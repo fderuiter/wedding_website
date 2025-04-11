@@ -11,6 +11,7 @@
   "dependencies": {
     "@react-three/drei": "^10.0.6",
     "@react-three/fiber": "^9.1.2",
+    "@react-three/rapier": "^2.1.0",
     "@types/uuid": "^10.0.0",
     "framer-motion": "^12.6.5",
     "fuse.js": "^7.1.0",

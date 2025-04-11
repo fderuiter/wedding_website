@@ -2,7 +2,10 @@
 
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useRef, useMemo } from 'react';
-import { Environment, Float, PresentationControls } from '@react-three/drei';
+// Import Physics and RigidBody
+import { Physics, RigidBody, TrimeshArgs } from '@react-three/rapier'; 
+// Removed Float as physics will handle movement
+import { Environment, PresentationControls } from '@react-three/drei';
 import { MotionConfig } from 'framer-motion';
 import * as THREE from 'three';
 
@@ -124,53 +127,64 @@ function EngravedRing({
   color = "#FFD700", 
   text = "" 
 }: EngravedCylinderRingProps) {
-  const meshRef = useRef<THREE.Mesh | null>(null);
+  const rigidBodyRef = useRef<any>(null); // Ref for RigidBody
 
-  // Use partial engraving - texture application might need adjustment for cylinder
   const { map, normalMap, bumpMap } = useMemo(() => {
-    // Texture created for torus segment, might look stretched/misplaced on cylinder sides
     return createEngravingTextures(text, true, 0.3, 0.7); 
   }, [text]);
 
   // Create the thick cylinder geometry using ExtrudeGeometry
   const geometry = useMemo(() => {
     const shape = new THREE.Shape();
-    // Outer circle
     shape.absarc(0, 0, outerRadius, 0, Math.PI * 2, false);
-    // Inner hole
     const holePath = new THREE.Path();
     holePath.absarc(0, 0, innerRadius, 0, Math.PI * 2, true);
     shape.holes.push(holePath);
-
-    // Extrusion settings with beveling
     const extrudeSettings = {
-      steps: 1, // Keep it simple
-      depth: height, // Thickness of the cylinder
-      bevelEnabled: true, // Enable beveling
-      bevelThickness: height * 0.2, // How deep the bevel goes (adjust as needed)
-      bevelSize: height * 0.1, // How far the bevel extends from the edge (adjust as needed)
-      bevelOffset: 0, // Start bevel from the original shape outline
-      bevelSegments: 4, // Number of segments for the bevel curve (increase for smoother bevel)
+      steps: 1,
+      depth: height,
+      bevelEnabled: true,
+      bevelThickness: height * 0.2,
+      bevelSize: height * 0.1,
+      bevelOffset: 0,
+      bevelSegments: 4,
     };
-
-    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geom.center(); // Center the geometry for potentially better physics stability
+    return geom;
   }, [outerRadius, innerRadius, height]);
 
-  // Animate rotation slightly
-  useFrame(() => {
-    if (meshRef.current) {
-      // Subtle continuous rotation on Z axis
-      meshRef.current.rotation.z += 0.001;
+  // Prepare args for TriMesh collider
+  const colliderArgs = useMemo(() => {
+    if (!geometry) return undefined;
+    const vertices = geometry.attributes.position.array as Float32Array;
+    // Ensure geometry has an index buffer, ExtrudeGeometry should create one
+    const indices = geometry.index?.array as Uint32Array | Uint16Array; 
+    if (!vertices || !indices) {
+        console.warn("Vertices or indices missing for trimesh collider");
+        return undefined;
     }
-  });
+    // Rapier expects Uint32Array for indices in trimesh
+    const indices32 = indices instanceof Uint16Array ? new Uint32Array(indices) : indices;
+    return [vertices, indices32] as TrimeshArgs; // Type assertion
+  }, [geometry]);
 
+  // Wrap mesh in RigidBody
   return (
-    <Float speed={1.0} rotationIntensity={0.2} floatIntensity={0.3}>
-      {/* Use primitive for custom geometry */}
-      <mesh ref={meshRef} position={position} rotation={rotation} geometry={geometry}>
-        {/* Removed torusGeometry, geometry is now a prop */}
+    <RigidBody
+      ref={rigidBodyRef} // Ref attached to RigidBody
+      position={position}
+      rotation={rotation}
+      colliders={colliderArgs ? "trimesh" : false} // Use trimesh collider if args are ready
+      args={colliderArgs} // Pass vertices and indices
+      type="dynamic" // Rings should move
+      restitution={0.3} // Bounciness
+      friction={0.7} // Friction
+      canSleep={false} // Prevent rings from sleeping to keep interaction lively
+    >
+      <mesh geometry={geometry}> {/* Pass geometry directly */}
         <meshStandardMaterial
-          color={color} // Base color of the ring
+          color={color} 
           metalness={0.95}
           roughness={0.15}
           side={THREE.DoubleSide}
@@ -181,7 +195,7 @@ function EngravedRing({
           bumpScale={-0.01} // Negative value for inset, adjust as needed
         />
       </mesh>
-    </Float>
+    </RigidBody>
   );
 }
 
@@ -189,57 +203,59 @@ function EngravedRing({
 function WeddingModel() {
   return (
     <MotionConfig transition={{ duration: 1.5 }}>
-      <group>
-        {/* Updated EngravedRing calls with cylinder props and different colors */}
-        <EngravedRing
-          position={[-0.45, 0.1, 0]}
-          outerRadius={0.8}
-          innerRadius={0.7} 
-          height={0.2}      
-          rotation={[Math.PI / 2, Math.PI / 5, 0]}
-          color="#FFD700" // Gold color
-          text="Abbi & Fred"
-        />
+      {/* No group needed if Physics handles positioning */}
+      {/* Adjust initial positions/rotations slightly to ensure they are interlocked but not overlapping initially */}
+      <EngravedRing
+        position={[-0.45, 0.1, 0]} // Keep positions for now, adjust if needed
+        outerRadius={0.8} 
+        innerRadius={0.7} 
+        height={0.2}      
+        rotation={[Math.PI / 2, Math.PI / 5, 0]} // Keep rotations for now
+        color="#FFD700" // Gold color
+        text="Abbi & Fred"
+      />
 
-        <EngravedRing
-          position={[0.45, -0.1, 0]}
-          outerRadius={0.8}
-          innerRadius={0.7} 
-          height={0.2}      
-          rotation={[Math.PI / 2, -Math.PI / 5, Math.PI / 16]}
-          color="#C0C0C0" // Silver color
-          text="10-10-2025"
-        />
-      </group>
+      <EngravedRing
+        position={[0.45, -0.1, 0]} // Keep positions for now
+        outerRadius={0.8}
+        innerRadius={0.7} 
+        height={0.2}      
+        rotation={[Math.PI / 2, -Math.PI / 5, Math.PI / 16]} // Keep rotations for now
+        color="#C0C0C0" // Silver color
+        text="10-10-2025"
+      />
     </MotionConfig>
   );
 }
 
 export default function WeddingScene() {
   return (
-    // Added a subtle background gradient to the container
     <div className="h-[600px] w-full bg-gradient-to-br from-gray-800 to-blue-900">
-      <Canvas camera={{ position: [0, 0, 4.5], fov: 55 }}> {/* Adjusted camera */}
-        {/* Improved Lighting */}
-        <ambientLight intensity={0.7} /> {/* Adjusted ambient light */}
-        <directionalLight
-          position={[5, 8, 5]} // Adjusted light position
-          intensity={1.8} // Adjusted intensity
-          // castShadow // Shadows can be added but require setup
-        />
-        <Environment preset="city" /> {/* Changed environment preset */}
+      <Canvas camera={{ position: [0, 0, 4.5], fov: 55 }}>
+        {/* Wrap scene content with Physics */}
+        <Physics gravity={[0, -1, 0]}> {/* Add some gravity */}
+          <ambientLight intensity={0.7} /> 
+          <directionalLight
+            position={[5, 8, 5]} 
+            intensity={1.8} 
+          />
+          <Environment preset="city" /> 
 
-        <PresentationControls
-          global
-          cursor={true} // Enable cursor hint
-          speed={1.2} // Adjusted speed
-          zoom={0.8} // Adjusted zoom factor
-          rotation={[0.1, 0.2, 0]} // Adjusted initial rotation
-          polar={[-0.3, 0.3]} // Adjusted polar limits
-          azimuth={[-0.4, 0.4]} // Adjusted azimuth limits
-        >
-          <WeddingModel />
-        </PresentationControls>
+          <PresentationControls
+            global
+            cursor={true} 
+            speed={1.2} 
+            zoom={0.8} 
+            // Rotation/polar/azimuth controls might fight physics if not configured carefully
+            // Consider disabling or adjusting interaction if physics simulation is primary
+            // For now, let's allow full rotation to see the physics interaction
+            rotation={[0.1, 0.2, 0]} 
+            polar={[-Math.PI / 2, Math.PI / 2]} // Allow full vertical rotation
+            azimuth={[-Math.PI, Math.PI]} // Allow full horizontal rotation
+          >
+            <WeddingModel />
+          </PresentationControls>
+        </Physics> {/* Close Physics wrapper */}
       </Canvas>
     </div>
   );
