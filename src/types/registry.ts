@@ -1,25 +1,21 @@
-export interface Contribution {
-  id: string;
-  itemId: string;
-  contributorName: string;
-  contributorContact: string;
+export interface Contributor {
+  name: string;
   amount: number;
-  date: string;
+  date: string; // Or Date object
 }
 
 export interface RegistryItem {
   id: string;
   name: string;
   description: string;
-  price: number;
-  imageUrl: string;
   category: string;
-  vendorUrl?: string;
+  price: number;
+  image: string;
+  vendorUrl: string | null;
+  quantity: number;
   isGroupGift: boolean;
-  purchased: boolean;
-  purchaserName?: string;
+  purchased: boolean; // True if fully claimed/funded
+  purchaserName?: string | null; // Name of the person who claimed it (if not group gift)
   amountContributed: number;
-  contributions: Contribution[];
+  contributors: Contributor[];
 }
-
-export type ItemCategory = 'Kitchen' | 'Travel' | 'Home' | 'Honeymoon' | 'Other';

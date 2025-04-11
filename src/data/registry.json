@@ -1,0 +1,47 @@
+[
+  {
+    "id": "item1",
+    "name": "Vintage Wine Glasses",
+    "description": "Elegant glasses for special toasts.",
+    "category": "Kitchen",
+    "price": 60,
+    "image": "/images/wine-glasses.jpg",
+    "vendorUrl": "https://example.com/item1",
+    "quantity": 1,
+    "isGroupGift": false,
+    "purchased": false,
+    "purchaserName": null,
+    "amountContributed": 0,
+    "contributors": []
+  },
+  {
+    "id": "item2",
+    "name": "Handcrafted Cutting Board",
+    "description": "Perfect for kitchen moments together.",
+    "category": "Kitchen",
+    "price": 80,
+    "image": "/images/cutting-board.jpg",
+    "vendorUrl": "https://example.com/item2",
+    "quantity": 1,
+    "isGroupGift": false,
+    "purchased": false,
+    "purchaserName": null,
+    "amountContributed": 0,
+    "contributors": []
+  },
+  {
+    "id": "item3",
+    "name": "Honeymoon Flight Fund",
+    "description": "Help us get to our dream destination!",
+    "category": "Honeymoon",
+    "price": 1000,
+    "image": "/images/plane.jpg",
+    "vendorUrl": null,
+    "quantity": 1,
+    "isGroupGift": true,
+    "purchased": false,
+    "purchaserName": null,
+    "amountContributed": 0,
+    "contributors": []
+  }
+]
