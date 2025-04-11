@@ -53,6 +53,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Project Structure Highlights
 
+wedding_website/
+├── src/
 ```
 wedding_website/
 ├── src/

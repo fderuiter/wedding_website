@@ -153,6 +153,7 @@ This project is a two‑page wedding website that doubles as a developer portfol
    ```
 
 2. **Install dependencies:**
+
    ```bash
    npm install
    ```
@@ -161,11 +162,13 @@ This project is a two‑page wedding website that doubles as a developer portfol
    Copy `.env.example` to `.env.local` and update the admin password and other settings as needed.
 
 4. **Run in development mode:**
+
    ```bash
    npm run dev
    ```
 
 5. **Build for production:**
+
    ```bash
    npm run build
    npm start
@@ -188,6 +191,7 @@ This project is a two‑page wedding website that doubles as a developer portfol
 ## License
 
 This project is open source under the MIT License.
+
 ```
 
 ---
@@ -234,6 +238,7 @@ _(Place appropriate images in the public/images folder or update the paths accor
 ## 3. Pages
 
 ### File: pages/index.js  
+
 This is the landing page (main wedding page/portfolio).
 
 ```jsx
@@ -283,6 +288,7 @@ export default function Home() {
 ```
 
 ### File: pages/registry.js  
+
 This page shows the registry and implements search/filter functionality.
 
 ```jsx
@@ -358,6 +364,7 @@ export default function Registry() {
 ## 4. API Endpoints
 
 ### File: pages/api/registry/items.js  
+
 Reads the sample registry items from the data file.
 
 ```js
@@ -378,6 +385,7 @@ export default async function handler(req, res) {
 ```
 
 ### File: pages/api/registry/contribute.js  
+
 A demo endpoint to process a contribution/claim. (In production this would update a database.)
 
 ```js
@@ -398,6 +406,7 @@ export default async function handler(req, res) {
 ```
 
 ### File: pages/api/registry/scrape.js  
+
 A basic web scraper using metascraper to fetch product info from a URL.
 
 ```js
@@ -447,6 +456,7 @@ export default async function handler(req, res) {
 ## 5. Components
 
 ### File: components/Layout.js  
+
 A common layout with header and footer.
 
 ```jsx
@@ -482,6 +492,7 @@ export default function Layout({ children }) {
 ```
 
 ### File: components/RegistryCard.js  
+
 Displays a registry item as a card.
 
 ```jsx
@@ -503,6 +514,7 @@ export default function RegistryCard({ item, onClick }) {
 ```
 
 ### File: components/Modal.js  
+
 A simple modal to show item details and allow contribution.
 
 ```jsx
