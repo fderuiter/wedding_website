@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import theme from '@/styles/theme';
+import WeddingScene from '@/components/WeddingScene';
 
 // Add schema.org Event markup for SEO
 const jsonLd = {
@@ -191,7 +192,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Portfolio Section with Interactive Cards */}
+        {/* 3D Wedding Scene Section */}
         <motion.section 
           className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto" 
           id="portfolio"
@@ -206,8 +207,18 @@ export default function Home() {
             whileInView={{ y: 0, opacity: 1 }}
             viewport={{ once: true }}
           >
-            About the Developer
+            Our Wedding Experience
           </motion.h2>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            whileInView={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+          >
+            <div className="rounded-xl overflow-hidden shadow-2xl">
+              <WeddingScene />
+            </div>
+          </motion.div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {[
               {
