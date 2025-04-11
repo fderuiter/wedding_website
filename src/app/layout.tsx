@@ -73,6 +73,10 @@ export default function RootLayout({
                 <Link href="/registry" className="px-4 py-2 rounded-md text-sm font-medium text-gray-900 hover:bg-gray-100">
                   Registry
                 </Link>
+                {/* Add link to the new game */}
+                <Link href="/catch-the-bouquet" className="px-4 py-2 rounded-md text-sm font-medium text-gray-900 hover:bg-gray-100">
+                  Catch the Bouquet
+                </Link>
               </div>
             </div>
           </div>

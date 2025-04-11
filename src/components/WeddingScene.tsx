@@ -212,7 +212,6 @@ function WeddingModel() {
         height={0.2}      
         rotation={[Math.PI / 2, Math.PI / 5, 0]} // Keep rotations for now
         color="#FFD700" // Gold color
-        text="Abbi & Fred"
       />
 
       <EngravedRing
@@ -222,7 +221,6 @@ function WeddingModel() {
         height={0.2}      
         rotation={[Math.PI / 2, -Math.PI / 5, Math.PI / 16]} // Keep rotations for now
         color="#C0C0C0" // Silver color
-        text="10-10-2025"
       />
     </MotionConfig>
   );
