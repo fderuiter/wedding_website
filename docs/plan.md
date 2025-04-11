@@ -115,14 +115,18 @@ By paying attention to SEO from the start, the site will be well-optimized to ap
 The registry system is a critical part of this project, combining a rich UI for guests with robust functionality under the hood. Here we detail each major feature and how to implement it:
 
 ### 1. Dynamic Filtering and Instant Search
+
 Guests should be able to easily find gifts that interest them or fit their budget.
+
 - **Category Filter:** Each item in the registry will have a category (e.g. Kitchen, Travel, Honeymoon Fund, etc.). On the UI, provide a list of categories (as checkboxes or toggles). Users can select one or multiple to filter the visible items. Implementation-wise, if our data is loaded into the front-end, filtering can be done with simple array filter logic (triggered on checkbox change). For larger data or for learning purposes, one could also implement filter queries on the backend, but it’s likely unnecessary here.
 - **Price Filter:** Include a slider or range input to set a price range. As the user adjusts the range, we filter the items whose price falls within it. This can be done instantly in the front-end as well. We just need to ensure each item’s price is stored as a number.
 - **Instant Search:** A search bar at the top of the registry page lets users type keywords (e.g. “knife” to find a knife set). We will implement this as a client-side fuzzy search so results update as they type. Using **Fuse.js** (or a similar library) allows substring matches and is very fast in-browser. Fuse can index fields like item name and description. As noted, using Fuse means *no extra backend calls* – “With Fuse.js, you don’t need to setup a dedicated backend just to handle search. ([Client side filtering with xState and Fuse.js - DEV Community](https://dev.to/gtodorov/client-side-filtering-with-xstate-and-fusejs-22k4#:~:text=After%20a%20quick%20research%2C%20Fuse,seemed%20like%20a%20good%20fit))” This keeps interactions snappy. As soon as the user types, we run the search on the array of items and update the displayed list.
 - **Performance of Filtering:** Even with dozens of items, filtering and searching on the client is fine (JavaScript can handle hundreds of items easily). For very large lists, we could paginate or load on demand, but a wedding registry typically has a manageable number of gifts (perhaps 20-100). We will just need to ensure efficient DOM updates (using React state updates or Svelte reactivity which handle diffing).
 
 ### 2. Visual Item Cards (Images, Videos, Descriptions, Links)
+
 Each gift item needs to be presented attractively and informatively:
+
 - **Card Layout:** Design a card to show a thumbnail image (or image carousel if we want to allow multiple images per item), the item name, and key info. If an item has a video (some products have demo videos), we might show a “play” icon or a second image indicating video, and in the detail modal we can embed a YouTube/Vimeo player or the product video.
 - **Images:** We will store an image URL for each item (either obtained via scraping or manually added). These images should be optimized (perhaps stored in the project or uploaded to an image CDN for faster loading). Use `<img>` with appropriate alt text (for accessibility and SEO, e.g. “KitchenAid Mixer in red”).
 - **Item Description:** A short description or note from the couple about why they want the item can add a personal touch. We’ll include a brief text on the card or at least in the detail modal.
@@ -136,7 +140,9 @@ Each gift item needs to be presented attractively and informatively:
 - **Responsive Design:** On mobile, the cards might be one per row (stacked), whereas on desktop they might be a grid of 3-4 columns. The modal on mobile should perhaps be full-screen for readability. All interactive elements (buttons, sliders) should be large enough for touch.
 
 ### 3. Claimed/Partially Funded Tracking (with Guest Accountability)
+
 A standout feature is allowing items to be marked as claimed or partially funded, and keeping track of who contributed.
+
 - **Data Model:** Each registry item in the database will have fields such as `price`, `isGroupGift` (whether partial contributions are allowed), `purchased` (boolean or amount contributed). For partial contributions, we might maintain a `contributions` list (each with contributor name, amount, date). If an item is fully claimed (one person buying it outright), we can mark it as `purchased=true` and possibly store who claimed it.
 - **Marking as Claimed (Full Purchase):** For items that are not group gifts (or even group ones if someone decides to take the whole thing), a guest can click “Claim this item.” We should then:
   - Ask for confirmation and their name/contact (to avoid duplicate claiming – though this isn’t a public marketplace, it’s nice to record who is taking it).
@@ -156,21 +162,25 @@ A standout feature is allowing items to be marked as claimed or partially funded
 This feature is relatively unique (even some commercial registries don’t allow partial gifts easily) – recall that “the majority of regular gift registry services will not allow people to make partial contributions to larger gifts ([Ideas for our Wedding Gift Registry: Must Have Presents to Include](https://mygiftregistry.com.au/news/what-to-put-on-a-wedding-gift-registry/#:~:text=Remember%20that%20the%20majority%20of,entire%20gift%20from%20the%20list)).” By implementing it, we add flexibility: multiple friends can chip in on a big gift. It’s a strong demonstration of full-stack capability (handling UI state, database updates, and ensuring consistency).
 
 ### 4. Item Detail Modals/Pages
+
 As mentioned, each item will have a detailed view. Key considerations:
-- Ensure the modal shows everything a guest might want to know before committing to a gift. This reduces the chance they need to click off to the vendor site (unless they are purchasing). 
+
+- Ensure the modal shows everything a guest might want to know before committing to a gift. This reduces the chance they need to click off to the vendor site (unless they are purchasing).
 - If implementing as separate pages (e.g., `/registry/item-id` routes), make sure to also SSR those for SEO and allow direct linking. However, given this is a two-page site by requirement, we might keep them as modals on the registry page itself to keep navigation simple.
 - If using modals, remember to update the URL hash or use the History API so that a user can share a specific item link (optional, but nice). For example, clicking an item could push state `#/item-123` so that if the page is reloaded with that, it opens that modal automatically.
 - Accessibility: modals should trap focus (so keyboard users aren’t stuck). Using a well-tested modal library or ARIA roles can handle this.
 
 ### 5. Adding Items via Web Scraping (Admin Tool)
+
 One innovative feature is a built-in tool that allows the site owner (admin) to add new registry items just by providing a vendor/product URL:
+
 - **Approach:** When the admin enters a URL and submits (in the admin UI), the backend will perform a fetch/scrape of that page. We’ll attempt to extract:
   - **Name/title** of the product,
   - **Price** (if available on page; sometimes in meta tags or JSON data),
   - **Main image URL**,
   - **Description** (maybe the first paragraph or meta description),
   - Possibly the **vendor name** (we can derive from the domain or if the page has an `<meta property="og:site_name">`).
-- **Tech Implementation:** We can use a Node library like **metascraper** or **open-graph-scraper** that automatically parses Open Graph tags and JSON-LD schema on the page. Many e-commerce pages include `<meta property="og:title" content="Product Name">` and similar tags for social sharing, as well as `<script type="application/ld+json">` with schema.org Product data. By using those, we can get structured info without having to parse HTML with brittle selectors. For example, metascraper can return a JSON with title, description, price if present, etc. 
+- **Tech Implementation:** We can use a Node library like **metascraper** or **open-graph-scraper** that automatically parses Open Graph tags and JSON-LD schema on the page. Many e-commerce pages include `<meta property="og:title" content="Product Name">` and similar tags for social sharing, as well as `<script type="application/ld+json">` with schema.org Product data. By using those, we can get structured info without having to parse HTML with brittle selectors. For example, metascraper can return a JSON with title, description, price if present, etc.
 - **Fallback:** If a site doesn’t have easily readable metadata, we might need to scrape specific HTML elements (like find the `<h1>` and price element). This could be done with a library like **Cheerio** (for HTML parsing) on the server. In an open-source project, a simple solution is to handle a few common patterns or just let the admin fill in missing info manually.
 - **Usage:** After scraping, show the admin what was found (pre-fill the add item form). They can adjust any field (maybe the price wasn’t found or needs conversion, or they want a different image). Then they save, which writes the item to the database.
 - **Speed & Errors:** The scraping should be reasonably quick (a second or two to fetch). Use asynchronous call on the backend, and provide feedback like a loading spinner. If it fails (e.g. network issue or site blocked scraping), show an error so the admin can then enter details manually. Also, because this uses external URLs, ensure to handle possible errors gracefully.
@@ -178,7 +188,9 @@ One innovative feature is a built-in tool that allows the site owner (admin) to 
 - **Open Source Note:** Document how this scraper works and that it might need maintenance if websites change. However, by focusing on metadata extraction, it should work for many sites without custom code per site.
 
 ### 6. Admin Dashboard/Management Tools
+
 To maintain the registry, an admin interface is essential:
+
 - **Authentication:** Implement a simple auth for admin. Could be as easy as an .env config with a password that the admin enters to login, or GitHub OAuth if we wanted to be fancy. For simplicity, perhaps a single admin password set in environment variables, and a login form on the admin page. Once logged in (store a cookie or localStorage token), the admin can use the tools.
 - **Dashboard:** The admin dashboard can be a separate page (not linked on the main site nav to keep it hidden). It can list all items in the registry in a table format. For each item, show key fields (name, price, remaining amount, etc.) and actions:
   - Edit (to change name, description, price, category, mark as group gift or not, etc.),
@@ -218,7 +230,7 @@ Behind the scenes, we need a reliable backend to support the registry features. 
   - It might use `open-graph-scraper` npm package internally: e.g. `ogs({ url })` which returns an object with `ogTitle`, `ogImage`, etc. We might also parse any JSON-LD by searching the HTML for `<script type="application/ld+json">` and JSON.parse-ing it to find product info.
   - This function can reside in a server utils file and be called by the API route. If the project is in Next, remember that API routes run in Node, so using `node-fetch` or axios to get the HTML is fine.
 - **Email/Notifications (Optional):** As an extra, the backend could integrate an email API (like SendGrid or Nodemailer with Gmail) to send notifications when a contribution is made (to the admin or to the contributor as a receipt). This is not required, but could be mentioned as a possible future addition for completeness.
-- **Security & Validation:** 
+- **Security & Validation:**
   - All admin routes should require authentication. We can implement a simple session or token. For instance, after admin logs in, the front-end gets a JSON Web Token (JWT) or sets a secure cookie. Then subsequent requests include that (or we use Next.js built-in authentication solutions). This prevents random people from hitting the open endpoints and modifying data.
   - Validate inputs on the server: e.g., ensure prices and contribution amounts are positive numbers, names are not too long, etc., to avoid any injection or mistakes.
   - Because it’s open source, we should caution users to set up a default admin password and change it. Possibly enforce that in setup.
@@ -300,10 +312,10 @@ Finally, let’s consider some possible extensions to the project that could be 
 - **Other Potential Extensions:**
   - **Multi-language support:** If guests are international, providing an easy way to translate text (maybe a JSON file for strings) could be useful.
   - **Gallery Page:** After the wedding, the couple might want to share photos. This could be an additional page or extension (Though not asked, it’s a common want – since the project is open source, someone might extend it with a gallery).
-  - **RSVP and Guest Management:** As mentioned, the platform could be extended to handle RSVPs, meal choices, etc., making it a fuller wedding portal. However, that’s a separate module of features. 
+  - **RSVP and Guest Management:** As mentioned, the platform could be extended to handle RSVPs, meal choices, etc., making it a fuller wedding portal. However, that’s a separate module of features.
   - **Integration with Google Sheets or Airtable:** For non-technical admin (the couple themselves), one could integrate a Google Sheet as the source of truth for registry items. Then adding an item is as easy as adding a row in a sheet. This would require reading from the Google Sheets API – a possible variant for those not wanting to deal with databases.
   - **Mobile App Wrapper:** Maybe create a simple PWA (Progressive Web App) so guests can “install” the site on their phone. Modern frameworks can easily make the site a PWA with an app manifest and offline caching of static assets.
 
-All these extensions show that the project is flexible and can evolve. For the scope of this blueprint, they remain optional ideas. The architecture we set up (with a backend, database, etc.) is capable of accommodating these in the future. For instance, adding Stripe payments would just be a few new API routes and front-end modals; adding personalization would involve an invites database and some conditional rendering, etc. 
+All these extensions show that the project is flexible and can evolve. For the scope of this blueprint, they remain optional ideas. The architecture we set up (with a backend, database, etc.) is capable of accommodating these in the future. For instance, adding Stripe payments would just be a few new API routes and front-end modals; adding personalization would involve an invites database and some conditional rendering, etc.
 
 **Conclusion:** This two-page wedding website + portfolio is designed to be **impressive in looks and in engineering**. By carefully planning the architecture, choosing an appropriate tech stack, designing with UX and performance in mind, and implementing advanced features (registry filtering, group gifting, scraping, etc.), we end up with a project that not only serves the immediate purpose (the couple’s wedding) but also stands as a showcase of the developer’s skills. Moreover, by adhering to open-source best practices, the project becomes a template that others can use for their own celebrations, fostering a small community of users and contributors around a unique idea.
