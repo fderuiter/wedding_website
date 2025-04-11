@@ -1,141 +1,211 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { RegistryItem } from '@/types/registry';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import RegistryCard from '@/components/RegistryCard';
 import Modal from '@/components/Modal';
-import Fuse from 'fuse.js';
+import { RegistryItem } from '@/types/registry';
 
 export default function RegistryPage() {
   const [items, setItems] = useState<RegistryItem[]>([]);
-  const [filteredItems, setFilteredItems] = useState<RegistryItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [activeItem, setActiveItem] = useState<RegistryItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [contributionAmount, setContributionAmount] = useState<number>(0);
+  const [purchaserName, setPurchaserName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false); // State to track admin status
+  const router = useRouter(); // Initialize router
 
-  // Fetch items from API
   useEffect(() => {
-    setIsLoading(true);
-    fetch('/api/registry/items')
-      .then((res) => {
+    // Check admin status on component mount
+    const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
+    setIsAdmin(loggedIn);
+
+    // Fetch registry items
+    const fetchItems = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const res = await fetch('/api/registry/items');
         if (!res.ok) {
-          throw new Error('Failed to fetch registry items');
+          throw new Error(`HTTP error! status: ${res.status}`);
         }
-        return res.json();
-      })
-      .then((data: RegistryItem[]) => {
+        const data = await res.json();
         setItems(data);
-        setFilteredItems(data); // Initialize filtered items
-        setError(null);
-      })
-      .catch((err) => {
-        console.error("Error fetching registry items:", err);
-        setError(err.message || "Could not load registry items.");
-      })
-      .finally(() => {
+      } catch (e) {
+        console.error("Failed to fetch registry items:", e);
+        setError(e instanceof Error ? e.message : 'Failed to load registry items.');
+      } finally {
         setIsLoading(false);
-      });
+      }
+    };
+    fetchItems();
   }, []);
 
-  // Fuse.js search setup
-  const fuse = useMemo(() => new Fuse(items, {
-    keys: ['name', 'description', 'category'],
-    threshold: 0.3, // Adjust threshold for desired fuzziness
-  }), [items]);
-
-  // Update filtered items when search term changes
-  useEffect(() => {
-    if (!searchTerm) {
-      setFilteredItems(items);
-    } else {
-      const results = fuse.search(searchTerm);
-      setFilteredItems(results.map(result => result.item));
-    }
-  }, [searchTerm, items, fuse]);
-
-  // Handle contribution submission
-  const handleContribute = async (itemId: string, contributorName: string, amount: number) => {
-    try {
-      const response = await fetch('/api/registry/contribute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId, contributorName, amount }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Contribution failed');
-      }
-
-      const { item: updatedItem } = await response.json();
-
-      // Update local state immediately for better UX
-      setItems(prevItems => prevItems.map(item => item.id === itemId ? updatedItem : item));
-      setActiveItem(updatedItem); // Update the item shown in the modal
-
-      // Optionally show a success message (could use a toast notification library)
-      alert('Thank you for your contribution!');
-      // Keep modal open to show updated status, or close it:
-      // onClose(); 
-
-    } catch (err: any) {
-      console.error("Contribution submission error:", err);
-      // Re-throw the error so the Modal component can display it
-      throw err;
-    }
+  const handleCardClick = (item: RegistryItem) => {
+    if (item.purchased || isAdmin) return; // Don't open modal if purchased or if admin (admin uses edit/delete)
+    setSelectedItem(item);
+    setContributionAmount(item.isGroupGift ? 0 : item.price); // Pre-fill price for non-group gifts
+    setPurchaserName(''); // Reset name field
+    setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
-    setActiveItem(null);
+    setIsModalOpen(false);
+    setSelectedItem(null);
   };
 
+  const handleContributionSubmit = async () => {
+    if (!selectedItem) return;
+
+    const contributionData = {
+      itemId: selectedItem.id,
+      amount: contributionAmount,
+      purchaserName: purchaserName,
+    };
+
+    try {
+      const res = await fetch('/api/registry/contribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contributionData),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+      }
+
+      const updatedItem = await res.json();
+
+      // Update the item in the local state
+      setItems(prevItems =>
+        prevItems.map(item => (item.id === updatedItem.id ? updatedItem : item))
+      );
+      handleCloseModal();
+      alert('Thank you for your contribution!');
+
+    } catch (e) {
+      console.error("Failed to submit contribution:", e);
+      alert(`Error: ${e instanceof Error ? e.message : 'Could not process contribution.'}`);
+    }
+  };
+
+  // --- Admin Actions ---
+  const handleEditItem = (itemId: string) => {
+    router.push(`/registry/edit-item/${itemId}`);
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/registry/items/${itemId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        let errorText = `HTTP error! status: ${res.status}`;
+        try {
+            const errorData = await res.json();
+            errorText = errorData.error || JSON.stringify(errorData);
+        } catch (jsonError) {
+            // If no JSON body, use the status text
+        }
+        throw new Error(errorText);
+      }
+
+      // Remove item from local state
+      setItems(prevItems => prevItems.filter(item => item.id !== itemId));
+      alert('Item deleted successfully.');
+
+    } catch (e) {
+      console.error("Failed to delete item:", e);
+      alert(`Error deleting item: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
+  };
+  // --- End Admin Actions ---
+
+  if (isLoading) return <p className="text-center mt-10">Loading registry...</p>;
+  if (error) return <p className="text-center text-red-500 mt-10">Error loading registry: {error}</p>;
+
   return (
-    <section className="py-10 px-4">
-      <h1 className="text-4xl font-bold text-center mb-8">Wedding Registry</h1>
-      
-      {/* Search Input */}
-      <div className="flex justify-center mb-6">
-        <input
-          type="text"
-          placeholder="Search gifts by name, description, or category..."
-          className="border p-3 rounded-lg w-full max-w-lg shadow-sm focus:ring-2 focus:ring-blue-300 outline-none"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+    <div className="container mx-auto p-4">
+      <h1 className="text-3xl font-bold text-center my-6">Wedding Registry</h1>
+      {isAdmin && (
+          <div className="text-center mb-6">
+              <button
+                  onClick={() => router.push('/registry/add-item')}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition"
+              >
+                  Add New Item
+              </button>
+          </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {items.map(item => (
+          <RegistryCard
+            key={item.id}
+            item={item}
+            onClick={() => handleCardClick(item)}
+            isAdmin={isAdmin} // Pass admin status
+            onEdit={handleEditItem} // Pass edit handler
+            onDelete={handleDeleteItem} // Pass delete handler
+          />
+        ))}
       </div>
 
-      {/* Loading and Error States */}
-      {isLoading && <p className="text-center text-gray-600">Loading registry items...</p>}
-      {error && <p className="text-center text-red-600">Error: {error}</p>}
+      {selectedItem && (
+        <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
+          <h2 className="text-2xl font-bold mb-4">{selectedItem.name}</h2>
+          <img src={selectedItem.image || '/images/placeholder.jpg'} alt={selectedItem.name} className="w-full h-64 object-cover mb-4 rounded"/>
+          <p className="mb-4">{selectedItem.description}</p>
+          <p className="font-semibold text-xl mb-4">Price: ${selectedItem.price.toFixed(2)}</p>
 
-      {/* Registry Grid */}
-      {!isLoading && !error && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredItems.length > 0 ? (
-            filteredItems.map(item => (
-              <RegistryCard 
-                key={item.id} 
-                item={item} 
-                onClick={() => !item.purchased && setActiveItem(item)} // Only open modal if not purchased
+          {selectedItem.isGroupGift && (
+            <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
+              <p className="text-blue-700 font-medium">This is a group gift!</p>
+              <p className="text-sm text-blue-600">${selectedItem.amountContributed.toFixed(2)} contributed so far.</p>
+              <p className="text-sm text-blue-600">Remaining: ${(selectedItem.price - selectedItem.amountContributed).toFixed(2)}</p>
+              <label htmlFor="contributionAmount" className="block text-sm font-medium text-gray-700 mt-2">Contribution Amount:</label>
+              <input
+                type="number"
+                id="contributionAmount"
+                value={contributionAmount}
+                onChange={(e) => setContributionAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                max={selectedItem.price - selectedItem.amountContributed}
+                step="0.01"
+                className="border p-2 rounded w-full mt-1"
+                required
               />
-            ))
-          ) : (
-            <p className="text-center text-gray-600 col-span-full">
-              {searchTerm ? 'No gifts found matching your search.' : 'No registry items available at the moment.'}
-            </p>
+            </div>
           )}
-        </div>
-      )}
 
-      {/* Modal for Item Details and Contribution */}
-      {activeItem && (
-        <Modal 
-          item={activeItem} 
-          onClose={handleCloseModal} 
-          onContribute={handleContribute} 
-        />
+          <div className="mb-4">
+            <label htmlFor="purchaserName" className="block text-sm font-medium text-gray-700">Your Name (Optional):</label>
+            <input
+              type="text"
+              id="purchaserName"
+              value={purchaserName}
+              onChange={(e) => setPurchaserName(e.target.value)}
+              className="border p-2 rounded w-full mt-1"
+            />
+          </div>
+
+          <button
+            onClick={handleContributionSubmit}
+            className="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition disabled:opacity-50"
+            disabled={selectedItem.isGroupGift && (contributionAmount <= 0 || contributionAmount > selectedItem.price - selectedItem.amountContributed)}
+          >
+            {selectedItem.isGroupGift ? 'Contribute' : 'Claim Gift'}
+          </button>
+        </Modal>
       )}
-    </section>
+    </div>
   );
 }

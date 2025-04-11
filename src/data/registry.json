@@ -43,5 +43,35 @@
     "purchaserName": null,
     "amountContributed": 0,
     "contributors": []
+  },
+  {
+    "id": "68079708-0a43-4c30-bc90-fcd8d4d2a007",
+    "name": "Test",
+    "description": "Testing",
+    "category": "Stuff",
+    "price": 20.99,
+    "image": "/images/placeholder.jpg",
+    "vendorUrl": "https://www.costco.com/alani-nu-energy-drink%2c-variety-pack%2c-12-fl-oz%2c-18-count.product.4000269836.html",
+    "quantity": 1,
+    "isGroupGift": false,
+    "purchased": false,
+    "purchaserName": null,
+    "amountContributed": 0,
+    "contributors": []
+  },
+  {
+    "id": "407c596e-63bc-4f66-941b-959636ba49d4",
+    "name": "Alani Nu Energy Drink, Variety Pack, 12 fl oz, 18-count",
+    "description": "Testing2",
+    "category": "Drinks",
+    "price": 20.99,
+    "image": "https://bfasset.costco-static.com/U447IH35/as/cqfkz7ksrg68ttbqvn87jn/4000269836-847__1?auto=webp&amp;format=jpg&width=1200&height=1200&fit=bounds&canvas=1200,1200",
+    "vendorUrl": "https://www.costco.com/alani-nu-energy-drink%2c-variety-pack%2c-12-fl-oz%2c-18-count.product.4000269836.html",
+    "quantity": 1,
+    "isGroupGift": false,
+    "purchased": true,
+    "purchaserName": "Frederick Price de Ruiter",
+    "amountContributed": 20.99,
+    "contributors": []
   }
 ]
