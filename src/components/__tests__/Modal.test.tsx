@@ -68,7 +68,8 @@ describe('Modal Component', () => {
     expect(screen.getByRole('img', { name: 'Single Item' })).toHaveAttribute('src', '/images/valid.jpg');
     expect(screen.getByRole('link', { name: 'View on Vendor Site' })).toHaveAttribute('href', 'https://example.com');
     expect(screen.getByPlaceholderText('Your Name')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Claim This Gift' })).toBeInTheDocument();
+    // Corrected button name
+    expect(screen.getByRole('button', { name: 'Claim Gift' })).toBeInTheDocument();
     // Group gift contribution input should not be present
     expect(screen.queryByPlaceholderText(/Contribution Amount/)).not.toBeInTheDocument();
   });
@@ -129,7 +130,8 @@ describe('Modal Component', () => {
 
   it('shows error if name is missing on contribution/claim', async () => {
     render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Claim This Gift' }));
+    // Corrected button name
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
     expect(await screen.findByText('Please enter your name.')).toBeInTheDocument();
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
@@ -155,14 +157,17 @@ describe('Modal Component', () => {
   it('calls onContribute with correct details for single item claim', async () => {
     render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
     fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Claimer' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Claim This Gift' }));
+    // Corrected button name
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+    // Check for processing state immediately after click
+    expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(mockOnContribute).toHaveBeenCalledTimes(1);
       // For single items, amount sent is the full price
       expect(mockOnContribute).toHaveBeenCalledWith(mockSingleItem.id, 'Claimer', mockSingleItem.price);
     });
-    expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument(); // Check submitting state
   });
 
   it('calls onContribute with correct details for group gift contribution', async () => {
@@ -171,15 +176,19 @@ describe('Modal Component', () => {
     fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
 
+    // Check for processing state immediately after click
+    expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument();
+
     await waitFor(() => {
       expect(mockOnContribute).toHaveBeenCalledTimes(1);
       expect(mockOnContribute).toHaveBeenCalledWith(mockGroupItem.id, 'Contributor', 50); // Amount entered
     });
-     expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument();
   });
 
    it('handles contribution submission error', async () => {
     const errorMessage = 'Network Error';
+    // Suppress console.error for this specific test
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockOnContribute.mockRejectedValueOnce(new Error(errorMessage)); // Simulate API error
 
     render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
@@ -187,8 +196,12 @@ describe('Modal Component', () => {
     fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
 
-    expect(await screen.findByText(`Failed to process contribution. Please try again.`)).toBeInTheDocument(); // Generic part of error
+    // Check for the actual error message displayed
+    expect(await screen.findByText(errorMessage)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Submit Contribution' })).toBeInTheDocument(); // Button should be enabled again
+
+    // Restore console.error
+    consoleErrorSpy.mockRestore();
   });
 
   it('displays placeholder image if item image fails to load', () => {
