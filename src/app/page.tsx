@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { AddToCalendarButton } from 'add-to-calendar-button-react'; // Corrected import path again
 import theme from '@/styles/theme';
 import WeddingScene from '@/components/WeddingScene';
 
@@ -189,6 +190,48 @@ export default function Home() {
                 </div>
               </motion.div>
             </div>
+            {/* Add to Calendar Button */} 
+            <motion.div 
+              className="text-center mt-12"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.4 }}
+            >
+              <AddToCalendarButton
+                name={jsonLd.name}
+                startDate={jsonLd.startDate.split('T')[0]} // Extract YYYY-MM-DD
+                startTime={jsonLd.startDate.split('T')[1].substring(0, 5)} // Extract HH:MM
+                endDate={jsonLd.endDate.split('T')[0]} // Extract YYYY-MM-DD
+                endTime={jsonLd.endDate.split('T')[1].substring(0, 5)} // Extract HH:MM
+                timeZone="America/New_York" // Adjust if needed
+                location="St. Mary's Church, 123 Wedding Ave & Grand Hotel Ballroom, 456 Celebration Blvd" // Combine locations or choose primary
+                description={jsonLd.description}
+                options={['Apple', 'Google', 'Outlook.com', 'Yahoo', 'iCal']}
+                buttonStyle="round"
+                styleLight="--btn-background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); --btn-text: #ffffff; --btn-shadow: 0 4px 6px rgba(0,0,0,0.1); --btn-hover-scale: 1.05;"
+                styleDark="--btn-background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); --btn-text: #ffffff; --btn-shadow: 0 4px 6px rgba(0,0,0,0.1); --btn-hover-scale: 1.05;"
+                trigger="click"
+                inline
+                label="Add to Calendar"
+                size="2" // Adjust size as needed (0-4)
+                customCss={`
+                  :root {
+                    --primary-color: ${theme.colors.primary};
+                    --secondary-color: ${theme.colors.secondary};
+                  }
+                  .atcb-button {
+                    font-weight: 500;
+                    padding: 0.75rem 1.5rem;
+                    border-radius: 9999px; /* full */
+                    transition: all 0.2s ease-in-out;
+                  }
+                  .atcb-button:hover {
+                     box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+                  }
+                `}
+              />
+            </motion.div>
           </div>
         </section>
 
@@ -220,7 +263,7 @@ export default function Home() {
             </div>
           </motion.div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
+            {[ 
               {
                 title: "Tech Stack",
                 items: [
@@ -295,7 +338,7 @@ export default function Home() {
                   </>
                 )}
               </motion.div>
-            ))}
+            ))} 
           </div>
         </motion.section>
       </div>
