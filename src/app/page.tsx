@@ -1,9 +1,16 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { AddToCalendarButton } from 'add-to-calendar-button-react'; // Corrected import path again
 import theme from '@/styles/theme';
 import WeddingScene from '@/components/WeddingScene';
+import dynamic from 'next/dynamic'; // Import dynamic
+
+// Dynamically import AddToCalendarButton with SSR disabled
+const AddToCalendarButtonClient = dynamic(() => import('add-to-calendar-button-react').then(mod => mod.AddToCalendarButton), {
+  ssr: false,
+  // Optional: Add a loading state while the component loads
+  // loading: () => <p>Loading calendar button...</p> 
+});
 
 // Add schema.org Event markup for SEO
 const jsonLd = {
@@ -190,15 +197,16 @@ export default function Home() {
                 </div>
               </motion.div>
             </div>
-            {/* Add to Calendar Button */} 
-            <motion.div 
+            {/* Add to Calendar Button */}
+            <motion.div
               className="text-center mt-12"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.4 }}
             >
-              <AddToCalendarButton
+              {/* Use the dynamically imported component */}
+              <AddToCalendarButtonClient
                 name={jsonLd.name}
                 startDate={jsonLd.startDate.split('T')[0]} // Extract YYYY-MM-DD
                 startTime={jsonLd.startDate.split('T')[1].substring(0, 5)} // Extract HH:MM
