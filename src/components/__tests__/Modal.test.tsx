@@ -1,0 +1,203 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import Modal from '../Modal'; // Adjust the import path as necessary
+import { RegistryItem } from '@/types/registry';
+
+// Mock item data
+const mockSingleItem: RegistryItem = {
+  id: 'item-1',
+  name: 'Single Item',
+  description: 'A nice single item.',
+  price: 100,
+  image: '/images/valid.jpg',
+  vendorUrl: 'https://example.com',
+  quantity: 1,
+  category: 'Home',
+  isGroupGift: false,
+  purchased: false,
+  amountContributed: 0,
+  contributors: [],
+};
+
+const mockGroupItem: RegistryItem = {
+  ...mockSingleItem,
+  id: 'item-2',
+  name: 'Group Item',
+  isGroupGift: true,
+  amountContributed: 30,
+};
+
+const mockPurchasedItem: RegistryItem = {
+  ...mockSingleItem,
+  id: 'item-3',
+  name: 'Purchased Item',
+  purchased: true,
+  purchaserName: 'Generous Guest',
+};
+
+const mockFundedGroupItem: RegistryItem = {
+    ...mockGroupItem,
+    id: 'item-4',
+    name: 'Funded Group Item',
+    purchased: true, // Mark as purchased when fully funded
+    amountContributed: 100,
+    contributors: [
+        { name: 'Contributor 1', amount: 50, date: '2023-11-01' }, 
+        { name: 'Contributor 2', amount: 50, date: '2023-11-02' }
+    ],
+};
+
+
+// Mock functions
+const mockOnClose = jest.fn();
+const mockOnContribute = jest.fn().mockResolvedValue(undefined); // Mock async function
+
+describe('Modal Component', () => {
+  beforeEach(() => {
+    // Reset mocks before each test
+    jest.clearAllMocks();
+  });
+
+  it('renders correctly for a single, available item', () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+
+    expect(screen.getByText('Single Item')).toBeInTheDocument();
+    expect(screen.getByText('A nice single item.')).toBeInTheDocument();
+    expect(screen.getByText('Price: $100.00')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Single Item' })).toHaveAttribute('src', '/images/valid.jpg');
+    expect(screen.getByRole('link', { name: 'View on Vendor Site' })).toHaveAttribute('href', 'https://example.com');
+    expect(screen.getByPlaceholderText('Your Name')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Claim This Gift' })).toBeInTheDocument();
+    // Group gift contribution input should not be present
+    expect(screen.queryByPlaceholderText(/Contribution Amount/)).not.toBeInTheDocument();
+  });
+
+  it('renders correctly for a group gift item', () => {
+    render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+
+    expect(screen.getByText('Group Item')).toBeInTheDocument();
+    expect(screen.getByText(/Group Gift - \$30.00 contributed so far./)).toBeInTheDocument();
+    expect(screen.getByText(/\$70.00 still needed./)).toBeInTheDocument(); // 100 - 30
+    expect(screen.getByPlaceholderText('Your Name')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Contribution Amount (up to $70.00)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit Contribution' })).toBeInTheDocument();
+  });
+
+   it('renders correctly for a purchased single item', () => {
+    render(<Modal item={mockPurchasedItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+
+    expect(screen.getByText('Purchased Item')).toBeInTheDocument();
+    expect(screen.getByText('This gift has been claimed!')).toBeInTheDocument();
+    expect(screen.getByText('Claimed by: Generous Guest')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Claim This Gift' })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Your Name')).not.toBeInTheDocument();
+  });
+
+  it('renders correctly for a fully funded group item', () => {
+    render(<Modal item={mockFundedGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+
+    expect(screen.getByText('Funded Group Item')).toBeInTheDocument();
+    expect(screen.getByText('This gift is fully funded!')).toBeInTheDocument();
+    expect(screen.getByText('Thank you to all contributors!')).toBeInTheDocument(); // Check for contributor thank you message
+    expect(screen.queryByRole('button', { name: 'Submit Contribution' })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Your Name')).not.toBeInTheDocument();
+  });
+
+
+  it('calls onClose when the close button is clicked', () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.click(screen.getByLabelText('Close modal'));
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates contributor name input', () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    const nameInput = screen.getByPlaceholderText('Your Name');
+    fireEvent.change(nameInput, { target: { value: 'Test User' } });
+    expect(nameInput).toHaveValue('Test User');
+  });
+
+  it('updates contribution amount input for group gift', () => {
+    render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    const amountInput = screen.getByPlaceholderText('Contribution Amount (up to $70.00)');
+    fireEvent.change(amountInput, { target: { value: '25' } });
+    expect(amountInput).toHaveValue(25); // Input type=number returns number
+  });
+
+  // --- Validation and Submission Tests ---
+
+  it('shows error if name is missing on contribution/claim', async () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Claim This Gift' }));
+    expect(await screen.findByText('Please enter your name.')).toBeInTheDocument();
+    expect(mockOnContribute).not.toHaveBeenCalled();
+  });
+
+  it('shows error if contribution amount is invalid for group gift', async () => {
+    render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Test User' } });
+    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+    expect(await screen.findByText('Please enter a valid contribution amount.')).toBeInTheDocument();
+    expect(mockOnContribute).not.toHaveBeenCalled();
+  });
+
+  it('shows error if contribution amount exceeds remaining for group gift', async () => {
+    render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Test User' } });
+    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '80' } }); // More than remaining 70
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+    expect(await screen.findByText('Amount cannot exceed the remaining $70.00.')).toBeInTheDocument();
+    expect(mockOnContribute).not.toHaveBeenCalled();
+  });
+
+  it('calls onContribute with correct details for single item claim', async () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Claimer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Claim This Gift' }));
+
+    await waitFor(() => {
+      expect(mockOnContribute).toHaveBeenCalledTimes(1);
+      // For single items, amount sent is the full price
+      expect(mockOnContribute).toHaveBeenCalledWith(mockSingleItem.id, 'Claimer', mockSingleItem.price);
+    });
+    expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument(); // Check submitting state
+  });
+
+  it('calls onContribute with correct details for group gift contribution', async () => {
+    render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Contributor' } });
+    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+    await waitFor(() => {
+      expect(mockOnContribute).toHaveBeenCalledTimes(1);
+      expect(mockOnContribute).toHaveBeenCalledWith(mockGroupItem.id, 'Contributor', 50); // Amount entered
+    });
+     expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument();
+  });
+
+   it('handles contribution submission error', async () => {
+    const errorMessage = 'Network Error';
+    mockOnContribute.mockRejectedValueOnce(new Error(errorMessage)); // Simulate API error
+
+    render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Contributor' } });
+    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+    expect(await screen.findByText(`Failed to process contribution. Please try again.`)).toBeInTheDocument(); // Generic part of error
+    expect(screen.getByRole('button', { name: 'Submit Contribution' })).toBeInTheDocument(); // Button should be enabled again
+  });
+
+  it('displays placeholder image if item image fails to load', () => {
+    render(<Modal item={{...mockSingleItem, image: '/invalid-path.jpg'}} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    const img = screen.getByRole('img', { name: mockSingleItem.name });
+    // Simulate the error event
+    fireEvent.error(img);
+    // Check if the src is updated to the placeholder
+    expect(img).toHaveAttribute('src', '/images/placeholder.jpg');
+  });
+
+});
