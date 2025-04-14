@@ -89,7 +89,7 @@ export default function Home() {
               transition={{ duration: 0.8, delay: 0.4 }}
             >
               <motion.a 
-                href="#story" 
+                href="/project-info" 
                 className="inline-block px-8 py-3 rounded-full font-medium text-white shadow-lg"
                 style={{
                   background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.secondary})`,
@@ -100,7 +100,7 @@ export default function Home() {
                 }}
                 whileTap={{ scale: 0.95 }}
               >
-                Our Story
+                Project Info
               </motion.a>
             </motion.div>
           </div>
