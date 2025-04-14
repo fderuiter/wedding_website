@@ -12,6 +12,31 @@ const config = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
   preset: 'ts-jest', // Use ts-jest preset
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['json', 'lcov', 'text', 'clover', 'html'], // Added 'html' for detailed report
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}', // Collect coverage from all ts/tsx files in src
+    '!src/**/*.d.ts', // Exclude type definition files
+    '!src/**/layout.tsx', // Often layout files have minimal logic
+    '!src/**/route.ts', // API routes might need different testing strategies (integration)
+    '!src/types/**/*.ts', // Exclude type definitions
+    '!src/styles/**/*.ts', // Exclude style definitions
+    '!**/node_modules/**',
+    '!<rootDir>/jest.config.mjs',
+    '!<rootDir>/jest.setup.js',
+    '!<rootDir>/next.config.ts',
+    '!<rootDir>/postcss.config.mjs',
+    '!<rootDir>/eslint.config.mjs',
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90,
+    },
+  },
   moduleNameMapper: {
     // Handle module aliases (if you have them in tsconfig.json)
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
