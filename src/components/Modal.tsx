@@ -34,11 +34,6 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
       }
     } else {
       // For non-group gifts, the amount is the full price
-      if (contributionAmount !== item.price && amount !== '') { // Allow empty amount for 'Claim Gift'
-         // If they entered an amount, it must match the price for non-group gifts
-         setError(`Please contribute the full amount ($${item.price.toFixed(2)}) or leave blank to claim.`);
-         return;
-      }
     }
 
     setIsSubmitting(true);
