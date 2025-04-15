@@ -88,7 +88,9 @@ describe('RegistryPage', () => {
     fireEvent.click(cards[1]);
     expect(await screen.findByTestId('modal')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/contribution amount/i), { target: { value: '20' } });
-    fireEvent.click(screen.getByText(/contribute/i));
+    // Use getAllByText to avoid ambiguity
+    const contributeButtons = screen.getAllByText(/contribute/i);
+    fireEvent.click(contributeButtons[contributeButtons.length - 1]);
     // Modal should close after submit (simulate success)
   });
 
@@ -111,7 +113,10 @@ describe('RegistryPage', () => {
     jest.spyOn(require('next/navigation'), 'useRouter').mockReturnValue({ push });
     window.confirm = jest.fn(() => true);
     window.alert = jest.fn();
-    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })) as jest.Mock;
+    // Ensure fetch returns an array
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([
+      { id: '1', name: 'Gift 1', price: 100, purchased: false, isGroupGift: false, description: 'desc', image: '', amountContributed: 0 },
+    ]) })) as jest.Mock;
     render(<RegistryPage />);
     expect(await screen.findByRole('button', { name: /add new item/i })).toBeInTheDocument();
     // Simulate edit

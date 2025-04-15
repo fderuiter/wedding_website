@@ -3,8 +3,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import LoginPage from './page';
 
 // Mock next/navigation useRouter
+const push = jest.fn();
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() })
+  useRouter: () => ({ push })
 }));
 
 describe('Admin Login Page', () => {
@@ -34,8 +35,6 @@ describe('Admin Login Page', () => {
   it('redirects on correct password', () => {
     process.env.NEXT_PUBLIC_ADMIN_PASSWORD = 'testpass';
     const setItemSpy = jest.spyOn(window.localStorage.__proto__, 'setItem');
-    const push = jest.fn();
-    jest.spyOn(require('next/navigation'), 'useRouter').mockReturnValue({ push });
     render(<LoginPage />);
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'testpass' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));

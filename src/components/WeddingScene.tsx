@@ -258,3 +258,5 @@ export default function WeddingScene() {
     </div>
   );
 }
+
+export { createEngravingTextures, EngravedRing, WeddingModel };
