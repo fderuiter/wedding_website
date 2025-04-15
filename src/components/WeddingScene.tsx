@@ -1,262 +1,231 @@
 'use client';
 
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 // Import Physics and RigidBody
-import { Physics, RigidBody, TrimeshArgs } from '@react-three/rapier'; 
-// Removed Float as physics will handle movement
+import { Physics, RigidBody, TrimeshArgs, CuboidCollider, BallCollider, CylinderCollider, interactionGroups } from '@react-three/rapier';
 import { Environment, PresentationControls } from '@react-three/drei';
 import { MotionConfig } from 'framer-motion';
 import * as THREE from 'three';
 
-// Function to create a proper engraving texture and normal map for a Torus
-function createEngravingTextures(text: string, partialEngraving = true, startAngle = 0.3, endAngle = 0.7) {
-  if (typeof window === 'undefined') return { map: null, normalMap: null, bumpMap: null };
-
-  // Create high-resolution canvases for better detail
-  const canvas = document.createElement('canvas');
-  const normalCanvas = document.createElement('canvas');
-  const bumpCanvas = document.createElement('canvas'); // Canvas for bump map
-  // Dimensions suitable for wrapping around a torus segment
-  canvas.width = 1024; // Width corresponds to the circumference segment
-  canvas.height = 128;  // Height corresponds to the tube thickness
-  normalCanvas.width = 1024;
-  normalCanvas.height = 128;
-  bumpCanvas.width = 1024; // Same dimensions for bump map
-  bumpCanvas.height = 128;
-
-  const ctx = canvas.getContext('2d');
-  const normalCtx = normalCanvas.getContext('2d');
-  const bumpCtx = bumpCanvas.getContext('2d'); // Context for bump map
-  if (!ctx || !normalCtx || !bumpCtx) return { map: null, normalMap: null, bumpMap: null };
-
-  // Set background - slightly transparent to blend with gold
-  // This canvas is now only for the base color, no text needed here.
-  ctx.fillStyle = 'rgba(153, 119, 34, 0.8)'; // Base gold color, slightly transparent
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Normal map background
-  normalCtx.fillStyle = '#808080'; // Neutral normal
-  normalCtx.fillRect(0, 0, normalCanvas.width, normalCanvas.height);
-
-  // Bump map background (white for non-engraved areas)
-  bumpCtx.fillStyle = '#FFFFFF';
-  bumpCtx.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
-
-  // Configure text properties (used for normal and bump maps)
-  const fontSize = 60; // Adjusted font size
-  const commonFont = `bold ${fontSize}px sans-serif`;
-  const commonTextAlign = 'center' as CanvasTextAlign; // Explicit type assertion
-  const commonTextBaseline = 'middle' as CanvasTextBaseline; // Explicit type assertion
-
-
-  // Draw text for normal map (white on black for bump effect)
-  normalCtx.fillStyle = '#FFFFFF'; // White for raised effect
-  normalCtx.font = commonFont;
-  normalCtx.textAlign = commonTextAlign;
-  normalCtx.textBaseline = commonTextBaseline;
-  // Use a darker shadow for a stronger normal effect
-  normalCtx.shadowColor = 'rgba(0, 0, 0, 1)';
-  normalCtx.shadowBlur = 8;
-  normalCtx.shadowOffsetX = 3;
-  normalCtx.shadowOffsetY = 3;
-  normalCtx.fillText(text, normalCanvas.width / 2, normalCanvas.height / 2);
-
-  // Draw text for bump map (black on white for inset effect)
-  bumpCtx.fillStyle = '#000000'; // Black for engraved areas
-  bumpCtx.font = commonFont;
-  bumpCtx.textAlign = commonTextAlign;
-  bumpCtx.textBaseline = commonTextBaseline;
-  // No shadow needed for bump map, just clear contrast
-  bumpCtx.fillText(text, bumpCanvas.width / 2, bumpCanvas.height / 2);
-
-  // Create textures
-  const texture = new THREE.CanvasTexture(canvas); // Base color texture (no text)
-  const normalTexture = new THREE.CanvasTexture(normalCanvas);
-  const bumpTexture = new THREE.CanvasTexture(bumpCanvas); // Bump texture
-
-  // Configure texture wrapping and filtering
-  texture.wrapS = normalTexture.wrapS = bumpTexture.wrapS = THREE.ClampToEdgeWrapping; // Clamp prevents repeating on torus
-  texture.wrapT = normalTexture.wrapT = bumpTexture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = normalTexture.minFilter = bumpTexture.minFilter = THREE.LinearMipmapLinearFilter; // Better quality filtering
-  texture.magFilter = normalTexture.magFilter = bumpTexture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  normalTexture.needsUpdate = true;
-  bumpTexture.needsUpdate = true;
-
-  // Set texture offset and repeat to apply only to a segment of the torus
-  if (partialEngraving) {
-    const range = endAngle - startAngle;
-    // Apply repeat/offset only to normal and bump maps
-    normalTexture.repeat.set(range, 1);
-    normalTexture.offset.set(startAngle, 0);
-    bumpTexture.repeat.set(range, 1);
-    bumpTexture.offset.set(startAngle, 0);
-    // Base texture covers the whole ring (or isn't used if material color is preferred)
-    texture.repeat.set(1, 1);
-    texture.offset.set(0, 0);
-  } else {
-     texture.repeat.set(1, 1);
-     normalTexture.repeat.set(1, 1);
-     bumpTexture.repeat.set(1, 1);
-  }
-
-
-  // Return map (now just base color), normalMap, and bumpMap
-  return { map: texture, normalMap: normalTexture, bumpMap: bumpTexture };
-}
-
-
-// Define props for the cylinder ring
-interface EngravedCylinderRingProps {
+// Define props for a simple ring
+interface RingProps {
   position: [number, number, number];
   rotation: [number, number, number];
   outerRadius: number;
   innerRadius: number;
   height: number;
   color?: string;
-  text?: string;
 }
 
-function EngravedRing({ 
+function InterlockedRing({ 
   position, 
   rotation, 
   outerRadius, 
   innerRadius, 
   height, 
-  color = "#FFD700", 
-  text = "" 
-}: EngravedCylinderRingProps) {
-  const rigidBodyRef = useRef<any>(null); // Ref for RigidBody
+  color = "#FFD700"
+}: RingProps) {
+  const rigidBodyRef = useRef<any>(null);
 
-  const { map, normalMap, bumpMap } = useMemo(() => {
-    return createEngravingTextures(text, true, 0.3, 0.7); 
-  }, [text]);
-
-  // Create the thick cylinder geometry using ExtrudeGeometry
+  // Create a more defined, solid ring geometry with better beveling
   const geometry = useMemo(() => {
+    // Create a toroidal shape for the ring
     const shape = new THREE.Shape();
     shape.absarc(0, 0, outerRadius, 0, Math.PI * 2, false);
     const holePath = new THREE.Path();
     holePath.absarc(0, 0, innerRadius, 0, Math.PI * 2, true);
     shape.holes.push(holePath);
+    
+    // Enhanced extrude settings for a more polished look
     const extrudeSettings = {
-      steps: 1,
+      steps: 2,  // Increased steps for smoother geometry
       depth: height,
       bevelEnabled: true,
-      bevelThickness: height * 0.2,
-      bevelSize: height * 0.1,
+      bevelThickness: height * 0.15,  // Increased bevel thickness
+      bevelSize: height * 0.15,       // Increased bevel size
       bevelOffset: 0,
-      bevelSegments: 4,
+      bevelSegments: 5,               // More segments for smoother edges
     };
+    
     const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-    geom.center(); // Center the geometry for potentially better physics stability
+    geom.computeVertexNormals(); // Ensure proper lighting
+    geom.center();
     return geom;
   }, [outerRadius, innerRadius, height]);
 
-  // Prepare args for TriMesh collider
+  // Create a more efficient compound collider for better physics performance
   const colliderArgs = useMemo(() => {
     if (!geometry) return undefined;
     const vertices = geometry.attributes.position.array as Float32Array;
-    // Ensure geometry has an index buffer, ExtrudeGeometry should create one
     const indices = geometry.index?.array as Uint32Array | Uint16Array; 
     if (!vertices || !indices) {
         console.warn("Vertices or indices missing for trimesh collider");
         return undefined;
     }
-    // Rapier expects Uint32Array for indices in trimesh
     const indices32 = indices instanceof Uint16Array ? new Uint32Array(indices) : indices;
-    return [vertices, indices32] as TrimeshArgs; // Type assertion
+    return [vertices, indices32] as TrimeshArgs;
   }, [geometry]);
 
-  // Wrap mesh in RigidBody
+  // UseEffect to update rigid body properties if needed
+  useEffect(() => {
+    if (rigidBodyRef.current) {
+      // Set initial position and rotation
+      rigidBodyRef.current.setTranslation({ 
+        x: position[0], 
+        y: position[1], 
+        z: position[2] 
+      });
+      
+      // Wake up the body to ensure physics are active
+      rigidBodyRef.current.wakeUp();
+    }
+  }, [position]);
+
   return (
     <RigidBody
-      ref={rigidBodyRef} // Ref attached to RigidBody
+      ref={rigidBodyRef}
       position={position}
       rotation={rotation}
-      colliders={colliderArgs ? "trimesh" : false} // Use trimesh collider if args are ready
-      args={colliderArgs} // Pass vertices and indices
-      type="dynamic" // Rings should move
-      restitution={0.3} // Bounciness
-      friction={0.7} // Friction
-      canSleep={false} // Prevent rings from sleeping to keep interaction lively
+      colliders={colliderArgs ? "trimesh" : false}
+      args={colliderArgs}
+      type="dynamic"
+      restitution={0.4}     // Higher restitution for more bounce
+      friction={0.8}        // Higher friction for more stable contacts
+      canSleep={false}
+      mass={1}              // Set explicit mass
+      linearDamping={0.8}   // Add damping for more controlled movement
+      angularDamping={0.8}  // Prevent excessive spinning
     >
-      <mesh geometry={geometry}> {/* Pass geometry directly */}
+      <mesh geometry={geometry}>
         <meshStandardMaterial
-          color={color} 
+          color={color}
           metalness={0.95}
           roughness={0.15}
           side={THREE.DoubleSide}
-          // map={map} // Base color map might not be needed
-          normalMap={normalMap}
-          normalScale={new THREE.Vector2(0.8, 0.8)} // Adjust scale as needed for cylinder
-          bumpMap={bumpMap} // Bump map creates the inset effect
-          bumpScale={-0.01} // Negative value for inset, adjust as needed
+          envMapIntensity={1.5}   // Enhanced reflectivity
         />
       </mesh>
     </RigidBody>
   );
 }
 
+function AnimatedInterwovenRings() {
+  // Enhanced parameters for the rings
+  const radius = 0.8;
+  const thickness = 0.18; // Slightly thinner for better interlocking
+  const animationSpeed = 0.4; // Slightly slower for more elegant movement
+  const orbitRadius = 0.25; // Controls how close rings are to each other
 
-function WeddingModel() {
+  // Refs for animation
+  const groupRef = useRef<any>(null);
+  const ring1Ref = useRef<any>(null);
+  const ring2Ref = useRef<any>(null);
+  
+  // Helper state for smooth animation
+  const animationRef = useRef({
+    prevTime: 0,
+    ringPhase: 0, // Phase difference between rings
+  });
+
+  // Create a more fluid, interlocking animation
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime() * animationSpeed;
+    const phase = Math.PI / 2; // 90-degree phase difference creates the interlocking effect
+    
+    // Smooth oscillating factor that creates the weaving effect
+    const weaveOsc = Math.sin(t * 0.5) * 0.2;
+    
+    // Ring 1: Gold ring - moves in Figure-8 pattern
+    if (ring1Ref.current) {
+      // Create more complex orbital path for interlocking appearance
+      ring1Ref.current.position.set(
+        Math.cos(t) * orbitRadius,
+        Math.sin(t * 0.7) * orbitRadius * 0.4, // Vertical oscillation
+        Math.sin(t) * orbitRadius
+      );
+      
+      // Roll the ring as it moves along its path
+      ring1Ref.current.rotation.set(
+        Math.PI / 2 + Math.sin(t) * 0.2,
+        t,
+        weaveOsc
+      );
+    }
+    
+    // Ring 2: Silver ring - moves in complementary Figure-8
+    if (ring2Ref.current) {
+      // Phase-shifted path creates interlocking effect
+      ring2Ref.current.position.set(
+        Math.sin(t + phase) * orbitRadius,
+        Math.sin((t + phase) * 0.7) * orbitRadius * -0.4, // Opposite vertical movement
+        Math.cos(t + phase) * orbitRadius
+      );
+      
+      // Different orientation creates crossover points
+      ring2Ref.current.rotation.set(
+        Math.sin(t + phase) * 0.2,
+        Math.PI / 2,
+        t + phase + weaveOsc
+      );
+    }
+  });
+
   return (
     <MotionConfig transition={{ duration: 1.5 }}>
-      {/* No group needed if Physics handles positioning */}
-      {/* Adjust initial positions/rotations slightly to ensure they are interlocked but not overlapping initially */}
-      <EngravedRing
-        position={[-0.45, 0.1, 0]} // Keep positions for now, adjust if needed
-        outerRadius={0.8} 
-        innerRadius={0.7} 
-        height={0.2}      
-        rotation={[Math.PI / 2, Math.PI / 5, 0]} // Keep rotations for now
-        color="#FFD700" // Gold color
-      />
-
-      <EngravedRing
-        position={[0.45, -0.1, 0]} // Keep positions for now
-        outerRadius={0.8}
-        innerRadius={0.7} 
-        height={0.2}      
-        rotation={[Math.PI / 2, -Math.PI / 5, Math.PI / 16]} // Keep rotations for now
-        color="#C0C0C0" // Silver color
-      />
+      <group ref={groupRef}>
+        <group ref={ring1Ref}>
+          <InterlockedRing
+            position={[0, 0, 0]}
+            outerRadius={radius}
+            innerRadius={radius - thickness}
+            height={thickness}
+            rotation={[Math.PI / 2, 0, 0]}
+            color="#FFD700"
+          />
+        </group>
+        <group ref={ring2Ref}>
+          <InterlockedRing
+            position={[0, 0, 0]}
+            outerRadius={radius}
+            innerRadius={radius - thickness}
+            height={thickness}
+            rotation={[0, Math.PI / 2, 0]}
+            color="#C0C0C0"
+          />
+        </group>
+      </group>
     </MotionConfig>
   );
+}
+
+function WeddingModel() {
+  return <AnimatedInterwovenRings />;
 }
 
 export default function WeddingScene() {
   return (
     <div className="h-[600px] w-full bg-gradient-to-br from-gray-800 to-blue-900">
       <Canvas camera={{ position: [0, 0, 4.5], fov: 55 }}>
-        {/* Wrap scene content with Physics */}
-        <Physics gravity={[0, -1, 0]}> {/* Add some gravity */}
+        <Physics gravity={[0, -1, 0]}>
           <ambientLight intensity={0.7} /> 
-          <directionalLight
-            position={[5, 8, 5]} 
-            intensity={1.8} 
-          />
+          <directionalLight position={[5, 8, 5]} intensity={1.8} />
           <Environment preset="city" /> 
-
           <PresentationControls
             global
-            cursor={true} 
-            speed={1.2} 
-            zoom={0.8} 
-            // Rotation/polar/azimuth controls might fight physics if not configured carefully
-            // Consider disabling or adjusting interaction if physics simulation is primary
-            // For now, let's allow full rotation to see the physics interaction
-            rotation={[0.1, 0.2, 0]} 
-            polar={[-Math.PI / 2, Math.PI / 2]} // Allow full vertical rotation
-            azimuth={[-Math.PI, Math.PI]} // Allow full horizontal rotation
+            cursor={true}
+            speed={1.2}
+            zoom={0.8}
+            rotation={[0.1, 0.2, 0]}
+            polar={[-Math.PI / 2, Math.PI / 2]}
+            azimuth={[-Math.PI, Math.PI]}
           >
             <WeddingModel />
           </PresentationControls>
-        </Physics> {/* Close Physics wrapper */}
+        </Physics>
       </Canvas>
     </div>
   );
 }
 
-export { createEngravingTextures, EngravedRing, WeddingModel };
+export { InterlockedRing, WeddingModel };

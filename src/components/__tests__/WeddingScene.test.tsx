@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react';
-import WeddingScene, { createEngravingTextures, EngravedRing, WeddingModel } from '../WeddingScene';
+import WeddingScene, { InterlockedRing, WeddingModel } from '../WeddingScene';
 import { Physics } from '@react-three/rapier';
 
 describe('WeddingScene', () => {
@@ -66,62 +66,28 @@ describe('WeddingScene', () => {
     render(<WeddingScene />);
   });
 
-  it('createEngravingTextures returns nulls if window is undefined', () => {
-    const originalWindow = global.window;
-    // @ts-ignore
-    delete global.window;
-    const result = createEngravingTextures('test');
-    expect(result).toEqual({ map: null, normalMap: null, bumpMap: null });
-    global.window = originalWindow;
-  });
-
-  it('createEngravingTextures returns nulls if context is missing', () => {
-    // Mock document.createElement to return an object with no getContext
-    const origCreateElement = document.createElement;
-    document.createElement = () => ({ getContext: () => null }) as any;
-    const result = createEngravingTextures('test');
-    expect(result).toEqual({ map: null, normalMap: null, bumpMap: null });
-    document.createElement = origCreateElement;
-  });
-
-  it('createEngravingTextures works for partialEngraving true', () => {
-    const result = createEngravingTextures('test', true, 0.2, 0.8);
-    expect(result.map).toBeDefined();
-    expect(result.normalMap).toBeDefined();
-    expect(result.bumpMap).toBeDefined();
-  });
-
-  it('createEngravingTextures works for partialEngraving false', () => {
-    const result = createEngravingTextures('test', false);
-    expect(result.map).toBeDefined();
-    expect(result.normalMap).toBeDefined();
-    expect(result.bumpMap).toBeDefined();
-  });
-
-  it('EngravedRing renders with various props inside Physics', () => {
+  it('InterlockedRing renders with various props inside Physics', () => {
     render(
       <Physics>
-        <EngravedRing
+        <InterlockedRing
           position={[0, 0, 0]}
           rotation={[0, 0, 0]}
           outerRadius={1}
           innerRadius={0.8}
           height={0.2}
           color="#FFD700"
-          text="Sample"
         />
       </Physics>
     );
     render(
       <Physics>
-        <EngravedRing
+        <InterlockedRing
           position={[1, 1, 1]}
           rotation={[1, 1, 1]}
           outerRadius={2}
           innerRadius={1.5}
           height={0.5}
           color="#C0C0C0"
-          text=""
         />
       </Physics>
     );
