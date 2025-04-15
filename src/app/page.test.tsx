@@ -26,7 +26,7 @@ describe('Home Page', () => {
   it('renders the hero section', () => {
     render(<Home />);
     expect(screen.getByRole('heading', { name: /abbi & fred/i })).toBeInTheDocument();
-    expect(screen.getByText(/april 15, 2025/i)).toBeInTheDocument();
+    expect(screen.getByText(/october 15, 2025/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /project info/i })).toBeInTheDocument();
   });
 
