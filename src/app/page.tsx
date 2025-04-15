@@ -273,15 +273,6 @@ export default function Home() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {[ 
               {
-                title: "Tech Stack",
-                items: [
-                  { icon: "⚡", text: "Next.js & React" },
-                  { icon: "📘", text: "TypeScript" },
-                  { icon: "🎨", text: "Tailwind CSS" },
-                  { icon: "🔄", text: "Full Stack Development" },
-                ],
-              },
-              {
                 title: "Website Features",
                 items: [
                   { icon: "📱", text: "Responsive Design" },
