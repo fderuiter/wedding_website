@@ -32,16 +32,14 @@ describe('Admin Login Page', () => {
   });
 
   it('redirects on correct password', () => {
+    process.env.NEXT_PUBLIC_ADMIN_PASSWORD = 'testpass';
+    const setItemSpy = jest.spyOn(window.localStorage.__proto__, 'setItem');
     const push = jest.fn();
     jest.spyOn(require('next/navigation'), 'useRouter').mockReturnValue({ push });
-    // Set up the environment variable before rendering
-    process.env.NEXT_PUBLIC_ADMIN_PASSWORD = 'testpass';
     render(<LoginPage />);
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'testpass' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
-    // Simulate localStorage for isAdminLoggedIn
-    expect(localStorage.getItem('isAdminLoggedIn')).toBe('true');
-    // Simulate navigation
+    expect(setItemSpy).toHaveBeenCalledWith('isAdminLoggedIn', 'true');
     expect(push).toHaveBeenCalledWith('/registry/add-item');
   });
 
