@@ -118,7 +118,7 @@ export default function EditRegistryItemPage() {
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Edit Registry Item</h1>
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-lg mx-auto bg-white p-6 rounded shadow">
+      <form onSubmit={handleSubmit} className="space-y-4 max-w-lg mx-auto bg-white p-6 rounded shadow" data-testid="form">
         {/* Form fields similar to Add Item, but using value={itemData.fieldName} and onChange={handleChange} */} 
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700">Item Name:</label>
