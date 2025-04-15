@@ -6,6 +6,7 @@ import Link from "next/link";
 import "./globals.css";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter for navigation
+import LoadingScreen from '@/components/LoadingScreen';
 
 const geist = Geist({
   variable: "--font-geist",
@@ -18,6 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
   const router = useRouter(); // Initialize router
 
   useEffect(() => {
@@ -46,9 +48,21 @@ export default function RootLayout({
     // window.location.reload();
   };
 
+  useEffect(() => {
+    // Loading screen logic
+    const handleLoad = () => setLoading(false);
+    if (document.readyState === 'complete') {
+      setLoading(false);
+    } else {
+      window.addEventListener('load', handleLoad);
+    }
+    return () => window.removeEventListener('load', handleLoad);
+  }, []);
+
   return (
     <html lang="en" className={geist.variable}>
       <body>
+        {loading && <LoadingScreen />}
         {/* Admin Indicator and Logout Button */}
         {isAdmin && (
           <div className="bg-yellow-200 text-yellow-800 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50">
@@ -61,7 +75,7 @@ export default function RootLayout({
             </button>
           </div>
         )}
-        <nav className={`fixed w-full bg-white/80 backdrop-blur-sm border-b z-40 ${isAdmin ? 'top-10' : 'top-0'}`}> {/* Adjust top based on admin bar */}
+        <nav className={`fixed w-full bg-white/80 backdrop-blur-sm border-b z-40 ${isAdmin ? 'top-10' : 'top-0'}`}>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
               <div className="flex">
@@ -77,7 +91,7 @@ export default function RootLayout({
             </div>
           </div>
         </nav>
-        <main className={`pt-16 ${isAdmin ? 'mt-10' : ''}`}> {/* Adjust margin-top based on admin bar */}
+        <main className={`pt-16 ${isAdmin ? 'mt-10' : ''}`}>
           {children}
         </main>
       </body>
