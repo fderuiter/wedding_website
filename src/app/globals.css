@@ -2,12 +2,16 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
+  --foreground: #181818; /* Even darker for best contrast */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: #B91C1C;
+  --color-secondary: #B8860B;
+  --color-primary-light: #FCA5A5;
+  --color-secondary-light: #FFE066;
+  --color-text-on-primary: #fff;
+  --color-text-on-secondary: #181818;
+  --color-accent: #FFD700;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -15,7 +19,14 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
-    --foreground: #ededed;
+    --foreground: #fff; /* Pure white for best contrast on dark */
+    --color-primary: #FF5555;
+    --color-secondary: #FFD700;
+    --color-primary-light: #7F1D1D;
+    --color-secondary-light: #B8860B;
+    --color-text-on-primary: #fff;
+    --color-text-on-secondary: #fff;
+    --color-accent: #FFD700;
   }
 }
 
@@ -23,4 +34,18 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Utility classes for universal text contrast */
+.text-universal {
+  color: var(--color-foreground) !important;
+}
+.bg-universal {
+  background: var(--color-background) !important;
+}
+.text-on-primary {
+  color: var(--color-text-on-primary) !important;
+}
+.text-on-secondary {
+  color: var(--color-text-on-secondary) !important;
 }

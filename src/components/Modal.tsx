@@ -56,52 +56,49 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const isFullyFunded = remainingAmount <= 0;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50 p-4">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-900 dark:text-white">
         {/* Close Button */}
         <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 text-2xl font-bold"
+          className="absolute top-3 right-3 text-gray-400 hover:text-red-500 text-2xl font-bold"
           onClick={onClose}
           aria-label="Close modal"
         >
           &times;
         </button>
-
         {/* Item Image */}
         <img
           src={item.image || '/images/placeholder.jpg'}
           alt={item.name}
-          className="w-full h-64 object-cover rounded mb-4 bg-gray-200"
-           onError={(e) => { 
+          className="w-full h-64 object-cover rounded mb-4 bg-gray-200 dark:bg-gray-800"
+          onError={(e) => { 
             const target = e.target as HTMLImageElement;
             target.onerror = null; 
             target.src = '/images/placeholder.jpg'; 
           }}
         />
-
         {/* Item Details */}
-        <h2 className="text-2xl font-bold mb-2">{item.name}</h2>
-        <p className="text-gray-700 mb-3">{item.description}</p>
-        <p className="text-lg text-gray-900 font-semibold mb-1">
+        <h2 className="text-2xl font-bold mb-2 text-red-700 dark:text-yellow-400">{item.name}</h2>
+        <p className="text-gray-800 dark:text-gray-200 mb-3">{item.description}</p>
+        <p className="text-lg font-semibold mb-1 text-yellow-700 dark:text-yellow-300">
           Price: ${item.price.toFixed(2)}
         </p>
         {item.isGroupGift && (
           <div className="mb-3">
-            <p className="text-sm text-blue-700">
+            <p className="text-sm text-blue-700 dark:text-blue-300">
               Group Gift - ${item.amountContributed.toFixed(2)} contributed so far.
             </p>
             {!isFullyFunded && (
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
                 ${remainingAmount.toFixed(2)} still needed.
               </p>
             )}
-             {/* Optional: Progress Bar */}
-             <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
-                <div 
-                  className="bg-blue-600 h-2.5 rounded-full"
-                  style={{ width: `${Math.min(100, (item.amountContributed / item.price) * 100)}%` }}
-                ></div>
-              </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-1">
+              <div 
+                className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full"
+                style={{ width: `${Math.min(100, (item.amountContributed / item.price) * 100)}%` }}
+              ></div>
+            </div>
           </div>
         )}
         {item.vendorUrl && (
@@ -109,22 +106,21 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             href={item.vendorUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-blue-600 hover:text-blue-800 underline mb-4 text-sm"
+            className="inline-block text-blue-600 dark:text-yellow-300 hover:text-blue-800 underline mb-4 text-sm"
           >
             View on Vendor Site
           </a>
         )}
-
         {/* Contribution/Claim Section */}
         {!item.purchased ? (
-          <div className="mt-5 pt-4 border-t">
-            <h3 className="font-semibold text-lg mb-3">
+          <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <h3 className="font-semibold text-lg mb-3 text-red-700 dark:text-yellow-400">
               {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
             </h3>
             <input
               type="text"
               placeholder="Your Name"
-              className="border p-2 rounded w-full mb-3 focus:ring-2 focus:ring-blue-300 outline-none"
+              className="border p-2 rounded w-full mb-3 focus:ring-2 focus:ring-yellow-400 outline-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
               value={contributorName}
               onChange={(e) => setContributorName(e.target.value)}
               disabled={isSubmitting}
@@ -133,7 +129,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               <input
                 type="number"
                 placeholder={`Contribution Amount (up to $${remainingAmount.toFixed(2)})`}
-                className="border p-2 rounded w-full mb-3 focus:ring-2 focus:ring-blue-300 outline-none"
+                className="border p-2 rounded w-full mb-3 focus:ring-2 focus:ring-yellow-400 outline-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min="0.01"
@@ -142,9 +138,9 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 disabled={isSubmitting}
               />
             )}
-            {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+            {error && <p className="text-red-600 dark:text-red-400 text-sm mb-3">{error}</p>}
             <button
-              className={`w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full bg-gradient-to-r from-red-600 to-yellow-500 text-white font-bold px-4 py-2 rounded shadow hover:from-yellow-500 hover:to-red-600 transition ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={handleContributeClick}
               disabled={isSubmitting}
             >
@@ -152,23 +148,19 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             </button>
           </div>
         ) : (
-          <div className="mt-5 pt-4 border-t text-center">
-            <p className="text-xl font-semibold text-green-600">
+          <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700 text-center">
+            <p className="text-xl font-semibold text-green-600 dark:text-green-400">
               {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
             </p>
             {item.purchaserName && !item.isGroupGift && (
-                <p className="text-sm text-gray-600">Claimed by: {item.purchaserName}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-200">Claimed by: {item.purchaserName}</p>
             )}
             {item.isGroupGift && item.contributors.length > 0 && (
                 <>
-                    <p className="text-sm text-gray-600 mt-1">Thank you to all contributors!</p>
-                    {/* Optional: List contributors if desired */}
-                    {/* <ul className="text-xs text-gray-500 list-disc list-inside mt-1">
-                        {item.contributors.map((c, i) => <li key={i}>{c.name}</li>)}
-                    </ul> */}
+                    <p className="text-sm text-gray-700 dark:text-gray-200 mt-1">Thank you to all contributors!</p>
                 </>
             )}
-            <p className="mt-2 text-gray-700">Thank you for your generosity!</p>
+            <p className="mt-2 text-yellow-700 dark:text-yellow-300">Thank you for your generosity!</p>
           </div>
         )}
       </div>
