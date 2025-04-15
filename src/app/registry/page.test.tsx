@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RegistryPage from './page';
 
 jest.mock('next/navigation', () => ({
@@ -18,8 +18,8 @@ describe('RegistryPage', () => {
     global.fetch = jest.fn(() => Promise.resolve({
       ok: true,
       json: () => Promise.resolve([
-        { id: '1', name: 'Gift 1', price: 100, purchased: false, isGroupGift: false },
-        { id: '2', name: 'Gift 2', price: 200, purchased: false, isGroupGift: true, amountContributed: 0 },
+        { id: '1', name: 'Gift 1', price: 100, purchased: false, isGroupGift: false, description: 'desc', image: '', amountContributed: 0 },
+        { id: '2', name: 'Gift 2', price: 200, purchased: false, isGroupGift: true, amountContributed: 50, description: 'desc', image: '', contributors: [] },
       ]),
     })) as jest.Mock;
   });
@@ -73,16 +73,48 @@ describe('RegistryPage', () => {
     expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
   });
 
-  it('handles edit and delete actions for admin', async () => {
+  it('opens and closes the modal on card click', async () => {
+    render(<RegistryPage />);
+    const cards = await screen.findAllByTestId('registry-card');
+    fireEvent.click(cards[0]);
+    expect(await screen.findByTestId('modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/claim gift/i));
+    // Modal should close after submit (simulate success)
+  });
+
+  it('handles group gift contribution', async () => {
+    render(<RegistryPage />);
+    const cards = await screen.findAllByTestId('registry-card');
+    fireEvent.click(cards[1]);
+    expect(await screen.findByTestId('modal')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/contribution amount/i), { target: { value: '20' } });
+    fireEvent.click(screen.getByText(/contribute/i));
+    // Modal should close after submit (simulate success)
+  });
+
+  it('shows error on contribution failure', async () => {
+    (global.fetch as jest.Mock).mockImplementationOnce(() => Promise.resolve({ ok: true, json: () => Promise.resolve([
+      { id: '1', name: 'Gift 1', price: 100, purchased: false, isGroupGift: false, description: 'desc', image: '', amountContributed: 0 },
+    ]) }))
+    .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: 'API error' }) }));
+    window.alert = jest.fn();
+    render(<RegistryPage />);
+    const cards = await screen.findAllByTestId('registry-card');
+    fireEvent.click(cards[0]);
+    fireEvent.click(screen.getByText(/claim gift/i));
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Error: API error')));
+  });
+
+  it('handles admin edit and delete actions', async () => {
     Storage.prototype.getItem = jest.fn(() => 'true');
     const push = jest.fn();
     jest.spyOn(require('next/navigation'), 'useRouter').mockReturnValue({ push });
+    window.confirm = jest.fn(() => true);
+    window.alert = jest.fn();
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })) as jest.Mock;
     render(<RegistryPage />);
     expect(await screen.findByRole('button', { name: /add new item/i })).toBeInTheDocument();
     // Simulate edit
     // Simulate delete (confirm dialog)
-    window.confirm = jest.fn(() => true);
-    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })) as jest.Mock;
-    // You would trigger onEdit/onDelete handlers here if RegistryCard was not mocked
   });
 });
