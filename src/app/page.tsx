@@ -124,11 +124,11 @@ export default function Home() {
               viewport={{ once: true }}
               transition={{ delay: 0.2 }}
             >
-              Our journey began in the tech world, where our shared passion for coding
-              and innovation brought us together. What started as collaborative projects
-              soon blossomed into something more meaningful. Through countless coffee-fueled
-              coding sessions and debugging adventures, we discovered that our best feature
-              was the love we share.
+              Once upon a swipe, Abbi and Fred found each other on Hinge—two souls searching for the same spark. Their first conversations were sprinkled with laughter, stories of late-night hot dog runs, and a shared reverence for kindness and humility. 
+              <br /><br />
+              Abbi, a nurse practitioner with a heart for healing, and Fred, a tech developer who builds with both code and care, quickly discovered that love is best written in moments both big and small. Together, they cherish the simple joys: a perfectly grilled hot dog, a clever joke, and the comfort of knowing they are truly seen.
+              <br /><br />
+              Their story is one of laughter echoing through city streets, of gentle encouragement through life’s challenges, and of two hearts choosing each other—again and again. Today, they invite you to celebrate the beautiful adventure that began with a swipe and blossomed into a lifetime of love.
             </motion.p>
           </div>
         </motion.section>
