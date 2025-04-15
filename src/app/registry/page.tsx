@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'; // Import useRouter
 import RegistryCard from '@/components/RegistryCard';
 import Modal from '@/components/Modal';
 import { RegistryItem } from '@/types/registry';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function RegistryPage() {
   const [items, setItems] = useState<RegistryItem[]>([]);
@@ -131,81 +132,79 @@ export default function RegistryPage() {
   };
   // --- End Admin Actions ---
 
-  if (isLoading) return <p className="text-center mt-10">Loading registry...</p>;
-  if (error) return <p className="text-center text-red-500 mt-10">Error loading registry: {error}</p>;
+  // Animation variants
+  const gridVariants = {
+    hidden: { opacity: 0, y: 30 },
+    visible: { opacity: 1, y: 0, transition: { staggerChildren: 0.08, duration: 0.7 } },
+  };
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  };
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold text-center my-6">Wedding Registry</h1>
-      {isAdmin && (
-          <div className="text-center mb-6">
-              <button
-                  onClick={() => router.push('/registry/add-item')}
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition"
-              >
-                  Add New Item
-              </button>
-          </div>
-      )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {items.map(item => (
-          <RegistryCard
-            key={item.id}
-            item={item}
-            onClick={() => handleCardClick(item)}
-            isAdmin={isAdmin} // Pass admin status
-            onEdit={handleEditItem} // Pass edit handler
-            onDelete={handleDeleteItem} // Pass delete handler
-          />
-        ))}
-      </div>
-
-      {selectedItem && (
-        <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
-          <h2 className="text-2xl font-bold mb-4">{selectedItem.name}</h2>
-          <img src={selectedItem.image || '/images/placeholder.jpg'} alt={selectedItem.name} className="w-full h-64 object-cover mb-4 rounded"/>
-          <p className="mb-4">{selectedItem.description}</p>
-          <p className="font-semibold text-xl mb-4">Price: ${selectedItem.price.toFixed(2)}</p>
-
-          {selectedItem.isGroupGift && (
-            <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
-              <p className="text-blue-700 font-medium">This is a group gift!</p>
-              <p className="text-sm text-blue-600">${selectedItem.amountContributed.toFixed(2)} contributed so far.</p>
-              <p className="text-sm text-blue-600">Remaining: ${(selectedItem.price - selectedItem.amountContributed).toFixed(2)}</p>
-              <label htmlFor="contributionAmount" className="block text-sm font-medium text-gray-700 mt-2">Contribution Amount:</label>
-              <input
-                type="number"
-                id="contributionAmount"
-                value={contributionAmount}
-                onChange={(e) => setContributionAmount(Math.max(0, parseFloat(e.target.value) || 0))}
-                max={selectedItem.price - selectedItem.amountContributed}
-                step="0.01"
-                className="border p-2 rounded w-full mt-1"
-                required
-              />
-            </div>
-          )}
-
-          <div className="mb-4">
-            <label htmlFor="purchaserName" className="block text-sm font-medium text-gray-700">Your Name (Optional):</label>
-            <input
-              type="text"
-              id="purchaserName"
-              value={purchaserName}
-              onChange={(e) => setPurchaserName(e.target.value)}
-              className="border p-2 rounded w-full mt-1"
+    <div className="min-h-screen bg-gradient-to-br from-red-50 to-yellow-50 pb-24">
+      <motion.h1
+        className="text-4xl font-bold text-center mb-10 pt-10"
+        initial={{ opacity: 0, y: -30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7 }}
+      >
+        Wedding Registry
+      </motion.h1>
+      {/* Feedback messages with animation */}
+      <AnimatePresence>
+        {isLoading && (
+          <motion.p className="text-center text-gray-500 mb-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            Loading registry...
+          </motion.p>
+        )}
+        {error && (
+          <motion.p className="text-center text-red-500 mb-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            Error loading registry: {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
+      <motion.div
+        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 px-4"
+        variants={gridVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        {items.map((item, idx) => (
+          <motion.div key={item.id} variants={cardVariants}>
+            <RegistryCard
+              item={item}
+              onClick={() => handleCardClick(item)}
+              isAdmin={isAdmin}
+              onEdit={handleEditItem}
+              onDelete={handleDeleteItem}
             />
-          </div>
-
-          <button
-            onClick={handleContributionSubmit}
-            className="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition disabled:opacity-50"
-            disabled={selectedItem.isGroupGift && (contributionAmount <= 0 || contributionAmount > selectedItem.price - selectedItem.amountContributed)}
+          </motion.div>
+        ))}
+      </motion.div>
+      {/* Modal with animation */}
+      <AnimatePresence>
+        {selectedItem && isModalOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           >
-            {selectedItem.isGroupGift ? 'Contribute' : 'Claim Gift'}
-          </button>
-        </Modal>
-      )}
+            <Modal
+              item={selectedItem}
+              onClose={handleCloseModal}
+              onContribute={async (itemId, purchaserName, amount) => {
+                setPurchaserName(purchaserName);
+                setContributionAmount(amount);
+                await handleContributionSubmit();
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

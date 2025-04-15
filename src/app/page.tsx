@@ -29,6 +29,16 @@ const jsonLd = {
   }
 };
 
+// Define motion variants for smoother section transitions
+const sectionVariants = {
+  hidden: { opacity: 0, y: 40 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: 0.15 * i, duration: 0.8, ease: 'easeOut' },
+  }),
+};
+
 export default function Home() {
   return (
     <>
@@ -62,58 +72,58 @@ export default function Home() {
           />
           <div className="relative z-20 text-center space-y-6">
             <motion.h1 
-              className="text-6xl md:text-7xl lg:text-8xl font-bold"
+              className="text-6xl md:text-7xl lg:text-8xl font-bold drop-shadow-xl"
               style={{
                 background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.secondary})`,
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}
-              initial={{ y: -50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
+              initial="hidden"
+              animate="visible"
+              variants={sectionVariants}
+              custom={0}
             >
               Abbi & Fred
             </motion.h1>
             <motion.p 
               className="text-2xl md:text-3xl text-gray-700"
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+              initial="hidden"
+              animate="visible"
+              variants={sectionVariants}
+              custom={1}
             >
               April 15, 2025
             </motion.p>
             <motion.div 
               className="pt-8"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
+              initial="hidden"
+              animate="visible"
+              variants={sectionVariants}
+              custom={2}
             >
               <motion.a 
                 href="/project-info" 
-                className="inline-block px-8 py-3 rounded-full font-medium text-white shadow-lg"
+                className="inline-block px-8 py-3 rounded-full font-medium text-white shadow-lg transition-transform"
                 style={{
                   background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.secondary})`,
                 }}
-                whileHover={{ 
-                  scale: 1.05,
-                  boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
-                }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.07, boxShadow: '0 10px 24px rgba(0,0,0,0.18)' }}
+                whileTap={{ scale: 0.97 }}
               >
                 Project Info
               </motion.a>
             </motion.div>
           </div>
         </section>
-
-        {/* Story Section with Animations */}
+        {/* Story Section with Smoother Animation */}
         <motion.section 
           id="story" 
           className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto"
-          initial={{ opacity: 0, y: 50 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial="hidden"
+          whileInView="visible"
           viewport={{ once: true }}
-          transition={{ duration: 0.8 }}
+          variants={sectionVariants}
+          custom={3}
         >
           <h2 className="text-4xl font-bold text-center mb-12" style={{ color: theme.colors.primary }}>Our Story</h2>
           <div className="prose lg:prose-lg mx-auto">
@@ -132,9 +142,15 @@ export default function Home() {
             </motion.p>
           </div>
         </motion.section>
-
         {/* Event Details Section with Enhanced Interactions */}
-        <section className="py-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <motion.section
+          className="py-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true }}
+          variants={sectionVariants}
+          custom={4}
+        >
           <motion.div 
             className="absolute inset-0" 
             style={{
@@ -241,15 +257,16 @@ export default function Home() {
               />
             </motion.div>
           </div>
-        </section>
-
+        </motion.section>
         {/* 3D Wedding Scene Section */}
         <motion.section 
           className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto" 
           id="portfolio"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
+          initial="hidden"
+          whileInView="visible"
           viewport={{ once: true }}
+          variants={sectionVariants}
+          custom={5}
         >
           <motion.h2 
             className="text-4xl font-bold text-center mb-12"
@@ -274,15 +291,17 @@ export default function Home() {
             {/* Cards removed: Website Features & Open Source. Move to Project Info page. */}
           </div>
         </motion.section>
-
         {/* Floating Project Info Button */}
-        <a
+        <motion.a
           href="/project-info"
           className="fixed bottom-6 right-6 z-50 px-6 py-3 rounded-full shadow-lg bg-gradient-to-r from-red-400 to-yellow-400 text-white font-semibold text-lg transition-transform hover:scale-105 hover:shadow-2xl"
           style={{ boxShadow: '0 8px 24px rgba(230,57,70,0.15)' }}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.7, delay: 1.2 }}
         >
           Project Info
-        </a>
+        </motion.a>
       </div>
     </>
   );

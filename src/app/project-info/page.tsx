@@ -1,4 +1,4 @@
-import React from 'react';
+import { motion } from 'framer-motion';
 
 const features = [
   { icon: '📱', label: 'Responsive Design' },
@@ -20,11 +20,27 @@ const techStack = [
   { name: 'File/JSON Storage', type: 'Data Layer' },
 ];
 
+const sectionVariants = {
+  hidden: { opacity: 0, y: 40 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: 0.15 * i, duration: 0.7, ease: 'easeOut' },
+  }),
+};
+
 const ProjectInfo = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-yellow-50 pb-24">
       {/* Hero Section */}
-      <div className="max-w-3xl mx-auto text-center py-20 px-4">
+      <motion.div
+        className="max-w-3xl mx-auto text-center py-20 px-4"
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true }}
+        variants={sectionVariants}
+        custom={0}
+      >
         <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-red-400 to-yellow-400 text-transparent bg-clip-text">Project Overview</h1>
         <p className="text-lg text-gray-700 mb-6">
           <strong>Abbigayle & Frederick's Wedding Website & Registry</strong> is a modern, open source web application that serves as both a wedding site and a developer portfolio template. It features a beautiful landing page, a robust registry system, and a clean, modular codebase designed for easy reuse and extension.
@@ -38,10 +54,17 @@ const ProjectInfo = () => {
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
           View on GitHub
         </a>
-      </div>
+      </motion.div>
 
       {/* Features & Tech Stack */}
-      <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 px-4">
+      <motion.div
+        className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 px-4"
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true }}
+        variants={sectionVariants}
+        custom={1}
+      >
         <div className="bg-white/90 rounded-2xl shadow-xl p-10 flex flex-col items-center">
           <h2 className="text-2xl font-bold mb-6 text-red-500 tracking-tight">Key Features</h2>
           <ul className="space-y-4 w-full">
@@ -62,10 +85,17 @@ const ProjectInfo = () => {
             ))}
           </ul>
         </div>
-      </div>
+      </motion.div>
 
       {/* Architecture & Structure */}
-      <div className="max-w-4xl mx-auto mt-16 px-4">
+      <motion.div
+        className="max-w-4xl mx-auto mt-16 px-4"
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true }}
+        variants={sectionVariants}
+        custom={2}
+      >
         <div className="bg-white/90 rounded-2xl shadow-xl p-10">
           <h2 className="text-2xl font-bold mb-4 text-yellow-600 tracking-tight">Architecture & Structure</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
@@ -77,7 +107,7 @@ const ProjectInfo = () => {
             <li><strong>Open Source:</strong> MIT License, clear project structure, and documentation for easy reuse.</li>
           </ul>
         </div>
-      </div>
+      </motion.div>
 
       {/* Deployment & Contribution */}
       <div className="max-w-4xl mx-auto mt-12 px-4 grid md:grid-cols-2 gap-8">
