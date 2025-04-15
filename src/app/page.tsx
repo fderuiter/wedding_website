@@ -271,75 +271,18 @@ export default function Home() {
             </div>
           </motion.div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[ 
-              {
-                title: "Website Features",
-                items: [
-                  { icon: "📱", text: "Responsive Design" },
-                  { icon: "🎯", text: "SEO Optimized" },
-                  { icon: "🎁", text: "Smart Registry System" },
-                  { icon: "⚡", text: "Dynamic Animations" },
-                ],
-              },
-              {
-                title: "Open Source",
-                content: "This wedding website is open source and available on GitHub. Built with modern web technologies and best practices.",
-                link: {
-                  text: "View Project",
-                  url: "https://github.com/FrederickdeRuiter",
-                },
-              },
-            ].map((card, index) => (
-              <motion.div
-                key={card.title}
-                className="bg-white/80 backdrop-blur-sm p-8 rounded-xl shadow-lg"
-                initial={{ y: 50, opacity: 0 }}
-                whileInView={{ y: 0, opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.2 }}
-                whileHover={{ 
-                  scale: 1.03,
-                  boxShadow: '0 20px 30px rgba(0,0,0,0.1)',
-                }}
-              >
-                <h3 className="text-xl font-semibold mb-4" style={{ color: theme.colors.primary }}>{card.title}</h3>
-                {card.items ? (
-                  <ul className="space-y-2 text-gray-600">
-                    {card.items.map((item) => (
-                      <motion.li
-                        key={item.text}
-                        className="flex items-center"
-                        whileHover={{ x: 5 }}
-                      >
-                        <span className="mr-2">{item.icon}</span> {item.text}
-                      </motion.li>
-                    ))}
-                  </ul>
-                ) : (
-                  <>
-                    <p className="text-gray-600 mb-4">{card.content}</p>
-                    {card.link && (
-                      <motion.a
-                        href={card.link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center"
-                        style={{ color: theme.colors.primary }}
-                        whileHover={{ x: 5 }}
-                      >
-                        <span>{card.link.text}</span>
-                        <svg className="ml-2 h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
-                          <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
-                        </svg>
-                      </motion.a>
-                    )}
-                  </>
-                )}
-              </motion.div>
-            ))} 
+            {/* Cards removed: Website Features & Open Source. Move to Project Info page. */}
           </div>
         </motion.section>
+
+        {/* Floating Project Info Button */}
+        <a
+          href="/project-info"
+          className="fixed bottom-6 right-6 z-50 px-6 py-3 rounded-full shadow-lg bg-gradient-to-r from-red-400 to-yellow-400 text-white font-semibold text-lg transition-transform hover:scale-105 hover:shadow-2xl"
+          style={{ boxShadow: '0 8px 24px rgba(230,57,70,0.15)' }}
+        >
+          Project Info
+        </a>
       </div>
     </>
   );
