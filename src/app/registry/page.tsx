@@ -8,49 +8,95 @@ import { RegistryItem } from '@/types/registry';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CategoryFilter } from '@/components/CategoryFilter';
 import { PriceRangeFilter } from '@/components/PriceRangeFilter';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function RegistryPage() {
-  const [items, setItems] = useState<RegistryItem[]>([]);
+  const queryClient = useQueryClient();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [contributionAmount, setContributionAmount] = useState<number>(0);
   const [purchaserName, setPurchaserName] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false); // State to track admin status
-  const router = useRouter(); // Initialize router
+  const [isAdmin, setIsAdmin] = useState(false);
+  const router = useRouter();
+
+  // Fetch registry items with React Query
+  const {
+    data: items = [],
+    isLoading,
+    error,
+  } = useQuery<RegistryItem[], Error>({
+    queryKey: ['registry-items'],
+    queryFn: async () => {
+      const res = await fetch('/api/registry/items');
+      if (!res.ok) throw new Error('Failed to fetch registry items');
+      return res.json();
+    },
+  });
 
   useEffect(() => {
-    // Check admin status on component mount
     const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
     setIsAdmin(loggedIn);
-
-    // Fetch registry items
-    const fetchItems = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const res = await fetch('/api/registry/items');
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        const data = await res.json();
-        setItems(data);
-      } catch (e) {
-        console.error("Failed to fetch registry items:", e);
-        setError(e instanceof Error ? e.message : 'Failed to load registry items.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchItems();
   }, []);
 
+  // Optimistic mutation for contribution/claim
+  const contributeMutation = useMutation({
+    mutationFn: async ({ itemId, purchaserName, amount }: { itemId: string; purchaserName: string; amount: number }) => {
+      const res = await fetch('/api/registry/contribute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, purchaserName, amount }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Contribution failed');
+      }
+      return res.json();
+    },
+    // Optimistic update
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ['registry-items'] });
+      const previousItems = queryClient.getQueryData<RegistryItem[]>(['registry-items']);
+      if (previousItems) {
+        queryClient.setQueryData<RegistryItem[]>(['registry-items'], prev => prev?.map(item => {
+          if (item.id !== variables.itemId) return item;
+          // Optimistically update the item
+          if (item.isGroupGift) {
+            const newAmount = item.amountContributed + variables.amount;
+            return {
+              ...item,
+              amountContributed: Math.min(item.price, newAmount),
+              contributors: [...item.contributors, { name: variables.purchaserName, amount: variables.amount, date: new Date().toISOString() }],
+              purchased: newAmount >= item.price,
+            };
+          } else {
+            return {
+              ...item,
+              purchased: true,
+              purchaserName: variables.purchaserName,
+            };
+          }
+        }) || []);
+      }
+      return { previousItems };
+    },
+    // Rollback on error
+    onError: (_err, _variables, context) => {
+      if (context?.previousItems) {
+        queryClient.setQueryData(['registry-items'], context.previousItems);
+      }
+      alert('Error: Could not process contribution.');
+    },
+    // Refetch after mutation
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['registry-items'] });
+    },
+  });
+
   const handleCardClick = (item: RegistryItem) => {
-    if (item.purchased || isAdmin) return; // Don't open modal if purchased or if admin (admin uses edit/delete)
+    if (item.purchased || isAdmin) return;
     setSelectedItem(item);
-    setContributionAmount(item.isGroupGift ? 0 : item.price); // Pre-fill price for non-group gifts
-    setPurchaserName(''); // Reset name field
+    setContributionAmount(item.isGroupGift ? 0 : item.price);
+    setPurchaserName('');
     setIsModalOpen(true);
   };
 
@@ -59,54 +105,13 @@ export default function RegistryPage() {
     setSelectedItem(null);
   };
 
-  const handleContributionSubmit = async () => {
-    if (!selectedItem) return;
-
-    const contributionData = {
-      itemId: selectedItem.id,
-      amount: contributionAmount,
-      purchaserName: purchaserName,
-    };
-
-    try {
-      const res = await fetch('/api/registry/contribute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(contributionData),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
-      }
-
-      const updatedItem = await res.json();
-
-      // Update the item in the local state
-      setItems(prevItems =>
-        prevItems.map(item => (item.id === updatedItem.id ? updatedItem : item))
-      );
-      handleCloseModal();
-      alert('Thank you for your contribution!');
-
-    } catch (e) {
-      console.error("Failed to submit contribution:", e);
-      alert(`Error: ${e instanceof Error ? e.message : 'Could not process contribution.'}`);
-    }
-  };
-
   // --- Admin Actions ---
   const handleEditItem = (itemId: string) => {
     router.push(`/registry/edit-item/${itemId}`);
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) {
-      return;
-    }
-
+    if (!confirm('Are you sure you want to delete this item?')) return;
     try {
       const res = await fetch(`/api/registry/items/${itemId}`, {
         method: 'DELETE',
@@ -124,7 +129,7 @@ export default function RegistryPage() {
       }
 
       // Remove item from local state
-      setItems(prevItems => prevItems.filter(item => item.id !== itemId));
+      queryClient.setQueryData<RegistryItem[]>(['registry-items'], (old) => old?.filter(item => item.id !== itemId));
       alert('Item deleted successfully.');
 
     } catch (e) {
@@ -156,7 +161,6 @@ export default function RegistryPage() {
     return [Math.floor(min), Math.ceil(max)];
   }, [items]);
 
-  // Update price range when items change
   useEffect(() => {
     setPriceRange([minPrice, maxPrice]);
   }, [minPrice, maxPrice]);
@@ -213,7 +217,7 @@ export default function RegistryPage() {
         )}
         {error && (
           <motion.p className="text-center text-red-500 mb-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            Error loading registry: {error}
+            Error loading registry: {error instanceof Error ? error.message : String(error)}
           </motion.p>
         )}
       </AnimatePresence>
@@ -251,7 +255,12 @@ export default function RegistryPage() {
               onContribute={async (itemId, purchaserName, amount) => {
                 setPurchaserName(purchaserName);
                 setContributionAmount(amount);
-                await handleContributionSubmit();
+                contributeMutation.mutate({ itemId, purchaserName, amount }, {
+                  onSuccess: () => {
+                    handleCloseModal();
+                    alert('Thank you for your contribution!');
+                  }
+                });
               }}
             />
           </motion.div>

@@ -33,20 +33,13 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         setError(`Amount cannot exceed the remaining $${remainingAmount.toFixed(2)}.`);
         return;
       }
-    } else {
-      // For non-group gifts, the amount is the full price
     }
-
     setIsSubmitting(true);
     try {
-      // If it's not a group gift or if the contribution amount equals the remaining amount,
-      // treat it as claiming the full item (or remaining part).
-      // Otherwise, it's a partial contribution.
       const finalAmount = item.isGroupGift ? contributionAmount : item.price;
       await onContribute(item.id, contributorName, finalAmount);
       // Success handled by parent component (e.g., closing modal, showing message)
     } catch (err: any) {
-      console.error("Contribution error:", err);
       setError(err.message || "Failed to process contribution. Please try again.");
     } finally {
       setIsSubmitting(false);

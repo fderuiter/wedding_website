@@ -7,11 +7,14 @@ import "./globals.css";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter for navigation
 import LoadingScreen from '@/components/LoadingScreen';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const geist = Geist({
   variable: "--font-geist",
   subsets: ["latin"],
 });
+
+const queryClient = new QueryClient();
 
 export default function RootLayout({
   children,
@@ -62,38 +65,22 @@ export default function RootLayout({
   return (
     <html lang="en" className={geist.variable}>
       <body className={geist.variable}>
-        {loading && <LoadingScreen />}
-        {/* Admin Indicator and Logout Button */}
-        {isAdmin && (
-          <div className="bg-yellow-200 text-yellow-800 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50">
-            <span>Admin Mode Active</span>
-            <button
-              onClick={handleLogout}
-              className="bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2 rounded"
-            >
-              Logout
-            </button>
-          </div>
-        )}
-        <nav className={`fixed w-full bg-white/80 backdrop-blur-sm border-b z-40 ${isAdmin ? 'top-10' : 'top-0'}`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
-              <div className="flex">
-                <Link href="/" className="flex items-center font-medium">
-                  A&F
-                </Link>
-              </div>
-              <div className="flex items-center space-x-4">
-                <Link href="/registry" className="px-4 py-2 rounded-md text-sm font-medium text-gray-900 hover:bg-gray-100">
-                  Registry
-                </Link>
-              </div>
+        <QueryClientProvider client={queryClient}>
+          {loading && <LoadingScreen />}
+          {/* Admin Indicator and Logout Button */}
+          {isAdmin && (
+            <div className="bg-yellow-200 text-yellow-800 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50">
+              <span>Admin Mode Active</span>
+              <button
+                onClick={handleLogout}
+                className="bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2 rounded"
+              >
+                Logout
+              </button>
             </div>
-          </div>
-        </nav>
-        <main className={`pt-16 ${isAdmin ? 'mt-10' : ''}`}>
+          )}
           {children}
-        </main>
+        </QueryClientProvider>
       </body>
     </html>
   );
