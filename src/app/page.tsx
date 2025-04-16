@@ -1,284 +1,189 @@
-'use client';
+// HomePage.tsx – single‑page wedding site with studio‑grade consistency
+// -----------------------------------------------------------------------------
+'use client'
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import theme from '@/styles/theme';
-import dynamic from 'next/dynamic';
-import LoadingScreen from '@/components/LoadingScreen';
-const WeddingScene = dynamic<{ onFinish?: () => void }>(
-  () => import('@/components/WeddingScene'),
-  { ssr: false, loading: () => <LoadingScreen /> }
-);
+import React, { useState } from 'react'
+import dynamic from 'next/dynamic'
+import { motion } from 'framer-motion'
+import { ChevronDown } from 'lucide-react'
+import LoadingScreen from '@/components/LoadingScreen'
 
-// Dynamically import AddToCalendarButton with SSR disabled
-const AddToCalendarButtonClient = dynamic(() => import('add-to-calendar-button-react').then(mod => mod.AddToCalendarButton), {
-  ssr: false,
-  // Optional: Add a loading state while the component loads
-  // loading: () => <p>Loading calendar button...</p> 
-});
+/* ----------------------------- Dynamic imports ---------------------------- */
+const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
+const AddToCalendarButtonClient = dynamic(() => import('add-to-calendar-button-react').then((m) => m.AddToCalendarButton), { ssr: false })
 
-// Add schema.org Event markup for SEO
+/* -------------------------------------------------------------------------- */
+/*                                  Palette                                   */
+/* -------------------------------------------------------------------------- */
+// Elegant neutrals + rose accent
+const COLORS = {
+  text: '#374151', // gray‑700
+  heading: '#be123c', // rose‑700
+  accentFrom: '#be123c', // rose‑700
+  accentTo: '#f59e0b', // amber‑500
+  bg: '#fffdfc',
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  JSON‑LD                                   */
+/* -------------------------------------------------------------------------- */
 const jsonLd = {
-  "@context": "https://schema.org",
-  "@type": "Event",
-  "name": "Abbigayle & Frederick's Wedding",
-  "startDate": "2025-04-15T14:00:00-04:00",
-  "endDate": "2025-04-15T22:00:00-04:00",
-  "eventStatus": "https://schema.org/EventScheduled",
-  "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
-  "description": "Wedding celebration of Abbigayle Schultz and Frederick de Ruiter",
-  "organizer": {
-    "@type": "Person",
-    "name": "Frederick de Ruiter",
-    "url": "https://github.com/FrederickdeRuiter"
-  }
-};
+  '@context': 'https://schema.org',
+  '@type': 'Event',
+  name: "Abbigayle & Frederick's Wedding",
+  startDate: '2025-10-10T15:00:00-05:00',
+  endDate: '2025-10-10T22:00:00-05:00',
+  eventStatus: 'https://schema.org/EventScheduled',
+  eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+  location: {
+    '@type': 'Place',
+    name: 'Plummer House',
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: '1091 Plummer Ln SW',
+      addressLocality: 'Rochester',
+      addressRegion: 'MN',
+      postalCode: '55902',
+      addressCountry: 'US',
+    },
+  },
+  description: 'A joyful celebration of love uniting Abbigayle Schultz & Frederick de Ruiter in historic Plummer House gardens.',
+  organizer: { '@type': 'Person', name: 'Frederick de Ruiter', url: 'https://github.com/FrederickdeRuiter' },
+}
 
-// Define motion variants for smoother section transitions
-const sectionVariants = {
-  hidden: { opacity: 0, y: 40 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: 0.15 * i, duration: 0.8, ease: 'easeOut' },
-  }),
-};
+const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
-export default function Home() {
-  const [showIntro, setShowIntro] = useState(true);
-  if (showIntro) {
-    return <WeddingScene onFinish={() => setShowIntro(false)} />;
-  }
+/* -------------------------------------------------------------------------- */
+export default function HomePage() {
+  const [showIntro, setShowIntro] = useState(true)
+  if (showIntro) return <WeddingIntro onFinish={() => setShowIntro(false)} />
+
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
-      <div className="flex flex-col min-h-screen">
-        {/* Hero Section with Enhanced Animations */}
-        <section className="relative h-screen flex items-center justify-center overflow-hidden">
-          <motion.div 
-            className="absolute inset-0 bg-gradient-to-b from-red-50 to-yellow-50 z-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1.5 }}
-          />
-          <motion.div
-            className="absolute inset-0"
-            style={{
-              background: `radial-gradient(circle at 50% 50%, ${theme.colors.primaryLight}15, ${theme.colors.secondaryLight}15)`,
-            }}
-            animate={{
-              scale: [1, 1.1, 1],
-              opacity: [0.5, 0.3, 0.5],
-            }}
-            transition={{
-              duration: 8,
-              repeat: Infinity,
-              repeatType: "reverse",
-            }}
-          />
-          <div className="relative z-20 text-center space-y-6">
-            <motion.h1 
-              className="text-6xl md:text-7xl lg:text-8xl font-bold drop-shadow-xl"
-              style={{
-                background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.secondary})`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-              initial="hidden"
-              animate="visible"
-              variants={sectionVariants}
-              custom={0}
-            >
-              Abbi & Fred
-            </motion.h1>
-            <motion.p 
-              className="text-2xl md:text-3xl text-gray-700"
-              initial="hidden"
-              animate="visible"
-              variants={sectionVariants}
-              custom={1}
-            >
-              April 15, 2025
-            </motion.p>
-            <motion.div 
-              className="pt-8"
-              initial="hidden"
-              animate="visible"
-              variants={sectionVariants}
-              custom={2}
-            >
-              <motion.a 
-                href="/project-info" 
-                className="inline-block px-8 py-3 rounded-full font-medium text-white shadow-lg transition-transform"
-                style={{
-                  background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.secondary})`,
-                }}
-                whileHover={{ scale: 1.07, boxShadow: '0 10px 24px rgba(0,0,0,0.18)' }}
-                whileTap={{ scale: 0.97 }}
-              >
-                Project Info
-              </motion.a>
-            </motion.div>
-          </div>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+
+      {/* Global wrapper provides consistent background */}
+      <div className="min-h-screen bg-[${COLORS.bg}] text-[${COLORS.text}] selection:bg-rose-100 selection:text-rose-900">
+        {/* -------------------------------------------------------------- */}
+        {/* Hero                                                          */}
+        {/* -------------------------------------------------------------- */}
+        <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
+          {/* Subtle radial for depth */}
+          <motion.div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)]" animate={{ scale: [1, 1.04, 1], opacity: [0.7, 0.5, 0.7] }} transition={{ duration: 14, repeat: Infinity, repeatType: 'reverse' }} />
+
+          <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+            Abbi&nbsp;&amp;&nbsp;Fred
+          </motion.h1>
+          <motion.p className="mb-8 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
+            October&nbsp;10,&nbsp;2025 • Rochester, Minnesota
+          </motion.p>
+          <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+            <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
+              Our Story
+              <ChevronDown className="h-5 w-5 transition-transform group-hover:translate-y-1" />
+            </a>
+            <a href="/registry" className="inline-block rounded-full border border-rose-600 px-8 py-3 font-medium text-rose-700 transition-colors hover:bg-rose-50">
+              Registry
+            </a>
+          </motion.div>
         </section>
-        {/* Story Section with Smoother Animation */}
-        <motion.section 
-          id="story" 
-          className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={sectionVariants}
-          custom={3}
-        >
-          <h2 className="text-4xl font-bold text-center mb-12" style={{ color: theme.colors.primary }}>Our Story</h2>
-          <div className="prose lg:prose-lg mx-auto">
-            <motion.p 
-              className="text-lg text-gray-700 leading-relaxed"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.2 }}
-            >
-              Once upon a swipe, Abbi and Fred found each other on Hinge—two souls searching for the same spark. Their first conversations were sprinkled with laughter, stories of late-night hot dog runs, and a shared reverence for kindness and humility. 
-              <br /><br />
-              Abbi, a nurse practitioner with a heart for healing, and Fred, a tech developer who builds with both code and care, quickly discovered that love is best written in moments both big and small. Together, they cherish the simple joys: a perfectly grilled hot dog, a clever joke, and the comfort of knowing they are truly seen.
-              <br /><br />
-              Their story is one of laughter echoing through city streets, of gentle encouragement through life’s challenges, and of two hearts choosing each other—again and again. Today, they invite you to celebrate the beautiful adventure that began with a swipe and blossomed into a lifetime of love.
-            </motion.p>
-          </div>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Story                                                         */}
+        {/* -------------------------------------------------------------- */}
+        <motion.section id="story" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={0}>
+          <h2 className="text-center text-4xl font-bold text-rose-700">Our Story</h2>
+          <p className="text-lg leading-relaxed">It all began with a swipe right on a cool September evening in 2021. Abbi was drawn to Fred's adventurous spirit (and maybe his cute dog), while Fred was captivated by Abbi's warm smile and shared love for bad puns. Our first date involved mini-golf (Fred won, barely) and ended with hours of conversation that felt like minutes.</p>
+          <p className="text-lg leading-relaxed">Since then, we've built a life filled with laughter, shared dreams, and countless adventures. From exploring national parks to cozy nights in binge-watching our favorite shows, we've collected plane tickets, concert stubs, and a growing library of inside jokes. We've supported each other through thick and thin, celebrated milestones big and small, and learned that home isn't just a place, but a feeling we find in each other.</p>
+          <p className="text-lg leading-relaxed">On a snowy January 10th, 2024, Fred recreated our very first walk together along the Zumbro River. Under the twinkling winter lights, he got down on one knee and asked Abbi to be his forever adventure partner. Through happy tears, she said yes! Now, we're eagerly counting down the days until we say "I do" surrounded by the people we love most.</p>
         </motion.section>
-        {/* Event Details Section with Enhanced Interactions */}
-        <motion.section
-          className="py-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={sectionVariants}
-          custom={4}
-        >
-          <motion.div 
-            className="absolute inset-0" 
-            style={{
-              background: `linear-gradient(135deg, ${theme.colors.primaryLight}15, ${theme.colors.secondaryLight}15)`,
-            }}
-            animate={{
-              backgroundPosition: ['0% 0%', '100% 100%'],
-            }}
-            transition={{
-              duration: 20,
-              repeat: Infinity,
-              repeatType: "reverse",
-            }}
-          />
-          <div className="max-w-7xl mx-auto relative z-10">
-            <motion.h2 
-              className="text-4xl font-bold text-center mb-12"
-              style={{ color: theme.colors.primary }}
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-            >
-              Celebration Details
-            </motion.h2>
-            <div className="grid md:grid-cols-2 gap-8">
-              <motion.div 
-                className="bg-white/80 backdrop-blur-sm p-8 rounded-xl shadow-lg"
-                whileHover={{ 
-                  scale: 1.05,
-                  boxShadow: '0 20px 30px rgba(0,0,0,0.1)',
-                }}
-                initial={{ x: -50, opacity: 0 }}
-                whileInView={{ x: 0, opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5 }}
-              >
-                <h3 className="text-2xl font-semibold mb-4" style={{ color: theme.colors.primary }}>Ceremony</h3>
-                <div className="space-y-2 text-gray-600">
-                  <p>2:00 PM - 3:00 PM</p>
-                  <p>St. Mary's Church</p>
-                  <p>123 Wedding Ave</p>
-                </div>
-              </motion.div>
-              <motion.div 
-                className="bg-white/80 backdrop-blur-sm p-8 rounded-xl shadow-lg"
-                whileHover={{ 
-                  scale: 1.05,
-                  boxShadow: '0 20px 30px rgba(0,0,0,0.1)',
-                }}
-                initial={{ x: 50, opacity: 0 }}
-                whileInView={{ x: 0, opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5 }}
-              >
-                <h3 className="text-2xl font-semibold mb-4" style={{ color: theme.colors.secondary }}>Reception</h3>
-                <div className="space-y-2 text-gray-600">
-                  <p>4:00 PM - 10:00 PM</p>
-                  <p>Grand Hotel Ballroom</p>
-                  <p>456 Celebration Blvd</p>
-                </div>
-              </motion.div>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Details                                                       */}
+        {/* -------------------------------------------------------------- */}
+        <motion.section className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1}>
+          <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
+            {/* Ceremony */}
+            <div className="rounded-2xl border border-rose-100 bg-white p-8 shadow-lg transition-transform hover:scale-[1.02]">
+              <h3 className="mb-4 text-2xl font-semibold text-black">Ceremony</h3>
+              <ul className="space-y-2 text-black">
+                <li>3:00 PM – Garden Terrace</li>
+                <li>Plummer House · 1091 Plummer Ln SW</li>
+                <li>Rochester, Minnesota</li>
+              </ul>
             </div>
-            {/* Add to Calendar Button */}
-            <motion.div
-              className="text-center mt-12"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.4 }}
-            >
-              {/* Use the dynamically imported component */}
-              <AddToCalendarButtonClient
-                name={jsonLd.name}
-                startDate={jsonLd.startDate.split('T')[0]} // Extract YYYY-MM-DD
-                startTime={jsonLd.startDate.split('T')[1].substring(0, 5)} // Extract HH:MM
-                endDate={jsonLd.endDate.split('T')[0]} // Extract YYYY-MM-DD
-                endTime={jsonLd.endDate.split('T')[1].substring(0, 5)} // Extract HH:MM
-                timeZone="America/New_York" // Adjust if needed
-                location="St. Mary's Church, 123 Wedding Ave & Grand Hotel Ballroom, 456 Celebration Blvd" // Combine locations or choose primary
-                description={jsonLd.description}
-                options={['Apple', 'Google', 'Outlook.com', 'Yahoo', 'iCal']}
-                buttonStyle="round"
-                styleLight="--btn-background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); --btn-text: #ffffff; --btn-shadow: 0 4px 6px rgba(0,0,0,0.1); --btn-hover-scale: 1.05;"
-                styleDark="--btn-background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); --btn-text: #ffffff; --btn-shadow: 0 4px 6px rgba(0,0,0,0.1); --btn-hover-scale: 1.05;"
-                trigger="click"
-                inline
-                label="Add to Calendar"
-                size="2" // Adjust size as needed (0-4)
-                customCss={`
-                  :root {
-                    --primary-color: ${theme.colors.primary};
-                    --secondary-color: ${theme.colors.secondary};
-                  }
-                  .atcb-button {
-                    font-weight: 500;
-                    padding: 0.75rem 1.5rem;
-                    border-radius: 9999px; /* full */
-                    transition: all 0.2s ease-in-out;
-                  }
-                  .atcb-button:hover {
-                     box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-                  }
-                `}
-              />
-            </motion.div>
+            {/* Reception */}
+            <div className="rounded-2xl border border-amber-200 bg-white p-8 shadow-lg transition-transform hover:scale-[1.02]">
+              <h3 className="mb-4 text-2xl font-semibold text-black">Reception</h3>
+              <ul className="space-y-2 text-black">
+                <li>5:00 PM – 10:00 PM · Great Hall</li>
+                <li>Cocktails on the veranda followed by dinner & dancing</li>
+                <li>Attire: Garden formal</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-14 flex justify-center">
+            <AddToCalendarButtonClient name={jsonLd.name} startDate="2025-10-10" startTime="15:00" endDate="2025-10-10" endTime="22:00" timeZone="America/Chicago" location="Plummer House, 1091 Plummer Ln SW, Rochester, MN" description={jsonLd.description} options={['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']} buttonStyle="round" label="Add to Calendar" size="2" inline customCss={`:root{--btn-background:linear-gradient(135deg,${COLORS.accentFrom},${COLORS.accentTo});--btn-text:#fff}`} />
           </div>
         </motion.section>
-        {/* Floating Project Info Button */}
-        <motion.a
-          href="/project-info"
-          className="fixed bottom-6 right-6 z-50 px-6 py-3 rounded-full shadow-lg bg-gradient-to-r from-red-400 to-yellow-400 text-white font-semibold text-lg transition-transform hover:scale-105 hover:shadow-2xl"
-          style={{ boxShadow: '0 8px 24px rgba(230,57,70,0.15)' }}
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.7, delay: 1.2 }}
-        >
-          Project Info
-        </motion.a>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Accommodations (Placeholder)                                  */}
+        {/* -------------------------------------------------------------- */}
+        <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
+          <h2 className="text-4xl font-bold text-rose-700">Accommodations</h2>
+          <p className="mx-auto max-w-xl text-lg">We've reserved a block of rooms at [Hotel Name] for your convenience. Please mention the Schultz/de Ruiter wedding when booking. [Link to hotel or booking details]. Other nearby options include [Hotel 2] and [Hotel 3].</p>
+          {/* Add more details or links as needed */}
+        </motion.section>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Travel (Placeholder)                                          */}
+        {/* -------------------------------------------------------------- */}
+        <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
+          <h2 className="text-4xl font-bold text-rose-700">Travel Information</h2>
+          <p className="mx-auto max-w-xl text-lg">For those flying in, Rochester International Airport (RST) is the closest airport. Minneapolis-Saint Paul International Airport (MSP) is about a 90-minute drive. [Add details about shuttles, driving directions, or parking at the venue].</p>
+          {/* Add more details or links as needed */}
+        </motion.section>
+
+        {/* -------------------------------------------------------------- */}
+        {/* FAQs (Placeholder)                                            */}
+        {/* -------------------------------------------------------------- */}
+        <motion.section id="faqs" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.9}>
+          <h2 className="text-center text-4xl font-bold text-rose-700">Questions?</h2>
+          <div className="space-y-4 text-left">
+            <div>
+              <h3 className="font-semibold text-lg">What is the dress code?</h3>
+              <p>We suggest garden formal attire. Think cocktail dresses, jumpsuits, suits, or jackets and slacks. Be mindful of walking on grass for the ceremony.</p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg">Are children welcome?</h3>
+              <p>[Your policy on children - e.g., We love your little ones, but we respectfully request an adults-only celebration.]</p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg">Is there parking available?</h3>
+              <p>Yes, there is ample free parking available at the Plummer House.</p>
+            </div>
+            {/* Add more Q&A pairs as needed */}
+          </div>
+        </motion.section>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Registry                                                      */}
+        {/* -------------------------------------------------------------- */}
+        <motion.section className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2}>
+          <h2 className="text-4xl font-bold text-rose-700">Gifts & Registry</h2>
+          <p className="mx-auto max-w-xl text-lg">Your presence is the greatest gift, but if you’d like to help us feather our first nest…</p>
+          <a href="/registry" className="inline-block rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl">View Registry</a>
+        </motion.section>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Footer                                                       */}
+        {/* -------------------------------------------------------------- */}
+        <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500">
+          <p>© {new Date().getFullYear()} Abbigayle & Frederick • Designed with ❤️ in Minnesota</p>
+          <a href="/project-info" className="text-rose-600 hover:underline">About this site</a>
+        </footer>
       </div>
     </>
-  );
+  )
 }
