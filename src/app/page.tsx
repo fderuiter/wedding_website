@@ -1,9 +1,14 @@
 'use client';
 
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import theme from '@/styles/theme';
-import WeddingScene from '@/components/WeddingScene';
-import dynamic from 'next/dynamic'; // Import dynamic
+import dynamic from 'next/dynamic';
+import LoadingScreen from '@/components/LoadingScreen';
+const WeddingScene = dynamic<{ onComplete?: () => void }>(
+  () => import('@/components/WeddingScene'),
+  { ssr: false, loading: () => <LoadingScreen /> }
+);
 
 // Dynamically import AddToCalendarButton with SSR disabled
 const AddToCalendarButtonClient = dynamic(() => import('add-to-calendar-button-react').then(mod => mod.AddToCalendarButton), {
@@ -40,6 +45,10 @@ const sectionVariants = {
 };
 
 export default function Home() {
+  const [showIntro, setShowIntro] = useState(true);
+  if (showIntro) {
+    return <WeddingScene onComplete={() => setShowIntro(false)} />;
+  }
   return (
     <>
       <script
@@ -256,39 +265,6 @@ export default function Home() {
                 `}
               />
             </motion.div>
-          </div>
-        </motion.section>
-        {/* 3D Wedding Scene Section */}
-        <motion.section 
-          className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto" 
-          id="portfolio"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={sectionVariants}
-          custom={5}
-        >
-          <motion.h2 
-            className="text-4xl font-bold text-center mb-12"
-            style={{ color: theme.colors.primary }}
-            initial={{ y: 30, opacity: 0 }}
-            whileInView={{ y: 0, opacity: 1 }}
-            viewport={{ once: true }}
-          >
-            Our Wedding Experience
-          </motion.h2>
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            whileInView={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-          >
-            <div className="rounded-xl overflow-hidden shadow-2xl">
-              <WeddingScene />
-            </div>
-          </motion.div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* Cards removed: Website Features & Open Source. Move to Project Info page. */}
           </div>
         </motion.section>
         {/* Floating Project Info Button */}
