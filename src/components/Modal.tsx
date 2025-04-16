@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { RegistryItem } from '@/types/registry';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 
@@ -13,6 +13,46 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const [amount, setAmount] = useState<number | string>(""); // Allow string for input flexibility
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
+
+  // Focus trap and Escape key support
+  useEffect(() => {
+    const focusableSelectors = [
+      'button', 'a[href]', 'input', '[tabindex]:not([tabindex="-1"])'
+    ];
+    const modal = modalRef.current;
+    if (!modal) return;
+    const focusableEls = modal.querySelectorAll<HTMLElement>(focusableSelectors.join(','));
+    if (focusableEls.length > 0) {
+      (focusableEls[0] as HTMLElement).focus();
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'Tab') {
+        // Focus trap
+        const focusable = Array.from(focusableEls);
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            (last as HTMLElement).focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            (first as HTMLElement).focus();
+          }
+        }
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const handleContributeClick = async () => {
     setError(null); // Clear previous errors
@@ -50,13 +90,14 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const isFullyFunded = remainingAmount <= 0;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50 p-4">
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50 p-4" role="dialog" aria-modal="true" ref={modalRef}>
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-900 dark:text-white">
         {/* Close Button */}
         <button
           className="absolute top-3 right-3 text-gray-400 hover:text-red-500 text-2xl font-bold"
           onClick={onClose}
           aria-label="Close modal"
+          ref={firstFocusableRef}
         >
           &times;
         </button>

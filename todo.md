@@ -44,7 +44,7 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 
 ## 3. UI/UX, Accessibility, and SEO
 
-- [ ] **Mobile Responsiveness & Accessibility**
+- [X] **Mobile Responsiveness & Accessibility**
   - Ensure all components are responsive and accessible (focus trap in modals, ARIA roles, keyboard navigation). Use Storybook or similar for visual testing. Write accessibility tests.
 
 - [ ] **Image Gallery/Video Support in Modals**
