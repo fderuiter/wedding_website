@@ -25,7 +25,11 @@ export async function POST(request: Request) {
     }
 
     // Fetch HTML content from the provided URL
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36'
+      }
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.statusText}`);
     }
