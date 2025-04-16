@@ -18,7 +18,7 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 - [X] **Optimistic UI Updates After Contribution/Claim**
   - Update the UI immediately after a contribution/claim, then confirm with API response. Use React Query or similar for state management if needed. Write integration tests to ensure UI state matches backend state.
 
-- [ ] **Validation and Error Handling for API Endpoints**
+- [X] **Validation and Error Handling for API Endpoints**
   - Add comprehensive validation and error handling to all API endpoints (e.g., contribute, add-item). Use a shared validation utility. Write API tests for all error cases. Ensure error messages are user-friendly and secure.
 
 ---

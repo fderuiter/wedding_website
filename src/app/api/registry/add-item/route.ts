@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { RegistryItem } from '@/types/registry';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+import { validateAddItemInput } from '@/utils/validation';
 
 // Helper function to read data (Consider moving to a shared utils file)
 async function readRegistryData(): Promise<RegistryItem[]> {
@@ -35,24 +36,20 @@ async function writeRegistryData(data: RegistryItem[]): Promise<void> {
 export async function POST(request: Request) {
   // IMPORTANT: Add proper authentication/authorization checks here in a real app
   // For now, we assume the request is authenticated if it reaches here.
-
   try {
     const newItemData = await request.json();
-
-    // Basic validation (add more as needed)
-    if (!newItemData.name || typeof newItemData.price !== 'number' || typeof newItemData.quantity !== 'number') {
-      return NextResponse.json({ error: 'Missing or invalid required fields (name, price, quantity)' }, { status: 400 });
+    const validationError = validateAddItemInput(newItemData);
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
     }
-
     const items = await readRegistryData();
-
     const newItem: RegistryItem = {
-      id: uuidv4(), // Generate a unique ID
+      id: uuidv4(),
       name: newItemData.name,
       description: newItemData.description || '',
       category: newItemData.category || 'Uncategorized',
       price: Number(newItemData.price),
-      image: newItemData.image || '/images/placeholder.jpg', // Use placeholder if no image
+      image: newItemData.image || '/images/placeholder.jpg',
       vendorUrl: newItemData.vendorUrl || null,
       quantity: Number(newItemData.quantity),
       isGroupGift: newItemData.isGroupGift || false,
@@ -61,12 +58,9 @@ export async function POST(request: Request) {
       amountContributed: 0,
       contributors: [],
     };
-
     items.push(newItem);
     await writeRegistryData(items);
-
     return NextResponse.json({ message: 'Item added successfully', item: newItem }, { status: 201 });
-
   } catch (error) {
     console.error("Error adding item:", error);
     let errorMessage = 'Failed to add item to registry';
