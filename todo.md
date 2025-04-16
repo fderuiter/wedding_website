@@ -15,7 +15,7 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 - [X] **Visual Indicator for Claimed/Funded Items**
   - Add a visual overlay or style change for fully claimed/funded items in RegistryCard. Use a DRY approach by centralizing status logic. Test that claimed items are correctly indicated in all UI states.
 
-- [ ] **Optimistic UI Updates After Contribution/Claim**
+- [X] **Optimistic UI Updates After Contribution/Claim**
   - Update the UI immediately after a contribution/claim, then confirm with API response. Use React Query or similar for state management if needed. Write integration tests to ensure UI state matches backend state.
 
 - [ ] **Validation and Error Handling for API Endpoints**
