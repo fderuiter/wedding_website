@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { validateAddItemInput } from '@/utils/validation';
-import { isAdminRequest } from '@/utils/adminAuth';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 
 export async function POST(request: Request) {
   // Admin authentication check

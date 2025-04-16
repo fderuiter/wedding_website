@@ -1,7 +1,7 @@
 // src/app/api/registry/items/[id]/route.ts
 import { NextResponse } from 'next/server';
 import { RegistryService } from '@/services/registryService';
-import { isAdminRequest } from '@/utils/adminAuth';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 
 // GET Handler (Fetch single item)
 export async function GET(

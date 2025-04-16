@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/types/registry';
-import { checkAdminClient } from '@/utils/adminAuth';
+import { checkAdminClient } from '@/utils/adminAuth.client';
 
 // Placeholder component for the Edit Item page
 export default function EditRegistryItemPage() {

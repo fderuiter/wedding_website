@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { checkAdminClient } from '@/utils/adminAuth';
+import { checkAdminClient } from '@/utils/adminAuth.client';
 
 // Basic placeholder component for the Add Item page
 export default function AddRegistryItemPage() {

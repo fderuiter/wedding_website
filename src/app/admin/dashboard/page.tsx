@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RegistryItem, Contributor } from "@/types/registry";
-import { checkAdminClient } from '@/utils/adminAuth';
+import { checkAdminClient } from '@/utils/adminAuth.client';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
