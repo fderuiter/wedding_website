@@ -6,10 +6,10 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 
 ## 1. Core Registry Functionality & Data Integrity
 
-- [ ] **Add Category and Price Filtering Controls**
+- [X] **Add Category and Price Filtering Controls**
   - Implement modular filter components for category and price range on the registry page. Write unit tests for filter logic. Ensure filter state is managed via React state/hooks and is easily testable. Reuse filter logic for both UI and potential backend filtering.
 
-- [ ] **Group Gift Progress Bar & Contributor List**
+- [X] **Group Gift Progress Bar & Contributor List**
   - In the item modal, show a progress bar for group gifts and list contributors. Make the progress bar a reusable component. Write tests for progress calculation and rendering. Ensure contributor data is displayed securely and accessibly.
 
 - [ ] **Visual Indicator for Claimed/Funded Items**
