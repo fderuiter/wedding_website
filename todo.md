@@ -25,7 +25,7 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 
 ## 2. Admin & Management
 
-- [ ] **Protected Admin Dashboard (CRUD for Items & Contributions)**
+- [X] **Protected Admin Dashboard (CRUD for Items & Contributions)**
   - Create an admin dashboard page (modular, route-protected) for listing, editing, deleting, and adding registry items. Use TDD: write tests for all CRUD operations. Use DRY form components for add/edit. Integrate with existing API endpoints and extend as needed.
 
 - [ ] **Authentication for Admin Routes/Pages**
