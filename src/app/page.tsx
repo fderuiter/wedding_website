@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import theme from '@/styles/theme';
 import dynamic from 'next/dynamic';
 import LoadingScreen from '@/components/LoadingScreen';
-const WeddingScene = dynamic<{ onComplete?: () => void }>(
+const WeddingScene = dynamic<{ onFinish?: () => void }>(
   () => import('@/components/WeddingScene'),
   { ssr: false, loading: () => <LoadingScreen /> }
 );
@@ -47,7 +47,7 @@ const sectionVariants = {
 export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
   if (showIntro) {
-    return <WeddingScene onComplete={() => setShowIntro(false)} />;
+    return <WeddingScene onFinish={() => setShowIntro(false)} />;
   }
   return (
     <>
