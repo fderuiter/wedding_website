@@ -60,7 +60,7 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 
 ## 4. Backend, Data, and Persistence
 
-- [ ] **Migrate to SQLite or Real DB for Production**
+- [X] **Migrate to SQLite or Real DB for Production**
   - Replace JSON file with SQLite (using Prisma or similar ORM). Write migration scripts and tests for DB operations. Ensure all data access is via modular repository/service layer. Update API endpoints to use DB.
 
 - [ ] **Provide Sample Data & Config for Site Settings**
