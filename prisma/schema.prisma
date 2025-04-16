@@ -1,0 +1,36 @@
+// This is your Prisma schema file
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./registry.db"
+}
+
+model RegistryItem {
+  id                String       @id @default(uuid())
+  name              String
+  description       String
+  category          String
+  price             Float
+  image             String
+  vendorUrl         String?
+  quantity          Int
+  isGroupGift       Boolean      @default(false)
+  purchased         Boolean      @default(false)
+  purchaserName     String?
+  amountContributed Float        @default(0)
+  contributors      Contributor[]
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+}
+
+model Contributor {
+  id            String       @id @default(uuid())
+  name          String
+  amount        Float
+  date          DateTime
+  registryItem  RegistryItem @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
+  registryItemId String
+}
