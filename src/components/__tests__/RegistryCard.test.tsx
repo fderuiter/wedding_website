@@ -121,5 +121,23 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
+  it('shows overlay and badge for claimed item', () => {
+    const purchasedItem = { ...mockItem, purchased: true };
+    render(<RegistryCard item={purchasedItem} onClick={() => {}} />);
+    // Overlay should be present
+    expect(screen.getByText('Claimed')).toBeInTheDocument();
+    // Overlay should be visually present
+    const overlay = screen.getByText('Claimed').closest('div');
+    expect(overlay).toHaveClass('absolute');
+  });
+
+  it('shows overlay and badge for fully funded group gift', () => {
+    const fundedGroupGift = { ...mockItem, isGroupGift: true, purchased: true };
+    render(<RegistryCard item={fundedGroupGift} onClick={() => {}} />);
+    expect(screen.getByText('Fully Funded')).toBeInTheDocument();
+    const overlay = screen.getByText('Fully Funded').closest('div');
+    expect(overlay).toHaveClass('absolute');
+  });
+
   // Add more tests for click handlers, image errors, etc.
 });

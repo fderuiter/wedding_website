@@ -12,7 +12,7 @@ This list is prioritized and each task is clarified with a focus on Test Driven 
 - [X] **Group Gift Progress Bar & Contributor List**
   - In the item modal, show a progress bar for group gifts and list contributors. Make the progress bar a reusable component. Write tests for progress calculation and rendering. Ensure contributor data is displayed securely and accessibly.
 
-- [ ] **Visual Indicator for Claimed/Funded Items**
+- [X] **Visual Indicator for Claimed/Funded Items**
   - Add a visual overlay or style change for fully claimed/funded items in RegistryCard. Use a DRY approach by centralizing status logic. Test that claimed items are correctly indicated in all UI states.
 
 - [ ] **Optimistic UI Updates After Contribution/Claim**

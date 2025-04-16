@@ -1,6 +1,7 @@
 import React from 'react';
 import { RegistryItem } from '@/types/registry';
 import Link from 'next/link'; // Import Link for navigation
+import { getRegistryItemStatus, RegistryItemStatus } from './registryStatusUtils';
 
 interface RegistryCardProps {
   item: RegistryItem;
@@ -11,7 +12,8 @@ interface RegistryCardProps {
 }
 
 const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onEdit, onDelete }) => {
-  const isClaimed = item.purchased;
+  const status = getRegistryItemStatus(item);
+  const isClaimed = status === 'claimed' || status === 'fullyFunded';
   // Adjust card styling slightly if admin controls are present
   const cardClasses = `border rounded-lg overflow-hidden shadow hover:shadow-lg transition relative bg-white dark:bg-gray-900 text-gray-900 dark:text-white ${isClaimed ? 'opacity-50' : ''}`;
   // Make card clickable only if not claimed AND not in admin mode (to avoid conflict with buttons)
@@ -31,8 +33,17 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     <div
       className={cardClasses}
       onClick={isClickable ? onClick : undefined}
-      style={{ cursor: isClickable ? 'pointer' : 'default' }} // Change cursor based on clickability
+      style={{ cursor: isClickable ? 'pointer' : 'default' }}
+      data-testid="registry-card"
     >
+      {/* Visual overlay for claimed/fully funded */}
+      {isClaimed && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-lg">
+          <span className="bg-green-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg">
+            {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
+          </span>
+        </div>
+      )}
       {/* Display a placeholder if image path is invalid or missing */}
       <img
         src={item.image || '/images/placeholder.jpg'}
@@ -44,7 +55,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           target.src = '/images/placeholder.jpg';
         }}
       />
-      <div className="p-4 pb-12">
+      <div className="p-4 pb-12 relative z-20">
         <h3 className="text-xl font-bold truncate text-red-700 dark:text-yellow-400">{item.name}</h3>
         <p className="text-yellow-700 dark:text-yellow-300 text-sm mb-1">{item.category}</p>
         <p className="mt-1 text-yellow-700 dark:text-yellow-300 font-semibold">$ {item.price.toFixed(2)}</p>
@@ -55,7 +66,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         )}
         {isClaimed && (
           <p className="text-sm text-green-700 dark:text-green-400 font-semibold mt-1">
-            {item.isGroupGift ? 'Fully Funded!' : 'Claimed!'}
+            {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
           </p>
         )}
       </div>
