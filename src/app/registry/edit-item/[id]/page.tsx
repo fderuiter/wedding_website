@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/types/registry';
+import { checkAdminClient } from '@/utils/adminAuth';
 
 // Placeholder component for the Edit Item page
 export default function EditRegistryItemPage() {
@@ -16,22 +17,19 @@ export default function EditRegistryItemPage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // Basic client-side auth check
-    const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-    setIsAdmin(loggedIn);
-    if (!loggedIn) {
-      router.push('/admin/login');
-      return; // Stop execution if not logged in
-    }
-
-    if (!itemId) {
+    async function checkAuthAndFetch() {
+      const isAdmin = await checkAdminClient();
+      setIsAdmin(isAdmin);
+      if (!isAdmin) {
+        router.push('/admin/login');
+        return;
+      }
+      if (!itemId) {
         setError('Item ID is missing.');
         setLoading(false);
         return;
-    }
-
-    // Fetch item data
-    const fetchItem = async () => {
+      }
+      // Fetch item data
       try {
         const response = await fetch(`/api/registry/items/${itemId}`);
         if (!response.ok) {
@@ -44,9 +42,8 @@ export default function EditRegistryItemPage() {
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchItem();
+    }
+    checkAuthAndFetch();
   }, [router, itemId]);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

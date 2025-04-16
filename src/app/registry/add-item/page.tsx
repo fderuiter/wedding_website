@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { checkAdminClient } from '@/utils/adminAuth';
 
 // Basic placeholder component for the Add Item page
 export default function AddRegistryItemPage() {
@@ -11,13 +12,14 @@ export default function AddRegistryItemPage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // Basic client-side check if admin is logged in
-    // In a real app, use a more robust session management solution
-    const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-    setIsAdmin(loggedIn);
-    if (!loggedIn) {
-      router.push('/admin/login'); // Redirect if not logged in
+    async function checkAuth() {
+      const isAdmin = await checkAdminClient();
+      setIsAdmin(isAdmin);
+      if (!isAdmin) {
+        router.push('/admin/login');
+      }
     }
+    checkAuth();
   }, [router]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {

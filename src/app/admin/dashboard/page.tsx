@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RegistryItem, Contributor } from "@/types/registry";
+import { checkAdminClient } from '@/utils/adminAuth';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -10,22 +11,23 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const isLoggedIn = localStorage.getItem("isAdminLoggedIn");
-      if (isLoggedIn !== "true") {
-        router.replace("/admin/login");
+    async function checkAuthAndFetch() {
+      const isAdmin = await checkAdminClient();
+      if (!isAdmin) {
+        router.replace('/admin/login');
         return;
       }
       // Fetch registry items
-      fetch("/api/registry/items")
+      fetch('/api/registry/items')
         .then((res) => {
-          if (!res.ok) throw new Error("Failed to fetch items");
+          if (!res.ok) throw new Error('Failed to fetch items');
           return res.json();
         })
         .then((data) => setItems(data))
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     }
+    checkAuthAndFetch();
   }, [router]);
 
   if (loading) return <main><h1>Admin Dashboard</h1><p>Loading items...</p></main>;

@@ -2,8 +2,14 @@
 import { NextResponse } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { validateAddItemInput } from '@/utils/validation';
+import { isAdminRequest } from '@/utils/adminAuth';
 
 export async function POST(request: Request) {
+  // Admin authentication check
+  const isAdmin = await isAdminRequest();
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const newItemData = await request.json();
     const validationError = validateAddItemInput(newItemData);

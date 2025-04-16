@@ -1,6 +1,7 @@
 // src/app/api/registry/items/[id]/route.ts
 import { NextResponse } from 'next/server';
 import { RegistryService } from '@/services/registryService';
+import { isAdminRequest } from '@/utils/adminAuth';
 
 // GET Handler (Fetch single item)
 export async function GET(
@@ -25,6 +26,11 @@ export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // Admin authentication check
+  const isAdmin = await isAdminRequest();
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const itemId = params.id;
   try {
     const updatedData = await request.json();
@@ -57,6 +63,11 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // Admin authentication check
+  const isAdmin = await isAdminRequest();
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const itemId = params.id;
   try {
     await RegistryService.deleteItem(itemId);

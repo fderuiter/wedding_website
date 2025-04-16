@@ -6,32 +6,31 @@ import { useRouter } from 'next/navigation';
 export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    // In a real app, you'd make an API call to verify the password.
-    // For simplicity, we compare against an environment variable directly on the client.
-    // This is NOT secure for production but matches the plan's simplicity.
-    // A better approach would be an API route for login.
-    if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
-      // Store a simple session flag in localStorage
-      localStorage.setItem('isAdminLoggedIn', 'true');
-      router.push('/registry/add-item'); // Corrected path
-    } else {
-      setError('Incorrect password.');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        router.push('/admin/dashboard');
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Login failed.');
+      }
+    } catch (err) {
+      setError('Network error.');
+    } finally {
+      setLoading(false);
     }
   };
-
-  // IMPORTANT: Expose the password to the client like this is insecure.
-  // This is only for demonstration based on the plan's simplicity.
-  // You MUST add NEXT_PUBLIC_ADMIN_PASSWORD to your .env.local file.
-  if (!process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
-      return <p className="text-red-500 text-center mt-10">Admin password environment variable (NEXT_PUBLIC_ADMIN_PASSWORD) is not set.</p>;
-  }
-
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -52,8 +51,9 @@ export default function LoginPage() {
         <button
           type="submit"
           className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+          disabled={loading}
         >
-          Login
+          {loading ? 'Logging in...' : 'Login'}
         </button>
       </form>
     </div>
