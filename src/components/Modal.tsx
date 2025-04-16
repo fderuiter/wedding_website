@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/types/registry';
+import RegistryItemProgressBar from './RegistryItemProgressBar';
 
 interface ModalProps {
   item: RegistryItem;
@@ -93,12 +94,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 ${remainingAmount.toFixed(2)} still needed.
               </p>
             )}
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-1">
-              <div 
-                className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full"
-                style={{ width: `${Math.min(100, (item.amountContributed / item.price) * 100)}%` }}
-              ></div>
-            </div>
+            <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
           </div>
         )}
         {item.vendorUrl && (
@@ -157,7 +153,17 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             )}
             {item.isGroupGift && item.contributors.length > 0 && (
                 <>
-                    <p className="text-sm text-gray-700 dark:text-gray-200 mt-1">Thank you to all contributors!</p>
+                    <div className="mt-2 mb-2">
+                      <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-200">Contributors:</h4>
+                      <ul className="list-disc list-inside text-xs text-gray-700 dark:text-gray-300">
+                        {item.contributors.map((c, idx) => (
+                          <li key={idx}>
+                            <span className="font-medium">{c.name}</span> {c.amount ? `($${c.amount.toFixed(2)})` : ''}
+                            {c.date ? <span className="ml-1 text-gray-400">{new Date(c.date).toLocaleDateString()}</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                 </>
             )}
             <p className="mt-2 text-yellow-700 dark:text-yellow-300">Thank you for your generosity!</p>
