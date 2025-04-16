@@ -185,9 +185,11 @@ export default function RegistryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-yellow-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 pb-32 px-2 sm:px-4">
+    // Updated background to match main page
+    <div className="min-h-screen bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900 pb-32 px-2 sm:px-4">
       <motion.h1
-        className="text-5xl font-extrabold text-center mb-12 pt-12 text-primary-700 dark:text-yellow-300 tracking-tight drop-shadow-lg"
+        // Updated heading color to rose-700
+        className="text-5xl font-extrabold text-center mb-12 pt-12 text-rose-700 tracking-tight drop-shadow-lg"
         initial={{ opacity: 0, y: -30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7 }}
@@ -196,9 +198,10 @@ export default function RegistryPage() {
       >
         Wedding Registry
       </motion.h1>
-      {/* Enhanced Filter Bar */}
+      {/* Enhanced Filter Bar - Updated styles */}
       <nav
-        className="sticky top-0 z-30 bg-white/90 dark:bg-gray-900/90 backdrop-blur border-b border-yellow-200 dark:border-yellow-800 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+        // Updated background, border, removed dark mode
+        className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-rose-100 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
         aria-label="Registry Filters"
         role="navigation"
       >
@@ -256,7 +259,8 @@ export default function RegistryPage() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            // Updated modal backdrop
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-label={selectedItem.name}
@@ -264,11 +268,12 @@ export default function RegistryPage() {
             <div className="absolute top-4 right-4 z-50">
               <button
                 onClick={handleCloseModal}
-                className="bg-white dark:bg-gray-900 rounded-full p-2 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-400"
+                // Updated close button style
+                className="bg-white rounded-full p-2 shadow-lg border border-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-rose-400"
                 aria-label="Close modal"
                 tabIndex={0}
               >
-                <span aria-hidden="true" className="text-2xl">×</span>
+                <span aria-hidden="true" className="text-2xl text-gray-600">×</span>
               </button>
             </div>
             <Modal

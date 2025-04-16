@@ -64,22 +64,26 @@ export default function RootLayout({
 
   return (
     <html lang="en" className={geist.variable}>
-      <body className={geist.variable}>
+      {/* Apply base theme colors directly to body */}
+      <body className={`${geist.variable} bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900`}>
         <QueryClientProvider client={queryClient}>
           {loading && <LoadingScreen />}
-          {/* Admin Indicator and Logout Button */}
+          {/* Admin Indicator and Logout Button - Restyled */}
           {isAdmin && (
-            <div className="bg-yellow-200 text-yellow-800 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50">
+            <div className="bg-gray-100 text-gray-700 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200">
               <span>Admin Mode Active</span>
               <button
                 onClick={handleLogout}
-                className="bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2 rounded"
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
               >
                 Logout
               </button>
             </div>
           )}
-          {children}
+          {/* Add padding top if admin bar is visible */}
+          <div className={isAdmin ? 'pt-10' : ''}>
+            {children}
+          </div>
         </QueryClientProvider>
       </body>
     </html>
