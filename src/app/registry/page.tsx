@@ -185,47 +185,56 @@ export default function RegistryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-yellow-50 pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-white via-yellow-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 pb-32 px-2 sm:px-4">
       <motion.h1
-        className="text-4xl font-bold text-center mb-10 pt-10"
+        className="text-5xl font-extrabold text-center mb-12 pt-12 text-primary-700 dark:text-yellow-300 tracking-tight drop-shadow-lg"
         initial={{ opacity: 0, y: -30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7 }}
+        tabIndex={0}
+        aria-label="Wedding Registry"
       >
         Wedding Registry
       </motion.h1>
-      {/* Filter Controls */}
-      <div className="max-w-3xl mx-auto px-4 mb-6">
-        <CategoryFilter
-          categories={categories}
-          selected={categoryFilter}
-          onChange={setCategoryFilter}
-        />
-        <PriceRangeFilter
-          min={minPrice}
-          max={maxPrice}
-          value={priceRange}
-          onChange={setPriceRange}
-        />
-      </div>
+      {/* Enhanced Filter Bar */}
+      <nav
+        className="sticky top-0 z-30 bg-white/90 dark:bg-gray-900/90 backdrop-blur border-b border-yellow-200 dark:border-yellow-800 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+        aria-label="Registry Filters"
+        role="navigation"
+      >
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <CategoryFilter
+            categories={categories}
+            selected={categoryFilter}
+            onChange={setCategoryFilter}
+          />
+          <PriceRangeFilter
+            min={minPrice}
+            max={maxPrice}
+            value={priceRange}
+            onChange={setPriceRange}
+          />
+        </div>
+      </nav>
       {/* Feedback messages with animation */}
       <AnimatePresence>
         {isLoading && (
-          <motion.p className="text-center text-gray-500 mb-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.p className="text-center text-gray-500 mb-8 text-lg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             Loading registry...
           </motion.p>
         )}
         {error && (
-          <motion.p className="text-center text-red-500 mb-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.p className="text-center text-red-500 mb-8 text-lg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             Error loading registry: {error instanceof Error ? error.message : String(error)}
           </motion.p>
         )}
       </AnimatePresence>
       <motion.div
-        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 px-4"
+        className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
         variants={gridVariants}
         initial="hidden"
         animate="visible"
+        aria-live="polite"
       >
         {filteredItems.map((item, idx) => (
           <motion.div key={item.id} variants={cardVariants}>
@@ -239,7 +248,7 @@ export default function RegistryPage() {
           </motion.div>
         ))}
       </motion.div>
-      {/* Modal with animation */}
+      {/* Modal with animation and accessibility improvements */}
       <AnimatePresence>
         {selectedItem && isModalOpen && (
           <motion.div
@@ -248,7 +257,20 @@ export default function RegistryPage() {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={selectedItem.name}
           >
+            <div className="absolute top-4 right-4 z-50">
+              <button
+                onClick={handleCloseModal}
+                className="bg-white dark:bg-gray-900 rounded-full p-2 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-400"
+                aria-label="Close modal"
+                tabIndex={0}
+              >
+                <span aria-hidden="true" className="text-2xl">×</span>
+              </button>
+            </div>
             <Modal
               item={selectedItem}
               onClose={handleCloseModal}
