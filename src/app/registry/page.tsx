@@ -6,6 +6,8 @@ import RegistryCard from '@/components/RegistryCard';
 import Modal from '@/components/Modal';
 import { RegistryItem } from '@/types/registry';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CategoryFilter } from '@/components/CategoryFilter';
+import { PriceRangeFilter } from '@/components/PriceRangeFilter';
 
 export default function RegistryPage() {
   const [items, setItems] = useState<RegistryItem[]>([]);
@@ -132,6 +134,42 @@ export default function RegistryPage() {
   };
   // --- End Admin Actions ---
 
+  // --- Filter State ---
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
+
+  // Compute all categories from items
+  const categories = React.useMemo(() => {
+    const set = new Set<string>();
+    items.forEach(item => set.add(item.category));
+    return Array.from(set).sort();
+  }, [items]);
+
+  // Compute min/max price from items
+  const [minPrice, maxPrice] = React.useMemo(() => {
+    if (items.length === 0) return [0, 1000];
+    let min = items[0].price, max = items[0].price;
+    for (const item of items) {
+      if (item.price < min) min = item.price;
+      if (item.price > max) max = item.price;
+    }
+    return [Math.floor(min), Math.ceil(max)];
+  }, [items]);
+
+  // Update price range when items change
+  useEffect(() => {
+    setPriceRange([minPrice, maxPrice]);
+  }, [minPrice, maxPrice]);
+
+  // Filter logic
+  const filteredItems = React.useMemo(() => {
+    return items.filter(item => {
+      const inCategory = categoryFilter.length === 0 || categoryFilter.includes(item.category);
+      const inPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
+      return inCategory && inPrice;
+    });
+  }, [items, categoryFilter, priceRange]);
+
   // Animation variants
   const gridVariants = {
     hidden: { opacity: 0, y: 30 },
@@ -152,6 +190,20 @@ export default function RegistryPage() {
       >
         Wedding Registry
       </motion.h1>
+      {/* Filter Controls */}
+      <div className="max-w-3xl mx-auto px-4 mb-6">
+        <CategoryFilter
+          categories={categories}
+          selected={categoryFilter}
+          onChange={setCategoryFilter}
+        />
+        <PriceRangeFilter
+          min={minPrice}
+          max={maxPrice}
+          value={priceRange}
+          onChange={setPriceRange}
+        />
+      </div>
       {/* Feedback messages with animation */}
       <AnimatePresence>
         {isLoading && (
@@ -171,7 +223,7 @@ export default function RegistryPage() {
         initial="hidden"
         animate="visible"
       >
-        {items.map((item, idx) => (
+        {filteredItems.map((item, idx) => (
           <motion.div key={item.id} variants={cardVariants}>
             <RegistryCard
               item={item}

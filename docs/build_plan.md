@@ -1,4 +1,4 @@
-Below is a complete “starter‐kit” project that implements the two‐page wedding site with a robust registry. This example uses Next.js (with React) and Tailwind CSS for styling. It includes:
+# Build Plan
 
 - A **Landing Page** (pages/index.js) that showcases a cool hero section (you can customize it with your own images/animations) plus a taste of your portfolio.
 - A **Registry Page** (pages/registry.js) that loads items from an API endpoint, implements client‑side filtering and search (using Fuse.js), and shows individual registry items via “cards” and modals.

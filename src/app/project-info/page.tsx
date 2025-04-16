@@ -1,3 +1,5 @@
+'use client';
+
 import { motion } from 'framer-motion';
 
 const features = [
@@ -22,11 +24,7 @@ const techStack = [
 
 const sectionVariants = {
   hidden: { opacity: 0, y: 40 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: 0.15 * i, duration: 0.7, ease: 'easeOut' },
-  }),
+  visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } },
 };
 
 const ProjectInfo = () => {
@@ -39,7 +37,6 @@ const ProjectInfo = () => {
         whileInView="visible"
         viewport={{ once: true }}
         variants={sectionVariants}
-        custom={0}
       >
         <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-red-400 to-yellow-400 text-transparent bg-clip-text">Project Overview</h1>
         <p className="text-lg text-gray-700 mb-6">
