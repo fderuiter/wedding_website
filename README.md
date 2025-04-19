@@ -12,7 +12,7 @@ I ended up just vibe-coding my way through this and built a whole registry syste
 
 **Known Scraper Quirks:**
 
-* Doesn't work with Costco links.
+* Doesn't work with Costco links. Apparently costco doesn't like webscrapers... Who knew?
 * Works for Amazon, but doesn't pull in the product images automatically.
 * Adding new items you just need some TLC and might need manual image uploads. The webscraper probably is more of a bug than a feature at this point...
 * And many more 🙄
