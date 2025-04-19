@@ -3,17 +3,12 @@ import { NextResponse, NextRequest } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
-// Define the context type explicitly
-type RouteContext = {
-  params: { id: string };
-};
-
 // GET Handler (Fetch single item)
 export async function GET(
   request: NextRequest,
-  context: RouteContext // Use the explicit type
+  { params }: { params: { id: string } } // Use inline type with destructuring
 ) {
-  const itemId = context.params.id; // Access params via context
+  const itemId = params.id; // Access params directly
   try {
     const item = await RegistryService.getItemById(itemId);
     if (!item) {
@@ -29,14 +24,14 @@ export async function GET(
 // PUT Handler (Update item)
 export async function PUT(
   request: NextRequest,
-  context: RouteContext // Use the explicit type
+  { params }: { params: { id: string } } // Use inline type with destructuring
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
   if (!isAdmin) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const itemId = context.params.id; // Access params via context
+  const itemId = params.id; // Access params directly
   try {
     const updatedData = await request.json();
     
@@ -66,14 +61,14 @@ export async function PUT(
 // DELETE Handler
 export async function DELETE(
   request: NextRequest,
-  context: RouteContext // Use the explicit type
+  { params }: { params: { id: string } } // Use inline type with destructuring
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
   if (!isAdmin) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const itemId = context.params.id; // Access params via context
+  const itemId = params.id; // Access params directly
   try {
     await RegistryService.deleteItem(itemId);
     return NextResponse.json({ message: 'Item deleted successfully' }, { status: 200 });
