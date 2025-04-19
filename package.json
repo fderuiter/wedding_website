@@ -16,6 +16,7 @@
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
     "@react-three/drei": "^10.0.6",
     "@react-three/fiber": "^9.1.2",
     "@react-three/postprocessing": "^3.0.4",
