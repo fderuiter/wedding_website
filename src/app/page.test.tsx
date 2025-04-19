@@ -4,23 +4,29 @@ import Home from './page';
 
 jest.mock('framer-motion', () => ({
   motion: {
-    div: (props: any) => <div {...props} />, // Simplify motion.div
-    section: (props: any) => <section {...props} />,
-    h1: (props: any) => <h1 {...props} />,
-    h2: (props: any) => <h2 {...props} />,
-    p: (props: any) => <p {...props} />,
-    a: (props: any) => <a {...props} />,
-    li: (props: any) => <li {...props} />,
+    div: (props: React.HTMLAttributes<HTMLDivElement>) => <div {...props} />, // Use React types
+    section: (props: React.HTMLAttributes<HTMLElement>) => <section {...props} />,
+    h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h1 {...props} />,
+    h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h2 {...props} />,
+    p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p {...props} />,
+    a: (props: React.HTMLAttributes<HTMLAnchorElement>) => <a {...props} />,
+    li: (props: React.HTMLAttributes<HTMLLIElement>) => <li {...props} />,
   },
 }));
 
-jest.mock('next/dynamic', () => (importFn: any, opts: any) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+jest.mock('next/dynamic', () => (_importFn: () => Promise<unknown>, _opts: unknown) => { // Use specific types or unknown, prefix unused vars
   // Return a dummy AddToCalendarButtonClient
   const Dummy = () => <button>Add to Calendar</button>;
+  Dummy.displayName = 'DummyAddToCalendarButton'; // Add display name
   return Dummy;
 });
 
-jest.mock('@/components/WeddingScene', () => () => <div>WeddingScene</div>);
+jest.mock('@/components/WeddingScene', () => {
+  const DummyWeddingScene = () => <div>WeddingScene</div>;
+  DummyWeddingScene.displayName = 'DummyWeddingScene'; // Add display name
+  return DummyWeddingScene;
+});
 
 describe('Home Page', () => {
   it('renders the hero section', () => {
