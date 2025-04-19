@@ -3,10 +3,15 @@ import { NextResponse, NextRequest } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
+// Define the context type explicitly
+type RouteContext = {
+  params: { id: string };
+};
+
 // GET Handler (Fetch single item)
 export async function GET(
-  request: NextRequest, // Use NextRequest
-  context: { params: { id: string } } // Correctly type the context object
+  request: NextRequest,
+  context: RouteContext // Use the explicit type
 ) {
   const itemId = context.params.id; // Access params via context
   try {
@@ -23,8 +28,8 @@ export async function GET(
 
 // PUT Handler (Update item)
 export async function PUT(
-  request: NextRequest, // Use NextRequest
-  context: { params: { id: string } } // Correctly type the context object
+  request: NextRequest,
+  context: RouteContext // Use the explicit type
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
@@ -60,8 +65,8 @@ export async function PUT(
 
 // DELETE Handler
 export async function DELETE(
-  request: NextRequest, // Use NextRequest
-  context: { params: { id: string } } // Correctly type the context object
+  request: NextRequest,
+  context: RouteContext // Use the explicit type
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
