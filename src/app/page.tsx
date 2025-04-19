@@ -93,9 +93,9 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         <motion.section id="story" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={0}>
           <h2 className="text-center text-4xl font-bold text-rose-700">Our Story</h2>
-          <p className="text-lg leading-relaxed">It all began with a swipe right on a cool September evening in 2021. Abbi was drawn to Fred's adventurous spirit (and maybe his cute dog), while Fred was captivated by Abbi's warm smile and shared love for bad puns. Our first date involved mini-golf (Fred won, barely) and ended with hours of conversation that felt like minutes.</p>
-          <p className="text-lg leading-relaxed">Since then, we've built a life filled with laughter, shared dreams, and countless adventures. From exploring national parks to cozy nights in binge-watching our favorite shows, we've collected plane tickets, concert stubs, and a growing library of inside jokes. We've supported each other through thick and thin, celebrated milestones big and small, and learned that home isn't just a place, but a feeling we find in each other.</p>
-          <p className="text-lg leading-relaxed">On a snowy January 10th, 2024, Fred recreated our very first walk together along the Zumbro River. Under the twinkling winter lights, he got down on one knee and asked Abbi to be his forever adventure partner. Through happy tears, she said yes! Now, we're eagerly counting down the days until we say "I do" surrounded by the people we love most.</p>
+          <p className="text-lg leading-relaxed">It all began with a swipe right on a cool September evening in 2021. Abbi was drawn to Fred&apos;s adventurous spirit (and maybe his cute dog), while Fred was captivated by Abbi&apos;s warm smile and shared love for bad puns. Our first date involved mini-golf (Fred won, barely) and ended with hours of conversation that felt like minutes.</p>
+          <p className="text-lg leading-relaxed">Since then, we&apos;ve built a life filled with laughter, shared dreams, and countless adventures. From exploring national parks to cozy nights in binge-watching our favorite shows, we&apos;ve collected plane tickets, concert stubs, and a growing library of inside jokes. We&apos;ve supported each other through thick and thin, celebrated milestones big and small, and learned that home isn&apos;t just a place, but a feeling we find in each other.</p>
+          <p className="text-lg leading-relaxed">On a snowy January 10th, 2024, Fred recreated our very first walk together along the Zumbro River. Under the twinkling winter lights, he got down on one knee and asked Abbi to be his forever adventure partner. Through happy tears, she said yes! Now, we&apos;re eagerly counting down the days until we say &quot;I do&quot; surrounded by the people we love most.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -132,7 +132,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
           <h2 className="text-4xl font-bold text-rose-700">Where to Sleep (If You Must)</h2>
-          <p className="mx-auto max-w-xl text-lg">Look, Rochester has hotels. Probably. We vaguely recall booking a block somewhere, maybe the Hilton? Mention our names, perhaps they'll give you a discount, perhaps they'll charge you extra. It's a gamble. Your favorite hotel booking site likely knows more than we do. Good luck.</p>
+          <p className="mx-auto max-w-xl text-lg">Look, Rochester has hotels. Probably. We vaguely recall booking a block somewhere, maybe the Hilton? Mention our names, perhaps they&apos;ll give you a discount, perhaps they&apos;ll charge you extra. It&apos;s a gamble. Your favorite hotel booking site likely knows more than we do. Good luck.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -140,7 +140,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
           <h2 className="text-4xl font-bold text-rose-700">Getting Here (The Ordeal)</h2>
-          <p className="mx-auto max-w-xl text-lg">Fly into RST if you enjoy quaint, small airports. Fly into MSP if you enjoy driving for 90 minutes after your flight. There's parking at the venue, allegedly. We assume you know how to use Google Maps. Don't call us for directions; we'll be busy.</p>
+          <p className="mx-auto max-w-xl text-lg">Fly into RST if you enjoy quaint, small airports. Fly into MSP if you enjoy driving for 90 minutes after your flight. There&apos;s parking at the venue, allegedly. We assume you know how to use Google Maps. Don&apos;t call us for directions; we&apos;ll be busy.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -150,8 +150,8 @@ export default function HomePage() {
           <h2 className="text-center text-4xl font-bold text-rose-700">Questions You Probably Have</h2>
           <div className="space-y-4 text-left">
             <div>
-              <h3 className="font-semibold text-lg">What is "Garden Formal"?</h3>
-              <p>It means look nice, but maybe don't wear stilettos unless you enjoy aerating the lawn.</p>
+              <h3 className="font-semibold text-lg">What is &quot;Garden Formal&quot;?</h3>
+              <p>It means look nice, but maybe don&apos;t wear stilettos unless you enjoy aerating the lawn.</p>
             </div>
             <div>
               <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
