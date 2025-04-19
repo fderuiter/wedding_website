@@ -43,7 +43,7 @@ const ProjectInfo = () => {
           Behold! A website. For a wedding. That also doubles as a desperate plea for someone to hire me based on this single, slightly overcooked project. It has a landing page, a registry that actually works (mostly), and code you can borrow if you promise not to look too closely.
         </p>
         <a
-          href="https://github.com/FrederickdeRuiter"
+          href="https://github.com/fderuiter/wedding_website"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-6 py-2 rounded-full bg-gradient-to-r from-rose-700 to-amber-500 text-white font-semibold shadow-lg hover:scale-105 transition-transform"
