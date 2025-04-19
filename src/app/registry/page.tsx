@@ -118,7 +118,7 @@ export default function RegistryPage() {
         try {
             const errorData = await res.json();
             errorText = errorData.error || JSON.stringify(errorData);
-        } catch (_jsonError) {
+        } catch {
             // If no JSON body, use the status text
         }
         throw new Error(errorText);
