@@ -1,11 +1,11 @@
 // src/app/api/registry/items/[id]/route.ts
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
 // GET Handler (Fetch single item)
 export async function GET(
-  request: Request,
+  request: NextRequest, // Use NextRequest
   context: { params: { id: string } } // Correctly type the context object
 ) {
   const itemId = context.params.id; // Access params via context
@@ -23,7 +23,7 @@ export async function GET(
 
 // PUT Handler (Update item)
 export async function PUT(
-  request: Request,
+  request: NextRequest, // Use NextRequest
   context: { params: { id: string } } // Correctly type the context object
 ) {
   // Admin authentication check
@@ -60,7 +60,7 @@ export async function PUT(
 
 // DELETE Handler
 export async function DELETE(
-  request: Request,
+  request: NextRequest, // Use NextRequest
   context: { params: { id: string } } // Correctly type the context object
 ) {
   // Admin authentication check
