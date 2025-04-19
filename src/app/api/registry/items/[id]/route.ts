@@ -1,12 +1,12 @@
 // src/app/api/registry/items/[id]/route.ts
-import { NextResponse, NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
 // GET Handler (Fetch single item)
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } } // Use inline type with destructuring
+  request: Request,
+  { params }: { params: { id: string } }
 ) {
   const itemId = params.id; // Access params directly
   try {
@@ -23,8 +23,8 @@ export async function GET(
 
 // PUT Handler (Update item)
 export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } } // Use inline type with destructuring
+  request: Request,
+  { params }: { params: { id: string } }
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
@@ -60,8 +60,8 @@ export async function PUT(
 
 // DELETE Handler
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } } // Use inline type with destructuring
+  request: Request,
+  { params }: { params: { id: string } }
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
