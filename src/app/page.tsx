@@ -47,8 +47,8 @@ const jsonLd = {
       addressCountry: 'US',
     },
   },
-  description: 'A joyful celebration of love uniting Abbigayle Schultz & Frederick de Ruiter in historic Plummer House gardens.',
-  organizer: { '@type': 'Person', name: 'Frederick de Ruiter', url: 'https://github.com/FrederickdeRuiter' },
+  description: 'A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens.',
+  organizer: { '@type': 'Person', name: 'Frederick de', url: '*   https://github.com/fderuiter/wedding_website' },
 }
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
@@ -128,42 +128,39 @@ export default function HomePage() {
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
-        {/* Accommodations (Placeholder)                                  */}
+        {/* Accommodations                                               */}
         {/* -------------------------------------------------------------- */}
         <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
-          <h2 className="text-4xl font-bold text-rose-700">Accommodations</h2>
-          <p className="mx-auto max-w-xl text-lg">We've reserved a block of rooms at [Hotel Name] for your convenience. Please mention the Schultz/de Ruiter wedding when booking. [Link to hotel or booking details]. Other nearby options include [Hotel 2] and [Hotel 3].</p>
-          {/* Add more details or links as needed */}
+          <h2 className="text-4xl font-bold text-rose-700">Where to Sleep (If You Must)</h2>
+          <p className="mx-auto max-w-xl text-lg">Look, Rochester has hotels. Probably. We vaguely recall booking a block somewhere, maybe the Hilton? Mention our names, perhaps they'll give you a discount, perhaps they'll charge you extra. It's a gamble. Your favorite hotel booking site likely knows more than we do. Good luck.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
-        {/* Travel (Placeholder)                                          */}
+        {/* Travel                                                       */}
         {/* -------------------------------------------------------------- */}
         <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
-          <h2 className="text-4xl font-bold text-rose-700">Travel Information</h2>
-          <p className="mx-auto max-w-xl text-lg">For those flying in, Rochester International Airport (RST) is the closest airport. Minneapolis-Saint Paul International Airport (MSP) is about a 90-minute drive. [Add details about shuttles, driving directions, or parking at the venue].</p>
-          {/* Add more details or links as needed */}
+          <h2 className="text-4xl font-bold text-rose-700">Getting Here (The Ordeal)</h2>
+          <p className="mx-auto max-w-xl text-lg">Fly into RST if you enjoy quaint, small airports. Fly into MSP if you enjoy driving for 90 minutes after your flight. There's parking at the venue, allegedly. We assume you know how to use Google Maps. Don't call us for directions; we'll be busy.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
-        {/* FAQs (Placeholder)                                            */}
+        {/* FAQs                                                         */}
         {/* -------------------------------------------------------------- */}
         <motion.section id="faqs" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.9}>
-          <h2 className="text-center text-4xl font-bold text-rose-700">Questions?</h2>
+          <h2 className="text-center text-4xl font-bold text-rose-700">Questions You Probably Have</h2>
           <div className="space-y-4 text-left">
             <div>
-              <h3 className="font-semibold text-lg">What is the dress code?</h3>
-              <p>We suggest garden formal attire. Think cocktail dresses, jumpsuits, suits, or jackets and slacks. Be mindful of walking on grass for the ceremony.</p>
+              <h3 className="font-semibold text-lg">What is "Garden Formal"?</h3>
+              <p>It means look nice, but maybe don't wear stilettos unless you enjoy aerating the lawn.</p>
             </div>
             <div>
-              <h3 className="font-semibold text-lg">Are children welcome?</h3>
-              <p>[Your policy on children - e.g., We love your little ones, but we respectfully request an adults-only celebration.]</p>
+              <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
+              <p>We love your kids! Just kidding. Please leave them at home. Consider this a date night mixed with a grad party. Graduating from our single lives that is.</p>
             </div>
             <div>
               <h3 className="font-semibold text-lg">Is there parking available?</h3>
-              <p>Yes, there is ample free parking available at the Plummer House.</p>
+              <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
             </div>
-            {/* Add more Q&A pairs as needed */}
           </div>
         </motion.section>
 

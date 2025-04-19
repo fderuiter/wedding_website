@@ -8,7 +8,7 @@ Honestly, I started this because [theknot.com](https://theknot.com) felt kinda l
 
 I ended up just vibe-coding my way through this and built a whole registry system instead, which turned out pretty slick. It even has a web scraper to help add items quickly from other sites.
 
-**Tech Journey:** Started with storing registry data in a simple JSON file, but eventually migrated to using Prisma with a SQLite database for a more robust setup.
+**Tech Journey:** Started with storing registry data in a simple JSON file, but eventually migrated to using Prisma with a SQLite database for a more robust setup. Even left in a registry file there before I added the registry to my gitignore. Enjoy the claimed costco energy drink item test.
 
 **Known Scraper Quirks:**
 
@@ -85,3 +85,15 @@ This will start the Next.js development server (likely on `http://localhost:3000
 * **Database:** SQLite (for development/simplicity)
 * **Language:** TypeScript
 * **Testing:** Jest, React Testing Library
+
+## Note about tests
+
+I got a whole bunch of tests in here which I was making as I was going through for a false sense of security in code reliablilty, however making sure they pass as I was going through kinda fell by the wayside. So they're still in here, but they probably shouldn't be. So if they don't pass know that it's not you... It's me.
+
+## and another thing
+
+If anyone out there want to help out, made this public. Some things I'd like to do is smooth out the animation at the start. I'll probably need to add real content here and maybe a nice looking photo album. I don't really know how this whole github thing is supposed to work, but I'm pretty sure there are some ways to collaborate. Any help would be greatly appreciative. For example I tried to add one of those add to calendar buttons. Pretty sure I installed a package to do that and had that on the main page... But I digress... I'm probably using too many packages anyways, heck there are like a thousand packages as part of this project (shout out to those competent devs out there, you're the real MVP).
+
+## Next steps
+
+Deployment maybe? I'm planning on using vercel since they have that hobby plan and I think that has a free tier. Really hoping this doesn't go above that. Maybe fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? We'll see.
