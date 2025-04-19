@@ -1,14 +1,25 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AddRegistryItemPage from './page';
+import { useRouter } from 'next/navigation';
 
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() })
+  useRouter: jest.fn(),
 }));
 
 describe('AddRegistryItemPage', () => {
+  let mockPush: jest.Mock;
+
   beforeEach(() => {
+    mockPush = jest.fn();
+    (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
     Storage.prototype.getItem = jest.fn((key) => (key === 'isAdminLoggedIn' ? 'true' : null));
+    window.alert = jest.fn();
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ id: '1' }) })) as jest.Mock;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   it('renders the add item form if admin', () => {
@@ -21,14 +32,11 @@ describe('AddRegistryItemPage', () => {
 
   it('redirects if not admin', () => {
     Storage.prototype.getItem = jest.fn(() => 'false');
-    const push = jest.fn();
-    jest.spyOn(require('next/navigation'), 'useRouter').mockReturnValue({ push });
     render(<AddRegistryItemPage />);
     expect(screen.getByText(/loading or redirecting/i)).toBeInTheDocument();
   });
 
   it('shows alert if price or quantity is invalid', () => {
-    window.alert = jest.fn();
     render(<AddRegistryItemPage />);
     fireEvent.change(screen.getByLabelText(/price/i), { target: { value: 'abc' } });
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: 'xyz' } });
@@ -37,21 +45,16 @@ describe('AddRegistryItemPage', () => {
   });
 
   it('submits the form and redirects on success', async () => {
-    window.alert = jest.fn();
-    const push = jest.fn();
-    jest.spyOn(require('next/navigation'), 'useRouter').mockReturnValue({ push });
-    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ id: '1' }) })) as jest.Mock;
     render(<AddRegistryItemPage />);
     fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'Test Item' } });
     fireEvent.change(screen.getByLabelText(/price/i), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '2' } });
     fireEvent.submit(screen.getByTestId('form'));
     await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Item added successfully!'));
-    expect(push).toHaveBeenCalledWith('/registry');
+    expect(mockPush).toHaveBeenCalledWith('/registry');
   });
 
   it('shows alert if API returns error on submit', async () => {
-    window.alert = jest.fn();
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve({ error: 'API error' }) })) as jest.Mock;
     render(<AddRegistryItemPage />);
     fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'Test Item' } });
