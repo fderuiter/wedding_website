@@ -3,7 +3,8 @@ import { RegistryItem } from '@/types/registry';
 import { getRegistryItemStatus } from './registryStatusUtils'; // Removed unused RegistryItemStatus
 import Image from 'next/image'; // Import next/image
 
-interface RegistryCardProps {
+// Export the props interface
+export interface RegistryCardProps {
   item: RegistryItem;
   onClick: () => void;
   isAdmin?: boolean; // Optional: Flag to show admin controls

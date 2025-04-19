@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { RegistryItem } from '@/types/registry';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
+import Image from 'next/image'; // Import next/image
 
-interface ModalProps {
+// Export the props interface
+export interface ModalProps {
   item: RegistryItem;
   onClose: () => void;
   onContribute: (itemId: string, contributorName: string, amount: number) => Promise<void>; // Function to handle contribution API call
@@ -79,8 +81,13 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
       const finalAmount = item.isGroupGift ? contributionAmount : item.price;
       await onContribute(item.id, contributorName, finalAmount);
       // Success handled by parent component (e.g., closing modal, showing message)
-    } catch (err: any) {
-      setError(err.message || "Failed to process contribution. Please try again.");
+    } catch (err: unknown) { // Changed 'any' to 'unknown'
+      // Type guard for Error object
+      if (err instanceof Error) {
+        setError(err.message || "Failed to process contribution. Please try again.");
+      } else {
+        setError("An unknown error occurred during contribution.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -103,17 +110,21 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         >
           &times;
         </button>
-        {/* Item Image - Adjusted placeholder bg */}
-        <img
-          src={item.image || '/images/placeholder.jpg'}
-          alt={item.name}
-          className="w-full h-64 object-cover rounded mb-4 bg-gray-100"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.onerror = null;
-            target.src = '/images/placeholder.jpg';
-          }}
-        />
+        {/* Item Image - Use next/image */}
+        <div className="relative w-full h-64 mb-4"> {/* Wrapper for layout="fill" */}
+          <Image
+            src={item.image || '/images/placeholder.jpg'}
+            alt={item.name}
+            className="object-cover rounded bg-gray-100" // Removed size classes
+            layout="fill" // Use fill layout
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.onerror = null; // Prevent infinite loop
+              target.srcset = '/images/placeholder.jpg'; // Use srcset for next/image
+              target.src = '/images/placeholder.jpg'; // Fallback src
+            }}
+          />
+        </div>
         {/* Item Details - Updated colors */}
         <h2 className="text-2xl font-bold mb-2 text-rose-700">{item.name}</h2>
         <p className="text-gray-700 mb-3">{item.description}</p>

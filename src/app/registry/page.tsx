@@ -14,8 +14,6 @@ export default function RegistryPage() {
   const queryClient = useQueryClient();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [contributionAmount, setContributionAmount] = useState<number>(0);
-  const [purchaserName, setPurchaserName] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
@@ -95,8 +93,6 @@ export default function RegistryPage() {
   const handleCardClick = (item: RegistryItem) => {
     if (item.purchased || isAdmin) return;
     setSelectedItem(item);
-    setContributionAmount(item.isGroupGift ? 0 : item.price);
-    setPurchaserName('');
     setIsModalOpen(true);
   };
 
@@ -122,7 +118,7 @@ export default function RegistryPage() {
         try {
             const errorData = await res.json();
             errorText = errorData.error || JSON.stringify(errorData);
-        } catch (jsonError) {
+        } catch (_jsonError) {
             // If no JSON body, use the status text
         }
         throw new Error(errorText);
@@ -239,7 +235,7 @@ export default function RegistryPage() {
         animate="visible"
         aria-live="polite"
       >
-        {filteredItems.map((item, idx) => (
+        {filteredItems.map((item) => (
           <motion.div key={item.id} variants={cardVariants}>
             <RegistryCard
               item={item}
@@ -280,8 +276,6 @@ export default function RegistryPage() {
               item={selectedItem}
               onClose={handleCloseModal}
               onContribute={async (itemId, purchaserName, amount) => {
-                setPurchaserName(purchaserName);
-                setContributionAmount(amount);
                 contributeMutation.mutate({ itemId, purchaserName, amount }, {
                   onSuccess: () => {
                     handleCloseModal();

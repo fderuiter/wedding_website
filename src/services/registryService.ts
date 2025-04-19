@@ -34,12 +34,16 @@ export class RegistryService {
   }
 
   static async updateItem(id: string, data: Partial<RegistryItem>) {
+    // Destructure contributors out, as it needs special handling or shouldn't be updated here.
+    // Mark contributors as unused if not needed further in this function.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { contributors, ...updateData } = data;
     return prisma.registryItem.update({
       where: { id },
+      // Pass the rest of the data for update.
       data: updateData,
       include: {
-        contributors: true
+        contributors: true // Still include contributors in the response.
       }
     });
   }
