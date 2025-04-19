@@ -47,7 +47,7 @@ export default function EditRegistryItemPage() {
     checkAuthAndFetch();
   }, [router, itemId]);
 
-  const handleEdit = async (values: any) => {
+  const handleEdit = async (values: Partial<RegistryItem>) => {
     setIsSubmitting(true);
     setError(null);
     try {
