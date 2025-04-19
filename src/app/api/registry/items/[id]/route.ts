@@ -6,9 +6,9 @@ import { isAdminRequest } from '@/utils/adminAuth.server';
 // GET Handler (Fetch single item)
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } } // Correctly type the context object
 ) {
-  const itemId = params.id;
+  const itemId = context.params.id; // Access params via context
   try {
     const item = await RegistryService.getItemById(itemId);
     if (!item) {
@@ -24,14 +24,14 @@ export async function GET(
 // PUT Handler (Update item)
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } } // Correctly type the context object
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
   if (!isAdmin) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const itemId = params.id;
+  const itemId = context.params.id; // Access params via context
   try {
     const updatedData = await request.json();
     
@@ -61,14 +61,14 @@ export async function PUT(
 // DELETE Handler
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } } // Correctly type the context object
 ) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();
   if (!isAdmin) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const itemId = params.id;
+  const itemId = context.params.id; // Access params via context
   try {
     await RegistryService.deleteItem(itemId);
     return NextResponse.json({ message: 'Item deleted successfully' }, { status: 200 });
