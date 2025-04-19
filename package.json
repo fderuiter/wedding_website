@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
@@ -34,6 +34,7 @@
     "next": "15.3.0",
     "node-fetch": "^3.3.2",
     "open-graph-scraper": "^6.9.0",
+    "pg": "^8.14.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.175.0",
