@@ -1,79 +1,53 @@
 // src/app/api/registry/items/[id]/route.ts
-import { NextResponse } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { isAdminRequest } from '@/utils/adminAuth.server';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';   // <‑‑ type‑only (optional)
 
-// GET Handler (Fetch single item)
+// GET ‑ fetch a single item
 export async function GET(
-  request: Request,
+  request: Request,                                // or NextRequest (type‑only import)
   { params }: { params: { id: string } }
 ) {
-  const itemId = params.id; // Access params directly
-  try {
-    const item = await RegistryService.getItemById(itemId);
-    if (!item) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
-    }
-    return NextResponse.json(item);
-  } catch (error) {
-    console.error("Error fetching item:", error);
-    return NextResponse.json({ error: 'Failed to fetch item data' }, { status: 500 });
-  }
+  const item = await RegistryService.getItemById(params.id);
+  if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+  return NextResponse.json(item);
 }
 
-// PUT Handler (Update item)
+// PUT ‑ update an item
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Admin authentication check
-  const isAdmin = await isAdminRequest();
-  if (!isAdmin) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const itemId = params.id; // Access params directly
-  try {
-    const updatedData = await request.json();
-    
-    // Basic validation
-    if (!updatedData.name || typeof updatedData.price !== 'number' || typeof updatedData.quantity !== 'number') {
-      return NextResponse.json({ error: 'Missing or invalid required fields (name, price, quantity)' }, { status: 400 });
-    }
+  const isAdmin = await isAdminRequest(request);   // pass request if the util needs it
+  if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const updatedItem = await RegistryService.updateItem(itemId, {
-      ...updatedData,
-      price: Number(updatedData.price),
-      quantity: Number(updatedData.quantity),
-      isGroupGift: updatedData.isGroupGift === true || updatedData.isGroupGift === 'on'
-    });
-
-    return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
-  } catch (error) {
-    console.error("Error updating item:", error);
-    let errorMessage = 'Failed to update item';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    }
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  const body = await request.json();
+  if (!body.name || typeof body.price !== 'number' || typeof body.quantity !== 'number') {
+    return NextResponse.json(
+      { error: 'Missing or invalid required fields (name, price, quantity)' },
+      { status: 400 }
+    );
   }
+
+  const updatedItem = await RegistryService.updateItem(params.id, {
+    ...body,
+    price: Number(body.price),
+    quantity: Number(body.quantity),
+    isGroupGift: body.isGroupGift === true || body.isGroupGift === 'on',
+  });
+
+  return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
 }
 
-// DELETE Handler
+// DELETE ‑ remove an item
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Admin authentication check
-  const isAdmin = await isAdminRequest();
-  if (!isAdmin) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const itemId = params.id; // Access params directly
-  try {
-    await RegistryService.deleteItem(itemId);
-    return NextResponse.json({ message: 'Item deleted successfully' }, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting item:", error);
-    return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 });
-  }
+  const isAdmin = await isAdminRequest(request);
+  if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  await RegistryService.deleteItem(params.id);
+  return NextResponse.json({ message: 'Item deleted successfully' });
 }
