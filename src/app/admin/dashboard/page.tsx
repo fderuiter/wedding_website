@@ -105,8 +105,8 @@ export default function AdminDashboardPage() {
                             if (!res.ok) throw new Error('Failed to delete item');
                             setItems((prev) => prev.filter((i) => i.id !== item.id));
                             alert('Item deleted successfully.');
-                          } catch (e: any) {
-                            alert(e.message || 'Error deleting item');
+                          } catch (e: unknown) { // Changed from any to unknown
+                            alert((e instanceof Error ? e.message : String(e)) || 'Error deleting item');
                           }
                         }}
                       >
@@ -164,8 +164,8 @@ export default function AdminDashboardPage() {
                       if (!res.ok) throw new Error('Failed to delete item');
                       setItems((prev) => prev.filter((i) => i.id !== item.id));
                       alert('Item deleted successfully.');
-                    } catch (e: any) {
-                      alert(e.message || 'Error deleting item');
+                    } catch (e: unknown) { // Changed from any to unknown
+                      alert((e instanceof Error ? e.message : String(e)) || 'Error deleting item');
                     }
                   }}
                 >
