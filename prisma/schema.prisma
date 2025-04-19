@@ -1,6 +1,7 @@
 // This is your Prisma schema file
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client" // Add recommended output path
 }
 
 datasource db {
