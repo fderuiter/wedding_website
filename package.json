@@ -4,14 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "dotenv -e .env.development.local -- prisma generate && dotenv -e .env.development.local -- prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "migrate:dev": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
+    "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
     "db:seed": "ts-node -r tsconfig-paths/register scripts/migrateToSqlite.ts",
     "prisma:generate": "prisma generate"
   },
