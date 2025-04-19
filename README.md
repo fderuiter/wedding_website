@@ -4,7 +4,7 @@ This project is a custom wedding website featuring a fully functional gift regis
 
 ## The Story
 
-Honestly, I started this because [theknot.com](https://theknot.com) felt kinda limiting and, well, a bit bullshit. It's free, sure, but I wanted something that looked cooler. I initially got sidetracked thinking about using Three.js to make something visually fancy, but let me tell you, that stuff is *hard*. Got a cool loading heart though. Tried to make some rings fly around eachout and then combine to make a heart, then transition that into the main page but it ended up looking terrible, so I just kept the heart.
+Honestly, I started this because [theknot.com](https://theknot.com) felt kinda limiting and, well, a bit bullshit. It's free, sure, but I wanted something that looked cooler, plus it felt like I was selling my soul to the baby of big tech and big wedding... I can't afford the stuff they're tring to sell me, and too keep wedding costs down here we are. I initially got sidetracked thinking about using Three.js to make something visually fancy, but let me tell you, that stuff is *hard*. Got a cool loading heart though. Tried to make some rings fly around eachout and then combine to make a heart, then transition that into the main page but it ended up looking terrible, so I just kept the heart.
 
 I ended up just vibe-coding my way through this and built a whole registry system instead, which turned out pretty slick. It even has a web scraper to help add items quickly from other sites.
 
