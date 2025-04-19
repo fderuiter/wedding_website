@@ -57,8 +57,13 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       }
       const data = await res.json();
       setValues((prev) => ({ ...prev, ...data }));
-    } catch (err: any) {
-      setScrapeError(err.message || 'Scraping failed');
+    } catch (err: unknown) { // Changed 'any' to 'unknown'
+      // Type guard for Error object
+      if (err instanceof Error) {
+        setScrapeError(err.message || 'Scraping failed');
+      } else {
+        setScrapeError('An unknown error occurred during scraping.');
+      }
     } finally {
       setScrapeLoading(false);
     }

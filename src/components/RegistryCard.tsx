@@ -1,7 +1,7 @@
 import React from 'react';
 import { RegistryItem } from '@/types/registry';
-import Link from 'next/link'; // Import Link for navigation
-import { getRegistryItemStatus, RegistryItemStatus } from './registryStatusUtils';
+import { getRegistryItemStatus } from './registryStatusUtils'; // Removed unused RegistryItemStatus
+import Image from 'next/image'; // Import next/image
 
 interface RegistryCardProps {
   item: RegistryItem;
@@ -48,18 +48,22 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <img
-        src={item.image || '/images/placeholder.jpg'}
-        alt={item.name}
-        // Updated placeholder background
-        className="w-full h-56 object-cover bg-gray-100 rounded-t-2xl"
-        loading="lazy"
-        onError={(e) => {
-          const target = e.target as HTMLImageElement;
-          target.onerror = null;
-          target.src = '/images/placeholder.jpg';
-        }}
-      />
+      <div className="relative w-full h-56"> {/* Added a wrapper for layout */}
+        <Image
+          src={item.image || '/images/placeholder.jpg'}
+          alt={item.name}
+          // Updated placeholder background
+          className="object-cover bg-gray-100 rounded-t-2xl" // Removed w-full, h-56
+          layout="fill" // Use fill layout
+          loading="lazy"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.onerror = null; // Prevent infinite loop if placeholder also fails
+            target.srcset = '/images/placeholder.jpg'; // Use srcset for next/image
+            target.src = '/images/placeholder.jpg'; // Fallback src
+          }}
+        />
+      </div>
       <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
         {/* Updated heading color */}
         <h3 className="text-2xl font-extrabold truncate text-rose-700" title={item.name}>{item.name}</h3>

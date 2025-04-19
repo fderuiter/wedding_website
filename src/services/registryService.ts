@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
 import type { RegistryItem } from '@/types/registry';
 
 export class RegistryService {
