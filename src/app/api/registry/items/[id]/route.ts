@@ -1,26 +1,28 @@
 // src/app/api/registry/items/[id]/route.ts
+import { NextResponse, type NextRequest } from 'next/server';
 import { RegistryService } from '@/services/registryService';
 import { isAdminRequest } from '@/utils/adminAuth.server';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';   // <‑‑ type‑only (optional)
 
-// GET ‑ fetch a single item
-export async function GET(
-  request: Request,                                // or NextRequest (type‑only import)
-  { params }: { params: { id: string } }
-) {
-  const item = await RegistryService.getItemById(params.id);
-  if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+/* ---------- GET ---------- */
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const itemId = url.pathname.split('/').pop()!;
+  const item = await RegistryService.getItemById(itemId);
+
+  if (!item) {
+    return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+  }
   return NextResponse.json(item);
 }
 
-// PUT ‑ update an item
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const isAdmin = await isAdminRequest(request);   // pass request if the util needs it
-  if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/* ---------- PUT ---------- */
+export async function PUT(request: NextRequest) {
+  const url = new URL(request.url);
+  const itemId = url.pathname.split('/').pop()!;
+
+  if (!(await isAdminRequest(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const body = await request.json();
   if (!body.name || typeof body.price !== 'number' || typeof body.quantity !== 'number') {
@@ -30,7 +32,7 @@ export async function PUT(
     );
   }
 
-  const updatedItem = await RegistryService.updateItem(params.id, {
+  const updatedItem = await RegistryService.updateItem(itemId, {
     ...body,
     price: Number(body.price),
     quantity: Number(body.quantity),
@@ -40,14 +42,15 @@ export async function PUT(
   return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
 }
 
-// DELETE ‑ remove an item
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const isAdmin = await isAdminRequest(request);
-  if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/* ---------- DELETE ---------- */
+export async function DELETE(request: NextRequest) {
+  const url = new URL(request.url);
+  const itemId = url.pathname.split('/').pop()!;
 
-  await RegistryService.deleteItem(params.id);
+  if (!(await isAdminRequest(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  await RegistryService.deleteItem(itemId);
   return NextResponse.json({ message: 'Item deleted successfully' });
 }
