@@ -25,6 +25,7 @@
     "@types/uuid": "^10.0.0",
     "add-to-calendar-button": "^2.8.9",
     "add-to-calendar-button-react": "^2.8.9",
+    "dotenv-cli": "^8.0.0",
     "framer-motion": "^12.6.5",
     "fuse.js": "^7.1.0",
     "lucide-react": "^0.488.0",
