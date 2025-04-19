@@ -97,4 +97,4 @@ If anyone out there want to help out, made this public. Some things I'd like to 
 
 ## Next steps
 
-Deployment maybe? I'm planning on using vercel since they have that hobby plan and I think that has a free tier. Really hoping this doesn't go above that. Maybe fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? Maybe I'll start doing my actual job instead of goofing off and making this at work (NOTE: IF YOU ARE MY BOSS I DEFINTELY DIDN'T MAKE THIS AT WORK PLEASE DON'T FIRE ME). The possibilities are endless.
+Deployment maybe? I'm planning on using vercel since they have that hobby plan and I think that has a free tier. Really hoping this doesn't go above that. Maybe fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? Maybe put this on my linkedIn? Just kidding, I don't want to be unemployed... 
