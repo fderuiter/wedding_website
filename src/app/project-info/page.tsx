@@ -63,7 +63,7 @@ const ProjectInfo = () => {
         custom={1}
       >
         <div className="bg-white rounded-2xl shadow-xl p-10 flex flex-col items-center border border-rose-100">
-          <h2 className="text-2xl font-bold mb-6 text-rose-700 tracking-tight">"Features" (Allegedly)</h2>
+          <h2 className="text-2xl font-bold mb-6 text-rose-700 tracking-tight">&quot;Features&quot; (Allegedly)</h2>
           <ul className="space-y-4 w-full">
             {features.map(f => (
               <li key={f.label} className="flex items-center text-lg text-gray-700">
@@ -94,14 +94,14 @@ const ProjectInfo = () => {
         custom={2}
       >
         <div className="bg-white rounded-2xl shadow-xl p-10 border border-gray-200">
-          <h2 className="text-2xl font-bold mb-4 text-rose-700 tracking-tight">How It's Cobbled Together</h2>
+          <h2 className="text-2xl font-bold mb-4 text-rose-700 tracking-tight">How It&apos;s Cobbled Together</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
             <li><strong>Landing Page:</strong> Standard wedding stuff, plus a heart that spins. Fancy.</li>
-            <li><strong>Registry Page:</strong> Click buttons, maybe buy us stuff. Search and filter if you're picky. Admin area for us to fix your mistakes.</li>
+            <li><strong>Registry Page:</strong> Click buttons, maybe buy us stuff. Search and filter if you&apos;re picky. Admin area for us to fix your mistakes.</li>
             <li><strong>API Endpoints:</strong> Some server-side code that talks to the database. Includes a web scraper that barely works.</li>
-            <li><strong>Data Layer:</strong> Started with JSON, got ambitious, now it's Prisma and SQLite. Probably overkill.</li>
+            <li><strong>Data Layer:</strong> Started with JSON, got ambitious, now it&apos;s Prisma and SQLite. Probably overkill.</li>
             <li><strong>Styling:</strong> Tailwind CSS, because writing actual CSS is hard.</li>
-            <li><strong>Open Source:</strong> Yeah, it's MIT licensed. Go nuts. Structure is... present.</li>
+            <li><strong>Open Source:</strong> Yeah, it&apos;s MIT licensed. Go nuts. Structure is... present.</li>
           </ul>
         </div>
       </motion.div>
@@ -118,9 +118,9 @@ const ProjectInfo = () => {
           </ul>
         </div>
         <div className="bg-white rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200">
-          <h2 className="text-xl font-bold mb-3 text-amber-600">"Contributing" (Why?)</h2>
+          <h2 className="text-xl font-bold mb-3 text-amber-600">&quot;Contributing&quot; (Why?)</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
-            <li>It's open source. Feel free to point and laugh on GitHub.</li>
+            <li>It&apos;s open source. Feel free to point and laugh on GitHub.</li>
             <li>See <a href='https://github.com/fderuiter/wedding_website' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>CONTRIBUTING.md</a> for guidelines.</li>
             <li>If you find a bug, maybe fix it? Or just open an issue and complain.</li>
           </ul>
