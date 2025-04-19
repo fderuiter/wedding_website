@@ -15,6 +15,7 @@ I ended up just vibe-coding my way through this and built a whole registry syste
 * Doesn't work with Costco links.
 * Works for Amazon, but doesn't pull in the product images automatically.
 * Adding new items you just need some TLC and might need manual image uploads. The webscraper probably is more of a bug than a feature at this point...
+* And many more 🙄
 
 ## Getting Started
 
@@ -96,4 +97,4 @@ If anyone out there want to help out, made this public. Some things I'd like to 
 
 ## Next steps
 
-Deployment maybe? I'm planning on using vercel since they have that hobby plan and I think that has a free tier. Really hoping this doesn't go above that. Maybe fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? We'll see.
+Deployment maybe? I'm planning on using vercel since they have that hobby plan and I think that has a free tier. Really hoping this doesn't go above that. Maybe fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? Maybe I'll start doing my actual job instead of goofing off and making this at work (NOTE: IF YOU ARE MY BOSS I DEFINTELY DIDN'T MAKE THIS AT WORK PLEASE DON'T FIRE ME). The possibilities are endless.
