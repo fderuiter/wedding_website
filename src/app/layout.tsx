@@ -1,8 +1,6 @@
 'use client';
 
-import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter for navigation
