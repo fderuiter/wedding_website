@@ -6,29 +6,29 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/components/RegistryItemForm';
+import { RegistryItem } from '@/types/registry'; // Import RegistryItem type
 
 // Basic placeholder component for the Add Item page
 export default function AddRegistryItemPage() {
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // Use null for initial state
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
-      const isAdmin = await checkAdminClient();
-      setIsAdmin(isAdmin);
-      if (!isAdmin) {
+      const adminStatus = await checkAdminClient();
+      setIsAdmin(adminStatus);
+      if (!adminStatus) {
         router.push('/admin/login');
       }
     }
     checkAuth();
   }, [router]);
 
-  const handleAdd = async (values: any) => {
+  const handleAdd = async (values: Partial<RegistryItem>) => { // Use Partial<RegistryItem> type
     setIsSubmitting(true);
     try {
       const response = await fetch('/api/registry/add-item', {
-        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
       });
