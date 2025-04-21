@@ -1,7 +1,7 @@
 ---
 name: Bug Report
 about: Create a report to help us improve
-title: "[BUG] "
+title: '[Bug] Brief description of the bug'
 labels: bug
 assignees: ''
 
@@ -21,14 +21,15 @@ Steps to reproduce the behavior:
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**Screenshots**
+**Screenshots (Optional)**
 If applicable, add screenshots to help explain your problem.
 
-**Environment (please complete the following information):**
+**Context (please complete the following information):**
 
-- OS: [e.g. Windows 11, macOS Sonoma]
-- Browser [e.g. Chrome, Firefox, Safari]
+- Device: [e.g. Desktop, Mobile]
+- OS: [e.g. Windows, macOS, iOS, Android]
+- Browser [e.g. Chrome, Safari]
 - Version [e.g. 22]
 
-**Additional context**
+**Additional context (Optional)**
 Add any other context about the problem here.
