@@ -19,7 +19,7 @@ const techStack = [
   { name: 'React Three Fiber, Drei', type: '3D Stuff' }, // That One Heart Animation
   { name: 'Fuse.js', type: 'Search Thingy' }, // Client-Side Fuzzy Search
   { name: 'Node.js API Routes', type: 'Backend-ish' }, // Serverless Functions, Basically
-  { name: 'Prisma & SQLite', type: 'Data Layer' }, // Used to be JSON, Now Fancy
+  { name: 'Prisma & PostgreSQL (Neon)', type: 'Data Layer' }, // Used to be JSON, Now Fancy & Serverless
 ];
 
 const sectionVariants = {
@@ -99,7 +99,7 @@ const ProjectInfo = () => {
             <li><strong>Landing Page:</strong> Standard wedding stuff, plus a heart that spins. Fancy.</li>
             <li><strong>Registry Page:</strong> Click buttons, maybe buy us stuff. Search and filter if you&apos;re picky. Admin area for us to fix your mistakes.</li>
             <li><strong>API Endpoints:</strong> Some server-side code that talks to the database. Includes a web scraper that barely works.</li>
-            <li><strong>Data Layer:</strong> Started with JSON, got ambitious, now it&apos;s Prisma and SQLite. Probably overkill.</li>
+            <li><strong>Data Layer:</strong> Started with JSON, got ambitious, now it&apos;s Prisma and PostgreSQL (hosted on Neon). Probably overkill.</li>
             <li><strong>Styling:</strong> Tailwind CSS, because writing actual CSS is hard.</li>
             <li><strong>Open Source:</strong> Yeah, it&apos;s MIT licensed. Go nuts. Structure is... present.</li>
           </ul>
