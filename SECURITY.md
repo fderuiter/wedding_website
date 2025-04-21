@@ -1,29 +1,29 @@
-# Security Policy
+# Security Policy (Such As It Is)
 
 ## Supported Versions
 
-This project is a web application. Security updates are applied to the latest deployed version on the main branch. We do not maintain separate version branches with long-term support.
+Look, this is a wedding website, not Fort Knox. We patch the live version when we notice something's broken or, you know, *really* insecure. We're not exactly rolling out LTS branches here.
 
-| Version          | Supported          |
-| ---------------- | ------------------ |
-| Latest Deployed  | :white_check_mark: |
-| Previous Versions| :x:                |
+| Version          | Supported          | Notes                                      |
+| ---------------- | ------------------ | ------------------------------------------ |
+| Latest Deployed  | :white_check_mark: | The one that's actually running. Hopefully. |
+| Previous Versions| :x:                | They're history. Like that questionable Jell-O mold Aunt Carol brought. |
 
 ## Reporting a Vulnerability
 
-We take security seriously. If you discover a security vulnerability within this project, please report it to us privately. We appreciate your efforts to disclose the issue responsibly.
+Found a gaping security hole? First off, thanks for not plastering it all over Twitter or creating a dramatic GitHub issue – my inbox is scary enough already. We genuinely appreciate you trying to tell us quietly.
 
-**How to Report:**
+**How to Report (The Right Way):**
 
-*   Please email the details of the vulnerability to `[fpderuiter@gmail.com]`. **Do not create a public GitHub issue.**
-*   Include a clear description of the vulnerability, steps to reproduce it, and any potential impact you foresee.
-*   If possible, include screenshots or code snippets that help illustrate the issue.
+* Please email the gory details to `[fpderuiter@gmail.com]`. **Seriously, no public GitHub issues.** We're trying to keep the panic contained.
+* Tell us what's busted, how *we* can break it ourselves (steps to reproduce are gold), and how bad you think the damage could be.
+* Screenshots or code snippets? Nice touch, if you're feeling fancy.
 
-**What to Expect:**
+**What Happens Next (Probably):**
 
-*   We aim to acknowledge receipt of your report within 48 hours.
-*   We will investigate the report and determine its validity and severity.
-*   You can expect an update on the status (e.g., accepted, declined, fix in progress) within 7 business days.
-*   We will coordinate with you on public disclosure once a fix is available, if applicable.
+* We'll *try* to email you back within 48 hours just to say "Got it!". Don't panic if it takes a bit longer, weddings are distracting.
+* Then we'll poke at it, see if it's a real problem or just, you know, a "feature". We'll figure out how much caffeine is required to fix it.
+* You should hear back within about 7 business days with an update like "Yep, that's bad," "Nah, that's just Tuesday," or "Fix incoming!".
+* If we actually fix it, we'll coordinate with you before bragging... I mean, *disclosing* it publicly, if that's even necessary.
 
-We thank you for helping keep the wedding website secure!
+Thanks for helping keep this digital monument to matrimony slightly less vulnerable! We owe you one (maybe a slice of virtual cake?).
