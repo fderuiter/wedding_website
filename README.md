@@ -8,7 +8,7 @@ Honestly, I started this because [theknot.com](https://theknot.com) felt kinda l
 
 I ended up just vibe-coding my way through this and built a whole registry system instead, which turned out pretty slick. It even has a web scraper to help add items quickly from other sites.
 
-**Tech Journey:** Started with storing registry data in a simple JSON file, but eventually migrated to using Prisma with a SQLite database for a more robust setup. Even left in a registry file there before I added the registry to my gitignore. Enjoy the claimed costco energy drink item test.
+**Tech Journey:** Started with storing registry data in a simple JSON file, then migrated to using Prisma with a SQLite database for local development. For deployment on Vercel, the database was migrated again to PostgreSQL, hosted on [Neon](https://neon.tech/), to leverage their serverless capabilities. The old SQLite migration script and database file might still be lurking in the repo, remnants of a bygone era. Enjoy the claimed costco energy drink item test data that might still be in the history somewhere.
 
 **Known Scraper Quirks:**
 
@@ -40,25 +40,41 @@ I ended up just vibe-coding my way through this and built a whole registry syste
     ```
 
 3. **Set up Environment Variables:**
-    * Create a file named `.env` in the root of the project (`/Users/fred/Documents/GitHub/wedding_website/.env`).
-    * Add the admin password to this file:
+    * Create a file named `.env` (or `.env.development.local` for local overrides) in the root of the project.
+    * Add the necessary environment variables:
 
         ```env
+        # Required for Admin Login
         ADMIN_PASSWORD=your_super_secret_password
+
+        # Required for Prisma (PostgreSQL connection) - Get these from Neon or your provider
+        POSTGRES_PRISMA_URL="postgresql://..." # Connection pooler URL
+        POSTGRES_URL_NON_POOLING="postgresql://..." # Direct connection URL (for migrations)
+
+        # Optional: Set Node environment (defaults to development if not set)
+        # NODE_ENV=development
         ```
 
-    * Replace `your_super_secret_password` with the actual password you want to use for the admin login.
-    * **Important:** This `.env` file is already included in the `.gitignore` so your password won't be accidentally committed.
+    * Replace placeholders with your actual admin password and database connection strings.
+    * **Important:** The `.env*` files are included in `.gitignore` so your secrets won't be accidentally committed.
 
 4. Set up the database:
     * Ensure Prisma CLI is available (it should be installed with `npm install`).
-    * Run migrations to create the database schema:
+    * **For local development:** Run migrations to create/update the database schema against your local or development PostgreSQL instance defined in `.env.development.local`:
 
         ```bash
-        npx prisma migrate dev --name init
+        npm run migrate:dev
         ```
 
-        *(Note: If the database and initial migration already exist, you might skip this or use `prisma db push` depending on the state)*
+        *(This uses `prisma migrate dev`)*
+
+    * **For deployment environments (like Vercel):** Apply migrations using the deployment connection string (usually handled by the build process or deployment platform settings, referencing environment variables):
+
+        ```bash
+        npm run migrate:deploy
+        ```
+
+        *(This uses `prisma migrate deploy`)*
 
 ### Running the Development Server
 
@@ -83,7 +99,7 @@ This will start the Next.js development server (likely on `http://localhost:3000
 * **Framework:** Next.js (React)
 * **Styling:** Tailwind CSS / PostCSS
 * **Database ORM:** Prisma
-* **Database:** SQLite (for development/simplicity)
+* **Database:** PostgreSQL (hosted on [Neon](https://neon.tech/) for deployment)
 * **Language:** TypeScript
 * **Testing:** Jest, React Testing Library
 
@@ -97,4 +113,4 @@ If anyone out there want to help out, made this public. Some things I'd like to 
 
 ## Next steps
 
-Deployed! Right now it's live at: <https://wedding-website-rho-six.vercel.app>. I had to migrate the db to posgres, and use neon, so that added extra packages. Anywho, also has to fix some wonky issues with the routes. Not really sure if the registry system works anymore... Anywho, maybe I'll fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? Maybe put this on my linkedIn? Just kidding, I don't want to be unemployed...
+Deployed! Right now it's live at: <https://wedding-website-rho-six.vercel.app>. Migrated the db to PostgreSQL using Neon, which added the `@neondatabase/serverless` package and required updating Prisma configuration and connection strings. Fixed some wonky issues with the routes during deployment. Need to verify the registry system thoroughly post-migration. Maybe I'll fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? Maybe put this on my linkedIn? Just kidding, I don't want to be unemployed...
