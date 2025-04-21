@@ -103,14 +103,25 @@ This will start the Next.js development server (likely on `http://localhost:3000
 * **Language:** TypeScript
 * **Testing:** Jest, React Testing Library
 
+## Contributing (Yes, Please!)
+
+Found a bug? Have a brilliant idea? Just want to tinker? Contributions are welcome!
+
+I've set up some guidelines and templates to make things easier:
+
+* **How to Contribute:** Check out the [**CONTRIBUTING.md**](.github/CONTRIBUTING.md) file for the full rundown on the workflow (forking, branching, PRs, etc.) and code style.
+* **Reporting Issues:** Please use the [**Issue Templates**](https://github.com/fderuiter/wedding_website/issues/new/choose) on GitHub for:
+  * Bug Reports
+  * Feature Requests
+  * Documentation Improvements
+* **Pull Requests:** When submitting code changes, the [**Pull Request Template**](.github/pull_request_template.md) will guide you on providing the necessary details.
+
+Basically, check `CONTRIBUTING.md` first, then use the templates when creating issues or PRs. Let's make this thing slightly less buggy together!
+
 ## Note about tests
 
 I got a whole bunch of tests in here which I was making as I was going through for a false sense of security in code reliablilty, however making sure they pass as I was going through kinda fell by the wayside. So they're still in here, but they probably shouldn't be. So if they don't pass know that it's not you... It's me.
 
-## and another thing
-
-If anyone out there want to help out, made this public. Some things I'd like to do is smooth out the animation at the start. I'll probably need to add real content here and maybe a nice looking photo album. I don't really know how this whole github thing is supposed to work, but I'm pretty sure there are some ways to collaborate. Any help would be greatly appreciative. For example I tried to add one of those add to calendar buttons. Pretty sure I installed a package to do that and had that on the main page... But I digress... I'm probably using too many packages anyways, heck there are like a thousand packages as part of this project (shout out to those competent devs out there, you're the real MVP).
-
 ## Next steps
 
-Deployed! Right now it's live at: <https://wedding-website-rho-six.vercel.app>. Migrated the db to PostgreSQL using Neon, which added the `@neondatabase/serverless` package and required updating Prisma configuration and connection strings. Fixed some wonky issues with the routes during deployment. Need to verify the registry system thoroughly post-migration. Maybe I'll fix up all the tests for fun. General bug fixes. Maybe adding a bug template in GitHub? Maybe put this on my linkedIn? Just kidding, I don't want to be unemployed...
+Deployed! Right now it's live at: <https://wedding-website-rho-six.vercel.app>. Migrated the db to PostgreSQL using Neon, which added the `@neondatabase/serverless` package and required updating Prisma configuration and connection strings. Fixed some wonky issues with the routes during deployment. Set up issue templates and contribution guidelines. Need to verify the registry system thoroughly post-migration. Maybe I'll fix up all the tests for fun. General bug fixes. Maybe put this on my linkedIn? Just kidding, I don't want to be unemployed...
