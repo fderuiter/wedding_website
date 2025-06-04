@@ -1,21 +1,16 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LoginPage from './page';
 
-// Mock next/navigation useRouter
 const push = jest.fn();
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push })
 }));
 
 describe('Admin Login Page', () => {
-  const OLD_ENV = process.env;
   beforeEach(() => {
-    jest.resetModules();
-    process.env = { ...OLD_ENV, NEXT_PUBLIC_ADMIN_PASSWORD: 'testpass' };
-  });
-  afterAll(() => {
-    process.env = OLD_ENV;
+    jest.resetAllMocks();
   });
 
   it('renders the login form', () => {
@@ -25,26 +20,19 @@ describe('Admin Login Page', () => {
     expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument();
   });
 
-  it('shows error if password is incorrect', () => {
+  it('shows error if password is incorrect', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'Invalid password.' }) });
     render(<LoginPage />);
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
-    expect(screen.getByText(/incorrect password/i)).toBeInTheDocument();
+    expect(await screen.findByText(/invalid password\./i)).toBeInTheDocument();
   });
 
-  it('redirects on correct password', () => {
-    process.env.NEXT_PUBLIC_ADMIN_PASSWORD = 'testpass';
-    const setItemSpy = jest.spyOn(window.localStorage.__proto__, 'setItem');
+  it('redirects on correct password', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
     render(<LoginPage />);
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'testpass' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
-    expect(setItemSpy).toHaveBeenCalledWith('isAdminLoggedIn', 'true');
-    expect(push).toHaveBeenCalledWith('/registry/add-item');
-  });
-
-  it('shows warning if env variable is missing', () => {
-    process.env.NEXT_PUBLIC_ADMIN_PASSWORD = '';
-    render(<LoginPage />);
-    expect(screen.getByText(/admin password environment variable/i)).toBeInTheDocument();
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/admin/dashboard'));
   });
 });
