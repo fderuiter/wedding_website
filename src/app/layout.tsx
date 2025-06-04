@@ -24,29 +24,31 @@ export default function RootLayout({
   const router = useRouter(); // Initialize router
 
   useEffect(() => {
-    // Check login status on initial mount and whenever localStorage might change
-    const checkLoginStatus = () => {
-      const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-      setIsAdmin(loggedIn);
+    // Check login status using server cookie on mount
+    const checkLoginStatus = async () => {
+      try {
+        const res = await fetch('/api/admin/me');
+        if (!res.ok) {
+          setIsAdmin(false);
+          return;
+        }
+        const data = await res.json();
+        setIsAdmin(!!data.isAdmin);
+      } catch {
+        setIsAdmin(false);
+      }
     };
 
     checkLoginStatus();
-
-    // Optional: Listen for storage changes if login/logout might happen in other tabs
-    window.addEventListener('storage', checkLoginStatus);
-
-    return () => {
-      window.removeEventListener('storage', checkLoginStatus);
-    };
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('isAdminLoggedIn');
-    setIsAdmin(false);
-    // Redirect to home or login page after logout
-    router.push('/');
-    // Optionally force a reload to ensure all components re-evaluate admin status
-    // window.location.reload();
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/logout', { method: 'POST' });
+    } finally {
+      setIsAdmin(false);
+      router.push('/');
+    }
   };
 
   useEffect(() => {

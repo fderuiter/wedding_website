@@ -32,8 +32,11 @@ export default function RegistryPage() {
   });
 
   useEffect(() => {
-    const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-    setIsAdmin(loggedIn);
+    async function checkAdmin() {
+      const adminStatus = await checkAdminClient();
+      setIsAdmin(adminStatus);
+    }
+    checkAdmin();
   }, []);
 
   // Optimistic mutation for contribution/claim

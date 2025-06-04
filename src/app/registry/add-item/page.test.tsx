@@ -13,31 +13,33 @@ describe('AddRegistryItemPage', () => {
   beforeEach(() => {
     mockPush = jest.fn();
     (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
-    Storage.prototype.getItem = jest.fn((key) => (key === 'isAdminLoggedIn' ? 'true' : null));
     window.alert = jest.fn();
-    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ id: '1' }) })) as jest.Mock;
+    global.fetch = jest.fn();
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders the add item form if admin', () => {
+  it('renders the add item form if admin', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: true }) });
     render(<AddRegistryItemPage />);
-    expect(screen.getByRole('heading', { name: /add new registry item/i })).toBeInTheDocument();
+    await screen.findByRole('heading', { name: /add new registry item/i });
     expect(screen.getByLabelText(/item name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/price/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add item/i })).toBeInTheDocument();
   });
 
-  it('redirects if not admin', () => {
-    Storage.prototype.getItem = jest.fn(() => 'false');
+  it('redirects if not admin', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: false }) });
     render(<AddRegistryItemPage />);
-    expect(screen.getByText(/loading or redirecting/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/login'));
   });
 
-  it('shows alert if price or quantity is invalid', () => {
+  it('shows alert if price or quantity is invalid', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: true }) });
     render(<AddRegistryItemPage />);
+    await screen.findByRole('heading', { name: /add new registry item/i });
     fireEvent.change(screen.getByLabelText(/price/i), { target: { value: 'abc' } });
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: 'xyz' } });
     fireEvent.submit(screen.getByTestId('form'));
@@ -45,7 +47,12 @@ describe('AddRegistryItemPage', () => {
   });
 
   it('submits the form and redirects on success', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: '1' }) });
+
     render(<AddRegistryItemPage />);
+    await screen.findByRole('heading', { name: /add new registry item/i });
     fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'Test Item' } });
     fireEvent.change(screen.getByLabelText(/price/i), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '2' } });
@@ -55,8 +62,11 @@ describe('AddRegistryItemPage', () => {
   });
 
   it('shows alert if API returns error on submit', async () => {
-    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve({ error: 'API error' }) })) as jest.Mock;
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: true }) })
+      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: 'API error' }) });
     render(<AddRegistryItemPage />);
+    await screen.findByRole('heading', { name: /add new registry item/i });
     fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'Test Item' } });
     fireEvent.change(screen.getByLabelText(/price/i), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: '2' } });
@@ -64,8 +74,10 @@ describe('AddRegistryItemPage', () => {
     await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Failed to add item:')));
   });
 
-  it('handles group gift checkbox', () => {
+  it('handles group gift checkbox', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: true }) });
     render(<AddRegistryItemPage />);
+    await screen.findByRole('heading', { name: /add new registry item/i });
     const checkbox = screen.getByLabelText(/allow group gifting/i);
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
