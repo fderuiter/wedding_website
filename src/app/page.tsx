@@ -93,9 +93,9 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         <motion.section id="story" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={0}>
           <h2 className="text-center text-4xl font-bold text-rose-700">Our Story</h2>
-          <p className="text-lg leading-relaxed">It all began with a swipe right on a cool September evening in 2021. Abbi was drawn to Fred&apos;s adventurous spirit (and maybe his cute dog), while Fred was captivated by Abbi&apos;s warm smile and shared love for bad puns. Our first date involved mini-golf (Fred won, barely) and ended with hours of conversation that felt like minutes.</p>
-          <p className="text-lg leading-relaxed">Since then, we&apos;ve built a life filled with laughter, shared dreams, and countless adventures. From exploring national parks to cozy nights in binge-watching our favorite shows, we&apos;ve collected plane tickets, concert stubs, and a growing library of inside jokes. We&apos;ve supported each other through thick and thin, celebrated milestones big and small, and learned that home isn&apos;t just a place, but a feeling we find in each other.</p>
-          <p className="text-lg leading-relaxed">On a snowy January 10th, 2024, Fred recreated our very first walk together along the Zumbro River. Under the twinkling winter lights, he got down on one knee and asked Abbi to be his forever adventure partner. Through happy tears, she said yes! Now, we&apos;re eagerly counting down the days until we say &quot;I do&quot; surrounded by the people we love most.</p>
+          <p className="text-lg leading-relaxed">It all began with a swipe right on a cool evening in 2024. Abbi was drawn to Fred&apos;s adventurous spirit, while Fred was captivated by Abbi&apos;s warm smile and shared love for hotdogs. Our first date involved Fred plugging the laser loon and ended with hours of conversation that felt like minutes.</p>
+          <p className="text-lg leading-relaxed">Since then, we&apos;ve built a life filled with laughter, shared dreams, and countless adventures. From exploring parks to cozy nights in binge-watching our favorite shows, we&apos;ve collected countless miles on the odometer, concert stubs, a few wolves tickets, and a growing library of inside jokes. We&apos;ve supported each other through thick and thin, celebrated milestones such as Abbi's DNP graduation, and learned that home isn&apos;t just a place, but a feeling we find in each other.</p>
+          <p className="text-lg leading-relaxed">As we all were saying goodbye to 2024 and bringing in 2025, Fred recreated our very first date together in downtown Minneaplis. While the ball had just dropped, Fred asked Abbi to be his forever adventure partner, starting the new year right. Through happy tears, she said yes! Now, we&apos;re eagerly counting down the days until we say &quot;I do&quot; surrounded by the people we love most.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -107,7 +107,7 @@ export default function HomePage() {
             <div className="rounded-2xl border border-rose-100 bg-white p-8 shadow-lg transition-transform hover:scale-[1.02]">
               <h3 className="mb-4 text-2xl font-semibold text-black">Ceremony</h3>
               <ul className="space-y-2 text-black">
-                <li>3:00 PM – Garden Terrace</li>
+                <li>TBD</li>
                 <li>Plummer House · 1091 Plummer Ln SW</li>
                 <li>Rochester, Minnesota</li>
               </ul>
@@ -116,7 +116,7 @@ export default function HomePage() {
             <div className="rounded-2xl border border-amber-200 bg-white p-8 shadow-lg transition-transform hover:scale-[1.02]">
               <h3 className="mb-4 text-2xl font-semibold text-black">Reception</h3>
               <ul className="space-y-2 text-black">
-                <li>5:00 PM – 10:00 PM · Great Hall</li>
+                <li>TBD</li>
                 <li>Cocktails on the veranda followed by dinner & dancing</li>
                 <li>Attire: Garden formal</li>
               </ul>
@@ -132,7 +132,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
           <h2 className="text-4xl font-bold text-rose-700">Where to Sleep (If You Must)</h2>
-          <p className="mx-auto max-w-xl text-lg">Look, Rochester has hotels. Probably. We vaguely recall booking a block somewhere, maybe the Hilton? Mention our names, perhaps they&apos;ll give you a discount, perhaps they&apos;ll charge you extra. It&apos;s a gamble. Your favorite hotel booking site likely knows more than we do. Good luck.</p>
+          <p className="mx-auto max-w-xl text-lg">Look, Rochester has hotels. If we get a block everyone ends up paying more in the end and stays at a worse hotel. If you want something nice, stay at the Hilton downtown or the Broadway Plaza. If you want something more affordable, look for motels. Mention our names, perhaps they&apos;ll give you a discount, perhaps they&apos;ll charge you extra. It&apos;s a gamble. Your favorite hotel booking site likely knows more than we do. Good luck.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
