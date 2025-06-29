@@ -132,15 +132,15 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
           <h2 className="text-4xl font-bold text-rose-700">Where to Sleep (If You Must)</h2>
-          <p className="mx-auto max-w-xl text-lg">Look, Rochester has hotels. If we get a block everyone ends up paying more in the end and stays at a worse hotel. If you want something nice, stay at the Hilton downtown or the Broadway Plaza. If you want something more affordable, look for motels. Mention our names, perhaps they&apos;ll give you a discount, perhaps they&apos;ll charge you extra. It&apos;s a gamble. Your favorite hotel booking site likely knows more than we do. Good luck.</p>
+          <p className="mx-auto max-w-xl text-lg">Rochester offers plenty of places to stay. We opted not to reserve a block so you can choose what fits your style and budget. The Hilton downtown or the Broadway Plaza are lovely if you want something nice, while motels can be more wallet-friendly. Feel free to mention our names at check-in; maybe they&#39;ll give you a deal! Your favorite booking site will have the best options.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
         {/* Travel                                                       */}
         {/* -------------------------------------------------------------- */}
         <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
-          <h2 className="text-4xl font-bold text-rose-700">Getting Here (The Ordeal)</h2>
-          <p className="mx-auto max-w-xl text-lg">Fly into RST if you enjoy quaint, small airports. Fly into MSP if you enjoy driving for 90 minutes after your flight. There&apos;s parking at the venue, allegedly. We assume you know how to use Google Maps. Don&apos;t call us for directions; we&apos;ll be busy.</p>
+          <h2 className="text-4xl font-bold text-rose-700">Getting Here</h2>
+          <p className="mx-auto max-w-xl text-lg">Fly into RST for a quick trip to Rochester or MSP if you don&rsquo;t mind a longer drive. There&rsquo;s parking at the venue, and your favorite map app will guide you right in.</p>
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -155,7 +155,7 @@ export default function HomePage() {
             </div>
             <div>
               <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
-              <p>We love your kids! Just kidding. Please leave them at home. Consider this a date night mixed with a grad party. Graduating from our single lives that is.</p>
+              <p>We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.</p>
             </div>
             <div>
               <h3 className="font-semibold text-lg">Is there parking available?</h3>
