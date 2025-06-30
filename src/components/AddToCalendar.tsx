@@ -1,5 +1,7 @@
 'use client'
 
+import 'add-to-calendar-button/assets/css/atcb.css'
+
 import dynamic from 'next/dynamic'
 import React from 'react'
 
