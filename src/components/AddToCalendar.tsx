@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import React from 'react'
+import '../../node_modules/add-to-calendar-button/assets/css/atcb.css'
 
 const AddToCalendarButton = dynamic(
   () => import('add-to-calendar-button-react').then((m) => m.AddToCalendarButton),
