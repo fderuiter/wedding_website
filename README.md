@@ -122,6 +122,13 @@ Basically, check `CONTRIBUTING.md` first, then use the templates when creating i
 
 I got a whole bunch of tests in here which I was making as I was going through for a false sense of security in code reliablilty, however making sure they pass as I was going through kinda fell by the wayside. So they're still in here, but they probably shouldn't be. So if they don't pass know that it's not you... It's me.
 
+To run the tests you need to install the project dependencies first:
+
+```bash
+npm install
+npm test
+```
+
 ## Next steps
 
 Deployed! Right now it's live at: <https://wedding-website-rho-six.vercel.app>. Migrated the db to PostgreSQL using Neon, which added the `@neondatabase/serverless` package and required updating Prisma configuration and connection strings. Fixed some wonky issues with the routes during deployment. Set up issue templates and contribution guidelines. Need to verify the registry system thoroughly post-migration. Maybe I'll fix up all the tests for fun. General bug fixes. Maybe put this on my linkedIn? Just kidding, I don't want to be unemployed...
