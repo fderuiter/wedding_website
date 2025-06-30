@@ -2,6 +2,7 @@
 
 import { Geist } from "next/font/google";
 import "./globals.css";
+import "../styles/add-to-calendar.css";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter for navigation
 import LoadingScreen from '@/components/LoadingScreen';
@@ -87,3 +88,4 @@ export default function RootLayout({
     </html>
   );
 }
+
