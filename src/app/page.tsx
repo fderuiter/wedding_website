@@ -7,22 +7,15 @@ import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import LoadingScreen from '@/components/LoadingScreen'
+import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
-const AddToCalendarButtonClient = dynamic(() => import('add-to-calendar-button-react').then((m) => m.AddToCalendarButton), { ssr: false })
 
 /* -------------------------------------------------------------------------- */
 /*                                  Palette                                   */
 /* -------------------------------------------------------------------------- */
 // Elegant neutrals + rose accent
-const COLORS = {
-  text: '#374151', // gray‑700
-  heading: '#be123c', // rose‑700
-  accentFrom: '#be123c', // rose‑700
-  accentTo: '#f59e0b', // amber‑500
-  bg: '#fffdfc',
-}
 
 /* -------------------------------------------------------------------------- */
 /*                                  JSON‑LD                                   */
@@ -51,6 +44,17 @@ const jsonLd = {
   organizer: { '@type': 'Person', name: 'Frederick de', url: '*   https://github.com/fderuiter/wedding_website' },
 }
 
+const calendarEvent: CalendarEvent = {
+  name: jsonLd.name,
+  startDate: '2025-10-10',
+  startTime: '16:00',
+  endDate: '2025-10-10',
+  endTime: '22:00',
+  timeZone: 'America/Chicago',
+  location: 'Plummer House, 1091 Plummer Ln SW, Rochester, MN',
+  description: jsonLd.description,
+}
+
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
 /* -------------------------------------------------------------------------- */
@@ -63,7 +67,7 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* Global wrapper provides consistent background */}
-      <div className="min-h-screen bg-[${COLORS.bg}] text-[${COLORS.text}] selection:bg-rose-100 selection:text-rose-900">
+      <div className="min-h-screen bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900">
         {/* -------------------------------------------------------------- */}
         {/* Hero                                                          */}
         {/* -------------------------------------------------------------- */}
@@ -85,6 +89,7 @@ export default function HomePage() {
             <a href="/registry" className="inline-block rounded-full border border-rose-600 px-8 py-3 font-medium text-rose-700 transition-colors hover:bg-rose-50">
               Registry
             </a>
+            <AddToCalendar event={calendarEvent} />
           </motion.div>
         </section>
 
@@ -123,7 +128,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="mt-14 flex justify-center">
-            <AddToCalendarButtonClient name={jsonLd.name} startDate="2025-10-10" startTime="16:00" endDate="2025-10-10" endTime="22:00" timeZone="America/Chicago" location="Plummer House, 1091 Plummer Ln SW, Rochester, MN" description={jsonLd.description} options={['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']} buttonStyle="round" label="Add to Calendar" size="2" inline customCss={`:root{--btn-background:linear-gradient(135deg,${COLORS.accentFrom},${COLORS.accentTo});--btn-text:#fff}`} />
+            <AddToCalendar event={calendarEvent} />
           </div>
         </motion.section>
 
@@ -179,6 +184,7 @@ export default function HomePage() {
         <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500">
           <p>© {new Date().getFullYear()} Abbigayle & Frederick • Designed with ❤️ in Minnesota</p>
           <a href="/project-info" className="text-rose-600 hover:underline">About this site</a>
+          <AddToCalendar event={calendarEvent} />
         </footer>
       </div>
     </>
