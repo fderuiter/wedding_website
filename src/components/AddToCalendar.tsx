@@ -46,7 +46,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         location={event.location}
         description={event.description}
         options={['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']}
-        buttonStyle="round"
+        buttonStyle="default"
         styleLight={style}
         label="Add to Calendar"
         size="2"
