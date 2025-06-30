@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter for navigation
 import LoadingScreen from '@/components/LoadingScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import Head from 'next/head';
+import React from 'react';
 
 const geist = Geist({
   variable: "--font-geist",
@@ -62,6 +64,9 @@ export default function RootLayout({
 
   return (
     <html lang="en" className={geist.variable}>
+      <Head>
+        <link rel="icon" href="/assets/favicon.png" type="image/png" />
+      </Head>
       {/* Apply base theme colors directly to body */}
       <body className={`${geist.variable} bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900`}>
         <QueryClientProvider client={queryClient}>
