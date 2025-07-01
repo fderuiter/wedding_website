@@ -100,7 +100,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
     // Updated backdrop
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={modalRef}>
       {/* Updated modal background and text color, removed dark mode */}
-      <div className="bg-white rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-[#374151]">
+      <div className="bg-white rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-[var(--color-foreground)]">
         {/* Close Button - Adjusted color */}
         <button
           className="absolute top-3 right-3 text-gray-500 hover:text-rose-600 text-2xl font-bold"
@@ -167,7 +167,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               type="text"
               placeholder="Your Name"
               // Updated input styles
-              className="border border-gray-300 p-2 rounded w-full mb-3 focus:ring-2 focus:ring-rose-400 outline-none bg-white text-[#374151]"
+              className="border border-gray-300 p-2 rounded w-full mb-3 focus:ring-2 focus:ring-rose-400 outline-none bg-white text-[var(--color-foreground)]"
               value={contributorName}
               onChange={(e) => setContributorName(e.target.value)}
               disabled={isSubmitting}
@@ -177,7 +177,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 type="number"
                 placeholder={`Contribution Amount (up to $${remainingAmount.toFixed(2)})`}
                 // Updated input styles
-                className="border border-gray-300 p-2 rounded w-full mb-3 focus:ring-2 focus:ring-rose-400 outline-none bg-white text-[#374151]"
+                className="border border-gray-300 p-2 rounded w-full mb-3 focus:ring-2 focus:ring-rose-400 outline-none bg-white text-[var(--color-foreground)]"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min="0.01"

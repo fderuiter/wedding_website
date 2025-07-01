@@ -182,7 +182,7 @@ export default function RegistryPage() {
 
   return (
     // Updated background to match main page
-    <div className="min-h-screen bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900 pb-32 px-2 sm:px-4">
+    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 pb-32 px-2 sm:px-4">
       <motion.h1
         // Updated heading color to rose-700
         className="text-5xl font-extrabold text-center mb-12 pt-12 text-rose-700 tracking-tight drop-shadow-lg"

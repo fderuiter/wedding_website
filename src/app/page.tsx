@@ -67,7 +67,7 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* Global wrapper provides consistent background */}
-      <div className="min-h-screen bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900">
+      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900">
         {/* -------------------------------------------------------------- */}
         {/* Hero                                                          */}
         {/* -------------------------------------------------------------- */}

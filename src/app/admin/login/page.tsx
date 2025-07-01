@@ -33,7 +33,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fffdfc] px-2">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)] px-2">
       <form onSubmit={handleLogin} className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-rose-100">
         <h1 className="text-3xl font-extrabold text-center text-rose-700 mb-2 tracking-tight">Admin Login</h1>
         {error && <p className="text-red-500 text-sm text-center -mt-2">{error}</p>}

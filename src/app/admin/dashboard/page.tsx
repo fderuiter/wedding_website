@@ -32,14 +32,14 @@ export default function AdminDashboardPage() {
 
   if (loading) return (
     // Updated background
-    <main className="min-h-screen flex items-center justify-center bg-[#fffdfc]">
+    <main className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)]">
       <h1 className="text-3xl font-bold mb-4 text-rose-700">Admin Dashboard</h1>
       <p className="text-lg text-gray-500">Loading items...</p>
     </main>
   );
   if (error) return (
     // Updated background
-    <main className="min-h-screen flex items-center justify-center bg-[#fffdfc]">
+    <main className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)]">
       <h1 className="text-3xl font-bold mb-4 text-rose-700">Admin Dashboard</h1>
       <p className="text-red-500 text-lg">Error: {error}</p>
     </main>
@@ -47,7 +47,7 @@ export default function AdminDashboardPage() {
 
   return (
     // Updated background, removed dark mode
-    <main className="min-h-screen bg-[#fffdfc] py-10 px-2 sm:px-6">
+    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-2 sm:px-6">
       <div className="max-w-5xl mx-auto">
         {/* Updated heading color */}
         <h1 className="text-4xl font-extrabold mb-8 text-center text-rose-700 tracking-tight drop-shadow-lg">Admin Dashboard</h1>

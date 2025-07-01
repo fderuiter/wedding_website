@@ -15,6 +15,21 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1a1a1a;
+    --foreground: #e5e5e5;
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-primary: #f43f5e; /* rose-500 */
+    --color-secondary: #fbbf24; /* amber-400 */
+    --color-accent-from: #f43f5e;
+    --color-accent-to: #fbbf24;
+    --color-text-on-primary: #fff;
+    --color-text-on-secondary: #1a1a1a;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

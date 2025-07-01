@@ -16,7 +16,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   // Updated card styling, removed dark mode, updated focus ring
-  const cardClasses = `border border-rose-100 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition relative bg-white text-[#374151] focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''}`;
+  const cardClasses = `border border-rose-100 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition relative bg-white text-[var(--color-foreground)] focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''}`;
   const isClickable = !isClaimed && !isAdmin;
 
   const handleEditClick = (e: React.MouseEvent) => {
