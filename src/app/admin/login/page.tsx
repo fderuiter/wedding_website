@@ -38,7 +38,7 @@ export default function LoginPage() {
         <h1 className="text-3xl font-extrabold text-center text-rose-700 mb-2 tracking-tight">Admin Login</h1>
         {error && <p className="text-red-500 text-sm text-center -mt-2">{error}</p>}
         <div className="flex flex-col gap-2">
-          <label htmlFor="password" className="block text-gray-700 font-semibold">Password</label>
+          <label htmlFor="password" className="block text-gray-700 dark:text-gray-300 font-semibold">Password</label>
           <input
             type="password"
             id="password"

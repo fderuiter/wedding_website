@@ -69,9 +69,9 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         {/* Updated heading color */}
         <h3 className="text-2xl font-extrabold truncate text-rose-700" title={item.name}>{item.name}</h3>
         {/* Updated text color */}
-        <p className="text-base text-gray-600 mb-1 font-medium">{item.category}</p>
+        <p className="text-base text-gray-600 dark:text-gray-300 mb-1 font-medium">{item.category}</p>
         {/* Updated price color */}
-        <p className="mt-1 text-lg text-gray-800 font-bold">$ {item.price.toFixed(2)}</p>
+        <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">$ {item.price.toFixed(2)}</p>
         {item.isGroupGift && !isClaimed && (
           // Updated group gift text color
           <p className="text-base text-amber-700 mt-1 font-semibold">

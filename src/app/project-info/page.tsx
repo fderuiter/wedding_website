@@ -39,7 +39,7 @@ const ProjectInfo = () => {
         variants={sectionVariants}
       >
         <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-rose-700 to-amber-500 text-transparent bg-clip-text">About This Thing I Built</h1>
-        <p className="text-lg text-gray-700 mb-6">
+        <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
           Behold! A website. For a wedding. That also doubles as a desperate plea for someone to hire me based on this single, slightly overcooked project. It has a landing page, a registry that actually works (mostly), and code you can borrow if you promise not to look too closely.
         </p>
         <a
@@ -66,7 +66,7 @@ const ProjectInfo = () => {
           <h2 className="text-2xl font-bold mb-6 text-rose-700 tracking-tight">&quot;Features&quot; (Allegedly)</h2>
           <ul className="space-y-4 w-full">
             {features.map(f => (
-              <li key={f.label} className="flex items-center text-lg text-gray-700">
+              <li key={f.label} className="flex items-center text-lg text-gray-700 dark:text-gray-300">
                 <span className="mr-3 text-2xl">{f.icon}</span> {f.label}
               </li>
             ))}
@@ -76,8 +76,8 @@ const ProjectInfo = () => {
           <h2 className="text-2xl font-bold mb-6 text-amber-600 tracking-tight">Tech I Used (And Sometimes Regretted)</h2>
           <ul className="space-y-4 w-full">
             {techStack.map(t => (
-              <li key={t.name} className="flex items-center text-lg text-gray-700">
-                <span className="font-semibold text-gray-800 w-40 inline-block">{t.type}:</span> {t.name}
+              <li key={t.name} className="flex items-center text-lg text-gray-700 dark:text-gray-300">
+                <span className="font-semibold text-gray-800 dark:text-gray-200 w-40 inline-block">{t.type}:</span> {t.name}
               </li>
             ))}
           </ul>
@@ -95,7 +95,7 @@ const ProjectInfo = () => {
       >
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-4 text-rose-700 tracking-tight">How It&apos;s Cobbled Together</h2>
-          <ul className="list-disc pl-6 text-gray-700 space-y-2">
+          <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li><strong>Landing Page:</strong> Standard wedding stuff, plus a heart that spins. Fancy.</li>
             <li><strong>Registry Page:</strong> Click buttons, maybe buy us stuff. Search and filter if you&apos;re picky. Admin area for us to fix your mistakes.</li>
             <li><strong>API Endpoints:</strong> Some server-side code that talks to the database. Includes a web scraper that barely works.</li>
@@ -110,7 +110,7 @@ const ProjectInfo = () => {
       <div className="max-w-4xl mx-auto mt-12 px-4 grid md:grid-cols-2 gap-8">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-rose-700">Making It Go Live (Good Luck)</h2>
-          <ul className="list-disc pl-6 text-gray-700 space-y-2">
+          <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li>Deploy easily to <a href='https://vercel.com/' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
             <li>Run <code>npm install</code> and <code>npm run dev</code> to start locally.</li>
             <li>Configure environment variables via <code>.env.example</code>.</li>
@@ -119,7 +119,7 @@ const ProjectInfo = () => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-amber-600">&quot;Contributing&quot; (Why?)</h2>
-          <ul className="list-disc pl-6 text-gray-700 space-y-2">
+          <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li>It&apos;s open source. Feel free to point and laugh on GitHub.</li>
             <li>See <a href='https://github.com/fderuiter/wedding_website' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>CONTRIBUTING.md</a> for guidelines.</li>
             <li>If you find a bug, maybe fix it? Or just open an issue and complain.</li>
