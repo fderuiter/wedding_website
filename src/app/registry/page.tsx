@@ -269,7 +269,7 @@ export default function RegistryPage() {
                 aria-label="Close modal"
                 tabIndex={0}
               >
-                <span aria-hidden="true" className="text-2xl text-gray-600">×</span>
+                <span aria-hidden="true" className="text-2xl text-gray-600 dark:text-gray-300">×</span>
               </button>
             </div>
             <Modal

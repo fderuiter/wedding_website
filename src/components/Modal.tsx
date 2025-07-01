@@ -127,7 +127,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         </div>
         {/* Item Details - Updated colors */}
         <h2 className="text-2xl font-bold mb-2 text-rose-700">{item.name}</h2>
-        <p className="text-gray-700 mb-3">{item.description}</p>
+        <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
         <p className="text-lg font-semibold mb-1 text-amber-700">
           Price: ${item.price.toFixed(2)}
         </p>
@@ -137,7 +137,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               Group Gift - ${item.amountContributed.toFixed(2)} contributed so far.
             </p>
             {!isFullyFunded && (
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 ${remainingAmount.toFixed(2)} still needed.
               </p>
             )}
@@ -204,13 +204,13 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
             </p>
             {item.purchaserName && !item.isGroupGift && (
-                <p className="text-sm text-gray-600">Claimed by: {item.purchaserName}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Claimed by: {item.purchaserName}</p>
             )}
             {item.isGroupGift && item.contributors.length > 0 && (
                 <>
                     <div className="mt-2 mb-2">
-                      <h4 className="font-semibold text-sm text-gray-700">Contributors:</h4>
-                      <ul className="list-disc list-inside text-xs text-gray-600">
+                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Contributors:</h4>
+                      <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400">
                         {item.contributors.map((c, idx) => (
                           <li key={idx}>
                             <span className="font-medium">{c.name}</span> {c.amount ? `($${c.amount.toFixed(2)})` : ''}

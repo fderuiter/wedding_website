@@ -71,12 +71,12 @@ export default function AdminDashboardPage() {
               <tbody className="divide-y divide-rose-100">
                 {items.map((item) => (
                   <tr key={item.id} className="hover:bg-rose-50/50 transition">
-                    <td className="px-4 py-3 font-semibold text-gray-800">{item.name}</td>
-                    <td className="px-4 py-3 text-gray-700">${item.price.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-gray-700">{item.purchased ? "Yes" : "No"}</td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{item.name}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">${item.price.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{item.purchased ? "Yes" : "No"}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       {item.contributors && item.contributors.length > 0 ? (
-                        <ul className="text-xs space-y-1">
+                        <ul className="text-xs space-y-1 text-gray-700 dark:text-gray-300">
                           {item.contributors.map((c, idx) => (
                             <li key={idx}>
                               {c.name} - ${c.amount.toFixed(2)} on {new Date(c.date).toLocaleDateString()}
@@ -127,17 +127,17 @@ export default function AdminDashboardPage() {
               <div className="flex justify-between items-center mb-2">
                 {/* Updated item name color */}
                 <span className="font-bold text-lg text-rose-700">{item.name}</span>
-                <span className="text-sm font-semibold text-gray-700">${item.price.toFixed(2)}</span>
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">${item.price.toFixed(2)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-xs mb-1">
                 <span className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.purchased ? 'Claimed' : 'Available'}</span>
               </div>
               <div className="mb-2">
-                <span className="font-semibold text-gray-800">Contributions:</span>
+                <span className="font-semibold text-gray-800 dark:text-gray-100">Contributions:</span>
                 {item.contributors && item.contributors.length > 0 ? (
                   <ul className="ml-2 mt-1 space-y-1">
                     {item.contributors.map((c, idx) => (
-                      <li key={idx} className="text-xs text-gray-700">
+                      <li key={idx} className="text-xs text-gray-700 dark:text-gray-300">
                         {c.name} - ${c.amount.toFixed(2)} on {new Date(c.date).toLocaleDateString()}
                       </li>
                     ))}

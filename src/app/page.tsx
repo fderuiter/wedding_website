@@ -109,18 +109,18 @@ export default function HomePage() {
         <motion.section className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1}>
           <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
             {/* Ceremony */}
-            <div className="rounded-2xl border border-rose-100 bg-white p-8 shadow-lg transition-transform hover:scale-[1.02]">
-              <h3 className="mb-4 text-2xl font-semibold text-black">Ceremony</h3>
-              <ul className="space-y-2 text-black">
+            <div className="rounded-2xl border border-rose-100 dark:border-rose-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
+              <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Ceremony</h3>
+              <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                 <li>4:00&nbsp;pm</li>
                 <li>Plummer House · 1091 Plummer Ln SW</li>
                 <li>Rochester, Minnesota</li>
               </ul>
             </div>
             {/* Reception */}
-            <div className="rounded-2xl border border-amber-200 bg-white p-8 shadow-lg transition-transform hover:scale-[1.02]">
-              <h3 className="mb-4 text-2xl font-semibold text-black">Reception</h3>
-              <ul className="space-y-2 text-black">
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
+              <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Reception</h3>
+              <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                 <li>Buffet dinner begins at 5:30&nbsp;pm</li>
                 <li>Cocktails with music if weather permits</li>
                 <li>Attire: Garden formal</li>

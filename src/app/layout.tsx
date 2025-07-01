@@ -76,7 +76,7 @@ export default function RootLayout({
           {loading && <LoadingScreen />}
           {/* Admin Indicator and Logout Button - Restyled */}
           {isAdmin && (
-            <div className="bg-gray-100 text-gray-700 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200">
+            <div className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700">
               <span>Admin Mode Active</span>
               <button
                 onClick={handleLogout}

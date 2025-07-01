@@ -37,6 +37,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
     '--btn-border-radius:9999px;' +
     '--btn-shadow:rgba(0,0,0,0.1) 0 4px 10px -2px;' +
     '--btn-hover-shadow:rgba(0,0,0,0.2) 0 5px 12px -2px;'
+  const styleDark = style
 
   useEffect(() => {
     const hiddenEls = document.querySelectorAll(
@@ -64,6 +65,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         options={['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']}
         buttonStyle="default"
         styleLight={style}
+        styleDark={styleDark}
         label="Add to Calendar"
       />
     </div>
