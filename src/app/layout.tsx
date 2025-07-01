@@ -65,6 +65,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={geist.variable}>
       <Head>
+        <title>Abbigayle &amp; Frederick&apos;s Wedding</title>
         <link rel="icon" href="/assets/favicon.png" type="image/png" />
       </Head>
       {/* Apply base theme colors directly to body */}
@@ -86,9 +87,9 @@ export default function RootLayout({
             </div>
           )}
           {/* Add padding top if admin bar is visible */}
-          <div className={isAdmin ? 'pt-10' : ''}>
+          <main id="main-content" className={isAdmin ? 'pt-10' : ''}>
             {children}
-          </div>
+          </main>
         </QueryClientProvider>
       </body>
     </html>
