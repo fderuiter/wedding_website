@@ -86,7 +86,7 @@ export default function HomePage() {
               Our Story
               <ChevronDown className="h-5 w-5 transition-transform group-hover:translate-y-1" />
             </a>
-            <a href="/registry" className="inline-block rounded-full border border-rose-600 px-8 py-3 font-medium text-rose-700 transition-colors hover:bg-rose-50">
+            <a href="/registry" className="inline-block rounded-full border border-rose-600 dark:border-rose-400 px-8 py-3 font-medium text-rose-700 dark:text-rose-400 transition-colors hover:bg-rose-50 dark:hover:bg-gray-800">
               Registry
             </a>
             <AddToCalendar event={calendarEvent} />
@@ -181,9 +181,9 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         {/* Footer                                                       */}
         {/* -------------------------------------------------------------- */}
-        <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500">
+        <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">
           <p>© {new Date().getFullYear()} Abbigayle & Frederick • Designed with ❤️ in Minnesota</p>
-          <a href="/project-info" className="text-rose-600 hover:underline">About this site</a>
+          <a href="/project-info" className="text-rose-600 dark:text-rose-400 hover:underline">About this site</a>
           <AddToCalendar event={calendarEvent} />
         </footer>
       </div>

@@ -103,7 +103,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
         {/* Close Button - Adjusted color */}
         <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-rose-600 text-2xl font-bold"
+          className="absolute top-3 right-3 text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 text-2xl font-bold"
           onClick={onClose}
           aria-label="Close modal"
           ref={firstFocusableRef}
@@ -150,7 +150,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             target="_blank"
             rel="noopener noreferrer"
             // Updated link color
-            className="inline-block text-rose-600 hover:text-rose-800 underline mb-4 text-sm"
+            className="inline-block text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 underline mb-4 text-sm"
           >
             View on Vendor Site
           </a>

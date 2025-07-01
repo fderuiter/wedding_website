@@ -111,24 +111,24 @@ const ProjectInfo = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-rose-700">Making It Go Live (Good Luck)</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
-            <li>Deploy easily to <a href='https://vercel.com/' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
+            <li>Deploy easily to <a href='https://vercel.com/' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
             <li>Run <code>npm install</code> and <code>npm run dev</code> to start locally.</li>
             <li>Configure environment variables via <code>.env.example</code>.</li>
-            <li>See <a href='https://github.com/fderuiter/wedding_website#readme' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>README</a> for full setup instructions.</li>
+            <li>See <a href='https://github.com/fderuiter/wedding_website#readme' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>README</a> for full setup instructions.</li>
           </ul>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-amber-600">&quot;Contributing&quot; (Why?)</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
             <li>It&apos;s open source. Feel free to point and laugh on GitHub.</li>
-            <li>See <a href='https://github.com/fderuiter/wedding_website' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>CONTRIBUTING.md</a> for guidelines.</li>
+            <li>See <a href='https://github.com/fderuiter/wedding_website' className='underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300' target='_blank' rel='noopener noreferrer'>CONTRIBUTING.md</a> for guidelines.</li>
             <li>If you find a bug, maybe fix it? Or just open an issue and complain.</li>
           </ul>
         </div>
       </div>
 
-      <div className="text-center text-gray-500 mt-16 text-sm">
-        Made with <span className="text-rose-500">♥</span> &bull; Open Source on <a className="underline text-rose-600 hover:text-rose-800" href="https://github.com/fderuiter/wedding_website" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <div className="text-center text-gray-500 dark:text-gray-400 mt-16 text-sm">
+        Made with <span className="text-rose-500">♥</span> &bull; Open Source on <a className="underline text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300" href="https://github.com/fderuiter/wedding_website" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
     </div>
   );

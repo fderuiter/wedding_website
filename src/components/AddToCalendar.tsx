@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import React from 'react'
+import React, { useEffect } from 'react'
 
 const AddToCalendarButton = dynamic(
   () => import('add-to-calendar-button-react').then((m) => m.AddToCalendarButton),
@@ -37,6 +37,18 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
     '--btn-border-radius:9999px;' +
     '--btn-shadow:rgba(0,0,0,0.1) 0 4px 10px -2px;' +
     '--btn-hover-shadow:rgba(0,0,0,0.2) 0 5px 12px -2px;'
+
+  useEffect(() => {
+    const hiddenEls = document.querySelectorAll(
+      'div[data-aria-hidden="true"][aria-hidden="true"]'
+    )
+    hiddenEls.forEach(el => {
+      const element = el as HTMLElement
+      element.setAttribute('tabindex', '-1')
+      element.querySelectorAll<HTMLElement>('button, a, input, select, textarea')
+        .forEach(focusable => focusable.setAttribute('tabindex', '-1'))
+    })
+  }, [])
 
   return (
     <div className={className}>
