@@ -32,14 +32,14 @@ export default function AdminDashboardPage() {
 
   if (loading) return (
     // Updated background
-    <main className="min-h-screen flex items-center justify-center bg-[#fffdfc]">
+    <main className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)]">
       <h1 className="text-3xl font-bold mb-4 text-rose-700">Admin Dashboard</h1>
       <p className="text-lg text-gray-500">Loading items...</p>
     </main>
   );
   if (error) return (
     // Updated background
-    <main className="min-h-screen flex items-center justify-center bg-[#fffdfc]">
+    <main className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)]">
       <h1 className="text-3xl font-bold mb-4 text-rose-700">Admin Dashboard</h1>
       <p className="text-red-500 text-lg">Error: {error}</p>
     </main>
@@ -47,14 +47,14 @@ export default function AdminDashboardPage() {
 
   return (
     // Updated background, removed dark mode
-    <main className="min-h-screen bg-[#fffdfc] py-10 px-2 sm:px-6">
+    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-2 sm:px-6">
       <div className="max-w-5xl mx-auto">
         {/* Updated heading color */}
         <h1 className="text-4xl font-extrabold mb-8 text-center text-rose-700 tracking-tight drop-shadow-lg">Admin Dashboard</h1>
         {/* Responsive Table for Desktop, Cards for Mobile */}
         <div className="hidden md:block">
           {/* Updated table container styles */}
-          <div className="overflow-x-auto rounded-xl shadow-lg bg-white border border-rose-100">
+          <div className="overflow-x-auto rounded-xl shadow-lg bg-white dark:bg-gray-800 border border-rose-100 dark:border-gray-700">
             {/* Updated table styles */}
             <table className="min-w-full divide-y divide-rose-100">
               {/* Updated table header styles */}
@@ -123,7 +123,7 @@ export default function AdminDashboardPage() {
         <div className="md:hidden space-y-6">
           {items.map((item) => (
             // Updated card styles
-            <div key={item.id} className="rounded-xl shadow-lg bg-white p-4 flex flex-col gap-2 border border-rose-100">
+            <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-rose-100 dark:border-gray-700">
               <div className="flex justify-between items-center mb-2">
                 {/* Updated item name color */}
                 <span className="font-bold text-lg text-rose-700">{item.name}</span>

@@ -68,7 +68,9 @@ export default function RootLayout({
         <link rel="icon" href="/assets/favicon.png" type="image/png" />
       </Head>
       {/* Apply base theme colors directly to body */}
-      <body className={`${geist.variable} bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900`}>
+      <body
+        className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800`}
+      >
         <QueryClientProvider client={queryClient}>
           {loading && <LoadingScreen />}
           {/* Admin Indicator and Logout Button - Restyled */}
