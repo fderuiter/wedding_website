@@ -122,12 +122,10 @@ Basically, check `CONTRIBUTING.md` first, then use the templates when creating i
 
 I got a whole bunch of tests in here which I was making as I was going through for a false sense of security in code reliablilty, however making sure they pass as I was going through kinda fell by the wayside. So they're still in here, but they probably shouldn't be. So if they don't pass know that it's not you... It's me.
 
-To run the tests you need to install the project dependencies first:
-
-```bash
-npm install
-npm test
-```
+Running `npm test` will trigger a small pre-test script that installs
+dependencies if `node_modules` is missing and then builds the project
+before running Jest. You can still run `npm install` yourself if you
+prefer, but it's no longer required.
 
 ## Next steps
 

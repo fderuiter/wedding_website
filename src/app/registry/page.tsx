@@ -182,7 +182,7 @@ export default function RegistryPage() {
 
   return (
     // Updated background to match main page
-    <div className="min-h-screen bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900 pb-32 px-2 sm:px-4">
+    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 pb-32 px-2 sm:px-4">
       <motion.h1
         // Updated heading color to rose-700
         className="text-5xl font-extrabold text-center mb-12 pt-12 text-rose-700 tracking-tight drop-shadow-lg"
@@ -197,7 +197,7 @@ export default function RegistryPage() {
       {/* Enhanced Filter Bar - Updated styles */}
       <nav
         // Updated background, border, removed dark mode
-        className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-rose-100 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+        className="sticky top-0 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-rose-100 dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
         aria-label="Registry Filters"
         role="navigation"
       >
@@ -265,7 +265,7 @@ export default function RegistryPage() {
               <button
                 onClick={handleCloseModal}
                 // Updated close button style
-                className="bg-white rounded-full p-2 shadow-lg border border-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                className="bg-white dark:bg-gray-800 rounded-full p-2 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-400"
                 aria-label="Close modal"
                 tabIndex={0}
               >

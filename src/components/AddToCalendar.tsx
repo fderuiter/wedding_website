@@ -26,10 +26,14 @@ interface AddToCalendarProps {
 
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const style =
-    '--btn-background:linear-gradient(to right,#be123c,#f59e0b);' +
-    '--btn-hover-background:linear-gradient(to right,#f59e0b,#be123c);' +
-    '--btn-text:#fff;' +
-    '--btn-hover-text:#fff;' +
+    '--font:var(--font-sans);' +
+    '--btn-background:linear-gradient(to right,var(--color-accent-from),var(--color-accent-to));' +
+    '--btn-hover-background:linear-gradient(to right,var(--color-accent-to),var(--color-accent-from));' +
+    '--btn-text:var(--color-text-on-primary);' +
+    '--btn-hover-text:var(--color-text-on-primary);' +
+    '--btn-font-weight:600;' +
+    '--btn-padding-x:2rem;' +
+    '--btn-padding-y:0.75rem;' +
     '--btn-border-radius:9999px;' +
     '--btn-shadow:rgba(0,0,0,0.1) 0 4px 10px -2px;' +
     '--btn-hover-shadow:rgba(0,0,0,0.2) 0 5px 12px -2px;'
@@ -49,7 +53,6 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         buttonStyle="default"
         styleLight={style}
         label="Add to Calendar"
-        size="2"
       />
     </div>
   )
