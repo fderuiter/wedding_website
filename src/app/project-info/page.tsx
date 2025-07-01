@@ -29,7 +29,7 @@ const sectionVariants = {
 
 const ProjectInfo = () => {
   return (
-    <div className="min-h-screen bg-[#fffdfc] text-[#374151] selection:bg-rose-100 selection:text-rose-900 pb-24">
+    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 pb-24">
       {/* Hero Section */}
       <motion.div
         className="max-w-3xl mx-auto text-center py-20 px-4"
@@ -62,7 +62,7 @@ const ProjectInfo = () => {
         variants={sectionVariants}
         custom={1}
       >
-        <div className="bg-white rounded-2xl shadow-xl p-10 flex flex-col items-center border border-rose-100">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 flex flex-col items-center border border-rose-100 dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-6 text-rose-700 tracking-tight">&quot;Features&quot; (Allegedly)</h2>
           <ul className="space-y-4 w-full">
             {features.map(f => (
@@ -72,7 +72,7 @@ const ProjectInfo = () => {
             ))}
           </ul>
         </div>
-        <div className="bg-white rounded-2xl shadow-xl p-10 flex flex-col items-center border border-amber-100">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 flex flex-col items-center border border-amber-100 dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-6 text-amber-600 tracking-tight">Tech I Used (And Sometimes Regretted)</h2>
           <ul className="space-y-4 w-full">
             {techStack.map(t => (
@@ -93,7 +93,7 @@ const ProjectInfo = () => {
         variants={sectionVariants}
         custom={2}
       >
-        <div className="bg-white rounded-2xl shadow-xl p-10 border border-gray-200">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-4 text-rose-700 tracking-tight">How It&apos;s Cobbled Together</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
             <li><strong>Landing Page:</strong> Standard wedding stuff, plus a heart that spins. Fancy.</li>
@@ -108,7 +108,7 @@ const ProjectInfo = () => {
 
       {/* Deployment & Contribution */}
       <div className="max-w-4xl mx-auto mt-12 px-4 grid md:grid-cols-2 gap-8">
-        <div className="bg-white rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-rose-700">Making It Go Live (Good Luck)</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
             <li>Deploy easily to <a href='https://vercel.com/' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
@@ -117,7 +117,7 @@ const ProjectInfo = () => {
             <li>See <a href='https://github.com/fderuiter/wedding_website#readme' className='underline text-rose-600 hover:text-rose-800' target='_blank' rel='noopener noreferrer'>README</a> for full setup instructions.</li>
           </ul>
         </div>
-        <div className="bg-white rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-amber-600">&quot;Contributing&quot; (Why?)</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-2">
             <li>It&apos;s open source. Feel free to point and laugh on GitHub.</li>

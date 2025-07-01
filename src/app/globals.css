@@ -15,6 +15,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #111827; /* gray-900 */
+    --foreground: #f9fafb; /* gray-50 */
+    --color-primary: #f43f5e; /* rose-500 for better contrast */
+    --color-secondary: #fbbf24; /* amber-400 */
+    --color-accent-from: #f43f5e;
+    --color-accent-to: #fbbf24;
+    --color-text-on-primary: #ffffff;
+    --color-text-on-secondary: #1f2937; /* gray-800 */
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -25,6 +38,11 @@ input, textarea, select {
   color: var(--color-foreground);
   background: var(--color-background);
   border-color: #e5e7eb; /* gray-200 for default borders */
+}
+@media (prefers-color-scheme: dark) {
+  input, textarea, select {
+    border-color: #4b5563; /* gray-600 */
+  }
 }
 input:focus, textarea:focus, select:focus {
   border-color: var(--color-primary); /* rose-700 */
