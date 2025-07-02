@@ -6,12 +6,14 @@ import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
-import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
+import { AnimatedHeart } from '@/components/AnimatedHeart'
 import Link from 'next/link'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
-const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
+const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), {
+  loading: () => <p>Loading love…</p>,
+})
 
 /* -------------------------------------------------------------------------- */
 /*                                  Palette                                   */
@@ -187,6 +189,7 @@ export default function HomePage() {
         {/* Footer                                                       */}
         {/* -------------------------------------------------------------- */}
         <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">
+          <AnimatedHeart />
           <p>© {new Date().getFullYear()} Abbigayle & Frederick • Designed with ❤️ in Minnesota</p>
           <a href="/project-info" className="text-rose-600 dark:text-rose-400 hover:underline">About this site</a>
           <Link
