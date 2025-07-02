@@ -1,7 +1,7 @@
 'use client'
 
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Environment, Html, Float, Text } from '@react-three/drei'
+import { Environment, Html, Float, Text, PresentationControls } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import React, { Suspense, useMemo, useRef } from 'react'
@@ -110,7 +110,13 @@ export default function HeartPage() {
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
         <Suspense fallback={<Html>Loading…</Html>}>
           <Environment preset="sunset" />
-          <SpinningHeart />
+          <PresentationControls
+            global={false}
+            rotation={[0, 0, 0]}
+            polar={[-Math.PI / 2, Math.PI / 2]}
+          >
+            <SpinningHeart />
+          </PresentationControls>
           <EffectComposer>
             <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
           </EffectComposer>
