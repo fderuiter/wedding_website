@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
@@ -60,15 +60,19 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
 
 /* -------------------------------------------------------------------------- */
 export default function HomePage() {
-  const [showIntro, setShowIntro] = useState(true)
-  if (showIntro) return <WeddingIntro onFinish={() => setShowIntro(false)} />
+  const [showIntro, setShowIntro] = useState(false)
+  useEffect(() => {
+    setShowIntro(true)
+  }, [])
 
   return (
     <>
+      {showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* Global wrapper provides consistent background */}
-      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800">
+      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${showIntro ? 'hidden' : ''}`}
+      >
         {/* -------------------------------------------------------------- */}
         {/* Hero                                                          */}
         {/* -------------------------------------------------------------- */}
