@@ -1,0 +1,10 @@
+.atcb-button {
+  background: linear-gradient(to right, var(--color-accent-to), var(--color-accent-from));
+  color: var(--btn-text);
+  border: none;
+}
+.atcb-button:not([disabled]):hover,
+.atcb-button:not([disabled]):focus-visible {
+  background: linear-gradient(to right, var(--color-accent-from), var(--color-accent-to));
+  color: var(--btn-hover-text);
+}
