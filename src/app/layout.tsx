@@ -67,6 +67,39 @@ export default function RootLayout({
       <Head>
         <title>Abbigayle &amp; Frederick&apos;s Wedding</title>
         <link rel="icon" href="/assets/favicon.png" type="image/png" />
+        <meta
+          name="description"
+          content="A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens."
+        />
+        <meta property="og:type" content="website" />
+        <meta
+          property="og:title"
+          content="Abbigayle & Frederick's Wedding"
+        />
+        <meta
+          property="og:description"
+          content="A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens."
+        />
+        <meta
+          property="og:image"
+          content="https://abbifred.com/assets/favicon.png"
+        />
+        <meta property="og:url" content="https://abbifred.com/" />
+        <meta
+          property="og:site_name"
+          content="Abbigayle & Frederick's Wedding"
+        />
+        <meta name="twitter:card" content="summary" />
+        <meta
+          name="twitter:title"
+          content="Abbigayle & Frederick's Wedding"
+        />
+        <meta
+          name="twitter:description"
+          content="A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens."
+        />
+        <meta name="twitter:image" content="https://abbifred.com/assets/favicon.png" />
+        <link rel="canonical" href="https://abbifred.com/" />
       </Head>
       {/* Apply base theme colors directly to body */}
       <body
