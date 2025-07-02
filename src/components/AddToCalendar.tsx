@@ -27,8 +27,8 @@ interface AddToCalendarProps {
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const style =
     '--font:var(--font-sans);' +
-    '--btn-background:linear-gradient(to right,var(--color-accent-from),var(--color-accent-to));' +
-    '--btn-hover-background:linear-gradient(to right,var(--color-accent-to),var(--color-accent-from));' +
+    '--btn-background:linear-gradient(to right,var(--color-accent-to),var(--color-accent-from));' +
+    '--btn-hover-background:linear-gradient(to right,var(--color-accent-from),var(--color-accent-to));' +
     '--btn-text:var(--color-text-on-primary);' +
     '--btn-hover-text:var(--color-text-on-primary);' +
     '--btn-font-weight:600;' +
@@ -37,7 +37,6 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
     '--btn-border-radius:9999px;' +
     '--btn-shadow:rgba(0,0,0,0.1) 0 4px 10px -2px;' +
     '--btn-hover-shadow:rgba(0,0,0,0.2) 0 5px 12px -2px;'
-  const styleDark = style
 
   useEffect(() => {
     const hiddenEls = document.querySelectorAll(
@@ -65,7 +64,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         options={['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']}
         buttonStyle="default"
         styleLight={style}
-        styleDark={styleDark}
+        styleDark={style}
         label="Add to Calendar"
       />
     </div>
