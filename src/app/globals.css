@@ -2,31 +2,18 @@
 @import "../../node_modules/add-to-calendar-button/assets/css/atcb.css";
 
 :root {
-  --background: #fffdfc; /* Custom light background from page.tsx */
-  --foreground: #374151; /* gray-700 */
+  --background: #111827; /* gray-900 */
+  --foreground: #f9fafb; /* gray-50 */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-primary: #be123c; /* rose-700 */
-  --color-secondary: #f59e0b; /* amber-500 */
-  --color-accent-from: #be123c; /* rose-700 */
-  --color-accent-to: #f59e0b; /* amber-500 */
-  --color-text-on-primary: #fff;
-  --color-text-on-secondary: #fff; /* Assuming secondary is amber, white text is okay */
+  --color-primary: #f43f5e; /* rose-500 for better contrast */
+  --color-secondary: #fbbf24; /* amber-400 */
+  --color-accent-from: #f43f5e;
+  --color-accent-to: #fbbf24;
+  --color-text-on-primary: #ffffff;
+  --color-text-on-secondary: #1f2937; /* gray-800 */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #111827; /* gray-900 */
-    --foreground: #f9fafb; /* gray-50 */
-    --color-primary: #f43f5e; /* rose-500 for better contrast */
-    --color-secondary: #fbbf24; /* amber-400 */
-    --color-accent-from: #f43f5e;
-    --color-accent-to: #fbbf24;
-    --color-text-on-primary: #ffffff;
-    --color-text-on-secondary: #1f2937; /* gray-800 */
-  }
 }
 
 body {
@@ -38,12 +25,7 @@ body {
 input, textarea, select {
   color: var(--color-foreground);
   background: var(--color-background);
-  border-color: #e5e7eb; /* gray-200 for default borders */
-}
-@media (prefers-color-scheme: dark) {
-  input, textarea, select {
-    border-color: #4b5563; /* gray-600 */
-  }
+  border-color: #4b5563; /* gray-600 */
 }
 input:focus, textarea:focus, select:focus {
   border-color: var(--color-primary); /* rose-700 */
