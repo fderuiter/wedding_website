@@ -27,8 +27,8 @@ interface AddToCalendarProps {
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const baseStyle =
     '--font:var(--font-sans);' +
-    '--btn-background:linear-gradient(to right,var(--color-accent-from),var(--color-accent-to));' +
-    '--btn-hover-background:linear-gradient(to right,var(--color-accent-to),var(--color-accent-from));' +
+    '--btn-background:linear-gradient(to right,var(--color-accent-to),var(--color-accent-from));' +
+    '--btn-hover-background:linear-gradient(to right,var(--color-accent-from),var(--color-accent-to));' +
     '--btn-font-weight:600;' +
     '--btn-padding-x:2rem;' +
     '--btn-padding-y:0.75rem;' +

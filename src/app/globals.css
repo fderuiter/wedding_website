@@ -65,8 +65,8 @@ input:focus, textarea:focus, select:focus {
 }
 add-to-calendar-button {
   --font: var(--font-sans);
-  --btn-background: linear-gradient(to right, var(--color-accent-from), var(--color-accent-to));
-  --btn-hover-background: linear-gradient(to right, var(--color-accent-to), var(--color-accent-from));
+  --btn-background: linear-gradient(to right, var(--color-accent-to), var(--color-accent-from));
+  --btn-hover-background: linear-gradient(to right, var(--color-accent-from), var(--color-accent-to));
   --btn-text: var(--color-text-on-primary);
   --btn-hover-text: var(--color-text-on-primary);
   --btn-font-weight: 600;
