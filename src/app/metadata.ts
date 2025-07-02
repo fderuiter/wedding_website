@@ -9,16 +9,16 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    url: 'https://wedding-website-rho-six.vercel.app/',
+    url: 'https://abbifred.com/',
     title: "Abbigayle & Frederick's Wedding",
     description: 'A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens.',
-    images: ['https://wedding-website-rho-six.vercel.app/assets/favicon.png'],
+    images: ['https://abbifred.com/assets/favicon.png'],
   },
   twitter: {
     card: 'summary',
     title: "Abbigayle & Frederick's Wedding",
     description: 'A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens.',
-    images: ['https://wedding-website-rho-six.vercel.app/assets/favicon.png'],
+    images: ['https://abbifred.com/assets/favicon.png'],
   },
-  metadataBase: new URL('https://wedding-website-rho-six.vercel.app'),
+  metadataBase: new URL('https://abbifred.com'),
 };

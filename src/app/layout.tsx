@@ -82,12 +82,9 @@ export default function RootLayout({
         />
         <meta
           property="og:image"
-          content="https://wedding-website-rho-six.vercel.app/assets/favicon.png"
+          content="https://abbifred.com/assets/favicon.png"
         />
-        <meta
-          property="og:url"
-          content="https://wedding-website-rho-six.vercel.app/"
-        />
+        <meta property="og:url" content="https://abbifred.com/" />
         <meta
           property="og:site_name"
           content="Abbigayle & Frederick's Wedding"
@@ -101,14 +98,8 @@ export default function RootLayout({
           name="twitter:description"
           content="A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens."
         />
-        <meta
-          name="twitter:image"
-          content="https://wedding-website-rho-six.vercel.app/assets/favicon.png"
-        />
-        <link
-          rel="canonical"
-          href="https://wedding-website-rho-six.vercel.app/"
-        />
+        <meta name="twitter:image" content="https://abbifred.com/assets/favicon.png" />
+        <link rel="canonical" href="https://abbifred.com/" />
       </Head>
       {/* Apply base theme colors directly to body */}
       <body
