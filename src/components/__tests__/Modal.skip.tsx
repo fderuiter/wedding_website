@@ -210,7 +210,7 @@ describe('Modal Component', () => {
     // Simulate the error event
     fireEvent.error(img);
     // Check if the src is updated to the placeholder
-    expect(img).toHaveAttribute('src', '/images/sunset-embrace.jpg');
+    expect(img).toHaveAttribute('src', '/images/placeholder.png');
   });
 
 });

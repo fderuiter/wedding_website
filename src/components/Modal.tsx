@@ -113,15 +113,15 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         {/* Item Image - Use next/image */}
         <div className="relative w-full h-64 mb-4"> {/* Wrapper for layout="fill" */}
           <Image
-            src={item.image || '/images/sunset-embrace.jpg'}
+            src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing  
             alt={item.name}
             className="object-cover rounded bg-gray-100" // Removed size classes
             layout="fill" // Use fill layout
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               target.onerror = null; // Prevent infinite loop
-              target.srcset = '/images/sunset-embrace.jpg'; // Use srcset for next/image
-              target.src = '/images/sunset-embrace.jpg'; // Fallback src
+              target.srcset = '/images/placeholder.png'; // Use srcset for next/image
+              target.src = '/images/placeholder.png'; // Fallback src
             }}
           />
         </div>

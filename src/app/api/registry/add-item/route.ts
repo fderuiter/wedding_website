@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       description: newItemData.description || '',
       category: newItemData.category || 'Uncategorized',
       price: Number(newItemData.price),
-      image: newItemData.image || '/images/sunset-embrace.jpg',
+      image: newItemData.image || '/images/placeholder.png', // Default placeholder image
       vendorUrl: newItemData.vendorUrl || null,
       quantity: Number(newItemData.quantity),
       isGroupGift: newItemData.isGroupGift || false,

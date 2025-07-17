@@ -51,7 +51,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       {/* Display a placeholder if image path is invalid or missing */}
       <div className="relative w-full h-56"> {/* Added a wrapper for layout */}
         <Image
-          src={item.image || '/images/sunset-embrace.jpg'}
+          src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing
           alt={item.name}
           // Updated placeholder background
           className="object-cover bg-gray-100 rounded-t-2xl" // Removed w-full, h-56
@@ -60,8 +60,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.onerror = null; // Prevent infinite loop if placeholder also fails
-            target.srcset = '/images/sunset-embrace.jpg'; // Use srcset for next/image
-            target.src = '/images/sunset-embrace.jpg'; // Fallback src
+            target.srcset = '/images/placeholder.png'; // Use srcset for next/image
+            target.src = '/images/placeholder.png'; // Fallback src
           }}
         />
       </div>
