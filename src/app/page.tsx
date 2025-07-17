@@ -9,7 +9,7 @@ import { ChevronDown } from 'lucide-react'
 import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
-import Image from 'next/image'
+import Gallery, { GalleryImage } from '@/components/Gallery'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
@@ -57,6 +57,16 @@ const calendarEvent: CalendarEvent = {
   description: jsonLd.description,
 }
 
+const galleryImages: GalleryImage[] = [
+  { src: '/images/sunset-embrace.jpg', alt: 'Abbi and Fred hug on a lakeside path at sunset, framed by twisting bare branches and a glowing orange sky.' },
+  { src: '/images/jogging-buddies.jpg', alt: 'Sweaty but smiling, Abbi and Fred snap a post-run selfie on a sunny sidewalk beside a brick building.' },
+  { src: '/images/winter-warmth.jpg', alt: 'Bundled in winter layers, Abbi and Fred pose against a brick wall—she in leopard-trimmed coat and hat, he in a dark jacket—both beaming.' },
+  { src: '/images/sunset-kiss.jpg', alt: 'Abbi and Fred share a quiet kiss at sunset beneath leafless tree silhouettes, golden light reflecting off the lake behind them.' },
+  { src: '/images/timberwolves.jpg', alt: 'Abbi and Fred smile from their seats at a packed Timberwolves basketball game, sporting team gear and surrounded by excited fans.' },
+  { src: '/images/twins-wins.jpg', alt: 'Abbi and Fred grin for a selfie with Target\u202fField and a cheering Minnesota Twins crowd spread out behind them.' },
+  { src: '/images/post-graduation-celebration.jpg', alt: 'Dressed up for the evening, Fred in a crisp white shirt hugs Abbi in a black dress as they smile warmly against a simple light backdrop.' },
+]
+
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
 /* -------------------------------------------------------------------------- */
@@ -82,13 +92,7 @@ export default function HomePage() {
           <motion.div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)]" animate={{ scale: [1, 1.04, 1], opacity: [0.7, 0.5, 0.7] }} transition={{ duration: 14, repeat: Infinity, repeatType: 'reverse' }} />
 
           <motion.div className="mb-8" variants={fadeUp} initial="hidden" animate="visible" custom={-1}>
-            <Image
-              src="/images/sunset-embrace.jpg"
-              alt="Abbi and Fred hug on a lakeside path at sunset, framed by twisting bare branches and a glowing orange sky."
-              width={600}
-              height={400}
-              className="mx-auto rounded-lg shadow-lg"
-            />
+            <Gallery images={galleryImages} />
           </motion.div>
 
           <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
@@ -115,21 +119,7 @@ export default function HomePage() {
         <motion.section id="story" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={0}>
           <h2 className="text-center text-4xl font-bold text-rose-700">Our Story</h2>
           <p className="text-lg leading-relaxed">It all began with a swipe right on a cool evening in 2024. Abbi was drawn to Fred&apos;s adventurous spirit, while Fred was captivated by Abbi&apos;s warm smile and shared love for hotdogs. Our first date involved Fred plugging the laser loon and ended with hours of conversation that felt like minutes.</p>
-          <Image
-            src="/images/jogging-buddies.jpg"
-            alt="Sweaty but smiling, Abbi and Fred snap a post-run selfie on a sunny sidewalk beside a brick building."
-            width={600}
-            height={400}
-            className="mx-auto rounded-lg shadow-lg"
-          />
           <p className="text-lg leading-relaxed">Since then, we&apos;ve built a life filled with laughter, shared dreams, and countless adventures. From exploring parks to cozy nights in binge-watching our favorite shows, we&apos;ve collected countless miles on the odometer, concert stubs, a few wolves tickets, and a growing library of inside jokes. We&apos;ve supported each other through thick and thin, celebrated milestones such as Abbi&apos;s DNP graduation, and learned that home isn&apos;t just a place, but a feeling we find in each other.</p>
-          <Image
-            src="/images/winter-warmth.jpg"
-            alt="Bundled in winter layers, Abbi and Fred pose against a brick wall—she in leopard-trimmed coat and hat, he in a dark jacket—both beaming."
-            width={600}
-            height={400}
-            className="mx-auto rounded-lg shadow-lg"
-          />
           <p className="text-lg leading-relaxed">As we all were saying goodbye to 2024 and bringing in 2025, Fred recreated our very first date together in downtown Minneaplis. While the ball had just dropped, Fred asked Abbi to be his forever adventure partner, starting the new year right. Through happy tears, she said yes! Now, we&apos;re eagerly counting down the days until we say &quot;I do&quot; surrounded by the people we love most.</p>
         </motion.section>
 
@@ -160,13 +150,6 @@ export default function HomePage() {
           <div className="mt-14 flex justify-center">
             <AddToCalendar event={calendarEvent} />
           </div>
-          <Image
-            src="/images/sunset-kiss.jpg"
-            alt="Abbi and Fred share a quiet kiss at sunset beneath leafless tree silhouettes, golden light reflecting off the lake behind them."
-            width={600}
-            height={400}
-            className="mx-auto mt-10 rounded-lg shadow-lg"
-          />
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -175,13 +158,6 @@ export default function HomePage() {
         <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
           <h2 className="text-4xl font-bold text-rose-700">Where to Sleep (If You Must)</h2>
           <p className="mx-auto max-w-xl text-lg">Rochester offers plenty of places to stay. We opted not to reserve a block so you can choose what fits your style and budget. The Hilton downtown or the Broadway Plaza are lovely if you want something nice, while motels can be more wallet-friendly. Feel free to mention our names at check-in; maybe they&#39;ll give you a deal! Your favorite booking site will have the best options.</p>
-          <Image
-            src="/images/timberwolves.jpg"
-            alt="Abbi and Fred smile from their seats at a packed Timberwolves basketball game, sporting team gear and surrounded by excited fans."
-            width={600}
-            height={400}
-            className="mx-auto rounded-lg shadow-lg"
-          />
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -190,13 +166,6 @@ export default function HomePage() {
         <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
           <h2 className="text-4xl font-bold text-rose-700">Getting Here</h2>
           <p className="mx-auto max-w-xl text-lg">Fly into RST for a quick trip to Rochester or MSP if you don&rsquo;t mind a longer drive. There&rsquo;s parking at the venue, and your favorite map app will guide you right in.</p>
-          <Image
-            src="/images/twins-wins.jpg"
-            alt="Abbi and Fred grin for a selfie with Target\u202fField and a cheering Minnesota Twins crowd spread out behind them."
-            width={600}
-            height={400}
-            className="mx-auto rounded-lg shadow-lg"
-          />
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
@@ -218,13 +187,6 @@ export default function HomePage() {
               <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
             </div>
           </div>
-          <Image
-            src="/images/post-graduation-celebration.jpg"
-            alt="Dressed up for the evening, Fred in a crisp white shirt hugs Abbi in a black dress as they smile warmly against a simple light backdrop."
-            width={600}
-            height={400}
-            className="mx-auto mt-8 rounded-lg shadow-lg"
-          />
         </motion.section>
 
         {/* -------------------------------------------------------------- */}
