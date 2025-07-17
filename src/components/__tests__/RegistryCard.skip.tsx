@@ -11,7 +11,7 @@ const mockItem: RegistryItem = {
   description: 'A description for the test item.',
   category: 'Test Category',
   price: 99.99,
-  image: '/images/placeholder.jpg',
+  image: '/images/sunset-embrace.jpg',
   vendorUrl: null,
   quantity: 1,
   isGroupGift: false,
@@ -28,7 +28,7 @@ describe('RegistryCard', () => {
     expect(screen.getByText('Test Item')).toBeInTheDocument();
     expect(screen.getByText('Test Category')).toBeInTheDocument();
     expect(screen.getByText('$ 99.99')).toBeInTheDocument(); // Note the space added by the component
-    expect(screen.getByAltText('Test Item')).toHaveAttribute('src', '/images/placeholder.jpg');
+    expect(screen.getByAltText('Test Item')).toHaveAttribute('src', '/images/sunset-embrace.jpg');
   });
 
   it('renders claimed status when purchased', () => {
@@ -87,7 +87,7 @@ describe('RegistryCard', () => {
     // Simulate the error event
     fireEvent.error(img);
     // Check if the src is updated to the placeholder
-    expect(img).toHaveAttribute('src', '/images/placeholder.jpg');
+    expect(img).toHaveAttribute('src', '/images/sunset-embrace.jpg');
   });
 
   // Tests for admin button interactions

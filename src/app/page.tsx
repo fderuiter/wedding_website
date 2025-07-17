@@ -83,8 +83,8 @@ export default function HomePage() {
 
           <motion.div className="mb-8" variants={fadeUp} initial="hidden" animate="visible" custom={-1}>
             <Image
-              src="/images/placeholder1.jpg"
-              alt="Happy couple placeholder"
+              src="/images/sunset-embrace.jpg"
+              alt="Abbi and Fred hug on a lakeside path at sunset, framed by twisting bare branches and a glowing orange sky."
               width={600}
               height={400}
               className="mx-auto rounded-lg shadow-lg"
@@ -116,16 +116,16 @@ export default function HomePage() {
           <h2 className="text-center text-4xl font-bold text-rose-700">Our Story</h2>
           <p className="text-lg leading-relaxed">It all began with a swipe right on a cool evening in 2024. Abbi was drawn to Fred&apos;s adventurous spirit, while Fred was captivated by Abbi&apos;s warm smile and shared love for hotdogs. Our first date involved Fred plugging the laser loon and ended with hours of conversation that felt like minutes.</p>
           <Image
-            src="/images/placeholder2.jpg"
-            alt="Placeholder story image 1"
+            src="/images/jogging-buddies.jpg"
+            alt="Sweaty but smiling, Abbi and Fred snap a post-run selfie on a sunny sidewalk beside a brick building."
             width={600}
             height={400}
             className="mx-auto rounded-lg shadow-lg"
           />
           <p className="text-lg leading-relaxed">Since then, we&apos;ve built a life filled with laughter, shared dreams, and countless adventures. From exploring parks to cozy nights in binge-watching our favorite shows, we&apos;ve collected countless miles on the odometer, concert stubs, a few wolves tickets, and a growing library of inside jokes. We&apos;ve supported each other through thick and thin, celebrated milestones such as Abbi&apos;s DNP graduation, and learned that home isn&apos;t just a place, but a feeling we find in each other.</p>
           <Image
-            src="/images/placeholder3.jpg"
-            alt="Placeholder story image 2"
+            src="/images/winter-warmth.jpg"
+            alt="Bundled in winter layers, Abbi and Fred pose against a brick wall—she in leopard-trimmed coat and hat, he in a dark jacket—both beaming."
             width={600}
             height={400}
             className="mx-auto rounded-lg shadow-lg"
@@ -161,8 +161,8 @@ export default function HomePage() {
             <AddToCalendar event={calendarEvent} />
           </div>
           <Image
-            src="/images/placeholder4.jpg"
-            alt="Placeholder details image"
+            src="/images/sunset-kiss.jpg"
+            alt="Abbi and Fred share a quiet kiss at sunset beneath leafless tree silhouettes, golden light reflecting off the lake behind them."
             width={600}
             height={400}
             className="mx-auto mt-10 rounded-lg shadow-lg"
@@ -176,8 +176,8 @@ export default function HomePage() {
           <h2 className="text-4xl font-bold text-rose-700">Where to Sleep (If You Must)</h2>
           <p className="mx-auto max-w-xl text-lg">Rochester offers plenty of places to stay. We opted not to reserve a block so you can choose what fits your style and budget. The Hilton downtown or the Broadway Plaza are lovely if you want something nice, while motels can be more wallet-friendly. Feel free to mention our names at check-in; maybe they&#39;ll give you a deal! Your favorite booking site will have the best options.</p>
           <Image
-            src="/images/placeholder5.jpg"
-            alt="Placeholder accommodations image"
+            src="/images/timberwolves.jpg"
+            alt="Abbi and Fred smile from their seats at a packed Timberwolves basketball game, sporting team gear and surrounded by excited fans."
             width={600}
             height={400}
             className="mx-auto rounded-lg shadow-lg"
@@ -191,8 +191,8 @@ export default function HomePage() {
           <h2 className="text-4xl font-bold text-rose-700">Getting Here</h2>
           <p className="mx-auto max-w-xl text-lg">Fly into RST for a quick trip to Rochester or MSP if you don&rsquo;t mind a longer drive. There&rsquo;s parking at the venue, and your favorite map app will guide you right in.</p>
           <Image
-            src="/images/placeholder6.jpg"
-            alt="Placeholder travel image"
+            src="/images/twins-wins.jpg"
+            alt="Abbi and Fred grin for a selfie with Target\u202fField and a cheering Minnesota Twins crowd spread out behind them."
             width={600}
             height={400}
             className="mx-auto rounded-lg shadow-lg"
@@ -219,8 +219,8 @@ export default function HomePage() {
             </div>
           </div>
           <Image
-            src="/images/placeholder7.jpg"
-            alt="Placeholder FAQs image"
+            src="/images/post-graduation-celebration.jpg"
+            alt="Dressed up for the evening, Fred in a crisp white shirt hugs Abbi in a black dress as they smile warmly against a simple light backdrop."
             width={600}
             height={400}
             className="mx-auto mt-8 rounded-lg shadow-lg"
