@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../../node_modules/add-to-calendar-button/assets/css/atcb.css";
+@import "../../node_modules/keen-slider/keen-slider.min.css";
 
 :root {
   --background: #111827; /* gray-900 */

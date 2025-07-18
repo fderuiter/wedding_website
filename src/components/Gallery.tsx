@@ -1,7 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useKeenSlider } from 'keen-slider/react';
-import 'keen-slider/keen-slider.min.css';
 
 export interface GalleryImage {
   src: string;
@@ -15,8 +14,10 @@ interface GalleryProps {
 
 const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 3000 }) => {
   const timer = useRef<NodeJS.Timeout | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({
     loop: true,
+    created: () => setLoaded(true),
   });
 
   useEffect(() => {
@@ -27,10 +28,28 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 3000 }) => {
     };
   }, [instanceRef, autoplayDelay]);
 
+  if (!loaded) {
+    return (
+      <div
+        ref={sliderRef}
+        className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden"
+        style={{ display: 'flex', overflow: 'hidden', position: 'relative' }}
+      />
+    );
+  }
+
   return (
-    <div ref={sliderRef} className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden">
+    <div
+      ref={sliderRef}
+      className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden"
+      style={{ display: 'flex', overflow: 'hidden', position: 'relative' }}
+    >
       {images.map((img, idx) => (
-        <div className="keen-slider__slide flex items-center justify-center" key={idx}>
+        <div
+          className="keen-slider__slide flex items-center justify-center"
+          key={idx}
+          style={{ minHeight: '100%', width: '100%', position: 'relative' }}
+        >
           <Image src={img.src} alt={img.alt} width={600} height={600} className="object-cover w-full h-full" />
         </div>
       ))}

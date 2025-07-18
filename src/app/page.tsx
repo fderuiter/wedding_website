@@ -198,6 +198,11 @@ export default function HomePage() {
           <a href="/registry" className="inline-block rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl">View Registry</a>
         </motion.section>
 
+        {/* Additional Gallery */}
+        <motion.section className="py-10" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2.1}>
+          <Gallery images={galleryImages} />
+        </motion.section>
+
         {/* -------------------------------------------------------------- */}
         {/* Footer                                                       */}
         {/* -------------------------------------------------------------- */}
