@@ -11,6 +11,8 @@ import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
 import Gallery, { GalleryImage } from '@/components/Gallery'
 import Head from 'next/head'
+import StickyHeader from '@/components/StickyHeader'
+import BackToTop from '@/components/BackToTop'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
@@ -87,9 +89,13 @@ export default function HomePage() {
         />
       </Head>
 
+      <div id="top" />
+      <StickyHeader />
+
       {/* Global wrapper provides consistent background */}
       <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${showIntro ? 'hidden' : ''}`}
       >
+        <main id="main">
         {/* -------------------------------------------------------------- */}
         {/* Hero                                                          */}
         {/* -------------------------------------------------------------- */}
@@ -132,7 +138,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         {/* Details                                                       */}
         {/* -------------------------------------------------------------- */}
-        <motion.section className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1}>
+        <motion.section id="details" className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1}>
           <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
             {/* Ceremony */}
             <div className="rounded-2xl border border-rose-100 dark:border-rose-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
@@ -177,7 +183,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         {/* FAQs                                                         */}
         {/* -------------------------------------------------------------- */}
-        <motion.section id="faqs" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.9}>
+        <motion.section id="faq" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.9}>
           <h2 className="text-center text-4xl font-bold text-rose-700">Questions You Probably Have</h2>
           <div className="space-y-4 text-left">
             <div>
@@ -198,7 +204,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         {/* Registry                                                      */}
         {/* -------------------------------------------------------------- */}
-        <motion.section className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2}>
+        <motion.section id="registry" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2}>
           <h2 className="text-4xl font-bold text-rose-700">Gifts & Registry</h2>
           <p className="mx-auto max-w-xl text-lg">Your presence is the greatest gift, but if you’d like to help us feather our first nest…</p>
           <a href="/registry" className="inline-block rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl">View Registry</a>
@@ -222,6 +228,8 @@ export default function HomePage() {
             Play with the Heart
           </Link>
         </footer>
+        </main>
+        <BackToTop />
       </div>
     </>
   )

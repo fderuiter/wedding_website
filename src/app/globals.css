@@ -15,6 +15,7 @@
   --color-text-on-secondary: #1f2937; /* gray-800 */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --header-h: 64px; /* Height of sticky header */
 }
 
 body {
@@ -59,4 +60,40 @@ add-to-calendar-button {
   --btn-border-radius: 9999px;
   --btn-shadow: rgba(0,0,0,0.1) 0 4px 10px -2px;
   --btn-hover-shadow: rgba(0,0,0,0.2) 0 5px 12px -2px;
+}
+
+/* Smooth scroll behavior with reduced motion respect */
+html:focus-within {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+}
+
+/* Prevent anchor targets from hiding under the sticky header */
+[id] {
+  scroll-margin-top: var(--header-h);
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+/* Skip to content link */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+.skip-link:focus {
+  left: 0;
+  z-index: 50;
+  background: white;
+  padding: .5rem .75rem;
+  border-radius: .375rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
 }
