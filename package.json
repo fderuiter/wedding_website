@@ -24,6 +24,8 @@
     "@react-three/rapier": "^2.1.0",
     "@tanstack/react-query": "^5.74.3",
     "@types/uuid": "^10.0.0",
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/speed-insights": "^1.2.0",
     "add-to-calendar-button": "^2.8.9",
     "add-to-calendar-button-react": "^2.8.9",
     "dotenv-cli": "^8.0.0",
