@@ -8,6 +8,8 @@ import LoadingScreen from '@/components/LoadingScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Head from 'next/head';
 import React from 'react';
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -124,6 +126,8 @@ export default function RootLayout({
             {children}
           </main>
         </QueryClientProvider>
+        <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
