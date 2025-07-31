@@ -10,6 +10,7 @@ import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
 import Gallery, { GalleryImage } from '@/components/Gallery'
+import Head from 'next/head'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
@@ -79,7 +80,12 @@ export default function HomePage() {
   return (
     <>
       {showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <Head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </Head>
 
       {/* Global wrapper provides consistent background */}
       <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${showIntro ? 'hidden' : ''}`}
