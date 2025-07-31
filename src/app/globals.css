@@ -15,7 +15,7 @@
   --color-text-on-secondary: #1f2937; /* gray-800 */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --header-h: 64px; /* Height of sticky header */
+  --header-h: 56px; /* Height of sticky header */
 }
 
 body {
