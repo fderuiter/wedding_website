@@ -62,21 +62,28 @@ export default function StickyHeader() {
   return (
     <header
       className={[
-        'sticky top-0 z-40',
+        'sticky top-0 z-40 h-14',
         'backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60',
-        'supports-[backdrop-filter]:shadow-sm',
+        'border-b border-white/10',
       ].join(' ')}
-      style={{ height: 'var(--header-h)' }}
+      style={{ height: 'var(--header-h, 56px)' }}
     >
       {/* Skip to content (first tabbable item on the page) */}
       <a href="#main" className="skip-link">Skip to content</a>
 
       <nav
-        className="mx-auto max-w-5xl h-[var(--header-h)] flex items-center px-3"
-        role="navigation"
-        aria-label="Section"
+        className="mx-auto w-full max-w-5xl h-full flex items-center px-3"
+        aria-label="Section navigation"
       >
-        <ul className="flex items-center gap-1 overflow-x-auto">{items}</ul>
+        <ul
+          className={[
+            'flex min-w-0 items-center gap-1 justify-center',
+            'max-sm:overflow-x-auto max-sm:scrollbar-none max-sm:justify-start',
+            'nav-scroll-fade',
+          ].join(' ')}
+        >
+          {items}
+        </ul>
       </nav>
     </header>
   );
