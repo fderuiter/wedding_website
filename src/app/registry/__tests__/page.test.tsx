@@ -4,8 +4,9 @@ import RegistryPage from '../page';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RegistryItem } from '@/types/registry';
 
+const pushMock = jest.fn();
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: pushMock }),
 }));
 
 jest.mock('framer-motion', () => ({
@@ -70,6 +71,7 @@ describe('RegistryPage', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
+    pushMock.mockReset();
     localStorage.setItem('isAdminLoggedIn', 'false');
     jest.spyOn(window, 'alert').mockImplementation(() => {});
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,6 +140,130 @@ describe('RegistryPage', () => {
       expect(window.alert).toHaveBeenCalledWith('Error: Could not process contribution.');
       expect(screen.getByText(/Group Gift:/).textContent).toContain('$0.00');
     });
+  });
+
+  it('navigates to edit page when Edit is clicked', async () => {
+    const item: RegistryItem = {
+      id: '10',
+      name: 'Plate',
+      description: 'Ceramic plate',
+      category: 'Kitchen',
+      price: 20,
+      image: '/img',
+      vendorUrl: null,
+      quantity: 1,
+      isGroupGift: false,
+      purchased: false,
+      amountContributed: 0,
+      contributors: [],
+    };
+
+    // Mock fetch for initial items
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (global as any).fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [item],
+    });
+
+    localStorage.setItem('isAdminLoggedIn', 'true');
+    setup();
+    await screen.findByText('Plate');
+
+    fireEvent.click(screen.getByLabelText('Edit Plate'));
+
+    expect(pushMock).toHaveBeenCalledWith(`/registry/edit-item/${item.id}`);
+  });
+
+  it('deletes item when confirmed', async () => {
+    const item: RegistryItem = {
+      id: '11',
+      name: 'Fork',
+      description: 'Silver fork',
+      category: 'Kitchen',
+      price: 5,
+      image: '/img',
+      vendorUrl: null,
+      quantity: 1,
+      isGroupGift: false,
+      purchased: false,
+      amountContributed: 0,
+      contributors: [],
+    };
+
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [item] })
+      .mockResolvedValueOnce({ ok: true });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (global as any).fetch = fetchMock;
+
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+
+    localStorage.setItem('isAdminLoggedIn', 'true');
+    setup();
+    await screen.findByText('Fork');
+
+    fireEvent.click(screen.getByLabelText('Delete Fork'));
+
+    await waitFor(() => expect(screen.queryByText('Fork')).not.toBeInTheDocument());
+    expect(alertSpy).toHaveBeenCalledWith('Item deleted successfully.');
+  });
+
+  it('shows error when delete fails', async () => {
+    const item: RegistryItem = {
+      id: '12',
+      name: 'Spoon',
+      description: 'Wooden spoon',
+      category: 'Kitchen',
+      price: 3,
+      image: '/img',
+      vendorUrl: null,
+      quantity: 1,
+      isGroupGift: false,
+      purchased: false,
+      amountContributed: 0,
+      contributors: [],
+    };
+
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [item] })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: 'fail' }),
+      });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (global as any).fetch = fetchMock;
+
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+
+    localStorage.setItem('isAdminLoggedIn', 'true');
+    setup();
+    await screen.findByText('Spoon');
+
+    fireEvent.click(screen.getByLabelText('Delete Spoon'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Error deleting item: fail'));
+    expect(screen.getByText('Spoon')).toBeInTheDocument();
+  });
+
+  it('shows error message when items fetch fails', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (global as any).fetch = jest.fn().mockResolvedValue({ ok: false });
+
+    localStorage.setItem('isAdminLoggedIn', 'true');
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RegistryPage />
+      </QueryClientProvider>
+    );
+
+    await screen.findByText(/Error loading registry/i);
   });
 });
 
