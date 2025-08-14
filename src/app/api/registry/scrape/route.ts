@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import fetch from 'node-fetch';
+import fetch, { FetchError } from 'node-fetch';
 import metascraper from 'metascraper';
 import metascraperTitle from 'metascraper-title';
 import metascraperDescription from 'metascraper-description';
@@ -32,11 +32,16 @@ export async function POST(request: Request) {
     // Fetch HTML content from the provided URL
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36'
-      }
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
+      },
     });
     if (!response.ok) {
-      throw new Error(`Failed to fetch URL: ${response.statusText}`);
+      const status = response.status >= 500 ? 502 : 400;
+      return NextResponse.json(
+        { error: `Failed to fetch URL: ${response.statusText}` },
+        { status }
+      );
     }
     const html = await response.text();
 
@@ -57,10 +62,14 @@ export async function POST(request: Request) {
 
   } catch (error: unknown) {
     console.error('Scraping error:', error);
+    let status = 500;
     let errorMessage = 'Failed to scrape product info';
-    if (error instanceof Error) {
+    if (error instanceof FetchError) {
+      status = 502;
+      errorMessage = error.message;
+    } else if (error instanceof Error) {
       errorMessage = error.message;
     }
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: errorMessage }, { status });
   }
 }
