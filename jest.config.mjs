@@ -45,6 +45,7 @@ const config = {
     '^@/types/(.*)$': '<rootDir>/src/types/$1',
     '^@/data/(.*)$': '<rootDir>/src/data/$1',
     '^@/app/(.*)$': '<rootDir>/src/app/$1',
+    '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '.skip.tsx$'],
 }
