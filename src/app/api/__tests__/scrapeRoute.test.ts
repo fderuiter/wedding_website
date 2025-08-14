@@ -1,6 +1,9 @@
 /** @jest-environment node */
 
-jest.mock('node-fetch', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('node-fetch', () => {
+  class FetchError extends Error {}
+  return { __esModule: true, default: jest.fn(), FetchError };
+});
 jest.mock('metascraper', () => ({ __esModule: true, default: jest.fn() }));
 jest.mock('metascraper-title', () => jest.fn());
 jest.mock('metascraper-description', () => jest.fn());
@@ -65,9 +68,10 @@ describe('POST /api/registry/scrape', () => {
     expect(json.error).toContain('URL is required');
   });
 
-  it('returns 500 when fetch fails', async () => {
+  it('returns 400 when fetch responds with client error', async () => {
     mockFetch.mockResolvedValue({
       ok: false,
+      status: 404,
       statusText: 'Not Found',
     });
 
@@ -77,8 +81,23 @@ describe('POST /api/registry/scrape', () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain('Failed to fetch');
+  });
+
+  it('returns 502 when network error occurs', async () => {
+    const { FetchError } = await import('node-fetch');
+    mockFetch.mockRejectedValue(new FetchError('network error'));
+
+    const req = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://example.com/error' }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toContain('network error');
   });
 });
