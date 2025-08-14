@@ -119,6 +119,18 @@ describe('Registry API routes', () => {
       const json = await res.json();
       expect(json.error).toBe('Item not found');
     });
+
+    it('returns 500 for service errors', async () => {
+      mockContributeToItem.mockRejectedValue(new Error('DB error'));
+      const req = new Request('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify(validContribution),
+      });
+      const res = await contribute(req);
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json).toEqual({ error: 'DB error' });
+    });
   });
 
   describe('GET /api/registry/items', () => {
