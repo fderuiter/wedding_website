@@ -33,8 +33,10 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 3000 }) => {
       <div
         ref={sliderRef}
         className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden"
-        style={{ display: 'flex', overflow: 'hidden', position: 'relative' }}
-      />
+        style={{ display: 'flex', overflow: 'hidden', position: 'relative', alignItems: 'center', justifyContent: 'center' }}
+      >
+        Loading...
+      </div>
     );
   }
 
