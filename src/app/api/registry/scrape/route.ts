@@ -56,16 +56,11 @@ export async function POST(request: Request) {
     return NextResponse.json(scrapedData);
 
   } catch (error: unknown) {
-    console.error("Scraping error:", error);
+    console.error('Scraping error:', error);
     let errorMessage = 'Failed to scrape product info';
     if (error instanceof Error) {
-        errorMessage = error.message;
+      errorMessage = error.message;
     }
-    // Provide more specific error if possible
-    if (errorMessage.includes('Failed to fetch')) {
-        return NextResponse.json({ error: `Could not reach the provided URL. Please check the link. (${errorMessage})` }, { status: 400 });
-    }
-
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
