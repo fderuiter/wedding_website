@@ -49,6 +49,39 @@ describe('RegistryItemForm', () => {
     });
   });
 
+  it('preloads and submits updated values in edit mode', async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    const initialValues = {
+      name: 'Mixer',
+      price: 99.99,
+      quantity: 2,
+      category: 'Kitchen',
+    };
+
+    render(<RegistryItemForm mode="edit" onSubmit={onSubmit} initialValues={initialValues} />);
+
+    expect(screen.getByLabelText(/Item Name/i)).toHaveValue('Mixer');
+    expect(screen.getByLabelText(/Price/)).toHaveValue(99.99);
+    expect(screen.getByLabelText(/Quantity/)).toHaveValue(2);
+    expect(screen.getByLabelText(/Category/)).toHaveValue('Kitchen');
+
+    fireEvent.change(screen.getByLabelText(/Price/), { target: { value: '120.5' } });
+
+    fireEvent.submit(screen.getByTestId('form'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: 'Mixer',
+      description: '',
+      price: 120.5,
+      quantity: 2,
+      category: 'Kitchen',
+      image: '',
+      vendorUrl: '',
+      isGroupGift: false,
+    });
+  });
+
   it('populates fields with scraped data on success', async () => {
     const mockFetch = jest
       .fn()
