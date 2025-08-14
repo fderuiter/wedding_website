@@ -157,6 +157,26 @@ describe('RegistryService', () => {
       ).rejects.toThrow('Item not found');
       expect(mockUpdate).not.toHaveBeenCalled();
     });
+
+    it('propagates update failures', async () => {
+      const item = {
+        id: '1',
+        amountContributed: 0,
+        price: 100,
+        contributors: []
+      } as unknown as RegistryItem;
+      const error = new Error('Update failed');
+
+      mockTransaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+      mockFindUnique.mockResolvedValue(item);
+      mockUpdate.mockRejectedValue(error);
+
+      await expect(
+        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+      ).rejects.toThrow(error);
+      expect(mockFindUnique).toHaveBeenCalledTimes(1);
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
