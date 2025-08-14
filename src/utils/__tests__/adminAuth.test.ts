@@ -41,6 +41,18 @@ describe('admin authentication helpers', () => {
       await expect(isAdminRequest(req)).resolves.toBe(true);
     });
 
+    it('returns true for request with admin header but without cookie', async () => {
+      const req = {
+        cookies: {
+          get: () => undefined,
+        },
+        headers: {
+          get: () => 'admin_auth=true',
+        },
+      } as unknown as NextRequest;
+      await expect(isAdminRequest(req)).resolves.toBe(true);
+    });
+
     it('returns false for request without admin cookie', async () => {
       const req = {
         cookies: {
