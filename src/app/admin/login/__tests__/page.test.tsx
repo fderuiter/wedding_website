@@ -70,5 +70,61 @@ describe('Admin Login Page', () => {
     expect(await screen.findByText('Invalid password')).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
+
+  it('shows network error message when fetch rejects', async () => {
+    const push = jest.fn();
+    (useRouter as jest.Mock).mockReturnValue({ push });
+
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error('network'));
+    globalWithFetch.fetch = fetchMock;
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    expect(await screen.findByText('Network error.')).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('disables button while logging in and restores after completion', async () => {
+    const push = jest.fn();
+    (useRouter as jest.Mock).mockReturnValue({ push });
+
+    let resolveFetch: (value: Response) => void = () => {};
+    const fetchPromise = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+
+    const fetchMock = jest.fn<typeof fetch>().mockReturnValue(fetchPromise);
+    globalWithFetch.fetch = fetchMock;
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'secret' },
+    });
+    const button = screen.getByRole('button', { name: /login/i });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(button).toBeDisabled();
+      expect(button).toHaveTextContent('Logging in...');
+    });
+
+    resolveFetch({
+      ok: false,
+      json: async () => ({ error: 'Invalid password' }),
+    } as unknown as Response);
+
+    await waitFor(() => {
+      expect(button).not.toBeDisabled();
+      expect(button).toHaveTextContent('Login');
+    });
+  });
 });
 
