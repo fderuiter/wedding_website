@@ -31,4 +31,10 @@ describe('checkAdminClient', () => {
 
     await expect(checkAdminClient()).resolves.toBe(false);
   });
+
+  it('returns false when fetch rejects', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('Network'));
+
+    await expect(checkAdminClient()).resolves.toBe(false);
+  });
 });
