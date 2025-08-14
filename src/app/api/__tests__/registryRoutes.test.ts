@@ -5,6 +5,9 @@ jest.mock('../../../services/registryService', () => ({
     createItem: jest.fn(),
     contributeToItem: jest.fn(),
     getAllItems: jest.fn(),
+    getItemById: jest.fn(),
+    updateItem: jest.fn(),
+    deleteItem: jest.fn(),
   },
 }));
 
@@ -15,12 +18,17 @@ jest.mock('../../../utils/adminAuth.server', () => ({
 import { POST as addItem } from '../registry/add-item/route';
 import { POST as contribute } from '../registry/contribute/route';
 import { GET as getItems } from '../registry/items/route';
+import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '../registry/items/[id]/route';
 import { RegistryService } from '../../../services/registryService';
 import { isAdminRequest } from '../../../utils/adminAuth.server';
+import type { NextRequest } from 'next/server';
 
 const mockCreateItem = RegistryService.createItem as jest.Mock;
 const mockContributeToItem = RegistryService.contributeToItem as jest.Mock;
 const mockGetAllItems = RegistryService.getAllItems as jest.Mock;
+const mockGetItemById = RegistryService.getItemById as jest.Mock;
+const mockUpdateItem = RegistryService.updateItem as jest.Mock;
+const mockDeleteItem = RegistryService.deleteItem as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
 
 describe('Registry API routes', () => {
@@ -162,6 +170,89 @@ describe('Registry API routes', () => {
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toBe('Failed to load registry items');
+    });
+  });
+
+  describe('/api/registry/items/[id]', () => {
+    const itemId = '1';
+    const baseUrl = `http://localhost/api/registry/items/${itemId}`;
+
+    describe('GET', () => {
+      it('returns item when found', async () => {
+        const item = { id: itemId, name: 'Lamp' };
+        mockGetItemById.mockResolvedValue(item);
+        const req = new Request(baseUrl);
+        const res = await getItemByIdRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json).toEqual(item);
+      });
+
+      it('returns 404 when item not found', async () => {
+        mockGetItemById.mockResolvedValue(null);
+        const req = new Request(baseUrl);
+        const res = await getItemByIdRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(404);
+        const json = await res.json();
+        expect(json).toEqual({ error: 'Item not found' });
+      });
+    });
+
+    describe('PUT', () => {
+      it('returns 401 when unauthorized', async () => {
+        mockIsAdminRequest.mockResolvedValue(false);
+        const req = new Request(baseUrl, {
+          method: 'PUT',
+          body: JSON.stringify({ name: 'Lamp', price: 10, quantity: 1 }),
+        });
+        const res = await updateItemRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(401);
+      });
+
+      it('returns 400 when missing fields', async () => {
+        mockIsAdminRequest.mockResolvedValue(true);
+        const req = new Request(baseUrl, {
+          method: 'PUT',
+          body: JSON.stringify({ name: 'Lamp' }),
+        });
+        const res = await updateItemRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(400);
+        const json = await res.json();
+        expect(json.error).toBe('Missing or invalid required fields (name, price, quantity)');
+      });
+
+      it('updates item when authorized and data valid', async () => {
+        mockIsAdminRequest.mockResolvedValue(true);
+        const updated = { id: itemId, name: 'Lamp', price: 20, quantity: 2 };
+        mockUpdateItem.mockResolvedValue(updated);
+        const req = new Request(baseUrl, {
+          method: 'PUT',
+          body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 2 }),
+        });
+        const res = await updateItemRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json).toEqual({ message: 'Item updated successfully', item: updated });
+      });
+    });
+
+    describe('DELETE', () => {
+      it('returns 401 when unauthorized', async () => {
+        mockIsAdminRequest.mockResolvedValue(false);
+        const req = new Request(baseUrl, { method: 'DELETE' });
+        const res = await deleteItemRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(401);
+      });
+
+      it('deletes item when authorized', async () => {
+        mockIsAdminRequest.mockResolvedValue(true);
+        mockDeleteItem.mockResolvedValue(undefined);
+        const req = new Request(baseUrl, { method: 'DELETE' });
+        const res = await deleteItemRoute(req as unknown as NextRequest);
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json).toEqual({ message: 'Item deleted successfully' });
+      });
     });
   });
 });
