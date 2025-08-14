@@ -74,6 +74,19 @@ describe('Registry API routes', () => {
       const json = await res.json();
       expect(json.error).toBeDefined();
     });
+
+    it('returns 500 when service fails', async () => {
+      mockIsAdminRequest.mockResolvedValue(true);
+      mockCreateItem.mockRejectedValue(new Error('DB down'));
+      const req = new Request('http://localhost/api/registry/add-item', {
+        method: 'POST',
+        body: JSON.stringify(validItem),
+      });
+      const res = await addItem(req);
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json.error).toBe('DB down');
+    });
   });
 
   describe('POST /api/registry/contribute', () => {
