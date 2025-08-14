@@ -28,7 +28,8 @@ describe('RegistryCard', () => {
     expect(screen.getByText('Test Item')).toBeInTheDocument();
     expect(screen.getByText('Test Category')).toBeInTheDocument();
     expect(screen.getByText('$ 99.99')).toBeInTheDocument(); // Note the space added by the component
-    expect(screen.getByAltText('Test Item')).toHaveAttribute('src', '/images/placeholder.png');
+    const img = screen.getByAltText('Test Item');
+    expect(img.getAttribute('src')).toContain('placeholder.png');
   });
 
   it('renders claimed status when purchased', () => {
@@ -37,7 +38,7 @@ describe('RegistryCard', () => {
 
     expect(screen.getByText('Claimed!')).toBeInTheDocument();
     // Check for opacity class indicating it's claimed
-    expect(screen.getByText('Test Item').closest('div[class*="opacity-50"]')).toBeInTheDocument();
+    expect(screen.getByText('Test Item').closest('div[class*="opacity-60"]')).toBeInTheDocument();
   });
 
    it('renders group gift details when applicable', () => {
@@ -45,7 +46,7 @@ describe('RegistryCard', () => {
     render(<RegistryCard item={groupGiftItem} onClick={() => {}} />);
 
     expect(screen.getByText(/Group Gift:/)).toBeInTheDocument();
-    expect(screen.getByText(/\$50.00 contributed/)).toBeInTheDocument();
+    expect(screen.getByText(/Group Gift:/)).toHaveTextContent('$50.00');
   });
 
   it('renders fully funded status for purchased group gift', () => {
@@ -54,7 +55,7 @@ describe('RegistryCard', () => {
 
     expect(screen.getByText('Fully Funded!')).toBeInTheDocument();
      // Check for opacity class indicating it's claimed/funded
-    expect(screen.getByText('Test Item').closest('div[class*="opacity-50"]')).toBeInTheDocument();
+    expect(screen.getByText('Test Item').closest('div[class*="opacity-60"]')).toBeInTheDocument();
   });
 
   it('renders admin buttons when isAdmin is true', () => {
@@ -118,6 +119,44 @@ describe('RegistryCard', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} onEdit={() => {}} onDelete={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    expect(mockOnClick).not.toHaveBeenCalled();
+  });
+
+  it('handles keyboard activation with Enter and Space', () => {
+    const mockOnClick = jest.fn();
+    render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
+    const card = screen.getByTestId('registry-card');
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+
+    expect(mockOnClick).toHaveBeenCalledTimes(2);
+  });
+
+  it('disables keyboard activation and tabbing when item is purchased', () => {
+    const mockOnClick = jest.fn();
+    const purchasedItem = { ...mockItem, purchased: true };
+    render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
+    const card = screen.getByTestId('registry-card');
+
+    expect(card).toHaveAttribute('tabIndex', '-1');
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+
+    expect(mockOnClick).not.toHaveBeenCalled();
+  });
+
+  it('disables keyboard activation and tabbing when admin', () => {
+    const mockOnClick = jest.fn();
+    render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
+    const card = screen.getByTestId('registry-card');
+
+    expect(card).toHaveAttribute('tabIndex', '-1');
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 

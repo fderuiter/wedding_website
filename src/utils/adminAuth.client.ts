@@ -8,8 +8,12 @@ export function isAdminClient(): boolean {
 
 // Or, call this API route to check admin status
 export async function checkAdminClient(): Promise<boolean> {
-  const res = await fetch('/api/admin/me');
-  if (!res.ok) return false;
-  const data = await res.json();
-  return !!data.isAdmin;
+  try {
+    const res = await fetch('/api/admin/me');
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!data.isAdmin;
+  } catch {
+    return false;
+  }
 }
