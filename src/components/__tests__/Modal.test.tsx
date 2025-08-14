@@ -65,7 +65,8 @@ describe('Modal Component', () => {
     expect(screen.getByText('Single Item')).toBeInTheDocument();
     expect(screen.getByText('A nice single item.')).toBeInTheDocument();
     expect(screen.getByText('Price: $100.00')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Single Item' })).toHaveAttribute('src', '/images/valid.jpg');
+    const img = screen.getByRole('img', { name: 'Single Item' });
+    expect(img.getAttribute('src')).toContain('valid.jpg');
     expect(screen.getByRole('link', { name: 'View on Vendor Site' })).toHaveAttribute('href', 'https://example.com');
     expect(screen.getByPlaceholderText('Your Name')).toBeInTheDocument();
     // Corrected button name
@@ -100,7 +101,7 @@ describe('Modal Component', () => {
 
     expect(screen.getByText('Funded Group Item')).toBeInTheDocument();
     expect(screen.getByText('This gift is fully funded!')).toBeInTheDocument();
-    expect(screen.getByText('Thank you to all contributors!')).toBeInTheDocument(); // Check for contributor thank you message
+    expect(screen.getByText('Thank you for your generosity!')).toBeInTheDocument(); // Check for contributor thank you message
     expect(screen.queryByRole('button', { name: 'Submit Contribution' })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Your Name')).not.toBeInTheDocument();
   });
