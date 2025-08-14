@@ -55,6 +55,21 @@ describe('WeddingIntro', () => {
     expect(onFinish).toHaveBeenCalledTimes(1);
   });
 
+  it('does not call onFinish after unmounting before the heart duration', () => {
+    const onFinish = jest.fn();
+    const { unmount } = render(<WeddingIntro onFinish={onFinish} />);
+
+    // Unmount before timers complete
+    unmount();
+
+    // Advance timers past CONFIG.HEART_DURATION * 1000 (6 seconds)
+    act(() => {
+      jest.advanceTimersByTime(6 * 1000 + 100);
+    });
+
+    expect(onFinish).not.toHaveBeenCalled();
+  });
+
   it('renders within a mocked canvas environment without crashing', () => {
     const onFinish = jest.fn();
     expect(() => render(<WeddingIntro onFinish={onFinish} />)).not.toThrow();
