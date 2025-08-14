@@ -122,6 +122,44 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
+  it('handles keyboard activation with Enter and Space', () => {
+    const mockOnClick = jest.fn();
+    render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
+    const card = screen.getByTestId('registry-card');
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+
+    expect(mockOnClick).toHaveBeenCalledTimes(2);
+  });
+
+  it('disables keyboard activation and tabbing when item is purchased', () => {
+    const mockOnClick = jest.fn();
+    const purchasedItem = { ...mockItem, purchased: true };
+    render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
+    const card = screen.getByTestId('registry-card');
+
+    expect(card).toHaveAttribute('tabIndex', '-1');
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+
+    expect(mockOnClick).not.toHaveBeenCalled();
+  });
+
+  it('disables keyboard activation and tabbing when admin', () => {
+    const mockOnClick = jest.fn();
+    render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
+    const card = screen.getByTestId('registry-card');
+
+    expect(card).toHaveAttribute('tabIndex', '-1');
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+
+    expect(mockOnClick).not.toHaveBeenCalled();
+  });
+
   it('shows overlay and badge for claimed item', () => {
     const purchasedItem = { ...mockItem, purchased: true };
     render(<RegistryCard item={purchasedItem} onClick={() => {}} />);
