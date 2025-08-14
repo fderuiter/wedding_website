@@ -31,6 +31,18 @@ describe('Admin API routes', () => {
     expect(json.error).toBe('Invalid password.');
   });
 
+  test('login fails when admin password is not set', async () => {
+    delete process.env.ADMIN_PASSWORD;
+    const req = new NextRequest('http://localhost/api/admin/login', {
+      method: 'POST',
+      body: JSON.stringify({ password: 'anything' }),
+    });
+    const res = await login(req);
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json).toEqual({ error: 'Admin password not set.' });
+  });
+
   test('logout clears auth cookie', async () => {
     const res = await logout();
     expect(res.status).toBe(200);
