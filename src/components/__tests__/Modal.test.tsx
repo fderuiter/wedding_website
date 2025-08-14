@@ -113,6 +113,38 @@ describe('Modal Component', () => {
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
+  it('calls onClose when Escape key is pressed', async () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    const closeButton = screen.getByLabelText('Close modal');
+    await waitFor(() => expect(closeButton).toHaveFocus());
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('loops focus from last to first element with Tab', async () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    const closeButton = screen.getByLabelText('Close modal');
+    await waitFor(() => expect(closeButton).toHaveFocus());
+    const claimButton = screen.getByRole('button', { name: 'Claim Gift' });
+
+    claimButton.focus();
+    expect(claimButton).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(closeButton).toHaveFocus();
+  });
+
+  it('loops focus from first to last element with Shift+Tab', async () => {
+    render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    const closeButton = screen.getByLabelText('Close modal');
+    const claimButton = screen.getByRole('button', { name: 'Claim Gift' });
+    await waitFor(() => expect(closeButton).toHaveFocus());
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(claimButton).toHaveFocus();
+  });
+
   it('updates contributor name input', () => {
     render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
     const nameInput = screen.getByPlaceholderText('Your Name');
