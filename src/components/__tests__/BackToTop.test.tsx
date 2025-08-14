@@ -41,4 +41,25 @@ describe('BackToTop', () => {
     });
     expect(link).toHaveAttribute('aria-label', 'Back to top');
   });
+
+  it('cleans up scroll listener and animation frame on unmount', () => {
+    const addEventListenerSpy = jest.spyOn(window, 'addEventListener');
+    const removeEventListenerSpy = jest.spyOn(window, 'removeEventListener');
+    const cancelAnimationFrameSpy = jest.spyOn(window, 'cancelAnimationFrame');
+
+    const { unmount } = render(<BackToTop />);
+    const scrollHandler = addEventListenerSpy.mock.calls.find(
+      (call) => call[0] === 'scroll',
+    )?.[1] as EventListener;
+
+    cancelAnimationFrameSpy.mockClear();
+    unmount();
+
+    expect(removeEventListenerSpy).toHaveBeenCalledWith('scroll', scrollHandler);
+    expect(cancelAnimationFrameSpy).toHaveBeenCalledTimes(1);
+
+    addEventListenerSpy.mockRestore();
+    removeEventListenerSpy.mockRestore();
+    cancelAnimationFrameSpy.mockRestore();
+  });
 });
