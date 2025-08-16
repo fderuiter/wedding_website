@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/types/registry';
 
+/**
+ * Props for the RegistryItemForm component.
+ */
 export interface RegistryItemFormProps {
+  /** Specifies whether the form is for adding a new item or editing an existing one. */
   mode: 'add' | 'edit';
+  /** Initial values to populate the form fields, used in 'edit' mode. */
   initialValues?: Partial<RegistryItem>;
+  /** The function to call when the form is submitted. */
   onSubmit: (values: Partial<RegistryItem>) => Promise<void> | void;
+  /** Optional flag to indicate that the form is currently being submitted. */
   isSubmitting?: boolean;
+  /** Optional custom label for the submit button. */
   submitLabel?: string;
 }
 
