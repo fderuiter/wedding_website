@@ -49,6 +49,10 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
 10. **Wait Patiently:** I'll review the PR as soon as I can. I might ask for changes or clarification. Once it's approved, I'll merge it in. You're a contributor!
 
+## A Note on Documentation
+
+We are actively working to improve the documentation for this project. If you make a change that requires a documentation update, please make the corresponding change to the documentation as part of your pull request.
+
 ## Code Style
 
 * **TypeScript:** Use it. Try to be explicit with types where it makes sense.

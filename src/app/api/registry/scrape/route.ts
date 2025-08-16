@@ -4,16 +4,29 @@ import metascraper from 'metascraper';
 import metascraperTitle from 'metascraper-title';
 import metascraperDescription from 'metascraper-description';
 import metascraperImage from 'metascraper-image';
-// import metascraperPrice from 'metascraper-price'; // Price plugin was not available
 
-// Initialize metascraper with desired plugins
+/**
+ * A web scraper endpoint to fetch product metadata from a given URL.
+ * It uses the 'metascraper' library to extract Open Graph and metadata tags
+ * from the HTML of the target page.
+ *
+ * Known limitations:
+ * - Does not fetch price, as 'metascraper-price' was not available or working.
+ * - May be blocked by sites with anti-scraping measures (e.g., Costco).
+ * - Image scraping may not work for all sites (e.g., Amazon).
+ * - Success depends heavily on the target site having well-formed metadata.
+ */
 const scraper = metascraper([
   metascraperTitle(),
   metascraperDescription(),
   metascraperImage(),
-  // metascraperPrice(), // Price plugin was not available
 ]);
 
+/**
+ * Handles POST requests to scrape a URL.
+ * @param request - The incoming Next.js request object, containing the URL to scrape.
+ * @returns A JSON response with the scraped data or an error message.
+ */
 export async function POST(request: Request) {
   try {
     const { url } = await request.json();

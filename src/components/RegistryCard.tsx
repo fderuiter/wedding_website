@@ -1,17 +1,32 @@
 import React from 'react';
 import { RegistryItem } from '@/types/registry';
-import { getRegistryItemStatus } from './registryStatusUtils'; // Removed unused RegistryItemStatus
-import Image from 'next/image'; // Import next/image
+import { getRegistryItemStatus } from './registryStatusUtils';
+import Image from 'next/image';
 
-// Export the props interface
+/**
+ * Props for the RegistryCard component.
+ */
 export interface RegistryCardProps {
+  /** The registry item data to display. */
   item: RegistryItem;
+  /** Function to call when the card is clicked. */
   onClick: () => void;
-  isAdmin?: boolean; // Optional: Flag to show admin controls
-  onEdit?: (id: string) => void; // Optional: Handler for edit action
-  onDelete?: (id: string) => void; // Optional: Handler for delete action
+  /** Optional flag to display administrator controls. */
+  isAdmin?: boolean;
+  /** Optional handler for the edit action. */
+  onEdit?: (id: string) => void;
+  /** Optional handler for the delete action. */
+  onDelete?: (id: string) => void;
 }
 
+/**
+ * A card component that displays a single registry item.
+ * It shows the item's name, image, price, and status (e.g., claimed, fully funded).
+ * It also provides optional controls for administrators to edit or delete the item.
+ *
+ * @param {RegistryCardProps} props - The props for the component.
+ * @returns {React.ReactElement} The rendered registry card.
+ */
 const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onEdit, onDelete }) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
