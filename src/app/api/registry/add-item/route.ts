@@ -26,9 +26,7 @@ export async function POST(request: Request) {
       vendorUrl: newItemData.vendorUrl || null,
       quantity: Number(newItemData.quantity),
       isGroupGift: newItemData.isGroupGift || false,
-      purchased: false,
       purchaserName: null,
-      amountContributed: 0,
     });
 
     return NextResponse.json({ message: 'Item added successfully', item: newItem }, { status: 201 });
