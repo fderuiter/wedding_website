@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import LoadingScreen from '@/components/LoadingScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -15,7 +14,6 @@ export default function RootLayoutClient({
   children: React.ReactNode;
 }) {
   const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
@@ -38,19 +36,8 @@ export default function RootLayoutClient({
     router.push('/');
   };
 
-  useEffect(() => {
-    const handleLoad = () => setLoading(false);
-    if (document.readyState === 'complete') {
-      setLoading(false);
-    } else {
-      window.addEventListener('load', handleLoad);
-    }
-    return () => window.removeEventListener('load', handleLoad);
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
-      {loading && <LoadingScreen />}
       {isAdmin && (
         <div className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700">
           <span>Admin Mode Active</span>

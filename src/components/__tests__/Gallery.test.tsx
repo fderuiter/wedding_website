@@ -32,7 +32,7 @@ describe('Gallery Component', () => {
     const { unmount } = render(<Gallery images={images} autoplayDelay={1000} />);
 
     // Placeholder before slider initialization
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByTestId('loading-placeholder')).toBeInTheDocument();
 
     // Simulate slider creation
     act(() => {
