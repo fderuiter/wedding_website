@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'; // Import useRouter
 import RegistryCard from '@/components/RegistryCard';
 import Modal from '@/components/Modal';
 import { RegistryItem } from '@/types/registry';
@@ -12,14 +11,25 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
 import RegistryCardSkeleton from '@/components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
+import { checkAdminClient } from '@/utils/adminAuth.client';
+import { useRouter } from 'next/navigation';
 
 export default function RegistryPage() {
   const queryClient = useQueryClient();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const router = useRouter();
   const [visibleItemsCount, setVisibleItemsCount] = useState(12); // Initial number of items
   const { ref, inView } = useInView({ threshold: 0, triggerOnce: false });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      const admin = await checkAdminClient();
+      setIsAdmin(admin);
+    };
+    checkAdminStatus();
+  }, []);
 
   // Fetch registry items with React Query
   const {
@@ -107,6 +117,33 @@ export default function RegistryPage() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedItem(null);
+  };
+
+  const handleEdit = (id: string) => {
+    router.push(`/registry/edit-item/${id}`);
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await fetch(`/api/registry/items/${itemId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete item');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registry-items'] });
+      alert('Item deleted successfully.');
+    },
+    onError: (error) => {
+      alert(`Error deleting item: ${error.message}`);
+    },
+  });
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this item?')) {
+      deleteMutation.mutate(id);
+    }
   };
 
 
@@ -255,6 +292,9 @@ export default function RegistryPage() {
                   <RegistryCard
                     item={item}
                     onClick={() => handleCardClick(item)}
+                    isAdmin={isAdmin}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
                   />
                 </motion.div>
               ))}

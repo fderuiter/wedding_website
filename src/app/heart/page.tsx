@@ -7,14 +7,17 @@ import * as THREE from 'three'
 import React, { Suspense, useMemo, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { SketchPicker } from 'react-color'
-import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
+import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier'
 import { inSphere } from 'maath/random'
 
 function Sparkles({ count = 200 }) {
-  const pointsRef = useRef<any>()
-  const positions = useMemo(() => inSphere(new Float32Array(count * 3), { radius: 10 }), [count])
+  const pointsRef = useRef<THREE.Points>(null!)
+  const positions = useMemo(
+    () => inSphere(new Float32Array(count * 3), { radius: 10 }) as Float32Array,
+    [count],
+  )
 
-  useFrame((state) => {
+  useFrame(() => {
     if (pointsRef.current) {
       pointsRef.current.rotation.y += 0.001
     }
@@ -122,16 +125,18 @@ function PhysicsHeart({
   interacted: boolean
   onInteract: () => void
 }) {
-  const heartRef = useRef<any>(null!)
+  const heartRef = useRef<RapierRigidBody>(null!)
   const groupRef = useRef<THREE.Group>(null!)
   const [pulseSpeed, setPulseSpeed] = useState(1)
 
   useFrame((state) => {
     if (heartRef.current && !interacted) {
-      const rotation = new THREE.Quaternion().setFromEuler(heartRef.current.rotation())
-      const euler = new THREE.Euler().setFromQuaternion(rotation)
+      const rotation = heartRef.current.rotation()
+      const euler = new THREE.Euler().setFromQuaternion(
+        new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+      )
       euler.y += 0.002
-      heartRef.current.setRotation(euler, true)
+      heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
     }
 
     const t = state.clock.getElapsedTime()
