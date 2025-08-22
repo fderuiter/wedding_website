@@ -2,16 +2,15 @@
 
 import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
-import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Gallery, { GalleryImage } from '@/components/Gallery'
 import StickyHeader from '@/components/StickyHeader'
 import BackToTop from '@/components/BackToTop'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
-const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
+const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => null })
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
@@ -31,7 +30,7 @@ export default function HomePageClient({
 
   return (
     <>
-      {showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}
+      <AnimatePresence>{showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}</AnimatePresence>
       <div id="top" />
       <StickyHeader />
       <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800`}>
