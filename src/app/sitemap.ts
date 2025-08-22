@@ -1,10 +1,19 @@
 import { MetadataRoute } from 'next';
 
+type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
+
+interface SitemapEntry {
+  url: string;
+  lastModified: Date;
+  changeFrequency: ChangeFrequency;
+  priority: number;
+}
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const siteUrl = 'https://abbifred.com';
 
   // Static pages
-  const staticPages = [
+  const staticPages: SitemapEntry[] = [
     {
       url: `${siteUrl}/`,
       lastModified: new Date(),
