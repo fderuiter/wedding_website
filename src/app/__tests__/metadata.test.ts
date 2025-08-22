@@ -2,25 +2,38 @@ import { metadata } from '../metadata';
 
 describe('metadata', () => {
   it('matches expected values', () => {
-    expect(metadata.title).toBe("Abbigayle & Frederick's Wedding");
+    const title = typeof metadata.title === 'object' && metadata.title !== null ? metadata.title.default : metadata.title;
+    expect(title).toBe("Abbigayle & Frederick's Wedding");
     expect(metadata.description).toBe(
-      'A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens.'
+      'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.'
     );
-    expect(metadata.icons).toEqual({ icon: '/assets/favicon.png' });
+    expect(metadata.icons).toEqual({
+      icon: '/assets/favicon.png',
+      shortcut: '/assets/favicon.png',
+      apple: '/assets/favicon.png',
+    });
     expect(metadata.openGraph).toEqual({
       type: 'website',
-      url: 'https://abbifred.com/',
+      url: 'https://abbifred.com',
       title: "Abbigayle & Frederick's Wedding",
-      description:
-        'A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens.',
-      images: ['https://abbifred.com/assets/favicon.png'],
+      description: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
+      images: [
+        {
+          url: 'https://abbifred.com/images/sunset-embrace.jpg',
+          width: 1200,
+          height: 630,
+          alt: 'A photo of Abbigayle and Frederick embracing at sunset.',
+        },
+      ],
+      locale: 'en_US',
+      siteName: "Abbigayle & Frederick's Wedding",
     });
     expect(metadata.twitter).toEqual({
-      card: 'summary',
+      card: 'summary_large_image',
       title: "Abbigayle & Frederick's Wedding",
-      description:
-        'A joyful celebration of love uniting Abbigayle & Frederick in historic Plummer House gardens.',
-      images: ['https://abbifred.com/assets/favicon.png'],
+      description: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
+      images: ['https://abbifred.com/images/sunset-embrace.jpg'],
+      creator: '@fderuiter',
     });
     expect(metadata.metadataBase?.href).toBe('https://abbifred.com/');
   });
