@@ -11,12 +11,6 @@ export interface RegistryCardProps {
   item: RegistryItem;
   /** Function to call when the card is clicked. */
   onClick: () => void;
-  /** Optional flag to display administrator controls. */
-  isAdmin?: boolean;
-  /** Optional handler for the edit action. */
-  onEdit?: (id: string) => void;
-  /** Optional handler for the delete action. */
-  onDelete?: (id: string) => void;
 }
 
 /**
@@ -27,22 +21,12 @@ export interface RegistryCardProps {
  * @param {RegistryCardProps} props - The props for the component.
  * @returns {React.ReactElement} The rendered registry card.
  */
-const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onEdit, onDelete }) => {
+const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick }) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   // Updated card styling, removed dark mode, updated focus ring
-  const cardClasses = `border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''}`;
-  const isClickable = !isClaimed && !isAdmin;
-
-  const handleEditClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click event
-    onEdit?.(item.id);
-  };
-
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click event
-    onDelete?.(item.id);
-  };
+  const isClickable = !isClaimed;
+  const cardClasses = `border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
 
   return (
     <div
@@ -100,27 +84,6 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           </p>
         )}
       </div>
-      {/* Admin Controls - Updated styles */}
-      {isAdmin && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gray-50 bg-opacity-95 flex justify-end space-x-3 rounded-b-2xl border-t border-gray-200">
-          <button
-            onClick={handleEditClick}
-            // Updated Edit button style (amber)
-            className="text-base bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg transition font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
-            aria-label={`Edit ${item.name}`}
-          >
-            Edit
-          </button>
-          <button
-            onClick={handleDeleteClick}
-            // Updated Delete button style (rose)
-            className="text-base bg-rose-600 hover:bg-rose-700 text-white py-2 px-4 rounded-lg transition font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400"
-            aria-label={`Delete ${item.name}`}
-          >
-            Delete
-          </button>
-        </div>
-      )}
     </div>
   );
 };
