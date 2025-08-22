@@ -43,6 +43,7 @@
     "pg": "^8.14.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-intersection-observer": "^9.16.0",
     "three": "^0.175.0",
     "uuid": "^11.1.0"
   },
