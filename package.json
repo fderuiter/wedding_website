@@ -14,8 +14,7 @@
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
     "db:seed": "ts-node -r tsconfig-paths/register scripts/migrateToSqlite.ts",
-    "prisma:generate": "prisma generate",
-    "prepare": "husky"
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.0",
