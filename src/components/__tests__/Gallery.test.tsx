@@ -4,11 +4,9 @@ import '@testing-library/jest-dom';
 import Gallery from '../Gallery';
 
 const mockNext = jest.fn();
-let createdCallback: (() => void) | undefined;
 
 jest.mock('keen-slider/react', () => ({
-  useKeenSlider: (options: { created: () => void }) => {
-    createdCallback = options.created;
+  useKeenSlider: () => {
     return [jest.fn(), { current: { next: mockNext } }];
   }
 }));
@@ -23,7 +21,7 @@ describe('Gallery Component', () => {
     jest.useRealTimers();
   });
 
-  it('renders placeholder, advances slides automatically, and clears interval on unmount', () => {
+  it('renders images, advances slides automatically, and clears interval on unmount', () => {
     const images = [
       { src: '/img1.jpg', alt: 'Image 1' },
       { src: '/img2.jpg', alt: 'Image 2' },
@@ -31,15 +29,7 @@ describe('Gallery Component', () => {
 
     const { unmount } = render(<Gallery images={images} autoplayDelay={1000} />);
 
-    // Placeholder before slider initialization
-    expect(screen.getByTestId('loading-placeholder')).toBeInTheDocument();
-
-    // Simulate slider creation
-    act(() => {
-      createdCallback?.();
-    });
-
-    // Images render after creation
+    // Images render immediately
     expect(screen.getAllByRole('img')).toHaveLength(2);
 
     // Autoplay moves to next slide

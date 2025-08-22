@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useKeenSlider } from 'keen-slider/react';
 
@@ -16,10 +16,8 @@ interface GalleryProps {
 
 const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 3000 }) => {
   const timer = useRef<NodeJS.Timeout | null>(null);
-  const [loaded, setLoaded] = useState(false);
   const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({
     loop: true,
-    created: () => setLoaded(true),
   });
 
   useEffect(() => {
@@ -29,17 +27,6 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 3000 }) => {
       if (timer.current) clearInterval(timer.current);
     };
   }, [instanceRef, autoplayDelay]);
-
-  if (!loaded) {
-    return (
-      <div
-        ref={sliderRef}
-        className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800"
-        style={{ display: 'flex', overflow: 'hidden', position: 'relative', alignItems: 'center', justifyContent: 'center' }}
-        data-testid="loading-placeholder"
-      />
-    );
-  }
 
   return (
     <div
