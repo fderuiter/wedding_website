@@ -109,7 +109,7 @@ export default function HomePage() {
             Hilton Rochester Mayo Clinic Area
           </a>{' '}
           or the{' '}
-          <a href="https://www.broadwayplazarochester.com/" target="_blank" rel="noopener noreferrer" className="text-rose-600 dark:text-rose-400 hover:underline">
+          <a href="https://rochesterbroadwayplaza.com/" target="_blank" rel="noopener noreferrer" className="text-rose-600 dark:text-rose-400 hover:underline">
             Broadway Plaza
           </a>
           . For more budget-friendly options, there are many comfortable motels in the area. Your favorite booking site will have the best deals for hotels in Rochester.
