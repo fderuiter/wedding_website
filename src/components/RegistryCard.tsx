@@ -11,6 +11,12 @@ export interface RegistryCardProps {
   item: RegistryItem;
   /** Function to call when the card is clicked. */
   onClick: () => void;
+  /** Whether the user is an admin. */
+  isAdmin?: boolean;
+  /** Function to call when the edit button is clicked. */
+  onEdit?: (id: string) => void;
+  /** Function to call when the delete button is clicked. */
+  onDelete?: (id: string) => void;
 }
 
 /**
@@ -21,12 +27,22 @@ export interface RegistryCardProps {
  * @param {RegistryCardProps} props - The props for the component.
  * @returns {React.ReactElement} The rendered registry card.
  */
-const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick }) => {
+const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onEdit, onDelete }) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   // Updated card styling, removed dark mode, updated focus ring
-  const isClickable = !isClaimed;
+  const isClickable = !isClaimed && !isAdmin;
   const cardClasses = `border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onEdit?.(item.id);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete?.(item.id);
+  };
 
   return (
     <div
@@ -82,6 +98,24 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick }) => {
           <p className="text-base text-green-700 font-semibold mt-1">
             {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
           </p>
+        )}
+        {isAdmin && (
+          <div className="absolute bottom-4 right-4 flex gap-2 z-20">
+            <button
+              onClick={handleEdit}
+              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+              aria-label={`Edit ${item.name}`}
+            >
+              Edit
+            </button>
+            <button
+              onClick={handleDelete}
+              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+              aria-label={`Delete ${item.name}`}
+            >
+              Delete
+            </button>
+          </div>
         )}
       </div>
     </div>
