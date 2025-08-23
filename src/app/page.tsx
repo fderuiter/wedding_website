@@ -1,6 +1,6 @@
 import React from 'react';
 import { Metadata } from 'next';
-import HomePageClient from './HomePageClient';
+import HomePageClient from '@/components/home/HomePageClient';
 import { CalendarEvent } from '@/components/AddToCalendar';
 import { GalleryImage } from '@/components/Gallery';
 
