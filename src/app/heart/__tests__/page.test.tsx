@@ -27,6 +27,16 @@ jest.mock('@react-three/postprocessing', () => ({
 }))
 
 describe('Heart page', () => {
+  let errorSpy: jest.SpyInstance;
+  beforeEach(() => {
+    // Mock console.error to suppress warnings from react-three-fiber in test environment
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
   it('renders the 3D heart canvas or heading', () => {
     const { container } = render(<HeartPage />)
     const canvas = container.querySelector('canvas') as HTMLElement | null

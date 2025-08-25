@@ -53,8 +53,8 @@ const Lightbox: React.FC<LightboxProps> = ({
         <Image
           src={image.src}
           alt={image.alt}
-          layout="fill"
-          objectFit="contain"
+          fill
+          style={{ objectFit: 'contain' }}
           className="rounded-lg"
         />
         <button

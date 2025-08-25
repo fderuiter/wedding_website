@@ -8,3 +8,31 @@ import '@testing-library/jest-dom'
 jest.mock('@vercel/analytics', () => ({
   track: jest.fn(),
 }));
+
+jest.mock('@prisma/client', () => {
+  const mockPrismaClient = {
+    registryItem: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    contributor: {
+      // Mock contributor methods if needed
+    },
+    $transaction: jest.fn().mockImplementation(async (callback) => {
+      const mockTx = {
+        registryItem: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
+      };
+      return await callback(mockTx);
+    }),
+    $disconnect: jest.fn(),
+  };
+  return {
+    PrismaClient: jest.fn(() => mockPrismaClient),
+  };
+});

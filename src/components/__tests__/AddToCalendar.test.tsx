@@ -26,20 +26,25 @@ jest.mock('next/dynamic', () => {
       location,
       description,
       ...rest
-    }: ButtonProps) => (
-      <button
-        data-testid="add-to-calendar-button"
-        data-name={name}
-        data-start-date={startDate}
-        data-start-time={startTime}
-        data-end-date={endDate}
-        data-end-time={endTime}
-        data-time-zone={timeZone}
-        data-location={location}
-        data-description={description}
-        {...rest}
-      />
-    );
+    }: ButtonProps) => {
+      // The component being mocked accepts custom style props, but the DOM <button> does not.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { buttonStyle, styleLight, styleDark, ...domProps } = rest
+      return (
+        <button
+          data-testid="add-to-calendar-button"
+          data-name={name}
+          data-start-date={startDate}
+          data-start-time={startTime}
+          data-end-date={endDate}
+          data-end-time={endTime}
+          data-time-zone={timeZone}
+          data-location={location}
+          data-description={description}
+          {...domProps}
+        />
+      )
+    };
     MockAddToCalendarButton.displayName = 'MockAddToCalendarButton';
     return MockAddToCalendarButton;
   };

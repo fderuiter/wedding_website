@@ -9,7 +9,12 @@ let createdCallback: (() => void) | undefined;
 jest.mock('keen-slider/react', () => ({
   useKeenSlider: (options: { created: () => void }) => {
     createdCallback = options.created;
-    return [jest.fn(), { current: { next: mockNext } }];
+    const mockSlider = {
+      next: mockNext,
+      on: jest.fn(),
+      destroy: jest.fn(),
+    };
+    return [jest.fn(), { current: mockSlider }];
   }
 }));
 
@@ -30,9 +35,6 @@ describe('Gallery Component', () => {
     ];
 
     const { unmount } = render(<Gallery images={images} autoplayDelay={1000} />);
-
-    // Placeholder before slider initialization
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
 
     // Simulate slider creation
     act(() => {

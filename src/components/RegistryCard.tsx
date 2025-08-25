@@ -70,7 +70,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           alt={item.name}
           // Updated placeholder background
           className="object-cover bg-gray-100 rounded-t-2xl" // Removed w-full, h-56
-          layout="fill" // Use fill layout
+          fill // Use fill layout
           loading="lazy"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
