@@ -5,7 +5,6 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import {
   Environment,
-  Html,
   Float,
   Text, // Keep Text import
 } from '@react-three/drei'
