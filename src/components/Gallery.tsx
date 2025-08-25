@@ -39,8 +39,6 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
     slider.on('animationEnded', resetTimer);
     slider.on('updated', resetTimer);
 
-    autoplay(); // Start autoplay on mount
-
     return () => {
       if (timer.current) clearInterval(timer.current);
       slider.destroy();

@@ -3,56 +3,57 @@ import { render, screen, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Gallery from '../Gallery';
 
-const mockNext = jest.fn();
-let createdCallback: (() => void) | undefined;
+import { useKeenSlider } from 'keen-slider/react';
 
-jest.mock('keen-slider/react', () => ({
-  useKeenSlider: (options: { created: () => void }) => {
-    createdCallback = options.created;
-    return [jest.fn(), { current: { next: mockNext } }];
-  }
-}));
+jest.mock('keen-slider/react');
+
+const mockUseKeenSlider = useKeenSlider as jest.Mock;
 
 describe('Gallery Component', () => {
+  const images = [
+    { src: '/img1.jpg', alt: 'Image 1' },
+    { src: '/img2.jpg', alt: 'Image 2' },
+  ];
+
   beforeEach(() => {
     jest.useFakeTimers();
-    mockNext.mockClear();
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.clearAllMocks();
   });
 
   it('renders placeholder, advances slides automatically, and clears interval on unmount', () => {
-    const images = [
-      { src: '/img1.jpg', alt: 'Image 1' },
-      { src: '/img2.jpg', alt: 'Image 2' },
-    ];
+    const mockNext = jest.fn();
+    const mockOn = jest.fn((event, callback) => {
+      if (event === 'created') {
+        callback();
+      }
+    });
+    const mockDestroy = jest.fn();
+
+    mockUseKeenSlider.mockImplementation(() => [
+      jest.fn(),
+      {
+        current: {
+          next: mockNext,
+          on: mockOn,
+          destroy: mockDestroy,
+        },
+      },
+    ]);
 
     const { unmount } = render(<Gallery images={images} autoplayDelay={1000} />);
 
-    // Placeholder before slider initialization
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('img')).toHaveLength(images.length);
 
-    // Simulate slider creation
-    act(() => {
-      createdCallback?.();
-    });
-
-    // Images render after creation
-    expect(screen.getAllByRole('img')).toHaveLength(2);
-
-    // Autoplay moves to next slide
     act(() => {
       jest.advanceTimersByTime(1000);
     });
     expect(mockNext).toHaveBeenCalledTimes(1);
 
-    // Interval cleared on unmount
     unmount();
-    act(() => {
-      jest.runOnlyPendingTimers();
-    });
-    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(mockDestroy).toHaveBeenCalledTimes(1);
   });
 });

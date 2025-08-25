@@ -30,9 +30,20 @@ export default function RootLayoutClient({
 }: {
   children: React.ReactNode;
 }) {
+  const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    const handleLoad = () => setLoading(false);
+    if (document.readyState === 'complete') {
+      handleLoad();
+    } else {
+      window.addEventListener('load', handleLoad);
+      return () => window.removeEventListener('load', handleLoad);
+    }
+  }, []);
 
   useEffect(() => {
     const checkLoginStatus = () => {
@@ -56,6 +67,7 @@ export default function RootLayoutClient({
 
   return (
     <QueryClientProvider client={queryClient}>
+      {loading && <LoadingScreen />}
       <header className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-4 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700">
         <nav>
           <ul className="flex gap-4">

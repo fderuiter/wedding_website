@@ -14,6 +14,7 @@ jest.mock('@vercel/speed-insights/next', () => ({
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
+  usePathname: () => '/',
 }));
 
 describe('RootLayout', () => {

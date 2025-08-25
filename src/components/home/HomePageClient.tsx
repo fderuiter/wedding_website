@@ -4,12 +4,12 @@ import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
-import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
 import Gallery, { GalleryImage } from '@/components/Gallery'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
+import WeatherTravelStrip from '@/components/WeatherTravelStrip'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false })
@@ -18,6 +18,18 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
 
 export default function HomePageClient({ galleryImages, calendarEvent }: { galleryImages: GalleryImage[], calendarEvent: CalendarEvent }) {
   const [introFinished, setIntroFinished] = useState(false);
+  const [showWeatherStrip, setShowWeatherStrip] = useState(false);
+
+  useEffect(() => {
+    const weddingDate = new Date('2025-10-10T00:00:00-05:00');
+    const now = new Date();
+    const diffTime = weddingDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays <= 10) {
+      setShowWeatherStrip(true);
+    }
+  }, []);
+
 
   return (
     <>
@@ -89,6 +101,11 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
             <h2 className="text-4xl font-bold text-rose-700">About Our Venue</h2>
             <p className="mx-auto max-w-xl text-lg">Our wedding will be held at the beautiful Plummer House, a historic English Tudor mansion that was the former home of Dr. Henry Stanley Plummer, a key figure in the history of the Mayo Clinic, and his wife, Daisy. Originally known as <a href="https://mngardens.horticulture.umn.edu/plummer-house-arts-gardens" target="_blank" rel="noopener noreferrer" className="text-rose-600 dark:text-rose-400 hover:underline">&quot;Quarry Hill,&quot;</a> the house was filled with innovations for its time and is a cherished landmark in Rochester. We are so excited to share this special place with you.</p>
           </motion.section>
+          {showWeatherStrip && (
+          <motion.section className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.65}>
+            <WeatherTravelStrip />
+            </motion.section>
+          )}
           <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
             <h2 className="text-4xl font-bold text-rose-700">Travel & Things to Do in Rochester</h2>
             <p className="mx-auto max-w-xl text-lg">For our guests flying in, you can fly into Rochester International Airport (RST) for a quick trip, or Minneapolis-Saint Paul International Airport (MSP) if you don&rsquo;t mind a scenic 90-minute drive. There is ample parking at the Plummer House for the wedding ceremony and reception.</p>
