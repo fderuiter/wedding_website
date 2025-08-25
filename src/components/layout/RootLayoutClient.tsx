@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import LoadingScreen from '@/components/LoadingScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Analytics } from "@vercel/analytics/next";
@@ -17,6 +17,13 @@ const navLinks = [
   { href: '/things-to-do', label: 'Things to Do' },
 ];
 
+const homeNavLinks = [
+  { href: '#details', label: 'Details' },
+  { href: '#travel', label: 'Travel' },
+  { href: '#faq', label: 'FAQ' },
+  { href: '#registry', label: 'Registry' },
+];
+
 export default function RootLayoutClient({
   children,
 }: {
@@ -25,6 +32,7 @@ export default function RootLayoutClient({
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const checkLoginStatus = () => {
@@ -63,6 +71,13 @@ export default function RootLayoutClient({
         <nav>
           <ul className="flex gap-4">
             {navLinks.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} className="hover:text-rose-400">
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+            {pathname === '/' && homeNavLinks.map((link) => (
               <li key={link.href}>
                 <Link href={link.href} className="hover:text-rose-400">
                   {link.label}
