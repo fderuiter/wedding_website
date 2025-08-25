@@ -44,9 +44,6 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
                 Our Story
                 <ChevronDown className="h-5 w-5 transition-transform group-hover:translate-y-1" />
               </a>
-              <a href="/registry" className="inline-block rounded-full border border-rose-600 dark:border-rose-400 px-8 py-3 font-medium text-rose-700 dark:text-rose-400 transition-colors hover:bg-rose-50 dark:hover:bg-gray-800">
-                Registry
-              </a>
               <AddToCalendar event={calendarEvent} />
             </motion.div>
           </section>
@@ -109,11 +106,6 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
                 <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
               </div>
             </div>
-          </motion.section>
-          <motion.section id="registry" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2}>
-            <h2 className="text-4xl font-bold text-rose-700">Wedding Registry</h2>
-            <p className="mx-auto max-w-xl text-lg">Your presence at our wedding is the greatest gift, but if you’d like to help us feather our first nest, you can view our wedding registry.</p>
-            <a href="/registry" className="inline-block rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl">View Wedding Registry</a>
           </motion.section>
           <motion.section className="py-10" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2.1}>
             <Gallery images={galleryImages} />

@@ -21,7 +21,6 @@ const homeNavLinks = [
   { href: '#details', label: 'Details' },
   { href: '#travel', label: 'Travel' },
   { href: '#faq', label: 'FAQ' },
-  { href: '#registry', label: 'Registry' },
 ];
 
 export default function RootLayoutClient({
