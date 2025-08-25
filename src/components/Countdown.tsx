@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 
 type TimeLeft = {
   days?: number;
@@ -9,7 +9,7 @@ type TimeLeft = {
 const Countdown = ({ targetDate }: { targetDate: string }) => {
   const weddingDate = new Date(targetDate)
 
-  const calculateTimeLeft = (): TimeLeft => {
+  const calculateTimeLeft = useCallback((): TimeLeft => {
     const now = new Date();
     const difference = weddingDate.getTime() - now.getTime();
 
@@ -22,7 +22,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     }
 
     return timeLeft
-  }
+  }, [weddingDate]);
 
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft())
 
@@ -44,7 +44,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     const timer = calculateAndSetTimeout();
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [calculateTimeLeft]);
 
   const timerComponents: React.ReactNode[] = []
 

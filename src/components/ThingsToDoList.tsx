@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react';
-import { Attraction, attractions } from '@/data/things-to-do';
+import { attractions } from '@/data/things-to-do';
 import ThingsToDoCard from './ThingsToDoCard';
 
 const categories = ['all', 'food', 'coffee', 'park', 'museum'] as const;
