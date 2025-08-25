@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import { WebVitals } from '@/components/WebVitals';
 import Link from 'next/link';
+import TravelStrip from '@/components/TravelStrip';
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,8 @@ export default function RootLayoutClient({
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
+  const headerRef = useRef<HTMLElement>(null);
+  const [mainPaddingTop, setMainPaddingTop] = useState(0);
 
   useEffect(() => {
     const checkLoginStatus = () => {
@@ -47,6 +50,21 @@ export default function RootLayoutClient({
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!headerRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (headerRef.current) {
+        setMainPaddingTop(headerRef.current.offsetHeight);
+      }
+    });
+
+    resizeObserver.observe(headerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+
   const handleLogout = () => {
     localStorage.removeItem('isAdminLoggedIn');
     setIsAdmin(false);
@@ -55,38 +73,45 @@ export default function RootLayoutClient({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <header className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-4 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700">
-        <nav>
-          <ul className="flex gap-4">
-            {navLinks.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href} className="hover:text-rose-400">
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-            {pathname === '/' && homeNavLinks.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href} className="hover:text-rose-400">
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        {isAdmin && (
-          <div className="flex items-center gap-4">
-            <span>Admin Mode Active</span>
-            <button
-              onClick={handleLogout}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
-            >
-              Logout
-            </button>
-          </div>
-        )}
+      <header
+        ref={headerRef}
+        className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-center text-sm flex flex-col items-stretch fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700"
+      >
+        <div className="p-4 flex justify-between items-center w-full">
+          <nav>
+            <ul className="flex gap-4">
+              {navLinks.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="hover:text-rose-400">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+              {pathname === '/' &&
+                homeNavLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href} className="hover:text-rose-400">
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </nav>
+          {isAdmin && (
+            <div className="flex items-center gap-4">
+              <span>Admin Mode Active</span>
+              <button
+                onClick={handleLogout}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
+        <TravelStrip />
       </header>
-      <main id="main-content" className={'pt-14'}>
+      <main id="main-content" style={{ paddingTop: mainPaddingTop }}>
         {children}
       </main>
       <SpeedInsights />
