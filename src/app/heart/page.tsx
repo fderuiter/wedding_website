@@ -179,11 +179,19 @@ export default function HeartPage() {
   const [colorB, setColorB] = useState('#C0C0C0')
   const [materialA, setMaterialA] = useState({ metalness: 1, roughness: 0.2 })
   const [materialB, setMaterialB] = useState({ metalness: 1, roughness: 0.25 })
+  const [isMobile, setIsMobile] = useState(false)
+  const [controlsOpen, setControlsOpen] = useState(true)
 
   useEffect(() => {
     const handleResize = () => {
-      const newScale = window.innerWidth < 768 ? 0.4 : 0.6
-      setScale(newScale)
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      setScale(mobile ? 0.4 : 0.6)
+      if (mobile) {
+        setControlsOpen(false)
+      } else {
+        setControlsOpen(true)
+      }
     }
 
     handleResize()
@@ -191,62 +199,91 @@ export default function HeartPage() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  const controlContainerClasses = isMobile
+    ? `fixed bottom-0 left-0 right-0 z-20 p-4 bg-black/50 backdrop-blur-sm transition-transform duration-300 ease-in-out ${
+        controlsOpen ? 'translate-y-0' : 'translate-y-full'
+      }`
+    : 'absolute top-0 left-0 z-10 p-4 space-y-4 max-h-screen overflow-y-auto'
+
+  const controlPanelClasses = isMobile ? 'flex space-x-4 overflow-x-auto p-2' : 'space-y-4'
+
+  const controlItemClasses = isMobile ? 'w-64 flex-shrink-0' : ''
+
   return (
     <div className="fixed inset-0 bg-black select-none">
-      <div className="absolute top-0 left-0 z-10 p-4 space-y-4 max-h-screen overflow-y-auto">
-        <div className="p-4 bg-white/80 rounded">
-          <h2 className="text-lg font-bold">Left Side</h2>
-          <SketchPicker color={colorA} onChange={(c) => setColorA(c.hex)} />
-          <div className="mt-2">
-            <label>Metalness: {materialA.metalness.toFixed(2)}</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={materialA.metalness}
-              onChange={(e) => setMaterialA({ ...materialA, metalness: parseFloat(e.target.value) })}
+      <div className={controlContainerClasses}>
+        <div className={controlPanelClasses}>
+          <div className={`p-4 bg-white/80 rounded ${controlItemClasses}`}>
+            <h2 className="text-lg font-bold">Left Side</h2>
+            <SketchPicker
+              color={colorA}
+              onChange={(c) => setColorA(c.hex)}
+              width={isMobile ? '220px' : undefined}
             />
+            <div className="mt-2">
+              <label>Metalness: {materialA.metalness.toFixed(2)}</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={materialA.metalness}
+                onChange={(e) => setMaterialA({ ...materialA, metalness: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label>Roughness: {materialA.roughness.toFixed(2)}</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={materialA.roughness}
+                onChange={(e) => setMaterialA({ ...materialA, roughness: parseFloat(e.target.value) })}
+              />
+            </div>
           </div>
-          <div>
-            <label>Roughness: {materialA.roughness.toFixed(2)}</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={materialA.roughness}
-              onChange={(e) => setMaterialA({ ...materialA, roughness: parseFloat(e.target.value) })}
+          <div className={`p-4 bg-white/80 rounded ${controlItemClasses}`}>
+            <h2 className="text-lg font-bold">Right Side</h2>
+            <SketchPicker
+              color={colorB}
+              onChange={(c) => setColorB(c.hex)}
+              width={isMobile ? '220px' : undefined}
             />
-          </div>
-        </div>
-        <div className="p-4 bg-white/80 rounded">
-          <h2 className="text-lg font-bold">Right Side</h2>
-          <SketchPicker color={colorB} onChange={(c) => setColorB(c.hex)} />
-          <div className="mt-2">
-            <label>Metalness: {materialB.metalness.toFixed(2)}</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={materialB.metalness}
-              onChange={(e) => setMaterialB({ ...materialB, metalness: parseFloat(e.target.value) })}
-            />
-          </div>
-          <div>
-            <label>Roughness: {materialB.roughness.toFixed(2)}</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={materialB.roughness}
-              onChange={(e) => setMaterialB({ ...materialB, roughness: parseFloat(e.target.value) })}
-            />
+            <div className="mt-2">
+              <label>Metalness: {materialB.metalness.toFixed(2)}</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={materialB.metalness}
+                onChange={(e) => setMaterialB({ ...materialB, metalness: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label>Roughness: {materialB.roughness.toFixed(2)}</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={materialB.roughness}
+                onChange={(e) => setMaterialB({ ...materialB, roughness: parseFloat(e.target.value) })}
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      {isMobile && (
+        <button
+          onClick={() => setControlsOpen(!controlsOpen)}
+          className="absolute bottom-4 right-4 z-30 rounded-full bg-white/80 p-3 text-black"
+        >
+          {controlsOpen ? 'Close' : 'Controls'}
+        </button>
+      )}
 
       <Link href="/" className="absolute top-0 right-0 z-10 m-4 rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
         Back Home
