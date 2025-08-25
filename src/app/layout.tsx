@@ -1,6 +1,6 @@
 import { Geist } from "next/font/google";
 import "./globals.css";
-import RootLayoutClient from "./RootLayoutClient";
+import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { metadata } from './metadata';
 
 const geist = Geist({

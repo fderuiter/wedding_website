@@ -3,10 +3,15 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RegistryPage from '../page';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RegistryItem } from '@/types/registry';
+import { checkAdminClient } from '@/utils/adminAuth.client';
 
 const pushMock = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
+}));
+
+jest.mock('@/utils/adminAuth.client', () => ({
+  checkAdminClient: jest.fn(),
 }));
 
 jest.mock('framer-motion', () => ({
@@ -165,7 +170,7 @@ describe('RegistryPage', () => {
       json: async () => [item],
     });
 
-    localStorage.setItem('isAdminLoggedIn', 'true');
+    (checkAdminClient as jest.Mock).mockReturnValue(true);
     setup();
     await screen.findByText('Plate');
 
@@ -192,15 +197,16 @@ describe('RegistryPage', () => {
 
     const fetchMock = jest
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => [item] })
-      .mockResolvedValueOnce({ ok: true });
+      .mockResolvedValueOnce({ ok: true, json: async () => [item] }) // Initial fetch
+      .mockResolvedValueOnce({ ok: true }) // Delete request
+      .mockResolvedValueOnce({ ok: true, json: async () => [] }); // Refetch
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (global as any).fetch = fetchMock;
 
     jest.spyOn(window, 'confirm').mockReturnValue(true);
     const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
 
-    localStorage.setItem('isAdminLoggedIn', 'true');
+    (checkAdminClient as jest.Mock).mockReturnValue(true);
     setup();
     await screen.findByText('Fork');
 
@@ -240,7 +246,7 @@ describe('RegistryPage', () => {
     jest.spyOn(window, 'confirm').mockReturnValue(true);
     const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
 
-    localStorage.setItem('isAdminLoggedIn', 'true');
+    (checkAdminClient as jest.Mock).mockReturnValue(true);
     setup();
     await screen.findByText('Spoon');
 

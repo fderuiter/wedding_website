@@ -1,0 +1,143 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - link "Skip to content" [ref=e4] [cursor=pointer]:
+        - /url: "#main"
+      - navigation "Section navigation" [ref=e5]:
+        - list [ref=e6]:
+          - listitem [ref=e7]:
+            - link "Details" [ref=e8] [cursor=pointer]:
+              - /url: "#details"
+          - listitem [ref=e9]:
+            - link "Travel" [ref=e10] [cursor=pointer]:
+              - /url: "#travel"
+          - listitem [ref=e11]:
+            - link "FAQ" [ref=e12] [cursor=pointer]:
+              - /url: "#faq"
+          - listitem [ref=e13]:
+            - link "Registry" [ref=e14] [cursor=pointer]:
+              - /url: "#registry"
+    - generic [ref=e15]:
+      - main [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e20]:
+            - img "Abbi and Fred hug on a lakeside path at sunset, framed by twisting bare branches and a glowing orange sky." [ref=e22]
+            - img "Sweaty but smiling, Abbi and Fred snap a post-run selfie on a sunny sidewalk beside a brick building." [ref=e24]
+            - img "Bundled in winter layers, Abbi and Fred pose against a brick wall—she in leopard-trimmed coat and hat, he in a dark jacket—both beaming." [ref=e26]
+            - img "Abbi and Fred share a quiet kiss at sunset beneath leafless tree silhouettes, golden light reflecting off the lake behind them." [ref=e28]
+            - img "Abbi and Fred smile from their seats at a packed Timberwolves basketball game, sporting team gear and surrounded by excited fans." [ref=e30]
+            - img "Abbi and Fred grin for a selfie with Target Field and a cheering Minnesota Twins crowd spread out behind them." [ref=e32]
+            - img "Dressed up for the evening, Fred in a crisp white shirt hugs Abbi in a black dress as they smile warmly against a simple light backdrop." [ref=e34]
+          - heading "Abbigayle & Frederick's Wedding" [level=1] [ref=e35]
+          - paragraph [ref=e36]: Join us for our wedding on October 10, 2025, in Rochester, Minnesota.
+          - generic [ref=e37]:
+            - link "Our Story" [ref=e38] [cursor=pointer]:
+              - /url: "#story"
+              - text: Our Story
+              - img [ref=e39] [cursor=pointer]
+            - link "Registry" [ref=e41] [cursor=pointer]:
+              - /url: /registry
+            - 'button "Add to Calendar: Abbigayle & Frederick''s Wedding" [ref=e46] [cursor=pointer]':
+              - img [ref=e48] [cursor=pointer]
+              - generic [ref=e50] [cursor=pointer]: Add to Calendar
+        - generic [ref=e52]:
+          - heading "Our Story" [level=2] [ref=e53]
+          - paragraph [ref=e54]: It all began with a swipe right on a cool evening in 2024. Abbi was drawn to Fred's adventurous spirit, while Fred was captivated by Abbi's warm smile and shared love for hotdogs. Our first date involved Fred plugging the laser loon and ended with hours of conversation that felt like minutes.
+          - paragraph [ref=e55]: Since then, we've built a life filled with laughter, shared dreams, and countless adventures. From exploring parks to cozy nights in binge-watching our favorite shows, we've collected countless miles on the odometer, concert stubs, a few wolves tickets, and a growing library of inside jokes. We've supported each other through thick and thin, celebrating milestones like Abbi's graduation as a Nurse Practitioner, and learned that home isn't just a place, but a feeling we find in each other.
+          - paragraph [ref=e56]: As we all were saying goodbye to 2024 and bringing in 2025, Fred recreated our very first date together in downtown Minneapolis. While the ball had just dropped, Fred asked Abbi to be his forever adventure partner, starting the new year right. Through happy tears, she said yes! Now, we're eagerly counting down the days until we say "I do" surrounded by the people we love most. We are so excited to celebrate our love and begin our next chapter with you at our Plummer House wedding.
+        - generic [ref=e57]:
+          - heading "Wedding Details" [level=2] [ref=e58]
+          - generic [ref=e59]:
+            - generic [ref=e60]:
+              - heading "Wedding Ceremony" [level=3] [ref=e61]
+              - list [ref=e62]:
+                - listitem [ref=e63]: 4:00 pm
+                - listitem [ref=e64]: Plummer House · 1091 Plummer Ln SW
+                - listitem [ref=e65]: Rochester, Minnesota
+            - generic [ref=e66]:
+              - heading "Wedding Reception" [level=3] [ref=e67]
+              - list [ref=e68]:
+                - listitem [ref=e69]: Buffet dinner begins at 5:30 pm
+                - listitem [ref=e70]: Cocktails with music if weather permits
+                - listitem [ref=e71]: "Attire: Garden formal"
+          - 'button "Add to Calendar: Abbigayle & Frederick''s Wedding" [ref=e77] [cursor=pointer]':
+            - img [ref=e79] [cursor=pointer]
+            - generic [ref=e81] [cursor=pointer]: Add to Calendar
+        - generic [ref=e83]:
+          - heading "Accommodations in Rochester, MN" [level=2] [ref=e84]
+          - paragraph [ref=e85]:
+            - text: Rochester offers plenty of places to stay for our wedding weekend. We opted not to reserve a block so you can choose what fits your style and budget. For a luxurious stay, consider the
+            - link "Hilton Rochester Mayo Clinic Area" [ref=e86] [cursor=pointer]:
+              - /url: https://www.hilton.com/en/hotels/rstmahh-hilton-rochester-mayo-clinic-area/
+            - text: or the
+            - link "Broadway Plaza" [ref=e87] [cursor=pointer]:
+              - /url: https://rochesterbroadwayplaza.com/
+            - text: . For more budget-friendly options, there are many comfortable motels in the area. Your favorite booking site will have the best deals for hotels in Rochester.
+        - generic [ref=e88]:
+          - heading "About Our Venue" [level=2] [ref=e89]
+          - paragraph [ref=e90]:
+            - text: Our wedding will be held at the beautiful Plummer House, a historic English Tudor mansion that was the former home of Dr. Henry Stanley Plummer, a key figure in the history of the Mayo Clinic, and his wife, Daisy. Originally known as
+            - link "\"Quarry Hill,\"" [ref=e91] [cursor=pointer]:
+              - /url: https://mngardens.horticulture.umn.edu/plummer-house-arts-gardens
+            - text: the house was filled with innovations for its time and is a cherished landmark in Rochester. We are so excited to share this special place with you.
+        - generic [ref=e92]:
+          - heading "Travel & Things to Do in Rochester" [level=2] [ref=e93]
+          - paragraph [ref=e94]: For our guests flying in, you can fly into Rochester International Airport (RST) for a quick trip, or Minneapolis-Saint Paul International Airport (MSP) if you don’t mind a scenic 90-minute drive. There is ample parking at the Plummer House for the wedding ceremony and reception.
+          - paragraph [ref=e95]:
+            - text: While you're in town, we recommend visiting the
+            - link "Mayo Clinic campus" [ref=e96] [cursor=pointer]:
+              - /url: https://www.mayoclinic.org/patient-visitor-guide/minnesota
+            - text: to see the beautiful architecture and its world-renowned art collection. A highlight of the campus is the Plummer Building (not to be confused with the Plummer House where our wedding is located!), a National Historic Landmark. Atop the Plummer Building is the famous 56-bell Carillon of Mayo, one of the largest musical instruments of its kind. You can often hear its beautiful music throughout downtown Rochester. We also recommend taking a stroll through
+            - link "Silver Lake Park" [ref=e97] [cursor=pointer]:
+              - /url: https://www.rochestermn.gov/Home/Components/FacilityDirectory/FacilityDirectory/138/1258
+            - text: or exploring the many great restaurants and breweries in the city.
+        - generic [ref=e98]:
+          - heading "Questions You Probably Have" [level=2] [ref=e99]
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - heading "What is \"Garden Formal\"?" [level=3] [ref=e102]
+              - paragraph [ref=e103]: It means look nice, but maybe don't wear stilettos unless you enjoy aerating the lawn.
+            - generic [ref=e104]:
+              - heading "Can I Bring My Kids?" [level=3] [ref=e105]
+              - paragraph [ref=e106]: We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.
+            - generic [ref=e107]:
+              - heading "Is there parking available?" [level=3] [ref=e108]
+              - paragraph [ref=e109]: Yes, there are 40 spots of parking available at the Plummer House.
+        - generic [ref=e110]:
+          - heading "Wedding Registry" [level=2] [ref=e111]
+          - paragraph [ref=e112]: Your presence at our wedding is the greatest gift, but if you’d like to help us feather our first nest, you can view our wedding registry.
+          - link "View Wedding Registry" [ref=e113] [cursor=pointer]:
+            - /url: /registry
+        - generic [ref=e115]:
+          - img "Abbi and Fred hug on a lakeside path at sunset, framed by twisting bare branches and a glowing orange sky." [ref=e117]
+          - img "Sweaty but smiling, Abbi and Fred snap a post-run selfie on a sunny sidewalk beside a brick building." [ref=e119]
+          - img "Bundled in winter layers, Abbi and Fred pose against a brick wall—she in leopard-trimmed coat and hat, he in a dark jacket—both beaming." [ref=e121]
+          - img "Abbi and Fred share a quiet kiss at sunset beneath leafless tree silhouettes, golden light reflecting off the lake behind them." [ref=e123]
+          - img "Abbi and Fred smile from their seats at a packed Timberwolves basketball game, sporting team gear and surrounded by excited fans." [ref=e125]
+          - img "Abbi and Fred grin for a selfie with Target Field and a cheering Minnesota Twins crowd spread out behind them." [ref=e127]
+          - img "Dressed up for the evening, Fred in a crisp white shirt hugs Abbi in a black dress as they smile warmly against a simple light backdrop." [ref=e129]
+        - generic [ref=e130]:
+          - paragraph [ref=e131]: © 2025 Abbigayle & Frederick • Designed with ❤️ in Minnesota
+          - link "About this site" [ref=e132] [cursor=pointer]:
+            - /url: /project-info
+          - link "Play with the Heart" [ref=e133] [cursor=pointer]:
+            - /url: /heart
+      - link "Back to top":
+        - /url: "#top"
+        - text: ↑ Back to top
+  - alert [ref=e134]
+  - generic [ref=e139] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e140] [cursor=pointer]:
+      - img [ref=e141] [cursor=pointer]
+    - generic [ref=e144] [cursor=pointer]:
+      - button "Open issues overlay" [ref=e145] [cursor=pointer]:
+        - generic [ref=e146] [cursor=pointer]:
+          - generic [ref=e147] [cursor=pointer]: "0"
+          - generic [ref=e148] [cursor=pointer]: "1"
+        - generic [ref=e149] [cursor=pointer]: Issue
+      - button "Collapse issues badge" [ref=e150] [cursor=pointer]:
+        - img [ref=e151] [cursor=pointer]
+```
