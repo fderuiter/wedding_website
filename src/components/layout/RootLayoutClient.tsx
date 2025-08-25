@@ -14,6 +14,7 @@ const queryClient = new QueryClient();
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/photos', label: 'Photos' },
+  { href: '/things-to-do', label: 'Things to Do' },
 ];
 
 export default function RootLayoutClient({
