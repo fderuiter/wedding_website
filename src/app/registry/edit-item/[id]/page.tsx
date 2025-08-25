@@ -61,7 +61,7 @@ export default function EditRegistryItemPage() {
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
       alert('Item updated successfully!');
-      router.push('/registry');
+      router.push('/admin/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update item');
     } finally {

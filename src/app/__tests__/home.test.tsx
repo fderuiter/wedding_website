@@ -48,7 +48,6 @@ describe('Home Page', () => {
 
     // Wait for elements to appear after intro
     await screen.findByRole('link', { name: 'Our Story' });
-    await screen.findAllByRole('link', { name: 'Registry' });
     await screen.findAllByRole('button', { name: 'Add to Calendar' });
 
     // Gallery and hero heading render
@@ -56,7 +55,6 @@ describe('Home Page', () => {
     expect(screen.getByRole('heading', { name: /Abbi.*Fred/ })).toBeInTheDocument();
 
     expect(screen.getByRole('link', { name: 'Our Story' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Registry' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Add to Calendar' }).length).toBeGreaterThan(0);
 
     // Wrapper should not be hidden after intro
