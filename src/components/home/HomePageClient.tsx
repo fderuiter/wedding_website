@@ -8,7 +8,6 @@ import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
 import Gallery, { GalleryImage } from '@/components/Gallery'
-import StickyHeader from '@/components/StickyHeader'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
 
@@ -27,7 +26,6 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
     <>
       {showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}
       <div id="top" />
-      <StickyHeader />
       <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${showIntro ? 'hidden' : ''}`}
       >
         <main id="main">
