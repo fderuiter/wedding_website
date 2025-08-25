@@ -1,13 +1,13 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 
 type TimeLeft = {
   days?: number;
 };
 
 const Countdown = ({ targetDate }: { targetDate: string }) => {
-  const weddingDate = new Date(targetDate)
+  const weddingDate = useMemo(() => new Date(targetDate), [targetDate])
 
   const calculateTimeLeft = useCallback((): TimeLeft => {
     const now = new Date();
