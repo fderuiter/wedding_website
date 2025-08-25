@@ -6,6 +6,7 @@ import LoadingScreen from '@/components/LoadingScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { WebVitals } from '@/components/WebVitals';
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ export default function RootLayoutClient({
       </main>
       <SpeedInsights />
       <Analytics />
+      <WebVitals />
     </QueryClientProvider>
   );
 }
