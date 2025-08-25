@@ -12,21 +12,18 @@ import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
-const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
+const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false })
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
 export default function HomePageClient({ galleryImages, calendarEvent }: { galleryImages: GalleryImage[], calendarEvent: CalendarEvent }) {
-  const [showIntro, setShowIntro] = useState(false)
-  useEffect(() => {
-    setShowIntro(true)
-  }, [])
+  const [introFinished, setIntroFinished] = useState(false);
 
   return (
     <>
-      {showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}
+      {!introFinished && <WeddingIntro onFinish={() => setIntroFinished(true)} />}
       <div id="top" />
-      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${showIntro ? 'hidden' : ''}`}
+      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? 'hidden' : ''}`}
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
