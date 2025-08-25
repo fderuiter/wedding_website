@@ -7,8 +7,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { WebVitals } from '@/components/WebVitals';
+import Link from 'next/link';
 
 const queryClient = new QueryClient();
+
+const navLinks = [
+  { href: '/', label: 'Home' },
+  { href: '/photos', label: 'Photos' },
+  { href: '/things-to-do', label: 'Things to Do' },
+];
 
 export default function RootLayoutClient({
   children,
@@ -52,18 +59,31 @@ export default function RootLayoutClient({
   return (
     <QueryClientProvider client={queryClient}>
       {loading && <LoadingScreen />}
-      {isAdmin && (
-        <div className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-2 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700">
-          <span>Admin Mode Active</span>
-          <button
-            onClick={handleLogout}
-            className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
-          >
-            Logout
-          </button>
-        </div>
-      )}
-      <main id="main-content" className={isAdmin ? 'pt-10' : ''}>
+      <header className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-4 text-center text-sm flex justify-between items-center fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700">
+        <nav>
+          <ul className="flex gap-4">
+            {navLinks.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} className="hover:text-rose-400">
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        {isAdmin && (
+          <div className="flex items-center gap-4">
+            <span>Admin Mode Active</span>
+            <button
+              onClick={handleLogout}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
+            >
+              Logout
+            </button>
+          </div>
+        )}
+      </header>
+      <main id="main-content" className={'pt-14'}>
         {children}
       </main>
       <SpeedInsights />

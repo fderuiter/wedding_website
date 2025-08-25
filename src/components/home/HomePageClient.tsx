@@ -10,6 +10,7 @@ import Link from 'next/link'
 import Gallery, { GalleryImage } from '@/components/Gallery'
 import StickyHeader from '@/components/StickyHeader'
 import BackToTop from '@/components/BackToTop'
+import Countdown from '@/components/Countdown'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
@@ -38,9 +39,12 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               Abbigayle &amp; Frederick&apos;s Wedding
             </motion.h1>
-            <motion.p className="mb-8 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
+            <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
               Join us for our wedding on October&nbsp;10,&nbsp;2025, in Rochester, Minnesota.
             </motion.p>
+            <motion.div className="mb-8" variants={fadeUp} initial="hidden" animate="visible" custom={1.5}>
+              <Countdown targetDate="2025-10-10T16:00:00-05:00" />
+            </motion.div>
             <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
               <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
                 Our Story
