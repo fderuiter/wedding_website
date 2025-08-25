@@ -11,7 +11,6 @@ const config = {
   // Add more setup options before each test is run
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
-  preset: 'ts-jest', // Use ts-jest preset
   collectCoverage: true,
   coverageDirectory: 'coverage',
   coverageReporters: ['json', 'lcov', 'text', 'clover', 'html'], // Added 'html' for detailed report
@@ -48,7 +47,10 @@ const config = {
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
     '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
   },
-  testPathIgnorePatterns: ['<rootDir>/node_modules/', '.skip.tsx$'],
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/', '.skip.tsx$'],
+  transformIgnorePatterns: [
+    '/node_modules/(?!@vercel/analytics/.*)',
+  ],
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
