@@ -230,7 +230,7 @@ export default function HeartPage() {
   }, [])
 
   return (
-    <div className="fixed inset-0 bg-black select-none">
+    <div className="fixed inset-0 bg-black select-none touch-action-none">
       <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
         <button
           onClick={handleReset}
