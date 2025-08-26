@@ -6,7 +6,6 @@ import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
-import Gallery, { GalleryImage } from '@/components/Gallery'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
 
@@ -15,7 +14,7 @@ const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/componen
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
-export default function HomePageClient({ galleryImages, calendarEvent }: { galleryImages: GalleryImage[], calendarEvent: CalendarEvent }) {
+export default function HomePageClient({ calendarEvent }: { calendarEvent: CalendarEvent }) {
   const [introFinished, setIntroFinished] = useState(false);
 
   return (
@@ -27,9 +26,6 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
             <motion.div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)]" animate={{ scale: [1, 1.04, 1], opacity: [0.7, 0.5, 0.7] }} transition={{ duration: 14, repeat: Infinity, repeatType: 'reverse' }} />
-            <motion.div className="mb-8" variants={fadeUp} initial="hidden" animate="visible" custom={-1}>
-              <Gallery images={galleryImages} />
-            </motion.div>
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               Abbigayle &amp; Frederick&apos;s Wedding
             </motion.h1>
@@ -106,9 +102,6 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
                 <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
               </div>
             </div>
-          </motion.section>
-          <motion.section className="py-10" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2.1}>
-            <Gallery images={galleryImages} />
           </motion.section>
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">
             <p>© {new Date().getFullYear()} Abbigayle & Frederick • Designed with ❤️ in Minnesota</p>
