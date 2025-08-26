@@ -1,56 +1,26 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import React from 'react'
+import { render, screen, fireEvent } from '@testing-library/react'
+import '@testing-library/jest-dom'
+import AddToCalendar, { CalendarEvent } from '../AddToCalendar'
+import * as calendarUtils from '@/utils/calendar'
 
-interface ButtonProps {
-  name: string;
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  endTime: string;
-  timeZone: string;
-  location: string;
-  description: string;
-  [key: string]: unknown;
-}
+// Mock the calendar utility functions
+jest.mock('@/utils/calendar', () => ({
+  createGoogleCalendarLink: jest.fn(),
+  createYahooCalendarLink: jest.fn(),
+  createIcsFile: jest.fn(),
+}))
 
-jest.mock('next/dynamic', () => {
-  return () => {
-    const MockAddToCalendarButton = ({
-      name,
-      startDate,
-      startTime,
-      endDate,
-      endTime,
-      timeZone,
-      location,
-      description,
-      ...rest
-    }: ButtonProps) => {
-      // The component being mocked accepts custom style props, but the DOM <button> does not.
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { buttonStyle, styleLight, styleDark, ...domProps } = rest
-      return (
-        <button
-          data-testid="add-to-calendar-button"
-          data-name={name}
-          data-start-date={startDate}
-          data-start-time={startTime}
-          data-end-date={endDate}
-          data-end-time={endTime}
-          data-time-zone={timeZone}
-          data-location={location}
-          data-description={description}
-          {...domProps}
-        />
-      )
-    };
-    MockAddToCalendarButton.displayName = 'MockAddToCalendarButton';
-    return MockAddToCalendarButton;
-  };
-});
+// Mock window.open
+const mockWindowOpen = jest.fn()
+Object.defineProperty(window, 'open', { value: mockWindowOpen })
 
-import AddToCalendar, { CalendarEvent } from '../AddToCalendar';
+// Mock URL.createObjectURL and the download link logic
+const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-url')
+const mockRevokeObjectURL = jest.fn()
+Object.defineProperty(window.URL, 'createObjectURL', { value: mockCreateObjectURL })
+Object.defineProperty(window.URL, 'revokeObjectURL', { value: mockRevokeObjectURL })
+
 
 describe('AddToCalendar', () => {
   const sampleEvent: CalendarEvent = {
@@ -62,45 +32,52 @@ describe('AddToCalendar', () => {
     timeZone: 'America/New_York',
     location: 'Test Location',
     description: 'Event Description',
-  };
+  }
 
-  it('renders button with event attributes', () => {
-    render(<AddToCalendar event={sampleEvent} />);
-    const button = screen.getByTestId('add-to-calendar-button');
-    expect(button).toHaveAttribute('data-name', sampleEvent.name);
-    expect(button).toHaveAttribute('data-start-date', sampleEvent.startDate);
-    expect(button).toHaveAttribute('data-start-time', sampleEvent.startTime);
-    expect(button).toHaveAttribute('data-end-date', sampleEvent.endDate);
-    expect(button).toHaveAttribute('data-end-time', sampleEvent.endTime);
-    expect(button).toHaveAttribute('data-time-zone', sampleEvent.timeZone);
-    expect(button).toHaveAttribute('data-location', sampleEvent.location);
-    expect(button).toHaveAttribute('data-description', sampleEvent.description);
-  });
+  beforeEach(() => {
+    // Clear mocks before each test
+    jest.clearAllMocks()
+  })
 
-  it('sets tabindex="-1" on hidden elements', () => {
-    const hiddenDiv = document.createElement('div');
-    hiddenDiv.setAttribute('data-aria-hidden', 'true');
-    hiddenDiv.setAttribute('aria-hidden', 'true');
-    const childBtn = document.createElement('button');
-    const childLink = document.createElement('a');
-    hiddenDiv.appendChild(childBtn);
-    hiddenDiv.appendChild(childLink);
+  it('renders the "Add to Calendar" button', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    expect(screen.getByText('Add to Calendar')).toBeInTheDocument()
+  })
 
-    const docQuerySpy = jest
-      .spyOn(document, 'querySelectorAll')
-      .mockReturnValue([hiddenDiv] as unknown as NodeListOf<Element>);
-    const elementQuerySpy = jest
-      .spyOn(hiddenDiv, 'querySelectorAll')
-      .mockReturnValue([childBtn, childLink] as unknown as NodeListOf<HTMLElement>);
+  it('opens the dropdown when the button is clicked', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    fireEvent.click(screen.getByText('Add to Calendar'))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(screen.getByText('Google')).toBeInTheDocument()
+    expect(screen.getByText('Yahoo')).toBeInTheDocument()
+    expect(screen.getByText('Apple')).toBeInTheDocument()
+  })
 
-    render(<AddToCalendar event={sampleEvent} />);
+  it('calls createGoogleCalendarLink and window.open when Google is clicked', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    fireEvent.click(screen.getByText('Add to Calendar'))
+    fireEvent.click(screen.getByText('Google'))
 
-    expect(docQuerySpy).toHaveBeenCalledWith('div[data-aria-hidden="true"][aria-hidden="true"]');
-    expect(hiddenDiv.getAttribute('tabindex')).toBe('-1');
-    expect(childBtn.getAttribute('tabindex')).toBe('-1');
-    expect(childLink.getAttribute('tabindex')).toBe('-1');
+    expect(calendarUtils.createGoogleCalendarLink).toHaveBeenCalledWith(sampleEvent)
+    expect(mockWindowOpen).toHaveBeenCalled()
+  })
 
-    docQuerySpy.mockRestore();
-    elementQuerySpy.mockRestore();
-  });
-});
+  it('calls createYahooCalendarLink and window.open when Yahoo is clicked', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    fireEvent.click(screen.getByText('Add to Calendar'))
+    fireEvent.click(screen.getByText('Yahoo'))
+
+    expect(calendarUtils.createYahooCalendarLink).toHaveBeenCalledWith(sampleEvent)
+    expect(mockWindowOpen).toHaveBeenCalled()
+  })
+
+  it('calls createIcsFile and triggers a download when Apple is clicked', () => {
+    (calendarUtils.createIcsFile as jest.Mock).mockReturnValue('mock ics content')
+    render(<AddToCalendar event={sampleEvent} />)
+    fireEvent.click(screen.getByText('Add to Calendar'))
+    fireEvent.click(screen.getByText('Apple'))
+
+    expect(calendarUtils.createIcsFile).toHaveBeenCalledWith(sampleEvent)
+    expect(mockCreateObjectURL).toHaveBeenCalled()
+  })
+})
