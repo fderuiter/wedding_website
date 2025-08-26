@@ -4,50 +4,58 @@ import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
-import LoadingScreen from '@/components/LoadingScreen'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
-import Gallery, { GalleryImage } from '@/components/Gallery'
-import StickyHeader from '@/components/StickyHeader'
 import BackToTop from '@/components/BackToTop'
+import Countdown from '@/components/Countdown'
 
 /* ----------------------------- Dynamic imports ---------------------------- */
-const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false, loading: () => <LoadingScreen /> })
+const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false })
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
-export default function HomePageClient({ galleryImages, calendarEvent }: { galleryImages: GalleryImage[], calendarEvent: CalendarEvent }) {
-  const [showIntro, setShowIntro] = useState(false)
+export default function HomePageClient({ calendarEvent }: { calendarEvent: CalendarEvent }) {
+  const [hasVisited, setHasVisited] = useState<boolean | null>(null);
+  const [introPlayed, setIntroPlayed] = useState(false);
+
   useEffect(() => {
-    setShowIntro(true)
-  }, [])
+    const visited = localStorage.getItem('hasVisited');
+    if (visited) {
+      setHasVisited(true);
+    } else {
+      localStorage.setItem('hasVisited', 'true');
+      setHasVisited(false);
+    }
+  }, []);
+
+  const introFinished = hasVisited || introPlayed;
+
+  if (hasVisited === null) {
+    return null; // Or a loading spinner
+  }
 
   return (
     <>
-      {showIntro && <WeddingIntro onFinish={() => setShowIntro(false)} />}
+      {!introFinished && <WeddingIntro onFinish={() => setIntroPlayed(true)} />}
       <div id="top" />
-      <StickyHeader />
-      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${showIntro ? 'hidden' : ''}`}
+      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? 'hidden' : ''}`}
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
             <motion.div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)]" animate={{ scale: [1, 1.04, 1], opacity: [0.7, 0.5, 0.7] }} transition={{ duration: 14, repeat: Infinity, repeatType: 'reverse' }} />
-            <motion.div className="mb-8" variants={fadeUp} initial="hidden" animate="visible" custom={-1}>
-              <Gallery images={galleryImages} />
-            </motion.div>
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               Abbigayle &amp; Frederick&apos;s Wedding
             </motion.h1>
-            <motion.p className="mb-8 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
+            <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
               Join us for our wedding on October&nbsp;10,&nbsp;2025, in Rochester, Minnesota.
             </motion.p>
+            <motion.div className="mb-8" variants={fadeUp} initial="hidden" animate="visible" custom={1.5}>
+              <Countdown targetDate="2025-10-10T16:00:00-05:00" />
+            </motion.div>
             <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
               <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
                 Our Story
                 <ChevronDown className="h-5 w-5 transition-transform group-hover:translate-y-1" />
-              </a>
-              <a href="/registry" className="inline-block rounded-full border border-rose-600 dark:border-rose-400 px-8 py-3 font-medium text-rose-700 dark:text-rose-400 transition-colors hover:bg-rose-50 dark:hover:bg-gray-800">
-                Registry
               </a>
               <AddToCalendar event={calendarEvent} />
             </motion.div>
@@ -111,14 +119,6 @@ export default function HomePageClient({ galleryImages, calendarEvent }: { galle
                 <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
               </div>
             </div>
-          </motion.section>
-          <motion.section id="registry" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2}>
-            <h2 className="text-4xl font-bold text-rose-700">Wedding Registry</h2>
-            <p className="mx-auto max-w-xl text-lg">Your presence at our wedding is the greatest gift, but if you’d like to help us feather our first nest, you can view our wedding registry.</p>
-            <a href="/registry" className="inline-block rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl">View Wedding Registry</a>
-          </motion.section>
-          <motion.section className="py-10" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={2.1}>
-            <Gallery images={galleryImages} />
           </motion.section>
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">
             <p>© {new Date().getFullYear()} Abbigayle & Frederick • Designed with ❤️ in Minnesota</p>

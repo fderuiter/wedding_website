@@ -5,7 +5,6 @@ const siteConfig = {
   title: "Abbigayle & Frederick's Wedding",
   description: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
   url: 'https://abbifred.com',
-  // TODO: Replace with a more compelling image for social sharing
   ogImage: 'https://abbifred.com/images/sunset-embrace.jpg',
 };
 
@@ -63,7 +62,7 @@ export const metadata: Metadata = {
     title: siteConfig.title,
     description: siteConfig.description,
     images: [siteConfig.ogImage],
-    creator: '@fderuiter', // TODO: Add actual Twitter handle
+    creator: '@fderuiter',
   },
   metadataBase: new URL(siteConfig.url),
 };

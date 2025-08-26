@@ -116,7 +116,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing  
             alt={item.name}
             className="object-cover rounded bg-gray-100" // Removed size classes
-            layout="fill" // Use fill layout
+            fill // Use fill layout
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               target.onerror = null; // Prevent infinite loop

@@ -30,11 +30,6 @@ jest.mock('@/components/WeddingIntro', () => {
   };
 });
 
-jest.mock('@/components/Gallery', () => ({
-  __esModule: true,
-  default: () => <div data-testid="gallery" />,
-}));
-
 jest.mock('@/components/AddToCalendar', () => ({
   __esModule: true,
   default: () => <button>Add to Calendar</button>,
@@ -48,15 +43,12 @@ describe('Home Page', () => {
 
     // Wait for elements to appear after intro
     await screen.findByRole('link', { name: 'Our Story' });
-    await screen.findAllByRole('link', { name: 'Registry' });
     await screen.findAllByRole('button', { name: 'Add to Calendar' });
 
     // Gallery and hero heading render
-    expect(screen.getAllByTestId('gallery').length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: /Abbi.*Fred/ })).toBeInTheDocument();
 
     expect(screen.getByRole('link', { name: 'Our Story' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Registry' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Add to Calendar' }).length).toBeGreaterThan(0);
 
     // Wrapper should not be hidden after intro

@@ -42,7 +42,7 @@ export default function AddRegistryItemPage() {
         throw new Error(errorText);
       }
       alert('Item added successfully!');
-      router.push('/registry');
+      router.push('/admin/dashboard');
     } catch (error) {
       alert(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`);
     } finally {

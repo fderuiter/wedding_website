@@ -1,8 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
-import HomePageClient from './HomePageClient';
+import HomePageClient from '@/components/home/HomePageClient';
 import { CalendarEvent } from '@/components/AddToCalendar';
-import { GalleryImage } from '@/components/Gallery';
 
 const jsonLd = {
   '@context': 'https://schema.org',
@@ -49,16 +48,6 @@ const calendarEvent: CalendarEvent = {
   description: jsonLd.description,
 };
 
-const galleryImages: GalleryImage[] = [
-  { src: '/images/sunset-embrace.jpg', alt: 'Abbi and Fred hug on a lakeside path at sunset, framed by twisting bare branches and a glowing orange sky.' },
-  { src: '/images/jogging-buddies.jpg', alt: 'Sweaty but smiling, Abbi and Fred snap a post-run selfie on a sunny sidewalk beside a brick building.' },
-  { src: '/images/winter-warmth.jpg', alt: 'Bundled in winter layers, Abbi and Fred pose against a brick wall—she in leopard-trimmed coat and hat, he in a dark jacket—both beaming.' },
-  { src: '/images/sunset-kiss.jpg', alt: 'Abbi and Fred share a quiet kiss at sunset beneath leafless tree silhouettes, golden light reflecting off the lake behind them.' },
-  { src: '/images/timberwolves.jpg', alt: 'Abbi and Fred smile from their seats at a packed Timberwolves basketball game, sporting team gear and surrounded by excited fans.' },
-  { src: '/images/twins-wins.jpg', alt: 'Abbi and Fred grin for a selfie with Target\u202fField and a cheering Minnesota Twins crowd spread out behind them.' },
-  { src: '/images/post-graduation-celebration.jpg', alt: 'Dressed up for the evening, Fred in a crisp white shirt hugs Abbi in a black dress as they smile warmly against a simple light backdrop.' },
-];
-
 export default function HomePage() {
-  return <HomePageClient galleryImages={galleryImages} calendarEvent={calendarEvent} />;
+  return <HomePageClient calendarEvent={calendarEvent} />;
 }

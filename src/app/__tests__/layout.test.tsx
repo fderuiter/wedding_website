@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import RootLayout from '../layout';
 
 const pushMock = jest.fn();
@@ -14,6 +14,7 @@ jest.mock('@vercel/speed-insights/next', () => ({
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
+  usePathname: () => '/',
 }));
 
 describe('RootLayout', () => {
@@ -22,8 +23,7 @@ describe('RootLayout', () => {
     localStorage.clear();
   });
 
-  it('handles loading screen and admin logout', async () => {
-    const readyStateSpy = jest.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+  it('handles admin logout', async () => {
     localStorage.setItem('isAdminLoggedIn', 'true');
 
     render(
@@ -32,18 +32,11 @@ describe('RootLayout', () => {
       </RootLayout>
     );
 
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
-
-    expect(await screen.findByText('Admin Mode Active')).toBeInTheDocument();
+    expect(await screen.findByText('Admin Mode')).toBeInTheDocument();
     const logoutButton = screen.getByRole('button', { name: 'Logout' });
-
-    fireEvent(window, new Event('load'));
-    await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
 
     fireEvent.click(logoutButton);
     expect(localStorage.getItem('isAdminLoggedIn')).toBeNull();
     expect(pushMock).toHaveBeenCalledWith('/');
-
-    readyStateSpy.mockRestore();
   });
 });

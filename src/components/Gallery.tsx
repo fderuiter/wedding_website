@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useKeenSlider } from 'keen-slider/react';
+import 'keen-slider/keen-slider.min.css';
 
 export interface GalleryImage {
   src: string;
@@ -12,47 +13,54 @@ interface GalleryProps {
   autoplayDelay?: number;
 }
 
-const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 3000 }) => {
+const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
   const timer = useRef<NodeJS.Timeout | null>(null);
-  const [loaded, setLoaded] = useState(false);
   const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({
     loop: true,
-    created: () => setLoaded(true),
   });
 
   useEffect(() => {
     if (!instanceRef.current) return;
-    timer.current = setInterval(() => instanceRef.current?.next(), autoplayDelay);
+    const slider = instanceRef.current;
+
+    const autoplay = () => {
+      timer.current = setInterval(() => slider.next(), autoplayDelay);
+    };
+
+    const resetTimer = () => {
+      if (timer.current) clearInterval(timer.current);
+      autoplay();
+    };
+
+    slider.on('created', autoplay);
+    slider.on('dragStarted', () => {
+      if (timer.current) clearInterval(timer.current);
+    });
+    slider.on('animationEnded', resetTimer);
+    slider.on('updated', resetTimer);
+
+    autoplay(); // Start autoplay on mount
+
     return () => {
       if (timer.current) clearInterval(timer.current);
+      slider.destroy();
     };
   }, [instanceRef, autoplayDelay]);
 
-  if (!loaded) {
-    return (
-      <div
-        ref={sliderRef}
-        className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden"
-        style={{ display: 'flex', overflow: 'hidden', position: 'relative', alignItems: 'center', justifyContent: 'center' }}
-      >
-        Loading...
-      </div>
-    );
-  }
-
   return (
-    <div
-      ref={sliderRef}
-      className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden"
-      style={{ display: 'flex', overflow: 'hidden', position: 'relative' }}
-    >
+    <div ref={sliderRef} className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden shadow-lg">
       {images.map((img, idx) => (
-        <div
-          className="keen-slider__slide flex items-center justify-center"
-          key={idx}
-          style={{ minHeight: '100%', width: '100%', position: 'relative' }}
-        >
-          <Image src={img.src} alt={img.alt} width={600} height={600} className="object-cover w-full h-full" />
+        <div className="keen-slider__slide" key={idx}>
+          <Image
+            src={img.src}
+            alt={img.alt}
+            width={600}
+            height={600}
+            className="object-cover w-full h-full"
+            placeholder="blur"
+            blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+            priority={idx === 0}
+          />
         </div>
       ))}
     </div>

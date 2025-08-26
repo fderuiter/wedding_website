@@ -5,7 +5,6 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import {
   Environment,
-  Html,
   Float,
   Text, // Keep Text import
 } from '@react-three/drei'
@@ -135,31 +134,26 @@ function SpinningHeart() {
 /* -------------------------------------------------------------------------- */
 export default function WeddingIntro({ onFinish }: { onFinish?: () => void }) {
   useEffect(() => {
-    // Only handle the finish timeout now
     const id = setTimeout(() => {
       onFinish?.()
     }, CONFIG.HEART_DURATION * 1e3)
 
     return () => clearTimeout(id)
-  }, [onFinish]) // Removed phase dependency
+  }, [onFinish])
 
-  /* --------------------------- Heart (final) scene ------------------------ */
-  // Always return the heart scene
   return (
-    // Wrap with motion.div for exit animation
     <motion.div
-      className="fixed inset-0 bg-black select-none"
-      exit={{ opacity: 0, transition: { duration: 1.0 } }} // Fade out over 1 second
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black select-none"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transition: { duration: 1.0 } }}
+      exit={{ opacity: 0, transition: { duration: 1.0 } }}
     >
       <Canvas camera={{ position: [0, 0, 7], fov: 50 }} dpr={[1, 2]}>
-        {/* Removed PerformanceMonitor */}
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
-
-        <Suspense fallback={<Html>Loading…</Html>}>
+        <Suspense fallback={null}>
           <Environment preset="sunset" />
-          {/* Removed PresentationControls */}
-          <SpinningHeart /> {/* Use the defined SpinningHeart component */}
+          <SpinningHeart />
           <EffectComposer>
             <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
           </EffectComposer>

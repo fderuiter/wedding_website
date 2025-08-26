@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'; // Import useRouter
 import RegistryCard from '@/components/RegistryCard';
 import Modal from '@/components/Modal';
 import { RegistryItem } from '@/types/registry';
@@ -9,13 +8,28 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CategoryFilter } from '@/components/CategoryFilter';
 import { PriceRangeFilter } from '@/components/PriceRangeFilter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInView } from 'react-intersection-observer';
+import RegistryCardSkeleton from '@/components/RegistryCardSkeleton';
+import EmptyState from '@/components/EmptyState';
+import { checkAdminClient } from '@/utils/adminAuth.client';
+import { useRouter } from 'next/navigation';
 
 export default function RegistryPage() {
   const queryClient = useQueryClient();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [visibleItemsCount, setVisibleItemsCount] = useState(12); // Initial number of items
+  const { ref, inView } = useInView({ threshold: 0, triggerOnce: false });
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      const admin = await checkAdminClient();
+      setIsAdmin(admin);
+    };
+    checkAdminStatus();
+  }, []);
 
   // Fetch registry items with React Query
   const {
@@ -31,10 +45,14 @@ export default function RegistryPage() {
     },
   });
 
+
+  // Infinite scroll effect
   useEffect(() => {
-    const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-    setIsAdmin(loggedIn);
-  }, []);
+    // When the sentinel comes into view, load more items
+    if (inView) {
+      setVisibleItemsCount(prevCount => prevCount + 8); // Load 8 more items
+    }
+  }, [inView]);
 
   // Optimistic mutation for contribution/claim
   const contributeMutation = useMutation({
@@ -91,7 +109,7 @@ export default function RegistryPage() {
   });
 
   const handleCardClick = (item: RegistryItem) => {
-    if (item.purchased || isAdmin) return;
+    if (item.purchased) return;
     setSelectedItem(item);
     setIsModalOpen(true);
   };
@@ -101,43 +119,39 @@ export default function RegistryPage() {
     setSelectedItem(null);
   };
 
-  // --- Admin Actions ---
-  const handleEditItem = (itemId: string) => {
-    router.push(`/registry/edit-item/${itemId}`);
+  const handleEdit = (id: string) => {
+    router.push(`/registry/edit-item/${id}`);
   };
 
-  const handleDeleteItem = async (itemId: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
-    try {
-      const res = await fetch(`/api/registry/items/${itemId}`, {
-        method: 'DELETE',
-      });
-
+  const deleteMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await fetch(`/api/registry/items/${itemId}`, { method: 'DELETE' });
       if (!res.ok) {
-        let errorText = `HTTP error! status: ${res.status}`;
-        try {
-            const errorData = await res.json();
-            errorText = errorData.error || JSON.stringify(errorData);
-        } catch {
-            // If no JSON body, use the status text
-        }
-        throw new Error(errorText);
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete item');
       }
-
-      // Remove item from local state
-      queryClient.setQueryData<RegistryItem[]>(['registry-items'], (old) => old?.filter(item => item.id !== itemId));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registry-items'] });
       alert('Item deleted successfully.');
+    },
+    onError: (error) => {
+      alert(`Error deleting item: ${error.message}`);
+    },
+  });
 
-    } catch (e) {
-      console.error("Failed to delete item:", e);
-      alert(`Error deleting item: ${e instanceof Error ? e.message : 'Unknown error'}`);
+  const handleDelete = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this item?')) {
+      deleteMutation.mutate(id);
     }
   };
-  // --- End Admin Actions ---
+
 
   // --- Filter State ---
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
+  const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
+  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
 
   // Compute all categories from items
   const categories = React.useMemo(() => {
@@ -166,9 +180,16 @@ export default function RegistryPage() {
     return items.filter(item => {
       const inCategory = categoryFilter.length === 0 || categoryFilter.includes(item.category);
       const inPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
-      return inCategory && inPrice;
+      const isGroupGift = !showGroupGiftsOnly || item.isGroupGift;
+      const isAvailable = !showAvailableOnly || !item.purchased;
+      return inCategory && inPrice && isGroupGift && isAvailable;
     });
-  }, [items, categoryFilter, priceRange]);
+  }, [items, categoryFilter, priceRange, showGroupGiftsOnly, showAvailableOnly]);
+
+  // Apply pagination to the filtered list
+  const visibleItems = React.useMemo(() => {
+    return filteredItems.slice(0, visibleItemsCount);
+  }, [filteredItems, visibleItemsCount]);
 
   // Animation variants
   const gridVariants = {
@@ -214,39 +235,82 @@ export default function RegistryPage() {
             onChange={setPriceRange}
           />
         </div>
+        <div className="flex flex-wrap justify-center items-center gap-4 mt-4">
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="group-gifts-only"
+              checked={showGroupGiftsOnly}
+              onChange={(e) => setShowGroupGiftsOnly(e.target.checked)}
+              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+            />
+            <label htmlFor="group-gifts-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
+              Show only group gifts
+            </label>
+          </div>
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="available-only"
+              checked={showAvailableOnly}
+              onChange={(e) => setShowAvailableOnly(e.target.checked)}
+              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+            />
+            <label htmlFor="available-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
+              Show only available gifts
+            </label>
+          </div>
+        </div>
       </nav>
       {/* Feedback messages with animation */}
       <AnimatePresence>
-        {isLoading && (
-          <motion.p className="text-center text-gray-500 mb-8 text-lg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            Loading registry...
-          </motion.p>
-        )}
         {error && (
           <motion.p className="text-center text-red-500 mb-8 text-lg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             Error loading registry: {error instanceof Error ? error.message : String(error)}
           </motion.p>
         )}
       </AnimatePresence>
-      <motion.div
-        className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
-        variants={gridVariants}
-        initial="hidden"
-        animate="visible"
-        aria-live="polite"
-      >
-        {filteredItems.map((item) => (
-          <motion.div key={item.id} variants={cardVariants}>
-            <RegistryCard
-              item={item}
-              onClick={() => handleCardClick(item)}
-              isAdmin={isAdmin}
-              onEdit={handleEditItem}
-              onDelete={handleDeleteItem}
-            />
-          </motion.div>
-        ))}
-      </motion.div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto">
+          {Array.from({ length: 12 }).map((_, index) => (
+            <RegistryCardSkeleton key={index} />
+          ))}
+        </div>
+      ) : (
+        <>
+          {visibleItems.length > 0 ? (
+            <motion.div
+              className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
+              variants={gridVariants}
+              initial="hidden"
+              animate="visible"
+              aria-live="polite"
+            >
+              {visibleItems.map((item) => (
+                <motion.div key={item.id} variants={cardVariants}>
+                  <RegistryCard
+                    item={item}
+                    onClick={() => handleCardClick(item)}
+                    isAdmin={isAdmin}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
+          ) : (
+            <EmptyState message="No gifts match the current filters. Try adjusting your search!" />
+          )}
+        </>
+      )}
+
+      {/* Sentinel element for infinite scroll */}
+      {visibleItems.length < filteredItems.length && !isLoading && (
+        <div ref={ref} className="text-center p-4 col-span-full">
+          <p className="text-gray-500">Loading more gifts...</p>
+        </div>
+      )}
       {/* Modal with animation and accessibility improvements */}
       <AnimatePresence>
         {selectedItem && isModalOpen && (

@@ -11,11 +11,11 @@ export interface RegistryCardProps {
   item: RegistryItem;
   /** Function to call when the card is clicked. */
   onClick: () => void;
-  /** Optional flag to display administrator controls. */
+  /** Whether the user is an admin. */
   isAdmin?: boolean;
-  /** Optional handler for the edit action. */
+  /** Function to call when the edit button is clicked. */
   onEdit?: (id: string) => void;
-  /** Optional handler for the delete action. */
+  /** Function to call when the delete button is clicked. */
   onDelete?: (id: string) => void;
 }
 
@@ -31,16 +31,16 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   // Updated card styling, removed dark mode, updated focus ring
-  const cardClasses = `border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''}`;
   const isClickable = !isClaimed && !isAdmin;
+  const cardClasses = `border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
 
-  const handleEditClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click event
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
     onEdit?.(item.id);
   };
 
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click event
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
     onDelete?.(item.id);
   };
 
@@ -70,7 +70,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           alt={item.name}
           // Updated placeholder background
           className="object-cover bg-gray-100 rounded-t-2xl" // Removed w-full, h-56
-          layout="fill" // Use fill layout
+          fill // Use fill layout
           loading="lazy"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
@@ -99,28 +99,25 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
             {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
           </p>
         )}
+        {isAdmin && (
+          <div className="absolute bottom-4 right-4 flex gap-2 z-20">
+            <button
+              onClick={handleEdit}
+              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+              aria-label={`Edit ${item.name}`}
+            >
+              Edit
+            </button>
+            <button
+              onClick={handleDelete}
+              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+              aria-label={`Delete ${item.name}`}
+            >
+              Delete
+            </button>
+          </div>
+        )}
       </div>
-      {/* Admin Controls - Updated styles */}
-      {isAdmin && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gray-50 bg-opacity-95 flex justify-end space-x-3 rounded-b-2xl border-t border-gray-200">
-          <button
-            onClick={handleEditClick}
-            // Updated Edit button style (amber)
-            className="text-base bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg transition font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
-            aria-label={`Edit ${item.name}`}
-          >
-            Edit
-          </button>
-          <button
-            onClick={handleDeleteClick}
-            // Updated Delete button style (rose)
-            className="text-base bg-rose-600 hover:bg-rose-700 text-white py-2 px-4 rounded-lg transition font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400"
-            aria-label={`Delete ${item.name}`}
-          >
-            Delete
-          </button>
-        </div>
-      )}
     </div>
   );
 };
