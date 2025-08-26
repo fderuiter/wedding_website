@@ -6,10 +6,10 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import React, { Suspense, useMemo, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier'
+import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayload, ConvexHullCollider } from '@react-three/rapier'
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
-import { RigidBodyType } from '@dimforge/rapier3d-compat'
+import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
 
 function Sparkles({ count = 200 }) {
   const pointsRef = useRef<THREE.Points>(null!)
@@ -105,6 +105,31 @@ function Heart3D({ scale }: { scale: number }) {
   )
 }
 
+function BrokenHeart({ initialVelocity, scale }: { initialVelocity: [number, number, number]; scale: number }) {
+  const brokenHeartRef = useRef<RapierRigidBody>(null!)
+
+  useEffect(() => {
+    if (brokenHeartRef.current) {
+      brokenHeartRef.current.applyImpulse({ x: initialVelocity[0], y: initialVelocity[1], z: initialVelocity[2] }, true)
+      const torqueStrength = 40
+      brokenHeartRef.current.applyTorqueImpulse(
+        {
+          x: (Math.random() - 0.5) * torqueStrength,
+          y: (Math.random() - 0.5) * torqueStrength,
+          z: (Math.random() - 0.5) * torqueStrength,
+        },
+        true,
+      )
+    }
+  }, [initialVelocity])
+
+  return (
+    <RigidBody ref={brokenHeartRef} colliders="hull" restitution={0.9}>
+      <Heart3D scale={scale * 0.7} />
+    </RigidBody>
+  )
+}
+
 function PhysicsHeart({
   scale,
   interacted,
@@ -117,10 +142,40 @@ function PhysicsHeart({
   const heartRef = useRef<RapierRigidBody>(null!)
   const groupRef = useRef<THREE.Group>(null!)
   const [pulseSpeed, setPulseSpeed] = useState(1)
+  const [isBroken, setIsBroken] = useState(false)
+  const [showEasterEgg, setShowEasterEgg] = useState(false)
   const { size, viewport } = useThree()
 
+  const handleContactForce = (payload: ContactForcePayload) => {
+    if (!isBroken && payload.totalForceMagnitude > 200) {
+      setIsBroken(true)
+      setTimeout(() => {
+        setIsBroken(false)
+        // Also reset the main heart's state when it reappears
+        if (heartRef.current) {
+            heartRef.current.setTranslation({x: 0, y: 0, z: 0}, true)
+            heartRef.current.setLinvel({x: 0, y: 0, z: 0}, true)
+            heartRef.current.setAngvel({x: 0, y: 0, z: 0}, true)
+        }
+      }, 3000)
+    }
+  }
+
   useFrame((state) => {
-    if (heartRef.current) {
+    if (heartRef.current && !isBroken) {
+      const position = heartRef.current.translation()
+
+      // Easter egg logic
+      const secretSpot = {
+        x: viewport.width / 2 - 2,
+        y: viewport.height / 2 - 2,
+      }
+      if (position.x > secretSpot.x && position.y > secretSpot.y) {
+        setShowEasterEgg(true)
+      } else {
+        setShowEasterEgg(false)
+      }
+
       if (!interacted) {
         const rotation = heartRef.current.rotation()
         const euler = new THREE.Euler().setFromQuaternion(
@@ -129,7 +184,6 @@ function PhysicsHeart({
         euler.y += 0.002
         heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
       } else {
-        const position = heartRef.current.translation()
         const distance = Math.sqrt(position.x ** 2 + position.y ** 2)
         if (distance > 0.1) {
           const force = new THREE.Vector3(-position.x, -position.y, 0).normalize().multiplyScalar(15)
@@ -149,6 +203,7 @@ function PhysicsHeart({
 
   const bind = useDrag(
     ({ active, xy: [sx, sy], velocity: [vx, vy], first, last }) => {
+      if (isBroken) return
       if (first) {
         if (!interacted) onInteract()
         setPulseSpeed(5)
@@ -186,13 +241,42 @@ function PhysicsHeart({
   )
 
   return (
-    <RigidBody ref={heartRef} colliders="hull" restitution={0.9}>
-      {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-      {/* @ts-ignore */}
-      <group ref={groupRef} {...bind()}>
-        <Heart3D scale={scale} />
-      </group>
-    </RigidBody>
+    <>
+      {!isBroken ? (
+        <RigidBody
+          ref={heartRef}
+          restitution={0.9}
+        >
+            <ConvexHullCollider
+                onContactForce={handleContactForce}
+                // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
+                activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
+            >
+                {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+                {/* @ts-ignore */}
+                <group ref={groupRef} {...bind()}>
+                    <Heart3D scale={scale} />
+                </group>
+            </ConvexHullCollider>
+        </RigidBody>
+      ) : (
+        <>
+          <BrokenHeart initialVelocity={[20, 15, 5]} scale={scale} />
+          <BrokenHeart initialVelocity={[-20, 15, -5]} scale={scale} />
+        </>
+      )}
+      {showEasterEgg && (
+        <Text
+            position={[0, 0, 5]}
+            fontSize={1.5}
+            anchorX="center"
+            anchorY="middle"
+        >
+            I love you!
+            <meshStandardMaterial color="hotpink" />
+        </Text>
+      )}
+    </>
   )
 }
 
