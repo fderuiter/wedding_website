@@ -6,23 +6,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { WebVitals } from '@/components/WebVitals';
-import Link from 'next/link';
-import TravelStrip from '@/components/TravelStrip';
+import Navbar from './Navbar';
 
 const queryClient = new QueryClient();
-
-const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/photos', label: 'Photos' },
-  { href: '/wedding-party', label: 'Wedding Party' },
-  { href: '/things-to-do', label: 'Things to Do' },
-];
-
-const homeNavLinks = [
-  { href: '#details', label: 'Details' },
-  { href: '#travel', label: 'Travel' },
-  { href: '#faq', label: 'FAQ' },
-];
 
 export default function RootLayoutClient({
   children,
@@ -74,44 +60,11 @@ export default function RootLayoutClient({
   return (
     <QueryClientProvider client={queryClient}>
       {!isHeartPage && (
-        <header
-          ref={headerRef}
-          className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-center text-sm flex flex-col items-stretch fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700"
-        >
-          <div className="p-4 flex justify-between items-center w-full">
-            <nav>
-              <ul className="flex gap-4">
-                {navLinks.map((link) => (
-                  <li key={link.href}>
-                    <Link href={link.href} className="hover:text-rose-400">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-                {pathname === '/' &&
-                  homeNavLinks.map((link) => (
-                    <li key={link.href}>
-                      <Link href={link.href} className="hover:text-rose-400">
-                        {link.label}
-                      </Link>
-                    </li>
-                  ))}
-              </ul>
-            </nav>
-            {isAdmin && (
-              <div className="flex items-center gap-4">
-                <span>Admin Mode Active</span>
-                <button
-                  onClick={handleLogout}
-                  className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
-                >
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
-          <TravelStrip />
-        </header>
+        <Navbar
+          headerRef={headerRef}
+          isAdmin={isAdmin}
+          handleLogout={handleLogout}
+        />
       )}
       <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
         {children}

@@ -32,7 +32,7 @@ describe('RootLayout', () => {
       </RootLayout>
     );
 
-    expect(await screen.findByText('Admin Mode Active')).toBeInTheDocument();
+    expect(await screen.findByText('Admin Mode')).toBeInTheDocument();
     const logoutButton = screen.getByRole('button', { name: 'Logout' });
 
     fireEvent.click(logoutButton);
