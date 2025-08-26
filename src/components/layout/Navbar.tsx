@@ -10,6 +10,7 @@ const navLinks = [
   { href: '/photos', label: 'Photos' },
   { href: '/wedding-party', label: 'Wedding Party' },
   { href: '/things-to-do', label: 'Things to Do' },
+  { href: '/rsvp', label: 'RSVP' },
 ];
 
 const homeNavLinks = [
