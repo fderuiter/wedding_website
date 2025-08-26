@@ -211,6 +211,12 @@ function ScreenBounds() {
 export default function HeartPage() {
   const [interacted, setInteracted] = useState(false)
   const [scale, setScale] = useState(0.6)
+  const [resetKey, setResetKey] = useState(0)
+
+  const handleReset = () => {
+    setInteracted(false)
+    setResetKey((prevKey) => prevKey + 1)
+  }
 
   useEffect(() => {
     const handleResize = () => {
@@ -225,14 +231,23 @@ export default function HeartPage() {
 
   return (
     <div className="fixed inset-0 bg-black select-none">
-      <Link href="/" className="absolute top-0 right-0 z-10 m-4 rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
-        Back Home
-      </Link>
+      <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
+        <button
+          onClick={handleReset}
+          className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white"
+          aria-label="Reset heart"
+        >
+          Reset
+        </button>
+        <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
+          Back Home
+        </Link>
+      </div>
       <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
         <Suspense fallback={<Html>Loading…</Html>}>
-          <Physics gravity={[0, 0, 0]}>
+          <Physics key={resetKey} gravity={[0, 0, 0]}>
             <Sparkles />
             <Environment preset="sunset" />
             <PhysicsHeart scale={scale} interacted={interacted} onInteract={() => setInteracted(true)} />
