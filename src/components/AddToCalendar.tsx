@@ -66,7 +66,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
       <div>
         <button
           type="button"
-          className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-gradient-to-r from-accent-to to-accent-from text-text-on-primary font-semibold shadow-md hover:from-accent-from hover:to-accent-to focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-from"
+          className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-accent-from text-white font-semibold shadow-md hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-from"
           id="options-menu"
           aria-haspopup="true"
           aria-expanded="true"
