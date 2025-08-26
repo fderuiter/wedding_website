@@ -43,7 +43,7 @@ const ThingsToDoList: React.FC = () => {
         <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden">
           <ThingsToDoMap attractions={filteredAttractions} />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 overflow-y-auto print:grid-cols-2 print:overflow-visible" style={{ maxHeight: '600px' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.map((attraction) => (
             <ThingsToDoCard key={attraction.name} attraction={attraction} />
           ))}
