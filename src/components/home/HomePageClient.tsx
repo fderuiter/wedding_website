@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
@@ -16,11 +16,28 @@ const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/componen
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
 export default function HomePageClient({ galleryImages, calendarEvent }: { galleryImages: GalleryImage[], calendarEvent: CalendarEvent }) {
-  const [introFinished, setIntroFinished] = useState(false);
+  const [hasVisited, setHasVisited] = useState<boolean | null>(null);
+  const [introPlayed, setIntroPlayed] = useState(false);
+
+  useEffect(() => {
+    const visited = localStorage.getItem('hasVisited');
+    if (visited) {
+      setHasVisited(true);
+    } else {
+      localStorage.setItem('hasVisited', 'true');
+      setHasVisited(false);
+    }
+  }, []);
+
+  const introFinished = hasVisited || introPlayed;
+
+  if (hasVisited === null) {
+    return null; // Or a loading spinner
+  }
 
   return (
     <>
-      {!introFinished && <WeddingIntro onFinish={() => setIntroFinished(true)} />}
+      {!introFinished && <WeddingIntro onFinish={() => setIntroPlayed(true)} />}
       <div id="top" />
       <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? 'hidden' : ''}`}
       >
