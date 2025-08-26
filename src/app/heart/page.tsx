@@ -120,13 +120,24 @@ function PhysicsHeart({
   const { size, viewport } = useThree()
 
   useFrame((state) => {
-    if (heartRef.current && !interacted) {
-      const rotation = heartRef.current.rotation()
-      const euler = new THREE.Euler().setFromQuaternion(
-        new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
-      )
-      euler.y += 0.002
-      heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
+    if (heartRef.current) {
+      if (!interacted) {
+        const rotation = heartRef.current.rotation()
+        const euler = new THREE.Euler().setFromQuaternion(
+          new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+        )
+        euler.y += 0.002
+        heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
+      } else {
+        const position = heartRef.current.translation()
+        const distance = Math.sqrt(position.x ** 2 + position.y ** 2)
+        if (distance > 0.1) {
+          const force = new THREE.Vector3(-position.x, -position.y, 0).normalize().multiplyScalar(15)
+          heartRef.current.addForce(force, true)
+        } else {
+          heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
+        }
+      }
     }
 
     const t = state.clock.getElapsedTime()
@@ -175,12 +186,24 @@ function PhysicsHeart({
   )
 
   return (
-    <RigidBody ref={heartRef} colliders="hull" restitution={0.7} gravityScale={interacted ? 1 : 0}>
+    <RigidBody ref={heartRef} colliders="hull" restitution={0.9}>
       {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
       {/* @ts-ignore */}
       <group ref={groupRef} {...bind()}>
         <Heart3D scale={scale} />
       </group>
+    </RigidBody>
+  )
+}
+
+function ScreenBounds() {
+  const { viewport } = useThree()
+  return (
+    <RigidBody type="fixed" restitution={0.9}>
+      <CuboidCollider args={[viewport.width / 2, 1, 10]} position={[0, -viewport.height / 2 - 1, 0]} />
+      <CuboidCollider args={[viewport.width / 2, 1, 10]} position={[0, viewport.height / 2 + 1, 0]} />
+      <CuboidCollider args={[1, viewport.height / 2, 10]} position={[-viewport.width / 2 - 1, 0, 0]} />
+      <CuboidCollider args={[1, viewport.height / 2, 10]} position={[viewport.width / 2 + 1, 0, 0]} />
     </RigidBody>
   )
 }
@@ -209,18 +232,11 @@ export default function HeartPage() {
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
         <Suspense fallback={<Html>Loading…</Html>}>
-          <Physics gravity={[0, -2, 0]}>
+          <Physics gravity={[0, 0, 0]}>
             <Sparkles />
             <Environment preset="sunset" />
             <PhysicsHeart scale={scale} interacted={interacted} onInteract={() => setInteracted(true)} />
-            <RigidBody type="fixed" restitution={0.7}>
-              <CuboidCollider args={[10, 1, 10]} position={[0, -10, 0]} />
-              <CuboidCollider args={[10, 1, 10]} position={[0, 10, 0]} />
-              <CuboidCollider args={[1, 10, 10]} position={[-10, 0, 0]} />
-              <CuboidCollider args={[1, 10, 10]} position={[10, 0, 0]} />
-              <CuboidCollider args={[10, 10, 1]} position={[0, 0, -10]} />
-              <CuboidCollider args={[10, 10, 1]} position={[0, 0, 10]} />
-            </RigidBody>
+            <ScreenBounds />
           </Physics>
           <EffectComposer>
             <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
