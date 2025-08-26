@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "../../node_modules/add-to-calendar-button/assets/css/atcb.css";
 @import "../../node_modules/keen-slider/keen-slider.min.css";
 
 :root {
@@ -47,19 +46,6 @@ input:focus, textarea:focus, select:focus {
 }
 .text-on-secondary {
   color: var(--color-text-on-secondary) !important;
-}
-add-to-calendar-button {
-  --font: var(--font-sans);
-  --btn-background: linear-gradient(to right, var(--color-accent-to), var(--color-accent-from));
-  --btn-hover-background: linear-gradient(to right, var(--color-accent-from), var(--color-accent-to));
-  --btn-text: var(--color-text-on-primary);
-  --btn-hover-text: var(--color-text-on-primary);
-  --btn-font-weight: 600;
-  --btn-padding-x: 2rem;
-  --btn-padding-y: 0.75rem;
-  --btn-border-radius: 9999px;
-  --btn-shadow: rgba(0,0,0,0.1) 0 4px 10px -2px;
-  --btn-hover-shadow: rgba(0,0,0,0.2) 0 5px 12px -2px;
 }
 
 /* Smooth scroll behavior with reduced motion respect */
