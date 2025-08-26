@@ -9,7 +9,14 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
-      // Add other allowed hostnames here if needed
+      { protocol: 'https', hostname: 'assets.mayoclinic.org' },
+      { protocol: 'https', hostname: 'www.exploreminnesota.com' },
+      { protocol: 'https', hostname: 'static.where-e.com' },
+      { protocol: 'https', hostname: 'static.wixstatic.com' },
+      { protocol: 'https', hostname: 'img.ctykit.com' },
+      { protocol: 'https', hostname: 'assets.simpleviewinc.com' },
+      { protocol: 'https', hostname: 'images.trvl-media.com' },
+      { protocol: 'https', hostname: 'upload.wikimedia.org' },
     ],
   },
   webpack: (config, { isServer }) => {
