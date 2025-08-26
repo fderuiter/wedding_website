@@ -61,8 +61,9 @@ export default function RootLayoutClient({
     resizeObserver.observe(headerRef.current);
 
     return () => resizeObserver.disconnect();
-  }, []);
+  }, [pathname]);
 
+  const isHeartPage = pathname === '/heart';
 
   const handleLogout = () => {
     localStorage.removeItem('isAdminLoggedIn');
@@ -72,45 +73,47 @@ export default function RootLayoutClient({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <header
-        ref={headerRef}
-        className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-center text-sm flex flex-col items-stretch fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700"
-      >
-        <div className="p-4 flex justify-between items-center w-full">
-          <nav>
-            <ul className="flex gap-4">
-              {navLinks.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="hover:text-rose-400">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-              {pathname === '/' &&
-                homeNavLinks.map((link) => (
+      {!isHeartPage && (
+        <header
+          ref={headerRef}
+          className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-center text-sm flex flex-col items-stretch fixed top-0 w-full z-50 border-b border-gray-200 dark:border-gray-700"
+        >
+          <div className="p-4 flex justify-between items-center w-full">
+            <nav>
+              <ul className="flex gap-4">
+                {navLinks.map((link) => (
                   <li key={link.href}>
                     <Link href={link.href} className="hover:text-rose-400">
                       {link.label}
                     </Link>
                   </li>
                 ))}
-            </ul>
-          </nav>
-          {isAdmin && (
-            <div className="flex items-center gap-4">
-              <span>Admin Mode Active</span>
-              <button
-                onClick={handleLogout}
-                className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
-              >
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
-        <TravelStrip />
-      </header>
-      <main id="main-content" style={{ paddingTop: mainPaddingTop }}>
+                {pathname === '/' &&
+                  homeNavLinks.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href} className="hover:text-rose-400">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+              </ul>
+            </nav>
+            {isAdmin && (
+              <div className="flex items-center gap-4">
+                <span>Admin Mode Active</span>
+                <button
+                  onClick={handleLogout}
+                  className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
+          <TravelStrip />
+        </header>
+      )}
+      <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
         {children}
       </main>
       <SpeedInsights />
