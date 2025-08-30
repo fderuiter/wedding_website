@@ -42,7 +42,7 @@
     "metascraper-description": "^5.46.11",
     "metascraper-image": "^5.46.11",
     "metascraper-title": "^5.46.11",
-    "next": "15.3.3",
+    "next": "15.5.2",
     "node-fetch": "^3.3.2",
     "open-graph-scraper": "^6.9.0",
     "pg": "^8.14.1",
