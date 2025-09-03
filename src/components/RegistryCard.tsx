@@ -20,8 +20,10 @@ export interface RegistryCardProps {
 }
 
 /**
- * A card component that displays a single registry item.
+ * @function RegistryCard
+ * @description A card component that displays a single registry item.
  * It shows the item's name, image, price, and status (e.g., claimed, fully funded).
+ * The card is clickable to open a modal for contributions, unless the item is already claimed.
  * It also provides optional controls for administrators to edit or delete the item.
  *
  * @param {RegistryCardProps} props - The props for the component.

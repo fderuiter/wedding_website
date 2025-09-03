@@ -3,13 +3,26 @@ import { RegistryItem } from '@/types/registry';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image'; // Import next/image
 
-// Export the props interface
+/**
+ * @interface ModalProps
+ * @description Defines the props for the Modal component.
+ * @property {RegistryItem} item - The registry item to be displayed in the modal.
+ * @property {() => void} onClose - Callback function to close the modal.
+ * @property {(itemId: string, contributorName: string, amount: number) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
+ */
 export interface ModalProps {
   item: RegistryItem;
   onClose: () => void;
   onContribute: (itemId: string, contributorName: string, amount: number) => Promise<void>; // Function to handle contribution API call
 }
 
+/**
+ * @function Modal
+ * @description A React component that displays a modal dialog for a registry item.
+ * It allows users to view item details and contribute to or claim the item.
+ * @param {ModalProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered Modal component.
+ */
 const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const [contributorName, setContributorName] = useState("");
   const [amount, setAmount] = useState<number | string>(""); // Allow string for input flexibility

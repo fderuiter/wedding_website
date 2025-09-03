@@ -12,8 +12,21 @@ import Countdown from '@/components/Countdown'
 /* ----------------------------- Dynamic imports ---------------------------- */
 const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false })
 
+/**
+ * Framer Motion variant for a fade-up animation.
+ * @type {{hidden: {opacity: number, y: number}, visible: (function(number): {opacity: number, y: number, transition: {delay: number, duration: number}})}}
+ */
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
+/**
+ * @function HomePageClient
+ * @description The main client component for the home page.
+ * It handles the display of the wedding intro animation for first-time visitors
+ * and renders the main content of the home page.
+ * @param {object} props - The component props.
+ * @param {CalendarEvent} props.calendarEvent - The event details for the "Add to Calendar" button.
+ * @returns {JSX.Element | null} The rendered HomePageClient component, or null while checking visitor status.
+ */
 export default function HomePageClient({ calendarEvent }: { calendarEvent: CalendarEvent }) {
   const [hasVisited, setHasVisited] = useState<boolean | null>(null);
   const [introPlayed, setIntroPlayed] = useState(false);

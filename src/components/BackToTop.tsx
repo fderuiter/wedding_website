@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
+/**
+ * @function BackToTop
+ * @description A React component that provides a "Back to Top" button.
+ * The button appears when the user scrolls down the page and, when clicked,
+ * smoothly scrolls the page to the top.
+ * @returns {JSX.Element} The rendered BackToTop component.
+ */
 export default function BackToTop() {
   const [visible, setVisible] = useState(false);
 

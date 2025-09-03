@@ -1,5 +1,10 @@
 // Centralized validation utility for registry API endpoints
 
+/**
+ * Validates the input for a contribution to a registry item.
+ * @param {unknown} input - The input data to validate.
+ * @returns {string | null} An error message if validation fails, otherwise null.
+ */
 export function validateContributeInput(input: unknown): string | null { // Changed 'any' to 'unknown'
   if (!input || typeof input !== 'object') return 'Invalid request body.';
   // Use type assertion or type guards for property access
@@ -10,6 +15,11 @@ export function validateContributeInput(input: unknown): string | null { // Chan
   return null;
 }
 
+/**
+ * Validates the input for adding a new registry item.
+ * @param {unknown} input - The input data to validate.
+ * @returns {string | null} An error message if validation fails, otherwise null.
+ */
 export function validateAddItemInput(input: unknown): string | null { // Changed 'any' to 'unknown'
   if (!input || typeof input !== 'object') return 'Invalid request body.';
    // Use type assertion or type guards for property access

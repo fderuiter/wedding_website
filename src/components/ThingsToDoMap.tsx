@@ -16,10 +16,22 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
 });
 
+/**
+ * @interface ThingsToDoMapProps
+ * @description Defines the props for the ThingsToDoMap component.
+ * @property {Attraction[]} attractions - An array of attraction objects to be displayed as markers on the map.
+ */
 interface ThingsToDoMapProps {
   attractions: Attraction[];
 }
 
+/**
+ * @function ThingsToDoMap
+ * @description A React component that displays a Leaflet map with markers for attractions.
+ * This component is client-side only and will not render on the server.
+ * @param {ThingsToDoMapProps} props - The props for the component.
+ * @returns {JSX.Element | null} The rendered ThingsToDoMap component, or null if on the server.
+ */
 const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions }) => {
   if (typeof window === 'undefined') {
     return null;

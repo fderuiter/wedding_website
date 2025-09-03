@@ -4,6 +4,20 @@ import { RegistryService } from '@/services/registryService';
 import { validateAddItemInput } from '@/utils/validation';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
+/**
+ * @api {post} /api/registry/add-item
+ * @description Adds a new item to the wedding registry.
+ *
+ * This function handles a POST request to create a new registry item. It requires admin
+ * authentication. The incoming request body is validated, and if successful, the new item
+ * is created in the database via the `RegistryService`.
+ *
+ * @param {Request} request - The incoming request object, containing the new item data in the JSON body.
+ * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
+ * On success, it returns a 201 status with a success message and the created item.
+ * On failure (e.g., unauthorized, validation error, server error), it returns an appropriate
+ * error message and status code.
+ */
 export async function POST(request: Request) {
   // Admin authentication check
   const isAdmin = await isAdminRequest();

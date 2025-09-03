@@ -14,6 +14,36 @@ import EmptyState from '@/components/EmptyState';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
 
+/**
+ * @page RegistryPage
+ * @description The main page for the wedding registry.
+ *
+ * This is a feature-rich client component that handles:
+ * - Fetching registry items using React Query.
+ * - Client-side filtering by category and price range.
+ * - Toggling the display of group gifts and available gifts.
+ * - Infinite scrolling to load more items as the user scrolls down.
+ * - Opening a modal to view item details and make a contribution.
+ * - Optimistic updates for contributions to provide a smooth user experience.
+ * - Admin controls to edit or delete items if the user is authenticated as an admin.
+ *
+ * @returns {JSX.Element} The rendered registry page.
+ */
+/**
+ * @page RegistryPage
+ * @description The main page for the wedding registry.
+ *
+ * This is a feature-rich client component that handles:
+ * - Fetching registry items using React Query.
+ * - Client-side filtering by category and price range.
+ * - Toggling the display of group gifts and available gifts.
+ * - Infinite scrolling to load more items as the user scrolls down.
+ * - Opening a modal to view item details and make a contribution.
+ * - Optimistic updates for contributions to provide a smooth user experience.
+ * - Admin controls to edit or delete items if the user is authenticated as an admin.
+ *
+ * @returns {JSX.Element} The rendered registry page.
+ */
 export default function RegistryPage() {
   const queryClient = useQueryClient();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);

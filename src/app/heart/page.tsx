@@ -11,6 +11,14 @@ import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
 
+/**
+ * @function Sparkles
+ * @description A React component for @react-three/fiber that creates a cloud of sparkling points.
+ * These points are distributed in a sphere and slowly rotate.
+ * @param {object} props - The component props.
+ * @param {number} [props.count=200] - The number of sparkles to render.
+ * @returns {JSX.Element} The rendered sparkles component.
+ */
 function Sparkles({ count = 200 }) {
   const pointsRef = useRef<THREE.Points>(null!)
   const positions = useMemo(
@@ -31,6 +39,15 @@ function Sparkles({ count = 200 }) {
   )
 }
 
+/**
+ * @function Heart3D
+ * @description A React component for @react-three/fiber that creates a 3D heart shape.
+ * This is a visual component without physics. It's composed of two halves with different
+ * materials (gold and silver) and displays names on each side.
+ * @param {object} props - The component props.
+ * @param {number} props.scale - The scale factor for the heart model.
+ * @returns {JSX.Element} The rendered 3D heart component.
+ */
 function Heart3D({ scale }: { scale: number }) {
   const geom = useMemo(() => {
     const s = new THREE.Shape()
@@ -105,6 +122,15 @@ function Heart3D({ scale }: { scale: number }) {
   )
 }
 
+/**
+ * @function BrokenHeart
+ * @description A React component for @react-three/rapier that represents a piece of the broken heart.
+ * It's a rigid body that receives an initial impulse to fly off in a random direction.
+ * @param {object} props - The component props.
+ * @param {[number, number, number]} props.initialVelocity - The initial impulse vector to apply to the heart piece.
+ * @param {number} props.scale - The scale factor for the heart piece.
+ * @returns {JSX.Element} The rendered broken heart piece.
+ */
 function BrokenHeart({ initialVelocity, scale }: { initialVelocity: [number, number, number]; scale: number }) {
   const brokenHeartRef = useRef<RapierRigidBody>(null!)
 
@@ -130,6 +156,17 @@ function BrokenHeart({ initialVelocity, scale }: { initialVelocity: [number, num
   )
 }
 
+/**
+ * @function PhysicsHeart
+ * @description The main interactive component of the HeartPage.
+ * It's a physics-based heart that can be dragged around the screen. It pulses,
+ * can be "broken" by colliding with the screen boundaries, and has an easter egg.
+ * @param {object} props - The component props.
+ * @param {number} props.scale - The scale of the heart.
+ * @param {boolean} props.interacted - A boolean indicating if the user has interacted with the heart.
+ * @param {() => void} props.onInteract - A callback function to be called when the user first interacts with the heart.
+ * @returns {JSX.Element} The rendered physics-enabled heart.
+ */
 function PhysicsHeart({
   scale,
   interacted,
@@ -280,6 +317,12 @@ function PhysicsHeart({
   )
 }
 
+/**
+ * @function ScreenBounds
+ * @description A component that creates invisible physics colliders around the screen
+ * to keep the `PhysicsHeart` contained within the viewport.
+ * @returns {JSX.Element} The rendered screen bounds component.
+ */
 function ScreenBounds() {
   const { viewport } = useThree()
   return (
@@ -292,6 +335,17 @@ function ScreenBounds() {
   )
 }
 
+/**
+ * @page HeartPage
+ * @description An interactive, physics-based 3D heart page using `@react-three/fiber` and `@react-three/rapier`.
+ *
+ * This page features a large, draggable 3D heart in the center of the screen. Users can
+ * fling the heart around, and it will bounce off the edges of the screen. Colliding too
+ * hard will cause the heart to "break" into two pieces, which then reform. The scene
+ * includes a starry background, post-processing effects, and a reset button.
+ *
+ * @returns {JSX.Element} The rendered HeartPage component.
+ */
 export default function HeartPage() {
   const [interacted, setInteracted] = useState(false)
   const [scale, setScale] = useState(0.6)

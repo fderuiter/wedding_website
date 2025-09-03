@@ -1,5 +1,13 @@
 import React from 'react';
 
+/**
+ * @interface PriceRangeFilterProps
+ * @description Defines the props for the PriceRangeFilter component.
+ * @property {number} min - The minimum possible price value.
+ * @property {number} max - The maximum possible price value.
+ * @property {[number, number]} value - The current selected price range [min, max].
+ * @property {(value: [number, number]) => void} onChange - Callback function invoked when the price range changes.
+ */
 export interface PriceRangeFilterProps {
   min: number;
   max: number;
@@ -7,6 +15,12 @@ export interface PriceRangeFilterProps {
   onChange: (value: [number, number]) => void;
 }
 
+/**
+ * @function PriceRangeFilter
+ * @description A React component that provides a dual-slider for selecting a price range.
+ * @param {PriceRangeFilterProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered PriceRangeFilter component.
+ */
 export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, value, onChange }) => {
   const [minValue, maxValue] = value;
 

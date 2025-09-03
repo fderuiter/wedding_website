@@ -23,9 +23,16 @@ const scraper = metascraper([
 ]);
 
 /**
- * Handles POST requests to scrape a URL.
- * @param request - The incoming Next.js request object, containing the URL to scrape.
- * @returns A JSON response with the scraped data or an error message.
+ * @api {post} /api/registry/scrape
+ * @description Scrapes a given URL for product metadata.
+ *
+ * This function handles a POST request containing a URL to be scraped. It fetches
+ * the HTML from the URL and uses the `metascraper` library to extract metadata
+ * such as the title, description, and image.
+ *
+ * @param {Request} request - The incoming Next.js request object, containing the URL to scrape in the JSON body.
+ * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object
+ * containing the scraped data or an error message.
  */
 export async function POST(request: Request) {
   try {

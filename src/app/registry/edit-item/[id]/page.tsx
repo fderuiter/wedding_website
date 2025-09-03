@@ -6,7 +6,17 @@ import { RegistryItem } from '@/types/registry';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/components/RegistryItemForm';
 
-// Placeholder component for the Edit Item page
+/**
+ * @page EditRegistryItemPage
+ * @description A page for administrators to edit an existing item in the wedding registry.
+ *
+ * This client component first verifies admin authentication. It then fetches the data
+ * for the specific registry item based on the ID from the URL. It renders the
+ * `RegistryItemForm` in 'edit' mode, populated with the fetched data. On submission,
+ * it sends the updated data to the `/api/registry/items/:id` endpoint.
+ *
+ * @returns {JSX.Element} The rendered "Edit Registry Item" page, or a loading/error/redirecting message.
+ */
 export default function EditRegistryItemPage() {
   const router = useRouter();
   const params = useParams();

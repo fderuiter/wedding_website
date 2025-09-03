@@ -2,10 +2,23 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 
+/**
+ * @typedef {object} TimeLeft
+ * @description Represents the time remaining until a target date.
+ * @property {number} [days] - The number of days remaining.
+ */
 type TimeLeft = {
   days?: number;
 };
 
+/**
+ * @function Countdown
+ * @description A React component that displays a countdown to a specified target date.
+ * It calculates the number of days remaining and updates daily.
+ * @param {object} props - The component props.
+ * @param {string} props.targetDate - The target date for the countdown in a string format recognizable by the Date constructor (e.g., "YYYY-MM-DDTHH:mm:ss").
+ * @returns {JSX.Element} The rendered Countdown component.
+ */
 const Countdown = ({ targetDate }: { targetDate: string }) => {
   const weddingDate = useMemo(() => new Date(targetDate), [targetDate])
 

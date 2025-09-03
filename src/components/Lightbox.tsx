@@ -5,6 +5,15 @@ import Image from 'next/image'
 import { GalleryImage } from './Gallery'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 
+/**
+ * @interface LightboxProps
+ * @description Defines the props for the Lightbox component.
+ * @property {GalleryImage[]} images - An array of image objects to be displayed in the lightbox.
+ * @property {number} currentIndex - The index of the currently displayed image in the `images` array.
+ * @property {() => void} onClose - Callback function to close the lightbox.
+ * @property {() => void} onNext - Callback function to navigate to the next image.
+ * @property {() => void} onPrev - Callback function to navigate to the previous image.
+ */
 interface LightboxProps {
   images: GalleryImage[]
   currentIndex: number
@@ -13,6 +22,13 @@ interface LightboxProps {
   onPrev: () => void
 }
 
+/**
+ * @function Lightbox
+ * @description A React component that displays an image in a full-screen modal,
+ * allowing navigation between images.
+ * @param {LightboxProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered Lightbox component.
+ */
 const Lightbox: React.FC<LightboxProps> = ({
   images,
   currentIndex,

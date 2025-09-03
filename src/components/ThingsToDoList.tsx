@@ -5,9 +5,24 @@ import dynamic from 'next/dynamic';
 import { attractions } from '@/data/things-to-do';
 import ThingsToDoCard from './ThingsToDoCard';
 
+/**
+ * An array of possible categories for attractions.
+ * @type {readonly string[]}
+ */
 const categories = ['all', 'food', 'coffee', 'park', 'museum', 'hotel', 'venue'] as const;
+
+/**
+ * A type representing a single category.
+ * @typedef {'all' | 'food' | 'coffee' | 'park' | 'museum' | 'hotel' | 'venue'} Category
+ */
 type Category = typeof categories[number];
 
+/**
+ * @function ThingsToDoList
+ * @description A React component that displays a list of "things to do" or attractions.
+ * It includes a category filter and a map showing the locations of the attractions.
+ * @returns {JSX.Element} The rendered ThingsToDoList component.
+ */
 const ThingsToDoList: React.FC = () => {
   const [filter, setFilter] = useState<Category>('all');
 
