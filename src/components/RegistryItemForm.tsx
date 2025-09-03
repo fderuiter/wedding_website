@@ -28,6 +28,14 @@ const defaultValues: Partial<RegistryItem> = {
   isGroupGift: false,
 };
 
+/**
+ * @function RegistryItemForm
+ * @description A form for adding or editing a registry item. It includes fields for all
+ * item properties and a web scraper to pre-fill data from a URL.
+ *
+ * @param {RegistryItemFormProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered registry item form.
+ */
 const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   mode,
   initialValues = {},

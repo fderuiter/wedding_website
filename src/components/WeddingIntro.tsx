@@ -29,6 +29,13 @@ const CONFIG = {
 /*                                Heart shape                                 */
 /* -------------------------------------------------------------------------- */
 // Remove explicit JSX.Element return type, let TS infer
+/**
+ * @function Heart3D
+ * @description A React component for @react-three/fiber that creates a 3D heart shape.
+ * The heart is composed of two halves with different materials (gold and silver)
+ * and displays names on each side.
+ * @returns {JSX.Element} The rendered 3D heart component.
+ */
 function Heart3D() {
   const geom = useMemo<THREE.ExtrudeGeometry>(() => { // Explicitly type useMemo return
     const s = new THREE.Shape()
@@ -110,7 +117,12 @@ function Heart3D() {
 /* -------------------------------------------------------------------------- */
 /*                           Spinning heart finale                            */
 /* -------------------------------------------------------------------------- */
-// Ensure SpinningHeart is defined before use
+/**
+ * @function SpinningHeart
+ * @description A React component for @react-three/fiber that wraps the Heart3D component
+ * and makes it spin with increasing acceleration.
+ * @returns {JSX.Element} The rendered spinning heart component.
+ */
 function SpinningHeart() {
   const ref = useRef<THREE.Group>(null!)
 
@@ -132,6 +144,16 @@ function SpinningHeart() {
 /* -------------------------------------------------------------------------- */
 /*                          Phased animation wrapper                          */
 /* -------------------------------------------------------------------------- */
+/**
+ * @function WeddingIntro
+ * @description The main export of the WeddingIntro component.
+ * It displays a full-screen 3D animation of a spinning heart.
+ * The component fades in, shows the animation for a fixed duration, and then fades out.
+ * An optional `onFinish` callback can be provided to be called when the animation sequence is complete.
+ * @param {object} props - The component props.
+ * @param {() => void} [props.onFinish] - Optional callback function to be executed when the intro animation finishes.
+ * @returns {JSX.Element} The rendered WeddingIntro component.
+ */
 export default function WeddingIntro({ onFinish }: { onFinish?: () => void }) {
   useEffect(() => {
     const id = setTimeout(() => {

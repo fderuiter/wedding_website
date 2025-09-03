@@ -1,3 +1,15 @@
+/**
+ * @interface Attraction
+ * @description Defines the structure for a "thing to do" or local attraction object.
+ * @property {string} name - The name of the attraction.
+ * @property {string} description - A brief description of the attraction.
+ * @property {string} [image] - The URL of an image representing the attraction.
+ * @property {'food' | 'coffee' | 'park' | 'museum' | 'hotel' | 'venue'} category - The category of the attraction.
+ * @property {string} website - The URL of the attraction's official website.
+ * @property {string} directions - A URL to get directions to the attraction (e.g., a Google Maps link).
+ * @property {number} latitude - The geographical latitude of the attraction.
+ * @property {number} longitude - The geographical longitude of the attraction.
+ */
 export interface Attraction {
   name: string;
   description: string;
@@ -9,6 +21,11 @@ export interface Attraction {
   longitude: number;
 }
 
+/**
+ * @const {Attraction[]} attractions
+ * @description An array of local attractions, restaurants, and points of interest in Rochester, MN.
+ * This data is used to populate the "Things to Do" page.
+ */
 export const attractions: Attraction[] = [
   {
     name: 'Mayo Clinic Campus',

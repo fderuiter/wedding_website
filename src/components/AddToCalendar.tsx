@@ -3,6 +3,18 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile } from '@/utils/calendar'
 
+/**
+ * @interface CalendarEvent
+ * @description Defines the structure for a calendar event object.
+ * @property {string} name - The name of the event.
+ * @property {string} startDate - The start date of the event in YYYY-MM-DD format.
+ * @property {string} startTime - The start time of the event in HH:MM format.
+ * @property {string} endDate - The end date of the event in YYYY-MM-DD format.
+ * @property {string} endTime - The end time of the event in HH:MM format.
+ * @property {string} timeZone - The time zone of the event.
+ * @property {string} location - The location of the event.
+ * @property {string} description - A description of the event.
+ */
 export interface CalendarEvent {
   name: string
   startDate: string
@@ -14,11 +26,23 @@ export interface CalendarEvent {
   description: string
 }
 
+/**
+ * @interface AddToCalendarProps
+ * @description Defines the props for the AddToCalendar component.
+ * @property {CalendarEvent} event - The event object to be added to the calendar.
+ * @property {string} [className] - Optional CSS class names to apply to the component.
+ */
 interface AddToCalendarProps {
   event: CalendarEvent
   className?: string
 }
 
+/**
+ * @function AddToCalendar
+ * @description A React component that provides a dropdown menu to add a specified event to various calendar services.
+ * @param {AddToCalendarProps} props - The props for the component.
+ * @returns {JSX.Element} - The rendered AddToCalendar component.
+ */
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)

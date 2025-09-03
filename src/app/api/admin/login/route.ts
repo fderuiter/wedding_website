@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const ADMIN_COOKIE = 'admin_auth';
 
+/**
+ * @api {post} /api/admin/login
+ * @description Handles admin login.
+ *
+ * This function processes a POST request to log in an administrator. It validates the
+ * provided password against the `ADMIN_PASSWORD` environment variable. If the password
+ * is correct, it sets a secure, HTTP-only cookie to authenticate subsequent admin requests.
+ *
+ * @param {NextRequest} req - The incoming Next.js request object, containing the password in the JSON body.
+ * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
+ * On success, it returns a JSON object with `success: true` and sets the auth cookie.
+ * On failure (e.g., wrong password, server misconfiguration), it returns an appropriate
+ * error message and status code.
+ */
 export async function POST(req: NextRequest) {
   const { password } = await req.json();
   const adminPassword = process.env.ADMIN_PASSWORD;

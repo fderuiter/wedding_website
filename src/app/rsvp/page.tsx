@@ -9,6 +9,15 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * @page RSVPPage
+ * @description A page that provides a link for guests to RSVP to the wedding.
+ *
+ * This simple, static page displays an invitation message and a prominent button
+ * that links to an external RSVP service.
+ *
+ * @returns {JSX.Element} The rendered RSVP page.
+ */
 export default function RSVPPage() {
   return (
     <main className="container mx-auto px-4 py-8">

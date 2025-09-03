@@ -48,6 +48,16 @@ const calendarEvent: CalendarEvent = {
   description: jsonLd.description,
 };
 
+/**
+ * @page HomePage
+ * @description The server component for the main home page.
+ *
+ * This component sets up the JSON-LD structured data for SEO and defines the calendar event details.
+ * It then renders the `HomePageClient` component, passing the calendar event data to it.
+ * The client component handles the interactive parts of the page, including the intro animation.
+ *
+ * @returns {JSX.Element} The rendered HomePageClient component.
+ */
 export default function HomePage() {
   return <HomePageClient calendarEvent={calendarEvent} />;
 }

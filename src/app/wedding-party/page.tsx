@@ -9,6 +9,15 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * @page WeddingPartyPage
+ * @description A page that introduces the members of the wedding party.
+ *
+ * This component renders the `WeddingPartyList`, which displays a series of cards,
+ * each featuring a member of the wedding party with their photo, name, role, and bio.
+ *
+ * @returns {JSX.Element} The rendered wedding party page.
+ */
 export default function WeddingPartyPage() {
   return (
     <main className="container mx-auto px-4 py-8">

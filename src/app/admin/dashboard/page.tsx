@@ -4,6 +4,18 @@ import { useRouter } from "next/navigation";
 import { RegistryItem} from "@/types/registry";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 
+/**
+ * @page AdminDashboardPage
+ * @description The main dashboard for administrators to manage the wedding registry.
+ *
+ * This client component first checks if the user is authenticated as an admin.
+ * If not, it redirects to the login page.
+ * If authenticated, it fetches all registry items and displays them in a responsive table.
+ * The dashboard provides functionality to edit and delete existing registry items and
+ * includes a link to add new items.
+ *
+ * @returns {JSX.Element} The rendered admin dashboard page, or a loading/error state.
+ */
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [items, setItems] = useState<RegistryItem[]>([]);

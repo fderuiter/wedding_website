@@ -1,12 +1,23 @@
 import { createEvent, EventAttributes } from 'ics'
 import { CalendarEvent } from '@/components/AddToCalendar'
 
+/**
+ * Formats a date and time string into a tuple of numbers for the 'ics' library.
+ * @param {string} date - The date string in 'YYYY-MM-DD' format.
+ * @param {string} time - The time string in 'HH:MM' format.
+ * @returns {[number, number, number, number, number]} A tuple representing [year, month, day, hours, minutes].
+ */
 function formatDate(date: string, time: string): [number, number, number, number, number] {
   const [year, month, day] = date.split('-').map(Number)
   const [hours, minutes] = time.split(':').map(Number)
   return [year, month, day, hours, minutes]
 }
 
+/**
+ * Creates a URL to add an event to Google Calendar.
+ * @param {CalendarEvent} event - The event object.
+ * @returns {string} The generated Google Calendar URL.
+ */
 export function createGoogleCalendarLink(event: CalendarEvent): string {
   const gCalEvent = {
     ...event,
@@ -23,6 +34,11 @@ export function createGoogleCalendarLink(event: CalendarEvent): string {
   return url.toString()
 }
 
+/**
+ * Creates a URL to add an event to Yahoo Calendar.
+ * @param {CalendarEvent} event - The event object.
+ * @returns {string} The generated Yahoo Calendar URL.
+ */
 export function createYahooCalendarLink(event: CalendarEvent): string {
     const yahooEvent = {
     ...event,
@@ -41,6 +57,12 @@ export function createYahooCalendarLink(event: CalendarEvent): string {
   return url.toString()
 }
 
+/**
+ * Creates an ICS file string for an event.
+ * ICS is a universal calendar file format compatible with Apple Calendar, Outlook, and others.
+ * @param {CalendarEvent} event - The event object.
+ * @returns {string} The generated ICS file content as a string.
+ */
 export function createIcsFile(event: CalendarEvent): string {
   const icsEvent: EventAttributes = {
     title: event.name,
