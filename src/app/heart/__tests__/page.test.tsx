@@ -1,47 +1,155 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import HeartPage from '../page'
 
-// Mock @react-three/fiber to avoid WebGL context issues in tests
+const mockSetTranslation = jest.fn()
+const mockSetLinvel = jest.fn()
+const mockSetAngvel = jest.fn()
+const mockApplyImpulse = jest.fn()
+const mockApplyTorqueImpulse = jest.fn()
+const mockSetBodyType = jest.fn()
+const mockSetNextKinematicTranslation = jest.fn()
+
+const mockSetScale = jest.fn()
+
+const mockHeartRef = {
+  current: {
+    setTranslation: mockSetTranslation,
+    setLinvel: mockSetLinvel,
+    setAngvel: mockSetAngvel,
+    applyImpulse: mockApplyImpulse,
+    applyTorqueImpulse: mockApplyTorqueImpulse,
+    setBodyType: mockSetBodyType,
+    setNextKinematicTranslation: mockSetNextKinematicTranslation,
+    translation: () => ({ x: 0, y: 0, z: 0 }),
+    rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+    setRotation: jest.fn(),
+    scale: {
+      set: mockSetScale,
+    },
+  },
+}
+
 jest.mock('@react-three/fiber', () => ({
-  Canvas: ({ children }: { children?: React.ReactNode }) => (
-    <canvas>{children}</canvas>
-  ),
+  ...jest.requireActual('@react-three/fiber'),
+  useThree: () => ({
+    size: { width: 1024, height: 768 },
+    viewport: { width: 10, height: 7.5 },
+  }),
   useFrame: () => {},
+  Canvas: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
-// Mock Drei components used within the page
+jest.mock('@react-three/rapier', () => ({
+  ...jest.requireActual('@react-three/rapier'),
+  Physics: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  RigidBody: React.forwardRef(function RigidBody({ children }, ref) {
+    React.useImperativeHandle(ref, () => mockHeartRef.current)
+    return <div>{children}</div>
+  }),
+  CuboidCollider: () => <div />,
+  ConvexHullCollider: React.forwardRef(function ConvexHullCollider({ children, onContactForce }: { children: React.ReactNode; onContactForce: (payload: { totalForceMagnitude: number }) => void }, ref) {
+// @ts-expect-error - The component is a mock and doesn't have the correct types
+    return <div data-testid="convexhull-collider" onClick={() => onContactForce({ totalForceMagnitude: 300 })} ref={ref}>
+      {children}
+    </div>
+  }),
+}))
+
+let useDragCallback: (state: { active: boolean; first: boolean; last: boolean; xy: [number, number]; velocity: [number, number] }) => void
+jest.mock('@use-gesture/react', () => ({
+  useDrag: (callback: (state: { active: boolean; first: boolean; last: boolean; xy: [number, number]; velocity: [number, number] }) => void) => {
+    useDragCallback = callback
+    return (props: React.HTMLAttributes<HTMLDivElement>) => props
+  },
+}))
+
 jest.mock('@react-three/drei', () => ({
-  Environment: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Html: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Float: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
-  PresentationControls: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  ...jest.requireActual('@react-three/drei'),
+  Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  Sparkles: () => <div data-testid="sparkles" />,
+  Environment: () => <div />,
+  PointMaterial: () => null,
+  Points: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
-// Mock postprocessing components
 jest.mock('@react-three/postprocessing', () => ({
-  EffectComposer: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  EffectComposer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Bloom: () => null,
 }))
 
-describe('Heart page', () => {
-  let errorSpy: jest.SpyInstance;
+
+describe('HeartPage', () => {
   beforeEach(() => {
-    // Mock console.error to suppress warnings from react-three-fiber in test environment
-    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-  });
+    jest.clearAllMocks()
+    jest.useFakeTimers()
+  })
 
   afterEach(() => {
-    errorSpy.mockRestore();
-  });
+    jest.useRealTimers()
+  })
 
-  it('renders the 3D heart canvas or heading', () => {
-    const { container } = render(<HeartPage />)
-    const canvas = container.querySelector('canvas') as HTMLElement | null
-    const heading = screen.queryByRole('heading', { level: 1 })
-    expect(canvas ?? heading).toBeInTheDocument()
+  it('renders the Reset and Back Home buttons', () => {
+    render(<HeartPage />)
+    expect(screen.getByRole('button', { name: 'Reset heart' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back Home' })).toBeInTheDocument()
+  })
+
+  it('resets the heart position after breaking', () => {
+    const { getByTestId, queryByTestId } = render(<HeartPage />)
+
+    // Simulate a hard collision
+    act(() => {
+      screen.getByTestId('convexhull-collider').click()
+    })
+
+    // The heart should be "broken" (the main collider is not rendered)
+    expect(queryByTestId('convexhull-collider')).toBeNull()
+
+    // Fast-forward time by 3 seconds
+    act(() => {
+      jest.advanceTimersByTime(3000)
+    })
+
+    // The heart should be reformed
+    expect(getByTestId('convexhull-collider')).toBeInTheDocument()
+
+    // And its state should be reset
+    expect(mockSetTranslation).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true)
+    expect(mockSetLinvel).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true)
+    expect(mockSetAngvel).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true)
+  })
+
+  it('handles drag events', () => {
+    render(<HeartPage />)
+
+    // Simulate drag start
+    act(() => {
+      useDragCallback({
+        active: true,
+        first: true,
+        last: false,
+        xy: [0, 0],
+        velocity: [0, 0],
+      })
+    })
+
+    expect(mockSetBodyType).toHaveBeenCalledWith(2, true) // 2 is KinematicPositionBased
+
+    // Simulate drag end
+    act(() => {
+      useDragCallback({
+        active: false,
+        last: true,
+        first: false,
+        xy: [0, 0],
+        velocity: [1, 1],
+      })
+    })
+
+    expect(mockSetBodyType).toHaveBeenCalledWith(0, true) // 0 is Dynamic
+    expect(mockApplyImpulse).toHaveBeenCalled()
+    expect(mockApplyTorqueImpulse).toHaveBeenCalled()
   })
 })
-

@@ -5,6 +5,12 @@
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom'
 import 'jest-fetch-mock/setupJest';
+import 'web-streams-polyfill/dist/polyfill.js';
+import 'abort-controller/polyfill';
+import { TextEncoder, TextDecoder } from 'util';
+
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
 
 jest.mock('@vercel/analytics', () => ({
   track: jest.fn(),
