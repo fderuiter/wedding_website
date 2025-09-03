@@ -188,15 +188,18 @@ function PhysicsHeart({
       setIsBroken(true)
       setTimeout(() => {
         setIsBroken(false)
-        // Also reset the main heart's state when it reappears
-        if (heartRef.current) {
-            heartRef.current.setTranslation({x: 0, y: 0, z: 0}, true)
-            heartRef.current.setLinvel({x: 0, y: 0, z: 0}, true)
-            heartRef.current.setAngvel({x: 0, y: 0, z: 0}, true)
-        }
       }, 3000)
     }
   }
+
+  useEffect(() => {
+    // When the heart is reformed, reset its state
+    if (!isBroken && heartRef.current) {
+      heartRef.current.setTranslation({ x: 0, y: 0, z: 0 }, true)
+      heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      heartRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    }
+  }, [isBroken])
 
   useFrame((state) => {
     if (heartRef.current && !isBroken) {
