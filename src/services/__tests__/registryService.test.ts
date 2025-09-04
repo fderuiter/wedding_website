@@ -177,6 +177,23 @@ describe('RegistryService', () => {
       expect(mockFindUnique).toHaveBeenCalledTimes(1);
       expect(mockUpdate).toHaveBeenCalledTimes(1);
     });
+
+    it('throws when contribution is greater than remaining amount', async () => {
+      const item = {
+        id: '1',
+        amountContributed: 80,
+        price: 100,
+        contributors: []
+      } as unknown as RegistryItem;
+
+      mockTransaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+      mockFindUnique.mockResolvedValue(item);
+
+      await expect(
+        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+      ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
   });
 });
 
