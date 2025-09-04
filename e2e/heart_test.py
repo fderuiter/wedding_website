@@ -36,7 +36,7 @@ def verify_heart_interaction(page: Page):
     page.wait_for_timeout(4000) # Wait a bit longer to be safe
 
     # 6. Take a screenshot for visual verification.
-    page.screenshot(path="jules-scratch/verification/heart_reformed.png")
+    page.screenshot(path="test-results/verification/heart_reformed.png")
 
 def main():
     with sync_playwright() as p:
