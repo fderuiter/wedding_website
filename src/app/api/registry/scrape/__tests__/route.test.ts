@@ -21,7 +21,7 @@ describe('POST /api/registry/scrape', () => {
       result: {
         ogTitle: 'Keurig K-Mini Coffee Maker',
         ogDescription: 'A great coffee maker.',
-        ogImage: [{ url: 'https://m.media-amazon.com/images/I/71+J6kR6D4L._AC_SX679_.jpg' }],
+        twitterImage: [{ url: 'https://m.media-amazon.com/images/I/71+J6kR6D4L._AC_SX679_.jpg' }],
         success: true,
       },
     });
