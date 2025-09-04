@@ -1,55 +1,88 @@
 /** @jest-environment node */
 
-/** @jest-environment node */
-
 import { POST } from '@/app/api/registry/scrape/route';
 import ogs from 'open-graph-scraper';
 
+// Mock open-graph-scraper
 jest.mock('open-graph-scraper');
 const ogsMock = ogs as jest.Mock;
+
+// Mock native fetch
+const fetchMock = jest.fn();
+global.fetch = fetchMock;
 
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should scrape an image from a URL even if it does not have an og:image tag', async () => {
-    const testUrl = 'https://www.amazon.com/dp/B08C1F553M';
+  it('should return an empty image string when ogs fails and the URL is not from Amazon', async () => {
+    const testUrl = 'https://www.example.com';
+    ogsMock.mockResolvedValue({
+      error: false,
+      result: {
+        ogTitle: 'Example Site',
+        ogDescription: 'An example site.',
+        ogImage: [], // No image found
+        success: true,
+      },
+    });
 
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: testUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.name).toBe('Example Site');
+    expect(body.image).toBe(''); // Expect empty image
+  });
+
+  it('should fail to get an image for an Amazon URL when ogs finds no image (demonstrates the bug)', async () => {
+    const amazonUrl = 'https://www.amazon.com/dp/B08C1F553M';
+    const expectedImageUrl = 'https://m.media-amazon.com/images/I/CORRECT_IMAGE.jpg';
+
+    // Simulate open-graph-scraper failing to find an image
     ogsMock.mockResolvedValue({
       error: false,
       result: {
         ogTitle: 'Keurig K-Mini Coffee Maker',
         ogDescription: 'A great coffee maker.',
-        twitterImage: [{ url: 'https://m.media-amazon.com/images/I/71+J6kR6D4L._AC_SX679_.jpg' }],
+        ogImage: [], // Simulate no OG image
+        twitterImage: [], // Simulate no Twitter image
         success: true,
       },
     });
 
-    // Create a mock request
+    // Mock the raw HTML fetch for the fallback mechanism
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <img id="landingImage" src="${expectedImageUrl}" />
+        </body>
+      </html>
+    `;
+    fetchMock.mockResolvedValue(new Response(mockHtml, {
+      headers: { 'Content-Type': 'text/html' },
+    }));
+
+
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
-      body: JSON.stringify({ url: testUrl }),
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: amazonUrl }),
     });
 
-    // Call the endpoint
     const response = await POST(request);
     const body = await response.json();
 
-    // Assertions
-    expect(ogsMock).toHaveBeenCalledWith({
-      url: testUrl,
-      fetchOptions: {
-        headers: {
-          'user-agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
-        },
-      },
-    });
     expect(response.status).toBe(200);
     expect(body.name).toBe('Keurig K-Mini Coffee Maker');
-    expect(body.description).toBe('A great coffee maker.');
-    expect(body.image).not.toBe(''); // This should fail initially, then pass after the fix.
+    // This assertion will fail initially because the fallback logic is not implemented.
+    // After the fix, it should pass by extracting the URL from the mocked HTML.
+    expect(body.image).toBe(expectedImageUrl);
   });
 });
