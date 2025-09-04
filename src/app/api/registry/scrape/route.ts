@@ -48,8 +48,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to scrape product info', details: result }, { status: 500 });
     }
 
-    // Extract the first image from the ogImage array if it exists
-    const image = result.ogImage && result.ogImage.length > 0 ? result.ogImage[0].url : '';
+    // Start with the Open Graph image
+    let image = result.ogImage && result.ogImage.length > 0 ? result.ogImage[0].url : '';
+
+    // If no OG image, try to fall back to the Twitter-specific image tag
+    if (!image && result.twitterImage && result.twitterImage.length > 0) {
+      image = result.twitterImage[0].url;
+    }
 
     const scrapedData = {
       name: result.ogTitle || '',
