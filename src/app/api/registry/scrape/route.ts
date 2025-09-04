@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
 import ogs from 'open-graph-scraper';
+import * as cheerio from 'cheerio';
 
 /**
  * @api {post} /api/registry/scrape
- * @description Scrapes a given URL for product metadata using open-graph-scraper.
+ * @description Scrapes a given URL for product metadata.
  *
- * This function handles a POST request containing a URL to be scraped. It uses
- * the `open-graph-scraper` library to extract Open Graph metadata such as the
- * title, description, and image. This is more robust than the previous
- * `metascraper` implementation and has better success with sites like Amazon.
+ * This function first uses `open-graph-scraper` to get standard metadata.
+ * If that fails to find an image and the URL is from Amazon, it falls back
+ * to fetching the raw HTML and parsing it with Cheerio to find the main
+ * product image.
  *
- * @param {Request} request - The incoming Next.js request object, containing the URL to scrape in the JSON body.
- * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object
- * containing the scraped data or an error message.
+ * @param {Request} request - The incoming Next.js request object.
+ * @returns {Promise<NextResponse>} A promise that resolves to the scraped data.
  */
 export async function POST(request: Request) {
   try {
@@ -22,14 +22,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'URL is required and must be a string' }, { status: 400 });
     }
 
-    // Validate URL format
     try {
       new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
     }
 
-    const options = {
+    // First attempt: Use open-graph-scraper
+    const ogsOptions = {
       url,
       fetchOptions: {
         headers: {
@@ -39,21 +39,32 @@ export async function POST(request: Request) {
       },
     };
 
-    const data = await ogs(options);
-    const { error, result } = data;
+    const { error, result } = await ogs(ogsOptions);
 
     if (error) {
-      // The error object from open-graph-scraper is a boolean. The actual error is in the result
       console.error('Scraping failed:', result);
       return NextResponse.json({ error: 'Failed to scrape product info', details: result }, { status: 500 });
     }
 
-    // Start with the Open Graph image
     let image = result.ogImage && result.ogImage.length > 0 ? result.ogImage[0].url : '';
-
-    // If no OG image, try to fall back to the Twitter-specific image tag
     if (!image && result.twitterImage && result.twitterImage.length > 0) {
       image = result.twitterImage[0].url;
+    }
+
+    // Fallback for Amazon: If no image was found, fetch HTML and parse with Cheerio
+    if (!image && url.includes('amazon.com')) {
+      try {
+        const response = await fetch(url);
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        const amazonImage = $('#landingImage').attr('src');
+        if (amazonImage) {
+          image = amazonImage;
+        }
+      } catch (e) {
+        console.error('Cheerio fallback for Amazon failed:', e);
+        // Don't throw an error, just proceed without the image
+      }
     }
 
     const scrapedData = {
