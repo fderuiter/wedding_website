@@ -44,17 +44,16 @@ jest.mock('@react-three/fiber', () => ({
 jest.mock('@react-three/rapier', () => ({
   ...jest.requireActual('@react-three/rapier'),
   Physics: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  RigidBody: React.forwardRef(function RigidBody({ children }, ref) {
+  RigidBody: React.forwardRef(function RigidBody({ children, onContactForce, colliders }, ref) {
     React.useImperativeHandle(ref, () => mockHeartRef.current)
-    return <div>{children}</div>
+    if (onContactForce) {
+      // @ts-expect-error - The component is a mock and doesn't have the correct types
+      return <div data-testid="physics-heart-rigidbody" data-colliders={colliders} onClick={() => onContactForce({ totalForceMagnitude: 300 })}>{children}</div>
+    }
+    // @ts-expect-error - The component is a mock and doesn't have the correct types
+    return <div data-colliders={colliders}>{children}</div>
   }),
   CuboidCollider: () => <div />,
-  ConvexHullCollider: React.forwardRef(function ConvexHullCollider({ children, onContactForce, args }: { children: React.ReactNode; onContactForce: (payload: { totalForceMagnitude: number }) => void, args: React.ReactNode[] }, ref) {
-// @ts-expect-error - The component is a mock and doesn't have the correct types
-    return <div data-testid="convexhull-collider" data-args={args} onClick={() => onContactForce({ totalForceMagnitude: 300 })} ref={ref}>
-      {children}
-    </div>
-  }),
 }))
 
 let useDragCallback: (state: { active: boolean; first: boolean; last: boolean; xy: [number, number]; velocity: [number, number] }) => void
@@ -101,11 +100,11 @@ describe('HeartPage', () => {
 
     // Simulate a hard collision
     act(() => {
-      screen.getByTestId('convexhull-collider').click()
+      screen.getByTestId('physics-heart-rigidbody').click()
     })
 
     // The heart should be "broken" (the main collider is not rendered)
-    expect(queryByTestId('convexhull-collider')).toBeNull()
+    expect(queryByTestId('physics-heart-rigidbody')).toBeNull()
 
     // Fast-forward time by 3 seconds
     act(() => {
@@ -113,7 +112,7 @@ describe('HeartPage', () => {
     })
 
     // The heart should be reformed
-    expect(getByTestId('convexhull-collider')).toBeInTheDocument()
+    expect(getByTestId('physics-heart-rigidbody')).toBeInTheDocument()
 
     // And its state should be reset
     expect(mockSetTranslation).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true)
@@ -153,8 +152,8 @@ describe('HeartPage', () => {
     expect(mockApplyTorqueImpulse).toHaveBeenCalled()
   })
 
-  it('renders ConvexHullCollider with args to prevent crash', () => {
+  it('renders RigidBody with hull collider', () => {
     render(<HeartPage />)
-    expect(screen.getByTestId('convexhull-collider')).toHaveAttribute('data-args')
+    expect(screen.getByTestId('physics-heart-rigidbody')).toHaveAttribute('data-colliders', 'hull')
   })
 })
