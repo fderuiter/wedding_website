@@ -10,7 +10,7 @@ export function validateContributeInput(input: unknown): string | null { // Chan
   // Use type assertion or type guards for property access
   const data = input as Record<string, unknown>;
   if (!data.itemId || typeof data.itemId !== 'string') return 'Missing or invalid itemId.';
-  if (!data.purchaserName || typeof data.purchaserName !== 'string' || String(data.purchaserName).trim().length === 0) return 'Name is required.';
+  if (!data.name || typeof data.name !== 'string' || String(data.name).trim().length === 0) return 'Name is required.';
   if (typeof data.amount !== 'number' || isNaN(data.amount) || data.amount <= 0) return 'Contribution amount must be a positive number.';
   return null;
 }

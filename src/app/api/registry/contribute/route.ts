@@ -25,10 +25,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const { itemId, purchaserName, amount } = data;
+    const { itemId, name, amount } = data;
 
     const updatedItem = await RegistryService.contributeToItem(itemId, {
-      name: purchaserName,
+      name,
       amount: Number(amount)
     });
 
