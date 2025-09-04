@@ -49,9 +49,9 @@ jest.mock('@react-three/rapier', () => ({
     return <div>{children}</div>
   }),
   CuboidCollider: () => <div />,
-  ConvexHullCollider: React.forwardRef(function ConvexHullCollider({ children, onContactForce }: { children: React.ReactNode; onContactForce: (payload: { totalForceMagnitude: number }) => void }, ref) {
+  ConvexHullCollider: React.forwardRef(function ConvexHullCollider({ children, onContactForce, args }: { children: React.ReactNode; onContactForce: (payload: { totalForceMagnitude: number }) => void, args: React.ReactNode[] }, ref) {
 // @ts-expect-error - The component is a mock and doesn't have the correct types
-    return <div data-testid="convexhull-collider" onClick={() => onContactForce({ totalForceMagnitude: 300 })} ref={ref}>
+    return <div data-testid="convexhull-collider" data-args={args} onClick={() => onContactForce({ totalForceMagnitude: 300 })} ref={ref}>
       {children}
     </div>
   }),
@@ -151,5 +151,10 @@ describe('HeartPage', () => {
     expect(mockSetBodyType).toHaveBeenCalledWith(0, true) // 0 is Dynamic
     expect(mockApplyImpulse).toHaveBeenCalled()
     expect(mockApplyTorqueImpulse).toHaveBeenCalled()
+  })
+
+  it('renders ConvexHullCollider with args to prevent crash', () => {
+    render(<HeartPage />)
+    expect(screen.getByTestId('convexhull-collider')).toHaveAttribute('data-args')
   })
 })
