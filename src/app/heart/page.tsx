@@ -186,11 +186,17 @@ function PhysicsHeart({
   const handleContactForce = (payload: ContactForcePayload) => {
     if (!isBroken && payload.totalForceMagnitude > 200) {
       setIsBroken(true)
-      setTimeout(() => {
-        setIsBroken(false)
-      }, 3000)
     }
   }
+
+  useEffect(() => {
+    if (isBroken) {
+      const timer = setTimeout(() => {
+        setIsBroken(false)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [isBroken])
 
   useEffect(() => {
     // When the heart is reformed, reset its state
@@ -288,6 +294,7 @@ function PhysicsHeart({
           restitution={0.9}
         >
             <ConvexHullCollider
+                args={[[0, 0, 0]]}
                 onContactForce={handleContactForce}
                 // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
                 activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
