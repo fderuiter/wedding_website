@@ -5,15 +5,49 @@ import '@testing-library/jest-dom';
 
 jest.mock('framer-motion', () => {
   const React = require('react');
+  const framerMotionProps = [
+    'initial',
+    'animate',
+    'exit',
+    'variants',
+    'transition',
+    'whileHover',
+    'whileTap',
+    'whileFocus',
+    'whileInView',
+    'layout',
+    'layoutId',
+    'onLayoutAnimationComplete',
+    'drag',
+    'dragConstraints',
+    'dragControls',
+    'dragElastic',
+    'dragMomentum',
+    'dragSnapToOrigin',
+    'dragTransition',
+    'onDragStart',
+    'onDrag',
+    'onDragEnd',
+    'viewport',
+    'custom'
+  ];
+
   return {
     __esModule: true,
     motion: new Proxy({}, {
       get: (_target, tag) => {
-        return React.forwardRef(({ children, ...props }, ref) =>
-          React.createElement(tag as string, { ref, ...props }, children)
-        );
+        return React.forwardRef(({ children, ...props }, ref) => {
+          const filteredProps = Object.keys(props).reduce((acc, key) => {
+            if (!framerMotionProps.includes(key)) {
+              acc[key] = props[key];
+            }
+            return acc;
+          }, {} as Record<string, unknown>);
+          return React.createElement(tag as string, { ref, ...filteredProps }, children);
+        });
       },
     }),
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   };
 });
 
@@ -55,4 +89,5 @@ describe('Home Page', () => {
     const wrapper = screen.getByRole('main').parentElement;
     expect(wrapper).not.toHaveClass('hidden');
   });
+
 });
