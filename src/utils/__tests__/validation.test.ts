@@ -3,8 +3,8 @@ import { validateContributeInput, validateAddItemInput } from '../validation';
 describe('validateContributeInput', () => {
   const cases: Array<{ name: string; input: unknown; expected: string | null }> = [
     {
-      name: 'valid payload',
-      input: { itemId: '1', purchaserName: 'Alice', amount: 100 },
+      name: 'valid payload for group gift contribution',
+      input: { itemId: '1', name: 'Alice', amount: 100 },
       expected: null,
     },
     {
@@ -14,19 +14,24 @@ describe('validateContributeInput', () => {
     },
     {
       name: 'missing itemId',
-      input: { purchaserName: 'Alice', amount: 100 },
+      input: { name: 'Alice', amount: 100 },
       expected: 'Missing or invalid itemId.',
     },
     {
-      name: 'missing purchaserName',
+      name: 'missing name',
       input: { itemId: '1', amount: 100 },
       expected: 'Name is required.',
     },
     {
       name: 'invalid amount',
-      input: { itemId: '1', purchaserName: 'Alice', amount: -5 },
+      input: { itemId: '1', name: 'Alice', amount: -5 },
       expected: 'Contribution amount must be a positive number.',
     },
+    {
+      name: 'empty name',
+      input: { itemId: '1', name: '  ', amount: 100 },
+      expected: 'Name is required.',
+    }
   ];
 
   test.each(cases)('$name', ({ input, expected }) => {

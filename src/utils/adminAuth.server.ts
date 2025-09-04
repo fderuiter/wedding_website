@@ -3,7 +3,15 @@ import { NextRequest } from 'next/server';
 
 const ADMIN_COOKIE = 'admin_auth';
 
-// For server components or API routes
+/**
+ * Checks for the admin authentication cookie on the server-side.
+ * This function is designed to work in different Next.js contexts:
+ * - In API Routes (Edge or Node), it checks the `req.cookies`.
+ * - In Server Components (App Router), it uses the `cookies()` function from `next/headers`.
+ *
+ * @param {NextRequest} [req] - The optional Next.js request object. If provided, the function assumes it's running in an API route context.
+ * @returns {Promise<boolean>} A promise that resolves to true if the user is an admin, false otherwise.
+ */
 export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
   if (req) {
     // API Route (Edge or Node)

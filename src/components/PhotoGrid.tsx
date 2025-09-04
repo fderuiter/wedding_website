@@ -6,10 +6,22 @@ import { GalleryImage } from './Gallery'
 import Lightbox from './Lightbox'
 import { useInView } from 'react-intersection-observer'
 
+/**
+ * @interface PhotoGridProps
+ * @description Defines the props for the PhotoGrid component.
+ * @property {GalleryImage[]} images - An array of image objects to be displayed in the grid.
+ */
 interface PhotoGridProps {
   images: GalleryImage[]
 }
 
+/**
+ * @function PhotoGrid
+ * @description A React component that displays a grid of photos.
+ * Clicking on a photo opens it in a lightbox for a larger view.
+ * @param {PhotoGridProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered PhotoGrid component.
+ */
 const PhotoGrid: React.FC<PhotoGridProps> = ({ images }) => {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)

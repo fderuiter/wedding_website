@@ -1,12 +1,25 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
+/**
+ * @interface RegistryItemProgressBarProps
+ * @description Defines the props for the RegistryItemProgressBar component.
+ * @property {number} contributed - The amount that has been contributed towards the item.
+ * @property {number} total - The total price of the item.
+ * @property {string} [className] - Optional CSS class names to apply to the component.
+ */
 interface RegistryItemProgressBarProps {
   contributed: number;
   total: number;
   className?: string;
 }
 
+/**
+ * @function RegistryItemProgressBar
+ * @description A React component that displays a progress bar indicating how much of a group gift has been funded.
+ * @param {RegistryItemProgressBarProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered RegistryItemProgressBar component.
+ */
 const RegistryItemProgressBar: React.FC<RegistryItemProgressBarProps> = ({ contributed, total, className }) => {
   const percent = total > 0 ? Math.min(100, (contributed / total) * 100) : 0;
   return (

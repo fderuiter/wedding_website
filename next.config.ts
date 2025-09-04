@@ -1,5 +1,18 @@
+/**
+ * @type {import('next').NextConfig}
+ */
 import type { NextConfig } from "next";
 
+/**
+ * @description Configuration object for Next.js.
+ *
+ * This configuration includes:
+ * - `images.remotePatterns`: A list of allowed hostnames for optimized image loading via `next/image`.
+ *   This is a security measure to prevent arbitrary image hosting.
+ * - `webpack`: A function to customize the Webpack configuration.
+ *   - It excludes the 're2' module from the server-side bundle. 're2' is a native C++
+ *     module that can cause issues with serverless environments if not handled as an external dependency.
+ */
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [

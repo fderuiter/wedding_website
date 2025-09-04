@@ -51,6 +51,14 @@ const getWeatherDescription = (code: number) => {
   return descriptions[code] || 'Unknown';
 };
 
+/**
+ * @function TravelStrip
+ * @description A React component that displays a travel information strip.
+ * This strip appears 10 days before the wedding date and shows a 10-day weather forecast
+ * for Rochester, MN, along with quick links to airport status pages.
+ * The component fetches weather data from the Open-Meteo API.
+ * @returns {JSX.Element | null} The rendered TravelStrip component or null if not visible.
+ */
 const TravelStrip: React.FC = () => {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [isVisible, setIsVisible] = useState(false);

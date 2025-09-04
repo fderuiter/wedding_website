@@ -27,6 +27,16 @@ const sectionVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.7 } },
 };
 
+/**
+ * @page ProjectInfo
+ * @description A page that provides detailed information about the wedding website project itself.
+ *
+ * This component serves as a portfolio piece, outlining the project's key features,
+ * the technology stack used, an overview of the architecture, and information on
+ * deployment and contributing to the open-source project.
+ *
+ * @returns {JSX.Element} The rendered project information page.
+ */
 const ProjectInfo = () => {
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 pb-24">

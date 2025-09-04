@@ -1,10 +1,22 @@
 import React from 'react';
 import { SearchX } from 'lucide-react';
 
+/**
+ * @interface EmptyStateProps
+ * @description Defines the props for the EmptyState component.
+ * @property {string} message - The message to display in the empty state.
+ */
 interface EmptyStateProps {
   message: string;
 }
 
+/**
+ * @function EmptyState
+ * @description A React component that displays a message indicating an empty state,
+ * typically when no data or results are available to be shown.
+ * @param {EmptyStateProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered EmptyState component.
+ */
 const EmptyState: React.FC<EmptyStateProps> = ({ message }) => {
   return (
     <div className="text-center p-10 col-span-full">

@@ -1,31 +1,11 @@
 /** @jest-environment node */
 
-jest.mock('node-fetch', () => {
-  class FetchError extends Error {}
-  return { __esModule: true, default: jest.fn(), FetchError };
-});
-jest.mock('metascraper', () => ({ __esModule: true, default: jest.fn() }));
-jest.mock('metascraper-title', () => jest.fn());
-jest.mock('metascraper-description', () => jest.fn());
-jest.mock('metascraper-image', () => jest.fn());
+import { POST } from '../registry/scrape/route';
+import ogs from 'open-graph-scraper';
 
-import fetch from 'node-fetch';
-import metascraper from 'metascraper';
+jest.mock('open-graph-scraper');
 
-const mockFetch = fetch as jest.Mock;
-const mockMetadata = {
-  title: 'Mock Item',
-  description: 'Mock Description',
-  image: 'https://example.com/image.jpg',
-};
-const mockScraper = jest.fn().mockResolvedValue(mockMetadata);
-(metascraper as jest.Mock).mockReturnValue(mockScraper);
-
-let POST: typeof import('../registry/scrape/route').POST;
-
-beforeAll(async () => {
-  ({ POST } = await import('../registry/scrape/route'));
-});
+const mockOgs = ogs as jest.Mock;
 
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
@@ -33,9 +13,14 @@ describe('POST /api/registry/scrape', () => {
   });
 
   it('returns scraped metadata for valid URL', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      text: jest.fn().mockResolvedValue('<html></html>'),
+    mockOgs.mockResolvedValue({
+      error: false,
+      result: {
+        ogTitle: 'Mock Item',
+        ogDescription: 'Mock Description',
+        ogImage: [{ url: 'https://example.com/image.jpg' }],
+        success: true,
+      },
     });
 
     const req = new Request('http://localhost/api/registry/scrape', {
@@ -46,14 +31,13 @@ describe('POST /api/registry/scrape', () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual(
-      expect.objectContaining({
-        name: mockMetadata.title,
-        description: mockMetadata.description,
-        image: mockMetadata.image,
-        vendorUrl: 'https://example.com/product',
-      })
-    );
+    expect(json).toEqual({
+      name: 'Mock Item',
+      description: 'Mock Description',
+      image: 'https://example.com/image.jpg',
+      vendorUrl: 'https://example.com/product',
+      quantity: 1,
+    });
   });
 
   it('returns 400 when URL is empty', async () => {
@@ -68,11 +52,10 @@ describe('POST /api/registry/scrape', () => {
     expect(json.error).toContain('URL is required');
   });
 
-  it('returns 400 when fetch responds with client error', async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
+  it('returns 500 when scraping fails', async () => {
+    mockOgs.mockResolvedValue({
+      error: true,
+      result: { success: false, error: 'some scraping error' },
     });
 
     const req = new Request('http://localhost/api/registry/scrape', {
@@ -81,14 +64,13 @@ describe('POST /api/registry/scrape', () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toContain('Failed to fetch');
+    expect(json.error).toContain('Failed to scrape product info');
   });
 
-  it('returns 502 when network error occurs', async () => {
-    const { FetchError } = await import('node-fetch');
-    mockFetch.mockRejectedValue(new FetchError('network error'));
+  it('returns 500 when an unexpected error occurs', async () => {
+    mockOgs.mockRejectedValue(new Error('network error'));
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -96,8 +78,8 @@ describe('POST /api/registry/scrape', () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toContain('network error');
+    expect(json.error).toContain('Failed to scrape product info');
   });
 });

@@ -21,6 +21,16 @@ const galleryImages: GalleryImage[] = [
 ];
 
 
+/**
+ * @page PhotosPage
+ * @description A page that displays a gallery of photos of the couple.
+ *
+ * This component defines a collection of images and renders them using the `PhotoGrid`
+ * component, which provides a responsive grid layout and a lightbox for viewing
+_ * individual photos.
+ *
+ * @returns {JSX.Element} The rendered photos page.
+ */
 export default function PhotosPage() {
   return (
     <main className="container mx-auto px-4 py-8">

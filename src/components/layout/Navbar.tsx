@@ -10,6 +10,7 @@ const navLinks = [
   { href: '/photos', label: 'Photos' },
   { href: '/wedding-party', label: 'Wedding Party' },
   { href: '/things-to-do', label: 'Things to Do' },
+  { href: '/rsvp', label: 'RSVP' },
 ];
 
 const homeNavLinks = [
@@ -18,12 +19,27 @@ const homeNavLinks = [
   { href: '#faq', label: 'FAQ' },
 ];
 
+/**
+ * @interface NavbarProps
+ * @description Defines the props for the Navbar component.
+ * @property {boolean} isAdmin - Indicates if the current user is an administrator.
+ * @property {() => void} handleLogout - Function to handle user logout.
+ * @property {React.RefObject<HTMLElement | null>} headerRef - Ref to the header element for layout calculations.
+ */
 interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
 }
 
+/**
+ * @function Navbar
+ * @description A responsive navigation bar component for the application.
+ * It displays different navigation links based on the current page and user's admin status.
+ * It also includes a mobile-friendly menu.
+ * @param {NavbarProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered Navbar component.
+ */
 export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);

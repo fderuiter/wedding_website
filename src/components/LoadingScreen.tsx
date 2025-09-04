@@ -1,5 +1,11 @@
 import React from 'react';
 
+/**
+ * @function LoadingScreen
+ * @description A React component that displays a full-screen loading indicator.
+ * It is used to signify that the application is in a loading state.
+ * @returns {JSX.Element} The rendered LoadingScreen component.
+ */
 export default function LoadingScreen() {
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-red-50 to-yellow-50 dark:from-gray-900 dark:to-yellow-900">

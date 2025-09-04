@@ -3,16 +3,35 @@ import Image from 'next/image';
 import { useKeenSlider } from 'keen-slider/react';
 import 'keen-slider/keen-slider.min.css';
 
+/**
+ * @interface GalleryImage
+ * @description Defines the structure for an image object used in the gallery.
+ * @property {string} src - The source URL of the image.
+ * @property {string} alt - The alternative text for the image.
+ */
 export interface GalleryImage {
   src: string;
   alt: string;
 }
 
+/**
+ * @interface GalleryProps
+ * @description Defines the props for the Gallery component.
+ * @property {GalleryImage[]} images - An array of image objects to be displayed in the gallery.
+ * @property {number} [autoplayDelay=4000] - The delay in milliseconds for the autoplay feature. Defaults to 4000.
+ */
 interface GalleryProps {
   images: GalleryImage[];
   autoplayDelay?: number;
 }
 
+/**
+ * @function Gallery
+ * @description A React component that displays an auto-playing image gallery/slider.
+ * It uses the 'keen-slider' library for the slider functionality.
+ * @param {GalleryProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered Gallery component.
+ */
 const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
   const timer = useRef<NodeJS.Timeout | null>(null);
   const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({

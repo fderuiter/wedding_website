@@ -13,7 +13,9 @@ export interface CategoryFilterProps {
 }
 
 /**
- * A component that renders a list of checkboxes for filtering items by category.
+ * @function CategoryFilter
+ * @description A component that renders a list of checkboxes for filtering items by category.
+ * It allows users to select multiple categories to filter a list of items.
  *
  * @param {CategoryFilterProps} props - The props for the component.
  * @returns {React.ReactElement} The rendered category filter component.

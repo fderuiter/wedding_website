@@ -3,6 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+/**
+ * @page LoginPage
+ * @description The login page for administrators.
+ *
+ * This client component provides a form for an administrator to enter a password.
+ * On submission, it sends the password to the `/api/admin/login` endpoint.
+ * If the login is successful, the user is redirected to the admin dashboard.
+ * Otherwise, an error message is displayed.
+ *
+ * @returns {JSX.Element} The rendered login page.
+ */
 export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

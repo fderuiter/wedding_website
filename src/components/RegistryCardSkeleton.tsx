@@ -1,5 +1,11 @@
 import React from 'react';
 
+/**
+ * @function RegistryCardSkeleton
+ * @description A React component that displays a skeleton loading state for a RegistryCard.
+ * It provides a visual placeholder while the actual registry item data is being loaded.
+ * @returns {JSX.Element} The rendered RegistryCardSkeleton component.
+ */
 const RegistryCardSkeleton: React.FC = () => {
   return (
     <div className="border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md bg-white dark:bg-gray-800">

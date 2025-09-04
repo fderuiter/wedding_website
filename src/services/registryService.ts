@@ -104,6 +104,11 @@ export class RegistryService {
         throw new Error('Item not found');
       }
 
+      const remainingAmount = item.price - item.amountContributed;
+      if (contribution.amount > remainingAmount) {
+        throw new Error('Contribution cannot be greater than the remaining amount.');
+      }
+
       const newTotal = item.amountContributed + contribution.amount;
       
       // Update the item's total contribution and add the new contributor.

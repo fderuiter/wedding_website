@@ -3,10 +3,22 @@ import Image from 'next/image';
 import { Attraction } from '@/data/things-to-do';
 import { MapPin, Globe } from 'lucide-react';
 
+/**
+ * @interface ThingsToDoCardProps
+ * @description Defines the props for the ThingsToDoCard component.
+ * @property {Attraction} attraction - The attraction object containing details to display.
+ */
 interface ThingsToDoCardProps {
   attraction: Attraction;
 }
 
+/**
+ * @function ThingsToDoCard
+ * @description A React component that displays a card for a "thing to do" or attraction.
+ * It includes an image, name, description, and links to the attraction's website and directions.
+ * @param {ThingsToDoCardProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered ThingsToDoCard component.
+ */
 const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   return (
     <div className="group bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 flex flex-col h-full">

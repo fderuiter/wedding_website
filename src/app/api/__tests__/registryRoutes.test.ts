@@ -100,7 +100,7 @@ describe('Registry API routes', () => {
   describe('POST /api/registry/contribute', () => {
     const validContribution = {
       itemId: '1',
-      purchaserName: 'John',
+      name: 'John',
       amount: 25,
     };
 
@@ -113,7 +113,7 @@ describe('Registry API routes', () => {
       const res = await contribute(req);
       expect(res.status).toBe(200);
       expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, {
-        name: validContribution.purchaserName,
+        name: validContribution.name,
         amount: validContribution.amount,
       });
     });
@@ -121,7 +121,7 @@ describe('Registry API routes', () => {
     it('returns 400 for invalid data', async () => {
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
-        body: JSON.stringify({ purchaserName: '', amount: -5 }),
+        body: JSON.stringify({ name: '', amount: -5 }),
       });
       const res = await contribute(req);
       expect(res.status).toBe(400);

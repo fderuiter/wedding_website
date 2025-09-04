@@ -49,9 +49,16 @@ const config = {
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/', '.skip.tsx$'],
   transformIgnorePatterns: [
-    '/node_modules/(?!@vercel/analytics/.*)',
+    '/node_modules/(?!(node-fetch|cheerio|metascraper|metascraper-description|metascraper-image|metascraper-title|@vercel/analytics)/.*)',
   ],
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
-export default createJestConfig(config)
+export default (async () => {
+  const jestConfig = await createJestConfig(config)();
+  // Add the packages that need to be transformed here
+  jestConfig.transformIgnorePatterns = [
+    '/node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|@vercel/analytics)/.*)',
+  ];
+  return jestConfig;
+})();

@@ -1,31 +1,18 @@
 import { NextResponse } from 'next/server';
-import fetch, { FetchError } from 'node-fetch';
-import metascraper from 'metascraper';
-import metascraperTitle from 'metascraper-title';
-import metascraperDescription from 'metascraper-description';
-import metascraperImage from 'metascraper-image';
+import ogs from 'open-graph-scraper';
 
 /**
- * A web scraper endpoint to fetch product metadata from a given URL.
- * It uses the 'metascraper' library to extract Open Graph and metadata tags
- * from the HTML of the target page.
+ * @api {post} /api/registry/scrape
+ * @description Scrapes a given URL for product metadata using open-graph-scraper.
  *
- * Known limitations:
- * - Does not fetch price, as 'metascraper-price' was not available or working.
- * - May be blocked by sites with anti-scraping measures (e.g., Costco).
- * - Image scraping may not work for all sites (e.g., Amazon).
- * - Success depends heavily on the target site having well-formed metadata.
- */
-const scraper = metascraper([
-  metascraperTitle(),
-  metascraperDescription(),
-  metascraperImage(),
-]);
-
-/**
- * Handles POST requests to scrape a URL.
- * @param request - The incoming Next.js request object, containing the URL to scrape.
- * @returns A JSON response with the scraped data or an error message.
+ * This function handles a POST request containing a URL to be scraped. It uses
+ * the `open-graph-scraper` library to extract Open Graph metadata such as the
+ * title, description, and image. This is more robust than the previous
+ * `metascraper` implementation and has better success with sites like Amazon.
+ *
+ * @param {Request} request - The incoming Next.js request object, containing the URL to scrape in the JSON body.
+ * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object
+ * containing the scraped data or an error message.
  */
 export async function POST(request: Request) {
   try {
@@ -35,54 +22,53 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'URL is required and must be a string' }, { status: 400 });
     }
 
-    // Validate URL format (basic check)
+    // Validate URL format
     try {
       new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
     }
 
-    // Fetch HTML content from the provided URL
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
+    const options = {
+      url,
+      fetchOptions: {
+        headers: {
+          'user-agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
+        },
       },
-    });
-    if (!response.ok) {
-      const status = response.status >= 500 ? 502 : 400;
-      return NextResponse.json(
-        { error: `Failed to fetch URL: ${response.statusText}` },
-        { status }
-      );
+    };
+
+    const data = await ogs(options);
+    const { error, result } = data;
+
+    if (error) {
+      // The error object from open-graph-scraper is a boolean. The actual error is in the result
+      console.error('Scraping failed:', result);
+      return NextResponse.json({ error: 'Failed to scrape product info', details: result }, { status: 500 });
     }
-    const html = await response.text();
 
-    // Extract metadata using metascraper
-    const metadata = await scraper({ html, url });
+    // Start with the Open Graph image
+    let image = result.ogImage && result.ogImage.length > 0 ? result.ogImage[0].url : '';
 
-    // Prepare the response data
+    // If no OG image, try to fall back to the Twitter-specific image tag
+    if (!image && result.twitterImage && result.twitterImage.length > 0) {
+      image = result.twitterImage[0].url;
+    }
+
     const scrapedData = {
-      name: metadata.title || '',
-      description: metadata.description || '',
-      image: metadata.image || '',
-      vendorUrl: url, // Include the original URL
-      // price: metadata.price, // Would be added here if plugin worked
-      quantity: 1, // Default quantity to 1
+      name: result.ogTitle || '',
+      description: result.ogDescription || '',
+      image: image,
+      vendorUrl: url,
+      quantity: 1,
     };
 
     return NextResponse.json(scrapedData);
 
   } catch (error: unknown) {
     console.error('Scraping error:', error);
-    let status = 500;
-    let errorMessage = 'Failed to scrape product info';
-    if (error instanceof FetchError) {
-      status = 502;
-      errorMessage = error.message;
-    } else if (error instanceof Error) {
-      errorMessage = error.message;
-    }
-    return NextResponse.json({ error: errorMessage }, { status });
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return NextResponse.json({ error: 'Failed to scrape product info', details: errorMessage }, { status: 500 });
   }
 }

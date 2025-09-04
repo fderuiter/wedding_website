@@ -6,11 +6,19 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import React, { Suspense, useMemo, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier'
+import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayload } from '@react-three/rapier'
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
-import { RigidBodyType } from '@dimforge/rapier3d-compat'
+import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
 
+/**
+ * @function Sparkles
+ * @description A React component for @react-three/fiber that creates a cloud of sparkling points.
+ * These points are distributed in a sphere and slowly rotate.
+ * @param {object} props - The component props.
+ * @param {number} [props.count=200] - The number of sparkles to render.
+ * @returns {JSX.Element} The rendered sparkles component.
+ */
 function Sparkles({ count = 200 }) {
   const pointsRef = useRef<THREE.Points>(null!)
   const positions = useMemo(
@@ -31,6 +39,15 @@ function Sparkles({ count = 200 }) {
   )
 }
 
+/**
+ * @function Heart3D
+ * @description A React component for @react-three/fiber that creates a 3D heart shape.
+ * This is a visual component without physics. It's composed of two halves with different
+ * materials (gold and silver) and displays names on each side.
+ * @param {object} props - The component props.
+ * @param {number} props.scale - The scale factor for the heart model.
+ * @returns {JSX.Element} The rendered 3D heart component.
+ */
 function Heart3D({ scale }: { scale: number }) {
   const geom = useMemo(() => {
     const s = new THREE.Shape()
@@ -105,6 +122,17 @@ function Heart3D({ scale }: { scale: number }) {
   )
 }
 
+/**
+ * @function PhysicsHeart
+ * @description The main interactive component of the HeartPage.
+ * It's a physics-based heart that can be dragged around the screen. It pulses,
+ * can be "broken" by colliding with the screen boundaries, and has an easter egg.
+ * @param {object} props - The component props.
+ * @param {number} props.scale - The scale of the heart.
+ * @param {boolean} props.interacted - A boolean indicating if the user has interacted with the heart.
+ * @param {() => void} props.onInteract - A callback function to be called when the user first interacts with the heart.
+ * @returns {JSX.Element} The rendered physics-enabled heart.
+ */
 function PhysicsHeart({
   scale,
   interacted,
@@ -115,12 +143,106 @@ function PhysicsHeart({
   onInteract: () => void
 }) {
   const heartRef = useRef<RapierRigidBody>(null!)
+  const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
+  const brokenHeartRightRef = useRef<RapierRigidBody>(null!)
   const groupRef = useRef<THREE.Group>(null!)
   const [pulseSpeed, setPulseSpeed] = useState(1)
+  const [isBroken, setIsBroken] = useState(false)
+  const [showEasterEgg, setShowEasterEgg] = useState(false)
   const { size, viewport } = useThree()
 
+  const handleContactForce = (payload: ContactForcePayload) => {
+    if (!isBroken && payload.totalForceMagnitude > 200) {
+      setIsBroken(true)
+    }
+  }
+
+  useEffect(() => {
+    const mainRb = heartRef.current
+    const leftRb = brokenHeartLeftRef.current
+    const rightRb = brokenHeartRightRef.current
+
+    if (!mainRb || !leftRb || !rightRb) {
+      return
+    }
+
+    if (isBroken) {
+      // Heart just broke
+      const position = mainRb.translation()
+      const rotation = mainRb.rotation()
+      const linvel = mainRb.linvel()
+      const angvel = mainRb.angvel()
+
+      // Hide main heart
+      mainRb.setBodyType(RigidBodyType.Fixed, true)
+
+      // Show broken pieces
+      const newType = RigidBodyType.Dynamic
+      leftRb.setBodyType(newType, true)
+      rightRb.setBodyType(newType, true)
+
+      leftRb.setTranslation(position, true)
+      leftRb.setRotation(rotation, true)
+      leftRb.setLinvel(linvel, true)
+      leftRb.setAngvel(angvel, true)
+
+      rightRb.setTranslation(position, true)
+      rightRb.setRotation(rotation, true)
+      rightRb.setLinvel(linvel, true)
+      rightRb.setAngvel(angvel, true)
+
+      // Apply explosion
+      leftRb.applyImpulse({ x: 20, y: 15, z: 5 }, true)
+      rightRb.applyImpulse({ x: -20, y: 15, z: -5 }, true)
+
+      const torqueStrength = 40
+      const leftTorque = {
+        x: (Math.random() - 0.5) * torqueStrength,
+        y: (Math.random() - 0.5) * torqueStrength,
+        z: (Math.random() - 0.5) * torqueStrength,
+      }
+      const rightTorque = {
+        x: (Math.random() - 0.5) * torqueStrength,
+        y: (Math.random() - 0.5) * torqueStrength,
+        z: (Math.random() - 0.5) * torqueStrength,
+      }
+      leftRb.applyTorqueImpulse(leftTorque, true)
+      rightRb.applyTorqueImpulse(rightTorque, true)
+
+      // Set up timer to reform
+      const timer = setTimeout(() => {
+        setIsBroken(false)
+      }, 3000)
+      return () => clearTimeout(timer)
+    } else {
+      // Heart is reforming
+      mainRb.setBodyType(RigidBodyType.Dynamic, true)
+      mainRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
+      mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
+
+      // Hide broken pieces
+      const newType = RigidBodyType.Fixed
+      leftRb.setBodyType(newType, true)
+      rightRb.setBodyType(newType, true)
+    }
+  }, [isBroken])
+
   useFrame((state) => {
-    if (heartRef.current) {
+    if (heartRef.current && !isBroken) {
+      const position = heartRef.current.translation()
+
+      // Easter egg logic
+      const secretSpot = {
+        x: viewport.width / 2 - 2,
+        y: viewport.height / 2 - 2,
+      }
+      if (position.x > secretSpot.x && position.y > secretSpot.y) {
+        setShowEasterEgg(true)
+      } else {
+        setShowEasterEgg(false)
+      }
+
       if (!interacted) {
         const rotation = heartRef.current.rotation()
         const euler = new THREE.Euler().setFromQuaternion(
@@ -129,7 +251,6 @@ function PhysicsHeart({
         euler.y += 0.002
         heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
       } else {
-        const position = heartRef.current.translation()
         const distance = Math.sqrt(position.x ** 2 + position.y ** 2)
         if (distance > 0.1) {
           const force = new THREE.Vector3(-position.x, -position.y, 0).normalize().multiplyScalar(15)
@@ -149,6 +270,7 @@ function PhysicsHeart({
 
   const bind = useDrag(
     ({ active, xy: [sx, sy], velocity: [vx, vy], first, last }) => {
+      if (isBroken) return
       if (first) {
         if (!interacted) onInteract()
         setPulseSpeed(5)
@@ -186,16 +308,49 @@ function PhysicsHeart({
   )
 
   return (
-    <RigidBody ref={heartRef} colliders="hull" restitution={0.9}>
-      {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-      {/* @ts-ignore */}
-      <group ref={groupRef} {...bind()}>
-        <Heart3D scale={scale} />
-      </group>
-    </RigidBody>
+    <>
+      <RigidBody
+        ref={heartRef}
+        restitution={0.9}
+        colliders="hull"
+        onContactForce={handleContactForce}
+        // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
+        activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
+      >
+        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+        {/* @ts-ignore */}
+        <group ref={groupRef} {...bind()} visible={!isBroken}>
+          <Heart3D scale={scale} />
+        </group>
+      </RigidBody>
+
+      <RigidBody ref={brokenHeartLeftRef} colliders="hull" restitution={0.9} type={'fixed'}>
+        <group visible={isBroken}>
+          <Heart3D scale={scale * 0.7} />
+        </group>
+      </RigidBody>
+      <RigidBody ref={brokenHeartRightRef} colliders="hull" restitution={0.9} type={'fixed'}>
+        <group visible={isBroken}>
+          <Heart3D scale={scale * 0.7} />
+        </group>
+      </RigidBody>
+
+      {showEasterEgg && (
+        <Text position={[0, 0, 5]} fontSize={1.5} anchorX="center" anchorY="middle">
+          I love you!
+          <meshStandardMaterial color="hotpink" />
+        </Text>
+      )}
+    </>
   )
 }
 
+/**
+ * @function ScreenBounds
+ * @description A component that creates invisible physics colliders around the screen
+ * to keep the `PhysicsHeart` contained within the viewport.
+ * @returns {JSX.Element} The rendered screen bounds component.
+ */
 function ScreenBounds() {
   const { viewport } = useThree()
   return (
@@ -208,6 +363,17 @@ function ScreenBounds() {
   )
 }
 
+/**
+ * @page HeartPage
+ * @description An interactive, physics-based 3D heart page using `@react-three/fiber` and `@react-three/rapier`.
+ *
+ * This page features a large, draggable 3D heart in the center of the screen. Users can
+ * fling the heart around, and it will bounce off the edges of the screen. Colliding too
+ * hard will cause the heart to "break" into two pieces, which then reform. The scene
+ * includes a starry background, post-processing effects, and a reset button.
+ *
+ * @returns {JSX.Element} The rendered HeartPage component.
+ */
 export default function HeartPage() {
   const [interacted, setInteracted] = useState(false)
   const [scale, setScale] = useState(0.6)

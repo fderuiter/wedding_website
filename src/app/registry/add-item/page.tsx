@@ -8,7 +8,17 @@ import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/components/RegistryItemForm';
 import { RegistryItem } from '@/types/registry'; // Import RegistryItem type
 
-// Basic placeholder component for the Add Item page
+/**
+ * @page AddRegistryItemPage
+ * @description A page for administrators to add a new item to the wedding registry.
+ *
+ * This client component first verifies that the user is an authenticated admin.
+ * If not, it redirects to the login page.
+ * It renders the `RegistryItemForm` in 'add' mode and handles the form submission
+ * by sending the new item data to the `/api/registry/add-item` endpoint.
+ *
+ * @returns {JSX.Element} The rendered "Add Registry Item" page, or a loading/redirecting message.
+ */
 export default function AddRegistryItemPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // Use null for initial state
