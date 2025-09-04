@@ -6,7 +6,7 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import React, { Suspense, useMemo, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayload, ConvexHullCollider } from '@react-three/rapier'
+import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayload } from '@react-three/rapier'
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
@@ -292,19 +292,16 @@ function PhysicsHeart({
         <RigidBody
           ref={heartRef}
           restitution={0.9}
+          colliders="hull"
+          onContactForce={handleContactForce}
+          // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
+          activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
         >
-            <ConvexHullCollider
-                args={[[0, 0, 0]]}
-                onContactForce={handleContactForce}
-                // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
-                activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
-            >
-                {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-                {/* @ts-ignore */}
-                <group ref={groupRef} {...bind()}>
-                    <Heart3D scale={scale} />
-                </group>
-            </ConvexHullCollider>
+            {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+            {/* @ts-ignore */}
+            <group ref={groupRef} {...bind()}>
+                <Heart3D scale={scale} />
+            </group>
         </RigidBody>
       ) : (
         <>
