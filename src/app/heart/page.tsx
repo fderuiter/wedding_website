@@ -123,40 +123,6 @@ function Heart3D({ scale }: { scale: number }) {
 }
 
 /**
- * @function BrokenHeart
- * @description A React component for @react-three/rapier that represents a piece of the broken heart.
- * It's a rigid body that receives an initial impulse to fly off in a random direction.
- * @param {object} props - The component props.
- * @param {[number, number, number]} props.initialVelocity - The initial impulse vector to apply to the heart piece.
- * @param {number} props.scale - The scale factor for the heart piece.
- * @returns {JSX.Element} The rendered broken heart piece.
- */
-function BrokenHeart({ initialVelocity, scale }: { initialVelocity: [number, number, number]; scale: number }) {
-  const brokenHeartRef = useRef<RapierRigidBody>(null!)
-
-  useEffect(() => {
-    if (brokenHeartRef.current) {
-      brokenHeartRef.current.applyImpulse({ x: initialVelocity[0], y: initialVelocity[1], z: initialVelocity[2] }, true)
-      const torqueStrength = 40
-      brokenHeartRef.current.applyTorqueImpulse(
-        {
-          x: (Math.random() - 0.5) * torqueStrength,
-          y: (Math.random() - 0.5) * torqueStrength,
-          z: (Math.random() - 0.5) * torqueStrength,
-        },
-        true,
-      )
-    }
-  }, [initialVelocity])
-
-  return (
-    <RigidBody ref={brokenHeartRef} colliders="hull" restitution={0.9}>
-      <Heart3D scale={scale * 0.7} />
-    </RigidBody>
-  )
-}
-
-/**
  * @function PhysicsHeart
  * @description The main interactive component of the HeartPage.
  * It's a physics-based heart that can be dragged around the screen. It pulses,
@@ -177,6 +143,8 @@ function PhysicsHeart({
   onInteract: () => void
 }) {
   const heartRef = useRef<RapierRigidBody>(null!)
+  const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
+  const brokenHeartRightRef = useRef<RapierRigidBody>(null!)
   const groupRef = useRef<THREE.Group>(null!)
   const [pulseSpeed, setPulseSpeed] = useState(1)
   const [isBroken, setIsBroken] = useState(false)
@@ -190,20 +158,73 @@ function PhysicsHeart({
   }
 
   useEffect(() => {
+    const mainRb = heartRef.current
+    const leftRb = brokenHeartLeftRef.current
+    const rightRb = brokenHeartRightRef.current
+
+    if (!mainRb || !leftRb || !rightRb) {
+      return
+    }
+
     if (isBroken) {
+      // Heart just broke
+      const position = mainRb.translation()
+      const rotation = mainRb.rotation()
+      const linvel = mainRb.linvel()
+      const angvel = mainRb.angvel()
+
+      // Hide main heart
+      mainRb.setBodyType(RigidBodyType.Fixed, true)
+
+      // Show broken pieces
+      const newType = RigidBodyType.Dynamic
+      leftRb.setBodyType(newType, true)
+      rightRb.setBodyType(newType, true)
+
+      leftRb.setTranslation(position, true)
+      leftRb.setRotation(rotation, true)
+      leftRb.setLinvel(linvel, true)
+      leftRb.setAngvel(angvel, true)
+
+      rightRb.setTranslation(position, true)
+      rightRb.setRotation(rotation, true)
+      rightRb.setLinvel(linvel, true)
+      rightRb.setAngvel(angvel, true)
+
+      // Apply explosion
+      leftRb.applyImpulse({ x: 20, y: 15, z: 5 }, true)
+      rightRb.applyImpulse({ x: -20, y: 15, z: -5 }, true)
+
+      const torqueStrength = 40
+      const leftTorque = {
+        x: (Math.random() - 0.5) * torqueStrength,
+        y: (Math.random() - 0.5) * torqueStrength,
+        z: (Math.random() - 0.5) * torqueStrength,
+      }
+      const rightTorque = {
+        x: (Math.random() - 0.5) * torqueStrength,
+        y: (Math.random() - 0.5) * torqueStrength,
+        z: (Math.random() - 0.5) * torqueStrength,
+      }
+      leftRb.applyTorqueImpulse(leftTorque, true)
+      rightRb.applyTorqueImpulse(rightTorque, true)
+
+      // Set up timer to reform
       const timer = setTimeout(() => {
         setIsBroken(false)
       }, 3000)
       return () => clearTimeout(timer)
-    }
-  }, [isBroken])
+    } else {
+      // Heart is reforming
+      mainRb.setBodyType(RigidBodyType.Dynamic, true)
+      mainRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
+      mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
 
-  useEffect(() => {
-    // When the heart is reformed, reset its state
-    if (!isBroken && heartRef.current) {
-      heartRef.current.setTranslation({ x: 0, y: 0, z: 0 }, true)
-      heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      heartRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      // Hide broken pieces
+      const newType = RigidBodyType.Fixed
+      leftRb.setBodyType(newType, true)
+      rightRb.setBodyType(newType, true)
     }
   }, [isBroken])
 
@@ -288,36 +309,36 @@ function PhysicsHeart({
 
   return (
     <>
-      {!isBroken ? (
-        <RigidBody
-          ref={heartRef}
-          restitution={0.9}
-          colliders="hull"
-          onContactForce={handleContactForce}
-          // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
-          activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
-        >
-            {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-            {/* @ts-ignore */}
-            <group ref={groupRef} {...bind()}>
-                <Heart3D scale={scale} />
-            </group>
-        </RigidBody>
-      ) : (
-        <>
-          <BrokenHeart initialVelocity={[20, 15, 5]} scale={scale} />
-          <BrokenHeart initialVelocity={[-20, 15, -5]} scale={scale} />
-        </>
-      )}
+      <RigidBody
+        ref={heartRef}
+        restitution={0.9}
+        colliders="hull"
+        onContactForce={handleContactForce}
+        // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
+        activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
+      >
+        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+        {/* @ts-ignore */}
+        <group ref={groupRef} {...bind()} visible={!isBroken}>
+          <Heart3D scale={scale} />
+        </group>
+      </RigidBody>
+
+      <RigidBody ref={brokenHeartLeftRef} colliders="hull" restitution={0.9} type={'fixed'}>
+        <group visible={isBroken}>
+          <Heart3D scale={scale * 0.7} />
+        </group>
+      </RigidBody>
+      <RigidBody ref={brokenHeartRightRef} colliders="hull" restitution={0.9} type={'fixed'}>
+        <group visible={isBroken}>
+          <Heart3D scale={scale * 0.7} />
+        </group>
+      </RigidBody>
+
       {showEasterEgg && (
-        <Text
-            position={[0, 0, 5]}
-            fontSize={1.5}
-            anchorX="center"
-            anchorY="middle"
-        >
-            I love you!
-            <meshStandardMaterial color="hotpink" />
+        <Text position={[0, 0, 5]} fontSize={1.5} anchorX="center" anchorY="middle">
+          I love you!
+          <meshStandardMaterial color="hotpink" />
         </Text>
       )}
     </>
