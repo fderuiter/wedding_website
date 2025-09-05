@@ -1,6 +1,6 @@
 import React from 'react';
 import { RegistryItem } from '@/types/registry';
-import { getRegistryItemStatus } from './registryStatusUtils';
+import { getRegistryItemStatus } from '../lib/registryStatusUtils';
 import Image from 'next/image';
 
 /**

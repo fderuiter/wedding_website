@@ -13,7 +13,7 @@ jest.mock('@/utils/adminAuth.client', () => ({
 }));
 
 // Mock RegistryItemForm to confirm it mounts
-jest.mock('@/components/RegistryItemForm', () => {
+jest.mock('../../components/RegistryItemForm', () => {
   function RegistryItemForm() {
     return <div data-testid="registry-item-form" />;
   }
