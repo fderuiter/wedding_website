@@ -1,21 +1,17 @@
-import { prisma } from '@/lib/prisma';
+import { RegistryRepository } from '@/repositories/registryRepository';
 import type { RegistryItem } from '@/types/registry';
 
 /**
  * Handles business logic for registry-related operations.
- * All methods interact with the database via the Prisma client.
+ * All methods interact with the database via the RegistryRepository.
  */
 export class RegistryService {
   /**
-   * Retrieves all registry items from the database.
-   * @returns A promise that resolves to an array of all registry items, including their contributors.
+   * Retrieves all registry items.
+   * @returns A promise that resolves to an array of all registry items.
    */
   static async getAllItems() {
-    return prisma.registryItem.findMany({
-      include: {
-        contributors: true
-      }
-    });
+    return RegistryRepository.getAllItems();
   }
 
   /**
@@ -24,31 +20,16 @@ export class RegistryService {
    * @returns A promise that resolves to the registry item object or null if not found.
    */
   static async getItemById(id: string) {
-    return prisma.registryItem.findUnique({
-      where: { id },
-      include: {
-        contributors: true
-      }
-    });
+    return RegistryRepository.getItemById(id);
   }
 
   /**
-   * Creates a new registry item in the database.
-   * @param data - The data for the new item, excluding the 'id' and 'contributors' fields.
+   * Creates a new registry item.
+   * @param data - The data for the new item.
    * @returns A promise that resolves to the newly created registry item.
    */
   static async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>) {
-    return prisma.registryItem.create({
-      data: {
-        ...data,
-        contributors: {
-          create: []
-        }
-      },
-      include: {
-        contributors: true
-      }
-    });
+    return RegistryRepository.createItem(data);
   }
 
   /**
@@ -58,80 +39,39 @@ export class RegistryService {
    * @returns A promise that resolves to the updated registry item.
    */
   static async updateItem(id: string, data: Partial<RegistryItem>) {
-    // Destructure contributors out, as it needs special handling and is not updated directly here.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { contributors, ...updateData } = data;
-    return prisma.registryItem.update({
-      where: { id },
-      data: updateData,
-      include: {
-        contributors: true // Ensure contributors are included in the returned object.
-      }
-    });
+    return RegistryRepository.updateItem(id, data);
   }
 
   /**
-   * Deletes a registry item from the database.
+   * Deletes a registry item.
    * @param id - The UUID of the item to delete.
    * @returns A promise that resolves when the item has been deleted.
    */
   static async deleteItem(id: string) {
-    return prisma.registryItem.delete({
-      where: { id }
-    });
+    return RegistryRepository.deleteItem(id);
   }
 
   /**
-   * Adds a contribution to a registry item within a database transaction.
-   * This ensures that the item's total contribution amount and the new contributor record are updated atomically.
+   * Adds a contribution to a registry item.
    * @param itemId - The UUID of the item to contribute to.
    * @param contribution - An object containing the contributor's name and the amount.
    * @returns A promise that resolves to the updated registry item.
-   * @throws Will throw an error if the item is not found.
    */
   static async contributeToItem(
     itemId: string,
     contribution: { name: string; amount: number }
   ) {
-    return prisma.$transaction(async (tx) => {
-      // Retrieve the current state of the item.
-      const item = await tx.registryItem.findUnique({
-        where: { id: itemId },
-        include: { contributors: true }
-      });
+    const item = await RegistryRepository.getItemById(itemId);
 
-      if (!item) {
-        throw new Error('Item not found');
-      }
+    if (!item) {
+      throw new Error('Item not found');
+    }
 
-      const remainingAmount = item.price - item.amountContributed;
-      if (contribution.amount > remainingAmount) {
-        throw new Error('Contribution cannot be greater than the remaining amount.');
-      }
+    const remainingAmount = item.price - item.amountContributed;
+    if (contribution.amount > remainingAmount) {
+      throw new Error('Contribution cannot be greater than the remaining amount.');
+    }
 
-      const newTotal = item.amountContributed + contribution.amount;
-      
-      // Update the item's total contribution and add the new contributor.
-      const updatedItem = await tx.registryItem.update({
-        where: { id: itemId },
-        data: {
-          amountContributed: newTotal,
-          // Mark as purchased if the total contribution meets or exceeds the price.
-          purchased: newTotal >= item.price,
-          contributors: {
-            create: {
-              name: contribution.name,
-              amount: contribution.amount,
-              date: new Date()
-            }
-          }
-        },
-        include: {
-          contributors: true
-        }
-      });
-
-      return updatedItem;
-    });
+    return RegistryRepository.contributeToItem(itemId, contribution);
   }
 }
