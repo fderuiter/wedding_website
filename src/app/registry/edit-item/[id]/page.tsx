@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/types/registry';
 import { checkAdminClient } from '@/utils/adminAuth.client';
-import RegistryItemForm from '@/components/RegistryItemForm';
+import RegistryItemForm from '../../components/RegistryItemForm';
 
 /**
  * @page EditRegistryItemPage

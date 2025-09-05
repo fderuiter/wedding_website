@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import RegistryCard from '@/components/RegistryCard';
-import Modal from '@/components/Modal';
+import RegistryCard from './components/RegistryCard';
+import Modal from './components/Modal';
 import { RegistryItem } from '@/types/registry';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CategoryFilter } from '@/components/CategoryFilter';
-import { PriceRangeFilter } from '@/components/PriceRangeFilter';
+import { CategoryFilter } from './components/CategoryFilter';
+import { PriceRangeFilter } from './components/PriceRangeFilter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
-import RegistryCardSkeleton from '@/components/RegistryCardSkeleton';
+import RegistryCardSkeleton from './components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
