@@ -1,4 +1,4 @@
-import { RegistryItem } from '@/types/registry';
+import { RegistryItem } from '@/features/registry/types';
 
 /**
  * Filters a list of registry items based on selected categories and a price range.

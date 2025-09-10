@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { RegistryItem } from '@/types/registry';
+import { RegistryItem } from '@/features/registry/types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image'; // Import next/image
 

@@ -1,5 +1,5 @@
-import { RegistryRepository } from '@/repositories/registryRepository';
-import type { RegistryItem } from '@/types/registry';
+import { RegistryRepository } from './repository';
+import type { RegistryItem } from './types';
 
 /**
  * Handles business logic for registry-related operations.

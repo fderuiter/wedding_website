@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import EditRegistryItemPage from '../page';
+import EditRegistryItemPage from '../edit-item';
 
 const mockPush = jest.fn();
 const mockItem = {

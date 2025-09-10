@@ -119,4 +119,3 @@ describe('RegistryItemForm', () => {
     expect(await screen.findByText('Scrape failed')).toBeInTheDocument();
   });
 });
-

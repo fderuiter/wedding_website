@@ -1,8 +1,8 @@
-import type { RegistryItem } from '@/types/registry';
-import { RegistryRepository } from '@/repositories/registryRepository';
-import { RegistryService } from '../registryService';
+import type { RegistryItem } from '@/features/registry/types';
+import { RegistryRepository } from '@/features/registry/repository';
+import { RegistryService } from '@/features/registry/service';
 
-jest.mock('@/repositories/registryRepository');
+jest.mock('@/features/registry/repository');
 
 const mockGetAllItems = RegistryRepository.getAllItems as jest.Mock;
 const mockGetItemById = RegistryRepository.getItemById as jest.Mock;

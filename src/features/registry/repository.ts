@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import type { RegistryItem } from '@/types/registry';
+import type { RegistryItem } from '@/features/registry/types';
 
 export class RegistryRepository {
   static async getAllItems() {

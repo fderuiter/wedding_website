@@ -46,7 +46,7 @@ const config = {
     '^@/app/(.*)$': '<rootDir>/src/app/$1',
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
     '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
-    '^@/repositories/(.*)$': '<rootDir>/src/repositories/$1',
+    '^@/features/(.*)$': '<rootDir>/src/features/$1',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/', '.skip.tsx$'],
   transformIgnorePatterns: [

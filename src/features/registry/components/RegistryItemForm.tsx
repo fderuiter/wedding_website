@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RegistryItem } from '@/types/registry';
+import { RegistryItem } from '@/features/registry/types';
 
 /**
  * Props for the RegistryItemForm component.
