@@ -57,9 +57,31 @@ export async function POST(request: Request) {
         const response = await fetch(url);
         const html = await response.text();
         const $ = cheerio.load(html);
-        const amazonImage = $('#landingImage').attr('src');
-        if (amazonImage) {
-          image = amazonImage;
+
+        const landingImage = $('#landingImage');
+        const dynamicImageData = landingImage.attr('data-a-dynamic-image');
+
+        if (dynamicImageData) {
+          try {
+            const images = JSON.parse(dynamicImageData);
+            const firstImageUrl = Object.keys(images)[0];
+            if (firstImageUrl) {
+              image = firstImageUrl;
+            }
+          } catch (e) {
+            console.error('Failed to parse dynamic image data from Amazon:', e);
+            // Fallback to the original src if parsing fails
+            const amazonImageSrc = landingImage.attr('src');
+            if (amazonImageSrc) {
+              image = amazonImageSrc;
+            }
+          }
+        } else {
+          // Fallback for older pages or if dynamic data attribute is not found
+          const amazonImageSrc = landingImage.attr('src');
+          if (amazonImageSrc) {
+            image = amazonImageSrc;
+          }
         }
       } catch (e) {
         console.error('Cheerio fallback for Amazon failed:', e);

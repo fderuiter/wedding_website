@@ -85,4 +85,43 @@ describe('POST /api/registry/scrape', () => {
     // After the fix, it should pass by extracting the URL from the mocked HTML.
     expect(body.image).toBe(expectedImageUrl);
   });
+
+  it('should correctly scrape an Amazon image using the data-a-dynamic-image attribute', async () => {
+    const amazonUrl = 'https://www.amazon.com/dp/B08C1F553M';
+    const expectedImageUrl = 'https://m.media-amazon.com/images/I/ACTUAL_IMAGE.jpg';
+
+    ogsMock.mockResolvedValue({
+      error: false,
+      result: {
+        ogTitle: 'Keurig K-Mini Coffee Maker',
+        ogDescription: 'A great coffee maker.',
+        ogImage: [],
+        twitterImage: [],
+        success: true,
+      },
+    });
+
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <img id="landingImage" data-a-dynamic-image='{"${expectedImageUrl}":[349,350],"https://m.media-amazon.com/images/I/OTHER_IMAGE.jpg":[500,500]}' />
+        </body>
+      </html>
+    `;
+    fetchMock.mockResolvedValue(new Response(mockHtml, {
+      headers: { 'Content-Type': 'text/html' },
+    }));
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: amazonUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.image).toBe(expectedImageUrl);
+  });
 });
