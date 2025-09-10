@@ -59,7 +59,7 @@ export default (async () => {
   const jestConfig = await createJestConfig(config)();
   // Add the packages that need to be transformed here
   jestConfig.transformIgnorePatterns = [
-    '/node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|@vercel/analytics)/.*)',
+    '/node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|@vercel/analytics|ics|nanoid)/.*)',
   ];
   return jestConfig;
 })();
