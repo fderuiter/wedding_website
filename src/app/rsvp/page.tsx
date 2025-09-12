@@ -23,7 +23,7 @@ export default function RSVPPage() {
     <main className="container mx-auto px-4 py-8">
       <div className="text-center">
         <h1 className="text-4xl font-bold text-center mb-4 text-rose-700 dark:text-rose-400">
-          You&apos;re Invited!
+          Are you invited?
         </h1>
         <p className="mb-8 text-lg text-gray-800 dark:text-gray-300">
           We&apos;re so excited to celebrate our special day with you.

@@ -20,7 +20,7 @@ jest.mock('../../components/RegistryItemForm', () => {
   return RegistryItemForm;
 });
 
-import AddRegistryItemPage from '../page';
+import AddRegistryItemPage from '../add-item';
 
 describe('AddRegistryItemPage', () => {
   it('renders the RegistryItemForm', async () => {
@@ -28,4 +28,3 @@ describe('AddRegistryItemPage', () => {
     expect(await screen.findByTestId('registry-item-form')).toBeInTheDocument();
   });
 });
-

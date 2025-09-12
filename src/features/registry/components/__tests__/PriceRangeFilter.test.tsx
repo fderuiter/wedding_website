@@ -46,4 +46,3 @@ describe('PriceRangeFilter', () => {
     expect(handleChange).toHaveBeenNthCalledWith(4, [80, 80]);
   });
 });
-

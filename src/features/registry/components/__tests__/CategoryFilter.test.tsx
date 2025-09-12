@@ -57,4 +57,3 @@ describe('CategoryFilter', () => {
     expect(handleChange).toHaveBeenLastCalledWith(['Bedroom']);
   });
 });
-

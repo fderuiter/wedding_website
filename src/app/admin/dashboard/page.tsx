@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { RegistryItem} from "@/types/registry";
+import { RegistryItem} from "@/features/registry/types";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 
 /**
