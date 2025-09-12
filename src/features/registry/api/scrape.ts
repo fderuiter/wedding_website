@@ -52,7 +52,14 @@ export async function POST(request: Request) {
     }
 
     // Fallback for Amazon: If no image was found, fetch HTML and parse with Cheerio
-    if (!image && url.includes('amazon.com')) {
+    // More robust check: Only fallback if URL's hostname is amazon.com or a subdomain thereof
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname;
+    const isAmazonDomain = (
+      hostname === 'amazon.com' ||
+      (hostname.endsWith('.amazon.com'))
+    );
+    if (!image && isAmazonDomain) {
       try {
         const response = await fetch(url);
         const html = await response.text();
