@@ -65,29 +65,40 @@ export async function POST(request: Request) {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        const landingImage = $('#landingImage');
-        const dynamicImageData = landingImage.attr('data-a-dynamic-image');
+        const selectors = [
+          '#landingImage',
+          '#imgBlkFront',
+          '#main-image-container img',
+        ];
 
-        if (dynamicImageData) {
-          try {
-            const images = JSON.parse(dynamicImageData);
-            const firstImageUrl = Object.keys(images)[0];
-            if (firstImageUrl) {
-              image = firstImageUrl;
+        for (const selector of selectors) {
+          const imageElement = $(selector);
+          if (imageElement.length > 0) {
+            const dynamicImageData = imageElement.attr('data-a-dynamic-image');
+            if (dynamicImageData) {
+              try {
+                const images = JSON.parse(dynamicImageData);
+                const firstImageUrl = Object.keys(images)[0];
+                if (firstImageUrl) {
+                  image = firstImageUrl;
+                  break; // Found an image, exit the loop
+                }
+              } catch (e) {
+                console.error(`Failed to parse dynamic image data for selector ${selector}:`, e);
+                // Fallback to src if parsing fails
+                const imageSrc = imageElement.attr('src');
+                if (imageSrc) {
+                  image = imageSrc;
+                  break; // Found an image, exit the loop
+                }
+              }
+            } else {
+              const imageSrc = imageElement.attr('src');
+              if (imageSrc) {
+                image = imageSrc;
+                break; // Found an image, exit the loop
+              }
             }
-          } catch (e) {
-            console.error('Failed to parse dynamic image data from Amazon:', e);
-            // Fallback to the original src if parsing fails
-            const amazonImageSrc = landingImage.attr('src');
-            if (amazonImageSrc) {
-              image = amazonImageSrc;
-            }
-          }
-        } else {
-          // Fallback for older pages or if dynamic data attribute is not found
-          const amazonImageSrc = landingImage.attr('src');
-          if (amazonImageSrc) {
-            image = amazonImageSrc;
           }
         }
       } catch (e) {
