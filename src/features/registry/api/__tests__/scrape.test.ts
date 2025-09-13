@@ -124,4 +124,49 @@ describe('POST /api/registry/scrape', () => {
     expect(response.status).toBe(200);
     expect(body.image).toBe(expectedImageUrl);
   });
+
+  it('should find the image using a fallback selector when #landingImage is not present', async () => {
+    const amazonUrl = 'https://www.amazon.com/dp/B09XYZ1234';
+    const expectedImageUrl = 'https://m.media-amazon.com/images/I/FALLBACK_IMAGE.jpg';
+
+    // Simulate OGS failing to find an image
+    ogsMock.mockResolvedValue({
+      error: false,
+      result: {
+        ogTitle: 'A Different Product',
+        ogDescription: 'Another great product.',
+        ogImage: [],
+        twitterImage: [],
+        success: true,
+      },
+    });
+
+    // Mock HTML that uses a different selector for the main image
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <div id="image-block">
+            <img id="imgBlkFront" src="${expectedImageUrl}" />
+          </div>
+        </body>
+      </html>
+    `;
+    fetchMock.mockResolvedValue(new Response(mockHtml, {
+      headers: { 'Content-Type': 'text/html' },
+    }));
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: amazonUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.name).toBe('A Different Product');
+    // This will fail until the logic is updated with fallback selectors
+    expect(body.image).toBe(expectedImageUrl);
+  });
 });
