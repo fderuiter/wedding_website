@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import RootLayout from '../layout';
+import RootLayoutClient from '@/components/layout/RootLayoutClient';
 
 const pushMock = jest.fn();
 
@@ -17,7 +17,7 @@ jest.mock('next/navigation', () => ({
   usePathname: () => '/',
 }));
 
-describe('RootLayout', () => {
+describe('RootLayoutClient', () => {
   beforeEach(() => {
     pushMock.mockClear();
     localStorage.clear();
@@ -27,9 +27,9 @@ describe('RootLayout', () => {
     localStorage.setItem('isAdminLoggedIn', 'true');
 
     render(
-      <RootLayout>
+      <RootLayoutClient>
         <div>Child content</div>
-      </RootLayout>
+      </RootLayoutClient>
     );
 
     expect(await screen.findByText('Admin Mode')).toBeInTheDocument();
