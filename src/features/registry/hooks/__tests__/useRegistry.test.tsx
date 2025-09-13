@@ -31,11 +31,15 @@ const createTestQueryClient = () => new QueryClient({
   },
 });
 
-const wrapper = (client: QueryClient) => ({ children }: { children: React.ReactNode }) => (
-  <QueryClientProvider client={client}>
-    {children}
-  </QueryClientProvider>
-);
+const wrapper = (client: QueryClient) => {
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={client}>
+            {children}
+        </QueryClientProvider>
+    );
+    Wrapper.displayName = 'QueryClientWrapper';
+    return Wrapper;
+};
 
 const mockItems: RegistryItem[] = [
     { id: '1', name: 'Item 1', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: '' },

@@ -3,7 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ThingsToDoList from '../ThingsToDoList';
 import { attractions } from '@/data/things-to-do';
 
-jest.mock('../ThingsToDoMap', () => () => <div data-testid="things-to-do-map" />);
+jest.mock('../ThingsToDoMap', () => {
+    const MockThingsToDoMap = () => <div data-testid="things-to-do-map" />;
+    MockThingsToDoMap.displayName = 'MockThingsToDoMap';
+    return MockThingsToDoMap;
+});
 
 describe('ThingsToDoList', () => {
   it('renders all attractions by default', () => {

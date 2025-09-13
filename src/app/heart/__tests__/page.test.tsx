@@ -3,7 +3,9 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import HeartPage from '../page';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 
-let onContactForceCallback: (payload: any) => void;
+import { ContactForceEvent } from '@react-three/rapier';
+
+let onContactForceCallback: (payload: ContactForceEvent) => void;
 
 const mockRigidBodyApi = {
     setBodyType: jest.fn(),
@@ -48,9 +50,9 @@ jest.mock('@react-three/postprocessing', () => ({
 }));
 
 jest.mock('@react-three/rapier', () => {
-    const RigidBodyMock = React.forwardRef(({ children, onContactForce }: any, ref) => {
+    const RigidBodyMock = React.forwardRef(({ children, onContactForce }: { children: React.ReactNode, onContactForce: (payload: ContactForceEvent) => void }, ref: React.Ref<unknown>) => {
         if (ref) {
-            // @ts-ignore
+            // @ts-expect-error This is a mock implementation
             ref.current = mockRigidBodyApi;
         }
         if (onContactForce) {
@@ -104,9 +106,11 @@ jest.mock('@use-gesture/react', () => ({
 
 
 jest.mock('next/link', () => {
-    return ({ children, href }: { children: React.ReactNode, href: string }) => {
-        return <a href={href}>{children}</a>
-    }
+    const MockLink = ({ children, href }: { children: React.ReactNode, href: string }) => {
+        return <a href={href}>{children}</a>;
+    };
+    MockLink.displayName = 'MockLink';
+    return MockLink;
 })
 
 // Mock three.js because JSDOM doesn't have a canvas
