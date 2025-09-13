@@ -52,7 +52,6 @@ export async function POST(request: Request) {
     }
 
     // Fallback for Amazon: If no image was found, fetch HTML and parse with Cheerio
-    // More robust check: Only fallback if URL's hostname is amazon.com or a subdomain thereof
     const parsedUrl = new URL(url);
     const hostname = parsedUrl.hostname;
     const isAmazonDomain = (
@@ -65,40 +64,13 @@ export async function POST(request: Request) {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        const selectors = [
-          '#landingImage',
-          '#imgBlkFront',
-          '#main-image-container img',
-        ];
+        // Simplified selector for Amazon's main product image
+        const imageElement = $('#imgTagWrapperId img');
 
-        for (const selector of selectors) {
-          const imageElement = $(selector);
-          if (imageElement.length > 0) {
-            const dynamicImageData = imageElement.attr('data-a-dynamic-image');
-            if (dynamicImageData) {
-              try {
-                const images = JSON.parse(dynamicImageData);
-                const firstImageUrl = Object.keys(images)[0];
-                if (firstImageUrl) {
-                  image = firstImageUrl;
-                  break; // Found an image, exit the loop
-                }
-              } catch (e) {
-                console.error(`Failed to parse dynamic image data for selector ${selector}:`, e);
-                // Fallback to src if parsing fails
-                const imageSrc = imageElement.attr('src');
-                if (imageSrc) {
-                  image = imageSrc;
-                  break; // Found an image, exit the loop
-                }
-              }
-            } else {
-              const imageSrc = imageElement.attr('src');
-              if (imageSrc) {
-                image = imageSrc;
-                break; // Found an image, exit the loop
-              }
-            }
+        if (imageElement.length > 0) {
+          const imageSrc = imageElement.attr('src');
+          if (imageSrc) {
+            image = imageSrc;
           }
         }
       } catch (e) {
