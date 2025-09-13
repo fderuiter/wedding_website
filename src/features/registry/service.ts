@@ -61,6 +61,10 @@ export class RegistryService {
     itemId: string,
     contribution: { name: string; amount: number }
   ) {
+    if (contribution.amount <= 0) {
+      throw new Error('Contribution must be a positive number.');
+    }
+
     const item = await RegistryRepository.getItemById(itemId);
 
     if (!item) {
