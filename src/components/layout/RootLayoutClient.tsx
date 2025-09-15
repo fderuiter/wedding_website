@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'react-hot-toast';
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { WebVitals } from '@/components/WebVitals';
@@ -79,6 +80,7 @@ export default function RootLayoutClient({
       <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
         {children}
       </main>
+      <Toaster position="bottom-right" />
       <SpeedInsights />
       <Analytics />
       <WebVitals />

@@ -86,6 +86,7 @@ describe('Registry API routes', () => {
     it('returns 500 when service fails', async () => {
       mockIsAdminRequest.mockResolvedValue(true);
       mockCreateItem.mockRejectedValue(new Error('DB down'));
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const req = new Request('http://localhost/api/registry/add-item', {
         method: 'POST',
         body: JSON.stringify(validItem),
@@ -94,6 +95,7 @@ describe('Registry API routes', () => {
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toBe('DB down');
+      consoleErrorSpy.mockRestore();
     });
   });
 
@@ -131,6 +133,7 @@ describe('Registry API routes', () => {
 
     it('returns 500 when item not found', async () => {
       mockContributeToItem.mockRejectedValue(new Error('Item not found'));
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
         body: JSON.stringify(validContribution),
@@ -139,10 +142,12 @@ describe('Registry API routes', () => {
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toBe('Item not found');
+      consoleErrorSpy.mockRestore();
     });
 
     it('returns 500 for service errors', async () => {
       mockContributeToItem.mockRejectedValue(new Error('DB error'));
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
         body: JSON.stringify(validContribution),
@@ -151,6 +156,7 @@ describe('Registry API routes', () => {
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json).toEqual({ error: 'DB error' });
+      consoleErrorSpy.mockRestore();
     });
   });
 
@@ -166,10 +172,12 @@ describe('Registry API routes', () => {
 
     it('returns 500 on service failure', async () => {
       mockGetAllItems.mockRejectedValue(new Error('db error'));
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const res = await getItems();
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toBe('Failed to load registry items');
+      consoleErrorSpy.mockRestore();
     });
   });
 

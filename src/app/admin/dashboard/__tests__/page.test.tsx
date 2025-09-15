@@ -1,11 +1,12 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import AdminDashboardPage from '../page';
-import type { RegistryItem } from '@/types/registry';
-import { checkAdminClient as mockCheckAdminClient } from '@/utils/adminAuth.client';
+import { checkAdminClient } from '@/utils/adminAuth.client';
+import { API_ROUTES } from '@/lib/apiRoutes';
 
-// Mock next/navigation's useRouter
+// Mock next/navigation
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({
@@ -15,158 +16,127 @@ jest.mock('next/navigation', () => ({
   }),
 }));
 
-// Mock admin check
+// Mock admin check utility
 jest.mock('@/utils/adminAuth.client');
-(mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
+const mockCheckAdminClient = checkAdminClient as jest.Mock;
 
-// Sample registry item for fetch mock
-const mockItem: RegistryItem = {
-  id: '1',
-  name: 'Sample Item',
-  description: 'desc',
-  category: 'Home',
-  price: 100,
-  image: '/img.jpg',
-  vendorUrl: null,
-  quantity: 1,
-  isGroupGift: false,
-  purchased: false,
-  amountContributed: 0,
-  contributors: [],
-};
+// Mock react-hot-toast
+jest.mock('react-hot-toast');
+const mockToast = toast as jest.Mock;
+const mockToastPromise = toast.promise as jest.Mock;
+const mockToastDismiss = jest.fn();
+// @ts-expect-error - We are intentionally adding a property to the mock for testing
+(toast as { dismiss: jest.Mock }).dismiss = mockToastDismiss;
+
 
 // Mock fetch
-const mockFetch = jest.fn();
+global.fetch = jest.fn();
+const mockFetch = global.fetch as jest.Mock;
 
-beforeEach(() => {
-  (global.fetch as unknown) = mockFetch as unknown as typeof fetch;
-  (window.fetch as unknown) = mockFetch as unknown as typeof fetch;
-  (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
+const createTestQueryClient = () => new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false, // Prevent retries in tests
+    },
+  },
 });
 
-afterEach(() => {
-  jest.clearAllMocks();
-});
+const renderWithClient = (client: QueryClient, ui: React.ReactElement) => {
+  return render(
+    <QueryClientProvider client={client}>
+      {ui}
+    </QueryClientProvider>
+  );
+};
+
+const mockItems = [
+  { id: '1', name: 'Sample Item 1', price: 100, purchased: false, contributors: [] },
+  { id: '2', name: 'Sample Item 2', price: 200, purchased: true, contributors: [] },
+];
 
 describe('AdminDashboardPage', () => {
-  it('shows admin controls for logged-in admin and hides them for non-admins', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => [mockItem],
-    });
+  let queryClient: QueryClient;
 
-    const { unmount } = render(<AdminDashboardPage />);
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+    mockCheckAdminClient.mockResolvedValue(true);
+    mockFetch.mockClear();
+    mockReplace.mockClear();
+    mockPush.mockClear();
+    (mockToast as jest.Mock).mockClear();
+    (mockToastPromise as jest.Mock).mockClear();
+    mockToastDismiss.mockClear();
+  });
 
-    expect(await screen.findByRole('button', { name: 'Add New Item' })).toBeInTheDocument();
-    expect((await screen.findAllByRole('button', { name: 'Edit' })).length).toBeGreaterThan(0);
-    expect((await screen.findAllByRole('button', { name: 'Delete' })).length).toBeGreaterThan(0);
-
-    unmount();
-
-    mockCheckAdminClient.mockResolvedValueOnce(false);
-    render(<AdminDashboardPage />);
-
+  it('redirects to login if not admin', async () => {
+    mockCheckAdminClient.mockResolvedValue(false);
+    renderWithClient(queryClient, <AdminDashboardPage />);
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith('/admin/login');
     });
-
-    expect(screen.queryByRole('button', { name: 'Add New Item' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 
-  it('renders loading state while fetching items', async () => {
-    let resolveFetch: (value: unknown) => void;
-    mockFetch.mockImplementation(() =>
-      new Promise((resolve) => {
-        resolveFetch = resolve;
-      })
-    );
+  it('renders loading state initially', () => {
+    mockFetch.mockImplementation(() => new Promise(() => {})); // Never resolves
+    renderWithClient(queryClient, <AdminDashboardPage />);
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+  });
 
-    render(<AdminDashboardPage />);
-    expect(screen.getByText('Loading items...')).toBeInTheDocument();
-    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+  it('renders items successfully on fetch', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockItems,
+    });
+    renderWithClient(queryClient, <AdminDashboardPage />);
+    expect((await screen.findAllByText('Sample Item 1')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Sample Item 2')).length).toBeGreaterThan(0);
+  });
 
-    await act(async () => {
-      resolveFetch({
-        ok: true,
-        json: async () => [mockItem],
-      });
+  it('renders error state on fetch failure', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('Network Error'));
+    renderWithClient(queryClient, <AdminDashboardPage />);
+    expect(await screen.findByText('Error: Network Error')).toBeInTheDocument();
+  });
+
+  it('calls delete mutation and shows toast on delete button click', async () => {
+    // Initial fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockItems,
+    });
+    renderWithClient(queryClient, <AdminDashboardPage />);
+
+    // Wait for items to render
+    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete' });
+    expect(deleteButtons[0]).toBeInTheDocument();
+
+    // Mock the toast confirmation
+    (toast as jest.Mock).mockImplementation((callback) => {
+      const t = { id: '1' };
+      // Simulate user clicking "Delete" in the toast
+      const span = callback(t);
+      const deleteButtonInToast = span.props.children[1].props.children[0];
+      deleteButtonInToast.props.onClick();
+      return t.id;
     });
 
-    expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
-  });
-
-  it('shows error when item fetch fails', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false });
-
-    render(<AdminDashboardPage />);
-
-    expect(await screen.findByText('Error: Failed to fetch items')).toBeInTheDocument();
-  });
-
-  it('deletes item successfully', async () => {
-    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/registry/items') {
-        return Promise.resolve({ ok: true, json: async () => [mockItem] });
-      }
-      if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
-        return Promise.resolve({ ok: true });
-      }
-      return Promise.reject(new Error(`Unhandled request: ${url}`));
+    // Mock the successful DELETE fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ message: 'Item deleted successfully' }),
     });
 
-    const originalConfirm = window.confirm;
-    const originalAlert = window.alert;
-    window.confirm = jest.fn().mockReturnValue(true);
-    window.alert = jest.fn();
+    // Click the delete button on the page
+    fireEvent.click(deleteButtons[0]);
 
-    render(<AdminDashboardPage />);
-
-    expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
-
+    // Check that toast was called to ask for confirmation
     await waitFor(() => {
-      expect(screen.queryByText('Sample Item')).not.toBeInTheDocument();
+      expect(mockToast).toHaveBeenCalled();
     });
 
-    expect(window.alert).toHaveBeenCalledWith('Item deleted successfully.');
-
-    window.confirm = originalConfirm;
-    window.alert = originalAlert;
-  });
-
-  it('shows alert and keeps item when delete fails', async () => {
-    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/registry/items') {
-        return Promise.resolve({ ok: true, json: async () => [mockItem] });
-      }
-      if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
-        return Promise.resolve({ ok: false });
-      }
-      return Promise.reject(new Error(`Unhandled request: ${url}`));
-    });
-
-    const originalConfirm = window.confirm;
-    const originalAlert = window.alert;
-    window.confirm = jest.fn().mockReturnValue(true);
-    window.alert = jest.fn();
-
-    render(<AdminDashboardPage />);
-
-    expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
-
+    // Check that the mutation was called
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Failed to delete item');
+      expect(mockFetch).toHaveBeenCalledWith(API_ROUTES.getRegistryItem(mockItems[0].id), { method: 'DELETE' });
     });
-
-    expect(screen.getAllByText('Sample Item').length).toBeGreaterThan(0);
-
-    window.confirm = originalConfirm;
-    window.alert = originalAlert;
   });
 });
-

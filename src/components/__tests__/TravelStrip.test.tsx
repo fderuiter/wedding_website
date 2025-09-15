@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import fetchMock from 'jest-fetch-mock';
 import TravelStrip from '@/components/TravelStrip';
 
@@ -29,9 +29,7 @@ describe('TravelStrip', () => {
 
     render(<TravelStrip />);
 
-    await waitFor(() => {
-      expect(screen.getByText('10-Day Forecast for Rochester, MN')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('10-Day Forecast for Rochester, MN')).toBeInTheDocument();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText('RST Airport Status')).toBeInTheDocument();
@@ -44,12 +42,10 @@ describe('TravelStrip', () => {
 
     render(<TravelStrip />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Mainly clear')).toBeInTheDocument();
-      expect(screen.getByText(/H: 70°F \/ L: 50°F/)).toBeInTheDocument();
-      expect(screen.getByText('Slight rain showers')).toBeInTheDocument();
-      expect(screen.getByText(/H: 65°F \/ L: 45°F/)).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Mainly clear')).toBeInTheDocument();
+    expect(await screen.findByText(/H: 70°F \/ L: 50°F/)).toBeInTheDocument();
+    expect(await screen.findByText('Slight rain showers')).toBeInTheDocument();
+    expect(await screen.findByText(/H: 65°F \/ L: 45°F/)).toBeInTheDocument();
   });
 
   it('should be visible on the wedding day', () => {
@@ -68,12 +64,11 @@ describe('TravelStrip', () => {
     jest.useFakeTimers().setSystemTime(new Date('2025-10-01'));
     fetchMock.mockReject(new Error('API is down'));
 
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     render(<TravelStrip />);
 
-    await waitFor(() => {
-      expect(screen.getByText('10-Day Forecast for Rochester, MN')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText('Loading weather...')).toBeInTheDocument();
+    expect(await screen.findByText('10-Day Forecast for Rochester, MN')).toBeInTheDocument();
+    expect(await screen.findByText('Loading weather...')).toBeInTheDocument();
+    consoleErrorSpy.mockRestore();
   });
 });

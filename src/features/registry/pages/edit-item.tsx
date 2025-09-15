@@ -5,6 +5,8 @@ import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/features/registry/types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
+import toast from 'react-hot-toast';
+import { API_ROUTES } from '@/lib/apiRoutes';
 
 /**
  * @page EditRegistryItemPage
@@ -42,7 +44,7 @@ export default function EditRegistryItemPage() {
         return;
       }
       try {
-        const response = await fetch(`/api/registry/items/${itemId}`);
+        const response = await fetch(API_ROUTES.getRegistryItem(itemId));
         if (!response.ok) {
           throw new Error(`Failed to fetch item: ${response.statusText}`);
         }
@@ -59,21 +61,20 @@ export default function EditRegistryItemPage() {
 
   const handleEdit = async (values: Partial<RegistryItem>) => {
     setIsSubmitting(true);
-    setError(null);
     try {
-      const response = await fetch(`/api/registry/items/${itemId}`, {
+      const response = await fetch(API_ROUTES.getRegistryItem(itemId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
       });
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: 'An unknown error occurred' }));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
-      alert('Item updated successfully!');
+      toast.success('Item updated successfully!');
       router.push('/admin/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update item');
+      toast.error(err instanceof Error ? err.message : 'Failed to update item');
     } finally {
       setIsSubmitting(false);
     }

@@ -6,7 +6,9 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
-import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem type
+import { RegistryItem } from '@/features/registry/types';
+import toast from 'react-hot-toast';
+import { API_ROUTES } from '@/lib/apiRoutes';
 
 /**
  * @page AddRegistryItemPage
@@ -35,26 +37,22 @@ export default function AddRegistryItemPage() {
     checkAuth();
   }, [router]);
 
-  const handleAdd = async (values: Partial<RegistryItem>) => { // Use Partial<RegistryItem> type
+  const handleAdd = async (values: Partial<RegistryItem>) => {
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/registry/add-item', {
-        method: 'POST', // Specify the POST method
+      const response = await fetch(API_ROUTES.addRegistryItem, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
       });
       if (!response.ok) {
-        let errorText = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorText = errorData.error || JSON.stringify(errorData);
-        } catch {}
-        throw new Error(errorText);
+        const errorData = await response.json().catch(() => ({ error: 'An unknown error occurred' }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
-      alert('Item added successfully!');
+      toast.success('Item added successfully!');
       router.push('/admin/dashboard');
     } catch (error) {
-      alert(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsSubmitting(false);
     }
