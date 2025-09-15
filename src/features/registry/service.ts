@@ -71,6 +71,10 @@ export class RegistryService {
       throw new Error('Item not found');
     }
 
+    if(item.purchased) {
+      throw new Error('This item has already been purchased.');
+    }
+
     const remainingAmount = item.price - item.amountContributed;
     if (contribution.amount > remainingAmount) {
       throw new Error('Contribution cannot be greater than the remaining amount.');

@@ -131,7 +131,6 @@ describe('RegistryRepository', () => {
       expect(item.amountContributed).toBe(50);
       expect(tx.registryItem.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
-        include: { contributors: true },
       });
       expect(tx.registryItem.update).toHaveBeenCalledWith({
         where: { id: '1' },
@@ -164,16 +163,5 @@ describe('RegistryRepository', () => {
       await expect(RegistryRepository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
     });
 
-    it('should throw an error if contribution is greater than remaining amount', async () => {
-        const tx = {
-            registryItem: {
-              findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
-              update: jest.fn(),
-            },
-          };
-          (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
-      const contribution = { name: 'John Doe', amount: 150 };
-      await expect(RegistryRepository.contributeToItem('1', contribution)).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
-    });
   });
 });

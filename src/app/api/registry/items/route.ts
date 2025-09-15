@@ -1,1 +1,1 @@
-export { GET } from '@/features/registry/api/items';
+export { GET } from '@/features/registry/api/get-items';

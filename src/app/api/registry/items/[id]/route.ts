@@ -1,1 +1,1 @@
-export { GET, PUT, DELETE } from '@/features/registry/api/items/[id]';
+export { GET, PUT, DELETE } from '@/features/registry/api/item-by-id';
