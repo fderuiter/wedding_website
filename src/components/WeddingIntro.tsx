@@ -17,10 +17,7 @@ import React, { Suspense, useEffect, useMemo, useRef } from 'react'; // Ensure R
 /*                                Configuration                               */
 /* -------------------------------------------------------------------------- */
 const CONFIG = {
-  // RING_DURATION: 10, // Removed
-  // FLASH_DURATION: 0.4, // Removed
   HEART_DURATION: 6,
-  // ORBIT_SPEED: 0.7, // Removed
   BASE_HEART_SPIN: 0.01,
   HEART_ACCEL: 1.0015,
 } as const

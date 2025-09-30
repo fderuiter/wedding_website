@@ -58,16 +58,11 @@ export class RegistryRepository {
     return prisma.$transaction(async (tx) => {
       const item = await tx.registryItem.findUnique({
         where: { id: itemId },
-        include: { contributors: true }
       });
 
       if (!item) {
+        // This should ideally not be reached if service layer validation is correct
         throw new Error('Item not found');
-      }
-
-      const remainingAmount = item.price - item.amountContributed;
-      if (contribution.amount > remainingAmount) {
-        throw new Error('Contribution cannot be greater than the remaining amount.');
       }
 
       const newTotal = item.amountContributed + contribution.amount;

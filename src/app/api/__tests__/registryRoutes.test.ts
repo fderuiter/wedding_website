@@ -17,8 +17,8 @@ jest.mock('../../../utils/adminAuth.server', () => ({
 
 import { POST as addItem } from '@/features/registry/api/add-item';
 import { POST as contribute } from '@/features/registry/api/contribute';
-import { GET as getItems } from '@/features/registry/api/items';
-import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '@/features/registry/api/items/[id]';
+import { GET as getItems } from '@/features/registry/api/get-items';
+import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '@/features/registry/api/item-by-id';
 import { RegistryService } from '@/features/registry/service';
 import { isAdminRequest } from '../../../utils/adminAuth.server';
 import type { NextRequest } from 'next/server';
