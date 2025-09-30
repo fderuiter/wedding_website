@@ -79,7 +79,7 @@ const Forecast: React.FC = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
-            className="bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto"
+            className="bg-white/25 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto"
         >
             <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="text-center md:text-left">
@@ -87,7 +87,7 @@ const Forecast: React.FC = () => {
                     <p className="text-2xl font-bold mt-2">{today.description}</p>
                 </div>
                 <div className="text-center">
-                    <p className="text-6xl md:text-7xl font-extrabold tracking-tight">
+                    <p data-testid="temperature" className="text-6xl md:text-7xl font-extrabold tracking-tight">
                         {today.high}°<span className="text-4xl md:text-5xl opacity-70">/{today.low}°</span>
                     </p>
                     <p className="text-sm opacity-80 mt-1">
