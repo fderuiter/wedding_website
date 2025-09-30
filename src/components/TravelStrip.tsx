@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import 'isomorphic-fetch';
 
 interface WeatherData {
   daily: {
@@ -14,8 +13,6 @@ interface WeatherData {
 }
 
 const WEDDING_DATE = new Date('2025-10-10T00:00:00');
-const ROCHESTER_LAT = 44.01;
-const ROCHESTER_LON = -92.28;
 
 const getWeatherDescription = (code: number) => {
   const descriptions: { [key: number]: string } = {
@@ -56,7 +53,7 @@ const getWeatherDescription = (code: number) => {
  * @description A React component that displays a travel information strip.
  * This strip appears 10 days before the wedding date and shows a 10-day weather forecast
  * for Rochester, MN, along with quick links to airport status pages.
- * The component fetches weather data from the Open-Meteo API.
+ * The component fetches weather data from the application's API.
  * @returns {JSX.Element | null} The rendered TravelStrip component or null if not visible.
  */
 const TravelStrip: React.FC = () => {
@@ -79,9 +76,7 @@ const TravelStrip: React.FC = () => {
     if (isVisible) {
       const fetchWeather = async () => {
         try {
-          const response = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${ROCHESTER_LAT}&longitude=${ROCHESTER_LON}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=America/Chicago&forecast_days=10`
-          );
+          const response = await fetch('/api/weather');
           if (!response.ok) {
             throw new Error('Failed to fetch weather data');
           }
@@ -104,17 +99,17 @@ const TravelStrip: React.FC = () => {
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
           transition={{ duration: 0.5 }}
-          className="bg-gray-800 text-white p-4 text-center text-sm"
+          className="bg-gray-800 text-white p-4 text-center"
         >
-          <div className="container mx-auto flex justify-between items-center">
-            <div>
-              <h3 className="font-bold">10-Day Forecast for Rochester, MN</h3>
+          <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="w-full">
+              <h3 className="font-bold text-lg mb-3">10-Day Forecast for Rochester, MN</h3>
               {weather ? (
-                <div className="flex space-x-4 overflow-x-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                   {weather.daily.time.map((day, index) => (
-                    <div key={day} className="text-xs">
-                      <div>{new Date(day).toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                      <div>{getWeatherDescription(weather.daily.weathercode[index])}</div>
+                    <div key={day} className="bg-gray-700 p-3 rounded-lg flex flex-col justify-between">
+                      <div className="font-semibold">{new Date(day).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })}</div>
+                      <div className="text-xs my-1">{getWeatherDescription(weather.daily.weathercode[index])}</div>
                       <div>
                         H: {Math.round(weather.daily.temperature_2m_max[index])}°F / L: {Math.round(weather.daily.temperature_2m_min[index])}°F
                       </div>
@@ -125,12 +120,12 @@ const TravelStrip: React.FC = () => {
                 <p>Loading weather...</p>
               )}
             </div>
-            <div className="flex flex-col items-end">
-                <h3 className="font-bold">Quick Travel Links</h3>
-                <a href="https://flyrst.com/arrivals-departures-airline-information/" target="_blank" rel="noopener noreferrer" className="hover:text-rose-400">
+            <div className="flex flex-col items-center md:items-end mt-4 md:mt-0 md:w-auto">
+                <h3 className="font-bold text-lg">Quick Travel Links</h3>
+                <a href="https://flyrst.com/arrivals-departures-airline-information/" target="_blank" rel="noopener noreferrer" className="hover:text-rose-400 mt-2">
                     RST Airport Status
                 </a>
-                <a href="https://www.mspairport.com/flights-and-airlines/flights" target="_blank" rel="noopener noreferrer" className="hover:text-rose-400">
+                <a href="https://www.mspairport.com/flights-and-airlines/flights" target="_blank" rel="noopener noreferrer" className="hover:text-rose-400 mt-1">
                     MSP Airport Status
                 </a>
             </div>
