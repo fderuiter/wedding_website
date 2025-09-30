@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import TravelStrip from '@/components/TravelStrip';
 
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/photos', label: 'Photos' },
   { href: '/wedding-party', label: 'Wedding Party' },
   { href: '/things-to-do', label: 'Things to Do' },
+  { href: '/weather', label: 'Weather' },
   { href: '/rsvp', label: 'RSVP' },
 ];
 
@@ -149,7 +149,6 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
           </div>
         </div>
       )}
-      <TravelStrip />
     </header>
   );
 }
