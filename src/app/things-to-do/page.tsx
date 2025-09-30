@@ -1,6 +1,6 @@
 import React from 'react';
 import { Metadata } from 'next';
-import ThingsToDoList from '@/components/ThingsToDoList';
+import ThingsToDoList from './components/ThingsToDoList';
 
 export const metadata: Metadata = {
   title: "Things to Do",

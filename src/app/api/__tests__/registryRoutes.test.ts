@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-jest.mock('../../../services/registryService', () => ({
+jest.mock('@/features/registry/service', () => ({
   RegistryService: {
     createItem: jest.fn(),
     contributeToItem: jest.fn(),
@@ -15,11 +15,11 @@ jest.mock('../../../utils/adminAuth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-import { POST as addItem } from '../registry/add-item/route';
-import { POST as contribute } from '../registry/contribute/route';
-import { GET as getItems } from '../registry/items/route';
-import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '../registry/items/[id]/route';
-import { RegistryService } from '../../../services/registryService';
+import { POST as addItem } from '@/features/registry/api/add-item';
+import { POST as contribute } from '@/features/registry/api/contribute';
+import { GET as getItems } from '@/features/registry/api/get-items';
+import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '@/features/registry/api/item-by-id';
+import { RegistryService } from '@/features/registry/service';
 import { isAdminRequest } from '../../../utils/adminAuth.server';
 import type { NextRequest } from 'next/server';
 
