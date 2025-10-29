@@ -68,16 +68,6 @@ export const attractions: Attraction[] = [
     longitude: -92.4881
   },
   {
-    name: 'Fiddlehead Coffee Co.',
-    description: 'A popular local coffee shop with multiple locations, serving high-quality coffee and pastries.',
-    category: 'coffee',
-    image: 'https://img.ctykit.com/cdn/mn-rochester/images/tr:w-900/425787538-18415394977042832-7869996539200696849-n.jpg',
-    website: 'https://fiddleheadcoffee.co/',
-    directions: 'https://www.google.com/maps/search/?api=1&query=Fiddlehead+Coffee+Co+Rochester+MN',
-    latitude: 44.0238,
-    longitude: -92.4674
-  },
-  {
     name: 'Quarry Hill Nature Center',
     description: 'A nature center with hiking trails, a fishing pond, and an indoor exhibit with live animals.',
     category: 'park',

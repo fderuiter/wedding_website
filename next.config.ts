@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'assets.simpleviewinc.com' },
       { protocol: 'https', hostname: 'images.trvl-media.com' },
       { protocol: 'https', hostname: 'upload.wikimedia.org' },
+      { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
     ],
   },
   webpack: (config, { isServer }) => {
