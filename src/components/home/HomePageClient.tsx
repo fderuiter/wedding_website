@@ -1,16 +1,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
-
-/* ----------------------------- Dynamic imports ---------------------------- */
-const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false })
 
 /**
  * Framer Motion variant for a fade-up animation.
@@ -29,7 +25,6 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
  */
 export default function HomePageClient({ calendarEvent }: { calendarEvent: CalendarEvent }) {
   const [hasVisited, setHasVisited] = useState<boolean | null>(null);
-  const [introPlayed, setIntroPlayed] = useState(false);
 
   useEffect(() => {
     const visited = localStorage.getItem('hasVisited');
@@ -41,8 +36,6 @@ export default function HomePageClient({ calendarEvent }: { calendarEvent: Calen
     }
   }, []);
 
-  const introFinished = hasVisited || introPlayed;
-
   if (hasVisited === null) {
     return null; // Or a loading spinner
   }
@@ -51,7 +44,7 @@ export default function HomePageClient({ calendarEvent }: { calendarEvent: Calen
     <>
 
       <div id="top" />
-      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? '' : ''}`}
+      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800"
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
