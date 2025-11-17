@@ -30,7 +30,7 @@ export default function PhotosPage() {
         <object data="https://lh3.googleusercontent.com/pw/AP1GczPzyrWDTfT2ofwHN6_wBKO8luOfDy2xpvoQNOiOw1cSoO1yUaLPW3mPbTBCUFGoCqI1hB0udanXyfM55PXEMYtmkkTSqQhoUVqQnBmz5qnYUYU_NnhB=w1920-h1080"></object>
         <object data="https://lh3.googleusercontent.com/pw/AP1GczPeRWHDkvouhncUEhhHHOAo5u-uPM3S7a6EXZTH8qO3BsG2Yo-f_y7XpK8TqALxpm4_OeA14gzpGOiiTBj6b2JP27xNQ39P159CbZn8BML4cRrcrSYw=w1920-h1080"></object>
         <object data="https://lh3.googleusercontent.com/pw/AP1GczP2x9gDf6MmKoAhEBg3cUOCg42Mk-l0uPPOuhBp77b-KrlgnPN_1yqUT2F_tc3ffa4BIvQBVcONVuV3_AXp_1T6l0PugHstYE0IDKKqikjy16ZNpiu7=w1920-h1080"></object>
-        <object data="https://lh3.googleusercontent.com/pw/AP1GczMfm0jygX3akWEN6XZXxKi72qPDtykQtA30g2hU3aWsP_bqtDMSuJAfDJUUABiO6XSrpoaOATGSw1HN6ZX91dOiXvha6GGqYkakGL24hgUXUSek_EHM=w1920-h1080"></object>
+        <object data="https://lh3.googleusercontent.com/pw/AP1GczMfm0jygX3akWEN6XZXxKi72qPDtykQtA30g2hU3aWsP_bqtDMSuJAfDJUUABiO6XSrpoaOATGSw1HN6ZX91dOiXvha6GGqYkakGL24hgUXUSek_EHM=w1920-h11080"></object>
         <object data="https://lh3.googleusercontent.com/pw/AP1GczPkTva_2XGwF8d1eVuuWinGtR_bfqpJHHhDEshfYUKDcwzXn0-egIBsf8TbYbmAcuowf-p72HDytwpK3ORDcD5AOtbXG7Lup_wS2yZYSDzqXqrH3iNc=w1920-h1080"></object>
         <object data="https://lh3.googleusercontent.com/pw/AP1GczNUft5lyjyIoYX99dNeQPQ8zigcrsu5Xf95bxH3i0Z_7ZzKjvBRnk_4cTe3uQWUZjhl3v5CDMD0u07JQBG_t6drLdZR5kzVVChZlugJX_d_gAd1Y5Bz=w1920-h1080"></object>
         <object data="https://lh3.googleusercontent.com/pw/AP1GczPAb-RVFteLsC0rmMLph7OmF-22p7srgSKCYCCp_x7STlBmGhIj-0ucp7SZy8olIyMlaA9tWYK5z9hHT-z6KNVc1Yb-s7cKqa3AYmGd9YxTB91hQJTw=w1920-h1080"></object>

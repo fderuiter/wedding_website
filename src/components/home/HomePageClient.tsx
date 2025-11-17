@@ -49,9 +49,9 @@ export default function HomePageClient({ calendarEvent }: { calendarEvent: Calen
 
   return (
     <>
-      {!introFinished && <WeddingIntro onFinish={() => setIntroPlayed(true)} />}
+
       <div id="top" />
-      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? 'hidden' : ''}`}
+      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? '' : ''}`}
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
