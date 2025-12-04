@@ -7,10 +7,7 @@ import { usePathname } from 'next/navigation';
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/photos', label: 'Photos' },
-  { href: '/wedding-party', label: 'Wedding Party' },
-  { href: '/things-to-do', label: 'Things to Do' },
-  { href: '/weather', label: 'Weather' },
-  { href: '/rsvp', label: 'RSVP' },
+  { href: '/archive', label: 'Archive' },
 ];
 
 const homeNavLinks = [
