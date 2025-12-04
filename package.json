@@ -43,7 +43,7 @@
     "metascraper-description": "^5.49.2",
     "metascraper-image": "^5.49.2",
     "metascraper-title": "^5.49.2",
-    "next": "^15.5.3",
+    "next": "^15.5.7",
     "node-fetch": "^3.3.2",
     "open-graph-scraper": "^6.9.0",
     "pg": "^8.14.1",
@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@playwright/test": "^1.55.0",
+    "@playwright/test": "^1.57.0",
     "@prisma/client": "^6.16.1",
     "@tailwindcss/postcss": "^4.1.13",
     "@testing-library/jest-dom": "^6.6.3",
