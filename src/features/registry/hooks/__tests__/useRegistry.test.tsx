@@ -1,9 +1,11 @@
+import fetchMock from 'jest-fetch-mock';
+fetchMock.enableMocks();
+
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useRegistry } from '../useRegistry';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { RegistryItem } from '../../types';
-import fetchMock from 'jest-fetch-mock';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 
 // Mock next/navigation
@@ -51,7 +53,6 @@ describe('useRegistry', () => {
     let queryClient: QueryClient;
 
   beforeEach(() => {
-    fetchMock.enableMocks();
     fetchMock.resetMocks();
     mockedCheckAdminClient.mockResolvedValue(false);
     queryClient = createTestQueryClient();
@@ -129,14 +130,22 @@ describe('useRegistry', () => {
   });
 
   it('should handle delete', async () => {
+    // We need to return valid items for the initial query, then handle the delete
+    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
     fetchMock.mockResponseOnce(JSON.stringify({}));
+
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+
+    // Wait for initial load
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
         result.current.handleDelete('1');
     });
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/registry/items/1', { method: 'DELETE' });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/registry/items/1', { method: 'DELETE' });
+    });
   });
 
   it('should handle contribution', async () => {
