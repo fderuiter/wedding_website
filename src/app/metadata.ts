@@ -8,6 +8,15 @@ const siteConfig = {
   ogImage: 'https://abbifred.com/images/sunset-embrace.jpg',
 };
 
+/**
+ * @const {Metadata} metadata
+ * @description The global metadata configuration for the Next.js application.
+ * This object defines the default title, description, keywords, author information,
+ * favicon icons, and Open Graph/Twitter card settings for SEO and social sharing.
+ *
+ * It uses a template for page titles (`%s | Abbigayle & Frederick's Wedding`) and
+ * sets a `metadataBase` to ensure all relative URLs are resolved correctly.
+ */
 export const metadata: Metadata = {
   title: {
     default: siteConfig.title,

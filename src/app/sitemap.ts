@@ -2,6 +2,9 @@ import { MetadataRoute } from 'next';
 
 type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
+/**
+ * Interface representing a single entry in the sitemap.
+ */
 interface SitemapEntry {
   url: string;
   lastModified: Date;
@@ -9,6 +12,14 @@ interface SitemapEntry {
   priority: number;
 }
 
+/**
+ * @function sitemap
+ * @description Generates the sitemap.xml for the application.
+ * This function returns a list of URLs that should be indexed by search engines,
+ * along with their modification date, change frequency, and priority.
+ *
+ * @returns {MetadataRoute.Sitemap} The sitemap data.
+ */
 export default function sitemap(): MetadataRoute.Sitemap {
   const siteUrl = 'https://abbifred.com';
 

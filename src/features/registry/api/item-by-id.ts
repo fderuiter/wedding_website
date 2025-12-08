@@ -12,13 +12,14 @@ import { isAdminRequest } from '@/utils/adminAuth.server';
  * from the database.
  *
  * @param {NextRequest} request - The incoming Next.js request object.
+ * @param {object} context - The context object containing route parameters.
+ * @param {Promise<{ id: string }>} context.params - The dynamic route parameters.
  * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
  * Returns the item if found, otherwise returns a 404 error.
  */
-export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const itemId = url.pathname.split('/').pop()!;
-  const item = await RegistryService.getItemById(itemId);
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const item = await RegistryService.getItemById(id);
 
   if (!item) {
     return NextResponse.json({ error: 'Item not found' }, { status: 404 });
@@ -35,13 +36,14 @@ export async function GET(request: NextRequest) {
  * to apply the updates to the item in the database.
  *
  * @param {NextRequest} request - The incoming Next.js request object, containing the update data.
+ * @param {object} context - The context object containing route parameters.
+ * @param {Promise<{ id: string }>} context.params - The dynamic route parameters.
  * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
  * On success, returns a success message and the updated item.
  * On failure, returns an appropriate error message and status code.
  */
-export async function PUT(request: NextRequest) {
-  const url = new URL(request.url);
-  const itemId = url.pathname.split('/').pop()!;
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
 
   if (!(await isAdminRequest(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -55,7 +57,7 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  const updatedItem = await RegistryService.updateItem(itemId, {
+  const updatedItem = await RegistryService.updateItem(id, {
     ...body,
     price: Number(body.price),
     quantity: Number(body.quantity),
@@ -73,18 +75,19 @@ export async function PUT(request: NextRequest) {
  * database. It requires admin authentication.
  *
  * @param {NextRequest} request - The incoming Next.js request object.
+ * @param {object} context - The context object containing route parameters.
+ * @param {Promise<{ id: string }>} context.params - The dynamic route parameters.
  * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
  * On success, returns a success message.
  * On failure (e.g., unauthorized), returns an appropriate error message and status code.
  */
-export async function DELETE(request: NextRequest) {
-  const url = new URL(request.url);
-  const itemId = url.pathname.split('/').pop()!;
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
 
   if (!(await isAdminRequest(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  await RegistryService.deleteItem(itemId);
+  await RegistryService.deleteItem(id);
   return NextResponse.json({ message: 'Item deleted successfully' });
 }

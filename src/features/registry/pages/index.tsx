@@ -12,6 +12,17 @@ import RegistryCardSkeleton from '@/features/registry/components/RegistryCardSke
 import EmptyState from '@/components/EmptyState';
 import { useRegistry } from '@/features/registry/hooks/useRegistry';
 
+/**
+ * @page RegistryPage
+ * @description The main page component for the wedding registry.
+ *
+ * This component displays the list of registry items, allowing users to browse, filter,
+ * and search for gifts. It integrates `useRegistry` to manage state and API interactions,
+ * including fetching items, handling contributions, and managing admin actions (edit/delete).
+ * It features infinite scrolling to load more items as the user scrolls down.
+ *
+ * @returns {JSX.Element} The rendered registry page.
+ */
 export default function RegistryPage() {
   const {
     isLoading,

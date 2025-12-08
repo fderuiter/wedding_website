@@ -4,6 +4,18 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Sun, Cloud, CloudRain, CloudSnow, Wind, Droplets, Thermometer } from 'lucide-react';
 
+/**
+ * @interface WeatherData
+ * @description Defines the structure of the weather data received from the API.
+ * @property {object} daily - Object containing arrays of daily weather data.
+ * @property {string[]} daily.time - Array of dates.
+ * @property {number[]} daily.weathercode - Array of WMO weather codes.
+ * @property {number[]} daily.temperature_2m_max - Array of maximum daily temperatures.
+ * @property {number[]} daily.temperature_2m_min - Array of minimum daily temperatures.
+ * @property {number[]} daily.apparent_temperature_max - Array of maximum apparent temperatures.
+ * @property {number[]} daily.precipitation_probability_max - Array of maximum precipitation probabilities.
+ * @property {number[]} daily.wind_speed_10m_max - Array of maximum wind speeds.
+ */
 interface WeatherData {
   daily: {
     time: string[];
@@ -16,6 +28,11 @@ interface WeatherData {
   };
 }
 
+/**
+ * Helper function to map WMO weather codes to human-readable descriptions.
+ * @param {number} code - The WMO weather code.
+ * @returns {string} A descriptive string for the weather condition.
+ */
 const getWeatherDescription = (code: number): string => {
     const descriptions: { [key: number]: string } = {
         0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Depositing rime fog',
@@ -28,6 +45,11 @@ const getWeatherDescription = (code: number): string => {
     return descriptions[code] || 'Unknown';
 };
 
+/**
+ * Helper function to select an appropriate icon based on the WMO weather code.
+ * @param {number} code - The WMO weather code.
+ * @returns {React.ReactElement} A Lucide React icon component representing the weather.
+ */
 const getWeatherIcon = (code: number): React.ReactElement => {
     if (code <= 1) return <Sun className="text-amber-400" size={64} />;
     if (code <= 3) return <Cloud className="text-gray-400" size={64} />;
@@ -36,6 +58,13 @@ const getWeatherIcon = (code: number): React.ReactElement => {
     return <Cloud className="text-gray-400" size={64} />;
 };
 
+/**
+ * @function Forecast
+ * @description A React component that fetches and displays the current weather forecast.
+ * It shows the current temperature (high/low), feels like temperature, precipitation probability,
+ * wind speed, and a weather icon/description.
+ * @returns {JSX.Element} The rendered Forecast component.
+ */
 const Forecast: React.FC = () => {
     const [weather, setWeather] = useState<WeatherData['daily'] | null>(null);
     const [isLoading, setIsLoading] = useState(true);

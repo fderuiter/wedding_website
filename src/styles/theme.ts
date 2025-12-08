@@ -1,22 +1,51 @@
+/**
+ * @interface ThemeConfig
+ * @description Defines the structure of the application's theme configuration.
+ * @property {object} colors - Color palette definitions.
+ * @property {object} gradients - Gradient definitions.
+ */
 interface ThemeConfig {
+  /**
+   * Color palette for the application.
+   */
   colors: {
-    primary: string; // Used for accents, buttons, links
-    secondary: string; // Used for highlights, secondary accents
+    /** Primary accent color (e.g., buttons, links). */
+    primary: string;
+    /** Secondary accent color (e.g., highlights). */
+    secondary: string;
+    /** Lighter shade of the primary color for backgrounds. */
     primaryLight: string;
+    /** Lighter shade of the secondary color for backgrounds. */
     secondaryLight: string;
+    /** Main background color. */
     background: string;
-    text: string; // Main text color
-    textOnPrimary: string; // Text on primary backgrounds
-    textOnSecondary: string; // Text on secondary backgrounds
+    /** Main text color. */
+    text: string;
+    /** Text color to be used on primary backgrounds. */
+    textOnPrimary: string;
+    /** Text color to be used on secondary backgrounds. */
+    textOnSecondary: string;
+    /** Additional accent color. */
     accent: string;
   };
+  /**
+   * Gradient definitions for the application.
+   */
   gradients: {
+    /** Primary gradient. */
     primary: string;
+    /** Secondary gradient. */
     secondary: string;
+    /** Background gradient. */
     background: string;
   };
 }
 
+/**
+ * @const {ThemeConfig} theme
+ * @description The main theme configuration object containing color and gradient definitions.
+ * This is used to maintain design consistency across the application.
+ */
 export const theme: ThemeConfig = {
   colors: {
     primary: '#B91C1C', // Darker red for better contrast
@@ -36,5 +65,8 @@ export const theme: ThemeConfig = {
   }
 };
 
+/**
+ * Type definition for the Theme object, derived from the theme constant.
+ */
 export type Theme = typeof theme;
 export default theme;

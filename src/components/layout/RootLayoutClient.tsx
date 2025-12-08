@@ -11,20 +11,26 @@ import Navbar from './Navbar';
 const queryClient = new QueryClient();
 
 /**
+ * @interface RootLayoutClientProps
+ * @description Defines the props for the RootLayoutClient component.
+ * @property {React.ReactNode} children - The child components to be rendered within the layout.
+ */
+interface RootLayoutClientProps {
+  children: React.ReactNode;
+}
+
+/**
  * @function RootLayoutClient
  * @description A client-side component that wraps the main application layout.
  * It handles the admin login state, provides a query client for React Query,
  * and includes analytics and web vitals reporting. It also dynamically adjusts
  * the main content padding to account for the fixed navbar height.
- * @param {object} props - The component props.
- * @param {React.ReactNode} props.children - The child components to be rendered within the layout.
+ * @param {RootLayoutClientProps} props - The component props.
  * @returns {JSX.Element} The rendered RootLayoutClient component.
  */
 export default function RootLayoutClient({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: RootLayoutClientProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();

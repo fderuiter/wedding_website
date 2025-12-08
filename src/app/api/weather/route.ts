@@ -5,6 +5,17 @@ const ROCHESTER_LAT = 44.0232;
 const ROCHESTER_LON = -92.4630;
 const WEDDING_DAY = '2025-10-10';
 
+/**
+ * @api {get} /api/weather
+ * @description Fetches the weather forecast for the wedding day in Rochester, MN.
+ *
+ * This function handles a GET request to retrieve weather data from the Open-Meteo API.
+ * It is hardcoded to fetch the forecast for October 10, 2025, at the coordinates of Rochester, MN.
+ *
+ * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
+ * On success, it returns a JSON object containing the daily weather forecast.
+ * On failure, it returns a 500 status with an error message.
+ */
 export async function GET() {
   try {
     const response = await fetch(

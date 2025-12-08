@@ -37,6 +37,14 @@ const archivedPages = [
   },
 ];
 
+/**
+ * @page ArchivePage
+ * @description The main page for the archive section.
+ * It displays a grid of links to other archived pages of the wedding website,
+ * such as RSVP, Wedding Party, Things to Do, and Weather.
+ *
+ * @returns {JSX.Element} The rendered archive page.
+ */
 export default function ArchivePage() {
   return (
     <main className="container mx-auto px-4 py-8">
