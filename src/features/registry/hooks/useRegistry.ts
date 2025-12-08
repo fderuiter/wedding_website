@@ -6,6 +6,20 @@ import { RegistryItem } from '@/features/registry/types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
 
+/**
+ * @function useRegistry
+ * @description Custom hook for managing registry state and operations.
+ *
+ * This hook handles:
+ * - Fetching registry items using React Query.
+ * - Admin authentication status check.
+ * - Filtering and sorting of registry items (category, price range, availability).
+ * - Pagination (infinite scroll) logic via `visibleItemsCount`.
+ * - Modal state management for viewing/contributing to items.
+ * - Mutations for contributing to, deleting, and editing items.
+ *
+ * @returns {object} An object containing the registry state and handler functions.
+ */
 export function useRegistry() {
   const queryClient = useQueryClient();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);

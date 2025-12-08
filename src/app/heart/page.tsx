@@ -19,7 +19,7 @@ import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
  * @param {number} [props.count=200] - The number of sparkles to render.
  * @returns {JSX.Element} The rendered sparkles component.
  */
-function Sparkles({ count = 200 }) {
+function Sparkles({ count = 200 }: { count?: number }) {
   const pointsRef = useRef<THREE.Points>(null!)
   const positions = useMemo(
     () => inSphere(new Float32Array(count * 3), { radius: 10 }) as Float32Array,
@@ -427,4 +427,3 @@ export default function HeartPage() {
     </div>
   )
 }
-

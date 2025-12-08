@@ -176,13 +176,14 @@ describe('Registry API routes', () => {
   describe('/api/registry/items/[id]', () => {
     const itemId = '1';
     const baseUrl = `http://localhost/api/registry/items/${itemId}`;
+    const mockParams = Promise.resolve({ id: itemId });
 
     describe('GET', () => {
       it('returns item when found', async () => {
         const item = { id: itemId, name: 'Lamp' };
         mockGetItemById.mockResolvedValue(item);
         const req = new Request(baseUrl);
-        const res = await getItemByIdRoute(req as unknown as NextRequest);
+        const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         const json = await res.json();
         expect(json).toEqual(item);
@@ -191,7 +192,7 @@ describe('Registry API routes', () => {
       it('returns 404 when item not found', async () => {
         mockGetItemById.mockResolvedValue(null);
         const req = new Request(baseUrl);
-        const res = await getItemByIdRoute(req as unknown as NextRequest);
+        const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(404);
         const json = await res.json();
         expect(json).toEqual({ error: 'Item not found' });
@@ -205,7 +206,7 @@ describe('Registry API routes', () => {
           method: 'PUT',
           body: JSON.stringify({ name: 'Lamp', price: 10, quantity: 1 }),
         });
-        const res = await updateItemRoute(req as unknown as NextRequest);
+        const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(401);
       });
 
@@ -215,7 +216,7 @@ describe('Registry API routes', () => {
           method: 'PUT',
           body: JSON.stringify({ name: 'Lamp' }),
         });
-        const res = await updateItemRoute(req as unknown as NextRequest);
+        const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(400);
         const json = await res.json();
         expect(json.error).toBe('Missing or invalid required fields (name, price, quantity)');
@@ -229,7 +230,7 @@ describe('Registry API routes', () => {
           method: 'PUT',
           body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 2 }),
         });
-        const res = await updateItemRoute(req as unknown as NextRequest);
+        const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         const json = await res.json();
         expect(json).toEqual({ message: 'Item updated successfully', item: updated });
@@ -240,7 +241,7 @@ describe('Registry API routes', () => {
       it('returns 401 when unauthorized', async () => {
         mockIsAdminRequest.mockResolvedValue(false);
         const req = new Request(baseUrl, { method: 'DELETE' });
-        const res = await deleteItemRoute(req as unknown as NextRequest);
+        const res = await deleteItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(401);
       });
 
@@ -248,7 +249,7 @@ describe('Registry API routes', () => {
         mockIsAdminRequest.mockResolvedValue(true);
         mockDeleteItem.mockResolvedValue(undefined);
         const req = new Request(baseUrl, { method: 'DELETE' });
-        const res = await deleteItemRoute(req as unknown as NextRequest);
+        const res = await deleteItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         const json = await res.json();
         expect(json).toEqual({ message: 'Item deleted successfully' });
@@ -256,4 +257,3 @@ describe('Registry API routes', () => {
     });
   });
 });
-

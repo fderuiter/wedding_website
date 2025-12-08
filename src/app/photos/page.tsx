@@ -11,6 +11,16 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * @page PhotosPage
+ * @description A page that displays a gallery of wedding photos.
+ *
+ * This component embeds a Google Photos album using the `publicalbum` script.
+ * It also provides a direct link to the full Google Photos album.
+ * The embedded gallery is initially hidden and populated with specific photo URLs.
+ *
+ * @returns {JSX.Element} The rendered photos page.
+ */
 export default function PhotosPage() {
   return (
     <main className="container mx-auto px-4 py-8">
