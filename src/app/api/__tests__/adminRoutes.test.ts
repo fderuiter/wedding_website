@@ -7,7 +7,8 @@ import { GET as me } from '../admin/me/route';
 
 describe('Admin API routes', () => {
   beforeEach(() => {
-    process.env.ADMIN_PASSWORD = 'secret';
+    // Hash for 'secret' generated with bcrypt
+    process.env.ADMIN_PASSWORD = '$2b$10$HYiV4HBBMU9iB5GEaeWV2u0Yt51iTwj4Hm7tlNR7OQuzAL7F8uNUO';
   });
 
   test('login succeeds with correct password', async () => {
@@ -65,4 +66,3 @@ describe('Admin API routes', () => {
     expect(jsonAnon.isAdmin).toBe(false);
   });
 });
-
