@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash, timingSafeEqual } from 'crypto';
+import bcrypt from 'bcrypt';
 
 const ADMIN_COOKIE = 'admin_auth';
 
@@ -8,8 +8,8 @@ const ADMIN_COOKIE = 'admin_auth';
  * @description Handles admin login.
  *
  * This function processes a POST request to log in an administrator. It validates the
- * provided password against the `ADMIN_PASSWORD` environment variable. If the password
- * is correct, it sets a secure, HTTP-only cookie to authenticate subsequent admin requests.
+ * provided password against the `ADMIN_PASSWORD` environment variable, which must now
+ * contain a bcrypt hash of the password.
  *
  * @param {NextRequest} req - The incoming Next.js request object, containing the password in the JSON body.
  * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
@@ -30,11 +30,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid password format.' }, { status: 400 });
   }
 
-  // Prevent timing attacks by using constant-time comparison
-  const inputHash = createHash('sha256').update(password).digest();
-  const targetHash = createHash('sha256').update(adminPassword).digest();
+  // Compare password using secure password hashing (bcrypt)
+  const isMatch = await bcrypt.compare(password, adminPassword);
 
-  if (!timingSafeEqual(inputHash, targetHash)) {
+  if (!isMatch) {
     return NextResponse.json({ error: 'Invalid password.' }, { status: 401 });
   }
 
