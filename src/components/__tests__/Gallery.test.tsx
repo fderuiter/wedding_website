@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Gallery from '../Gallery';
 
@@ -56,5 +56,53 @@ describe('Gallery Component', () => {
       jest.runOnlyPendingTimers();
     });
     expect(mockNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses autoplay on mouse enter and resumes on mouse leave', () => {
+    const images = [
+      { src: '/img1.jpg', alt: 'Image 1' },
+      { src: '/img2.jpg', alt: 'Image 2' },
+    ];
+
+    const { unmount, container } = render(<Gallery images={images} autoplayDelay={1000} />);
+
+    // Simulate slider creation
+    act(() => {
+      createdCallback?.();
+    });
+
+    // Verify autoplay works initially
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    mockNext.mockClear();
+
+    // Mouse Enter - should pause
+    const sliderContainer = container.querySelector('.keen-slider');
+    if (!sliderContainer) throw new Error('Slider container not found');
+
+    act(() => {
+        fireEvent.mouseEnter(sliderContainer);
+    });
+
+    // Advance time - should NOT call next
+    act(() => {
+      jest.advanceTimersByTime(1500);
+    });
+    expect(mockNext).toHaveBeenCalledTimes(0);
+
+    // Mouse Leave - should resume
+    act(() => {
+        fireEvent.mouseLeave(sliderContainer);
+    });
+
+    // Advance time - should call next
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(mockNext).toHaveBeenCalledTimes(1);
+
+    unmount();
   });
 });
