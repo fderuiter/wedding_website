@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'crypto';
 
 const ADMIN_COOKIE = 'admin_auth';
 
@@ -24,7 +25,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Admin password not set.' }, { status: 500 });
   }
 
-  if (password !== adminPassword) {
+  // Input validation: ensure password is a string
+  if (typeof password !== 'string') {
+    return NextResponse.json({ error: 'Invalid password format.' }, { status: 400 });
+  }
+
+  // Prevent timing attacks by using constant-time comparison
+  const inputHash = createHash('sha256').update(password).digest();
+  const targetHash = createHash('sha256').update(adminPassword).digest();
+
+  if (!timingSafeEqual(inputHash, targetHash)) {
     return NextResponse.json({ error: 'Invalid password.' }, { status: 401 });
   }
 
