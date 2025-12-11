@@ -85,8 +85,9 @@ This project is built with a modern, full-stack TypeScript architecture.
 Create a `.env.development.local` file in the root directory by copying the example or creating a new one. You need to define the following variables:
 
 ```env
-# Required for Admin Login
-ADMIN_PASSWORD="your_super_secret_password"
+# Required for Admin Login (Must be a BCrypt hash, NOT plaintext)
+# Generate a hash by running: node scripts/generate-password-hash.js "your_password"
+ADMIN_PASSWORD="$2b$10$..."
 
 # Required for Prisma (PostgreSQL connection)
 # Obtain these from your database provider
