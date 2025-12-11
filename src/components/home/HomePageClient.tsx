@@ -1,16 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import dynamic from 'next/dynamic'
+import React from 'react'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar, { CalendarEvent } from '@/components/AddToCalendar'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
-
-/* ----------------------------- Dynamic imports ---------------------------- */
-const WeddingIntro = dynamic<{ onFinish?: () => void }>(() => import('@/components/WeddingIntro'), { ssr: false })
 
 /**
  * Framer Motion variant for a fade-up animation.
@@ -21,37 +17,21 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
 /**
  * @function HomePageClient
  * @description The main client component for the home page.
- * It handles the display of the wedding intro animation for first-time visitors
- * and renders the main content of the home page.
  * @param {object} props - The component props.
  * @param {CalendarEvent} props.calendarEvent - The event details for the "Add to Calendar" button.
- * @returns {JSX.Element | null} The rendered HomePageClient component, or null while checking visitor status.
+ * @returns {JSX.Element} The rendered HomePageClient component.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function HomePageClient({ calendarEvent }: { calendarEvent: CalendarEvent }) {
-  const [hasVisited, setHasVisited] = useState<boolean | null>(null);
-  const [introPlayed, setIntroPlayed] = useState(false);
-
-  useEffect(() => {
-    const visited = localStorage.getItem('hasVisited');
-    if (visited) {
-      setHasVisited(true);
-    } else {
-      localStorage.setItem('hasVisited', 'true');
-      setHasVisited(false);
-    }
-  }, []);
-
-  const introFinished = hasVisited || introPlayed;
-
-  if (hasVisited === null) {
-    return null; // Or a loading spinner
-  }
-
   return (
     <>
-
+      {/*
+        NOTE: AddToCalendar and Countdown are imported but currently unused in the layout.
+        They are preserved here for future use or reference, as requested.
+        To use them: <AddToCalendar event={calendarEvent} /> or <Countdown targetDate="..." />
+      */}
       <div id="top" />
-      <div className={`min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 ${!introFinished ? '' : ''}`}
+      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800"
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">

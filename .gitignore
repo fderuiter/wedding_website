@@ -58,3 +58,7 @@ node_modules/@prisma/client
 # macOS file attributes
 ._*
 .vercel
+
+# Jules
+.jules/
+.Jules/
