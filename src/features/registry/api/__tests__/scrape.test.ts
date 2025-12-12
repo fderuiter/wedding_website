@@ -2,10 +2,17 @@
 
 import { POST } from '@/app/api/registry/scrape/route';
 import ogs from 'open-graph-scraper';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 
 // Mock open-graph-scraper
 jest.mock('open-graph-scraper');
+// Mock admin auth
+jest.mock('@/utils/adminAuth.server', () => ({
+  isAdminRequest: jest.fn(),
+}));
+
 const ogsMock = ogs as jest.Mock;
+const mockIsAdminRequest = isAdminRequest as jest.Mock;
 
 // Mock native fetch
 const fetchMock = jest.fn();
@@ -14,6 +21,7 @@ global.fetch = fetchMock;
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(true);
   });
 
   it('should return an empty image string when ogs fails and the URL is not from Amazon', async () => {
