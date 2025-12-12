@@ -46,6 +46,7 @@ interface AddToCalendarProps {
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const handleToggle = () => setIsOpen(!isOpen)
 
@@ -56,11 +57,44 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
       }
     }
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+
     document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [])
+  }, [isOpen])
+
+  // Focus first item when opened
+  useEffect(() => {
+    if (isOpen) {
+      const firstButton = dropdownRef.current?.querySelector('button[role="menuitem"]') as HTMLElement
+      firstButton?.focus()
+    }
+  }, [isOpen])
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const buttons = dropdownRef.current?.querySelectorAll('button[role="menuitem"]')
+      if (!buttons) return
+      const index = Array.from(buttons).indexOf(document.activeElement as Element)
+      let nextIndex = 0
+      if (e.key === 'ArrowDown') {
+        nextIndex = index + 1 < buttons.length ? index + 1 : 0
+      } else {
+        nextIndex = index - 1 >= 0 ? index - 1 : buttons.length - 1
+      }
+      (buttons[nextIndex] as HTMLElement).focus()
+    }
+  }
 
   const calendarOptions = ['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']
 
@@ -83,17 +117,19 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
       document.body.removeChild(link)
     }
     setIsOpen(false)
+    triggerRef.current?.focus()
   }
 
   return (
     <div className={`relative inline-block text-left ${className}`} ref={dropdownRef}>
       <div>
         <button
+          ref={triggerRef}
           type="button"
           className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-accent-from text-white font-semibold shadow-md hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-from"
           id="options-menu"
           aria-haspopup="true"
-          aria-expanded="true"
+          aria-expanded={isOpen}
           onClick={handleToggle}
         >
           Add to Calendar
@@ -106,18 +142,16 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         >
           <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
             {calendarOptions.map((calendar) => (
-              <a
+              <button
                 key={calendar}
-                href="#"
-                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                type="button"
+                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
                 role="menuitem"
-                onClick={(e) => {
-                  e.preventDefault()
-                  handleCalendarLink(calendar)
-                }}
+                onClick={() => handleCalendarLink(calendar)}
+                onKeyDown={handleMenuKeyDown}
               >
                 {calendar}
-              </a>
+              </button>
             ))}
           </div>
         </div>
