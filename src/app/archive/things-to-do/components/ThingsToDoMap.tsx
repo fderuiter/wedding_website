@@ -5,15 +5,16 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Attraction } from '@/data/things-to-do';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
+import shadow from 'leaflet/dist/images/marker-shadow.png';
 
 // Fix for default icon issue with webpack
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-
+// We use local imports instead of unpkg URLs to ensure stability and version consistency.
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+  iconRetinaUrl: iconRetina.src,
+  iconUrl: icon.src,
+  shadowUrl: shadow.src,
 });
 
 /**
