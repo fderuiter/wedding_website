@@ -132,12 +132,42 @@ describe('RegistryService', () => {
       expect(mockContributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
+    it('throws when contribution amount is not positive', async () => {
+      await expect(
+        RegistryService.contributeToItem('1', { name: 'John', amount: 0 })
+      ).rejects.toThrow('Contribution must be a positive number.');
+
+      await expect(
+        RegistryService.contributeToItem('1', { name: 'John', amount: -10 })
+      ).rejects.toThrow('Contribution must be a positive number.');
+
+      expect(mockGetItemById).not.toHaveBeenCalled();
+      expect(mockContributeToItem).not.toHaveBeenCalled();
+    });
+
     it('throws when item not found', async () => {
       mockGetItemById.mockResolvedValue(null);
 
       await expect(
         RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('Item not found');
+      expect(mockContributeToItem).not.toHaveBeenCalled();
+    });
+
+    it('throws when item has already been purchased', async () => {
+      const item = {
+        id: '1',
+        amountContributed: 100,
+        price: 100,
+        contributors: [],
+        purchased: true
+      } as unknown as RegistryItem;
+
+      mockGetItemById.mockResolvedValue(item);
+
+      await expect(
+        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+      ).rejects.toThrow('This item has already been purchased.');
       expect(mockContributeToItem).not.toHaveBeenCalled();
     });
 
@@ -177,4 +207,3 @@ describe('RegistryService', () => {
     });
   });
 });
-
