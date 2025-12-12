@@ -46,9 +46,9 @@ export const metadata: Metadata = {
   creator: 'Frederick de Ruiter',
   publisher: 'Vercel',
   icons: {
-    icon: '/assets/favicon.png',
-    shortcut: '/assets/favicon.png',
-    apple: '/assets/favicon.png',
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
   },
   openGraph: {
     type: 'website',
