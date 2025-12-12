@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import ogs from 'open-graph-scraper';
 import * as cheerio from 'cheerio';
 import { isAdminRequest } from '@/utils/adminAuth.server';
+import { isPrivateUrl } from '@/utils/ssrf';
 
 /**
  * @api {post} /api/registry/scrape
@@ -33,6 +34,10 @@ export async function POST(request: Request) {
       new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+    }
+
+    if (isPrivateUrl(url)) {
+      return NextResponse.json({ error: 'Invalid URL: Internal addresses are not allowed' }, { status: 400 });
     }
 
     // First attempt: Use open-graph-scraper
