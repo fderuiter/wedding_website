@@ -153,7 +153,7 @@ export default function RegistryPage() {
                 <motion.div key={item.id} variants={cardVariants}>
                   <RegistryCard
                     item={item}
-                    onClick={() => handleCardClick(item)}
+                    onClick={handleCardClick}
                     isAdmin={isAdmin}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
