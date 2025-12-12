@@ -10,7 +10,7 @@ export interface RegistryCardProps {
   /** The registry item data to display. */
   item: RegistryItem;
   /** Function to call when the card is clicked. */
-  onClick: () => void;
+  onClick: (item: RegistryItem) => void;
   /** Whether the user is an admin. */
   isAdmin?: boolean;
   /** Function to call when the edit button is clicked. */
@@ -49,13 +49,13 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   return (
     <div
       className={cardClasses}
-      onClick={isClickable ? onClick : undefined}
+      onClick={isClickable ? () => onClick(item) : undefined}
       style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 340 }}
       data-testid="registry-card"
       tabIndex={isClickable ? 0 : -1}
       aria-label={item.name}
       role="button"
-      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); } : undefined}
+      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(item); } : undefined}
     >
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
@@ -124,4 +124,4 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   );
 };
 
-export default RegistryCard;
+export default React.memo(RegistryCard);
