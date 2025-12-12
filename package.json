@@ -44,7 +44,7 @@
     "metascraper-description": "^5.49.2",
     "metascraper-image": "^5.49.2",
     "metascraper-title": "^5.49.2",
-    "next": "^15.5.7",
+    "next": "^15.5.9",
     "node-fetch": "^3.3.2",
     "open-graph-scraper": "^6.9.0",
     "pg": "^8.14.1",
