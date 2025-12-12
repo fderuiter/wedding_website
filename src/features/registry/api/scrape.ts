@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import ogs from 'open-graph-scraper';
 import * as cheerio from 'cheerio';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 
 /**
  * @api {post} /api/registry/scrape
@@ -15,6 +16,12 @@ import * as cheerio from 'cheerio';
  * @returns {Promise<NextResponse>} A promise that resolves to the scraped data.
  */
 export async function POST(request: Request) {
+  // Admin authentication check
+  const isAdmin = await isAdminRequest();
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { url } = await request.json();
 
