@@ -7,10 +7,20 @@ import { CalendarEvent } from '@/components/AddToCalendar'
  * @param {string} time - The time string in 'HH:MM' format.
  * @returns {[number, number, number, number, number]} A tuple representing [year, month, day, hours, minutes].
  */
-function formatDate(date: string, time: string): [number, number, number, number, number] {
+function formatDateTuple(date: string, time: string): [number, number, number, number, number] {
   const [year, month, day] = date.split('-').map(Number)
   const [hours, minutes] = time.split(':').map(Number)
   return [year, month, day, hours, minutes]
+}
+
+/**
+ * Formats date and time into YYYYMMDDTHHMMSS string for calendar URLs.
+ * @param {string} date - The date string in 'YYYY-MM-DD' format.
+ * @param {string} time - The time string in 'HH:MM' format.
+ * @returns {string} The formatted date-time string.
+ */
+function formatDateTimeForUrl(date: string, time: string): string {
+  return `${date.replace(/-/g, '')}T${time.replace(/:/g, '')}00`
 }
 
 /**
@@ -21,8 +31,8 @@ function formatDate(date: string, time: string): [number, number, number, number
 export function createGoogleCalendarLink(event: CalendarEvent): string {
   const gCalEvent = {
     ...event,
-    start: `${event.startDate.replace(/-/g, '')}T${event.startTime.replace(/:/g, '')}00`,
-    end: `${event.endDate.replace(/-/g, '')}T${event.endTime.replace(/:/g, '')}00`,
+    start: formatDateTimeForUrl(event.startDate, event.startTime),
+    end: formatDateTimeForUrl(event.endDate, event.endTime),
   }
   const url = new URL('https://calendar.google.com/calendar/render')
   url.searchParams.set('action', 'TEMPLATE')
@@ -40,10 +50,10 @@ export function createGoogleCalendarLink(event: CalendarEvent): string {
  * @returns {string} The generated Yahoo Calendar URL.
  */
 export function createYahooCalendarLink(event: CalendarEvent): string {
-    const yahooEvent = {
+  const yahooEvent = {
     ...event,
-    start: `${event.startDate.replace(/-/g, '')}T${event.startTime.replace(/:/g, '')}00`,
-    end: `${event.endDate.replace(/-/g, '')}T${event.endTime.replace(/:/g, '')}00`,
+    start: formatDateTimeForUrl(event.startDate, event.startTime),
+    end: formatDateTimeForUrl(event.endDate, event.endTime),
   }
   const url = new URL('https://calendar.yahoo.com/')
   url.searchParams.set('v', '60')
@@ -68,8 +78,8 @@ export function createIcsFile(event: CalendarEvent): string {
     title: event.name,
     description: event.description,
     location: event.location,
-    start: formatDate(event.startDate, event.startTime),
-    end: formatDate(event.endDate, event.endTime),
+    start: formatDateTuple(event.startDate, event.startTime),
+    end: formatDateTuple(event.endDate, event.endTime),
     startOutputType: 'local',
     endOutputType: 'local',
   }
