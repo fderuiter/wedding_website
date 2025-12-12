@@ -80,4 +80,42 @@ describe('AddToCalendar', () => {
     expect(calendarUtils.createIcsFile).toHaveBeenCalledWith(sampleEvent)
     expect(mockCreateObjectURL).toHaveBeenCalled()
   })
+
+  it('closes the dropdown when Escape key is pressed', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    fireEvent.click(screen.getByText('Add to Calendar'))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('manages focus with Arrow keys', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    fireEvent.click(screen.getByText('Add to Calendar'))
+
+    const googleButton = screen.getByText('Google')
+    const appleButton = screen.getByText('Apple')
+
+    // Focus should be on the first item (Google) initially or we can set it
+    googleButton.focus()
+    expect(document.activeElement).toBe(googleButton)
+
+    // Arrow Down -> Apple
+    fireEvent.keyDown(googleButton, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(appleButton)
+
+    // Arrow Up -> Google
+    fireEvent.keyDown(appleButton, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(googleButton)
+  })
+
+  it('returns focus to trigger button on Escape', () => {
+    render(<AddToCalendar event={sampleEvent} />)
+    const trigger = screen.getByText('Add to Calendar')
+    fireEvent.click(trigger)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(document.activeElement).toBe(trigger)
+  })
 })
