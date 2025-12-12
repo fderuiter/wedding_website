@@ -35,7 +35,7 @@ export default function HomePageClient({ calendarEvent }: { calendarEvent: Calen
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
-            <motion.div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)]" animate={{ scale: [1, 1.04, 1], opacity: [0.7, 0.5, 0.7] }} transition={{ duration: 14, repeat: Infinity, repeatType: 'reverse' }} />
+            <div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)] animate-pulse-scale" />
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               We Tied the Knot!
             </motion.h1>
