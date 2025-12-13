@@ -24,24 +24,36 @@ function formatDateTimeForUrl(date: string, time: string): string {
 }
 
 /**
+ * Helper function to build a calendar URL with query parameters.
+ * @param {string} baseUrl - The base URL for the calendar service.
+ * @param {Record<string, string>} params - A key-value map of query parameters.
+ * @returns {string} The fully constructed URL.
+ */
+function buildCalendarUrl(baseUrl: string, params: Record<string, string>): string {
+  const url = new URL(baseUrl)
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.set(key, value)
+  })
+  return url.toString()
+}
+
+/**
  * Creates a URL to add an event to Google Calendar.
  * @param {CalendarEvent} event - The event object.
  * @returns {string} The generated Google Calendar URL.
  */
 export function createGoogleCalendarLink(event: CalendarEvent): string {
-  const gCalEvent = {
-    ...event,
-    start: formatDateTimeForUrl(event.startDate, event.startTime),
-    end: formatDateTimeForUrl(event.endDate, event.endTime),
-  }
-  const url = new URL('https://calendar.google.com/calendar/render')
-  url.searchParams.set('action', 'TEMPLATE')
-  url.searchParams.set('text', gCalEvent.name)
-  url.searchParams.set('dates', `${gCalEvent.start}/${gCalEvent.end}`)
-  url.searchParams.set('ctz', gCalEvent.timeZone)
-  url.searchParams.set('details', gCalEvent.description)
-  url.searchParams.set('location', gCalEvent.location)
-  return url.toString()
+  const start = formatDateTimeForUrl(event.startDate, event.startTime)
+  const end = formatDateTimeForUrl(event.endDate, event.endTime)
+
+  return buildCalendarUrl('https://calendar.google.com/calendar/render', {
+    action: 'TEMPLATE',
+    text: event.name,
+    dates: `${start}/${end}`,
+    ctz: event.timeZone,
+    details: event.description,
+    location: event.location,
+  })
 }
 
 /**
@@ -50,21 +62,19 @@ export function createGoogleCalendarLink(event: CalendarEvent): string {
  * @returns {string} The generated Yahoo Calendar URL.
  */
 export function createYahooCalendarLink(event: CalendarEvent): string {
-  const yahooEvent = {
-    ...event,
-    start: formatDateTimeForUrl(event.startDate, event.startTime),
-    end: formatDateTimeForUrl(event.endDate, event.endTime),
-  }
-  const url = new URL('https://calendar.yahoo.com/')
-  url.searchParams.set('v', '60')
-  url.searchParams.set('view', 'd')
-  url.searchParams.set('type', '20')
-  url.searchParams.set('title', yahooEvent.name)
-  url.searchParams.set('st', yahooEvent.start)
-  url.searchParams.set('et', yahooEvent.end)
-  url.searchParams.set('desc', yahooEvent.description)
-  url.searchParams.set('in_loc', yahooEvent.location)
-  return url.toString()
+  const start = formatDateTimeForUrl(event.startDate, event.startTime)
+  const end = formatDateTimeForUrl(event.endDate, event.endTime)
+
+  return buildCalendarUrl('https://calendar.yahoo.com/', {
+    v: '60',
+    view: 'd',
+    type: '20',
+    title: event.name,
+    st: start,
+    et: end,
+    desc: event.description,
+    in_loc: event.location,
+  })
 }
 
 /**
