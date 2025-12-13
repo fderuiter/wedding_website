@@ -28,7 +28,6 @@ const jsonLd = {
 };
 
 export const metadata: Metadata = {
-  title: "Home",
   alternates: {
     canonical: '/',
   },

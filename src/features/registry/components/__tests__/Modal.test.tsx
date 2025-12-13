@@ -68,7 +68,7 @@ describe('Modal Component', () => {
     const img = screen.getByRole('img', { name: 'Single Item' });
     expect(img.getAttribute('src')).toContain('valid.jpg');
     expect(screen.getByRole('link', { name: 'View on Vendor Site' })).toHaveAttribute('href', 'https://example.com');
-    expect(screen.getByPlaceholderText('Your Name')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Jane Doe')).toBeInTheDocument();
     // Corrected button name
     expect(screen.getByRole('button', { name: 'Claim Gift' })).toBeInTheDocument();
     // Group gift contribution input should not be present
@@ -81,8 +81,8 @@ describe('Modal Component', () => {
     expect(screen.getByText('Group Item')).toBeInTheDocument();
     expect(screen.getByText(/Group Gift - \$30.00 contributed so far./)).toBeInTheDocument();
     expect(screen.getByText(/\$70.00 still needed./)).toBeInTheDocument(); // 100 - 30
-    expect(screen.getByPlaceholderText('Your Name')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Contribution Amount (up to $70.00)')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Jane Doe')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Up to $70.00')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Submit Contribution' })).toBeInTheDocument();
   });
 
@@ -93,7 +93,7 @@ describe('Modal Component', () => {
     expect(screen.getByText('This gift has been claimed!')).toBeInTheDocument();
     expect(screen.getByText('Claimed by: Generous Guest')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Claim This Gift' })).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText('Your Name')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Jane Doe')).not.toBeInTheDocument();
   });
 
   it('renders correctly for a fully funded group item', () => {
@@ -103,7 +103,7 @@ describe('Modal Component', () => {
     expect(screen.getByText('This gift is fully funded!')).toBeInTheDocument();
     expect(screen.getByText('Thank you for your generosity!')).toBeInTheDocument(); // Check for contributor thank you message
     expect(screen.queryByRole('button', { name: 'Submit Contribution' })).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText('Your Name')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Jane Doe')).not.toBeInTheDocument();
   });
 
 
@@ -147,14 +147,14 @@ describe('Modal Component', () => {
 
   it('updates contributor name input', () => {
     render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    const nameInput = screen.getByPlaceholderText('Your Name');
+    const nameInput = screen.getByPlaceholderText('Jane Doe');
     fireEvent.change(nameInput, { target: { value: 'Test User' } });
     expect(nameInput).toHaveValue('Test User');
   });
 
   it('updates contribution amount input for group gift', () => {
     render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    const amountInput = screen.getByPlaceholderText('Contribution Amount (up to $70.00)');
+    const amountInput = screen.getByPlaceholderText('Up to $70.00');
     fireEvent.change(amountInput, { target: { value: '25' } });
     expect(amountInput).toHaveValue(25); // Input type=number returns number
   });
@@ -171,8 +171,8 @@ describe('Modal Component', () => {
 
   it('shows error if contribution amount is invalid for group gift', async () => {
     render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Test User' } });
-    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '0' } });
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), { target: { value: 'Test User' } });
+    fireEvent.change(screen.getByPlaceholderText('Up to $70.00'), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
     expect(await screen.findByText('Please enter a valid contribution amount.')).toBeInTheDocument();
     expect(mockOnContribute).not.toHaveBeenCalled();
@@ -180,8 +180,8 @@ describe('Modal Component', () => {
 
   it('shows error if contribution amount exceeds remaining for group gift', async () => {
     render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Test User' } });
-    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '80' } }); // More than remaining 70
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), { target: { value: 'Test User' } });
+    fireEvent.change(screen.getByPlaceholderText('Up to $70.00'), { target: { value: '80' } }); // More than remaining 70
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
     expect(await screen.findByText('Amount cannot exceed the remaining $70.00.')).toBeInTheDocument();
     expect(mockOnContribute).not.toHaveBeenCalled();
@@ -189,7 +189,7 @@ describe('Modal Component', () => {
 
   it('calls onContribute with correct details for single item claim', async () => {
     render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Claimer' } });
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), { target: { value: 'Claimer' } });
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
@@ -205,8 +205,8 @@ describe('Modal Component', () => {
 
   it('calls onContribute with correct details for group gift contribution', async () => {
     render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Contributor' } });
-    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '50' } });
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), { target: { value: 'Contributor' } });
+    fireEvent.change(screen.getByPlaceholderText('Up to $70.00'), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
 
     // Check for processing state immediately after click
@@ -225,8 +225,8 @@ describe('Modal Component', () => {
     mockOnContribute.mockRejectedValueOnce(new Error(errorMessage)); // Simulate API error
 
     render(<Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    fireEvent.change(screen.getByPlaceholderText('Your Name'), { target: { value: 'Contributor' } });
-    fireEvent.change(screen.getByPlaceholderText('Contribution Amount (up to $70.00)'), { target: { value: '50' } });
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), { target: { value: 'Contributor' } });
+    fireEvent.change(screen.getByPlaceholderText('Up to $70.00'), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
 
     // Check for the actual error message displayed

@@ -8,9 +8,9 @@ describe('metadata', () => {
       'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.'
     );
     expect(metadata.icons).toEqual({
-      icon: '/assets/favicon.png',
-      shortcut: '/assets/favicon.png',
-      apple: '/assets/favicon.png',
+      icon: '/favicon.ico',
+      shortcut: '/favicon.ico',
+      apple: '/favicon.ico',
     });
     expect(metadata.openGraph).toEqual({
       type: 'website',

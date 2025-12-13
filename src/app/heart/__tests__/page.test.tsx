@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import HeartPage from '../page';
+import HeartPage from '../HeartPageClient';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 
 import { ContactForceEvent } from '@react-three/rapier';
@@ -140,11 +140,28 @@ jest.mock('three', () => {
 describe('HeartPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Suppress console errors for React warnings about casing
+    jest.spyOn(console, 'error').mockImplementation((...args) => {
+        const msg = args[0];
+        if (typeof msg === 'string' && (
+            msg.includes('incorrect casing') ||
+            msg.includes('The tag <%s> is unrecognized') ||
+            (args.length > 1 && (args[1] === 'ambientLight' || args[1] === 'directionalLight'))
+        )) {
+            return;
+        }
+        console.warn(...args); // fallback
+    });
+
     const useThree = jest.requireMock('@react-three/fiber').useThree;
     useThree.mockReturnValue({
       size: { width: 800, height: 600 },
       viewport: { width: 10, height: 7.5 },
     });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('renders the page without crashing', () => {
