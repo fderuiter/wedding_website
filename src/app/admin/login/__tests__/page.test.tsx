@@ -38,7 +38,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText(/password/i), {
+    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
       target: { value: 'secret' },
     });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -62,7 +62,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText(/password/i), {
+    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
       target: { value: 'wrong' },
     });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -82,7 +82,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText(/password/i), {
+    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
       target: { value: 'secret' },
     });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -105,7 +105,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText(/password/i), {
+    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
       target: { value: 'secret' },
     });
     const button = screen.getByRole('button', { name: /login/i });
@@ -125,6 +125,22 @@ describe('Admin Login Page', () => {
       expect(button).not.toBeDisabled();
       expect(button).toHaveTextContent('Login');
     });
+  });
+
+  it('toggles password visibility', () => {
+    render(<LoginPage />);
+
+    const passwordInput = screen.getByPlaceholderText(/enter admin password/i);
+    expect(passwordInput).toHaveAttribute('type', 'password');
+
+    const toggleButton = screen.getByLabelText(/show password/i);
+    fireEvent.click(toggleButton);
+
+    expect(passwordInput).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText(/hide password/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/hide password/i));
+    expect(passwordInput).toHaveAttribute('type', 'password');
   });
 });
 
