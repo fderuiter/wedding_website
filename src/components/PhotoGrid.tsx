@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useCallback, memo } from 'react'
 import Image from 'next/image'
 import { GalleryImage } from './Gallery'
 import Lightbox from './Lightbox'
@@ -26,24 +26,25 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({ images }) => {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
 
-  const openLightbox = (index: number) => {
+  // Memoize handlers to prevent unnecessary re-renders of child components
+  const openLightbox = useCallback((index: number) => {
     setCurrentIndex(index)
     setLightboxOpen(true)
-  }
+  }, [])
 
-  const closeLightbox = () => {
+  const closeLightbox = useCallback(() => {
     setLightboxOpen(false)
-  }
+  }, [])
 
-  const nextImage = () => {
+  const nextImage = useCallback(() => {
     setCurrentIndex((prevIndex) => (prevIndex + 1) % images.length)
-  }
+  }, [images.length])
 
-  const prevImage = () => {
+  const prevImage = useCallback(() => {
     setCurrentIndex(
       (prevIndex) => (prevIndex - 1 + images.length) % images.length
     )
-  }
+  }, [images.length])
 
   return (
     <>
@@ -76,7 +77,9 @@ interface GridImageProps {
   openLightbox: (index: number) => void
 }
 
-const GridImage: React.FC<GridImageProps> = ({
+// Memoize GridImage to prevent re-rendering when PhotoGrid state changes (e.g. lightbox opens)
+// This is a performance optimization, especially for large grids.
+const GridImage = memo<GridImageProps>(({
   image,
   index,
   openLightbox,
@@ -105,6 +108,8 @@ const GridImage: React.FC<GridImageProps> = ({
       )}
     </div>
   )
-}
+})
+
+GridImage.displayName = 'GridImage'
 
 export default PhotoGrid
