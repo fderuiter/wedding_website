@@ -53,8 +53,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 340 }}
       data-testid="registry-card"
       tabIndex={isClickable ? 0 : -1}
-      aria-label={item.name}
-      role="button"
+      aria-label={`${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`}
+      role={isClickable ? 'button' : undefined}
       onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(item); } : undefined}
     >
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
