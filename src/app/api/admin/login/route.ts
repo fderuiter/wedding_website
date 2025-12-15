@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
+import { signAdminToken } from '@/utils/adminAuth.server';
 
 const ADMIN_COOKIE = 'admin_auth';
 
@@ -37,8 +38,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid password.' }, { status: 401 });
   }
 
+  // Generate signed token
+  const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+
   const response = NextResponse.json({ success: true });
-  response.cookies.set(ADMIN_COOKIE, 'true', {
+  response.cookies.set(ADMIN_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

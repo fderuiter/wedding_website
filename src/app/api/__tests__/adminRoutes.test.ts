@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import { POST as login } from '../admin/login/route';
 import { POST as logout } from '../admin/logout/route';
 import { GET as me } from '../admin/me/route';
+import { signAdminToken } from '@/utils/adminAuth.server';
 
 describe('Admin API routes', () => {
   beforeEach(() => {
@@ -18,7 +19,10 @@ describe('Admin API routes', () => {
     });
     const res = await login(req);
     expect(res.status).toBe(200);
-    expect(res.cookies.get('admin_auth')?.value).toBe('true');
+    // The cookie value should now be a signed token, not just "true"
+    const cookieValue = res.cookies.get('admin_auth')?.value;
+    expect(cookieValue).not.toBe('true');
+    expect(cookieValue).toContain('.');
   });
 
   test('login fails with invalid password', async () => {
@@ -53,8 +57,11 @@ describe('Admin API routes', () => {
   });
 
   test('me returns admin status based on cookie', async () => {
+    // We need to generate a valid signed token for the test
+    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+
     const reqAdmin = new NextRequest('http://localhost/api/admin/me', {
-      headers: { cookie: 'admin_auth=true' },
+      headers: { cookie: `admin_auth=${token}` },
     });
     const resAdmin = await me(reqAdmin);
     const jsonAdmin = await resAdmin.json();
