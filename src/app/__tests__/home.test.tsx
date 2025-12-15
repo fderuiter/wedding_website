@@ -51,19 +51,6 @@ jest.mock('framer-motion', () => {
   };
 });
 
-jest.mock('@/components/WeddingIntro', () => {
-  const React = require('react');
-  return {
-    __esModule: true,
-    default: ({ onFinish }: { onFinish?: () => void }) => {
-      React.useEffect(() => {
-        onFinish?.();
-      }, [onFinish]);
-      return null;
-    },
-  };
-});
-
 jest.mock('@/components/AddToCalendar', () => ({
   __esModule: true,
   default: () => <button>Add to Calendar</button>,
