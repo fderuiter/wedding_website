@@ -35,10 +35,27 @@ export async function POST(request: Request) {
     return NextResponse.json(updatedItem);
   } catch (error) {
     console.error("Error processing contribution:", error);
-    let errorMessage = 'Failed to process contribution';
+
+    // Security: Determine if the error is safe to expose to the client
+    let errorMessage = 'An error occurred while processing your request.';
+
     if (error instanceof Error) {
-      errorMessage = error.message;
+      // Allow specific business logic errors to pass through
+      const safeErrors = [
+        'Contribution must be a positive number.',
+        'Item not found',
+        'This item has already been purchased.',
+        'Contribution cannot be greater than the remaining amount.'
+      ];
+
+      if (safeErrors.includes(error.message)) {
+        errorMessage = error.message;
+        // Business logic errors are usually 400 Bad Request
+        return NextResponse.json({ error: errorMessage }, { status: 400 });
+      }
     }
+
+    // For unknown errors (like DB connection failure), return 500 with generic message
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
