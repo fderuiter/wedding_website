@@ -2,13 +2,15 @@ const ADMIN_COOKIE = 'admin_auth';
 
 /**
  * Checks for the admin authentication cookie on the client-side.
- * Note: This is less secure as it relies on a non-HttpOnly cookie.
- * This function is not currently used in the application.
- * @returns {boolean} True if the admin cookie is present, false otherwise.
+ * @deprecated This function is unreliable because the admin cookie is HttpOnly and cannot be accessed by client-side JavaScript.
+ * Use `checkAdminClient` instead, which calls the server-side API.
+ * @returns {boolean} Always false (in production with HttpOnly cookies).
  */
 export function isAdminClient(): boolean {
   if (typeof document === 'undefined') return false;
-  return document.cookie.split(';').some(c => c.trim().startsWith(`${ADMIN_COOKIE}=true`));
+  // Previously checked for 'admin_auth=true'. Since the cookie is HttpOnly, this will typically return false.
+  // We keep the check for consistency if non-HttpOnly cookies are used in dev, but generally this should not be relied upon.
+  return document.cookie.split(';').some(c => c.trim().startsWith(`${ADMIN_COOKIE}=`));
 }
 
 /**

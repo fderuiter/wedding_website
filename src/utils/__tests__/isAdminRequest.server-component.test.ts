@@ -1,4 +1,4 @@
-import { isAdminRequest } from '../adminAuth.server';
+import { isAdminRequest, signAdminToken } from '../adminAuth.server';
 import { cookies } from 'next/headers';
 
 jest.mock('next/headers', () => ({
@@ -10,9 +10,11 @@ describe('isAdminRequest server component', () => {
     jest.clearAllMocks();
   });
 
-  it('resolves true when admin cookie is present', async () => {
+  it('resolves true when admin cookie is present and valid', async () => {
+    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+
     (cookies as jest.Mock).mockResolvedValue({
-      get: () => ({ value: 'true' }),
+      get: () => ({ value: token }),
     });
 
     await expect(isAdminRequest()).resolves.toBe(true);
@@ -21,6 +23,14 @@ describe('isAdminRequest server component', () => {
   it('resolves false when admin cookie is absent', async () => {
     (cookies as jest.Mock).mockResolvedValue({
       get: () => undefined,
+    });
+
+    await expect(isAdminRequest()).resolves.toBe(false);
+  });
+
+  it('resolves false when admin cookie is invalid', async () => {
+    (cookies as jest.Mock).mockResolvedValue({
+      get: () => ({ value: 'invalid_token' }),
     });
 
     await expect(isAdminRequest()).resolves.toBe(false);
