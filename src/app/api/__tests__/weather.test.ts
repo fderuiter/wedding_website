@@ -7,6 +7,11 @@ global.fetch = jest.fn();
 describe('Weather API Route', () => {
   beforeEach(() => {
     (fetch as jest.Mock).mockClear();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('should return a 200 status code and weather data on success', async () => {
@@ -36,7 +41,8 @@ describe('Weather API Route', () => {
   });
 
   it('should return a 500 status code on fetch failure', async () => {
-    (fetch as jest.Mock).mockRejectedValueOnce(new Error('API is down'));
+    const error = new Error('API is down');
+    (fetch as jest.Mock).mockRejectedValueOnce(error);
 
     const request = new NextRequest('http://localhost/api/weather');
     const response = await GET();
@@ -44,6 +50,7 @@ describe('Weather API Route', () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body).toEqual({ error: 'Failed to fetch weather data' });
+    expect(console.error).toHaveBeenCalledWith('Weather API error:', error);
   });
 
   it('should return a 500 status code on non-ok response from Open-Meteo', async () => {
@@ -57,5 +64,6 @@ describe('Weather API Route', () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body).toEqual({ error: 'Failed to fetch weather data' });
+    expect(console.error).toHaveBeenCalledWith('Weather API error:', expect.any(Error));
   });
 });

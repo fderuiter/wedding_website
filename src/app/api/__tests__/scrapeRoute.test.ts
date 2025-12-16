@@ -15,6 +15,11 @@ const mockIsAdminRequest = isAdminRequest as jest.Mock;
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('returns 401 when user is not admin', async () => {
@@ -75,9 +80,10 @@ describe('POST /api/registry/scrape', () => {
 
   it('returns 500 when scraping fails', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
+    const mockResult = { success: false, error: 'some scraping error' };
     mockOgs.mockResolvedValue({
       error: true,
-      result: { success: false, error: 'some scraping error' },
+      result: mockResult,
     });
 
     const req = new Request('http://localhost/api/registry/scrape', {
@@ -89,11 +95,13 @@ describe('POST /api/registry/scrape', () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json.error).toContain('Failed to scrape product info');
+    expect(console.error).toHaveBeenCalledWith('Scraping failed:', mockResult);
   });
 
   it('returns 500 when an unexpected error occurs', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    mockOgs.mockRejectedValue(new Error('network error'));
+    const error = new Error('network error');
+    mockOgs.mockRejectedValue(error);
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -104,5 +112,6 @@ describe('POST /api/registry/scrape', () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json.error).toContain('Failed to scrape product info');
+    expect(console.error).toHaveBeenCalledWith('Scraping error:', error);
   });
 });
