@@ -10,14 +10,16 @@ jest.mock('../ThingsToDoMap', () => {
 });
 
 describe('ThingsToDoList', () => {
-  it('renders all attractions by default', () => {
+  it('renders all attractions by default', async () => {
     render(<ThingsToDoList />);
+    await screen.findByTestId('things-to-do-map');
     const attractionCards = screen.getAllByText(/Directions/);
     expect(attractionCards.length).toBe(attractions.length);
   });
 
-  it('filters attractions when a category is clicked', () => {
+  it('filters attractions when a category is clicked', async () => {
     render(<ThingsToDoList />);
+    await screen.findByTestId('things-to-do-map');
 
     const foodButton = screen.getByText('Food');
     fireEvent.click(foodButton);
@@ -27,8 +29,9 @@ describe('ThingsToDoList', () => {
     expect(attractionCards.length).toBe(foodAttractions.length);
   });
 
-  it('shows all attractions when "all" category is clicked', () => {
+  it('shows all attractions when "all" category is clicked', async () => {
     render(<ThingsToDoList />);
+    await screen.findByTestId('things-to-do-map');
 
     // First filter to something else
     const foodButton = screen.getByText('Food');
