@@ -1,30 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile } from '@/utils/calendar'
-
-/**
- * @interface CalendarEvent
- * @description Defines the structure for a calendar event object.
- * @property {string} name - The name of the event.
- * @property {string} startDate - The start date of the event in YYYY-MM-DD format.
- * @property {string} startTime - The start time of the event in HH:MM format.
- * @property {string} endDate - The end date of the event in YYYY-MM-DD format.
- * @property {string} endTime - The end time of the event in HH:MM format.
- * @property {string} timeZone - The time zone of the event.
- * @property {string} location - The location of the event.
- * @property {string} description - A description of the event.
- */
-export interface CalendarEvent {
-  name: string
-  startDate: string
-  startTime: string
-  endDate: string
-  endTime: string
-  timeZone: string
-  location: string
-  description: string
-}
+import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar'
 
 /**
  * @interface AddToCalendarProps
