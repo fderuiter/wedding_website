@@ -73,6 +73,13 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           // Updated placeholder background
           className="object-cover bg-gray-100 rounded-t-2xl" // Removed w-full, h-56
           fill // Use fill layout
+          // Added sizes prop for performance optimization
+          // Matches grid layout:
+          // < 640px: 1 col (100vw)
+          // 640-768px: 2 cols (50vw)
+          // 768-1280px: 3 cols (33vw)
+          // > 1280px: 4 cols (25vw)
+          sizes="(max-width: 639px) 100vw, (max-width: 767px) 50vw, (max-width: 1279px) 33vw, 25vw"
           loading="lazy"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
