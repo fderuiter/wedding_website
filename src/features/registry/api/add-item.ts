@@ -46,10 +46,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Item added successfully', item: newItem }, { status: 201 });
   } catch (error) {
     console.error("Error adding item:", error);
-    let errorMessage = 'Failed to add item to registry';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    }
+    // Security Fix: Do not expose internal error details to the client
+    const errorMessage = 'Failed to add item to registry. Please try again later.';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

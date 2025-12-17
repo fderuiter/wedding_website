@@ -35,10 +35,8 @@ export async function POST(request: Request) {
     return NextResponse.json(updatedItem);
   } catch (error) {
     console.error("Error processing contribution:", error);
-    let errorMessage = 'Failed to process contribution';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    }
+    // Security Fix: Do not expose internal error details to the client
+    const errorMessage = 'Failed to process contribution. Please try again later.';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

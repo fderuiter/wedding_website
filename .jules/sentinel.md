@@ -1,4 +1,7 @@
-## 2024-05-24 - Secure Password Storage and Comparison
-**Vulnerability:** The admin login route used direct string comparison (or simple hashing) for the password, which is vulnerable to brute-force and timing attacks.
-**Learning:** For password verification, simple hashing (like SHA-256) is insufficient due to speed. Timing attacks are also a risk with direct comparison.
-**Prevention:** Use `bcrypt` for password storage and verification. It handles salting automatically and is computationally expensive, resisting brute-force attacks. It also performs constant-time comparison.
+## 2024-05-23 - Information Leakage in API Error Handling
+
+**Vulnerability:** Several API endpoints (`/api/registry/contribute`, `/api/registry/add-item`, `/api/registry/scrape`) were catching exceptions and returning the raw `error.message` directly to the client in the JSON response.
+
+**Learning:** This is a common pattern when developers want to "pass through" validation errors, but it inadvertently exposes internal system details (like database connection failures, SQL syntax errors, or library-specific stack traces) when unexpected errors occur.
+
+**Prevention:** Always sanitize error messages at the API boundary. Log the full error details server-side for debugging, but return a generic, user-friendly message to the client (e.g., "An unexpected error occurred"). Only pass through specific, known error types that are safe for client consumption.
