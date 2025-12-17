@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
-import { CalendarEvent } from '@/components/AddToCalendar';
+import { CalendarEvent } from '@/utils/calendar';
 
 const jsonLd = {
   '@context': 'https://schema.org',

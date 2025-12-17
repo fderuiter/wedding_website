@@ -1,7 +1,8 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import AddToCalendar, { CalendarEvent } from '../AddToCalendar'
+import AddToCalendar from '../AddToCalendar'
+import { CalendarEvent } from '@/utils/calendar'
 import * as calendarUtils from '@/utils/calendar'
 
 // Mock the calendar utility functions

@@ -1,5 +1,5 @@
 import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile } from '../calendar';
-import { CalendarEvent } from '@/components/AddToCalendar';
+import { CalendarEvent } from '@/utils/calendar';
 
 const event: CalendarEvent = {
   name: 'Test Event',
