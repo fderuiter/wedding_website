@@ -18,7 +18,8 @@ describe('PriceRangeFilter', () => {
     const handleChange = jest.fn();
     render(<Wrapper min={0} max={100} initial={[10, 90]} onChange={handleChange} />);
 
-    const [minSlider, maxSlider] = screen.getAllByRole('slider');
+    const minSlider = screen.getByLabelText('Minimum price');
+    const maxSlider = screen.getByLabelText('Maximum price');
     const getMinDisplay = () => screen.getAllByText(/\$\d+/)[1];
     const getMaxDisplay = () => screen.getAllByText(/\$\d+/)[2];
 
