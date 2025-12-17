@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import BackToTop from '../BackToTop';
 
@@ -11,35 +11,58 @@ describe('BackToTop', () => {
     };
     g.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(cb, 0);
     g.cancelAnimationFrame = (id: number) => clearTimeout(id);
+
+    // Mock window.scrollTo
+    Object.defineProperty(window, 'scrollTo', {
+      value: jest.fn(),
+      writable: true,
+    });
   });
 
   it('toggles visibility based on scroll position and retains ARIA label', async () => {
     Object.defineProperty(window, 'scrollY', { writable: true, value: 0 });
 
     render(<BackToTop />);
-    const link = screen.getByRole('link', { name: /back to top/i });
+    const button = screen.getByRole('button', { name: /back to top/i });
 
     await waitFor(() => {
-      expect(link).toHaveClass('opacity-0');
-      expect(link).toHaveClass('pointer-events-none');
+      expect(button).toHaveClass('opacity-0');
+      expect(button).toHaveClass('pointer-events-none');
     });
-    expect(link).toHaveAttribute('aria-label', 'Back to top');
+    expect(button).toHaveAttribute('aria-label', 'Back to top');
 
     window.scrollY = 700;
     window.dispatchEvent(new Event('scroll'));
     await waitFor(() => {
-      expect(link).toHaveClass('opacity-100');
-      expect(link).toHaveClass('pointer-events-auto');
+      expect(button).toHaveClass('opacity-100');
+      expect(button).toHaveClass('pointer-events-auto');
     });
-    expect(link).toHaveAttribute('aria-label', 'Back to top');
+    expect(button).toHaveAttribute('aria-label', 'Back to top');
 
     window.scrollY = 100;
     window.dispatchEvent(new Event('scroll'));
     await waitFor(() => {
-      expect(link).toHaveClass('opacity-0');
-      expect(link).toHaveClass('pointer-events-none');
+      expect(button).toHaveClass('opacity-0');
+      expect(button).toHaveClass('pointer-events-none');
     });
-    expect(link).toHaveAttribute('aria-label', 'Back to top');
+    expect(button).toHaveAttribute('aria-label', 'Back to top');
+  });
+
+  it('scrolls to top when clicked', async () => {
+    window.scrollY = 700;
+    render(<BackToTop />);
+    const button = screen.getByRole('button', { name: /back to top/i });
+
+    await waitFor(() => {
+      expect(button).toHaveClass('opacity-100');
+    });
+
+    fireEvent.click(button);
+
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: 'smooth',
+    });
   });
 
   it('cleans up scroll listener and animation frame on unmount', () => {
