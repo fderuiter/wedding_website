@@ -44,6 +44,7 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
         value={minValue}
         onChange={handleMinChange}
         className="accent-yellow-600"
+        aria-label="Minimum price"
       />
       <span className="text-sm">${minValue}</span>
       <span className="mx-1">-</span>
@@ -54,6 +55,7 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
         value={maxValue}
         onChange={handleMaxChange}
         className="accent-yellow-600"
+        aria-label="Maximum price"
       />
       <span className="text-sm">${maxValue}</span>
       <span className="text-sm">/ ${max}</span>
