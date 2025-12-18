@@ -23,8 +23,13 @@ describe('validateContributeInput', () => {
       expected: 'Name is required.',
     },
     {
-      name: 'invalid amount',
+      name: 'invalid amount (negative)',
       input: { itemId: '1', name: 'Alice', amount: -5 },
+      expected: 'Contribution amount must be a positive number.',
+    },
+    {
+      name: 'invalid amount (Infinity)',
+      input: { itemId: '1', name: 'Alice', amount: Infinity },
       expected: 'Contribution amount must be a positive number.',
     },
     {
@@ -57,14 +62,24 @@ describe('validateAddItemInput', () => {
       expected: 'Item name is required.',
     },
     {
-      name: 'invalid price',
+      name: 'invalid price (negative)',
       input: { name: 'Toaster', price: -1, quantity: 1, category: 'Kitchen' },
       expected: 'Price must be a positive number.',
     },
     {
-      name: 'invalid quantity',
+      name: 'invalid price (Infinity)',
+      input: { name: 'Toaster', price: Infinity, quantity: 1, category: 'Kitchen' },
+      expected: 'Price must be a positive number.',
+    },
+    {
+      name: 'invalid quantity (zero)',
       input: { name: 'Toaster', price: 100, quantity: 0, category: 'Kitchen' },
-      expected: 'Quantity must be a positive number.',
+      expected: 'Quantity must be a positive integer.',
+    },
+    {
+      name: 'invalid quantity (float)',
+      input: { name: 'Toaster', price: 100, quantity: 1.5, category: 'Kitchen' },
+      expected: 'Quantity must be a positive integer.',
     },
     {
       name: 'missing category',
@@ -77,4 +92,3 @@ describe('validateAddItemInput', () => {
     expect(validateAddItemInput(input)).toBe(expected);
   });
 });
-
