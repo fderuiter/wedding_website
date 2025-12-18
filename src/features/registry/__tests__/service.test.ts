@@ -1,52 +1,55 @@
-import type { RegistryItem } from '@/features/registry/types';
-import { RegistryRepository } from '@/features/registry/repository';
+import type { RegistryItem, IRegistryRepository } from '@/features/registry/types';
 import { RegistryService } from '@/features/registry/service';
 
-jest.mock('@/features/registry/repository');
-
-const mockGetAllItems = RegistryRepository.getAllItems as jest.Mock;
-const mockGetItemById = RegistryRepository.getItemById as jest.Mock;
-const mockCreateItem = RegistryRepository.createItem as jest.Mock;
-const mockUpdateItem = RegistryRepository.updateItem as jest.Mock;
-const mockDeleteItem = RegistryRepository.deleteItem as jest.Mock;
-const mockContributeToItem = RegistryRepository.contributeToItem as jest.Mock;
+// Mock the repository interface
+const mockRepository: jest.Mocked<IRegistryRepository> = {
+  getAllItems: jest.fn(),
+  getItemById: jest.fn(),
+  createItem: jest.fn(),
+  updateItem: jest.fn(),
+  deleteItem: jest.fn(),
+  contributeToItem: jest.fn(),
+};
 
 describe('RegistryService', () => {
+  let registryService: RegistryService;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    registryService = new RegistryService(mockRepository);
   });
 
   describe('getAllItems', () => {
     it('returns all registry items', async () => {
       const items = [{ id: '1' } as RegistryItem];
-      mockGetAllItems.mockResolvedValue(items);
+      mockRepository.getAllItems.mockResolvedValue(items);
 
-      await expect(RegistryService.getAllItems()).resolves.toEqual(items);
-      expect(mockGetAllItems).toHaveBeenCalled();
+      await expect(registryService.getAllItems()).resolves.toEqual(items);
+      expect(mockRepository.getAllItems).toHaveBeenCalled();
     });
 
     it('throws when repository fails', async () => {
       const error = new Error('DB error');
-      mockGetAllItems.mockRejectedValue(error);
+      mockRepository.getAllItems.mockRejectedValue(error);
 
-      await expect(RegistryService.getAllItems()).rejects.toThrow(error);
+      await expect(registryService.getAllItems()).rejects.toThrow(error);
     });
   });
 
   describe('getItemById', () => {
     it('returns a registry item by id', async () => {
       const item = { id: '1' } as RegistryItem;
-      mockGetItemById.mockResolvedValue(item);
+      mockRepository.getItemById.mockResolvedValue(item);
 
-      await expect(RegistryService.getItemById('1')).resolves.toEqual(item);
-      expect(mockGetItemById).toHaveBeenCalledWith('1');
+      await expect(registryService.getItemById('1')).resolves.toEqual(item);
+      expect(mockRepository.getItemById).toHaveBeenCalledWith('1');
     });
 
     it('throws when item lookup fails', async () => {
       const error = new Error('DB error');
-      mockGetItemById.mockRejectedValue(error);
+      mockRepository.getItemById.mockRejectedValue(error);
 
-      await expect(RegistryService.getItemById('1')).rejects.toThrow(error);
+      await expect(registryService.getItemById('1')).rejects.toThrow(error);
     });
   });
 
@@ -61,18 +64,18 @@ describe('RegistryService', () => {
         amountContributed: 0,
       } as unknown as Omit<RegistryItem, 'id' | 'contributors'>;
       const created = { id: '1', ...input, contributors: [] } as unknown as RegistryItem;
-      mockCreateItem.mockResolvedValue(created);
+      mockRepository.createItem.mockResolvedValue(created);
 
-      await expect(RegistryService.createItem(input)).resolves.toEqual(created);
-      expect(mockCreateItem).toHaveBeenCalledWith(input);
+      await expect(registryService.createItem(input)).resolves.toEqual(created);
+      expect(mockRepository.createItem).toHaveBeenCalledWith(input);
     });
 
     it('throws when creation fails', async () => {
       const error = new Error('DB error');
-      mockCreateItem.mockRejectedValue(error);
+      mockRepository.createItem.mockRejectedValue(error);
 
       await expect(
-        RegistryService.createItem({} as unknown as Omit<RegistryItem, 'id' | 'contributors'>)
+        registryService.createItem({} as unknown as Omit<RegistryItem, 'id' | 'contributors'>)
       ).rejects.toThrow(error);
     });
   });
@@ -80,36 +83,36 @@ describe('RegistryService', () => {
   describe('updateItem', () => {
     it('updates a registry item', async () => {
       const updated = { id: '1', title: 'New', contributors: [] } as unknown as RegistryItem;
-      mockUpdateItem.mockResolvedValue(updated);
+      mockRepository.updateItem.mockResolvedValue(updated);
 
       await expect(
-        RegistryService.updateItem('1', { title: 'New' } as Partial<RegistryItem>)
+        registryService.updateItem('1', { title: 'New' } as Partial<RegistryItem>)
       ).resolves.toEqual(updated);
-      expect(mockUpdateItem).toHaveBeenCalledWith('1', { title: 'New' });
+      expect(mockRepository.updateItem).toHaveBeenCalledWith('1', { title: 'New' });
     });
 
     it('throws when update fails', async () => {
       const error = new Error('DB error');
-      mockUpdateItem.mockRejectedValue(error);
+      mockRepository.updateItem.mockRejectedValue(error);
 
-      await expect(RegistryService.updateItem('1', {})).rejects.toThrow(error);
+      await expect(registryService.updateItem('1', {})).rejects.toThrow(error);
     });
   });
 
   describe('deleteItem', () => {
     it('deletes a registry item', async () => {
       const deleted = { id: '1' } as RegistryItem;
-      mockDeleteItem.mockResolvedValue(deleted);
+      mockRepository.deleteItem.mockResolvedValue(deleted);
 
-      await expect(RegistryService.deleteItem('1')).resolves.toEqual(deleted);
-      expect(mockDeleteItem).toHaveBeenCalledWith('1');
+      await expect(registryService.deleteItem('1')).resolves.toEqual(deleted);
+      expect(mockRepository.deleteItem).toHaveBeenCalledWith('1');
     });
 
     it('throws when delete fails', async () => {
       const error = new Error('DB error');
-      mockDeleteItem.mockRejectedValue(error);
+      mockRepository.deleteItem.mockRejectedValue(error);
 
-      await expect(RegistryService.deleteItem('1')).rejects.toThrow(error);
+      await expect(registryService.deleteItem('1')).rejects.toThrow(error);
     });
   });
 
@@ -123,35 +126,35 @@ describe('RegistryService', () => {
         purchased: false,
       } as unknown as RegistryItem;
 
-      mockGetItemById.mockResolvedValue(item);
-      mockContributeToItem.mockResolvedValue(updated);
+      mockRepository.getItemById.mockResolvedValue(item);
+      mockRepository.contributeToItem.mockResolvedValue(updated);
 
-      const result = await RegistryService.contributeToItem('1', { name: 'John', amount: 50 });
+      const result = await registryService.contributeToItem('1', { name: 'John', amount: 50 });
       expect(result).toEqual(updated);
-      expect(mockGetItemById).toHaveBeenCalledWith('1');
-      expect(mockContributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
+      expect(mockRepository.getItemById).toHaveBeenCalledWith('1');
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
     it('throws when contribution amount is not positive', async () => {
       await expect(
-        RegistryService.contributeToItem('1', { name: 'John', amount: 0 })
+        registryService.contributeToItem('1', { name: 'John', amount: 0 })
       ).rejects.toThrow('Contribution must be a positive number.');
 
       await expect(
-        RegistryService.contributeToItem('1', { name: 'John', amount: -10 })
+        registryService.contributeToItem('1', { name: 'John', amount: -10 })
       ).rejects.toThrow('Contribution must be a positive number.');
 
-      expect(mockGetItemById).not.toHaveBeenCalled();
-      expect(mockContributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
     });
 
     it('throws when item not found', async () => {
-      mockGetItemById.mockResolvedValue(null);
+      mockRepository.getItemById.mockResolvedValue(null);
 
       await expect(
-        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+        registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('Item not found');
-      expect(mockContributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
     });
 
     it('throws when item has already been purchased', async () => {
@@ -163,12 +166,12 @@ describe('RegistryService', () => {
         purchased: true
       } as unknown as RegistryItem;
 
-      mockGetItemById.mockResolvedValue(item);
+      mockRepository.getItemById.mockResolvedValue(item);
 
       await expect(
-        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+        registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('This item has already been purchased.');
-      expect(mockContributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
     });
 
     it('propagates update failures', async () => {
@@ -180,14 +183,14 @@ describe('RegistryService', () => {
       } as unknown as RegistryItem;
       const error = new Error('Update failed');
 
-      mockGetItemById.mockResolvedValue(item);
-      mockContributeToItem.mockRejectedValue(error);
+      mockRepository.getItemById.mockResolvedValue(item);
+      mockRepository.contributeToItem.mockRejectedValue(error);
 
       await expect(
-        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+        registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow(error);
-      expect(mockGetItemById).toHaveBeenCalledTimes(1);
-      expect(mockContributeToItem).toHaveBeenCalledTimes(1);
+      expect(mockRepository.getItemById).toHaveBeenCalledTimes(1);
+      expect(mockRepository.contributeToItem).toHaveBeenCalledTimes(1);
     });
 
     it('throws when contribution is greater than remaining amount', async () => {
@@ -198,12 +201,12 @@ describe('RegistryService', () => {
         contributors: []
       } as unknown as RegistryItem;
 
-      mockGetItemById.mockResolvedValue(item);
+      mockRepository.getItemById.mockResolvedValue(item);
 
       await expect(
-        RegistryService.contributeToItem('1', { name: 'John', amount: 50 })
+        registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
-      expect(mockContributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,6 @@
 // src/app/api/registry/items/[id]/route.ts
 import { NextResponse, type NextRequest } from 'next/server';
-import { RegistryService } from '@/features/registry/service';
+import { registryService } from '@/features/registry/service';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
 /**
@@ -19,7 +19,7 @@ import { isAdminRequest } from '@/utils/adminAuth.server';
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const item = await RegistryService.getItemById(id);
+  const item = await registryService.getItemById(id);
 
   if (!item) {
     return NextResponse.json({ error: 'Item not found' }, { status: 404 });
@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     );
   }
 
-  const updatedItem = await RegistryService.updateItem(id, {
+  const updatedItem = await registryService.updateItem(id, {
     ...body,
     price: Number(body.price),
     quantity: Number(body.quantity),
@@ -88,6 +88,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  await RegistryService.deleteItem(id);
+  await registryService.deleteItem(id);
   return NextResponse.json({ message: 'Item deleted successfully' });
 }
