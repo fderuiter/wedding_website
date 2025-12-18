@@ -118,4 +118,19 @@ describe('RegistryItemForm', () => {
 
     expect(await screen.findByText('Scrape failed')).toBeInTheDocument();
   });
+
+  it('shows loading state during submission', () => {
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} isSubmitting={true} />);
+    const submitButton = screen.getByRole('button', { name: /adding.../i });
+    expect(submitButton).toBeDisabled();
+    // Check for spinner existence indirectly or via class if needed, but text content is sufficient for UX check
+    expect(submitButton).toHaveTextContent('Adding...');
+  });
+
+  it('shows loading state during edit submission', () => {
+      render(<RegistryItemForm mode="edit" onSubmit={jest.fn()} isSubmitting={true} />);
+      const submitButton = screen.getByRole('button', { name: /saving.../i });
+      expect(submitButton).toBeDisabled();
+      expect(submitButton).toHaveTextContent('Saving...');
+  });
 });

@@ -58,7 +58,6 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@playwright/test": "^1.57.0",
     "@prisma/client": "^6.16.1",
     "@tailwindcss/postcss": "^4.1.13",
     "@testing-library/jest-dom": "^6.6.3",

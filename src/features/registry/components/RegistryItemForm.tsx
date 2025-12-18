@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
+import { Loader2 } from 'lucide-react';
 
 /**
  * Props for the RegistryItemForm component.
@@ -124,9 +127,10 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
             <button
               type="button"
               onClick={handleScrape}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={scrapeLoading || !scrapeUrl}
             >
+              {scrapeLoading && <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />}
               {scrapeLoading ? 'Importing...' : 'Import'}
             </button>
           </div>
@@ -166,8 +170,16 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
         <label htmlFor="isGroupGift" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">Allow Group Gifting?</label>
       </div>
       {formError && <p className="text-red-500 text-sm mt-2">{formError}</p>}
-      <button type="submit" className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" disabled={isSubmitting}>
-        {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
+      <button
+        type="submit"
+        className="inline-flex items-center justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={isSubmitting}
+      >
+        {isSubmitting && <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />}
+        {isSubmitting
+          ? (mode === 'add' ? 'Adding...' : 'Saving...')
+          : (submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes'))
+        }
       </button>
     </form>
   );
