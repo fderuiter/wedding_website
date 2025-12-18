@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { RegistryService } from '@/features/registry/service';
+import { registryService } from '@/features/registry/service';
 
 /**
  * @api {get} /api/registry/items
@@ -14,7 +14,7 @@ import { RegistryService } from '@/features/registry/service';
  */
 export async function GET() {
   try {
-    const items = await RegistryService.getAllItems();
+    const items = await registryService.getAllItems();
     return NextResponse.json(items);
   } catch (error) {
     console.error("Error reading registry items: ", error);

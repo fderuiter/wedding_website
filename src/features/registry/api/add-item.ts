@@ -1,6 +1,6 @@
 // src/app/api/registry/add-item/route.ts
 import { NextResponse } from 'next/server';
-import { RegistryService } from '@/features/registry/service';
+import { registryService } from '@/features/registry/service';
 import { validateAddItemInput } from '@/utils/validation';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const newItem = await RegistryService.createItem({
+    const newItem = await registryService.createItem({
       name: newItemData.name,
       description: newItemData.description || '',
       category: newItemData.category || 'Uncategorized',

@@ -1,7 +1,7 @@
 /** @jest-environment node */
 
 jest.mock('@/features/registry/service', () => ({
-  RegistryService: {
+  registryService: {
     createItem: jest.fn(),
     contributeToItem: jest.fn(),
     getAllItems: jest.fn(),
@@ -19,16 +19,16 @@ import { POST as addItem } from '@/features/registry/api/add-item';
 import { POST as contribute } from '@/features/registry/api/contribute';
 import { GET as getItems } from '@/features/registry/api/get-items';
 import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '@/features/registry/api/item-by-id';
-import { RegistryService } from '@/features/registry/service';
+import { registryService } from '@/features/registry/service';
 import { isAdminRequest } from '../../../utils/adminAuth.server';
 import type { NextRequest } from 'next/server';
 
-const mockCreateItem = RegistryService.createItem as jest.Mock;
-const mockContributeToItem = RegistryService.contributeToItem as jest.Mock;
-const mockGetAllItems = RegistryService.getAllItems as jest.Mock;
-const mockGetItemById = RegistryService.getItemById as jest.Mock;
-const mockUpdateItem = RegistryService.updateItem as jest.Mock;
-const mockDeleteItem = RegistryService.deleteItem as jest.Mock;
+const mockCreateItem = registryService.createItem as jest.Mock;
+const mockContributeToItem = registryService.contributeToItem as jest.Mock;
+const mockGetAllItems = registryService.getAllItems as jest.Mock;
+const mockGetItemById = registryService.getItemById as jest.Mock;
+const mockUpdateItem = registryService.updateItem as jest.Mock;
+const mockDeleteItem = registryService.deleteItem as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
 
 describe('Registry API routes', () => {

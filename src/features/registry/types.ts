@@ -44,3 +44,12 @@ export interface RegistryItem {
   amountContributed: number;
   contributors: Contributor[];
 }
+
+export interface IRegistryRepository {
+  getAllItems(): Promise<RegistryItem[]>;
+  getItemById(id: string): Promise<RegistryItem | null>;
+  createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>): Promise<RegistryItem>;
+  updateItem(id: string, data: Partial<RegistryItem>): Promise<RegistryItem>;
+  deleteItem(id: string): Promise<RegistryItem>;
+  contributeToItem(itemId: string, contribution: { name: string; amount: number }): Promise<RegistryItem>;
+}

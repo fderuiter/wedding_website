@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { RegistryService } from '@/features/registry/service';
+import { registryService } from '@/features/registry/service';
 import { validateContributeInput } from '@/utils/validation';
 
 /**
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
     const { itemId, name, amount } = data;
 
-    const updatedItem = await RegistryService.contributeToItem(itemId, {
+    const updatedItem = await registryService.contributeToItem(itemId, {
       name,
       amount: Number(amount)
     });
