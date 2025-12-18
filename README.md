@@ -103,10 +103,9 @@ POSTGRES_URL_NON_POOLING="postgresql://user:password@host:port/database?connect_
     ```
     This command creates the necessary tables (`RegistryItem`, `Contributor`, etc.) defined in `prisma/schema.prisma`.
 
-2.  **Seed Data (Optional):** If you have a seeding script or want to migrate data from a JSON file, you can run the migration script located in `scripts/migrateToSqlite.ts` (note: the name implies SQLite but the logic uses Prisma, so it adapts to your configured provider).
+2.  **Seed Data (Optional):** If you have a seeding script or want to migrate data from a JSON file, you can run the migration script (this uses the configured Prisma provider to seed the database).
     ```bash
-    # Example command to run a custom script
-    npx ts-node scripts/migrateToSqlite.ts
+    npm run db:seed
     ```
 
 ## Usage
@@ -120,6 +119,20 @@ npm run dev
 ```
 
 The application will be available at `http://localhost:3000`.
+
+### Linting & Testing
+
+Run the linter to ensure code quality:
+
+```bash
+npm run lint
+```
+
+Run the test suite:
+
+```bash
+npm test
+```
 
 ### Admin Access
 
@@ -144,6 +157,8 @@ The application will be available at `http://localhost:3000`.
 *   `src/styles`: Global styles and theme configuration.
 *   `prisma`: Database schema definition.
 *   `public`: Static assets (images, fonts).
+*   `e2e`: End-to-end tests (Playwright).
+*   `scripts`: Utility scripts for database migration and maintenance.
 
 ## Contributing
 
