@@ -10,13 +10,7 @@ const mockImages: GalleryImage[] = [
   { src: '/image3.jpg', alt: 'Image 3' },
 ];
 
-// Mock useInView to always be in view
-jest.mock('react-intersection-observer', () => ({
-  useInView: () => ({
-    ref: jest.fn(),
-    inView: true,
-  }),
-}));
+// Removed react-intersection-observer mock since it's no longer used
 
 describe('PhotoGrid', () => {
   it('renders the correct number of images', () => {

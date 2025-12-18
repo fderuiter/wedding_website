@@ -4,7 +4,6 @@ import React, { useState, useCallback, memo } from 'react'
 import Image from 'next/image'
 import { GalleryImage } from './Gallery'
 import Lightbox from './Lightbox'
-import { useInView } from 'react-intersection-observer'
 
 /**
  * @interface PhotoGridProps
@@ -84,28 +83,22 @@ const GridImage = memo<GridImageProps>(({
   index,
   openLightbox,
 }) => {
-  const { ref, inView } = useInView({
-    triggerOnce: true,
-    threshold: 0.1,
-  })
+  // Optimization: Removed useInView overhead.
+  // Next.js Image component handles lazy loading (network) natively.
+  // We use standard CSS aspect-ratio and relative positioning for the container.
 
   return (
     <div
-      ref={ref}
-      className="aspect-w-1 aspect-h-1 cursor-pointer"
+      className="aspect-square relative cursor-pointer bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden"
       onClick={() => openLightbox(index)}
     >
-      {inView ? (
-        <Image
-          src={image.src}
-          alt={image.alt}
-          width={500}
-          height={500}
-          className="object-cover w-full h-full rounded-lg shadow-md hover:shadow-xl transition-shadow"
-        />
-      ) : (
-        <div className="w-full h-full bg-gray-200 dark:bg-gray-800 rounded-lg" />
-      )}
+      <Image
+        src={image.src}
+        alt={image.alt}
+        fill
+        sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+        className="object-cover hover:scale-105 transition-transform duration-300"
+      />
     </div>
   )
 })
