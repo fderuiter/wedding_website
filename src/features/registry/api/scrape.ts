@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('Scraping failed:', result);
-      return NextResponse.json({ error: 'Failed to scrape product info', details: result }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to scrape product info' }, { status: 500 });
     }
 
     let image = result.ogImage && result.ogImage.length > 0 ? result.ogImage[0].url : '';
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
 
   } catch (error: unknown) {
     console.error('Scraping error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    return NextResponse.json({ error: 'Failed to scrape product info', details: errorMessage }, { status: 500 });
+    // Return a generic error message to prevent leaking internal details or stack traces
+    return NextResponse.json({ error: 'Failed to scrape product info' }, { status: 500 });
   }
 }
