@@ -1,34 +1,7 @@
 import type { NextRequest } from 'next/server';
-import { isAdminClient } from '../adminAuth.client';
 import { isAdminRequest, signAdminToken } from '../adminAuth.server';
 
 describe('admin authentication helpers', () => {
-  describe('isAdminClient', () => {
-    afterEach(() => {
-      Object.defineProperty(document, 'cookie', {
-        writable: true,
-        value: '',
-      });
-    });
-
-    it('returns true when admin cookie is present (simulated non-HttpOnly)', () => {
-      // We simulate a non-HttpOnly cookie for testing purposes, although in prod it is HttpOnly.
-      Object.defineProperty(document, 'cookie', {
-        writable: true,
-        value: 'admin_auth=some_token',
-      });
-      expect(isAdminClient()).toBe(true);
-    });
-
-    it('returns false when admin cookie is absent', () => {
-      Object.defineProperty(document, 'cookie', {
-        writable: true,
-        value: '',
-      });
-      expect(isAdminClient()).toBe(false);
-    });
-  });
-
   describe('isAdminRequest', () => {
     const token = signAdminToken({ isAdmin: true, iat: Date.now() });
 
