@@ -1,7 +1,9 @@
-import { registryRepository } from '../repository';
+import { RegistryRepository } from '../repository';
 import { prisma } from '@/lib/prisma';
 import { RegistryItem } from '../types';
 
+// We still mock the module because the default export `registryRepository` depends on it,
+// and we also want to pass the mocked `prisma` to the constructor in our tests.
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     registryItem: {
@@ -31,6 +33,13 @@ const mockRegistryItem: RegistryItem = {
 };
 
 describe('RegistryRepository', () => {
+  let registryRepository: RegistryRepository;
+
+  beforeEach(() => {
+     // Inject the mocked prisma instance
+     registryRepository = new RegistryRepository(prisma);
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
