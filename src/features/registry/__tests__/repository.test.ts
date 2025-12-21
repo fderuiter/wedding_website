@@ -1,19 +1,6 @@
-import { registryRepository } from '../repository';
-import { prisma } from '@/lib/prisma';
+import { RegistryRepository } from '../repository';
+import { PrismaClient } from '@prisma/client';
 import { RegistryItem } from '../types';
-
-jest.mock('@/lib/prisma', () => ({
-  prisma: {
-    registryItem: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    },
-    $transaction: jest.fn(),
-  },
-}));
 
 const mockRegistryItem: RegistryItem = {
   id: '1',
@@ -30,17 +17,47 @@ const mockRegistryItem: RegistryItem = {
   contributors: [],
 };
 
+// Explicitly type the mock methods for better TS support and clarity
+type MockPrismaClient = {
+    registryItem: {
+        findMany: jest.Mock;
+        findUnique: jest.Mock;
+        create: jest.Mock;
+        update: jest.Mock;
+        delete: jest.Mock;
+    };
+    $transaction: jest.Mock;
+};
+
 describe('RegistryRepository', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
+  let mockPrisma: MockPrismaClient;
+  let registryRepository: RegistryRepository;
+
+  beforeEach(() => {
+    // Reset mocks before each test
+    mockPrisma = {
+      registryItem: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      $transaction: jest.fn(),
+    };
+
+    // Inject the mock Prisma client
+    registryRepository = new RegistryRepository(mockPrisma as unknown as PrismaClient);
   });
 
   describe('getAllItems', () => {
     it('should return all registry items', async () => {
-      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+      mockPrisma.registryItem.findMany.mockResolvedValue([mockRegistryItem]);
+
       const items = await registryRepository.getAllItems();
+
       expect(items).toEqual([mockRegistryItem]);
-      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
           contributors: true,
         },
@@ -50,10 +67,12 @@ describe('RegistryRepository', () => {
 
   describe('getItemById', () => {
     it('should return a single item by id', async () => {
-      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(mockRegistryItem);
+      mockPrisma.registryItem.findUnique.mockResolvedValue(mockRegistryItem);
+
       const item = await registryRepository.getItemById('1');
+
       expect(item).toEqual(mockRegistryItem);
-      expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
+      expect(mockPrisma.registryItem.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
         include: {
           contributors: true,
@@ -74,10 +93,12 @@ describe('RegistryRepository', () => {
         quantity: 1,
         isGroupGift: true,
       };
-      (prisma.registryItem.create as jest.Mock).mockResolvedValue({ ...newItemData, id: '2' });
+      mockPrisma.registryItem.create.mockResolvedValue({ ...newItemData, id: '2' });
+
       const item = await registryRepository.createItem(newItemData);
+
       expect(item).toEqual({ ...newItemData, id: '2' });
-      expect(prisma.registryItem.create).toHaveBeenCalledWith({
+      expect(mockPrisma.registryItem.create).toHaveBeenCalledWith({
         data: {
           ...newItemData,
           contributors: {
@@ -94,10 +115,12 @@ describe('RegistryRepository', () => {
   describe('updateItem', () => {
     it('should update an existing item', async () => {
       const updatedData = { name: 'Updated Item' };
-      (prisma.registryItem.update as jest.Mock).mockResolvedValue({ ...mockRegistryItem, ...updatedData });
+      mockPrisma.registryItem.update.mockResolvedValue({ ...mockRegistryItem, ...updatedData });
+
       const item = await registryRepository.updateItem('1', updatedData);
+
       expect(item.name).toBe('Updated Item');
-      expect(prisma.registryItem.update).toHaveBeenCalledWith({
+      expect(mockPrisma.registryItem.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: updatedData,
         include: {
@@ -109,9 +132,11 @@ describe('RegistryRepository', () => {
 
   describe('deleteItem', () => {
     it('should delete an item', async () => {
-      (prisma.registryItem.delete as jest.Mock).mockResolvedValue(mockRegistryItem);
+      mockPrisma.registryItem.delete.mockResolvedValue(mockRegistryItem);
+
       await registryRepository.deleteItem('1');
-      expect(prisma.registryItem.delete).toHaveBeenCalledWith({
+
+      expect(mockPrisma.registryItem.delete).toHaveBeenCalledWith({
         where: { id: '1' },
       });
     });
@@ -125,7 +150,7 @@ describe('RegistryRepository', () => {
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
         },
       };
-      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+      mockPrisma.$transaction.mockImplementation(callback => callback(tx));
 
       const contribution = { name: 'John Doe', amount: 50 };
       const item = await registryRepository.contributeToItem('1', contribution);
@@ -160,7 +185,7 @@ describe('RegistryRepository', () => {
               update: jest.fn(),
             },
           };
-          (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+          mockPrisma.$transaction.mockImplementation(callback => callback(tx));
       const contribution = { name: 'John Doe', amount: 50 };
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
     });
