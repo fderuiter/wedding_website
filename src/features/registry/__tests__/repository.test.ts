@@ -1,7 +1,8 @@
-import { registryRepository } from '../repository';
+import { RegistryRepository } from '../repository';
 import { prisma } from '@/lib/prisma';
 import { RegistryItem } from '../types';
 
+// Mock the prisma client module
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     registryItem: {
@@ -31,6 +32,16 @@ const mockRegistryItem: RegistryItem = {
 };
 
 describe('RegistryRepository', () => {
+  let repository: RegistryRepository;
+
+  beforeEach(() => {
+    // Instantiate the repository with the mocked prisma client
+    // Note: Since we are mocking the module '@lib/prisma', the imported 'prisma' object is the mock.
+    // However, TypeScript might complain about types if we don't cast or if we use the real type.
+    // In this test environment, passing the mocked `prisma` is correct.
+    repository = new RegistryRepository(prisma);
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -38,7 +49,7 @@ describe('RegistryRepository', () => {
   describe('getAllItems', () => {
     it('should return all registry items', async () => {
       (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
-      const items = await registryRepository.getAllItems();
+      const items = await repository.getAllItems();
       expect(items).toEqual([mockRegistryItem]);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
@@ -51,7 +62,7 @@ describe('RegistryRepository', () => {
   describe('getItemById', () => {
     it('should return a single item by id', async () => {
       (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(mockRegistryItem);
-      const item = await registryRepository.getItemById('1');
+      const item = await repository.getItemById('1');
       expect(item).toEqual(mockRegistryItem);
       expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
@@ -75,7 +86,7 @@ describe('RegistryRepository', () => {
         isGroupGift: true,
       };
       (prisma.registryItem.create as jest.Mock).mockResolvedValue({ ...newItemData, id: '2' });
-      const item = await registryRepository.createItem(newItemData);
+      const item = await repository.createItem(newItemData);
       expect(item).toEqual({ ...newItemData, id: '2' });
       expect(prisma.registryItem.create).toHaveBeenCalledWith({
         data: {
@@ -95,7 +106,7 @@ describe('RegistryRepository', () => {
     it('should update an existing item', async () => {
       const updatedData = { name: 'Updated Item' };
       (prisma.registryItem.update as jest.Mock).mockResolvedValue({ ...mockRegistryItem, ...updatedData });
-      const item = await registryRepository.updateItem('1', updatedData);
+      const item = await repository.updateItem('1', updatedData);
       expect(item.name).toBe('Updated Item');
       expect(prisma.registryItem.update).toHaveBeenCalledWith({
         where: { id: '1' },
@@ -110,7 +121,7 @@ describe('RegistryRepository', () => {
   describe('deleteItem', () => {
     it('should delete an item', async () => {
       (prisma.registryItem.delete as jest.Mock).mockResolvedValue(mockRegistryItem);
-      await registryRepository.deleteItem('1');
+      await repository.deleteItem('1');
       expect(prisma.registryItem.delete).toHaveBeenCalledWith({
         where: { id: '1' },
       });
@@ -128,7 +139,7 @@ describe('RegistryRepository', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
 
       const contribution = { name: 'John Doe', amount: 50 };
-      const item = await registryRepository.contributeToItem('1', contribution);
+      const item = await repository.contributeToItem('1', contribution);
 
       expect(item.amountContributed).toBe(50);
       expect(tx.registryItem.findUnique).toHaveBeenCalledWith({
@@ -162,7 +173,7 @@ describe('RegistryRepository', () => {
           };
           (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
       const contribution = { name: 'John Doe', amount: 50 };
-      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
+      await expect(repository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
     });
 
   });
