@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import type { IRegistryRepository, RegistryItem } from '@/features/registry/types';
+import type { PrismaClient, Prisma } from '@prisma/client';
+
+type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
 
 /**
  * @class RegistryRepository
@@ -7,12 +10,18 @@ import type { IRegistryRepository, RegistryItem } from '@/features/registry/type
  * This class abstracts the database interactions from the service layer.
  */
 export class RegistryRepository implements IRegistryRepository {
+  private client: PrismaClient;
+
+  constructor(client: PrismaClient = prisma) {
+    this.client = client;
+  }
+
   /**
    * Retrieves all registry items from the database, including their contributors.
    * @returns {Promise<RegistryItem[]>} A promise that resolves to an array of all registry items.
    */
   async getAllItems() {
-    const items = await prisma.registryItem.findMany({
+    const items = await this.client.registryItem.findMany({
       include: {
         contributors: true
       }
@@ -29,7 +38,7 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItem | null>} A promise that resolves to the registry item or null if not found.
    */
   async getItemById(id: string) {
-    const item = await prisma.registryItem.findUnique({
+    const item = await this.client.registryItem.findUnique({
       where: { id },
       include: {
         contributors: true
@@ -44,7 +53,7 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItem>} A promise that resolves to the newly created registry item.
    */
   async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>) {
-    const item = await prisma.registryItem.create({
+    const item = await this.client.registryItem.create({
       data: {
         ...data,
         contributors: {
@@ -67,7 +76,7 @@ export class RegistryRepository implements IRegistryRepository {
   async updateItem(id: string, data: Partial<RegistryItem>) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { contributors, ...updateData } = data;
-    const item = await prisma.registryItem.update({
+    const item = await this.client.registryItem.update({
       where: { id },
       data: updateData,
       include: {
@@ -83,7 +92,7 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItem>} A promise that resolves to the deleted item.
    */
   async deleteItem(id: string) {
-    const item = await prisma.registryItem.delete({
+    const item = await this.client.registryItem.delete({
       where: { id }
     });
     return item as unknown as RegistryItem;
@@ -105,8 +114,13 @@ export class RegistryRepository implements IRegistryRepository {
     itemId: string,
     contribution: { name: string; amount: number }
   ) {
-    return prisma.$transaction(async (tx) => {
-      const item = await tx.registryItem.findUnique({
+    return this.client.$transaction(async (tx) => {
+      // Cast the transaction client to something usable if needed, but standard tx should work.
+      // However, tx might not have the full PrismaClient type, so we need to be careful.
+      // In Prisma, tx is usually the same structure for model access.
+      const transactionClient = tx as unknown as TransactionClient;
+
+      const item = await transactionClient.registryItem.findUnique({
         where: { id: itemId },
       });
 
@@ -117,7 +131,7 @@ export class RegistryRepository implements IRegistryRepository {
 
       const newTotal = item.amountContributed + contribution.amount;
 
-      const updatedItem = await tx.registryItem.update({
+      const updatedItem = await transactionClient.registryItem.update({
         where: { id: itemId },
         data: {
           amountContributed: newTotal,
@@ -140,4 +154,4 @@ export class RegistryRepository implements IRegistryRepository {
   }
 }
 
-export const registryRepository = new RegistryRepository();
+export const registryRepository = new RegistryRepository(prisma);

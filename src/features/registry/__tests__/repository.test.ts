@@ -1,7 +1,9 @@
-import { registryRepository } from '../repository';
+import { registryRepository, RegistryRepository } from '../repository';
 import { prisma } from '@/lib/prisma';
 import { RegistryItem } from '../types';
+import type { PrismaClient } from '@prisma/client';
 
+// Mock the global prisma module for existing tests (backward compatibility)
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     registryItem: {
@@ -33,6 +35,27 @@ const mockRegistryItem: RegistryItem = {
 describe('RegistryRepository', () => {
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  // New test using Dependency Injection (Mason's Fix)
+  describe('Constructor Injection (DIP)', () => {
+    it('should use the injected Prisma client instead of the global singleton', async () => {
+      // Create a local mock client
+      const mockClient = {
+        registryItem: {
+          findMany: jest.fn().mockResolvedValue([mockRegistryItem]),
+        },
+      } as unknown as PrismaClient;
+
+      // Instantiate repository with the mock client
+      const repo = new RegistryRepository(mockClient);
+      const items = await repo.getAllItems();
+
+      expect(items).toEqual([mockRegistryItem]);
+      expect(mockClient.registryItem.findMany).toHaveBeenCalledTimes(1);
+      // Ensure the global mock was NOT called
+      expect(prisma.registryItem.findMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('getAllItems', () => {
