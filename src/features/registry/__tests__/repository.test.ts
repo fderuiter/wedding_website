@@ -1,4 +1,4 @@
-import { registryRepository } from '../repository';
+import { registryRepository, RegistryRepository } from '../repository';
 import { prisma } from '@/lib/prisma';
 import { RegistryItem } from '../types';
 
@@ -164,6 +164,30 @@ describe('RegistryRepository', () => {
       const contribution = { name: 'John Doe', amount: 50 };
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
     });
+  });
 
+  describe('Constructor Injection', () => {
+    it('should use the injected prisma client', async () => {
+      const mockFindMany = jest.fn().mockResolvedValue([mockRegistryItem]);
+      const mockClient = {
+        registryItem: {
+          findMany: mockFindMany,
+        },
+      };
+
+      // @ts-expect-error - Mocking partial client for testing
+      const injectedRepo = new RegistryRepository(mockClient);
+
+      const items = await injectedRepo.getAllItems();
+
+      expect(items).toEqual([mockRegistryItem]);
+      expect(mockFindMany).toHaveBeenCalledWith({
+        include: {
+          contributors: true,
+        },
+      });
+      // Verify global prisma was NOT called for this instance
+      expect(prisma.registryItem.findMany).not.toHaveBeenCalled();
+    });
   });
 });
