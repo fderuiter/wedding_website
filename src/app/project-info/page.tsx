@@ -9,7 +9,7 @@ const features = [
   { icon: '⚡', label: 'Interactive scroll animations' },
   { icon: '🔍', label: 'Fuzzy search with filtering' },
   { icon: '🛡️', label: 'Protected administrative interface' },
-  { icon: '🧩', label: 'MIT-licensed open-source code' },
+  { icon: '🧩', label: 'AGPL-licensed open-source code' },
 ];
 
 const techStack = [
@@ -111,7 +111,7 @@ const ProjectInfo = () => {
             <li><strong>API Endpoints:</strong> Serverless routes that interact with the database and include a basic web scraper.</li>
             <li><strong>Data Layer:</strong> Powered by Prisma with a PostgreSQL database hosted on Neon.</li>
             <li><strong>Styling:</strong> Styled using Tailwind CSS.</li>
-            <li><strong>Open Source:</strong> Distributed under the MIT license.</li>
+            <li><strong>Open Source:</strong> Distributed under the GNU AGPLv3 license.</li>
           </ul>
         </div>
       </motion.div>
