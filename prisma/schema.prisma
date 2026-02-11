@@ -5,9 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql" // Changed from sqlite
-  url               = env("POSTGRES_PRISMA_URL")
-  shadowDatabaseUrl = env("POSTGRES_URL_NON_POOLING") // Needed for migrations
+  provider = "postgresql"
 }
 
 model RegistryItem {
