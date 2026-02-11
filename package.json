@@ -2,6 +2,7 @@
   "name": "wedding_website",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
