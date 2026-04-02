@@ -30,10 +30,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'URL is required and must be a string' }, { status: 400 });
     }
 
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+    }
+
+    // Only allow HTTP(S) URLs to prevent SSRF via unexpected schemes
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json({ error: 'Invalid URL protocol' }, { status: 400 });
     }
 
     // SSRF Protection: Ensure URL does not point to a private IP
@@ -65,7 +71,6 @@ export async function POST(request: Request) {
     }
 
     // Fallback for Amazon: If no image was found, fetch HTML and parse with Cheerio
-    const parsedUrl = new URL(url);
     const hostname = parsedUrl.hostname;
     const isAmazonDomain = (
       hostname === 'amazon.com' ||
@@ -73,7 +78,12 @@ export async function POST(request: Request) {
     );
     if (!image && isAmazonDomain) {
       try {
-        const response = await fetch(url);
+        // Restrict fallback fetch to HTTPS on allowed Amazon domains using the validated URL
+        if (parsedUrl.protocol !== 'https:') {
+          throw new Error('Amazon fallback only supports HTTPS URLs');
+        }
+
+        const response = await fetch(parsedUrl.toString());
         const html = await response.text();
         const $ = cheerio.load(html);
 
