@@ -2,3 +2,8 @@
 **Vulnerability:** The admin login route used direct string comparison (or simple hashing) for the password, which is vulnerable to brute-force and timing attacks.
 **Learning:** For password verification, simple hashing (like SHA-256) is insufficient due to speed. Timing attacks are also a risk with direct comparison.
 **Prevention:** Use `bcrypt` for password storage and verification. It handles salting automatically and is computationally expensive, resisting brute-force attacks. It also performs constant-time comparison.
+
+## 2024-05-25 - Hardcoded Fallback Secret in Admin Authentication
+**Vulnerability:** The admin JWT token signing process in `src/utils/adminAuth.server.ts` used a hardcoded fallback secret (`'fallback-secret-for-dev'`) if the `ADMIN_PASSWORD` environment variable was missing. This would allow an attacker to bypass authentication by forging tokens with the known fallback secret.
+**Learning:** Hardcoded fallback secrets in authentication mechanisms are a severe security risk, even if intended only for development. If they inadvertently make it into production (e.g. due to missing environment variables), they provide a trivial bypass.
+**Prevention:** Generate a cryptographically secure random secret dynamically on server startup (e.g., `crypto.randomBytes(32).toString('hex')`) if a configuration secret is missing. This ensures any tokens generated are valid only for that specific server process, invalidating them on restart, and preventing attackers from forging tokens.
