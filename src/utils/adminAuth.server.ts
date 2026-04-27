@@ -6,7 +6,7 @@ const ADMIN_COOKIE = 'admin_auth';
 
 // Use the admin password hash as the secret for signing tokens.
 // In a real app, use a dedicated SESSION_SECRET environment variable.
-const SECRET = process.env.ADMIN_PASSWORD || 'fallback-secret-for-dev';
+const SECRET = process.env.ADMIN_PASSWORD || crypto.randomBytes(32).toString('hex');
 
 interface AdminTokenPayload {
   isAdmin: boolean;
