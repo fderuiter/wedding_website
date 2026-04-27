@@ -33,6 +33,7 @@ export default function RootLayout({
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-800`}
       >
+        <a href="#main-content" className="skip-link">Skip to main content</a>
         <RootLayoutClient>{children}</RootLayoutClient>
       </body>
     </html>
