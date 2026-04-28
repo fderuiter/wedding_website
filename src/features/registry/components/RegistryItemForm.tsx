@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
+import { Loader2 } from 'lucide-react';
 
 /**
  * Props for the RegistryItemForm component.
@@ -124,34 +125,42 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
             <button
               type="button"
               onClick={handleScrape}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+              className={`bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded flex items-center justify-center ${scrapeLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
               disabled={scrapeLoading || !scrapeUrl}
+              aria-busy={scrapeLoading}
             >
-              {scrapeLoading ? 'Importing...' : 'Import'}
+              {scrapeLoading ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Importing...
+                </>
+              ) : (
+                'Import'
+              )}
             </button>
           </div>
           {scrapeError && <p className="text-red-500 text-sm mt-1">{scrapeError}</p>}
         </div>
       )}
       <div>
-        <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Item Name:</label>
-        <input type="text" id="name" name="name" value={values.name || ''} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
+        <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Item Name <span className="text-red-500">*</span></label>
+        <input type="text" id="name" name="name" value={values.name || ''} onChange={handleChange} required aria-required="true" className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
       </div>
       <div>
         <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description:</label>
         <textarea id="description" name="description" value={values.description || ''} onChange={handleChange} rows={3} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"></textarea>
       </div>
       <div>
-        <label htmlFor="price" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Price ($):</label>
-        <input type="number" id="price" name="price" value={values.price ?? ''} onChange={handleChange} step="0.01" required className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
+        <label htmlFor="price" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Price ($) <span className="text-red-500">*</span></label>
+        <input type="number" id="price" name="price" value={values.price ?? ''} onChange={handleChange} step="0.01" required aria-required="true" className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
       </div>
       <div>
-        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity:</label>
-        <input type="number" id="quantity" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
+        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity <span className="text-red-500">*</span></label>
+        <input type="number" id="quantity" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required aria-required="true" className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
       </div>
       <div>
-        <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category:</label>
-        <input type="text" id="category" name="category" value={values.category || ''} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
+        <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category <span className="text-red-500">*</span></label>
+        <input type="text" id="category" name="category" value={values.category || ''} onChange={handleChange} required aria-required="true" className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100" />
       </div>
       <div>
         <label htmlFor="image" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Image URL:</label>
@@ -166,7 +175,8 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
         <label htmlFor="isGroupGift" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">Allow Group Gifting?</label>
       </div>
       {formError && <p className="text-red-500 text-sm mt-2">{formError}</p>}
-      <button type="submit" className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" disabled={isSubmitting}>
+      <button type="submit" className={`inline-flex justify-center items-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`} disabled={isSubmitting} aria-busy={isSubmitting}>
+        {isSubmitting && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
         {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
       </button>
     </form>
