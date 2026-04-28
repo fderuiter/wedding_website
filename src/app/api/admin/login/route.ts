@@ -38,8 +38,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid password.' }, { status: 401 });
   }
 
-  // Generate signed token
-  const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+  // Generate signed token with expiration
+  const iat = Date.now();
+  const exp = iat + 60 * 60 * 8 * 1000; // 8 hours
+  const token = signAdminToken({ isAdmin: true, iat, exp });
 
   const response = NextResponse.json({ success: true });
   response.cookies.set(ADMIN_COOKIE, token, {

@@ -86,7 +86,24 @@ export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
   if (!cookieValue) return false;
 
   const payload = verifyAdminToken(cookieValue);
-  // Check if payload is valid and has isAdmin: true
-  // We can also add expiration check here if we added 'exp' to payload
-  return payload !== null && payload.isAdmin === true;
+
+  if (!payload || payload.isAdmin !== true) {
+    return false;
+  }
+
+  // Enforce expiration
+  const now = Date.now();
+  if (payload.exp && payload.exp < now) {
+    return false;
+  }
+
+  // Fallback for older tokens without 'exp', expire after 8 hours from 'iat'
+  if (!payload.exp && payload.iat) {
+    const defaultExp = payload.iat + 60 * 60 * 8 * 1000;
+    if (defaultExp < now) {
+      return false;
+    }
+  }
+
+  return true;
 }
