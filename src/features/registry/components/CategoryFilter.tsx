@@ -37,7 +37,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ categories, sele
             type="checkbox"
             checked={selected.includes(category)}
             onChange={() => handleToggle(category)}
-            className="form-checkbox accent-yellow-600 mr-2"
+            className="form-checkbox accent-yellow-600 mr-2 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none focus-visible:ring-offset-2"
           />
           <span className="text-sm">{category}</span>
         </label>

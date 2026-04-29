@@ -59,6 +59,13 @@ export default function RegistryPage() {
     }
   }, [inView, setVisibleItemsCount]);
 
+  const handleClearFilters = () => {
+    setCategoryFilter([]);
+    setPriceRange([minPrice, maxPrice]);
+    setShowGroupGiftsOnly(false);
+    setShowAvailableOnly(false);
+  };
+
   const gridVariants = {
     hidden: { opacity: 0, y: 30 },
     visible: { opacity: 1, y: 0, transition: { staggerChildren: 0.08, duration: 0.7 } },
@@ -162,7 +169,11 @@ export default function RegistryPage() {
               ))}
             </motion.div>
           ) : (
-            <EmptyState message="No gifts match the current filters. Try adjusting your search!" />
+            <EmptyState
+              message="No gifts match the current filters. Try adjusting your search!"
+              onAction={handleClearFilters}
+              actionLabel="Clear Filters"
+            />
           )}
         </>
       )}
