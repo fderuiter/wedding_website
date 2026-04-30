@@ -75,21 +75,21 @@ const Lightbox: React.FC<LightboxProps> = ({
         />
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-white hover:text-rose-400"
+          className="absolute top-4 right-4 text-white hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 rounded"
           aria-label="Close"
         >
           <X size={32} />
         </button>
         <button
           onClick={onPrev}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-rose-400"
+          className="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 rounded"
           aria-label="Previous image"
         >
           <ChevronLeft size={48} />
         </button>
         <button
           onClick={onNext}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-rose-400"
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 rounded"
           aria-label="Next image"
         >
           <ChevronRight size={48} />
