@@ -62,6 +62,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                 <Link
                   key={link.href}
                   href={link.href}
+                  aria-current={pathname === link.href ? 'page' : undefined}
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
                     pathname === link.href
                       ? 'text-white bg-rose-500'
@@ -115,6 +116,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
               <Link
                 key={link.href}
                 href={link.href}
+                aria-current={pathname === link.href ? 'page' : undefined}
                 onClick={() => setIsMenuOpen(false)}
                 className={`block px-3 py-2 rounded-md text-base font-medium ${
                   pathname === link.href
