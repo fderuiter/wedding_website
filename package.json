@@ -59,6 +59,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@eslint/eslintrc": "^3",
     "@playwright/test": "^1.58.2",
     "@prisma/client": "^7.3.0",
@@ -72,6 +73,7 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.184.0",
     "abort-controller": "^3.0.0",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
