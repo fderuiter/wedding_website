@@ -67,6 +67,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                       ? 'text-white bg-rose-500'
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
+                  aria-current={pathname === link.href ? 'page' : undefined}
                 >
                   {link.label}
                 </Link>
@@ -121,6 +122,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                     ? 'text-white bg-rose-500'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
+                aria-current={pathname === link.href ? 'page' : undefined}
               >
                 {link.label}
               </Link>
