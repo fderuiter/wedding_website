@@ -176,6 +176,8 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 value={contributorName}
                 onChange={(e) => setContributorName(e.target.value)}
                 disabled={isSubmitting}
+                aria-invalid={error ? "true" : undefined}
+                aria-describedby={error ? "contribution-error" : undefined}
               />
             </div>
             {item.isGroupGift && (
@@ -194,18 +196,21 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                   step="0.01"
                   max={remainingAmount}
                   disabled={isSubmitting}
+                  aria-invalid={error ? "true" : undefined}
+                  aria-describedby={error ? "contribution-error" : undefined}
                 />
               </div>
             )}
-            {error && <p className="text-red-600 text-sm mb-3" role="alert">{error}</p>}
+            {error && <p id="contribution-error" className="text-red-600 text-sm mb-3" role="alert">{error}</p>}
             <button
-              className={`w-full bg-gradient-to-r from-rose-700 to-amber-500 text-white font-bold px-4 py-2 rounded shadow hover:from-amber-500 hover:to-rose-700 transition flex items-center justify-center ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
+              className={`w-full bg-gradient-to-r from-rose-700 to-amber-500 text-white font-bold px-4 py-2 rounded shadow hover:from-amber-500 hover:to-rose-700 transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-500 ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
               onClick={handleContributeClick}
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="animate-spin mr-2 h-5 w-5" />
+                  <Loader2 className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
                   Processing...
                 </>
               ) : (
