@@ -30,6 +30,26 @@ describe('PhotoGrid', () => {
     const lightboxImage = within(lightbox).getByAltText('Image 2');
     expect(lightboxImage).toBeInTheDocument();
   });
+
+  it('opens the lightbox when an image receives Enter or Space key press', () => {
+    render(<PhotoGrid images={mockImages} />);
+    const images = screen.getAllByRole('button');
+    // Test Enter
+    fireEvent.keyDown(images[1], { key: 'Enter' });
+    let lightbox = screen.getByRole('dialog');
+    expect(lightbox).toBeInTheDocument();
+
+    // Close lightbox
+    const closeButton = screen.getByLabelText('Close');
+    fireEvent.click(closeButton);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Test Space
+    fireEvent.keyDown(images[1], { key: ' ' });
+    lightbox = screen.getByRole('dialog');
+    expect(lightbox).toBeInTheDocument();
+  });
+
 });
 
 describe('Lightbox', () => {
