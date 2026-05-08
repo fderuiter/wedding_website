@@ -92,6 +92,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               type="button"
               aria-expanded={isMenuOpen}
+              aria-controls="mobile-menu"
               className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white"
             >
               <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
@@ -110,7 +111,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
       </div>
 
       {isMenuOpen && (
-        <div className="md:hidden">
+        <div className="md:hidden" id="mobile-menu">
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
             {allLinks.map((link) => (
               <Link
