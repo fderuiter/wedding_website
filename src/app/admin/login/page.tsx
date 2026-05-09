@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 /**
  * @page LoginPage
@@ -49,7 +49,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-2 text-[var(--color-foreground)]">
       <form onSubmit={handleLogin} className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-rose-100 dark:border-gray-700">
         <h1 className="text-3xl font-extrabold text-center text-rose-700 mb-2 tracking-tight">Admin Login</h1>
-        {error && <p className="text-red-500 text-sm text-center -mt-2">{error}</p>}
+        {error && <p id="login-error" role="alert" className="text-red-500 text-sm text-center -mt-2">{error}</p>}
         <div className="flex flex-col gap-2">
           <label htmlFor="password" className="block text-gray-700 dark:text-gray-300 font-semibold">Password</label>
           <div className="relative">
@@ -58,16 +58,18 @@ export default function LoginPage() {
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="border border-gray-300 dark:border-gray-600 p-3 rounded-lg w-full focus:ring-2 focus:ring-rose-300 outline-none bg-white dark:bg-gray-700 text-lg text-gray-800 dark:text-gray-100 pr-12"
+              className="border border-gray-300 dark:border-gray-600 p-3 rounded-lg w-full focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none focus-visible:ring-offset-2 bg-white dark:bg-gray-700 text-lg text-gray-800 dark:text-gray-100 pr-12"
               required
               autoFocus
               autoComplete="current-password"
               placeholder="Enter admin password"
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby={error ? "login-error" : undefined}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-rose-300 rounded-full p-1"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 rounded-full p-1"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -76,10 +78,18 @@ export default function LoginPage() {
         </div>
         <button
           type="submit"
-          className="w-full bg-rose-700 text-white px-6 py-3 rounded-lg font-bold text-lg shadow-md hover:bg-rose-800 transition focus:outline-none focus:ring-2 focus:ring-rose-300 disabled:opacity-60"
+          className="w-full bg-rose-700 text-white px-6 py-3 rounded-lg font-bold text-lg shadow-md hover:bg-rose-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center"
           disabled={loading}
+          aria-busy={loading}
         >
-          {loading ? 'Logging in...' : 'Login'}
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
+              Logging in...
+            </>
+          ) : (
+            'Login'
+          )}
         </button>
       </form>
     </div>
