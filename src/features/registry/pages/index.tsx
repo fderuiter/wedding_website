@@ -112,7 +112,7 @@ export default function RegistryPage() {
               id="group-gifts-only"
               checked={showGroupGiftsOnly}
               onChange={(e) => setShowGroupGiftsOnly(e.target.checked)}
-              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none focus-visible:ring-offset-2"
             />
             <label htmlFor="group-gifts-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
               Show only group gifts
@@ -124,7 +124,7 @@ export default function RegistryPage() {
               id="available-only"
               checked={showAvailableOnly}
               onChange={(e) => setShowAvailableOnly(e.target.checked)}
-              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none focus-visible:ring-offset-2"
             />
             <label htmlFor="available-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
               Show only available gifts
