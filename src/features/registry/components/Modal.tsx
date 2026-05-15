@@ -106,6 +106,9 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const remainingAmount = item.price - item.amountContributed;
   const isFullyFunded = remainingAmount <= 0;
 
+  // XSS protection for the vendorUrl. Ensure it's a valid http(s) URL.
+  const isVendorUrlSafe = item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
+
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={modalRef}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
@@ -149,9 +152,9 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
           </div>
         )}
-        {item.vendorUrl && (
+        {isVendorUrlSafe && (
           <a
-            href={item.vendorUrl}
+            href={item.vendorUrl as string}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 underline mb-4 text-sm"
