@@ -110,7 +110,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={modalRef}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
         <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          className="absolute top-3 right-3 text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
           onClick={onClose}
           aria-label="Close modal"
           ref={firstFocusableRef}
@@ -154,7 +154,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             href={item.vendorUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 underline mb-4 text-sm"
+            className="inline-block text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 rounded"
           >
             View on Vendor Site
           </a>
@@ -172,7 +172,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 id="contributorName"
                 type="text"
                 placeholder="Jane Doe"
-                className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus:ring-2 focus:ring-rose-400 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
                 value={contributorName}
                 onChange={(e) => setContributorName(e.target.value)}
                 disabled={isSubmitting}
@@ -189,7 +189,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                   id="contributionAmount"
                   type="number"
                   placeholder={`Up to $${remainingAmount.toFixed(2)}`}
-                  className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus:ring-2 focus:ring-rose-400 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                  className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   min="0.01"
