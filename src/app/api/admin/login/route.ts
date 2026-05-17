@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { signAdminToken } from '@/utils/adminAuth.server';
+import { checkRateLimit } from '@/utils/rateLimit';
 
 const ADMIN_COOKIE = 'admin_auth';
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
  * @api {post} /api/admin/login
@@ -19,6 +22,19 @@ const ADMIN_COOKIE = 'admin_auth';
  * error message and status code.
  */
 export async function POST(req: NextRequest) {
+  // Rate limiting to prevent brute-force attacks
+  // Prefer req.ip which is set securely by Next.js if the server is properly configured behind a proxy.
+  // Fallback to x-forwarded-for ONLY if we must, though it is spoofable.
+  const ip = req.ip || req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
+  const isAllowed = checkRateLimit(ip, MAX_LOGIN_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_MS);
+
+  if (!isAllowed) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Please try again later.' },
+      { status: 429 }
+    );
+  }
+
   const { password } = await req.json();
   const adminPassword = process.env.ADMIN_PASSWORD;
 
