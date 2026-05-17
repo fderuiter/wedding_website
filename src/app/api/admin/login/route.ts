@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   // Rate limiting to prevent brute-force attacks
   // Prefer req.ip which is set securely by Next.js if the server is properly configured behind a proxy.
   // Fallback to x-forwarded-for ONLY if we must, though it is spoofable.
-  const ip = req.ip || req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
+  const ip = req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
   const isAllowed = checkRateLimit(ip, MAX_LOGIN_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_MS);
 
   if (!isAllowed) {
