@@ -5,11 +5,13 @@ import { POST as login } from '../admin/login/route';
 import { POST as logout } from '../admin/logout/route';
 import { GET as me } from '../admin/me/route';
 import { signAdminToken } from '@/utils/adminAuth.server';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 describe('Admin API routes', () => {
   beforeEach(() => {
     // Hash for 'secret' generated with bcrypt
     process.env.ADMIN_PASSWORD = '$2b$10$HYiV4HBBMU9iB5GEaeWV2u0Yt51iTwj4Hm7tlNR7OQuzAL7F8uNUO';
+    resetRateLimitsForTesting();
   });
 
   test('login succeeds with correct password', async () => {
@@ -46,6 +48,25 @@ describe('Admin API routes', () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json).toEqual({ error: 'Admin password not set.' });
+  });
+
+  test('login is rate limited after 5 failed attempts', async () => {
+    const makeReq = () => new NextRequest('http://localhost/api/admin/login', {
+      method: 'POST',
+      body: JSON.stringify({ password: 'wrong' }),
+    });
+
+    // 5 allowed attempts
+    for (let i = 0; i < 5; i++) {
+      const res = await login(makeReq());
+      expect(res.status).toBe(401);
+    }
+
+    // 6th attempt should be rate limited
+    const resRateLimited = await login(makeReq());
+    expect(resRateLimited.status).toBe(429);
+    const json = await resRateLimited.json();
+    expect(json.error).toBe('Too many requests, please try again later.');
   });
 
   test('logout clears auth cookie', async () => {
