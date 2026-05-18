@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { signAdminToken } from '@/utils/adminAuth.server';
+import { rateLimit } from '@/utils/rateLimit';
 
 const ADMIN_COOKIE = 'admin_auth';
 
@@ -19,6 +20,12 @@ const ADMIN_COOKIE = 'admin_auth';
  * error message and status code.
  */
 export async function POST(req: NextRequest) {
+  // Apply rate limiting: max 5 requests per 15 minutes per IP
+  const rateLimitResponse = await rateLimit(req, 5, 15 * 60 * 1000);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   const { password } = await req.json();
   const adminPassword = process.env.ADMIN_PASSWORD;
 
