@@ -1,10 +1,16 @@
 import { validateContributeInput, validateAddItemInput } from '../validation';
 
 describe('validateContributeInput', () => {
-  const cases: Array<{ name: string; input: unknown; expected: string | null }> = [
+  const validContributePayload = {
+    itemId: '123-abc',
+    name: 'Jane Doe',
+    amount: 50,
+  };
+
+  const cases = [
     {
       name: 'valid payload for group gift contribution',
-      input: { itemId: '1', name: 'Alice', amount: 100 },
+      input: validContributePayload,
       expected: null,
     },
     {
@@ -14,29 +20,29 @@ describe('validateContributeInput', () => {
     },
     {
       name: 'missing itemId',
-      input: { name: 'Alice', amount: 100 },
+      input: { ...validContributePayload, itemId: '' },
       expected: 'Missing or invalid itemId.',
     },
     {
       name: 'missing name',
-      input: { itemId: '1', amount: 100 },
-      expected: 'Name is required.',
+      input: { ...validContributePayload, name: undefined },
+      expected: 'Name is required and must be under 100 characters.',
     },
     {
       name: 'invalid amount (negative)',
-      input: { itemId: '1', name: 'Alice', amount: -5 },
+      input: { ...validContributePayload, amount: -10 },
       expected: 'Contribution amount must be a positive number.',
     },
     {
       name: 'invalid amount (Infinity)',
-      input: { itemId: '1', name: 'Alice', amount: Infinity },
+      input: { ...validContributePayload, amount: Infinity },
       expected: 'Contribution amount must be a positive number.',
     },
     {
       name: 'empty name',
-      input: { itemId: '1', name: '  ', amount: 100 },
-      expected: 'Name is required.',
-    }
+      input: { ...validContributePayload, name: '  ' },
+      expected: 'Name is required and must be under 100 characters.',
+    },
   ];
 
   test.each(cases)('$name', ({ input, expected }) => {
@@ -45,46 +51,53 @@ describe('validateContributeInput', () => {
 });
 
 describe('validateAddItemInput', () => {
-  const cases: Array<{ name: string; input: unknown; expected: string | null }> = [
+  const validAddItemPayload = {
+    name: 'Fancy Blender',
+    price: 150.00,
+    quantity: 1,
+    category: 'Kitchen',
+  };
+
+  const cases = [
     {
       name: 'valid payload',
-      input: { name: 'Toaster', price: 100, quantity: 1, category: 'Kitchen' },
+      input: validAddItemPayload,
       expected: null,
     },
     {
       name: 'invalid request body',
-      input: null,
+      input: 'not an object',
       expected: 'Invalid request body.',
     },
     {
       name: 'missing name',
-      input: { price: 100, quantity: 1, category: 'Kitchen' },
-      expected: 'Item name is required.',
+      input: { ...validAddItemPayload, name: '' },
+      expected: 'Item name is required and must be under 255 characters.',
     },
     {
       name: 'invalid price (negative)',
-      input: { name: 'Toaster', price: -1, quantity: 1, category: 'Kitchen' },
+      input: { ...validAddItemPayload, price: -50 },
       expected: 'Price must be a positive number.',
     },
     {
       name: 'invalid price (Infinity)',
-      input: { name: 'Toaster', price: Infinity, quantity: 1, category: 'Kitchen' },
+      input: { ...validAddItemPayload, price: Infinity },
       expected: 'Price must be a positive number.',
     },
     {
       name: 'invalid quantity (zero)',
-      input: { name: 'Toaster', price: 100, quantity: 0, category: 'Kitchen' },
+      input: { ...validAddItemPayload, quantity: 0 },
       expected: 'Quantity must be a positive integer.',
     },
     {
       name: 'invalid quantity (float)',
-      input: { name: 'Toaster', price: 100, quantity: 1.5, category: 'Kitchen' },
+      input: { ...validAddItemPayload, quantity: 1.5 },
       expected: 'Quantity must be a positive integer.',
     },
     {
       name: 'missing category',
-      input: { name: 'Toaster', price: 100, quantity: 1 },
-      expected: 'Category is required.',
+      input: { ...validAddItemPayload, category: '   ' },
+      expected: 'Category is required and must be under 255 characters.',
     },
   ];
 

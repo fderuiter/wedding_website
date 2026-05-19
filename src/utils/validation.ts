@@ -1,12 +1,13 @@
 // Centralized validation utility for registry API endpoints
 
 /**
- * Validates if a value is a non-empty string.
+ * Validates if a value is a non-empty string and does not exceed a maximum length.
  * @param {unknown} value - The value to check.
+ * @param {number} [maxLength=255] - The maximum allowed length for the string.
  * @returns {boolean} True if valid, false otherwise.
  */
-function isValidString(value: unknown): boolean {
-  return typeof value === 'string' && value.trim().length > 0;
+function isValidString(value: unknown, maxLength: number = 255): boolean {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
 }
 
 /**
@@ -14,7 +15,7 @@ function isValidString(value: unknown): boolean {
  * @param {unknown} value - The value to check.
  * @returns {boolean} True if valid, false otherwise.
  */
-function isValidPositiveNumber(value: unknown): boolean {
+export function isValidPositiveNumber(value: unknown): boolean {
   return typeof value === 'number' && !isNaN(value) && Number.isFinite(value) && value > 0;
 }
 
@@ -38,7 +39,7 @@ export function validateContributeInput(input: unknown): string | null {
   const data = input as Record<string, unknown>;
 
   if (!isValidString(data.itemId)) return 'Missing or invalid itemId.';
-  if (!isValidString(data.name)) return 'Name is required.';
+  if (!isValidString(data.name, 100)) return 'Name is required and must be under 100 characters.';
   if (!isValidPositiveNumber(data.amount)) return 'Contribution amount must be a positive number.';
 
   return null;
@@ -54,11 +55,22 @@ export function validateAddItemInput(input: unknown): string | null {
 
   const data = input as Record<string, unknown>;
 
-  if (!isValidString(data.name)) return 'Item name is required.';
+  if (!isValidString(data.name)) return 'Item name is required and must be under 255 characters.';
   if (!isValidPositiveNumber(data.price)) return 'Price must be a positive number.';
   if (!isValidPositiveInteger(data.quantity)) return 'Quantity must be a positive integer.';
-  if (!isValidString(data.category)) return 'Category is required.';
-  // Optional: image, vendorUrl, isGroupGift
+  if (!isValidString(data.category)) return 'Category is required and must be under 255 characters.';
+
+  if (data.description !== undefined && data.description !== null && !isValidString(data.description, 2000) && data.description !== '') {
+      return 'Description must be under 2000 characters.';
+  }
+
+  if (data.image !== undefined && data.image !== null && !isValidString(data.image, 2000) && data.image !== '') {
+      return 'Image URL must be under 2000 characters.';
+  }
+
+  if (data.vendorUrl !== undefined && data.vendorUrl !== null && !isValidString(data.vendorUrl, 2000) && data.vendorUrl !== '') {
+      return 'Vendor URL must be under 2000 characters.';
+  }
 
   return null;
 }
