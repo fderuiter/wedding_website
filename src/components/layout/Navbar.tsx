@@ -63,7 +63,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                   key={link.href}
                   href={link.href}
                   aria-current={pathname === link.href ? "page" : undefined}
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${
                     pathname === link.href
                       ? 'text-white bg-rose-500'
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -80,7 +80,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
                 <button
                   onClick={handleLogout}
-                  className="ml-4 bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md"
+                  className="ml-4 bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
                 >
                   Logout
                 </button>
@@ -93,7 +93,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
               type="button"
               aria-expanded={isMenuOpen}
               aria-controls="mobile-menu"
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white"
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 focus-visible:ring-white"
             >
               <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
               {isMenuOpen ? (
@@ -119,7 +119,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                 href={link.href}
                 onClick={() => setIsMenuOpen(false)}
                 aria-current={pathname === link.href ? "page" : undefined}
-                className={`block px-3 py-2 rounded-md text-base font-medium ${
+                className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${
                   pathname === link.href
                     ? 'text-white bg-rose-500'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -141,7 +141,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                       handleLogout();
                       setIsMenuOpen(false);
                     }}
-                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700"
+                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
                   >
                     Logout
                   </button>
