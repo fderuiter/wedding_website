@@ -1,11 +1,24 @@
-import { metadata } from '../metadata';
+import { generateMetadata } from '../metadata';
+import { getAppConfig } from '@/lib/config';
 
-describe('metadata', () => {
-  it('matches expected values', () => {
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    brideName: 'TestBride',
+    groomName: 'TestGroom',
+    venueName: 'Test Venue',
+    venueCity: 'TestCity',
+    venueState: 'TS',
+    baseUrl: 'https://testsite.com'
+  })
+}));
+
+describe('generateMetadata', () => {
+  it('generates expected metadata based on config', async () => {
+    const metadata = await generateMetadata();
     const title = typeof metadata.title === 'object' && metadata.title !== null ? metadata.title.default : metadata.title;
-    expect(title).toBe("Abbigayle & Frederick's Wedding");
+    expect(title).toBe("TestBride & TestGroom's Wedding");
     expect(metadata.description).toBe(
-      'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.'
+      'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.'
     );
     expect(metadata.icons).toEqual({
       icon: '/assets/favicon.png',
@@ -14,27 +27,27 @@ describe('metadata', () => {
     });
     expect(metadata.openGraph).toEqual({
       type: 'website',
-      url: 'https://abbifred.com',
-      title: "Abbigayle & Frederick's Wedding",
-      description: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
+      url: 'https://testsite.com',
+      title: "TestBride & TestGroom's Wedding",
+      description: 'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.',
       images: [
         {
-          url: 'https://abbifred.com/images/sunset-embrace.jpg',
+          url: 'https://testsite.com/images/sunset-embrace.jpg',
           width: 1200,
           height: 630,
-          alt: 'A photo of Abbigayle and Frederick embracing at sunset.',
+          alt: 'A photo of TestBride and TestGroom embracing.',
         },
       ],
       locale: 'en_US',
-      siteName: "Abbigayle & Frederick's Wedding",
+      siteName: "TestBride & TestGroom's Wedding",
     });
     expect(metadata.twitter).toEqual({
       card: 'summary_large_image',
-      title: "Abbigayle & Frederick's Wedding",
-      description: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
-      images: ['https://abbifred.com/images/sunset-embrace.jpg'],
-      creator: '@fderuiter',
+      title: "TestBride & TestGroom's Wedding",
+      description: 'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.',
+      images: ['https://testsite.com/images/sunset-embrace.jpg'],
     });
-    expect(metadata.metadataBase?.href).toBe('https://abbifred.com/');
+    expect(metadata.metadataBase?.href).toBe('https://testsite.com/');
   });
 });
+

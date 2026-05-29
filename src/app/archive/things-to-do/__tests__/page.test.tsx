@@ -12,7 +12,7 @@ jest.mock('../components/ThingsToDoList', () => {
 describe('ThingsToDoPage', () => {
   it('renders the main heading', () => {
     render(<ThingsToDoPage />);
-    expect(screen.getByRole('heading', { name: /Things to Do in Rochester/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Things to Do in City/i })).toBeInTheDocument();
   });
 
   it('renders the ThingsToDoList component', () => {
