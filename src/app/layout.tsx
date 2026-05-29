@@ -1,14 +1,14 @@
 import { Geist } from "next/font/google";
 import "./globals.css";
 import RootLayoutClient from "@/components/layout/RootLayoutClient";
-import { metadata } from './metadata';
+import { generateMetadata } from './metadata';
 
 const geist = Geist({
   variable: "--font-geist",
   subsets: ["latin"],
 });
 
-export { metadata };
+export { generateMetadata };
 
 /**
  * @layout RootLayout

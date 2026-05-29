@@ -62,7 +62,10 @@ export default function AdminDashboardPage() {
     <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-2 sm:px-6">
       <div className="max-w-5xl mx-auto">
         {/* Updated heading color */}
-        <h1 className="text-4xl font-extrabold mb-8 text-center text-rose-700 tracking-tight drop-shadow-lg">Admin Dashboard</h1>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-extrabold text-rose-700 tracking-tight drop-shadow-lg">Admin Dashboard</h1>
+          <a href="/admin/dashboard/settings" className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition">Site Settings</a>
+        </div>
         {/* Responsive Table for Desktop, Cards for Mobile */}
         <div className="hidden md:block">
           {/* Updated table container styles */}

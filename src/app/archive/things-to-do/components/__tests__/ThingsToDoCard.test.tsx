@@ -10,7 +10,7 @@ const mockAttraction: Attraction = {
   website: 'https://example.com',
   directions: 'https://maps.google.com',
   category: 'museum',
-  latitude: 44.0232,
+  latitude: 0.0,
   longitude: -92.4679,
 };
 

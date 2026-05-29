@@ -26,7 +26,7 @@ const archivedPages = [
   {
     href: '/archive/things-to-do',
     title: 'Things to Do',
-    description: 'Explore our favorite spots in Rochester.',
+    description: 'Explore our favorite spots in City.',
     icon: <Map className="w-8 h-8 text-rose-500" />,
   },
   {

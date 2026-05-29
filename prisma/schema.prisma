@@ -8,6 +8,27 @@ datasource db {
   provider = "postgresql"
 }
 
+model AppConfig {
+  id               String   @id @default("global")
+  brideName        String   @default("Bride")
+  groomName        String   @default("Groom")
+  weddingDate      DateTime @default(dbgenerated("NOW()"))
+  baseUrl          String   @default("https://example.com")
+  venueName        String   @default("Wedding Venue")
+  venueAddress     String   @default("123 Wedding St")
+  venueCity        String   @default("City")
+  venueState       String   @default("State")
+  venueZip         String   @default("12345")
+  latitude         Float    @default(0.0)
+  longitude        Float    @default(0.0)
+  storyText        String   @default("Our story began...")
+  venueDescription String   @default("A beautiful venue...")
+  travelAdvice     String   @default("Travel safely...")
+  adminPassword    String   @default("$2b$10$Ep3/07xWd34e9/jV91KIn.u2L1xW5G5S3T.eP28j8/qX5x81A0xLq") // hashed "admin"
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 model RegistryItem {
   id                String       @id @default(uuid())
   name              String

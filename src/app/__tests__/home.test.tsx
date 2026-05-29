@@ -56,11 +56,31 @@ jest.mock('@/components/AddToCalendar', () => ({
   default: () => <button>Add to Calendar</button>,
 }));
 
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    brideName: 'Bride',
+    groomName: 'Groom',
+    weddingDate: new Date('2025-10-10T00:00:00.000Z'),
+    baseUrl: 'https://example.com',
+    venueName: 'Wedding Venue',
+    venueAddress: '123 Wedding St',
+    venueCity: 'City',
+    venueState: 'State',
+    venueZip: '12345',
+    latitude: 0.0,
+    longitude: 0.0,
+    storyText: 'Our story began...',
+    venueDescription: 'A beautiful venue...',
+    travelAdvice: 'Travel safely...',
+  })
+}));
+
 const HomePage = require('../page').default;
 
 describe('Home Page', () => {
   it('renders hero content and navigation after intro finishes', async () => {
-    render(<HomePage />);
+    const Component = await HomePage();
+    render(Component);
 
     // Wait for elements to appear after intro
     await screen.findByRole('link', { name: 'Our Story' });

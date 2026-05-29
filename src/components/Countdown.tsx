@@ -97,7 +97,11 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
       </span>
       <noscript>
         <div className="text-2xl font-bold text-rose-700 dark:text-rose-400">
-          October 10, 2025
+          {weddingDate.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })}
         </div>
       </noscript>
     </div>

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
  * @description A page that lists recommended local attractions, restaurants, and points of interest.
  *
  * This component renders the `ThingsToDoList`, which provides an interactive, filterable
- * list and map of things for wedding guests to do in the Rochester area.
+ * list and map of things for wedding guests to do in the City area.
  *
  * @returns {JSX.Element} The rendered "Things to Do" page.
  */
@@ -22,7 +22,7 @@ export default function ThingsToDoPage() {
   return (
     <main className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-rose-700 dark:text-rose-400">
-        Things to Do in Rochester
+        Things to Do in City
       </h1>
       <ThingsToDoList />
     </main>
