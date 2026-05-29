@@ -10,13 +10,15 @@ jest.mock('../components/ThingsToDoList', () => {
 });
 
 describe('ThingsToDoPage', () => {
-  it('renders the main heading', () => {
-    render(<ThingsToDoPage />);
+  it('renders the main heading', async () => {
+    const Component = await ThingsToDoPage();
+    render(Component);
     expect(screen.getByRole('heading', { name: /Things to Do in City/i })).toBeInTheDocument();
   });
 
-  it('renders the ThingsToDoList component', () => {
-    render(<ThingsToDoPage />);
+  it('renders the ThingsToDoList component', async () => {
+    const Component = await ThingsToDoPage();
+    render(Component);
     expect(screen.getByTestId('things-to-do-list')).toBeInTheDocument();
   });
 });

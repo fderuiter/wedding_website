@@ -48,10 +48,10 @@ export default function HomePageClient({ calendarEvent, config, contentNodes = [
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
             <div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)] animate-pulse-scale" />
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-rose-700 to-amber-500 sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
-              We Tied the Knot!
+              {config.heroTitle || 'We Tied the Knot!'}
             </motion.h1>
             <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
-              Thank you for celebrating with us on {formattedDate}, in {config.venueCity}, {config.venueState}. We&apos;re so grateful for all the love and support from our family and friends.
+              {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
             </motion.p>
             <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
               <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-8 py-3 text-white shadow-lg transition hover:shadow-xl">

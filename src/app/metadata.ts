@@ -5,8 +5,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   
   const siteConfig = {
-    title: `${config.brideName} & ${config.groomName}'s Wedding`,
-    description: `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
+    title: config.seoTitle || `${config.brideName} & ${config.groomName}'s Wedding`,
+    description: config.seoDescription || `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
     url: config.baseUrl,
     ogImage: `${config.baseUrl}/images/sunset-embrace.jpg`,
   };

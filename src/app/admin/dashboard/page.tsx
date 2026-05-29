@@ -64,7 +64,9 @@ export default function AdminDashboardPage() {
         {/* Updated heading color */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-rose-700 tracking-tight drop-shadow-lg">Admin Dashboard</h1>
-          <div className="space-x-4">
+          <div className="space-x-4 flex items-center flex-wrap gap-y-2">
+            <a href="/admin/dashboard/wedding-party" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Wedding Party</a>
+            <a href="/admin/dashboard/attractions" className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Attractions</a>
             <a href="/admin/dashboard/content" className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 transition">Manage Content</a>
             <a href="/admin/dashboard/settings" className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition">Site Settings</a>
           </div>
