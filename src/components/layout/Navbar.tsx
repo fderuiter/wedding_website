@@ -3,17 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AppConfig } from '@prisma/client';
 
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/photos', label: 'Photos' },
   { href: '/archive', label: 'Archive' },
-];
-
-const homeNavLinks = [
-  { href: '#details', label: 'Details' },
-  { href: '#travel', label: 'Travel' },
-  { href: '#faq', label: 'FAQ' },
 ];
 
 /**
@@ -22,11 +17,13 @@ const homeNavLinks = [
  * @property {boolean} isAdmin - Indicates if the current user is an administrator.
  * @property {() => void} handleLogout - Function to handle user logout.
  * @property {React.RefObject<HTMLElement | null>} headerRef - Ref to the header element for layout calculations.
+ * @property {AppConfig} config - The app configuration.
  */
 interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
+  config: AppConfig;
 }
 
 /**
@@ -37,12 +34,41 @@ interface NavbarProps {
  * @param {NavbarProps} props - The props for the component.
  * @returns {JSX.Element} The rendered Navbar component.
  */
-export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps) {
+export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+  // Safely parse features array
+  let features: any[] = [];
+  try {
+    if (typeof config.features === 'string') {
+      features = JSON.parse(config.features);
+    } else if (Array.isArray(config.features)) {
+      features = config.features;
+    }
+  } catch(e) {}
+
+  if (features.length === 0) {
+    features = [
+      { id: 'story', type: 'story', title: 'Our Story', visible: true },
+      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
+      { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+      { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+      { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+      { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
+    ];
+  }
+
+  const homeNavLinks = features
+    .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story')
+    .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
+
   const allLinks =
     pathname === '/' ? [...navLinks, ...homeNavLinks] : navLinks;
+
+  if (isAdmin) {
+    allLinks.push({ href: '/admin/dashboard', label: 'Dashboard' });
+  }
 
   return (
     <header

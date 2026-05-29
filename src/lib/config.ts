@@ -35,6 +35,14 @@ export async function getAppConfig() {
       seoTitle: 'Our Wedding',
       seoDescription: 'Join us to celebrate our wedding.',
       adminPassword: '',
+      features: [
+        { id: 'story', type: 'story', title: 'Our Story', visible: true },
+        { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
+        { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+        { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+        { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+        { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
+      ],
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any;
