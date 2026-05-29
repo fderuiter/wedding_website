@@ -3,6 +3,7 @@ import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
 import { CalendarEvent } from '@/utils/calendar';
 import { getAppConfig } from '@/lib/config';
+import { prisma } from '@/lib/prisma';
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
@@ -54,6 +55,19 @@ export default async function HomePage() {
     description: config.venueDescription,
   };
 
-  return <HomePageClient calendarEvent={calendarEvent} config={config} />;
+  let contentNodes: import('@prisma/client').ContentNode[] = [];
+  try {
+    contentNodes = await prisma.contentNode.findMany({
+      where: {
+        tags: {
+          has: 'Homepage'
+        }
+      }
+    });
+  } catch (error) {
+    console.warn("Could not fetch content nodes for Homepage");
+  }
+
+  return <HomePageClient calendarEvent={calendarEvent} config={config} contentNodes={contentNodes} />;
 }
 

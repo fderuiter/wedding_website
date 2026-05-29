@@ -55,3 +55,12 @@ model Contributor {
   registryItem  RegistryItem @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
   registryItemId String
 }
+
+model ContentNode {
+  id        String   @id @default(uuid())
+  type      String   // e.g., "FAQ", "Logistics", "Photo"
+  tags      String[] // e.g., ["Homepage", "FAQ"]
+  data      Json     // Flexible key-value pairs
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
