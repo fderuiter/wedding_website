@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { Attraction } from '@prisma/client';
 
+import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+
 export default function AttractionsDashboardPage() {
   const router = useRouter();
   const [attractions, setAttractions] = useState<Attraction[]>([]);
@@ -75,9 +77,36 @@ export default function AttractionsDashboardPage() {
   if (loading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
   if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error}</p></main>;
 
+  const draftAttraction = {
+    id: currentAttraction.id || 'draft',
+    name: currentAttraction.name || '',
+    description: currentAttraction.description || '',
+    image: currentAttraction.image || '',
+    category: currentAttraction.category || 'food',
+    website: currentAttraction.website || '',
+    directions: currentAttraction.directions || '',
+    latitude: currentAttraction.latitude || 0,
+    longitude: currentAttraction.longitude || 0,
+    isVisible: currentAttraction.isVisible !== false,
+  };
+
+  const currentAttractionsWithDraft = attractions.map(a => a.id === currentAttraction.id ? draftAttraction : a);
+  if (!currentAttraction.id && isEditing) {
+    currentAttractionsWithDraft.push(draftAttraction as Attraction);
+  }
+
   return (
-    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto">
+    <AdminPreviewLayout
+      previewUrl="/archive/things-to-do"
+      draftType="attractions"
+      draftData={currentAttractionsWithDraft}
+      entityId={currentAttraction.id}
+      onRestore={() => {
+        setIsEditing(false);
+        fetchAttractions();
+      }}
+    >
+      <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-extrabold text-rose-700">Attractions Studio</h1>
           <div>
@@ -146,7 +175,7 @@ export default function AttractionsDashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4">
+        <div className="grid gap-4 pb-10">
           {attractions.map(attraction => (
             <div key={attraction.id} className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-rose-100 flex justify-between items-center ${!attraction.isVisible ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-4">
@@ -171,6 +200,6 @@ export default function AttractionsDashboardPage() {
           {attractions.length === 0 && <p className="text-gray-500">No attractions found.</p>}
         </div>
       </div>
-    </main>
+    </AdminPreviewLayout>
   );
 }

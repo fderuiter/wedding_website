@@ -4,12 +4,29 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 
+import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+
 export default function AdminSettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<any>(null);
   const [message, setMessage] = useState("");
+
+  const refreshConfig = async () => {
+    try {
+      const res = await fetch('/api/admin/settings');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.weddingDate) {
+          data.weddingDate = data.weddingDate.split('T')[0];
+        }
+        setConfig(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     async function init() {
@@ -18,21 +35,8 @@ export default function AdminSettingsPage() {
         router.replace('/admin/login');
         return;
       }
-      try {
-        const res = await fetch('/api/admin/settings');
-        if (res.ok) {
-          const data = await res.json();
-          // format date for input type="date"
-          if (data.weddingDate) {
-            data.weddingDate = data.weddingDate.split('T')[0];
-          }
-          setConfig(data);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+      await refreshConfig();
+      setLoading(false);
     }
     init();
   }, [router]);
@@ -54,6 +58,7 @@ export default function AdminSettingsPage() {
 
       if (res.ok) {
         setMessage("Settings saved successfully.");
+        await refreshConfig(); // ensure we have latest after save
       } else {
         setMessage("Failed to save settings.");
       }
@@ -75,124 +80,138 @@ export default function AdminSettingsPage() {
   if (!config) return <div className="p-8 text-center text-red-500">Failed to load settings.</div>;
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <h1 className="text-3xl font-bold mb-8">Site Settings</h1>
-      
-      {message && (
-        <div className="mb-6 p-4 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-          {message}
+    <AdminPreviewLayout
+      previewUrl="/"
+      draftType="config"
+      draftData={{
+         ...config,
+         weddingDate: config.weddingDate ? new Date(config.weddingDate).toISOString() : new Date().toISOString()
+      }}
+      entityId="global"
+      onRestore={() => refreshConfig()}
+    >
+      <div className="mx-auto max-w-4xl p-6">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold">Site Settings</h1>
+          <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
         </div>
-      )}
+        
+        {message && (
+          <div className="mb-6 p-4 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+            {message}
+          </div>
+        )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Core Identity</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Bride Name</label>
-              <input required type="text" name="brideName" value={config.brideName} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+        <form onSubmit={handleSubmit} className="space-y-8 pb-10">
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-4">Core Identity</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Bride Name</label>
+                <input required type="text" name="brideName" value={config.brideName || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Groom Name</label>
+                <input required type="text" name="groomName" value={config.groomName || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Wedding Date</label>
+                <input required type="date" name="weddingDate" value={config.weddingDate || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Base URL</label>
+                <input required type="url" name="baseUrl" value={config.baseUrl || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Groom Name</label>
-              <input required type="text" name="groomName" value={config.groomName} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Wedding Date</label>
-              <input required type="date" name="weddingDate" value={config.weddingDate} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Base URL</label>
-              <input required type="url" name="baseUrl" value={config.baseUrl} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Venue & Location</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Venue Name</label>
-              <input required type="text" name="venueName" value={config.venueName} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-4">Venue & Location</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Venue Name</label>
+                <input required type="text" name="venueName" value={config.venueName || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Address</label>
+                <input required type="text" name="venueAddress" value={config.venueAddress || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">City</label>
+                <input required type="text" name="venueCity" value={config.venueCity || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">State</label>
+                <input required type="text" name="venueState" value={config.venueState || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Zip Code</label>
+                <input required type="text" name="venueZip" value={config.venueZip || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Address</label>
-              <input required type="text" name="venueAddress" value={config.venueAddress} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Latitude</label>
+                <input required type="number" step="any" name="latitude" value={config.latitude || 0} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Longitude</label>
+                <input required type="number" step="any" name="longitude" value={config.longitude || 0} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">City</label>
-              <input required type="text" name="venueCity" value={config.venueCity} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">State</label>
-              <input required type="text" name="venueState" value={config.venueState} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Zip Code</label>
-              <input required type="text" name="venueZip" value={config.venueZip} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Latitude</label>
-              <input required type="number" step="any" name="latitude" value={config.latitude} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Longitude</label>
-              <input required type="number" step="any" name="longitude" value={config.longitude} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Narrative Content</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Hero Title</label>
-              <input required type="text" name="heroTitle" value={config.heroTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-4">Narrative Content</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Hero Title</label>
+                <input required type="text" name="heroTitle" value={config.heroTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Hero Subtitle</label>
+                <input required type="text" name="heroSubtitle" value={config.heroSubtitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Hero Subtitle</label>
-              <input required type="text" name="heroSubtitle" value={config.heroSubtitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              <label className="block text-sm font-medium mb-1">Our Story</label>
+              <textarea required name="storyText" value={config.storyText || ''} onChange={handleChange} rows={6} className="w-full p-2 border rounded text-black" />
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Our Story</label>
-            <textarea required name="storyText" value={config.storyText} onChange={handleChange} rows={6} className="w-full p-2 border rounded text-black" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Venue Description</label>
-            <textarea required name="venueDescription" value={config.venueDescription} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Travel Advice</label>
-            <textarea required name="travelAdvice" value={config.travelAdvice} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
-          </div>
-        </section>
+            <div>
+              <label className="block text-sm font-medium mb-1">Venue Description</label>
+              <textarea required name="venueDescription" value={config.venueDescription || ''} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Travel Advice</label>
+              <textarea required name="travelAdvice" value={config.travelAdvice || ''} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
+            </div>
+          </section>
 
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">SEO Title</label>
-              <input required type="text" name="seoTitle" value={config.seoTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">SEO Title</label>
+                <input required type="text" name="seoTitle" value={config.seoTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">SEO Description</label>
+                <input required type="text" name="seoDescription" value={config.seoDescription || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">SEO Description</label>
-              <input required type="text" name="seoDescription" value={config.seoDescription || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save Settings"}
-          </button>
-        </div>
-      </form>
-    </div>
+          <div className="flex justify-end sticky bottom-0 bg-gray-100 dark:bg-gray-900 py-4 shadow-t">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save Settings"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </AdminPreviewLayout>
   );
 }

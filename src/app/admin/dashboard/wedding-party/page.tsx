@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { WeddingPartyMember } from '@prisma/client';
 
+import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+
 export default function WeddingPartyDashboardPage() {
   const router = useRouter();
   const [members, setMembers] = useState<WeddingPartyMember[]>([]);
@@ -75,9 +77,36 @@ export default function WeddingPartyDashboardPage() {
   if (loading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
   if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error}</p></main>;
 
+  const draftMember = {
+    id: currentMember.id || 'draft',
+    name: currentMember.name || '',
+    role: currentMember.role || '',
+    bio: currentMember.bio || '',
+    photo: currentMember.photo || '',
+    link: currentMember.link || '',
+    order: currentMember.order || 0,
+  };
+
+  const currentMembersWithDraft = members.map(m => m.id === currentMember.id ? draftMember : m);
+  if (!currentMember.id && isEditing) {
+    currentMembersWithDraft.push(draftMember as WeddingPartyMember);
+  }
+  
+  // Sort by order so preview looks right
+  currentMembersWithDraft.sort((a, b) => a.order - b.order);
+
   return (
-    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto">
+    <AdminPreviewLayout
+      previewUrl="/archive/wedding-party"
+      draftType="wedding-party"
+      draftData={currentMembersWithDraft}
+      entityId={currentMember.id}
+      onRestore={() => {
+        setIsEditing(false);
+        fetchMembers();
+      }}
+    >
+      <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-extrabold text-rose-700">Wedding Party Studio</h1>
           <div>
@@ -125,7 +154,7 @@ export default function WeddingPartyDashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4">
+        <div className="grid gap-4 pb-10">
           {members.map(member => (
             <div key={member.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-rose-100 flex justify-between items-center">
               <div className="flex items-center gap-4">
@@ -150,6 +179,6 @@ export default function WeddingPartyDashboardPage() {
           {members.length === 0 && <p className="text-gray-500">No wedding party members found.</p>}
         </div>
       </div>
-    </main>
+    </AdminPreviewLayout>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import WeddingPartyCard from './WeddingPartyCard';
 import { WeddingPartyMember } from '@prisma/client';
 
@@ -8,13 +8,21 @@ interface WeddingPartyListProps {
   members: WeddingPartyMember[];
 }
 
-/**
- * @function WeddingPartyList
- * @description A React component that displays a grid of WeddingPartyCard components.
- * It maps over the `weddingPartyMembers` data to render a card for each member.
- * @returns {JSX.Element} The rendered WeddingPartyList component.
- */
-const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members }) => {
+const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMembers }) => {
+  const [members, setMembers] = useState(initialMembers);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window !== window.parent) {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'wedding-party') {
+          setMembers(event.data.draftData);
+        }
+      };
+      window.addEventListener('message', handleMessage);
+      return () => window.removeEventListener('message', handleMessage);
+    }
+  }, []);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
       {members.map((member) => (

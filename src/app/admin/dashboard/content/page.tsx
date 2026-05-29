@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { ContentNode } from '@prisma/client';
 
+import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+
 export default function ContentDashboardPage() {
   const router = useRouter();
   const [nodes, setNodes] = useState<ContentNode[]>([]);
@@ -136,11 +138,37 @@ export default function ContentDashboardPage() {
   if (loading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
   if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error}</p></main>;
 
+  const draftDataObj: Record<string, string> = {};
+  dynamicData.forEach(item => {
+    if (item.key.trim()) draftDataObj[item.key.trim()] = item.value;
+  });
+  
+  const draftNode = {
+    id: currentNode.id || 'draft',
+    type: currentNode.type || 'FAQ',
+    tags: currentNode.tags || ['Homepage'],
+    data: draftDataObj
+  };
+
+  const currentNodesWithDraft = nodes.map(n => n.id === currentNode.id ? draftNode : n);
+  if (!currentNode.id && isEditing) {
+    currentNodesWithDraft.push(draftNode as ContentNode);
+  }
+
   return (
-    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto">
+    <AdminPreviewLayout
+      previewUrl="/"
+      draftType="content"
+      draftData={currentNodesWithDraft}
+      entityId={currentNode.id}
+      onRestore={() => {
+        setIsEditing(false);
+        fetchNodes();
+      }}
+    >
+      <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-extrabold text-rose-700">Content Configuration Hub</h1>
+          <h1 className="text-3xl font-extrabold text-rose-700">Content Hub</h1>
           <div>
             <button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Registry</button>
             <button onClick={() => { 
@@ -187,7 +215,7 @@ export default function ContentDashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4">
+        <div className="grid gap-4 pb-10">
           {nodes.map(node => (
             <div key={node.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-rose-100 flex justify-between items-center">
               <div>
@@ -196,7 +224,7 @@ export default function ContentDashboardPage() {
                   {JSON.stringify(node.data).substring(0, 100)}...
                 </div>
               </div>
-              <div className="space-x-2">
+              <div className="space-x-2 flex">
                 <button onClick={() => { 
                   setCurrentNode(node); 
                   const d = node.data as Record<string, string>;
@@ -210,7 +238,7 @@ export default function ContentDashboardPage() {
           {nodes.length === 0 && <p className="text-gray-500">No content nodes found.</p>}
         </div>
       </div>
-    </main>
+    </AdminPreviewLayout>
   );
 }
 

@@ -19,6 +19,16 @@ export async function PUT(req: Request, props: { params: Promise<{ id: string }>
         order: data.order,
       }
     });
+
+    await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'WeddingPartyMember',
+        entityId: updated.id,
+        data: updated as any,
+        author: 'Admin',
+      }
+    });
+
     return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

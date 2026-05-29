@@ -1,34 +1,33 @@
 'use client'
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
 import { Attraction } from '@prisma/client';
 
-/**
- * An array of possible categories for attractions.
- * @type {readonly string[]}
- */
 const categories = ['all', 'food', 'coffee', 'park', 'museum', 'hotel', 'venue'] as const;
 
-/**
- * A type representing a single category.
- * @typedef {'all' | 'food' | 'coffee' | 'park' | 'museum' | 'hotel' | 'venue'} Category
- */
 type Category = typeof categories[number];
 
 interface ThingsToDoListProps {
   attractions: Attraction[];
 }
 
-/**
- * @function ThingsToDoList
- * @description A React component that displays a list of "things to do" or attractions.
- * It includes a category filter and a map showing the locations of the attractions.
- * @returns {JSX.Element} The rendered ThingsToDoList component.
- */
-const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions }) => {
+const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions }) => {
+  const [attractions, setAttractions] = useState(initialAttractions);
   const [filter, setFilter] = useState<Category>('all');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window !== window.parent) {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'attractions') {
+          setAttractions(event.data.draftData);
+        }
+      };
+      window.addEventListener('message', handleMessage);
+      return () => window.removeEventListener('message', handleMessage);
+    }
+  }, []);
 
   const ThingsToDoMap = useMemo(() => dynamic(() => import('./ThingsToDoMap'), {
     ssr: false,
@@ -64,7 +63,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions }) => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.map((attraction) => (
-            <ThingsToDoCard key={attraction.name} attraction={attraction} />
+            <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />
           ))}
         </div>
       </div>

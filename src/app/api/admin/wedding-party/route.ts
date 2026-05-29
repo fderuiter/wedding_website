@@ -27,6 +27,16 @@ export async function POST(req: Request) {
         order: data.order,
       }
     });
+
+    await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'WeddingPartyMember',
+        entityId: member.id,
+        data: member as any,
+        author: 'Admin',
+      }
+    });
+
     return NextResponse.json(member);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
