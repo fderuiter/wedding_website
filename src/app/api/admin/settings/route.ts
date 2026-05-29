@@ -40,8 +40,35 @@ export async function PUT(req: NextRequest) {
         storyText: data.storyText,
         venueDescription: data.venueDescription,
         travelAdvice: data.travelAdvice,
+        heroTitle: data.heroTitle,
+        heroSubtitle: data.heroSubtitle,
+        seoTitle: data.seoTitle,
+        seoDescription: data.seoDescription,
       },
     });
+
+    // Create a version snapshot
+    await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: updatedConfig as any,
+        author: 'Admin', // In a real app we'd get the actual user from auth
+      }
+    });
+    
+    // Prune old versions (keep max 50)
+    const versions = await prisma.snapshotVersion.findMany({
+      where: { entityType: 'AppConfig', entityId: 'global' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (versions.length > 50) {
+      const idsToDelete = versions.slice(50).map(v => v.id);
+      await prisma.snapshotVersion.deleteMany({
+        where: { id: { in: idsToDelete } }
+      });
+    }
 
     return NextResponse.json(updatedConfig);
   } catch (err) {

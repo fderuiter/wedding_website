@@ -33,6 +33,16 @@ export async function POST(request: Request) {
         data: body.data,
       }
     });
+
+    await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'ContentNode',
+        entityId: newNode.id,
+        data: newNode as any,
+        author: 'Admin',
+      }
+    });
+
     return NextResponse.json(newNode, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to create content node' }, { status: 500 });

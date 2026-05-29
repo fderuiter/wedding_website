@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar from '@/components/AddToCalendar'
@@ -10,21 +10,29 @@ import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
 
-/**
- * Framer Motion variant for a fade-up animation.
- * @type {{hidden: {opacity: number, y: number}, visible: (function(number): {opacity: number, y: number, transition: {delay: number, duration: number}})}}
- */
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
-/**
- * @function HomePageClient
- * @description The main client component for the home page.
- * @param {object} props - The component props.
- * @param {CalendarEvent} props.calendarEvent - The event details for the "Add to Calendar" button.
- * @returns {JSX.Element} The rendered HomePageClient component.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function HomePageClient({ calendarEvent, config, contentNodes = [] }: { calendarEvent: CalendarEvent, config: AppConfig, contentNodes?: ContentNode[] }) {
+export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: AppConfig, contentNodes?: ContentNode[] }) {
+  const [config, setConfig] = useState<AppConfig>(initialConfig);
+  const [contentNodes, setContentNodes] = useState<ContentNode[]>(initialContentNodes);
+
+  useEffect(() => {
+    // Only listen for messages if inside an iframe
+    if (typeof window !== 'undefined' && window !== window.parent) {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'DRAFT_UPDATE') {
+          if (event.data.draftType === 'config') {
+            setConfig({ ...config, ...event.data.draftData });
+          } else if (event.data.draftType === 'content') {
+            setContentNodes(event.data.draftData);
+          }
+        }
+      };
+      window.addEventListener('message', handleMessage);
+      return () => window.removeEventListener('message', handleMessage);
+    }
+  }, [config]);
+
   const formattedDate = new Date(config.weddingDate).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',

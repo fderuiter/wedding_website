@@ -96,3 +96,12 @@ model ContentNode {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model SnapshotVersion {
+  id          String   @id @default(uuid())
+  entityType  String   // "AppConfig", "ContentNode", "RegistryItem", etc.
+  entityId    String   // The ID of the modified entity
+  data        Json     // Full snapshot of the record at the time of save
+  author      String   @default("Admin")
+  createdAt   DateTime @default(now())
+}

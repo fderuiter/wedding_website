@@ -28,6 +28,16 @@ export async function POST(req: Request) {
         isVisible: data.isVisible !== false,
       }
     });
+
+    await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'Attraction',
+        entityId: attraction.id,
+        data: attraction as any,
+        author: 'Admin',
+      }
+    });
+
     return NextResponse.json(attraction);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
