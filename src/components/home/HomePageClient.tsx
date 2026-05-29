@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar from '@/components/AddToCalendar'
 import { CalendarEvent } from '@/utils/calendar'
-import { AppConfig } from '@prisma/client'
+import { AppConfig, ContentNode } from '@prisma/client'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
@@ -24,12 +24,15 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
  * @returns {JSX.Element} The rendered HomePageClient component.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function HomePageClient({ calendarEvent, config }: { calendarEvent: CalendarEvent, config: AppConfig }) {
+export default function HomePageClient({ calendarEvent, config, contentNodes = [] }: { calendarEvent: CalendarEvent, config: AppConfig, contentNodes?: ContentNode[] }) {
   const formattedDate = new Date(config.weddingDate).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
+
+  const faqs = contentNodes.filter(n => n.type === 'FAQ').map(n => n.data as { question?: string, answer?: string });
+  const logisticsNodes = contentNodes.filter(n => n.type === 'Logistics').map(n => n.data as { title?: string, description?: string });
 
   return (
     <>
@@ -99,25 +102,45 @@ export default function HomePageClient({ calendarEvent, config }: { calendarEven
           </motion.section>
           <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
             <h2 className="text-4xl font-bold text-rose-700">Travel & Things to Do in {config.venueCity}</h2>
-            {config.travelAdvice.split('\n\n').map((paragraph, index) => (
-              <p key={index} className="mx-auto max-w-xl text-lg mt-4">{paragraph}</p>
-            ))}
+            {logisticsNodes.length > 0 ? (
+              logisticsNodes.map((node, i) => (
+                <div key={i} className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg mt-4 border border-rose-100 dark:border-rose-700">
+                  {node.title && <h3 className="font-semibold text-xl mb-2 text-rose-700">{node.title}</h3>}
+                  {node.description && <p className="text-lg">{node.description}</p>}
+                </div>
+              ))
+            ) : (
+              config.travelAdvice.split('\n\n').map((paragraph, index) => (
+                <p key={index} className="mx-auto max-w-xl text-lg mt-4">{paragraph}</p>
+              ))
+            )}
           </motion.section>
           <motion.section id="faq" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.9}>
             <h2 className="text-center text-4xl font-bold text-rose-700">Questions You Probably Have</h2>
             <div className="space-y-4 text-left">
-              <div>
-                <h3 className="font-semibold text-lg">What is &quot;Garden Formal&quot;?</h3>
-                <p>It means look nice, but maybe don&apos;t wear stilettos unless you enjoy aerating the lawn.</p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
-                <p>We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.</p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-lg">Is there parking available?</h3>
-                <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
-              </div>
+              {faqs.length > 0 ? (
+                faqs.map((faq, index) => (
+                  <div key={index}>
+                    <h3 className="font-semibold text-lg">{faq.question}</h3>
+                    <p>{faq.answer}</p>
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div>
+                    <h3 className="font-semibold text-lg">What is &quot;Garden Formal&quot;?</h3>
+                    <p>It means look nice, but maybe don&apos;t wear stilettos unless you enjoy aerating the lawn.</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
+                    <p>We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Is there parking available?</h3>
+                    <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
+                  </div>
+                </>
+              )}
             </div>
           </motion.section>
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">

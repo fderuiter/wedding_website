@@ -50,6 +50,33 @@ export function validateContributeInput(input: unknown): string | null {
  * @param {unknown} input - The input data to validate.
  * @returns {string | null} An error message if validation fails, otherwise null.
  */
+export function validateContentNodeInput(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return 'Invalid request body.';
+  const data = input as Record<string, unknown>;
+
+  if (!isValidString(data.type, 100)) return 'Type is required and must be under 100 characters.';
+  if (!Array.isArray(data.tags)) return 'Tags must be an array of strings.';
+  for (const tag of data.tags) {
+    if (!isValidString(tag, 100)) return 'Each tag must be a string under 100 characters.';
+  }
+
+  if (typeof data.data !== 'object' || data.data === null) return 'Data must be an object.';
+
+  // Basic type validation for common flexible fields:
+  // e.g. ensuring any key ending in "Url" or "url" contains a valid link
+  for (const [key, value] of Object.entries(data.data)) {
+    if (key.toLowerCase().includes('url') && typeof value === 'string' && value !== '') {
+      try {
+        new URL(value);
+      } catch (e) {
+        return `Field ${key} contains an invalid URL.`;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function validateAddItemInput(input: unknown): string | null {
   if (!input || typeof input !== 'object') return 'Invalid request body.';
 
