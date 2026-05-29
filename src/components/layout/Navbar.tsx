@@ -3,17 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AppConfig } from '@prisma/client';
 
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/photos', label: 'Photos' },
   { href: '/archive', label: 'Archive' },
-];
-
-const homeNavLinks = [
-  { href: '#details', label: 'Details' },
-  { href: '#travel', label: 'Travel' },
-  { href: '#faq', label: 'FAQ' },
 ];
 
 /**
@@ -22,11 +17,13 @@ const homeNavLinks = [
  * @property {boolean} isAdmin - Indicates if the current user is an administrator.
  * @property {() => void} handleLogout - Function to handle user logout.
  * @property {React.RefObject<HTMLElement | null>} headerRef - Ref to the header element for layout calculations.
+ * @property {AppConfig} config - The app config.
  */
 interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
+  config: AppConfig;
 }
 
 /**
@@ -37,9 +34,14 @@ interface NavbarProps {
  * @param {NavbarProps} props - The props for the component.
  * @returns {JSX.Element} The rendered Navbar component.
  */
-export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps) {
+export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const homeNavLinks = [];
+  if (config.showDetails !== false) homeNavLinks.push({ href: '/#details', label: 'Details' });
+  if (config.showTravel !== false) homeNavLinks.push({ href: '/#travel', label: 'Travel' });
+  if (config.showFaq !== false) homeNavLinks.push({ href: '/#faq', label: 'FAQ' });
 
   const allLinks =
     pathname === '/' ? [...navLinks, ...homeNavLinks] : navLinks;
@@ -76,11 +78,14 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
           </div>
           <div className="hidden md:block">
             {isAdmin && (
-              <div className="ml-4 flex items-center md:ml-6">
+              <div className="ml-4 flex items-center md:ml-6 space-x-4">
+                <Link href="/admin/dashboard" className="text-sm font-medium text-rose-600 dark:text-rose-400 hover:underline">
+                  Dashboard
+                </Link>
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
                 <button
                   onClick={handleLogout}
-                  className="ml-4 bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                  className="bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
                 >
                   Logout
                 </button>
@@ -130,10 +135,13 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
             ))}
             {isAdmin && (
               <div className="pt-4 pb-3 border-t border-gray-700">
-                <div className="flex items-center px-5">
-                  <div className="ml-3">
+                <div className="flex items-center px-5 justify-between">
+                  <div className="flex items-center">
                     <div className="text-base font-medium leading-none text-white">Admin Mode</div>
                   </div>
+                  <Link href="/admin/dashboard" className="text-sm font-medium text-rose-600 dark:text-rose-400 hover:underline">
+                    Dashboard
+                  </Link>
                 </div>
                 <div className="mt-3 px-2 space-y-1">
                   <button

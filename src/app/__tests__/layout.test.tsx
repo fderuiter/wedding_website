@@ -26,8 +26,14 @@ describe('RootLayoutClient', () => {
   it('handles admin logout', async () => {
     localStorage.setItem('isAdminLoggedIn', 'true');
 
+    const mockConfig = {
+      showDetails: true,
+      showTravel: true,
+      showFaq: true,
+    } as any;
+
     render(
-      <RootLayoutClient>
+      <RootLayoutClient config={mockConfig}>
         <div>Child content</div>
       </RootLayoutClient>
     );
