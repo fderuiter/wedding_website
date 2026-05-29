@@ -30,10 +30,14 @@ export async function getAppConfig() {
       storyText: 'Our story began...',
       venueDescription: 'A beautiful venue...',
       travelAdvice: 'Travel safely...',
+      heroTitle: 'We Tied the Knot!',
+      heroSubtitle: 'Thank you for celebrating with us!',
+      seoTitle: 'Our Wedding',
+      seoDescription: 'Join us to celebrate our wedding.',
       adminPassword: '',
       createdAt: new Date(),
       updatedAt: new Date(),
-    };
+    } as any;
   }
 }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
-import { WeddingPartyMember } from '@/data/wedding-party';
+import { WeddingPartyMember } from '@prisma/client';
 import { ExternalLink } from 'lucide-react';
 
 /**

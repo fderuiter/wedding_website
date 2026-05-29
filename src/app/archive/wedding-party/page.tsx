@@ -1,6 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import WeddingPartyList from '@/components/WeddingPartyList';
+import { prisma } from '@/lib/prisma';
 
 export const metadata: Metadata = {
   title: "Wedding Party",
@@ -18,13 +19,22 @@ export const metadata: Metadata = {
  *
  * @returns {JSX.Element} The rendered wedding party page.
  */
-export default function WeddingPartyPage() {
+export default async function WeddingPartyPage() {
+  let members: import('@prisma/client').WeddingPartyMember[] = [];
+  try {
+    members = await prisma.weddingPartyMember.findMany({
+      orderBy: { order: 'asc' },
+    });
+  } catch (error) {
+    console.warn("Database unreachable, using empty members array.");
+  }
+
   return (
     <main className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-rose-700 dark:text-rose-400">
         Wedding Party
       </h1>
-      <WeddingPartyList />
+      <WeddingPartyList members={members} />
     </main>
   );
 }

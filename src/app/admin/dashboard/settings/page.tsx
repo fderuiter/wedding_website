@@ -145,6 +145,16 @@ export default function AdminSettingsPage() {
 
         <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
           <h2 className="text-xl font-semibold mb-4">Narrative Content</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Hero Title</label>
+              <input required type="text" name="heroTitle" value={config.heroTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Hero Subtitle</label>
+              <input required type="text" name="heroSubtitle" value={config.heroSubtitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1">Our Story</label>
             <textarea required name="storyText" value={config.storyText} onChange={handleChange} rows={6} className="w-full p-2 border rounded text-black" />
@@ -156,6 +166,20 @@ export default function AdminSettingsPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Travel Advice</label>
             <textarea required name="travelAdvice" value={config.travelAdvice} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
+          </div>
+        </section>
+
+        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+          <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">SEO Title</label>
+              <input required type="text" name="seoTitle" value={config.seoTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">SEO Description</label>
+              <input required type="text" name="seoDescription" value={config.seoDescription || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
+            </div>
           </div>
         </section>
 

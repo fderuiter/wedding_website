@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { attractions } from '@/data/things-to-do';
 import ThingsToDoCard from './ThingsToDoCard';
+import { Attraction } from '@prisma/client';
 
 /**
  * An array of possible categories for attractions.
@@ -17,13 +17,17 @@ const categories = ['all', 'food', 'coffee', 'park', 'museum', 'hotel', 'venue']
  */
 type Category = typeof categories[number];
 
+interface ThingsToDoListProps {
+  attractions: Attraction[];
+}
+
 /**
  * @function ThingsToDoList
  * @description A React component that displays a list of "things to do" or attractions.
  * It includes a category filter and a map showing the locations of the attractions.
  * @returns {JSX.Element} The rendered ThingsToDoList component.
  */
-const ThingsToDoList: React.FC = () => {
+const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions }) => {
   const [filter, setFilter] = useState<Category>('all');
 
   const ThingsToDoMap = useMemo(() => dynamic(() => import('./ThingsToDoMap'), {

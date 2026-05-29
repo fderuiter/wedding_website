@@ -1,6 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
-import { Attraction } from '@/data/things-to-do';
+import { Attraction } from '@prisma/client';
 import { MapPin, Globe } from 'lucide-react';
 
 /**

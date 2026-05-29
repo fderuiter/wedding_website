@@ -1,8 +1,12 @@
 'use client';
 
 import React from 'react';
-import { weddingPartyMembers } from '@/data/wedding-party';
 import WeddingPartyCard from './WeddingPartyCard';
+import { WeddingPartyMember } from '@prisma/client';
+
+interface WeddingPartyListProps {
+  members: WeddingPartyMember[];
+}
 
 /**
  * @function WeddingPartyList
@@ -10,11 +14,11 @@ import WeddingPartyCard from './WeddingPartyCard';
  * It maps over the `weddingPartyMembers` data to render a card for each member.
  * @returns {JSX.Element} The rendered WeddingPartyList component.
  */
-const WeddingPartyList: React.FC = () => {
+const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members }) => {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-      {weddingPartyMembers.map((member) => (
-        <WeddingPartyCard key={member.name} member={member} />
+      {members.map((member) => (
+        <WeddingPartyCard key={member.id} member={member} />
       ))}
     </div>
   );
