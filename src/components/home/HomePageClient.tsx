@@ -34,6 +34,142 @@ export default function HomePageClient({ calendarEvent, config, contentNodes = [
   const faqs = contentNodes.filter(n => n.type === 'FAQ').map(n => n.data as { question?: string, answer?: string });
   const logisticsNodes = contentNodes.filter(n => n.type === 'Logistics').map(n => n.data as { title?: string, description?: string });
 
+  let features: any[] = [];
+  try {
+    if (typeof config.features === 'string') {
+      features = JSON.parse(config.features);
+    } else if (Array.isArray(config.features)) {
+      features = config.features;
+    }
+  } catch(e) {}
+
+  if (features.length === 0) {
+    features = [
+      { id: 'story', type: 'story', title: 'Our Story', visible: true },
+      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
+      { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+      { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+      { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+      { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
+    ];
+  }
+
+  const renderSection = (feature: any, index: number) => {
+    if (!feature.visible) return null;
+
+    switch (feature.type) {
+      case 'story':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-center text-4xl font-bold text-rose-700">{feature.title || 'Our Story'}</h2>
+            {config.storyText.split('\n\n').map((paragraph, i) => (
+              <p key={i} className="text-lg leading-relaxed">{paragraph}</p>
+            ))}
+          </motion.section>
+        );
+      case 'details':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-center text-4xl font-bold text-rose-700 mb-10">{feature.title || 'Wedding Day Details'}</h2>
+            <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
+              <div className="rounded-2xl border border-rose-100 dark:border-rose-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
+                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Wedding Ceremony</h3>
+                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
+                  <li>4:00&nbsp;pm</li>
+                  <li>{config.venueName} · {config.venueAddress}</li>
+                  <li>{config.venueCity}, {config.venueState}</li>
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
+                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Wedding Reception</h3>
+                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
+                  <li>Buffet dinner began at 5:30&nbsp;pm</li>
+                  <li>Cocktails with music if weather permitted</li>
+                  <li>Attire: Garden formal</li>
+                </ul>
+              </div>
+            </div>
+          </motion.section>
+        );
+      case 'accommodations':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-rose-700">{feature.title || `Accommodations in ${config.venueCity}, ${config.venueState}`}</h2>
+            <p className="mx-auto max-w-xl text-lg">{config.venueCity} offers plenty of places to stay for our wedding weekend. We opted not to reserve a block so you can choose what fits your style and budget. Your favorite booking site will have the best deals for hotels in {config.venueCity}.</p>
+          </motion.section>
+        );
+      case 'venue':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-rose-700">{feature.title || 'About Our Venue'}</h2>
+            {config.venueDescription.split('\n\n').map((paragraph, i) => (
+              <p key={i} className="mx-auto max-w-xl text-lg">{paragraph}</p>
+            ))}
+          </motion.section>
+        );
+      case 'travel':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-rose-700">{feature.title || `Travel & Things to Do in ${config.venueCity}`}</h2>
+            {logisticsNodes.length > 0 ? (
+              logisticsNodes.map((node, i) => (
+                <div key={i} className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg mt-4 border border-rose-100 dark:border-rose-700">
+                  {node.title && <h3 className="font-semibold text-xl mb-2 text-rose-700">{node.title}</h3>}
+                  {node.description && <p className="text-lg">{node.description}</p>}
+                </div>
+              ))
+            ) : (
+              config.travelAdvice.split('\n\n').map((paragraph, i) => (
+                <p key={i} className="mx-auto max-w-xl text-lg mt-4">{paragraph}</p>
+              ))
+            )}
+          </motion.section>
+        );
+      case 'faq':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-center text-4xl font-bold text-rose-700">{feature.title || 'Questions You Probably Have'}</h2>
+            <div className="space-y-4 text-left">
+              {faqs.length > 0 ? (
+                faqs.map((faq, i) => (
+                  <div key={i}>
+                    <h3 className="font-semibold text-lg">{faq.question}</h3>
+                    <p>{faq.answer}</p>
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div>
+                    <h3 className="font-semibold text-lg">What is &quot;Garden Formal&quot;?</h3>
+                    <p>It means look nice, but maybe don&apos;t wear stilettos unless you enjoy aerating the lawn.</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
+                    <p>We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Is there parking available?</h3>
+                    <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.section>
+        );
+      case 'custom':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-center text-4xl font-bold text-rose-700">{feature.title}</h2>
+            {feature.content?.split('\n\n').map((paragraph: string, i: number) => (
+              <p key={i} className="text-lg leading-relaxed">{paragraph}</p>
+            ))}
+          </motion.section>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <>
       {/*
@@ -63,86 +199,9 @@ export default function HomePageClient({ calendarEvent, config, contentNodes = [
               </Link>
             </motion.div>
           </section>
-          <motion.section id="story" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={0}>
-            <h2 className="text-center text-4xl font-bold text-rose-700">Our Story</h2>
-            {config.storyText.split('\n\n').map((paragraph, index) => (
-              <p key={index} className="text-lg leading-relaxed">{paragraph}</p>
-            ))}
-          </motion.section>
-          <motion.section id="details" className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1}>
-            <h2 className="text-center text-4xl font-bold text-rose-700 mb-10">Wedding Day Details</h2>
-            <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
-              <div className="rounded-2xl border border-rose-100 dark:border-rose-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
-                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Wedding Ceremony</h3>
-                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>4:00&nbsp;pm</li>
-                  <li>{config.venueName} · {config.venueAddress}</li>
-                  <li>{config.venueCity}, {config.venueState}</li>
-                </ul>
-              </div>
-              <div className="rounded-2xl border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
-                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Wedding Reception</h3>
-                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>Buffet dinner began at 5:30&nbsp;pm</li>
-                  <li>Cocktails with music if weather permitted</li>
-                  <li>Attire: Garden formal</li>
-                </ul>
-              </div>
-            </div>
-          </motion.section>
-          <motion.section id="accommodations" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.5}>
-            <h2 className="text-4xl font-bold text-rose-700">Accommodations in {config.venueCity}, {config.venueState}</h2>
-            <p className="mx-auto max-w-xl text-lg">{config.venueCity} offers plenty of places to stay for our wedding weekend. We opted not to reserve a block so you can choose what fits your style and budget. Your favorite booking site will have the best deals for hotels in {config.venueCity}.</p>
-          </motion.section>
-          <motion.section id="venue" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.6}>
-            <h2 className="text-4xl font-bold text-rose-700">About Our Venue</h2>
-            {config.venueDescription.split('\n\n').map((paragraph, index) => (
-              <p key={index} className="mx-auto max-w-xl text-lg">{paragraph}</p>
-            ))}
-          </motion.section>
-          <motion.section id="travel" className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.7}>
-            <h2 className="text-4xl font-bold text-rose-700">Travel & Things to Do in {config.venueCity}</h2>
-            {logisticsNodes.length > 0 ? (
-              logisticsNodes.map((node, i) => (
-                <div key={i} className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg mt-4 border border-rose-100 dark:border-rose-700">
-                  {node.title && <h3 className="font-semibold text-xl mb-2 text-rose-700">{node.title}</h3>}
-                  {node.description && <p className="text-lg">{node.description}</p>}
-                </div>
-              ))
-            ) : (
-              config.travelAdvice.split('\n\n').map((paragraph, index) => (
-                <p key={index} className="mx-auto max-w-xl text-lg mt-4">{paragraph}</p>
-              ))
-            )}
-          </motion.section>
-          <motion.section id="faq" className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={1.9}>
-            <h2 className="text-center text-4xl font-bold text-rose-700">Questions You Probably Have</h2>
-            <div className="space-y-4 text-left">
-              {faqs.length > 0 ? (
-                faqs.map((faq, index) => (
-                  <div key={index}>
-                    <h3 className="font-semibold text-lg">{faq.question}</h3>
-                    <p>{faq.answer}</p>
-                  </div>
-                ))
-              ) : (
-                <>
-                  <div>
-                    <h3 className="font-semibold text-lg">What is &quot;Garden Formal&quot;?</h3>
-                    <p>It means look nice, but maybe don&apos;t wear stilettos unless you enjoy aerating the lawn.</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
-                    <p>We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-lg">Is there parking available?</h3>
-                    <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
-                  </div>
-                </>
-              )}
-            </div>
-          </motion.section>
+
+          {features.map((feature, index) => renderSection(feature, index + 3))}
+
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">
             <p>© {new Date().getFullYear()} {config.brideName} & {config.groomName} • Designed with ❤️ in {config.venueState}</p>
             <p>Stay tuned for more updates from our lives together!</p>
