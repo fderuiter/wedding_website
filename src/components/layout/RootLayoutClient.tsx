@@ -10,17 +10,13 @@ import Navbar from './Navbar';
 
 const queryClient = new QueryClient();
 
-import { AppConfig } from '@prisma/client';
-
 /**
  * @interface RootLayoutClientProps
  * @description Defines the props for the RootLayoutClient component.
  * @property {React.ReactNode} children - The child components to be rendered within the layout.
- * @property {AppConfig} config - The app config.
  */
 interface RootLayoutClientProps {
   children: React.ReactNode;
-  config: AppConfig;
 }
 
 /**
@@ -34,7 +30,6 @@ interface RootLayoutClientProps {
  */
 export default function RootLayoutClient({
   children,
-  config,
 }: RootLayoutClientProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
@@ -85,7 +80,6 @@ export default function RootLayoutClient({
           headerRef={headerRef}
           isAdmin={isAdmin}
           handleLogout={handleLogout}
-          config={config}
         />
       )}
       <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>

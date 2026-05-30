@@ -183,53 +183,6 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Feature Visibility Toggles</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {[
-              { label: 'Hero', name: 'showHero' },
-              { label: 'Story', name: 'showStory' },
-              { label: 'Details', name: 'showDetails' },
-              { label: 'Accommodations', name: 'showAccommodations' },
-              { label: 'Venue', name: 'showVenue' },
-              { label: 'Travel', name: 'showTravel' },
-              { label: 'FAQ', name: 'showFaq' },
-            ].map((toggle) => (
-              <div key={toggle.name} className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  id={toggle.name}
-                  name={toggle.name}
-                  checked={config[toggle.name]}
-                  onChange={(e) => setConfig({ ...config, [toggle.name]: e.target.checked })}
-                  className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor={toggle.name} className="font-medium text-gray-700 dark:text-gray-300">
-                  Show {toggle.label}
-                </label>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Social Media Links</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Facebook</label>
-              <input type="url" name="socialFacebook" value={config.socialFacebook || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" placeholder="https://facebook.com/..." />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Instagram</label>
-              <input type="url" name="socialInstagram" value={config.socialInstagram || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" placeholder="https://instagram.com/..." />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Twitter</label>
-              <input type="url" name="socialTwitter" value={config.socialTwitter || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" placeholder="https://twitter.com/..." />
-            </div>
-          </div>
-        </section>
-
         <div className="flex justify-end">
           <button
             type="submit"
