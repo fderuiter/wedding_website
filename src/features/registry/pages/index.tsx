@@ -1,55 +1,114 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
+import { useRouter } from 'next/navigation';
 
 import RegistryCard from '@/features/registry/components/RegistryCard';
 import Modal from '@/features/registry/components/Modal';
 import { CategoryFilter } from '@/features/registry/components/CategoryFilter';
 import { PriceRangeFilter } from '@/features/registry/components/PriceRangeFilter';
-import RegistryCardSkeleton from '@/features/registry/components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
-import { useRegistry } from '@/features/registry/hooks/useRegistry';
+import { RegistryItem } from '@/features/registry/types';
+import { deleteRegistryItem, contributeToRegistryItem } from '@/features/registry/actions';
 
-/**
- * @page RegistryPage
- * @description The main page component for the wedding registry.
- *
- * This component displays the list of registry items, allowing users to browse, filter,
- * and search for gifts. It integrates `useRegistry` to manage state and API interactions,
- * including fetching items, handling contributions, and managing admin actions (edit/delete).
- * It features infinite scrolling to load more items as the user scrolls down.
- *
- * @returns {JSX.Element} The rendered registry page.
- */
-export default function RegistryPage() {
-  const {
-    isLoading,
-    error,
-    selectedItem,
-    isModalOpen,
-    setVisibleItemsCount,
-    isAdmin,
-    filteredItems,
-    visibleItems,
-    categories,
-    minPrice,
-    maxPrice,
-    categoryFilter,
-    setCategoryFilter,
-    priceRange,
-    setPriceRange,
-    showGroupGiftsOnly,
-    setShowGroupGiftsOnly,
-    showAvailableOnly,
-    setShowAvailableOnly,
-    handleCardClick,
-    handleCloseModal,
-    handleEdit,
-    handleDelete,
-    handleContribute,
-  } = useRegistry();
+interface RegistryClientProps {
+  initialItems: RegistryItem[];
+  initialIsAdmin: boolean;
+}
+
+export default function RegistryClient({ initialItems, initialIsAdmin }: RegistryClientProps) {
+  const router = useRouter();
+  const [items, setItems] = useState<RegistryItem[]>(initialItems);
+  const isAdmin = initialIsAdmin;
+  
+  // Update state if initialItems change (e.g. via revalidation)
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [visibleItemsCount, setVisibleItemsCount] = useState(12);
+
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
+  const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
+  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach(item => set.add(item.category));
+    return Array.from(set).sort();
+  }, [items]);
+
+  const [minPrice, maxPrice] = useMemo(() => {
+    if (items.length === 0) return [0, 1000];
+    let min = items[0].price, max = items[0].price;
+    for (const item of items) {
+      if (item.price < min) min = item.price;
+      if (item.price > max) max = item.price;
+    }
+    return [Math.floor(min), Math.ceil(max)];
+  }, [items]);
+
+  useEffect(() => {
+    setPriceRange([minPrice, maxPrice]);
+  }, [minPrice, maxPrice]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter(item => {
+      const inCategory = categoryFilter.length === 0 || categoryFilter.includes(item.category);
+      const inPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
+      const isGroupGift = !showGroupGiftsOnly || item.isGroupGift;
+      const isAvailable = !showAvailableOnly || !item.purchased;
+      return inCategory && inPrice && isGroupGift && isAvailable;
+    });
+  }, [items, categoryFilter, priceRange, showGroupGiftsOnly, showAvailableOnly]);
+
+  const visibleItems = useMemo(() => {
+    return filteredItems.slice(0, visibleItemsCount);
+  }, [filteredItems, visibleItemsCount]);
+
+  const handleCardClick = useCallback((item: RegistryItem) => {
+    if (item.purchased) return;
+    setSelectedItem(item);
+    setIsModalOpen(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+    setSelectedItem(null);
+  }, []);
+
+  const handleEdit = useCallback((id: string) => {
+    router.push(`/registry/edit-item/${id}`);
+  }, [router]);
+
+  const handleDelete = useCallback((id: string) => {
+    if (window.confirm('Are you sure you want to delete this item?')) {
+      startTransition(async () => {
+        try {
+          await deleteRegistryItem(id);
+          alert('Item deleted successfully.');
+        } catch (e: any) {
+          alert(`Error deleting item: ${e.message}`);
+        }
+      });
+    }
+  }, []);
+
+  const handleContribute = useCallback(async (itemId: string, purchaserName: string, amount: number) => {
+    try {
+      await contributeToRegistryItem(itemId, purchaserName, amount);
+      handleCloseModal();
+      alert('Thank you for your contribution!');
+    } catch (error: any) {
+      throw new Error(error.message || 'Contribution failed');
+    }
+  }, [handleCloseModal]);
 
   const { ref, inView } = useInView({ threshold: 0, triggerOnce: false });
 
@@ -132,23 +191,12 @@ export default function RegistryPage() {
           </div>
         </div>
       </nav>
-      <AnimatePresence>
-        {error && (
-          <motion.p className="text-center text-red-500 mb-8 text-lg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            Error loading registry: {error instanceof Error ? error.message : String(error)}
-          </motion.p>
-        )}
-      </AnimatePresence>
+      {isPending && (
+        <p className="text-center text-rose-500 mb-8 text-lg animate-pulse">Updating registry...</p>
+      )}
 
-      {isLoading ? (
-        <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto">
-          {Array.from({ length: 12 }).map((_, index) => (
-            <RegistryCardSkeleton key={index} />
-          ))}
-        </div>
-      ) : (
-        <>
-          {visibleItems.length > 0 ? (
+      <>
+        {visibleItems.length > 0 ? (
             <motion.div
               className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
               variants={gridVariants}
@@ -175,10 +223,9 @@ export default function RegistryPage() {
               actionLabel="Clear Filters"
             />
           )}
-        </>
-      )}
+      </>
 
-      {visibleItems.length < filteredItems.length && !isLoading && (
+      {visibleItems.length < filteredItems.length && (
         <div ref={ref} className="text-center p-4 col-span-full">
           <p className="text-gray-500">Loading more gifts...</p>
         </div>
