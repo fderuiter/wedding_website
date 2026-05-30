@@ -72,6 +72,15 @@ jest.mock('@/lib/config', () => ({
     storyText: 'Our story began...',
     venueDescription: 'A beautiful venue...',
     travelAdvice: 'Travel safely...',
+    features: [
+      { id: 'hero', title: 'Hero', type: 'Hero', isVisible: true },
+      { id: 'story', title: 'Our Story', type: 'Story', isVisible: true },
+      { id: 'details', title: 'Details', type: 'Details', isVisible: true },
+      { id: 'accommodations', title: 'Accommodations', type: 'Accommodations', isVisible: true },
+      { id: 'venue', title: 'Venue', type: 'Venue', isVisible: true },
+      { id: 'travel', title: 'Travel', type: 'Travel', isVisible: true },
+      { id: 'faq', title: 'FAQ', type: 'FAQ', isVisible: true },
+    ]
   })
 }));
 

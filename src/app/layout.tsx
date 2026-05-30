@@ -2,6 +2,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { generateMetadata } from './metadata';
+import { getAppConfig } from "@/lib/config";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -23,18 +24,21 @@ export { generateMetadata };
  * @param {React.ReactNode} props.children - The child components to be rendered within the layout.
  * @returns {JSX.Element} The rendered root layout.
  */
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const config = await getAppConfig();
+  const features = Array.isArray(config.features) ? config.features : [];
+
   return (
     <html lang="en" className={`dark ${geist.variable}`}>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-800`}
       >
         <a href="#main-content" className="skip-link">Skip to main content</a>
-        <RootLayoutClient>{children}</RootLayoutClient>
+        <RootLayoutClient features={features}>{children}</RootLayoutClient>
       </body>
     </html>
   );

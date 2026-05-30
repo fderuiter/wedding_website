@@ -29,6 +29,7 @@ model AppConfig {
   seoTitle         String   @default("Our Wedding")
   seoDescription   String   @default("Join us to celebrate our wedding.")
   adminPassword    String   @default("$2b$10$Ep3/07xWd34e9/jV91KIn.u2L1xW5G5S3T.eP28j8/qX5x81A0xLq") // hashed "admin"
+  features         Json     @default("[]")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }

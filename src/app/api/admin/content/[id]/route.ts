@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { contentService } from '@/features/content/service';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 import { validateContentNodeInput } from '@/utils/validation';
 
@@ -13,13 +13,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const validationError = validateContentNodeInput(body);
     if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
-    const updatedNode = await prisma.contentNode.update({
-      where: { id },
-      data: {
-        type: body.type,
-        tags: body.tags,
-        data: body.data,
-      }
+    const updatedNode = await contentService.updateNode(id, {
+      type: body.type,
+      tags: body.tags,
+      data: body.data,
     });
     return NextResponse.json(updatedNode);
   } catch (error) {
@@ -33,9 +30,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params;
-    await prisma.contentNode.delete({
-      where: { id }
-    });
+    await contentService.deleteNode(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete content node' }, { status: 500 });

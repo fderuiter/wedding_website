@@ -14,9 +14,11 @@ const queryClient = new QueryClient();
  * @interface RootLayoutClientProps
  * @description Defines the props for the RootLayoutClient component.
  * @property {React.ReactNode} children - The child components to be rendered within the layout.
+ * @property {any[]} features - Array of site features from AppConfig
  */
 interface RootLayoutClientProps {
   children: React.ReactNode;
+  features?: any[];
 }
 
 /**
@@ -30,6 +32,7 @@ interface RootLayoutClientProps {
  */
 export default function RootLayoutClient({
   children,
+  features = [],
 }: RootLayoutClientProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
@@ -80,6 +83,7 @@ export default function RootLayoutClient({
           headerRef={headerRef}
           isAdmin={isAdmin}
           handleLogout={handleLogout}
+          features={features}
         />
       )}
       <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>

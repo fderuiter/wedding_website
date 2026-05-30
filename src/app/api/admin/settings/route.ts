@@ -40,6 +40,11 @@ export async function PUT(req: NextRequest) {
         storyText: data.storyText,
         venueDescription: data.venueDescription,
         travelAdvice: data.travelAdvice,
+        heroTitle: data.heroTitle,
+        heroSubtitle: data.heroSubtitle,
+        seoTitle: data.seoTitle,
+        seoDescription: data.seoDescription,
+        features: data.features,
       },
     });
 

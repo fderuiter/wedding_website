@@ -10,23 +10,19 @@ const navLinks = [
   { href: '/archive', label: 'Archive' },
 ];
 
-const homeNavLinks = [
-  { href: '#details', label: 'Details' },
-  { href: '#travel', label: 'Travel' },
-  { href: '#faq', label: 'FAQ' },
-];
-
 /**
  * @interface NavbarProps
  * @description Defines the props for the Navbar component.
  * @property {boolean} isAdmin - Indicates if the current user is an administrator.
  * @property {() => void} handleLogout - Function to handle user logout.
  * @property {React.RefObject<HTMLElement | null>} headerRef - Ref to the header element for layout calculations.
+ * @property {any[]} features - The list of site features.
  */
 interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
+  features?: any[];
 }
 
 /**
@@ -37,9 +33,16 @@ interface NavbarProps {
  * @param {NavbarProps} props - The props for the component.
  * @returns {JSX.Element} The rendered Navbar component.
  */
-export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps) {
+export default function Navbar({ isAdmin, handleLogout, headerRef, features = [] }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const homeNavLinks = features
+    .filter((f) => f.isVisible && f.id !== 'hero' && f.id !== 'story')
+    .map((f) => ({
+      href: `/#${f.id}`,
+      label: f.title || f.id.charAt(0).toUpperCase() + f.id.slice(1),
+    }));
 
   const allLinks =
     pathname === '/' ? [...navLinks, ...homeNavLinks] : navLinks;
@@ -78,6 +81,12 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
             {isAdmin && (
               <div className="ml-4 flex items-center md:ml-6">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
+                <Link
+                  href="/admin/dashboard"
+                  className="ml-4 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                >
+                  Dashboard
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="ml-4 bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
@@ -136,6 +145,13 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
                   </div>
                 </div>
                 <div className="mt-3 px-2 space-y-1">
+                  <Link
+                    href="/admin/dashboard"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-blue-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                  >
+                    Dashboard
+                  </Link>
                   <button
                     onClick={() => {
                       handleLogout();

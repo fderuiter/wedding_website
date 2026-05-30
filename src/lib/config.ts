@@ -1,5 +1,15 @@
 import { prisma } from './prisma';
 
+export const DEFAULT_FEATURES = [
+  { id: 'hero', title: 'Hero', type: 'Hero', isVisible: true },
+  { id: 'story', title: 'Our Story', type: 'Story', isVisible: true },
+  { id: 'details', title: 'Details', type: 'Details', isVisible: true },
+  { id: 'accommodations', title: 'Accommodations', type: 'Accommodations', isVisible: true },
+  { id: 'venue', title: 'Venue', type: 'Venue', isVisible: true },
+  { id: 'travel', title: 'Travel', type: 'Travel', isVisible: true },
+  { id: 'faq', title: 'FAQ', type: 'FAQ', isVisible: true },
+];
+
 export async function getAppConfig() {
   try {
     let config = await prisma.appConfig.findUnique({
@@ -8,8 +18,16 @@ export async function getAppConfig() {
 
     if (!config) {
       config = await prisma.appConfig.create({
-        data: { id: 'global' },
+        data: { id: 'global', features: DEFAULT_FEATURES },
       });
+    } else {
+      const currentFeatures = Array.isArray(config.features) ? config.features : [];
+      if (currentFeatures.length === 0) {
+        config = await prisma.appConfig.update({
+          where: { id: 'global' },
+          data: { features: DEFAULT_FEATURES },
+        });
+      }
     }
     return config;
   } catch (error) {
@@ -35,9 +53,11 @@ export async function getAppConfig() {
       seoTitle: 'Our Wedding',
       seoDescription: 'Join us to celebrate our wedding.',
       adminPassword: '',
+      features: DEFAULT_FEATURES,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any;
   }
 }
+
 
