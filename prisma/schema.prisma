@@ -28,16 +28,6 @@ model AppConfig {
   heroSubtitle     String   @default("Thank you for celebrating with us!")
   seoTitle         String   @default("Our Wedding")
   seoDescription   String   @default("Join us to celebrate our wedding.")
-  socialFacebook   String?
-  socialInstagram  String?
-  socialTwitter    String?
-  showHero         Boolean  @default(true)
-  showStory        Boolean  @default(true)
-  showDetails      Boolean  @default(true)
-  showAccommodations Boolean @default(true)
-  showVenue        Boolean  @default(true)
-  showTravel       Boolean  @default(true)
-  showFaq          Boolean  @default(true)
   adminPassword    String   @default("$2b$10$Ep3/07xWd34e9/jV91KIn.u2L1xW5G5S3T.eP28j8/qX5x81A0xLq") // hashed "admin"
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
