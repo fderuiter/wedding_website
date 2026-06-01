@@ -10,6 +10,7 @@ import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayloa
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+import { theme } from '@/styles/theme'
 
 /**
  * @function Sparkles
@@ -71,7 +72,7 @@ function Heart3D({ scale }: { scale: number }) {
   const gold = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#FFD700',
+        color: theme.colors.heartMaterial1 || '#f43f5e',
         metalness: 1,
         roughness: 0.2,
         envMapIntensity: 1.2,
@@ -84,7 +85,7 @@ function Heart3D({ scale }: { scale: number }) {
   const silver = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#C0C0C0',
+        color: theme.colors.heartMaterial2 || '#C0C0C0',
         metalness: 1,
         roughness: 0.25,
         envMapIntensity: 1.2,

@@ -3,6 +3,7 @@ import "./globals.css";
 import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { generateMetadata } from './metadata';
 import { getAppConfig } from "@/lib/config";
+import { theme } from "@/styles/theme";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -30,8 +31,21 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const config = await getAppConfig();
+  
+  // Inject theme variables so Tailwind v4 automatically picks them up
+  const themeVars = {
+    '--color-primary': theme?.colors?.primary || '#f43f5e',
+    '--color-secondary': theme?.colors?.secondary || '#fbbf24',
+    '--color-accent-from': theme?.colors?.accent || theme?.colors?.primary || '#f43f5e',
+    '--color-accent-to': theme?.colors?.secondary || '#fbbf24',
+    '--color-text-on-primary': theme?.colors?.textOnPrimary || '#ffffff',
+    '--color-text-on-secondary': theme?.colors?.textOnSecondary || '#1f2937',
+    '--background': theme?.colors?.background || '#111827',
+    '--foreground': theme?.colors?.text || '#f9fafb',
+  } as React.CSSProperties;
+
   return (
-    <html lang="en" className={`dark ${geist.variable}`}>
+    <html lang="en" className={`dark ${geist.variable}`} style={themeVars}>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-800`}
       >

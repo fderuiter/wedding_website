@@ -1,7 +1,5 @@
-/**
- * @type {import('tailwindcss').Config}
- */
 import type { Config } from 'tailwindcss'
+import { theme } from './src/styles/theme'
 
 /**
  * @description Tailwind CSS configuration object.
@@ -18,13 +16,16 @@ const config: Config = {
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/features/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {
       colors: {
-        'accent-from': '#f43f5e',
-        'accent-to': '#fbbf24',
-        'text-on-primary': '#ffffff',
+        'accent-from': theme.colors.primary,
+        'accent-to': theme.colors.secondary,
+        'text-on-primary': theme.colors.textOnPrimary,
+        primary: theme.colors.primary,
+        secondary: theme.colors.secondary,
       },
     },
   },

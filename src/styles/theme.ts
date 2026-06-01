@@ -27,6 +27,10 @@ interface ThemeConfig {
     textOnSecondary: string;
     /** Additional accent color. */
     accent: string;
+    /** Primary material color for the 3D heart. */
+    heartMaterial1: string;
+    /** Secondary material color for the 3D heart. */
+    heartMaterial2: string;
   };
   /**
    * Gradient definitions for the application.
@@ -46,22 +50,24 @@ interface ThemeConfig {
  * @description The main theme configuration object containing color and gradient definitions.
  * This is used to maintain design consistency across the application.
  */
-export const theme: ThemeConfig = {
+export const theme = {
   colors: {
-    primary: '#B91C1C', // Darker red for better contrast
-    secondary: '#B8860B', // Darker gold for better contrast
-    primaryLight: '#FCA5A5', // Light red for backgrounds
-    secondaryLight: '#FFE066', // Light gold for backgrounds
-    background: '#FFFFFF',
-    text: '#171717', // Very dark gray for main text
-    textOnPrimary: '#FFFFFF', // White text on primary backgrounds
-    textOnSecondary: '#171717', // Dark text on secondary backgrounds
-    accent: '#FFD700'
+    primary: '#f43f5e',
+    secondary: '#fbbf24',
+    primaryLight: '#ffe4e6', // rose-100
+    secondaryLight: '#fef3c7', // amber-100
+    background: '#111827', // gray-900
+    text: '#f9fafb', // gray-50
+    textOnPrimary: '#ffffff',
+    textOnSecondary: '#1f2937',
+    accent: '#f43f5e',
+    heartMaterial1: '#f43f5e',
+    heartMaterial2: '#C0C0C0'
   },
   gradients: {
-    primary: 'from-red-700 to-yellow-600',
-    secondary: 'from-yellow-600 to-red-700',
-    background: 'from-red-50 to-yellow-50'
+    primary: 'from-rose-500 to-amber-400',
+    secondary: 'from-amber-400 to-rose-500',
+    background: 'from-gray-900 to-gray-800'
   }
 };
 

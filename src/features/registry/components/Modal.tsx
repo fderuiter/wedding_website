@@ -163,7 +163,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
           </a>
         )}
         {!item.purchased ? (
-          <div className="mt-5 pt-4 border-t border-rose-100">
+          <div className="mt-5 pt-4 border-t border-primary dark:border-primary">
             <h3 className="font-semibold text-lg mb-3 text-rose-700">
               {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
             </h3>
@@ -222,7 +222,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             </button>
           </div>
         ) : (
-          <div className="mt-5 pt-4 border-t border-rose-100 text-center">
+          <div className="mt-5 pt-4 border-t border-primary dark:border-primary text-center">
             <p className="text-xl font-semibold text-green-600">
               {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
             </p>
