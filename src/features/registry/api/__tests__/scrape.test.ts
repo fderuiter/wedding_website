@@ -4,6 +4,21 @@ import { POST } from '@/app/api/registry/scrape/route';
 import ogs from 'open-graph-scraper';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
+// Mock puppeteer and chromium BEFORE any imports that might trigger loading them
+jest.mock('puppeteer-core', () => ({
+  launch: jest.fn().mockResolvedValue({
+    newPage: jest.fn().mockResolvedValue({
+      goto: jest.fn().mockResolvedValue(null),
+      evaluate: jest.fn().mockResolvedValue({ dynImage: '', dynName: '', dynPrice: null }),
+    }),
+    close: jest.fn().mockResolvedValue(null),
+  }),
+}));
+jest.mock('@sparticuz/chromium', () => ({
+  args: [],
+  executablePath: jest.fn(),
+}));
+
 // Mock open-graph-scraper
 jest.mock('open-graph-scraper');
 // Mock admin auth
