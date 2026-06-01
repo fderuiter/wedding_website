@@ -120,7 +120,7 @@ export default function AdminPreviewLayout({
                     </button>
                     <button 
                       onClick={() => handleRestore(v.id)}
-                      className="px-3 py-1 bg-rose-600 text-white rounded text-sm"
+                      className="px-3 py-1 bg-primary text-white rounded text-sm"
                     >
                       Restore
                     </button>
@@ -141,7 +141,7 @@ export default function AdminPreviewLayout({
         {/* Visual Indicator */}
         <div className="absolute top-4 right-4 z-20">
           <span className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${
-            viewState === 'Draft' ? 'bg-amber-500' : 
+            viewState === 'Draft' ? 'bg-secondary' : 
             viewState === 'Historical' ? 'bg-purple-600' : 'bg-green-600'
           }`}>
             {viewState} Preview

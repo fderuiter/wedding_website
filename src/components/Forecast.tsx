@@ -51,7 +51,7 @@ const getWeatherDescription = (code: number): string => {
  * @returns {React.ReactElement} A Lucide React icon component representing the weather.
  */
 const getWeatherIcon = (code: number): React.ReactElement => {
-    if (code <= 1) return <Sun className="text-amber-400" size={64} />;
+    if (code <= 1) return <Sun className="text-secondary" size={64} />;
     if (code <= 3) return <Cloud className="text-gray-400" size={64} />;
     if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return <CloudRain className="text-blue-400" size={64} />;
     if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return <CloudSnow className="text-sky-300" size={64} />;

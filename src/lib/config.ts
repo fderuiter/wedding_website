@@ -35,6 +35,9 @@ export async function getAppConfig() {
       seoTitle: "Abbigayle & Frederick's Wedding",
       seoDescription: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
       adminPassword: '',
+      themePrimary: '#f43f5e',
+      themeSecondary: '#fbbf24',
+      themeAccent: '#e11d48',
       features: [
         { id: 'story', type: 'story', title: 'Our Story', visible: true },
         { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
