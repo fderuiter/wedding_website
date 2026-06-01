@@ -76,9 +76,9 @@ export default function RegistryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-100 selection:text-rose-900 dark:selection:bg-rose-800 pb-32 px-2 sm:px-4">
+    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-primary dark:selection:bg-primary pb-32 px-2 sm:px-4">
       <motion.h1
-        className="text-5xl font-extrabold text-center mb-12 pt-12 text-rose-700 tracking-tight drop-shadow-lg"
+        className="text-5xl font-extrabold text-center mb-12 pt-12 text-primary tracking-tight drop-shadow-lg"
         initial={{ opacity: 0, y: -30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7 }}
@@ -88,7 +88,7 @@ export default function RegistryPage() {
         Wedding Registry
       </motion.h1>
       <nav
-        className="sticky top-0 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-rose-100 dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+        className="sticky top-0 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
         aria-label="Registry Filters"
         role="navigation"
       >
@@ -112,7 +112,7 @@ export default function RegistryPage() {
               id="group-gifts-only"
               checked={showGroupGiftsOnly}
               onChange={(e) => setShowGroupGiftsOnly(e.target.checked)}
-              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none focus-visible:ring-offset-2"
+              className="h-4 w-4 text-primary border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
             />
             <label htmlFor="group-gifts-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
               Show only group gifts
@@ -124,7 +124,7 @@ export default function RegistryPage() {
               id="available-only"
               checked={showAvailableOnly}
               onChange={(e) => setShowAvailableOnly(e.target.checked)}
-              className="h-4 w-4 text-rose-600 border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none focus-visible:ring-offset-2"
+              className="h-4 w-4 text-primary border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
             />
             <label htmlFor="available-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
               Show only available gifts
@@ -198,7 +198,7 @@ export default function RegistryPage() {
             <div className="absolute top-4 right-4 z-50">
               <button
                 onClick={handleCloseModal}
-                className="bg-white dark:bg-gray-800 rounded-full p-2 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                className="bg-white dark:bg-gray-800 rounded-full p-2 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary"
                 aria-label="Close modal"
                 tabIndex={0}
               >

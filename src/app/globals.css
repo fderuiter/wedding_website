@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "../../node_modules/keen-slider/keen-slider.min.css";
 
+@theme {
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-accent: var(--color-accent);
+}
+
 :root {
   --background: #111827; /* gray-900 */
   --foreground: #f9fafb; /* gray-50 */

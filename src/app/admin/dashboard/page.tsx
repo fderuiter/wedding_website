@@ -45,14 +45,14 @@ export default function AdminDashboardPage() {
   if (loading) return (
     // Updated background
     <main className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)]">
-      <h1 className="text-3xl font-bold mb-4 text-rose-700">Admin Dashboard</h1>
+      <h1 className="text-3xl font-bold mb-4 text-primary">Admin Dashboard</h1>
       <p className="text-lg text-gray-500">Loading items...</p>
     </main>
   );
   if (error) return (
     // Updated background
     <main className="min-h-screen flex items-center justify-center bg-[var(--color-background)] text-[var(--color-foreground)]">
-      <h1 className="text-3xl font-bold mb-4 text-rose-700">Admin Dashboard</h1>
+      <h1 className="text-3xl font-bold mb-4 text-primary">Admin Dashboard</h1>
       <p className="text-red-500 text-lg">Error: {error}</p>
     </main>
   );
@@ -63,35 +63,35 @@ export default function AdminDashboardPage() {
       <div className="max-w-5xl mx-auto">
         {/* Updated heading color */}
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-extrabold text-rose-700 tracking-tight drop-shadow-lg">Admin Dashboard</h1>
+          <h1 className="text-4xl font-extrabold text-primary tracking-tight drop-shadow-lg">Admin Dashboard</h1>
           <div className="space-x-4 flex items-center flex-wrap gap-y-2">
             <a href="/admin/dashboard/site-manager" className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Visual Site Manager</a>
             <a href="/admin/dashboard/wedding-party" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Wedding Party</a>
             <a href="/admin/dashboard/attractions" className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Attractions</a>
-            <a href="/admin/dashboard/content" className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 transition">Manage Content</a>
-            <a href="/admin/dashboard/settings" className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition">Site Settings</a>
+            <a href="/admin/dashboard/content" className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary transition">Manage Content</a>
+            <a href="/admin/dashboard/settings" className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Site Settings</a>
           </div>
         </div>
         {/* Responsive Table for Desktop, Cards for Mobile */}
         <div className="hidden md:block">
           {/* Updated table container styles */}
-          <div className="overflow-x-auto rounded-xl shadow-lg bg-white dark:bg-gray-800 border border-rose-100 dark:border-gray-700">
+          <div className="overflow-x-auto rounded-xl shadow-lg bg-white dark:bg-gray-800 border border-primary dark:border-gray-700">
             {/* Updated table styles */}
-            <table className="min-w-full divide-y divide-rose-100">
+            <table className="min-w-full divide-y divide-primary">
               {/* Updated table header styles */}
-              <thead className="sticky top-0 z-10 bg-rose-50 backdrop-blur border-b border-rose-200">
+              <thead className="sticky top-0 z-10 bg-primary/10 backdrop-blur border-b border-primary">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-rose-800 uppercase tracking-wider">Item</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-rose-800 uppercase tracking-wider">Price</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-rose-800 uppercase tracking-wider">Claimed/Funded</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-rose-800 uppercase tracking-wider">Contributions</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-rose-800 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-primary uppercase tracking-wider">Item</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-primary uppercase tracking-wider">Price</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-primary uppercase tracking-wider">Claimed/Funded</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-primary uppercase tracking-wider">Contributions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-primary uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               {/* Updated table body styles */}
-              <tbody className="divide-y divide-rose-100">
+              <tbody className="divide-y divide-primary">
                 {items.map((item) => (
-                  <tr key={item.id} className="hover:bg-rose-50/50 transition">
+                  <tr key={item.id} className="hover:bg-primary/10/50 transition">
                     <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{item.name}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">${item.price.toFixed(2)}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{item.purchased ? "Yes" : "No"}</td>
@@ -111,14 +111,14 @@ export default function AdminDashboardPage() {
                     <td className="px-4 py-3 space-x-2">
                       <button
                         // Updated Edit button (amber)
-                        className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-300"
+                        className="bg-secondary hover:bg-secondary text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-secondary"
                         onClick={() => router.push(`/registry/edit-item/${item.id}`)}
                       >
                         Edit
                       </button>
                       <button
                         // Updated Delete button (rose)
-                        className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-300"
+                        className="bg-primary hover:bg-primary text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
                         onClick={async () => {
                           if (!confirm('Are you sure you want to delete this item?')) return;
                           try {
@@ -144,10 +144,10 @@ export default function AdminDashboardPage() {
         <div className="md:hidden space-y-6">
           {items.map((item) => (
             // Updated card styles
-            <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-rose-100 dark:border-gray-700">
+            <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-primary dark:border-gray-700">
               <div className="flex justify-between items-center mb-2">
                 {/* Updated item name color */}
-                <span className="font-bold text-lg text-rose-700">{item.name}</span>
+                <span className="font-bold text-lg text-primary">{item.name}</span>
                 <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">${item.price.toFixed(2)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-xs mb-1">
@@ -170,14 +170,14 @@ export default function AdminDashboardPage() {
               <div className="flex gap-2 mt-2">
                 <button
                   // Updated Edit button (amber)
-                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  className="flex-1 bg-secondary hover:bg-secondary text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-secondary"
                   onClick={() => router.push(`/registry/edit-item/${item.id}`)}
                 >
                   Edit
                 </button>
                 <button
                   // Updated Delete button (rose)
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-300"
+                  className="flex-1 bg-primary hover:bg-primary text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
                   onClick={async () => {
                     if (!confirm('Are you sure you want to delete this item?')) return;
                     try {
@@ -199,7 +199,7 @@ export default function AdminDashboardPage() {
         <div className="mt-10 flex justify-center">
           <button
             // Updated Add New Item button (gradient)
-            className="bg-gradient-to-r from-rose-700 to-amber-500 hover:from-amber-500 hover:to-rose-700 text-white px-6 py-3 rounded-lg text-base font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-rose-300"
+            className="bg-gradient-to-r from-primary to-secondary hover:from-secondary hover:to-primary text-white px-6 py-3 rounded-lg text-base font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-primary"
             onClick={() => router.push('/registry/add-item')}
           >
             Add New Item
