@@ -82,7 +82,8 @@ export async function POST(request: Request) {
     }
     
     // Heuristic Check: Are we missing critical data?
-    const isAmazonDomain = new URL(url).hostname.includes('amazon.com');
+    const hostname = new URL(url).hostname.toLowerCase();
+    const isAmazonDomain = hostname === 'amazon.com' || hostname.endsWith('.amazon.com');
     // If it's a typical static site that provides name and image, but no price, we might skip headless to save resources,
     // but the prompt implies price is critical. So we will require price, but allow exceptions if it's explicitly Amazon where price is harder to grab without rendering?
     // Actually, Amazon price requires rendering most of the time. Let's just say we require name, image, and price.
