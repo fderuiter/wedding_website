@@ -33,10 +33,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'URL is required and must be a string' }, { status: 400 });
     }
 
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json({ error: 'Only HTTP(S) URLs are allowed' }, { status: 400 });
+    }
+
+    if (isPrivateUrl(parsedUrl.toString())) {
+      return NextResponse.json({ error: 'Private or internal URLs are not allowed' }, { status: 400 });
     }
 
     // SSRF Protection: Ensure URL does not point to a private IP
