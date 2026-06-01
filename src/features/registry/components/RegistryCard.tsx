@@ -50,7 +50,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     <div
       className={cardClasses}
       onClick={isClickable ? () => onClick(item) : undefined}
-      style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 340 }}
+      style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' }}
       data-testid="registry-card"
       tabIndex={isClickable ? 0 : -1}
       aria-label={`${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`}
@@ -66,7 +66,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full h-56"> {/* Added a wrapper for layout */}
+      <div className="relative w-full" style={{ height: 'calc(224px * var(--scale-factor))' }}> {/* Added a wrapper for layout */}
         <Image
           src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing
           alt={item.name}

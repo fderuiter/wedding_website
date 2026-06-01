@@ -95,7 +95,11 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
   return (
     <div
       ref={sliderRef}
-      className="keen-slider aspect-square w-full max-w-lg mx-auto rounded-lg overflow-hidden shadow-lg"
+      className="keen-slider aspect-square mx-auto rounded-lg overflow-hidden shadow-lg"
+      style={{
+        width: 'calc(600px * var(--scale-factor))',
+        maxWidth: '100%'
+      }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
@@ -104,13 +108,13 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
       aria-label="Image gallery"
     >
       {images.map((img, idx) => (
-        <div className="keen-slider__slide" key={idx}>
+        <div className="keen-slider__slide relative" key={idx}>
           <Image
             src={img.src}
             alt={img.alt}
-            width={600}
-            height={600}
-            className="object-cover w-full h-full"
+            fill
+            sizes="calc(600px * var(--scale-factor))"
+            className="object-cover"
             placeholder="blur"
             blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
             priority={idx === 0}
