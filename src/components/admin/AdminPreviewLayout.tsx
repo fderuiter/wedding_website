@@ -120,7 +120,7 @@ export default function AdminPreviewLayout({
                     </button>
                     <button 
                       onClick={() => handleRestore(v.id)}
-                      className="px-3 py-1 bg-rose-600 text-white rounded text-sm"
+                      className="px-3 py-1 bg-primary-600 text-white rounded text-sm"
                     >
                       Restore
                     </button>

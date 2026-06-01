@@ -31,7 +31,7 @@ export default async function ThingsToDoPage() {
 
   return (
     <main className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold text-center mb-8 text-rose-700 dark:text-rose-400">
+      <h1 className="text-4xl font-bold text-center mb-8 text-primary-700 dark:text-primary-400">
         Things to Do in City
       </h1>
       <ThingsToDoList attractions={attractions} />

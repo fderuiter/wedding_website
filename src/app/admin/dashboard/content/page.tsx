@@ -168,19 +168,19 @@ export default function ContentDashboardPage() {
     >
       <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-extrabold text-rose-700">Content Hub</h1>
+          <h1 className="text-3xl font-extrabold text-primary-700">Content Hub</h1>
           <div>
             <button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Registry</button>
             <button onClick={() => { 
               setCurrentNode({ type: 'FAQ', tags: ['Homepage'] }); 
               setDynamicData([{key: 'question', value: ''}, {key: 'answer', value: ''}]); 
               setIsEditing(true); 
-            }} className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition">Add New Content</button>
+            }} className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 transition">Add New Content</button>
           </div>
         </div>
 
         {isEditing && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-rose-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary-100 dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">{currentNode.id ? 'Edit' : 'Create'} Content Node</h2>
             <div className="grid gap-4 mb-4">
               <div>
@@ -217,7 +217,7 @@ export default function ContentDashboardPage() {
 
         <div className="grid gap-4 pb-10">
           {nodes.map(node => (
-            <div key={node.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-rose-100 flex justify-between items-center">
+            <div key={node.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary-100 flex justify-between items-center">
               <div>
                 <div className="font-bold text-lg">{node.type} <span className="text-sm font-normal text-gray-500">({node.tags.join(', ')})</span></div>
                 <div className="text-sm mt-1 text-gray-700 dark:text-gray-300">
@@ -231,7 +231,7 @@ export default function ContentDashboardPage() {
                   setDynamicData(Object.keys(d).map(k => ({key: k, value: String(d[k])})));
                   setIsEditing(true); 
                 }} className="bg-amber-500 text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(node.id)} className="bg-rose-600 text-white px-3 py-1 rounded text-sm">Delete</button>
+                <button onClick={() => handleDelete(node.id)} className="bg-primary-600 text-white px-3 py-1 rounded text-sm">Delete</button>
               </div>
             </div>
           ))}

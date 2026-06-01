@@ -81,14 +81,14 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     <div>
       {timerComponents.length ? (
         <div
-          className="text-2xl font-bold text-rose-700 dark:text-rose-400"
+          className="text-2xl font-bold text-primary-700 dark:text-primary-400"
           role="timer"
           aria-atomic="true"
         >
           {timerComponents} to go!
         </div>
       ) : (
-        <span className="text-2xl font-bold text-rose-700 dark:text-rose-400">
+        <span className="text-2xl font-bold text-primary-700 dark:text-primary-400">
           The wedding day is here!
         </span>
       )}
@@ -96,7 +96,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
         {screenReaderText}
       </span>
       <noscript>
-        <div className="text-2xl font-bold text-rose-700 dark:text-rose-400">
+        <div className="text-2xl font-bold text-primary-700 dark:text-primary-400">
           {weddingDate.toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'long',

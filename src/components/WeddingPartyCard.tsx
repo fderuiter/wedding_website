@@ -33,7 +33,7 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
         />
       </div>
       <div className="p-6">
-        <h3 className="text-2xl font-bold text-rose-700 dark:text-rose-400 mb-2">{member.name}</h3>
+        <h3 className="text-2xl font-bold text-primary-700 dark:text-primary-400 mb-2">{member.name}</h3>
         <p className="text-lg font-medium text-gray-600 dark:text-gray-300 mb-4">{member.role}</p>
         <p className="text-base text-gray-700 dark:text-gray-400 mb-4">{member.bio}</p>
         {member.link && (
@@ -41,7 +41,7 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
             href={member.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-200 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+            className="inline-flex items-center text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
             aria-label={`Learn more about ${member.name}`}
           >
             Learn more <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />

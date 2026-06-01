@@ -10,6 +10,7 @@ import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayloa
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+import { useTheme, ThemeName } from '@/components/ThemeProvider'
 
 /**
  * @function Sparkles
@@ -20,6 +21,7 @@ import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
  * @returns {JSX.Element} The rendered sparkles component.
  */
 function Sparkles({ count = 200 }: { count?: number }) {
+  const { theme } = useTheme()
   const pointsRef = useRef<THREE.Points>(null!)
   const positions = useMemo(
     () => inSphere(new Float32Array(count * 3), { radius: 10 }) as Float32Array,
@@ -34,7 +36,7 @@ function Sparkles({ count = 200 }: { count?: number }) {
 
   return (
     <Points ref={pointsRef} positions={positions} stride={3} frustumCulled={false}>
-      <PointMaterial transparent color="#ffa0e0" size={0.1} sizeAttenuation={true} depthWrite={false} />
+      <PointMaterial transparent color={theme.colors.sparkles} size={0.1} sizeAttenuation={true} depthWrite={false} />
     </Points>
   )
 }
@@ -49,6 +51,7 @@ function Sparkles({ count = 200 }: { count?: number }) {
  * @returns {JSX.Element} The rendered 3D heart component.
  */
 function Heart3D({ scale }: { scale: number }) {
+  const { theme } = useTheme()
   const geom = useMemo(() => {
     const s = new THREE.Shape()
     s.moveTo(0, -1.4)
@@ -71,27 +74,27 @@ function Heart3D({ scale }: { scale: number }) {
   const gold = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#FFD700',
+        color: theme.colors.materialPrimary,
         metalness: 1,
         roughness: 0.2,
         envMapIntensity: 1.2,
         clippingPlanes: [planeLeft],
         clipShadows: true,
       }),
-    [planeLeft],
+    [planeLeft, theme.colors.materialPrimary],
   )
 
   const silver = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#C0C0C0',
+        color: theme.colors.materialSecondary,
         metalness: 1,
         roughness: 0.25,
         envMapIntensity: 1.2,
         clippingPlanes: [planeRight],
         clipShadows: true,
       }),
-    [planeRight],
+    [planeRight, theme.colors.materialSecondary],
   )
 
   return (
@@ -375,6 +378,7 @@ function ScreenBounds() {
  * @returns {JSX.Element} The rendered HeartPage component.
  */
 export default function HeartPage() {
+  const { theme, setTheme } = useTheme()
   const [interacted, setInteracted] = useState(false)
   const [scale, setScale] = useState(0.6)
   const [resetKey, setResetKey] = useState(0)
@@ -398,14 +402,23 @@ export default function HeartPage() {
   return (
     <div className="fixed inset-0 bg-black select-none">
       <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
+        <select 
+          value={theme.name}
+          onChange={(e) => setTheme(e.target.value as ThemeName)}
+          className="rounded bg-white/80 px-3 py-1 text-sm text-black hover:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+        >
+          <option value="rose">Rose Theme</option>
+          <option value="gold">Gold Theme</option>
+          <option value="silver">Silver Theme</option>
+        </select>
         <button
           onClick={handleReset}
-          className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white"
+          className="rounded bg-white/80 px-3 py-1 text-sm text-black hover:bg-white"
           aria-label="Reset heart"
         >
           Reset
         </button>
-        <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
+        <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm text-black hover:bg-white">
           Back Home
         </Link>
       </div>

@@ -32,14 +32,14 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
         />
       </div>
       <div className="p-6 flex flex-col flex-grow">
-        <h3 className="text-2xl font-bold mb-2 text-rose-800 dark:text-rose-300">{attraction.name}</h3>
+        <h3 className="text-2xl font-bold mb-2 text-primary-800 dark:text-primary-300">{attraction.name}</h3>
         <p className="text-gray-600 dark:text-gray-400 mb-4 flex-grow">{attraction.description}</p>
         <div className="mt-auto flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
           <a
             href={attraction.website}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-200 transition-colors"
+            className="flex items-center text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 transition-colors"
           >
             <Globe size={18} className="mr-2" />
             Website
@@ -48,7 +48,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
             href={attraction.directions}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-200 transition-colors"
+            className="flex items-center text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 transition-colors"
           >
             <MapPin size={18} className="mr-2" />
             Directions

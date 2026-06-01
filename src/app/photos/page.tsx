@@ -58,7 +58,7 @@ export default async function PhotosPage() {
   return (
     <main className="container mx-auto px-4 py-8">
       <Script src="https://cdn.jsdelivr.net/npm/publicalbum@latest/embed-ui.min.js" async />
-      <h1 className="text-4xl font-bold text-center mb-8 text-rose-700 dark:text-rose-400">
+      <h1 className="text-4xl font-bold text-center mb-8 text-primary-700 dark:text-primary-400">
         Our Wedding Photos
       </h1>
       <p className="text-center text-lg mb-12">
@@ -74,7 +74,7 @@ export default async function PhotosPage() {
       </div>
       <div className="flex justify-center mt-12">
         <Link href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
-          target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
+          target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary-700 to-amber-500 px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
             View Full Album
             <Camera className="w-5 h-5" />
         </Link>

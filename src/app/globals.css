@@ -1,17 +1,49 @@
 @import "tailwindcss";
 @import "../../node_modules/keen-slider/keen-slider.min.css";
 
-:root {
-  --background: #111827; /* gray-900 */
-  --foreground: #f9fafb; /* gray-50 */
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: #f43f5e; /* rose-500 for better contrast */
-  --color-secondary: #fbbf24; /* amber-400 */
-  --color-accent-from: #f43f5e;
-  --color-accent-to: #fbbf24;
+@theme {
+  --color-background: var(--theme-background);
+  --color-foreground: var(--theme-foreground);
+
+  --color-primary-50: var(--theme-primary-50);
+  --color-primary-100: var(--theme-primary-100);
+  --color-primary-200: var(--theme-primary-200);
+  --color-primary-300: var(--theme-primary-300);
+  --color-primary-400: var(--theme-primary-400);
+  --color-primary-500: var(--theme-primary-500);
+  --color-primary-600: var(--theme-primary-600);
+  --color-primary-700: var(--theme-primary-700);
+  --color-primary-800: var(--theme-primary-800);
+  --color-primary-900: var(--theme-primary-900);
+  --color-primary-950: var(--theme-primary-950);
+
+  --color-accent-from: var(--theme-primary-500);
+  --color-accent-to: var(--theme-secondary-400);
+
   --color-text-on-primary: #ffffff;
-  --color-text-on-secondary: #1f2937; /* gray-800 */
+  --color-text-on-secondary: #1f2937;
+}
+
+:root {
+  --theme-background: #111827; 
+  --theme-foreground: #f9fafb; 
+  
+  --theme-primary-50: #fff1f2;
+  --theme-primary-100: #ffe4e6;
+  --theme-primary-200: #fecdd3;
+  --theme-primary-300: #fda4af;
+  --theme-primary-400: #fb7185;
+  --theme-primary-500: #f43f5e;
+  --theme-primary-600: #e11d48;
+  --theme-primary-700: #be123c;
+  --theme-primary-800: #9f1239;
+  --theme-primary-900: #881337;
+  --theme-primary-950: #4c0519;
+
+  --theme-secondary-400: #fbbf24;
+
+  --color-background: var(--theme-background);
+  --color-foreground: var(--theme-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --header-h: 56px; /* Height of sticky header */
@@ -29,8 +61,8 @@ input, textarea, select {
   border-color: #4b5563; /* gray-600 */
 }
 input:focus, textarea:focus, select:focus {
-  border-color: var(--color-primary); /* rose-700 */
-  outline-color: var(--color-primary);
+  border-color: var(--color-primary-600); /* rose-700 */
+  outline-color: var(--color-primary-600);
 }
 
 

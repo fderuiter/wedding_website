@@ -3,6 +3,7 @@ import "./globals.css";
 import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { generateMetadata } from './metadata';
 import { getAppConfig } from "@/lib/config";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -33,10 +34,12 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`dark ${geist.variable}`}>
       <body
-        className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-800`}
+        className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary-800`}
       >
         <a href="#main-content" className="skip-link">Skip to main content</a>
-        <RootLayoutClient config={config}>{children}</RootLayoutClient>
+        <ThemeProvider>
+          <RootLayoutClient config={config}>{children}</RootLayoutClient>
+        </ThemeProvider>
       </body>
     </html>
   );

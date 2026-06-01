@@ -89,7 +89,7 @@ const GridImage = memo<GridImageProps>(({
 
   return (
     <div
-      className="aspect-square relative cursor-pointer bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-500"
+      className="aspect-square relative cursor-pointer bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary-500"
       onClick={() => openLightbox(index)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
