@@ -10,6 +10,7 @@ import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayloa
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+import { theme } from '../../styles/theme'
 
 /**
  * @function Sparkles
@@ -34,7 +35,7 @@ function Sparkles({ count = 200 }: { count?: number }) {
 
   return (
     <Points ref={pointsRef} positions={positions} stride={3} frustumCulled={false}>
-      <PointMaterial transparent color="#ffa0e0" size={0.1} sizeAttenuation={true} depthWrite={false} />
+      <PointMaterial transparent color={theme.colors.sparkle} size={0.1} sizeAttenuation={true} depthWrite={false} />
     </Points>
   )
 }
@@ -71,7 +72,7 @@ function Heart3D({ scale }: { scale: number }) {
   const gold = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#FFD700',
+        color: theme.colors.gold,
         metalness: 1,
         roughness: 0.2,
         envMapIntensity: 1.2,
@@ -84,7 +85,7 @@ function Heart3D({ scale }: { scale: number }) {
   const silver = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#C0C0C0',
+        color: theme.colors.silver,
         metalness: 1,
         roughness: 0.25,
         envMapIntensity: 1.2,
@@ -104,7 +105,7 @@ function Heart3D({ scale }: { scale: number }) {
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
-        outlineColor="#000"
+        outlineColor={theme.colors.outline}
       >
         Abbi
       </Text>
@@ -114,7 +115,7 @@ function Heart3D({ scale }: { scale: number }) {
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
-        outlineColor="#000"
+        outlineColor={theme.colors.outline}
       >
         Fred
       </Text>
@@ -338,7 +339,7 @@ function PhysicsHeart({
       {showEasterEgg && (
         <Text position={[0, 0, 5]} fontSize={1.5} anchorX="center" anchorY="middle">
           I love you!
-          <meshStandardMaterial color="hotpink" />
+          <meshStandardMaterial color={theme.colors.easterEgg} />
         </Text>
       )}
     </>
