@@ -137,8 +137,9 @@ export async function POST(request: Request) {
           let dynPrice: number | null = null;
           
           const hostname = window.location.hostname;
-          
-          if (hostname.includes('amazon.com')) {
+          const normalizedHostname = hostname.toLowerCase();
+
+          if (normalizedHostname === 'amazon.com' || normalizedHostname.endsWith('.amazon.com')) {
             const imgEl = document.querySelector('#imgTagWrapperId img') || document.querySelector('#landingImage') || document.querySelector('.imgTagWrapper img');
             if (imgEl) dynImage = (imgEl as HTMLImageElement).src;
             
