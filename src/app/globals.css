@@ -2,6 +2,12 @@
 @import "../../node_modules/keen-slider/keen-slider.min.css";
 @config "../../tailwind.config.ts";
 
+@theme {
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-accent: var(--color-accent);
+}
+
 :root {
   --background: theme('colors.background');
   --foreground: theme('colors.foreground');

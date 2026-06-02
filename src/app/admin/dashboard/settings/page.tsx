@@ -188,6 +188,36 @@ export default function AdminSettingsPage() {
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-4">Branding & Colors</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="flex flex-col items-center">
+                <label className="block text-sm font-medium mb-2">Primary Color</label>
+                <div className="flex items-center gap-2 w-full">
+                  <input type="color" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <input type="text" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="w-full p-2 border rounded text-black font-mono text-sm uppercase" />
+                </div>
+              </div>
+              <div className="flex flex-col items-center">
+                <label className="block text-sm font-medium mb-2">Secondary Color</label>
+                <div className="flex items-center gap-2 w-full">
+                  <input type="color" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <input type="text" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="w-full p-2 border rounded text-black font-mono text-sm uppercase" />
+                </div>
+              </div>
+              <div className="flex flex-col items-center">
+                <label className="block text-sm font-medium mb-2">Accent Color</label>
+                <div className="flex items-center gap-2 w-full">
+                  <input type="color" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <input type="text" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="w-full p-2 border rounded text-black font-mono text-sm uppercase" />
+                </div>
+              </div>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+              These colors will automatically synchronize across the UI components and 3D scenes.
+            </p>
+          </section>
+
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
