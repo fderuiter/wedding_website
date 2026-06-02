@@ -93,4 +93,3 @@ export async function getAppConfig() {
 
   return ConfigSchema.parse(rawConfig);
 }
-

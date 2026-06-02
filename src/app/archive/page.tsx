@@ -15,25 +15,25 @@ const archivedPages = [
     href: '/archive/rsvp',
     title: 'RSVP',
     description: 'View the original RSVP form.',
-    icon: <Rss className="w-8 h-8 text-rose-500" />,
+    icon: <Rss className="w-8 h-8 text-primary" />,
   },
   {
     href: '/archive/wedding-party',
     title: 'Wedding Party',
     description: 'Meet the people who stood by our side.',
-    icon: <Users className="w-8 h-8 text-rose-500" />,
+    icon: <Users className="w-8 h-8 text-primary" />,
   },
   {
     href: '/archive/things-to-do',
     title: 'Things to Do',
     description: 'Explore our favorite spots in City.',
-    icon: <Map className="w-8 h-8 text-rose-500" />,
+    icon: <Map className="w-8 h-8 text-primary" />,
   },
   {
     href: '/archive/weather',
     title: 'Weather',
     description: 'See the weather forecast for our wedding day.',
-    icon: <Cloud className="w-8 h-8 text-rose-500" />,
+    icon: <Cloud className="w-8 h-8 text-primary" />,
   },
 ];
 
@@ -48,7 +48,7 @@ const archivedPages = [
 export default function ArchivePage() {
   return (
     <main className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold text-center mb-8 text-rose-700 dark:text-rose-400">
+      <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Website Archive
       </h1>
       <p className="text-center text-lg mb-12">

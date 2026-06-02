@@ -113,7 +113,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={modalRef}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
         <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+          className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           onClick={onClose}
           aria-label="Close modal"
           ref={firstFocusableRef}
@@ -134,14 +134,14 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             }}
           />
         </div>
-        <h2 className="text-2xl font-bold mb-2 text-rose-700">{item.name}</h2>
+        <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
         <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
-        <p className="text-lg font-semibold mb-1 text-amber-700">
+        <p className="text-lg font-semibold mb-1 text-secondary">
           Price: ${item.price.toFixed(2)}
         </p>
         {item.isGroupGift && (
           <div className="mb-3">
-            <p className="text-sm text-amber-700">
+            <p className="text-sm text-secondary">
               Group Gift - ${item.amountContributed.toFixed(2)} contributed so far.
             </p>
             {!isFullyFunded && (
@@ -157,14 +157,14 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             href={item.vendorUrl as string}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 rounded"
+            className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
           >
             View on Vendor Site
           </a>
         )}
         {!item.purchased ? (
-          <div className="mt-5 pt-4 border-t border-rose-100">
-            <h3 className="font-semibold text-lg mb-3 text-rose-700">
+          <div className="mt-5 pt-4 border-t border-primary">
+            <h3 className="font-semibold text-lg mb-3 text-primary">
               {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
             </h3>
             <div className="mb-3">
@@ -175,7 +175,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 id="contributorName"
                 type="text"
                 placeholder="Jane Doe"
-                className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
                 value={contributorName}
                 onChange={(e) => setContributorName(e.target.value)}
                 disabled={isSubmitting}
@@ -192,7 +192,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                   id="contributionAmount"
                   type="number"
                   placeholder={`Up to $${remainingAmount.toFixed(2)}`}
-                  className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                  className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   min="0.01"
@@ -206,7 +206,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             )}
             {error && <p id="contribution-error" className="text-red-600 text-sm mb-3" role="alert">{error}</p>}
             <button
-              className={`w-full bg-gradient-to-r from-rose-700 to-amber-500 text-white font-bold px-4 py-2 rounded shadow hover:from-amber-500 hover:to-rose-700 transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-500 ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
+              className={`w-full bg-gradient-to-r from-primary to-secondary text-white font-bold px-4 py-2 rounded shadow hover:from-secondary hover:to-primary transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
               onClick={handleContributeClick}
               disabled={isSubmitting}
               aria-busy={isSubmitting}
@@ -222,7 +222,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             </button>
           </div>
         ) : (
-          <div className="mt-5 pt-4 border-t border-rose-100 text-center">
+          <div className="mt-5 pt-4 border-t border-primary text-center">
             <p className="text-xl font-semibold text-green-600">
               {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
             </p>
@@ -244,7 +244,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 </div>
               </>
             )}
-            <p className="mt-2 text-amber-700">Thank you for your generosity!</p>
+            <p className="mt-2 text-secondary">Thank you for your generosity!</p>
           </div>
         )}
       </div>
