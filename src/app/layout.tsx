@@ -3,6 +3,7 @@ import "./globals.css";
 import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { generateMetadata } from './metadata';
 import { getAppConfig } from "@/lib/config";
+import SetupWizard from "@/components/setup/SetupWizard";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -30,13 +31,21 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const config = await getAppConfig();
+  const isUninitialized = !config.brideName || !config.groomName || !config.baseUrl;
+
   return (
     <html lang="en" className={`dark ${geist.variable}`}>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-rose-800`}
       >
-        <a href="#main-content" className="skip-link">Skip to main content</a>
-        <RootLayoutClient config={config}>{children}</RootLayoutClient>
+        {isUninitialized ? (
+          <SetupWizard />
+        ) : (
+          <>
+            <a href="#main-content" className="skip-link">Skip to main content</a>
+            <RootLayoutClient config={config}>{children}</RootLayoutClient>
+          </>
+        )}
       </body>
     </html>
   );

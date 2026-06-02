@@ -1,7 +1,37 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ThingsToDoList from '../ThingsToDoList';
-import { attractions } from '@/data/things-to-do';
+
+const attractions = [
+  {
+    id: '1',
+    name: 'Test Food Place',
+    description: 'A place to eat',
+    category: 'food',
+    website: 'https://test.com',
+    directions: 'Go straight',
+    latitude: 45.0,
+    longitude: -90.0,
+    isVisible: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    image: null
+  },
+  {
+    id: '2',
+    name: 'Test Park',
+    description: 'A place to walk',
+    category: 'activity',
+    website: 'https://test.com',
+    directions: 'Go left',
+    latitude: 45.1,
+    longitude: -90.1,
+    isVisible: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    image: null
+  }
+];
 
 jest.mock('../ThingsToDoMap', () => {
     const MockThingsToDoMap = () => <div data-testid="things-to-do-map" />;
