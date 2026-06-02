@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next';
+import { getAppConfig } from '@/lib/config';
 
 type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
@@ -18,10 +19,18 @@ interface SitemapEntry {
  * This function returns a list of URLs that should be indexed by search engines,
  * along with their modification date, change frequency, and priority.
  *
- * @returns {MetadataRoute.Sitemap} The sitemap data.
+ * @returns {Promise<MetadataRoute.Sitemap>} The sitemap data.
  */
-export default function sitemap(): MetadataRoute.Sitemap {
-  const siteUrl = 'https://abbifred.com';
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  let siteUrl = 'http://localhost:3000';
+  try {
+    const config = await getAppConfig();
+    if (config.baseUrl) {
+      siteUrl = config.baseUrl;
+    }
+  } catch (err) {
+    console.error("Could not load config for sitemap", err);
+  }
 
   // Static pages
   const staticPages: SitemapEntry[] = [
@@ -45,16 +54,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  // In a real application, you would also fetch dynamic routes from a database
-  // For example, if you had a blog:
-  // const posts = await db.post.findMany();
-  // const postUrls = posts.map(post => ({
-  //   url: `${siteUrl}/blog/${post.slug}`,
-  //   lastModified: post.updatedAt,
-  // }));
-
   return [
     ...staticPages,
-    // ...postUrls,
   ];
 }
