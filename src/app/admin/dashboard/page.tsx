@@ -91,7 +91,7 @@ export default function AdminDashboardPage() {
               {/* Updated table body styles */}
               <tbody className="divide-y divide-primary">
                 {items.map((item) => (
-                  <tr key={item.id} className="hover:bg-primary/10/50 transition">
+                  <tr key={item.id} className="hover:bg-primary/10 transition">
                     <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{item.name}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">${item.price.toFixed(2)}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{item.purchased ? "Yes" : "No"}</td>

@@ -34,8 +34,6 @@ export function ThemeProvider({
   useEffect(() => {
     document.documentElement.style.setProperty('--color-primary', primary);
     document.documentElement.style.setProperty('--color-secondary', secondary);
-    document.documentElement.style.setProperty('--color-primary', primary);
-    document.documentElement.style.setProperty('--color-secondary', secondary);
     
     // Convert accent color to tailwind's primary/primary equivalent if possible,
     // or just apply it to elements that used primary.

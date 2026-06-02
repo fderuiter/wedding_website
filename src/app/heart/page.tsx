@@ -10,6 +10,7 @@ import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayloa
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+import { theme } from '../../styles/theme'
 import { useTheme } from '@/components/ThemeProvider'
 
 /**
@@ -105,7 +106,7 @@ function Heart3D({ scale, primaryColor, secondaryColor }: { scale: number; prima
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
-        outlineColor="#000"
+        outlineColor={theme.colors.outline}
       >
         Abbi
       </Text>
@@ -115,7 +116,7 @@ function Heart3D({ scale, primaryColor, secondaryColor }: { scale: number; prima
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
-        outlineColor="#000"
+        outlineColor={theme.colors.outline}
       >
         Fred
       </Text>
