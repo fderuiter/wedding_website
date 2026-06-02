@@ -91,6 +91,7 @@ export async function getAppConfig() {
   try {
     rawConfig = await prisma.appConfig.upsert({
       where: { id: 'global' },
+      // Intentionally no-op on existing record; this is create-if-missing.
       update: {},
       create: { id: 'global' },
     });

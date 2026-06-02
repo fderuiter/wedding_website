@@ -39,7 +39,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Features are already validated by the schema gateway
-  let features: any[] = Array.isArray(config?.features) ? config.features : [];
+  let features: any[] = Array.isArray(config?.features) ? config?.features : [];
 
 
   const homeNavLinks = features
