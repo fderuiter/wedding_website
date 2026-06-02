@@ -44,6 +44,9 @@ export async function PUT(req: NextRequest) {
         heroSubtitle: data.heroSubtitle,
         seoTitle: data.seoTitle,
         seoDescription: data.seoDescription,
+        themePrimary: data.themePrimary,
+        themeSecondary: data.themeSecondary,
+        themeAccent: data.themeAccent,
       },
     });
 

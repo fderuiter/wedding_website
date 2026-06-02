@@ -103,7 +103,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         <button
           ref={triggerRef}
           type="button"
-          className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-accent-from text-white font-semibold shadow-md hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-from"
+          className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-primary text-white font-semibold shadow-md hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
           id="options-menu"
           aria-haspopup="true"
           aria-expanded={isOpen}

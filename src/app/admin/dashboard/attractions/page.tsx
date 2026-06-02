@@ -108,18 +108,18 @@ export default function AttractionsDashboardPage() {
     >
       <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-extrabold text-rose-700">Attractions Studio</h1>
+          <h1 className="text-3xl font-extrabold text-primary">Attractions Studio</h1>
           <div>
             <button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
             <button onClick={() => { 
               setCurrentAttraction({ name: '', description: '', image: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true }); 
               setIsEditing(true); 
-            }} className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition">Add New Attraction</button>
+            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Attraction</button>
           </div>
         </div>
 
         {isEditing && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-rose-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} Attraction</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
@@ -177,12 +177,12 @@ export default function AttractionsDashboardPage() {
 
         <div className="grid gap-4 pb-10">
           {attractions.map(attraction => (
-            <div key={attraction.id} className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-rose-100 flex justify-between items-center ${!attraction.isVisible ? 'opacity-50' : ''}`}>
+            <div key={attraction.id} className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center ${!attraction.isVisible ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-4">
                 {attraction.image && <img src={attraction.image} alt={attraction.name} className="w-16 h-16 rounded-lg object-cover" />}
                 <div>
                   <div className="font-bold text-lg">{attraction.name} {!attraction.isVisible && <span className="text-red-500 text-sm">(Hidden)</span>}</div>
-                  <div className="text-sm font-semibold text-amber-600 uppercase">{attraction.category}</div>
+                  <div className="text-sm font-semibold text-secondary uppercase">{attraction.category}</div>
                   <div className="text-sm mt-1 text-gray-700 dark:text-gray-300">
                     {attraction.description}
                   </div>
@@ -192,8 +192,8 @@ export default function AttractionsDashboardPage() {
                 <button onClick={() => { 
                   setCurrentAttraction(attraction); 
                   setIsEditing(true); 
-                }} className="bg-amber-500 text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(attraction.id)} className="bg-rose-600 text-white px-3 py-1 rounded text-sm">Delete</button>
+                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
+                <button onClick={() => handleDelete(attraction.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
               </div>
             </div>
           ))}
