@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { prisma } from './prisma';
 
+const FeatureSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  title: z.string().optional(),
+  visible: z.boolean(),
+  content: z.string().optional(),
+  href: z.string().optional(),
+  icon: z.string().optional(),
+  label: z.string().optional(),
+});
+
 const strictShape = {
   id: z.string(),
   brideName: z.string(),
@@ -27,12 +38,20 @@ const strictShape = {
       try { return JSON.parse(val); } catch { return val; }
     }
     return val;
-  }, z.array(z.any())),
+  }, z.array(FeatureSchema)),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 };
 
 const StrictConfigSchema = z.object(strictShape);
+
+function isConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const code = (error as { code?: unknown }).code;
+  return code === 'P2002' || code === 'P2003' || code === 'P2011';
+}
 
 const ConfigSchema = z.object({
   id: strictShape.id.catch('global'),
@@ -70,16 +89,16 @@ const ConfigSchema = z.object({
 export async function getAppConfig() {
   let rawConfig;
   try {
-    rawConfig = await prisma.appConfig.findUnique({
+    rawConfig = await prisma.appConfig.upsert({
       where: { id: 'global' },
+      update: {},
+      create: { id: 'global' },
     });
-
-    if (!rawConfig) {
-      rawConfig = await prisma.appConfig.create({
-        data: { id: 'global' },
-      });
-    }
   } catch (error) {
+    if (isConstraintError(error)) {
+      console.error('❌ Failed to initialize app config due to database constraint error.');
+      throw error;
+    }
     console.warn("Database unreachable, using fallback config.");
     rawConfig = {}; // Schema will use default/catch values
   }
