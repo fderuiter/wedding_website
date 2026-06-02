@@ -1,21 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import type { IContentRepository } from './types';
 import { ContentNode, AppConfig } from '@prisma/client';
+import { getAppConfig } from '@/lib/config';
 
 export class ContentRepository implements IContentRepository {
   async getFeatures() {
-    const config = await prisma.appConfig.findUnique({ where: { id: 'global' } });
-    if (!config || !config.features) return [];
-    
-    let features: any[] = [];
-    if (typeof config.features === 'string') {
-      try {
-        features = JSON.parse(config.features);
-      } catch(e) {}
-    } else if (Array.isArray(config.features)) {
-      features = config.features;
-    }
-    return features;
+    const config = await getAppConfig();
+    return config.features || [];
   }
 
   async updateFeatures(features: any[]): Promise<AppConfig> {

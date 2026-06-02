@@ -12,6 +12,8 @@ import { TextEncoder, TextDecoder } from 'util';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
+process.env.POSTGRES_PRISMA_URL = 'postgres://test:test@localhost:5432/test';
+
 jest.mock('@vercel/analytics', () => ({
   track: jest.fn(),
 }));

@@ -38,26 +38,9 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Safely parse features array
-  let features: any[] = [];
-  try {
-    if (typeof config.features === 'string') {
-      features = JSON.parse(config.features);
-    } else if (Array.isArray(config.features)) {
-      features = config.features;
-    }
-  } catch(e) {}
+  // Features are already validated by the schema gateway
+  let features: any[] = Array.isArray(config.features) ? config.features : [];
 
-  if (features.length === 0) {
-    features = [
-      { id: 'story', type: 'story', title: 'Our Story', visible: true },
-      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
-      { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
-      { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
-      { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
-      { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
-    ];
-  }
 
   const homeNavLinks = features
     .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story')
