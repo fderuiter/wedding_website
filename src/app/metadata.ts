@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const siteConfig = {
     title: config.seoTitle || `${config.brideName} & ${config.groomName}'s Wedding`,
     description: config.seoDescription || `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
-    url: config.baseUrl,
-    ogImage: `${config.baseUrl}/images/sunset-embrace.jpg`,
+    url: config.baseUrl || 'http://localhost:3000',
+    ogImage: `${config.baseUrl || 'http://localhost:3000'}/images/sunset-embrace.jpg`,
   };
 
   return {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { signAdminToken } from '@/utils/adminAuth.server';
 import { rateLimit } from '@/utils/rateLimit';
+import { getAppConfig } from '@/lib/config';
 
 const ADMIN_COOKIE = 'admin_auth';
 
@@ -10,8 +11,7 @@ const ADMIN_COOKIE = 'admin_auth';
  * @description Handles admin login.
  *
  * This function processes a POST request to log in an administrator. It validates the
- * provided password against the `ADMIN_PASSWORD` environment variable, which must now
- * contain a bcrypt hash of the password.
+ * provided password against the `adminPassword` stored in the database.
  *
  * @param {NextRequest} req - The incoming Next.js request object, containing the password in the JSON body.
  * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { password } = await req.json();
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  const config = await getAppConfig();
+  const adminPassword = process.env.ADMIN_PASSWORD || config.adminPassword;
 
   if (!adminPassword) {
     return NextResponse.json({ error: 'Admin password not set.' }, { status: 500 });

@@ -1,9 +1,9 @@
 import sitemap from '../sitemap';
 
 describe('sitemap', () => {
-  it('should return the correct sitemap entries', () => {
-    const sitemapEntries = sitemap();
-    const siteUrl = 'https://abbifred.com';
+  it('should return the correct sitemap entries', async () => {
+    const sitemapEntries = await sitemap();
+    const siteUrl = 'http://localhost:3000';
 
     expect(sitemapEntries).toHaveLength(3);
 

@@ -4,6 +4,7 @@ import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { generateMetadata } from './metadata';
 import { getAppConfig } from "@/lib/config";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import SetupWizard from "@/components/setup/SetupWizard";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -31,19 +32,25 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const config = await getAppConfig();
+  const isUninitialized = !config.brideName || !config.groomName || !config.baseUrl;
+
   return (
     <html lang="en" className={`dark ${geist.variable}`}>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}
       >
-        <ThemeProvider 
-          themePrimary={config?.themePrimary} 
-          themeSecondary={config?.themeSecondary} 
-          themeAccent={config?.themeAccent}
-        >
-          <a href="#main-content" className="skip-link">Skip to main content</a>
-          <RootLayoutClient config={config}>{children}</RootLayoutClient>
-        </ThemeProvider>
+        {isUninitialized ? (
+          <SetupWizard />
+        ) : (
+          <ThemeProvider
+            themePrimary={config?.themePrimary}
+            themeSecondary={config?.themeSecondary}
+            themeAccent={config?.themeAccent}
+          >
+            <a href="#main-content" className="skip-link">Skip to main content</a>
+            <RootLayoutClient config={config}>{children}</RootLayoutClient>
+          </ThemeProvider>
+        )}
       </body>
     </html>
   );
