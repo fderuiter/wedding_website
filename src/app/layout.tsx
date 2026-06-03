@@ -2,7 +2,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import RootLayoutClient from "@/components/layout/RootLayoutClient";
 import { generateMetadata } from './metadata';
-import { getAppConfig } from "@/lib/config";
+import { getAppConfig, toPublicAppConfig } from "@/lib/config";
 import SetupWizard from "@/components/setup/SetupWizard";
 
 const geist = Geist({
@@ -31,6 +31,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const config = await getAppConfig();
+  const publicConfig = toPublicAppConfig(config);
   const isUninitialized = !config.brideName || !config.groomName || !config.baseUrl;
 
   return (
@@ -43,7 +44,7 @@ export default async function RootLayout({
         ) : (
           <>
             <a href="#main-content" className="skip-link">Skip to main content</a>
-            <RootLayoutClient config={config}>{children}</RootLayoutClient>
+            <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
           </>
         )}
       </body>

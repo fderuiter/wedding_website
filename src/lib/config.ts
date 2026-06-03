@@ -1,4 +1,12 @@
 import { prisma } from './prisma';
+import type { AppConfig } from '@prisma/client';
+
+export type PublicAppConfig = Omit<AppConfig, 'adminPassword'>;
+
+export function toPublicAppConfig(config: AppConfig): PublicAppConfig {
+  const { adminPassword, ...publicConfig } = config;
+  return publicConfig;
+}
 
 export async function getAppConfig() {
   try {
