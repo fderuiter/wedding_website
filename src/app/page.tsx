@@ -7,11 +7,16 @@ import { prisma } from '@/lib/prisma';
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
-  
+  const title = `${config.brideName} & ${config.groomName}'s Wedding`;
+  const description =
+    `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`;
+  const baseUrl = config.baseUrl || 'https://abbifred.com';
+  const imageUrl = `${baseUrl}/images/sunset-embrace.jpg`;
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
-    name: `${config.brideName} & ${config.groomName}'s Wedding`,
+    name: title,
     startDate: config.weddingDate.toISOString(),
     eventStatus: 'https://schema.org/EventScheduled',
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
@@ -27,13 +32,27 @@ export async function generateMetadata(): Promise<Metadata> {
         addressCountry: 'US',
       },
     },
-    description: config.venueDescription,
+    description,
   };
 
   return {
     title: "Home",
+    description,
     alternates: {
-      canonical: '/',
+      canonical: baseUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      url: baseUrl,
+      type: 'website',
+      images: [imageUrl],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [imageUrl],
     },
     other: {
       'application/ld+json': JSON.stringify(jsonLd),
@@ -71,4 +90,3 @@ export default async function HomePage() {
 
   return <HomePageClient calendarEvent={calendarEvent} config={publicConfig} contentNodes={contentNodes} />;
 }
-
