@@ -1,3 +1,5 @@
+# NOTE CURRENTLY UNDER MAINTAINANCE AND REFACTORING
+
 # Wedding Website & Custom Registry
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
