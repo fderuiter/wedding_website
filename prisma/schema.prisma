@@ -29,6 +29,9 @@ model AppConfig {
   seoTitle         String   @default("")
   seoDescription   String   @default("")
   adminPassword    String   @default("$2b$10$Ep3/07xWd34e9/jV91KIn.u2L1xW5G5S3T.eP28j8/qX5x81A0xLq") // hashed "admin"
+  themePrimary     String   @default("#f43f5e") // rose-500
+  themeSecondary   String   @default("#fbbf24") // amber-400
+  themeAccent      String   @default("#e11d48") // rose-600
   features         Json     @default("[]")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
