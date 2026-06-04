@@ -2,7 +2,7 @@ import React from 'react';
 import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
 import { CalendarEvent } from '@/utils/calendar';
-import { getAppConfig } from '@/lib/config';
+import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -43,6 +43,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage() {
   const config = await getAppConfig();
+  const publicConfig = toPublicAppConfig(config);
 
   const calendarEvent: CalendarEvent = {
     name: `${config.brideName} & ${config.groomName}'s Wedding`,
@@ -68,6 +69,6 @@ export default async function HomePage() {
     console.warn("Could not fetch content nodes for Homepage");
   }
 
-  return <HomePageClient calendarEvent={calendarEvent} config={config} contentNodes={contentNodes} />;
+  return <HomePageClient calendarEvent={calendarEvent} config={publicConfig} contentNodes={contentNodes} />;
 }
 

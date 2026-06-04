@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAppConfig } from '@/lib/config';
+import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { verifyAdminToken } from '@/utils/adminAuth.server';
 
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   }
 
   const config = await getAppConfig();
-  return NextResponse.json(config);
+  return NextResponse.json(toPublicAppConfig(config));
 }
 
 export async function PUT(req: NextRequest) {
@@ -73,7 +73,7 @@ export async function PUT(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(updatedConfig);
+    return NextResponse.json(toPublicAppConfig(updatedConfig));
   } catch (err) {
     console.error('Failed to update config:', err);
     return NextResponse.json({ error: 'Failed to update config' }, { status: 500 });

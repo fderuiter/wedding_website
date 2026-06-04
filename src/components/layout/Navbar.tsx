@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AppConfig } from '@prisma/client';
+import { PublicAppConfig } from '@/lib/config';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -23,7 +23,7 @@ interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
-  config: AppConfig;
+  config: PublicAppConfig;
 }
 
 /**

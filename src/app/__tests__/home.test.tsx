@@ -72,6 +72,10 @@ jest.mock('@/lib/config', () => ({
     storyText: 'Our story began...',
     venueDescription: 'A beautiful venue...',
     travelAdvice: 'Travel safely...',
+  }),
+  toPublicAppConfig: jest.fn().mockImplementation((config) => {
+    const { adminPassword, ...publicConfig } = config;
+    return publicConfig;
   })
 }));
 

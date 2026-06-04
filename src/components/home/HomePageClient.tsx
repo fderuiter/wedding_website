@@ -5,15 +5,16 @@ import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar from '@/components/AddToCalendar'
 import { CalendarEvent } from '@/utils/calendar'
-import { AppConfig, ContentNode } from '@prisma/client'
+import { ContentNode } from '@prisma/client'
+import { PublicAppConfig } from '@/lib/config'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
-export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: AppConfig, contentNodes?: ContentNode[] }) {
-  const [config, setConfig] = useState<AppConfig>(initialConfig);
+export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: PublicAppConfig, contentNodes?: ContentNode[] }) {
+  const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [contentNodes, setContentNodes] = useState<ContentNode[]>(initialContentNodes);
 
   useEffect(() => {
