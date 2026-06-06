@@ -10,7 +10,7 @@ import Navbar from './Navbar';
 
 const queryClient = new QueryClient();
 
-import { PublicAppConfig } from '@/lib/config';
+import type { PublicAppConfig } from '@/lib/config';
 
 /**
  * @interface RootLayoutClientProps

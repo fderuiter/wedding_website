@@ -39,7 +39,7 @@ const sectionVariants = {
  */
 const ProjectInfo = () => {
   return (
-    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-primary dark:selection:bg-primary pb-24">
+    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary pb-24">
       {/* Hero Section */}
       <motion.div
         className="max-w-3xl mx-auto text-center py-20 px-4"

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { PublicAppConfig } from '@/lib/config';
+import type { PublicAppConfig } from '@/lib/config';
 
 const navLinks = [
   { href: '/', label: 'Home' },

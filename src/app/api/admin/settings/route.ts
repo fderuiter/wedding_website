@@ -23,6 +23,9 @@ export async function PUT(req: NextRequest) {
     const data = await req.json();
 
     // Data validation could go here
+    const HEX = /^#([0-9a-fA-F]{6})$/;
+    const safeColor = (v: unknown, fallback: string) =>
+      typeof v === 'string' && HEX.test(v) ? v : fallback;
     const updatedConfig = await prisma.appConfig.update({
       where: { id: 'global' },
       data: {
@@ -44,9 +47,9 @@ export async function PUT(req: NextRequest) {
         heroSubtitle: data.heroSubtitle,
         seoTitle: data.seoTitle,
         seoDescription: data.seoDescription,
-        themePrimary: data.themePrimary,
-        themeSecondary: data.themeSecondary,
-        themeAccent: data.themeAccent,
+        themePrimary: safeColor(data.themePrimary, '#f43f5e'),
+        themeSecondary: safeColor(data.themeSecondary, '#fbbf24'),
+        themeAccent: safeColor(data.themeAccent, '#e11d48'),
       },
     });
 

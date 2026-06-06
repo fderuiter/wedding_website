@@ -113,7 +113,7 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
             src={img.src}
             alt={img.alt}
             fill
-            sizes="calc(600px * var(--scale-factor))"
+            sizes="min(100vw, calc(600px * var(--scale-factor)))"
             className="object-cover"
             placeholder="blur"
             blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="

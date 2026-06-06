@@ -68,8 +68,8 @@ export default function AdminDashboardPage() {
             <a href="/admin/dashboard/site-manager" className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Visual Site Manager</a>
             <a href="/admin/dashboard/wedding-party" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Wedding Party</a>
             <a href="/admin/dashboard/attractions" className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Attractions</a>
-            <a href="/admin/dashboard/content" className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary transition">Manage Content</a>
-            <a href="/admin/dashboard/settings" className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Site Settings</a>
+            <a href="/admin/dashboard/content" className="px-4 py-2 bg-secondary text-white rounded hover:brightness-90 transition">Manage Content</a>
+            <a href="/admin/dashboard/settings" className="px-4 py-2 bg-primary text-white rounded hover:brightness-90 transition">Site Settings</a>
           </div>
         </div>
         {/* Responsive Table for Desktop, Cards for Mobile */}
@@ -111,14 +111,14 @@ export default function AdminDashboardPage() {
                     <td className="px-4 py-3 space-x-2">
                       <button
                         // Updated Edit button (amber)
-                        className="bg-secondary hover:bg-secondary text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-secondary"
+                        className="bg-secondary hover:brightness-90 text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-secondary"
                         onClick={() => router.push(`/registry/edit-item/${item.id}`)}
                       >
                         Edit
                       </button>
                       <button
                         // Updated Delete button (rose)
-                        className="bg-primary hover:bg-primary text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="bg-primary hover:brightness-90 text-white px-3 py-1 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
                         onClick={async () => {
                           if (!confirm('Are you sure you want to delete this item?')) return;
                           try {
@@ -170,14 +170,14 @@ export default function AdminDashboardPage() {
               <div className="flex gap-2 mt-2">
                 <button
                   // Updated Edit button (amber)
-                  className="flex-1 bg-secondary hover:bg-secondary text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-secondary"
+                  className="flex-1 bg-secondary hover:brightness-90 text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-secondary"
                   onClick={() => router.push(`/registry/edit-item/${item.id}`)}
                 >
                   Edit
                 </button>
                 <button
                   // Updated Delete button (rose)
-                  className="flex-1 bg-primary hover:bg-primary text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="flex-1 bg-primary hover:brightness-90 text-white px-3 py-2 rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
                   onClick={async () => {
                     if (!confirm('Are you sure you want to delete this item?')) return;
                     try {

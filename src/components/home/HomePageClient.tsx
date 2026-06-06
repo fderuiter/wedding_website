@@ -5,8 +5,8 @@ import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar from '@/components/AddToCalendar'
 import { CalendarEvent } from '@/utils/calendar'
-import { ContentNode } from '@prisma/client'
-import { PublicAppConfig } from '@/lib/config'
+import type { ContentNode } from '@prisma/client'
+import type { PublicAppConfig } from '@/lib/config'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
@@ -187,7 +187,7 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
         To use them: <AddToCalendar event={calendarEvent} /> or <Countdown targetDate="..." />
       */}
       <div id="top" />
-      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-primary dark:selection:bg-primary"
+      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary"
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">

@@ -51,11 +51,11 @@ const getWeatherDescription = (code: number): string => {
  * @returns {React.ReactElement} A Lucide React icon component representing the weather.
  */
 const getWeatherIcon = (code: number): React.ReactElement => {
-    if (code <= 1) return <Sun className="text-secondary" size="calc(64px * var(--scale-factor))" />;
-    if (code <= 3) return <Cloud className="text-gray-400" size="calc(64px * var(--scale-factor))" />;
-    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return <CloudRain className="text-blue-400" size="calc(64px * var(--scale-factor))" />;
-    if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return <CloudSnow className="text-sky-300" size="calc(64px * var(--scale-factor))" />;
-    return <Cloud className="text-gray-400" size="calc(64px * var(--scale-factor))" />;
+    if (code <= 1) return <Sun className="text-secondary" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
+    if (code <= 3) return <Cloud className="text-gray-400" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return <CloudRain className="text-blue-400" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
+    if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return <CloudSnow className="text-sky-300" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
+    return <Cloud className="text-gray-400" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
 };
 
 /**
@@ -127,17 +127,17 @@ const Forecast: React.FC = () => {
 
             <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
                 <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-                    <Droplets size="calc(24px * var(--scale-factor))" className="opacity-70" />
+                    <Droplets className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
                     <p className="font-bold mt-1">Precipitation</p>
                     <p className="text-lg">{today.precipitation}%</p>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-                    <Wind size="calc(24px * var(--scale-factor))" className="opacity-70" />
+                    <Wind className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
                     <p className="font-bold mt-1">Wind</p>
                     <p className="text-lg">{today.windSpeed} mph</p>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-                    <Thermometer size="calc(24px * var(--scale-factor))" className="opacity-70" />
+                    <Thermometer className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
                     <p className="font-bold mt-1">Feels Like</p>
                     <p className="text-lg">{today.feelsLikeHigh}°</p>
                 </motion.div>
