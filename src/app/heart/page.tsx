@@ -10,6 +10,8 @@ import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayloa
 import { inSphere } from 'maath/random'
 import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+import { theme } from '../../styles/theme'
+import { useTheme } from '@/components/ThemeProvider'
 
 /**
  * @function Sparkles
@@ -19,7 +21,7 @@ import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
  * @param {number} [props.count=200] - The number of sparkles to render.
  * @returns {JSX.Element} The rendered sparkles component.
  */
-function Sparkles({ count = 200 }: { count?: number }) {
+function Sparkles({ count = 200, color = "#ffa0e0" }: { count?: number, color?: string }) {
   const pointsRef = useRef<THREE.Points>(null!)
   const positions = useMemo(
     () => inSphere(new Float32Array(count * 3), { radius: 10 }) as Float32Array,
@@ -34,7 +36,7 @@ function Sparkles({ count = 200 }: { count?: number }) {
 
   return (
     <Points ref={pointsRef} positions={positions} stride={3} frustumCulled={false}>
-      <PointMaterial transparent color="#ffa0e0" size={0.1} sizeAttenuation={true} depthWrite={false} />
+      <PointMaterial transparent color={color} size={0.1} sizeAttenuation={true} depthWrite={false} />
     </Points>
   )
 }
@@ -48,7 +50,7 @@ function Sparkles({ count = 200 }: { count?: number }) {
  * @param {number} props.scale - The scale factor for the heart model.
  * @returns {JSX.Element} The rendered 3D heart component.
  */
-function Heart3D({ scale }: { scale: number }) {
+function Heart3D({ scale, primaryColor, secondaryColor }: { scale: number; primaryColor: string; secondaryColor: string }) {
   const geom = useMemo(() => {
     const s = new THREE.Shape()
     s.moveTo(0, -1.4)
@@ -71,27 +73,27 @@ function Heart3D({ scale }: { scale: number }) {
   const gold = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#FFD700',
+        color: primaryColor,
         metalness: 1,
         roughness: 0.2,
         envMapIntensity: 1.2,
         clippingPlanes: [planeLeft],
         clipShadows: true,
       }),
-    [planeLeft],
+    [planeLeft, primaryColor],
   )
 
   const silver = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#C0C0C0',
+        color: secondaryColor,
         metalness: 1,
         roughness: 0.25,
         envMapIntensity: 1.2,
         clippingPlanes: [planeRight],
         clipShadows: true,
       }),
-    [planeRight],
+    [planeRight, secondaryColor],
   )
 
   return (
@@ -104,7 +106,7 @@ function Heart3D({ scale }: { scale: number }) {
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
-        outlineColor="#000"
+        outlineColor={theme.colors.outline}
       >
         Abbi
       </Text>
@@ -114,7 +116,7 @@ function Heart3D({ scale }: { scale: number }) {
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
-        outlineColor="#000"
+        outlineColor={theme.colors.outline}
       >
         Fred
       </Text>
@@ -137,10 +139,16 @@ function PhysicsHeart({
   scale,
   interacted,
   onInteract,
+  primaryColor,
+  secondaryColor,
+  accentColor
 }: {
   scale: number
   interacted: boolean
   onInteract: () => void
+  primaryColor: string
+  secondaryColor: string
+  accentColor: string
 }) {
   const heartRef = useRef<RapierRigidBody>(null!)
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
@@ -320,25 +328,25 @@ function PhysicsHeart({
         {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
         {/* @ts-ignore */}
         <group ref={groupRef} {...bind()} visible={!isBroken}>
-          <Heart3D scale={scale} />
+          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} />
         </group>
       </RigidBody>
 
       <RigidBody ref={brokenHeartLeftRef} colliders="hull" restitution={0.9} type={'fixed'}>
         <group visible={isBroken}>
-          <Heart3D scale={scale * 0.7} />
+          <Heart3D scale={scale * 0.7} primaryColor={primaryColor} secondaryColor={secondaryColor} />
         </group>
       </RigidBody>
       <RigidBody ref={brokenHeartRightRef} colliders="hull" restitution={0.9} type={'fixed'}>
         <group visible={isBroken}>
-          <Heart3D scale={scale * 0.7} />
+          <Heart3D scale={scale * 0.7} primaryColor={primaryColor} secondaryColor={secondaryColor} />
         </group>
       </RigidBody>
 
       {showEasterEgg && (
         <Text position={[0, 0, 5]} fontSize={1.5} anchorX="center" anchorY="middle">
           I love you!
-          <meshStandardMaterial color="hotpink" />
+          <meshStandardMaterial color={accentColor} />
         </Text>
       )}
     </>
@@ -375,6 +383,7 @@ function ScreenBounds() {
  * @returns {JSX.Element} The rendered HeartPage component.
  */
 export default function HeartPage() {
+  const { themePrimary, themeSecondary, themeAccent } = useTheme()
   const [interacted, setInteracted] = useState(false)
   const [scale, setScale] = useState(0.6)
   const [resetKey, setResetKey] = useState(0)
@@ -414,9 +423,16 @@ export default function HeartPage() {
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
         <Suspense fallback={<Html>Loading…</Html>}>
           <Physics key={resetKey} gravity={[0, 0, 0]}>
-            <Sparkles />
+            <Sparkles color={themeAccent} />
             <Environment preset="sunset" />
-            <PhysicsHeart scale={scale} interacted={interacted} onInteract={() => setInteracted(true)} />
+            <PhysicsHeart 
+              scale={scale} 
+              interacted={interacted} 
+              onInteract={() => setInteracted(true)} 
+              primaryColor={themePrimary}
+              secondaryColor={themeSecondary}
+              accentColor={themeAccent}
+            />
             <ScreenBounds />
           </Physics>
           <EffectComposer>

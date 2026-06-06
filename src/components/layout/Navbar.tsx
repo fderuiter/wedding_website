@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AppConfig } from '@prisma/client';
+import type { PublicAppConfig } from '@/lib/config';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -23,7 +23,7 @@ interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
-  config: AppConfig;
+  config: PublicAppConfig;
 }
 
 /**
@@ -89,9 +89,9 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                   key={link.href}
                   href={link.href}
                   aria-current={pathname === link.href ? "page" : undefined}
-                  className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
                     pathname === link.href
-                      ? 'text-white bg-rose-500'
+                      ? 'text-white bg-primary'
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
@@ -106,7 +106,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
                 <button
                   onClick={handleLogout}
-                  className="ml-4 bg-rose-600 hover:bg-rose-700 text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                  className="ml-4 bg-primary hover:bg-primary text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
                   Logout
                 </button>
@@ -145,9 +145,9 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                 href={link.href}
                 onClick={() => setIsMenuOpen(false)}
                 aria-current={pathname === link.href ? "page" : undefined}
-                className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${
+                className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
                   pathname === link.href
-                    ? 'text-white bg-rose-500'
+                    ? 'text-white bg-primary'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
@@ -167,7 +167,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                       handleLogout();
                       setIsMenuOpen(false);
                     }}
-                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   >
                     Logout
                   </button>

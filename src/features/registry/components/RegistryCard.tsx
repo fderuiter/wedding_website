@@ -34,7 +34,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   // Updated card styling, removed dark mode, updated focus ring
   const isClickable = !isClaimed && !isAdmin;
-  const cardClasses = `border border-rose-100 dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-rose-300 outline-none ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
+  const cardClasses = `border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-primary outline-none ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -50,7 +50,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     <div
       className={cardClasses}
       onClick={isClickable ? () => onClick(item) : undefined}
-      style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 340 }}
+      style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' }}
       data-testid="registry-card"
       tabIndex={isClickable ? 0 : -1}
       aria-label={`${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`}
@@ -60,13 +60,13 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-2xl">
-          <span className="bg-gradient-to-r from-rose-700 to-amber-500 text-white text-base font-bold px-4 py-2 rounded-full shadow-xl">
+          <span className="bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-xl">
             {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
           </span>
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full h-56"> {/* Added a wrapper for layout */}
+      <div className="relative w-full" style={{ height: 'calc(224px * var(--scale-factor))' }}> {/* Added a wrapper for layout */}
         <Image
           src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing
           alt={item.name}
@@ -91,14 +91,14 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       </div>
       <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
         {/* Updated heading color */}
-        <h3 className="text-2xl font-extrabold truncate text-rose-700" title={item.name}>{item.name}</h3>
+        <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
         {/* Updated text color */}
         <p className="text-base text-gray-600 dark:text-gray-300 mb-1 font-medium">{item.category}</p>
         {/* Updated price color */}
         <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">$ {item.price.toFixed(2)}</p>
         {item.isGroupGift && !isClaimed && (
           // Updated group gift text color
-          <p className="text-base text-amber-700 mt-1 font-semibold">
+          <p className="text-base text-secondary mt-1 font-semibold">
             Group Gift: <span className="font-bold">${item.amountContributed.toFixed(2)}</span> contributed
           </p>
         )}

@@ -10,7 +10,7 @@ import Navbar from './Navbar';
 
 const queryClient = new QueryClient();
 
-import { AppConfig } from '@prisma/client';
+import type { PublicAppConfig } from '@/lib/config';
 
 /**
  * @interface RootLayoutClientProps
@@ -20,7 +20,7 @@ import { AppConfig } from '@prisma/client';
  */
 interface RootLayoutClientProps {
   children: React.ReactNode;
-  config: AppConfig;
+  config: PublicAppConfig;
 }
 
 /**

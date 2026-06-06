@@ -27,6 +27,22 @@ interface ThemeConfig {
     textOnSecondary: string;
     /** Additional accent color. */
     accent: string;
+    /** Gold color for 3D materials and UI. */
+    gold: string;
+    /** Silver color for 3D materials and UI. */
+    silver: string;
+    /** Sparkle color for point materials. */
+    sparkle: string;
+    /** Easter egg hotpink color. */
+    easterEgg: string;
+    /** Outline color. */
+    outline: string;
+    /** Border color. */
+    border: string;
+    /** Background color for dark mode (or main background) */
+    backgroundDark: string;
+    /** Foreground color for dark mode (or main text) */
+    foregroundDark: string;
   };
   /**
    * Gradient definitions for the application.
@@ -56,7 +72,15 @@ export const theme: ThemeConfig = {
     text: '#171717', // Very dark gray for main text
     textOnPrimary: '#FFFFFF', // White text on primary backgrounds
     textOnSecondary: '#171717', // Dark text on secondary backgrounds
-    accent: '#FFD700'
+    accent: '#FFD700',
+    gold: '#FFD700',
+    silver: '#C0C0C0',
+    sparkle: '#ffa0e0',
+    easterEgg: '#ff69b4',
+    outline: '#000000',
+    border: '#4b5563',
+    backgroundDark: '#111827',
+    foregroundDark: '#f9fafb'
   },
   gradients: {
     primary: 'from-red-700 to-yellow-600',

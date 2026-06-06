@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { contentService } from '@/features/content/service';
-import { cookies } from 'next/headers';
-import bcrypt from 'bcrypt';
 import { prisma } from '@/lib/prisma';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 
 export async function GET() {
   try {
@@ -15,20 +14,8 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const cookieStore = await cookies();
-    const adminToken = cookieStore.get('admin_token')?.value;
-
-    if (!adminToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const config = await prisma.appConfig.findUnique({ where: { id: 'global' } });
-    if (!config) {
-      return NextResponse.json({ error: 'Config not found' }, { status: 500 });
-    }
-
-    const isMatch = await bcrypt.compare(config.adminPassword, adminToken);
-    if (!isMatch) {
+    const isAdmin = await isAdminRequest();
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

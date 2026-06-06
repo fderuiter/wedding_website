@@ -110,16 +110,16 @@ export default function SiteManagerPage() {
     saveFeatures(newFeatures);
   };
 
-  if (loading) return <div className="p-8 text-center text-rose-700">Loading Site Manager...</div>;
+  if (loading) return <div className="p-8 text-center text-primary">Loading Site Manager...</div>;
   if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
 
   return (
     <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-4 sm:px-6">
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-extrabold text-rose-700 tracking-tight">Visual Site Manager</h1>
+          <h1 className="text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
           <div className="space-x-4">
-            <button onClick={() => setShowCustomModal(true)} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 transition">Add Custom Section</button>
+            <button onClick={() => setShowCustomModal(true)} className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary transition">Add Custom Section</button>
             <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">Back to Dashboard</button>
           </div>
         </div>
@@ -136,7 +136,7 @@ export default function SiteManagerPage() {
               onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, index)}
-              className={`p-4 rounded-xl shadow border border-rose-100 dark:border-rose-800 flex justify-between items-center cursor-move transition ${!feature.visible ? 'opacity-50 bg-gray-50 dark:bg-gray-900' : 'bg-white dark:bg-gray-800'}`}
+              className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center cursor-move transition ${!feature.visible ? 'opacity-50 bg-gray-50 dark:bg-gray-900' : 'bg-white dark:bg-gray-800'}`}
             >
               <div className="flex items-center gap-4">
                 <div className="text-gray-400">
@@ -145,7 +145,7 @@ export default function SiteManagerPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-bold text-xl text-rose-700">{feature.title || feature.id}</h3>
+                  <h3 className="font-bold text-xl text-primary">{feature.title || feature.id}</h3>
                   <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{feature.type}</span>
                 </div>
               </div>
@@ -164,7 +164,7 @@ export default function SiteManagerPage() {
         {showCustomModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl max-w-lg w-full">
-              <h2 className="text-2xl font-bold mb-4 text-rose-700">Add Custom Section</h2>
+              <h2 className="text-2xl font-bold mb-4 text-primary">Add Custom Section</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold mb-1">Section Title</label>
