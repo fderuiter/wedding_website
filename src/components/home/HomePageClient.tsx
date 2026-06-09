@@ -41,7 +41,7 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
   });
 
   const faqs = contentNodes.filter(n => n.type === 'FAQ').map(n => n.data as { question?: string, answer?: string });
-  const logisticsNodes = contentNodes.filter(n => n.type === 'Logistics').map(n => n.data as { title?: string, description?: string });
+  const logisticsNodes = contentNodes.filter(n => n.type === 'Logistics').map(n => n.data as any);
 
   let features: any[] = [];
   try {
@@ -76,37 +76,51 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
             ))}
           </motion.section>
         );
-      case 'details':
+      case 'details': {
+        const detailsNode = logisticsNodes.find(n => n.ceremonyTitle);
+        if (!detailsNode) return (
+          <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-center text-4xl font-bold text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+            <div className="text-center text-gray-500">Details coming soon...</div>
+          </motion.section>
+        );
         return (
           <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="text-center text-4xl font-bold text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
             <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
               <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
-                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Wedding Ceremony</h3>
+                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
                 <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>4:00&nbsp;pm</li>
+                  <li>{detailsNode.ceremonyTime}</li>
                   <li>{config.venueName} · {config.venueAddress}</li>
                   <li>{config.venueCity}, {config.venueState}</li>
                 </ul>
               </div>
               <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
-                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">Wedding Reception</h3>
+                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
                 <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>Buffet dinner began at 5:30&nbsp;pm</li>
-                  <li>Cocktails with music if weather permitted</li>
-                  <li>Attire: Garden formal</li>
+                  <li>{detailsNode.receptionTime}</li>
+                  <li>{detailsNode.receptionDetails}</li>
+                  <li>{detailsNode.receptionAttire}</li>
                 </ul>
               </div>
             </div>
           </motion.section>
         );
-      case 'accommodations':
+      }
+      case 'accommodations': {
+        const accNode = logisticsNodes.find(n => n.title?.includes('Accommodations') || n.description?.includes('hotel'));
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-4xl font-bold text-primary">{feature.title || `Accommodations in ${config.venueCity}, ${config.venueState}`}</h2>
-            <p className="mx-auto max-w-xl text-lg">{config.venueCity} offers plenty of places to stay for our wedding weekend. We opted not to reserve a block so you can choose what fits your style and budget. Your favorite booking site will have the best deals for hotels in {config.venueCity}.</p>
+            <h2 className="text-4xl font-bold text-primary">{accNode?.title || feature.title || 'Accommodations'}</h2>
+            {accNode?.description ? (
+              <p className="mx-auto max-w-xl text-lg">{accNode.description}</p>
+            ) : (
+              <div className="text-center text-gray-500">Accommodation details coming soon...</div>
+            )}
           </motion.section>
         );
+      }
       case 'venue':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
@@ -116,24 +130,24 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
             ))}
           </motion.section>
         );
-      case 'travel':
+      case 'travel': {
+        const travelNodes = logisticsNodes.filter(n => !n.ceremonyTitle && !n.title?.includes('Accommodations'));
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-4xl font-bold text-primary">{feature.title || `Travel & Things to Do in ${config.venueCity}`}</h2>
-            {logisticsNodes.length > 0 ? (
-              logisticsNodes.map((node, i) => (
+            <h2 className="text-4xl font-bold text-primary">{feature.title || 'Travel & Things to Do'}</h2>
+            {travelNodes.length > 0 ? (
+              travelNodes.map((node: any, i: number) => (
                 <div key={i} className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg mt-4 border border-primary dark:border-primary">
                   {node.title && <h3 className="font-semibold text-xl mb-2 text-primary">{node.title}</h3>}
                   {node.description && <p className="text-lg">{node.description}</p>}
                 </div>
               ))
             ) : (
-              config.travelAdvice.split('\n\n').map((paragraph, i) => (
-                <p key={i} className="mx-auto max-w-xl text-lg mt-4">{paragraph}</p>
-              ))
+              <div className="text-center text-gray-500">Travel details coming soon...</div>
             )}
           </motion.section>
         );
+      }
       case 'faq':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
@@ -147,20 +161,7 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
                   </div>
                 ))
               ) : (
-                <>
-                  <div>
-                    <h3 className="font-semibold text-lg">What is &quot;Garden Formal&quot;?</h3>
-                    <p>It means look nice, but maybe don&apos;t wear stilettos unless you enjoy aerating the lawn.</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-lg">Can I Bring My Kids?</h3>
-                    <p>We adore your little ones, but this celebration is adults only. Treat it as a date night while we toast to the next chapter of our lives.</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-lg">Is there parking available?</h3>
-                    <p>Yes, there are 40 spots of parking available at the Plummer House.</p>
-                  </div>
-                </>
+                <div className="text-center text-gray-500">No FAQs available yet.</div>
               )}
             </div>
           </motion.section>

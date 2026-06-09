@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
 import { CalendarEvent } from '@/utils/calendar';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
-import { prisma } from '@/lib/prisma';
+import { logisticsService } from '@/features/logistics/service';
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
@@ -77,13 +77,7 @@ export default async function HomePage() {
 
   let contentNodes: import('@prisma/client').ContentNode[] = [];
   try {
-    contentNodes = await prisma.contentNode.findMany({
-      where: {
-        tags: {
-          has: 'Homepage'
-        }
-      }
-    });
+    contentNodes = await logisticsService.getHomepageLogistics();
   } catch (error) {
     console.warn("Could not fetch content nodes for Homepage");
   }
