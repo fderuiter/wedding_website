@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import HeartPage from '../page';
+import HeartClient from '../HeartClient';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 
 import { ContactForceEvent } from '@react-three/rapier';
@@ -137,7 +137,7 @@ jest.mock('three', () => {
   };
 });
 
-describe('HeartPage', () => {
+describe('HeartClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     const useThree = jest.requireMock('@react-three/fiber').useThree;
@@ -148,34 +148,34 @@ describe('HeartPage', () => {
   });
 
   it('renders the page without crashing', () => {
-    render(<HeartPage />);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
     expect(screen.getByText('Back Home')).toBeInTheDocument();
     expect(screen.getByText('Reset')).toBeInTheDocument();
   });
 
   it('handles reset button clicks', () => {
-    const { rerender } = render(<HeartPage />);
+    const { rerender } = render(<HeartClient name1="TestName1" name2="TestName2" />);
     const resetButton = screen.getByText('Reset');
     fireEvent.click(resetButton);
-    rerender(<HeartPage />);
+    rerender(<HeartClient name1="TestName1" name2="TestName2" />);
     expect(screen.getByText('Back Home')).toBeInTheDocument();
   });
 
   it('responds to window resize', () => {
-    render(<HeartPage />);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
     global.innerWidth = 500;
     fireEvent(window, new Event('resize'));
     expect(screen.getByText('Back Home')).toBeInTheDocument();
   });
 
   it('should call onInteract when the heart is dragged', () => {
-    render(<HeartPage />);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
     const rigidBody = screen.getAllByTestId('rigidbody')[0];
     fireEvent.mouseDown(rigidBody);
   });
 
   it('renders Sparkles component with default number of points', () => {
-    render(<HeartPage />);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
     const points = screen.getByTestId('points');
     expect(points).toBeInTheDocument();
     // Default count is 200
@@ -183,14 +183,14 @@ describe('HeartPage', () => {
   });
 
   it('renders the Heart3D component with the names', () => {
-    render(<HeartPage />);
-    expect(screen.getAllByText('Abbi').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Fred').length).toBeGreaterThan(0);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
+    expect(screen.getAllByText('TestName1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('TestName2').length).toBeGreaterThan(0);
   });
 
   it('breaks when colliding with force and reforms after a timeout', () => {
     jest.useFakeTimers();
-    render(<HeartPage />);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
 
     expect(onContactForceCallback).toBeDefined();
 
@@ -209,7 +209,7 @@ describe('HeartPage', () => {
   });
 
   it('renders the ScreenBounds component with four walls', () => {
-    render(<HeartPage />);
+    render(<HeartClient name1="TestName1" name2="TestName2" />);
     const colliders = screen.getAllByTestId('cuboid-collider');
     expect(colliders.length).toBe(4);
   });
