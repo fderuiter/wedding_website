@@ -23,6 +23,9 @@ const fallbackAppConfig: AppConfig = {
   heroSubtitle: '',
   seoTitle: '',
   seoDescription: '',
+  faviconUrl: '/assets/favicon.png',
+  ogImageUrl: '/images/sunset-embrace.jpg',
+  seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
   adminPassword: '',
   themePrimary: '#000000',
   themeSecondary: '#ffffff',
@@ -138,6 +141,9 @@ export async function getAppConfig() {
           longitude: -92.4938,
           venueDescription: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN.',
           seoDescription: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
+          faviconUrl: '/assets/favicon.png',
+          ogImageUrl: '/images/sunset-embrace.jpg',
+          seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
         },
       });
     }

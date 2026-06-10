@@ -32,6 +32,9 @@ model AppConfig {
   themePrimary     String   @default("#f43f5e") // rose-500
   themeSecondary   String   @default("#fbbf24") // amber-400
   themeAccent      String   @default("#e11d48") // rose-600
+  faviconUrl       String   @default("/assets/favicon.png")
+  ogImageUrl       String   @default("/images/sunset-embrace.jpg")
+  seoKeywords      String   @default("{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception")
   features         Json     @default("[]")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
