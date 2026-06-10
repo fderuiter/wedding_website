@@ -3,61 +3,44 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { WeddingPartyMember } from '@prisma/client';
+import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
 export default function WeddingPartyDashboardPage() {
   const router = useRouter();
-  const [members, setMembers] = useState<WeddingPartyMember[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  
+  const {
+    data: members,
+    loading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove
+  } = useAdminEntity<WeddingPartyMember>('wedding-party');
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMember>>({});
 
   useEffect(() => {
-    async function checkAuthAndFetch() {
+    async function checkAuth() {
       const isAdmin = await checkAdminClient();
       if (!isAdmin) {
         router.replace('/admin/login');
-        return;
       }
-      fetchMembers();
     }
-    checkAuthAndFetch();
+    checkAuth();
   }, [router]);
-
-  const fetchMembers = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/admin/wedding-party');
-      if (!res.ok) throw new Error('Failed to fetch members');
-      const data = await res.json();
-      setMembers(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSave = async () => {
     try {
-      const url = currentMember.id ? `/api/admin/wedding-party/${currentMember.id}` : '/api/admin/wedding-party';
-      const method = currentMember.id ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentMember)
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to save member');
+      if (currentMember.id) {
+        await update(currentMember.id, currentMember);
+      } else {
+        await create(currentMember);
       }
-
       setIsEditing(false);
-      fetchMembers();
     } catch (e: any) {
       alert(e.message || 'Error saving member');
     }
@@ -66,9 +49,7 @@ export default function WeddingPartyDashboardPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this member?')) return;
     try {
-      const res = await fetch(`/api/admin/wedding-party/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete member');
-      setMembers((prev) => prev.filter((i) => i.id !== id));
+      await remove(id);
     } catch (e: any) {
       alert(e.message || 'Error deleting member');
     }
@@ -103,7 +84,7 @@ export default function WeddingPartyDashboardPage() {
       entityId={currentMember.id}
       onRestore={() => {
         setIsEditing(false);
-        fetchMembers();
+        fetchAll();
       }}
     >
       <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
