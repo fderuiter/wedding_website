@@ -13,8 +13,14 @@ export interface EntityConfig {
 function validateCoordinates(data: any): string | null {
   const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
   const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
-  if (!parsedLat.success || !parsedLon.success) {
-    return 'Invalid coordinate format. Must be a numeric value or a placeholder.';
+  if (!parsedLat.success && !parsedLon.success) {
+    return 'Invalid coordinate format for latitude and longitude. Must be a numeric value or a placeholder.';
+  }
+  if (!parsedLat.success) {
+    return 'Invalid coordinate format for latitude. Must be a numeric value or a placeholder.';
+  }
+  if (!parsedLon.success) {
+    return 'Invalid coordinate format for longitude. Must be a numeric value or a placeholder.';
   }
   return null;
 }
