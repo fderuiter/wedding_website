@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
-import { verifyAdminToken } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 import { coordinateSchema } from '@/utils/validation';
 
 export async function GET(req: NextRequest) {
-  const token = req.cookies.get('admin_auth')?.value;
-  if (!token || !verifyAdminToken(token)) {
+  if (!(await isAdminRequest(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -15,8 +14,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const token = req.cookies.get('admin_auth')?.value;
-  if (!token || !verifyAdminToken(token)) {
+  if (!(await isAdminRequest(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

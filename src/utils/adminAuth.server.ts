@@ -1,12 +1,15 @@
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
+import { getAppConfig } from '@/lib/config';
 
 const ADMIN_COOKIE = 'admin_auth';
 
-// Use the admin password hash as the secret for signing tokens.
-// In a real app, use a dedicated SESSION_SECRET environment variable.
-const SECRET = process.env.ADMIN_PASSWORD || crypto.randomBytes(32).toString('hex');
+async function getSecret(): Promise<string> {
+  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  const config = await getAppConfig();
+  return config.adminPassword || 'fallback-secret';
+}
 
 interface AdminTokenPayload {
   isAdmin: boolean;
@@ -19,10 +22,11 @@ interface AdminTokenPayload {
  * Creates a signed token string.
  * Format: payloadBase64.signatureBase64
  */
-export function signAdminToken(payload: AdminTokenPayload): string {
+export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const secret = await getSecret();
   const signature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', secret)
     .update(data)
     .digest('base64url');
   return `${data}.${signature}`;
@@ -32,13 +36,14 @@ export function signAdminToken(payload: AdminTokenPayload): string {
  * Verifies a signed token string.
  * Returns the payload if valid, or null if invalid.
  */
-export function verifyAdminToken(token: string): AdminTokenPayload | null {
+export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;
 
+  const secret = await getSecret();
   const expectedSignature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', secret)
     .update(data)
     .digest('base64url');
 
@@ -85,7 +90,7 @@ export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
 
   if (!cookieValue) return false;
 
-  const payload = verifyAdminToken(cookieValue);
+  const payload = await verifyAdminToken(cookieValue);
 
   if (!payload || payload.isAdmin !== true) {
     return false;
