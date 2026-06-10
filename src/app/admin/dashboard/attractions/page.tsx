@@ -7,6 +7,13 @@ import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
+/**
+ * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
+ *
+ * The page enforces an admin check on mount, displays loading/error states, integrates a live preview via AdminPreviewLayout, and provides an editor panel and list view for attractions.
+ *
+ * @returns The React element for the Attractions admin dashboard page.
+ */
 export default function AttractionsDashboardPage() {
   const router = useRouter();
 

@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 import { getEntityService } from '@/lib/admin/registry';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
+/**
+ * Fetches a list of records for the entity specified in the route parameters, with optional ordering from query parameters.
+ *
+ * Supports query parameters `orderBy` (defaults to `createdAt`) and `orderDir` (defaults to `desc`). For entities with type `WeddingPartyMember` the results are ordered by `{ order: 'asc' }`.
+ *
+ * @param context - Route context whose `params` resolves to an object containing `entity`, the name of the target entity.
+ * @returns A JSON HTTP response containing the fetched records array on success; on failure returns a JSON error object with an appropriate status code (401 if unauthorized, 404 if the entity is not found, 500 on server error).
+ */
 export async function GET(request: Request, context: { params: Promise<{ entity: string }> }) {
   const isAdmin = await isAdminRequest();
   if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -28,6 +36,13 @@ export async function GET(request: Request, context: { params: Promise<{ entity:
   }
 }
 
+/**
+ * Create a new record for the entity specified in the route parameters.
+ *
+ * If the entity's config provides `validateCreate`, the request body is validated and a `400` is returned with the validation error when validation fails. The handler also returns `401` for unauthorized requests, `404` if the entity is not found, and `500` for unexpected failures.
+ *
+ * @returns The created record as JSON when successful (HTTP 201).
+ */
 export async function POST(request: Request, context: { params: Promise<{ entity: string }> }) {
   const isAdmin = await isAdminRequest();
   if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -51,6 +66,19 @@ export async function POST(request: Request, context: { params: Promise<{ entity
   }
 }
 
+/**
+ * Handle collection-level bulk actions for the specified entity (currently supports reorder).
+ *
+ * @param request - The incoming HTTP request containing a JSON body with the action payload.
+ * @param context - Route context whose `params.entity` identifies the target entity.
+ * @returns A JSON Response:
+ * - Success: `{ success: true }` with status 200 when reorder completes.
+ * - Client errors:
+ *   - `{ error: 'Invalid action' }` with status 400 for unsupported action/shape.
+ *   - `{ error: 'Entity not found' }` with status 404 when the entity has no registered service.
+ *   - `{ error: 'Unauthorized' }` with status 401 when the requester is not an admin.
+ * - Server error: `{ error: string }` with status 500 on unexpected failures.
+ */
 export async function PUT(request: Request, context: { params: Promise<{ entity: string }> }) {
   // Use PUT on collection for bulk operations like reorder
   const isAdmin = await isAdminRequest();

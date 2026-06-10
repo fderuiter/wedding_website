@@ -7,6 +7,14 @@ import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
+/**
+ * Render the admin CRUD interface and live archive preview for wedding-party members.
+ *
+ * Renders an admin page that lists wedding party members, provides create/edit/delete controls,
+ * shows an inline form for drafting a member, and supplies a preview of the archive via AdminPreviewLayout.
+ *
+ * @returns The React element for the Wedding Party admin dashboard and preview.
+ */
 export default function WeddingPartyDashboardPage() {
   const router = useRouter();
   

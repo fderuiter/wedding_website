@@ -27,6 +27,12 @@ const entityConfigs: Record<string, EntityConfig> = {
   }
 };
 
+/**
+ * Retrieve the service and configuration for a registered admin entity key.
+ *
+ * @param entityKey - The registry key identifying the entity (e.g., 'wedding-party', 'attractions', 'registry-items', 'content-nodes')
+ * @returns An object containing `service` (a BaseService instance) and `config` (the EntityConfig) for the given key, or `null` if the key is not registered
+ */
 export function getEntityService(entityKey: string) {
   const config = entityConfigs[entityKey];
   if (!config) return null;

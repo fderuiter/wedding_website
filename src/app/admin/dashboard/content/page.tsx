@@ -7,6 +7,16 @@ import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
+/**
+ * Admin interface for listing, creating, editing, deleting, and previewing content nodes.
+ *
+ * Renders a dashboard UI that enforces admin authentication, shows existing content nodes,
+ * provides an inline editor for node metadata and dynamic key/value fields, supports
+ * creating and removing nodes, and offers a preview integration (including optional
+ * photo metadata scraping when a node is of type `Photo`).
+ *
+ * @returns A React element rendering the content dashboard UI with list, editor, and preview controls.
+ */
 export default function ContentDashboardPage() {
   const router = useRouter();
 
