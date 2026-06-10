@@ -32,11 +32,22 @@ const fallbackAppConfig: AppConfig = {
   updatedAt: new Date(),
 };
 
+/**
+ * Produce a public-safe view of the application configuration.
+ *
+ * @param config - The full `AppConfig` object
+ * @returns The same configuration with the `adminPassword` field removed
+ */
 export function toPublicAppConfig(config: AppConfig): PublicAppConfig {
   const { adminPassword, ...publicConfig } = config;
   return publicConfig;
 }
 
+/**
+ * Ensures baseline Logistics and FAQ content nodes exist in the database by creating default entries when none are present.
+ *
+ * Creates two default Logistics nodes and three default FAQ nodes when the corresponding contentNode count is zero.
+ */
 async function bootstrapLogisticsNodes() {
   const logisticsCount = await prisma.contentNode.count({
     where: { type: 'Logistics' }
@@ -100,6 +111,14 @@ async function bootstrapLogisticsNodes() {
   }
 }
 
+/**
+ * Load the global application configuration from the database and ensure baseline content nodes exist.
+ *
+ * If the `appConfig` row with id `"global"` does not exist, a new row is created with initial venue and SEO fields.
+ * Also ensures default logistics and FAQ content nodes are present.
+ *
+ * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
+ */
 export async function getAppConfig() {
   try {
     let config = await prisma.appConfig.findUnique({

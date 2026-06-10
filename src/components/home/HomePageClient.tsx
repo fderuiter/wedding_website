@@ -13,6 +13,16 @@ import Countdown from '@/components/Countdown'
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
+/**
+ * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.
+ *
+ * Renders sections (story, details, accommodations, venue, travel, faq, and custom) driven by `config` and `contentNodes`, formats the wedding date for display, and animates sections with Framer Motion. While mounted inside an iframe, listens for postMessage events of type `DRAFT_UPDATE` and merges incoming `config` updates or replaces `contentNodes` when draft data arrives.
+ *
+ * @param calendarEvent - Calendar event data used for calendar-related features (provided to optional calendar components).
+ * @param config - Initial public application configuration used to populate page content and settings.
+ * @param contentNodes - Optional initial array of CMS content nodes that drive FAQs, logistics, and custom sections.
+ * @returns The rendered homepage JSX element.
+ */
 export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: PublicAppConfig, contentNodes?: ContentNode[] }) {
   const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [contentNodes, setContentNodes] = useState<ContentNode[]>(initialContentNodes);

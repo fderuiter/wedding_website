@@ -5,6 +5,11 @@ import { CalendarEvent } from '@/utils/calendar';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { logisticsService } from '@/features/logistics/service';
 
+/**
+ * Build homepage metadata and embedded schema.org JSON-LD from application configuration.
+ *
+ * @returns A `Metadata` object for the homepage containing a page title and description, `alternates.canonical`, Open Graph and Twitter card fields (including image and URL), and an `application/ld+json` entry with an Event schema. 
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   const title = `${config.brideName} & ${config.groomName}'s Wedding`;
@@ -60,6 +65,15 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/**
+ * Assemble page data and render the homepage component.
+ *
+ * Builds a public-facing app config and a wedding `CalendarEvent`, attempts to load homepage content
+ * nodes from the logistics service (falls back to an empty array on failure), and returns the
+ * homepage JSX element populated with those values.
+ *
+ * @returns The homepage JSX element populated with the public app configuration, a calendar event for the wedding, and the fetched content nodes (or an empty array if fetching fails).
+ */
 export default async function HomePage() {
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
