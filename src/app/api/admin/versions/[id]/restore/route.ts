@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/utils/adminAuth.server';
+import { coordinateSchema } from '@/utils/validation';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const isAdmin = await isAdminRequest();
@@ -32,8 +33,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           venueCity: snapshotData.venueCity,
           venueState: snapshotData.venueState,
           venueZip: snapshotData.venueZip,
-          latitude: parseFloat(snapshotData.latitude),
-          longitude: parseFloat(snapshotData.longitude),
+          latitude: coordinateSchema.parse(snapshotData.latitude),
+          longitude: coordinateSchema.parse(snapshotData.longitude),
           storyText: snapshotData.storyText,
           venueDescription: snapshotData.venueDescription,
           travelAdvice: snapshotData.travelAdvice,
@@ -74,8 +75,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           category: snapshotData.category,
           website: snapshotData.website,
           directions: snapshotData.directions,
-          latitude: parseFloat(snapshotData.latitude || 0),
-          longitude: parseFloat(snapshotData.longitude || 0),
+          latitude: coordinateSchema.parse(snapshotData.latitude || 0),
+          longitude: coordinateSchema.parse(snapshotData.longitude || 0),
           isVisible: snapshotData.isVisible !== false,
         }
       });
