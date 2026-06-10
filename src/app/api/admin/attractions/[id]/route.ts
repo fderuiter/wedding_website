@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/utils/adminAuth.server';
+import { coordinateSchema } from '@/utils/validation';
 
 export async function PUT(req: Request, props: { params: Promise<{ id: string }> }) {
   if (!(await isAdminRequest())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -8,6 +9,16 @@ export async function PUT(req: Request, props: { params: Promise<{ id: string }>
     const params = await props.params;
     const { id } = params;
     const data = await req.json();
+
+    const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
+    const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
+
+    if (!parsedLat.success || !parsedLon.success) {
+      return NextResponse.json({ 
+        error: 'Invalid coordinate format. Must be a numeric value or a placeholder.' 
+      }, { status: 400 });
+    }
+
     const updated = await prisma.attraction.update({
       where: { id },
       data: {
@@ -17,8 +28,8 @@ export async function PUT(req: Request, props: { params: Promise<{ id: string }>
         category: data.category,
         website: data.website,
         directions: data.directions,
-        latitude: parseFloat(data.latitude || 0),
-        longitude: parseFloat(data.longitude || 0),
+        latitude: parsedLat.data,
+        longitude: parsedLon.data,
         isVisible: data.isVisible !== false,
       }
     });
