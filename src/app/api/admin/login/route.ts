@@ -7,17 +7,10 @@ import { getAppConfig } from '@/lib/config';
 const ADMIN_COOKIE = 'admin_auth';
 
 /**
- * @api {post} /api/admin/login
- * @description Handles admin login.
+ * Authenticate an administrator and set an HTTP-only admin auth cookie.
  *
- * This function processes a POST request to log in an administrator. It validates the
- * provided password against the `adminPassword` stored in the database.
- *
- * @param {NextRequest} req - The incoming Next.js request object, containing the password in the JSON body.
- * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
- * On success, it returns a JSON object with `success: true` and sets the auth cookie.
- * On failure (e.g., wrong password, server misconfiguration), it returns an appropriate
- * error message and status code.
+ * @param req - Incoming Next.js request whose JSON body must include a `password` string.
+ * @returns A NextResponse: on success contains `{ success: true }` and sets the `admin_auth` cookie; on failure contains an `{ error: string }` with an appropriate 4xx/5xx status.
  */
 export async function POST(req: NextRequest) {
   // Apply rate limiting: max 5 requests per 15 minutes per IP
