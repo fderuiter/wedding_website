@@ -59,7 +59,8 @@ export async function POST(request: Request, context: { params: Promise<{ entity
       if (error) return NextResponse.json({ error }, { status: 400 });
     }
 
-    const newRecord = await serviceData.service.create(body);
+    const mappedBody = serviceData.config.mapData ? serviceData.config.mapData(body) : body;
+    const newRecord = await serviceData.service.create(mappedBody);
     return NextResponse.json(newRecord, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to create' }, { status: 500 });

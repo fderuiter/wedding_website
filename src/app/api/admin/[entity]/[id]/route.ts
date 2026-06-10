@@ -49,7 +49,8 @@ export async function PUT(request: Request, context: { params: Promise<{ entity:
       if (error) return NextResponse.json({ error }, { status: 400 });
     }
 
-    const updatedRecord = await serviceData.service.update(id, body);
+    const mappedBody = serviceData.config.mapData ? serviceData.config.mapData(body) : body;
+    const updatedRecord = await serviceData.service.update(id, mappedBody);
     return NextResponse.json(updatedRecord);
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to update' }, { status: 500 });

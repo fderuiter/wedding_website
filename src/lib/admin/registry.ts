@@ -1,4 +1,5 @@
 import { BaseRepository, BaseService } from './core';
+import { coordinateSchema } from '@/utils/validation';
 
 export interface EntityConfig {
   modelName: string;
@@ -6,6 +7,26 @@ export interface EntityConfig {
   // declarative custom validation or mapping can be added here
   validateCreate?: (data: any) => string | null;
   validateUpdate?: (data: any) => string | null;
+  mapData?: (data: any) => any;
+}
+
+function validateCoordinates(data: any): string | null {
+  const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
+  const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
+  if (!parsedLat.success || !parsedLon.success) {
+    return 'Invalid coordinate format. Must be a numeric value or a placeholder.';
+  }
+  return null;
+}
+
+function mapAttractionData(data: any): any {
+  const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
+  const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
+  return {
+    ...data,
+    latitude: parsedLat.success ? parsedLat.data : 0,
+    longitude: parsedLon.success ? parsedLon.data : 0,
+  };
 }
 
 const entityConfigs: Record<string, EntityConfig> = {
@@ -16,6 +37,9 @@ const entityConfigs: Record<string, EntityConfig> = {
   'attractions': {
     modelName: 'attraction',
     entityType: 'Attraction',
+    validateCreate: validateCoordinates,
+    validateUpdate: validateCoordinates,
+    mapData: mapAttractionData,
   },
   'registry-items': {
     modelName: 'registryItem',
