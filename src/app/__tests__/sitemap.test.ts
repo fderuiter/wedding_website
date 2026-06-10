@@ -1,4 +1,11 @@
 import sitemap from '../sitemap';
+import { getAppConfig } from '@/lib/config';
+
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    baseUrl: 'http://localhost:3000',
+  }),
+}));
 
 describe('sitemap', () => {
   it('should return the correct sitemap entries', async () => {
