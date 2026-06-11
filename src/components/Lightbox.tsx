@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect } from 'react'
 import Image from 'next/image'
 import { GalleryImage } from './Gallery'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { useOverlay } from '@/hooks/useOverlay'
 
 /**
  * @interface LightboxProps
@@ -36,13 +37,11 @@ const Lightbox: React.FC<LightboxProps> = ({
   onNext,
   onPrev,
 }) => {
-  const modalRef = useRef<HTMLDivElement>(null)
+  const { overlayRef, handleBackdropClick } = useOverlay(true, onClose);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-      } else if (e.key === 'ArrowRight') {
+      if (e.key === 'ArrowRight') {
         onNext()
       } else if (e.key === 'ArrowLeft') {
         onPrev()
@@ -53,15 +52,15 @@ const Lightbox: React.FC<LightboxProps> = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onClose, onNext, onPrev])
+  }, [onNext, onPrev])
 
   const image = images[currentIndex]
 
   return (
     <div
-      ref={modalRef}
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80"
-      onClick={onClose}
+      onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
     >

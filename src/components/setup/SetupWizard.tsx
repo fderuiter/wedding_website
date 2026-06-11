@@ -101,11 +101,11 @@ export default function SetupWizard() {
               placeholder="Admin Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 p-2 rounded focus:ring-rose-500 focus:border-rose-500"
+              className="form-input"
               required
             />
             {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button disabled={loading} className="w-full bg-rose-600 text-white p-2 rounded hover:bg-rose-700 disabled:opacity-50">
+            <button disabled={loading} className="w-full btn-primary py-3">
               {loading ? "Authenticating..." : "Continue"}
             </button>
           </form>
@@ -124,37 +124,37 @@ export default function SetupWizard() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold mb-1">Partner 1</label>
-                <input type="text" value={brideName} onChange={(e) => setBrideName(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+                <input type="text" value={brideName} onChange={(e) => setBrideName(e.target.value)} className="form-input" required />
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-1">Partner 2</label>
-                <input type="text" value={groomName} onChange={(e) => setGroomName(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+                <input type="text" value={groomName} onChange={(e) => setGroomName(e.target.value)} className="form-input" required />
               </div>
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Wedding Date</label>
-              <input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+              <input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} className="form-input" required />
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Site URL (e.g. https://ourwedding.com)</label>
-              <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+              <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="form-input" required />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-3 md:col-span-1">
                 <label className="block text-sm font-semibold mb-1">Venue Name</label>
-                <input type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+                <input type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} className="form-input" required />
               </div>
               <div className="col-span-3 md:col-span-1">
                 <label className="block text-sm font-semibold mb-1">City</label>
-                <input type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+                <input type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} className="form-input" required />
               </div>
               <div className="col-span-3 md:col-span-1">
                 <label className="block text-sm font-semibold mb-1">State</label>
-                <input type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} className="w-full border border-gray-300 p-2 rounded" required />
+                <input type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} className="form-input" required />
               </div>
             </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button disabled={loading} className="w-full bg-rose-600 text-white p-2 rounded hover:bg-rose-700 disabled:opacity-50">
+            <button disabled={loading} className="w-full btn-primary py-3">
               {loading ? "Saving..." : "Next Step"}
             </button>
           </form>
@@ -170,17 +170,17 @@ export default function SetupWizard() {
           <h1 className="text-2xl font-bold text-rose-700 mb-4">Step 2: Add Content</h1>
           <p className="mb-6 text-gray-600">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
           <div className="space-y-4">
-            <button onClick={() => window.open("/admin/dashboard/wedding-party", "_blank")} className="w-full border-2 border-rose-600 text-rose-600 font-bold p-3 rounded hover:bg-rose-50">
+            <button onClick={() => window.open("/admin/dashboard/wedding-party", "_blank")} className="w-full btn-secondary py-3">
               Manage Wedding Party (Opens in New Tab)
             </button>
-            <button onClick={() => window.open("/admin/dashboard/attractions", "_blank")} className="w-full border-2 border-rose-600 text-rose-600 font-bold p-3 rounded hover:bg-rose-50">
+            <button onClick={() => window.open("/admin/dashboard/attractions", "_blank")} className="w-full btn-secondary py-3">
               Manage Attractions (Opens in New Tab)
             </button>
           </div>
           <p className="mt-6 mb-4 text-sm text-gray-500">You can also do this later from the Admin Dashboard.</p>
           <button onClick={() => {
             window.location.href = "/";
-          }} className="w-full bg-rose-600 text-white p-3 rounded font-bold hover:bg-rose-700">
+          }} className="w-full btn-primary py-3">
             Finish Setup & View Site
           </button>
         </div>
