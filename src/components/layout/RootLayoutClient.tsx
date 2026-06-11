@@ -85,7 +85,6 @@ export default function RootLayoutClient({
           headerRef={headerRef}
           isAdmin={isAdmin}
           handleLogout={handleLogout}
-          config={config}
         />
       )}
       <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>

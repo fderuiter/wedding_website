@@ -160,13 +160,34 @@ export async function getAppConfig(): Promise<AppConfig> {
     console.warn("Database unreachable, using fallback config.");
   }
 
-  const mergedConfig = dbConfig 
-    ? { ...fallbackAppConfig, ...dbConfig }
-    : fallbackAppConfig;
+  // Define environment overrides mapping
+  const envOverrides: Partial<LocalAppConfig> = {};
+  if (process.env.NEXT_PUBLIC_BRIDE_NAME || process.env.BRIDE_NAME) envOverrides.brideName = process.env.NEXT_PUBLIC_BRIDE_NAME || process.env.BRIDE_NAME;
+  if (process.env.NEXT_PUBLIC_GROOM_NAME || process.env.GROOM_NAME) envOverrides.groomName = process.env.NEXT_PUBLIC_GROOM_NAME || process.env.GROOM_NAME;
+  if (process.env.WEDDING_DATE) envOverrides.weddingDate = new Date(process.env.WEDDING_DATE);
+  if (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL) envOverrides.baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL;
+  if (process.env.NEXT_PUBLIC_VENUE_NAME || process.env.VENUE_NAME) envOverrides.venueName = process.env.NEXT_PUBLIC_VENUE_NAME || process.env.VENUE_NAME;
+  if (process.env.NEXT_PUBLIC_THEME_PRIMARY || process.env.THEME_PRIMARY) envOverrides.themePrimary = process.env.NEXT_PUBLIC_THEME_PRIMARY || process.env.THEME_PRIMARY;
+  if (process.env.NEXT_PUBLIC_THEME_SECONDARY || process.env.THEME_SECONDARY) envOverrides.themeSecondary = process.env.NEXT_PUBLIC_THEME_SECONDARY || process.env.THEME_SECONDARY;
+  if (process.env.NEXT_PUBLIC_THEME_ACCENT || process.env.THEME_ACCENT) envOverrides.themeAccent = process.env.NEXT_PUBLIC_THEME_ACCENT || process.env.THEME_ACCENT;
+
+  const mergedConfig = {
+    ...fallbackAppConfig,
+    ...(dbConfig || {}),
+    ...envOverrides,
+  };
+
+  // Guarantee all properties have fallbacks if falsy
+  const finalConfig = Object.fromEntries(
+    Object.entries(mergedConfig).map(([k, v]) => [
+      k,
+      v === null || v === undefined || v === '' ? (fallbackAppConfig as any)[k] : v,
+    ])
+  ) as LocalAppConfig;
 
   return {
-    ...mergedConfig,
-    latitude: coordinateSchema.parse(mergedConfig.latitude),
-    longitude: coordinateSchema.parse(mergedConfig.longitude),
-  };
+    ...finalConfig,
+    latitude: coordinateSchema.parse(finalConfig.latitude),
+    longitude: coordinateSchema.parse(finalConfig.longitude),
+  } as AppConfig;
 }

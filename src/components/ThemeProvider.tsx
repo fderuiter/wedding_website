@@ -1,49 +1,65 @@
 "use client";
 
-import React, { createContext, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { PublicAppConfig } from '@/lib/config';
 
-type ThemeContextType = {
-  themePrimary: string;
-  themeSecondary: string;
-  themeAccent: string;
+type AppContextType = {
+  config: PublicAppConfig | null;
 };
 
-const ThemeContext = createContext<ThemeContextType>({
-  themePrimary: '#f43f5e',
-  themeSecondary: '#fbbf24',
-  themeAccent: '#e11d48',
+const AppContext = createContext<AppContextType>({
+  config: null,
 });
 
-export const useTheme = () => useContext(ThemeContext);
+export const useAppConfig = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useAppConfig must be used within an AppProvider');
+  }
+  return context.config;
+};
+
+// Deprecated: for backwards compatibility with old ThemeProvider consumers.
+export const useTheme = () => {
+  const config = useAppConfig();
+  return {
+    themePrimary: config?.themePrimary || '#f43f5e',
+    themeSecondary: config?.themeSecondary || '#fbbf24',
+    themeAccent: config?.themeAccent || '#e11d48',
+  };
+};
 
 export function ThemeProvider({ 
   children, 
-  themePrimary, 
-  themeSecondary, 
-  themeAccent 
+  config 
 }: { 
   children: React.ReactNode; 
-  themePrimary?: string; 
-  themeSecondary?: string; 
-  themeAccent?: string; 
+  config: PublicAppConfig;
 }) {
-  const primary = themePrimary || '#f43f5e';
-  const secondary = themeSecondary || '#fbbf24';
-  const accent = themeAccent || '#e11d48';
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const primary = config.themePrimary || '#f43f5e';
+    const secondary = config.themeSecondary || '#fbbf24';
+    const accent = config.themeAccent || '#e11d48';
+
     document.documentElement.style.setProperty('--color-primary', primary);
     document.documentElement.style.setProperty('--color-secondary', secondary);
-    
-    // Convert accent color to tailwind's primary/primary equivalent if possible,
-    // or just apply it to elements that used primary.
-    // Let's create an --color-accent variable for things like hover states or focus rings.
     document.documentElement.style.setProperty('--color-accent', accent);
-  }, [primary, secondary, accent]);
+  }, [config.themePrimary, config.themeSecondary, config.themeAccent, mounted]);
 
   return (
-    <ThemeContext.Provider value={{ themePrimary: primary, themeSecondary: secondary, themeAccent: accent }}>
+    <AppContext.Provider value={{ config }}>
       {children}
-    </ThemeContext.Provider>
+    </AppContext.Provider>
   );
 }
+
+// Export it as AppProvider too.
+export const AppProvider = ThemeProvider;

@@ -12,11 +12,10 @@ import { logisticsService } from '@/features/logistics/service';
  */
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
-  const title = `${config.brideName} & ${config.groomName}'s Wedding`;
-  const description =
-    `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`;
+  const title = config.seoTitle || `${config.brideName} & ${config.groomName}'s Wedding`;
+  const description = config.seoDescription || `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`;
   const baseUrl = config.baseUrl || 'https://abbifred.com';
-  const imageUrl = `${baseUrl}/images/sunset-embrace.jpg`;
+  const imageUrl = config.ogImageUrl ? (config.ogImageUrl.startsWith('http') ? config.ogImageUrl : `${baseUrl}${config.ogImageUrl}`) : `${baseUrl}/images/sunset-embrace.jpg`;
 
   const jsonLd = {
     '@context': 'https://schema.org',

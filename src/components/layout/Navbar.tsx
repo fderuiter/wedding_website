@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { PublicAppConfig } from '@/lib/config';
+import { useAppConfig } from '@/components/ThemeProvider';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -17,13 +17,11 @@ const navLinks = [
  * @property {boolean} isAdmin - Indicates if the current user is an administrator.
  * @property {() => void} handleLogout - Function to handle user logout.
  * @property {React.RefObject<HTMLElement | null>} headerRef - Ref to the header element for layout calculations.
- * @property {AppConfig} config - The app configuration.
  */
 interface NavbarProps {
   isAdmin: boolean;
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
-  config: PublicAppConfig;
 }
 
 /**
@@ -34,16 +32,17 @@ interface NavbarProps {
  * @param {NavbarProps} props - The props for the component.
  * @returns {JSX.Element} The rendered Navbar component.
  */
-export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
+export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const config = useAppConfig();
 
   // Safely parse features array
   let features: any[] = [];
   try {
-    if (typeof config.features === 'string') {
+    if (config && typeof config.features === 'string') {
       features = JSON.parse(config.features);
-    } else if (Array.isArray(config.features)) {
+    } else if (config && Array.isArray(config.features)) {
       features = config.features;
     }
   } catch(e) {}
@@ -79,7 +78,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         <div className="flex items-center justify-between h-16">
           <div className="flex-shrink-0">
             <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
-              A & F
+              {config?.brideName?.[0] ?? 'A'} & {config?.groomName?.[0] ?? 'F'}
             </Link>
           </div>
           <div className="hidden md:block">
