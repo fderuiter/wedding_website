@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar'
+import { useOverlay } from '@/hooks/useOverlay'
 
 /**
  * @interface AddToCalendarProps
@@ -22,45 +23,16 @@ interface AddToCalendarProps {
  */
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const handleToggle = () => setIsOpen(!isOpen)
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isOpen])
-
-  // Focus first item when opened
-  useEffect(() => {
-    if (isOpen) {
-      const firstButton = dropdownRef.current?.querySelector('button[role="menuitem"]') as HTMLElement
-      firstButton?.focus()
-    }
-  }, [isOpen])
+  const { overlayRef } = useOverlay(isOpen, () => setIsOpen(false));
 
   const handleMenuKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const buttons = dropdownRef.current?.querySelectorAll('button[role="menuitem"]')
+      const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]')
       if (!buttons) return
       const index = Array.from(buttons).indexOf(document.activeElement as Element)
       let nextIndex = 0
@@ -98,12 +70,12 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
   }
 
   return (
-    <div className={`relative inline-block text-left ${className}`} ref={dropdownRef}>
+    <div className={`relative inline-block text-left ${className}`} ref={overlayRef}>
       <div>
         <button
           ref={triggerRef}
           type="button"
-          className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-primary text-white font-semibold shadow-md hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+          className="btn-primary w-full rounded-full px-8 py-3"
           id="options-menu"
           aria-haspopup="true"
           aria-expanded={isOpen}
