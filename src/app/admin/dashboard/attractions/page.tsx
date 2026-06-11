@@ -3,61 +3,51 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { Attraction } from '@prisma/client';
+import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
+/**
+ * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
+ *
+ * The page enforces an admin check on mount, displays loading/error states, integrates a live preview via AdminPreviewLayout, and provides an editor panel and list view for attractions.
+ *
+ * @returns The React element for the Attractions admin dashboard page.
+ */
 export default function AttractionsDashboardPage() {
   const router = useRouter();
-  const [attractions, setAttractions] = useState<Attraction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const {
+    data: attractions,
+    loading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove
+  } = useAdminEntity<Attraction>('attractions');
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentAttraction, setCurrentAttraction] = useState<Partial<Attraction>>({});
 
   useEffect(() => {
-    async function checkAuthAndFetch() {
+    async function checkAuth() {
       const isAdmin = await checkAdminClient();
       if (!isAdmin) {
         router.replace('/admin/login');
-        return;
       }
-      fetchAttractions();
     }
-    checkAuthAndFetch();
+    checkAuth();
   }, [router]);
-
-  const fetchAttractions = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/admin/attractions');
-      if (!res.ok) throw new Error('Failed to fetch attractions');
-      const data = await res.json();
-      setAttractions(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSave = async () => {
     try {
-      const url = currentAttraction.id ? `/api/admin/attractions/${currentAttraction.id}` : '/api/admin/attractions';
-      const method = currentAttraction.id ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentAttraction)
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to save attraction');
+      if (currentAttraction.id) {
+        await update(currentAttraction.id, currentAttraction);
+      } else {
+        await create(currentAttraction);
       }
-
       setIsEditing(false);
-      fetchAttractions();
     } catch (e: any) {
       alert(e.message || 'Error saving attraction');
     }
@@ -66,9 +56,7 @@ export default function AttractionsDashboardPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this attraction?')) return;
     try {
-      const res = await fetch(`/api/admin/attractions/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete attraction');
-      setAttractions((prev) => prev.filter((i) => i.id !== id));
+      await remove(id);
     } catch (e: any) {
       alert(e.message || 'Error deleting attraction');
     }
@@ -103,7 +91,7 @@ export default function AttractionsDashboardPage() {
       entityId={currentAttraction.id}
       onRestore={() => {
         setIsEditing(false);
-        fetchAttractions();
+        fetchAll();
       }}
     >
       <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">

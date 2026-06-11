@@ -1,9 +1,15 @@
 import { prisma } from './prisma';
 import type { AppConfig } from '@prisma/client';
+import { coordinateSchema } from '../utils/validation';
 
 export type PublicAppConfig = Omit<AppConfig, 'adminPassword'>;
 
-const fallbackAppConfig: AppConfig = {
+export type LocalAppConfig = Omit<AppConfig, 'latitude' | 'longitude'> & {
+  latitude: string | number;
+  longitude: string | number;
+};
+
+const fallbackAppConfig: LocalAppConfig = {
   id: 'global',
   brideName: 'Abbigayle',
   groomName: 'Frederick',
@@ -122,14 +128,15 @@ async function bootstrapLogisticsNodes() {
  *
  * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
  */
-export async function getAppConfig() {
+export async function getAppConfig(): Promise<AppConfig> {
+  let dbConfig: AppConfig | null = null;
   try {
-    let config = await prisma.appConfig.findUnique({
+    dbConfig = await prisma.appConfig.findUnique({
       where: { id: 'global' },
     });
 
-    if (!config) {
-      config = await prisma.appConfig.create({
+    if (!dbConfig) {
+      dbConfig = await prisma.appConfig.create({
         data: { 
           id: 'global',
           venueName: 'Plummer House',
@@ -149,13 +156,17 @@ export async function getAppConfig() {
     }
 
     await bootstrapLogisticsNodes();
-
-    return {
-      ...fallbackAppConfig,
-      ...config,
-    };
   } catch (error) {
     console.warn("Database unreachable, using fallback config.");
-    return fallbackAppConfig;
   }
+
+  const mergedConfig = dbConfig 
+    ? { ...fallbackAppConfig, ...dbConfig }
+    : fallbackAppConfig;
+
+  return {
+    ...mergedConfig,
+    latitude: coordinateSchema.parse(mergedConfig.latitude),
+    longitude: coordinateSchema.parse(mergedConfig.longitude),
+  };
 }

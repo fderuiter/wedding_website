@@ -3,6 +3,7 @@ import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { verifyAdminToken } from '@/utils/adminAuth.server';
 import { revalidatePath } from 'next/cache';
+import { coordinateSchema } from '@/utils/validation';
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get('admin_auth')?.value;
@@ -23,6 +24,15 @@ export async function PUT(req: NextRequest) {
   try {
     const data = await req.json();
 
+    const parsedLat = coordinateSchema.safeParse(data.latitude);
+    const parsedLon = coordinateSchema.safeParse(data.longitude);
+
+    if (!parsedLat.success || !parsedLon.success) {
+      return NextResponse.json({ 
+        error: 'Invalid coordinate format. Must be a numeric value or a placeholder.' 
+      }, { status: 400 });
+    }
+
     // Data validation could go here
     const HEX = /^#([0-9a-fA-F]{6})$/;
     const safeColor = (v: unknown, fallback: string) =>
@@ -39,8 +49,8 @@ export async function PUT(req: NextRequest) {
         venueCity: data.venueCity,
         venueState: data.venueState,
         venueZip: data.venueZip,
-        latitude: parseFloat(data.latitude),
-        longitude: parseFloat(data.longitude),
+        latitude: parsedLat.data,
+        longitude: parsedLon.data,
         storyText: data.storyText,
         venueDescription: data.venueDescription,
         travelAdvice: data.travelAdvice,
