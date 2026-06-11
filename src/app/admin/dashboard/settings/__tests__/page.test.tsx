@@ -358,11 +358,9 @@ describe('AdminSettingsPage - SEO keywords field', () => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const textarea = screen.getByLabelText(/SEO Keywords/i);
-    await act(async () => {
-      fireEvent.change(textarea, { target: { name: 'seoKeywords', value: 'new keyword one, new keyword two' } });
-    });
+    const textarea = screen.getByRole('textbox', { name: /SEO Keywords/i });
+    fireEvent.input(textarea, { target: { value: 'new keyword one, new keyword two' } });
 
-    expect((textarea as HTMLTextAreaElement).value).toBe('new keyword one, new keyword two');
+    expect(textarea).toHaveValue('new keyword one, new keyword two');
   });
 });
