@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import HeartPage from '../page';
+import HeartClient from '../HeartClient';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 
 import { ContactForceEvent } from '@react-three/rapier';
@@ -136,6 +136,8 @@ jest.mock('three', () => {
     },
   };
 });
+
+const HeartPage = () => <HeartClient brideName="Abbi" groomName="Fred" />;
 
 describe('HeartPage', () => {
   beforeEach(() => {
