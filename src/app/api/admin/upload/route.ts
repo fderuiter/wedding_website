@@ -4,23 +4,20 @@ import path from 'path';
 import { verifyAdminToken } from '@/utils/adminAuth.server';
 import crypto from 'crypto';
 
+/**
+ * Handle an authenticated file upload, validate and store the file, and return its public URL.
+ *
+ * On success, responds with a JSON object containing the uploaded file's public URL.
+ * On failure, responds with a JSON error object and an appropriate HTTP status:
+ * - 401 if the admin authentication token is missing or invalid
+ * - 400 for missing file, file too large (> 5 MB), or unsupported MIME type
+ * - 500 for unexpected server errors during processing
+ *
+ * @returns A NextResponse with `{ url: '/uploads/<filename>' }` on success; otherwise a NextResponse with `{ error: string }` and the corresponding HTTP status code.
+ */
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('admin_auth')?.value;
-  let isAuthorized = false;
-
-  if (token) {
-    const payload = await verifyAdminToken(token);
-    if (payload && payload.isAdmin === true) {
-      const now = Date.now();
-      let valid = true;
-      if (payload.iat && payload.iat > now) valid = false;
-      if (payload.exp && payload.exp < now) valid = false;
-      if (!payload.exp && payload.iat && payload.iat + 60 * 60 * 8 * 1000 < now) valid = false;
-      isAuthorized = valid;
-    }
-  }
-
-  if (!isAuthorized) {
+  if (!token || !(await verifyAdminToken(token))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

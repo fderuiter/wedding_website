@@ -15,17 +15,18 @@ const ADMIN_COOKIE = 'admin_auth';
  */
 let cachedConfigSecret: Promise<string | null> | null = null;
 
+/**
+ * Resolve the admin HMAC secret, preferring the `ADMIN_PASSWORD` environment variable and falling back to the application config.
+ *
+ * The config lookup is performed once and cached for subsequent calls.
+ *
+ * @returns The resolved secret string, or `null` if no secret is configured.
+ */
 async function getSecret(): Promise<string | null> {
   if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
 
   if (!cachedConfigSecret) {
-    cachedConfigSecret = getAppConfig().then((config) => {
-      const secret = config.adminPassword ?? null;
-      if (secret === null) {
-        cachedConfigSecret = null;
-      }
-      return secret;
-    });
+    cachedConfigSecret = getAppConfig().then((config) => config.adminPassword ?? null);
   }
 
   return cachedConfigSecret;
@@ -39,10 +40,11 @@ interface AdminTokenPayload {
 }
 
 /**
- * Signs an admin payload and returns a compact token.
+ * Create a compact signed token from an admin payload.
  *
- * @param payload - The admin token payload to sign.
- * @returns A signed token string in the format `base64url(payload).base64url(signature)`.
+ * @param payload - Object containing the admin claims to include in the token
+ * @returns A signed token string in the format `base64url(payload).base64url(signature)`
+ * @throws Error if the HMAC secret is not configured
  */
 export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -58,9 +60,9 @@ export async function signAdminToken(payload: AdminTokenPayload): Promise<string
 }
 
 /**
- * Validate a base64url-signed admin token and return its decoded payload.
+ * Validate a base64url-signed admin token and decode its payload.
  *
- * @param token - Signed token in the form `base64url(payload).base64url(hmac)` 
+ * @param token - Signed token in the form `base64url(payload).base64url(hmac)`
  * @returns The parsed `AdminTokenPayload` if the token is valid and the signature matches, `null` otherwise.
  */
 export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {

@@ -26,6 +26,19 @@ function getLocalImageDimensions(imageUrl: string) {
   return null;
 }
 
+/**
+ * Builds site metadata (title, description, SEO keywords, icons, Open Graph and Twitter cards) from application configuration with sensible defaults.
+ *
+ * @returns A Metadata object containing:
+ * - `title` with `default` and `template`
+ * - `description`
+ * - `keywords` (placeholders interpolated from config)
+ * - `authors`, `creator`, and `publisher`
+ * - `icons` for icon, shortcut, and apple
+ * - `openGraph` (type, url, title, description, images with resolved width/height/alt, locale, siteName)
+ * - `twitter` card data (including image)
+ * - `metadataBase` as a URL constructed from the site's base URL
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   

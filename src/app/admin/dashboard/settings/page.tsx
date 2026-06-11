@@ -6,6 +6,13 @@ import { checkAdminClient } from '@/utils/adminAuth.client';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
+/**
+ * Admin interface for viewing and editing the site's global configuration.
+ *
+ * Renders a protected "Site Settings" page that verifies admin access, loads editable configuration from the server, and provides controls to update settings, upload images (with a 5MB limit), and preview changes. Handles fetching current settings, saving updates, file uploads, form input binding, basic client-side validation via HTML attributes, and integrates with the AdminPreviewLayout for draft preview and restore.
+ *
+ * @returns A React element rendering the admin site settings UI
+ */
 export default function AdminSettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
