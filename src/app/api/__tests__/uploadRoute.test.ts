@@ -4,6 +4,7 @@ import { POST } from '../admin/upload/route';
 
 jest.mock('@/utils/adminAuth.server', () => ({
   verifyAdminToken: jest.fn(),
+  isAdminRequest: jest.fn(),
 }));
 
 jest.mock('fs/promises', () => ({
@@ -73,7 +74,7 @@ describe('POST /api/admin/upload', () => {
     });
 
     it('returns 401 when token verification fails', async () => {
-      mockVerifyAdminToken.mockReturnValue(false);
+      mockVerifyAdminToken.mockResolvedValue(null);
       const req = makeRequest({ hasAuth: true, token: 'bad-token' });
       const res = await POST(req);
 
@@ -85,7 +86,7 @@ describe('POST /api/admin/upload', () => {
 
   describe('file validation', () => {
     beforeEach(() => {
-      mockVerifyAdminToken.mockReturnValue(true);
+      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
     });
 
     it('returns 400 when no file is provided', async () => {
@@ -211,7 +212,7 @@ describe('POST /api/admin/upload', () => {
 
   describe('successful upload', () => {
     beforeEach(() => {
-      mockVerifyAdminToken.mockReturnValue(true);
+      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
     });
 
     it('writes the file to the public/uploads directory', async () => {
@@ -285,7 +286,7 @@ describe('POST /api/admin/upload', () => {
 
   describe('error handling', () => {
     beforeEach(() => {
-      mockVerifyAdminToken.mockReturnValue(true);
+      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
     });
 
     it('returns 500 when writeFile throws an error', async () => {
@@ -299,7 +300,7 @@ describe('POST /api/admin/upload', () => {
     });
 
     it('returns 500 when formData throws an error', async () => {
-      mockVerifyAdminToken.mockReturnValue(true);
+      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
       const brokenReq = {
         cookies: {
           get: jest.fn().mockReturnValue({ name: 'admin_auth', value: 'token' }),

@@ -9,15 +9,20 @@ const ADMIN_COOKIE = 'admin_auth';
  * Resolve the admin signing secret used for token HMAC operations.
  *
  * Prefers the `ADMIN_PASSWORD` environment variable; if absent, loads the application
- * configuration and returns `config.adminPassword`; if that is also missing, returns
- * the literal string `'fallback-secret'`.
+ * configuration and returns `config.adminPassword`; if that is also missing, returns `null`.
  *
- * @returns The secret string used to sign and verify admin tokens
+ * @returns The secret string used to sign and verify admin tokens, or null if unavailable
  */
-async function getSecret(): Promise<string> {
+let cachedConfigSecret: Promise<string | null> | null = null;
+
+async function getSecret(): Promise<string | null> {
   if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
-  const config = await getAppConfig();
-  return config.adminPassword || 'fallback-secret';
+
+  if (!cachedConfigSecret) {
+    cachedConfigSecret = getAppConfig().then((config) => config.adminPassword ?? null);
+  }
+
+  return cachedConfigSecret;
 }
 
 interface AdminTokenPayload {
@@ -36,6 +41,9 @@ interface AdminTokenPayload {
 export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const secret = await getSecret();
+  if (!secret) {
+    throw new Error('Admin auth secret is not configured');
+  }
   const signature = crypto
     .createHmac('sha256', secret)
     .update(data)
@@ -55,6 +63,7 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
   if (!data || !signature) return null;
 
   const secret = await getSecret();
+  if (!secret) return null;
   const expectedSignature = crypto
     .createHmac('sha256', secret)
     .update(data)

@@ -6,6 +6,20 @@ jest.mock('next/headers', () => ({
 }));
 
 describe('isAdminRequest server component', () => {
+  const previousAdminPassword = process.env.ADMIN_PASSWORD;
+
+  beforeAll(() => {
+    process.env.ADMIN_PASSWORD = 'test-admin-secret';
+  });
+
+  afterAll(() => {
+    if (previousAdminPassword === undefined) {
+      delete process.env.ADMIN_PASSWORD;
+    } else {
+      process.env.ADMIN_PASSWORD = previousAdminPassword;
+    }
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });

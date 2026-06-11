@@ -25,7 +25,7 @@ jest.mock('@/lib/config', () => ({
 }));
 
 jest.mock('@/utils/adminAuth.server', () => ({
-  verifyAdminToken: jest.fn(),
+  isAdminRequest: jest.fn(),
 }));
 
 jest.mock('next/cache', () => ({
@@ -34,12 +34,12 @@ jest.mock('next/cache', () => ({
 
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
-import { verifyAdminToken } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 import { revalidatePath } from 'next/cache';
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
-const mockVerifyAdminToken = verifyAdminToken as jest.MockedFunction<typeof verifyAdminToken>;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockRevalidatePath = revalidatePath as jest.MockedFunction<typeof revalidatePath>;
 
 const validConfigData = {
@@ -95,6 +95,7 @@ function makeUnauthReq() {
 describe('GET /api/admin/settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(false);
   });
 
   it('returns 401 when no auth cookie is present', async () => {
@@ -107,7 +108,7 @@ describe('GET /api/admin/settings', () => {
   });
 
   it('returns 401 when token verification fails', async () => {
-    mockVerifyAdminToken.mockReturnValue(false);
+    mockIsAdminRequest.mockResolvedValue(false);
     const req = makeAuthReq();
     const res = await GET(req);
 
@@ -117,7 +118,7 @@ describe('GET /api/admin/settings', () => {
   });
 
   it('returns config when authenticated', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     mockGetAppConfig.mockResolvedValue(updatedConfig as any);
 
     const req = makeAuthReq();
@@ -132,6 +133,7 @@ describe('GET /api/admin/settings', () => {
 describe('PUT /api/admin/settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(false);
     (mockPrisma.appConfig.update as jest.Mock).mockResolvedValue(updatedConfig);
     (mockPrisma.snapshotVersion.create as jest.Mock).mockResolvedValue({});
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
@@ -147,7 +149,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('returns 401 when token is invalid', async () => {
-    mockVerifyAdminToken.mockReturnValue(false);
+    mockIsAdminRequest.mockResolvedValue(false);
     const req = makeAuthReq(validConfigData);
     const res = await PUT(req);
 
@@ -155,7 +157,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('persists faviconUrl to database', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       faviconUrl: '/uploads/abc123.ico',
@@ -172,7 +174,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('persists ogImageUrl to database', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       ogImageUrl: '/uploads/def456.jpg',
@@ -189,7 +191,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('persists seoKeywords to database', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       seoKeywords: '{{brideName}} and {{groomName}} wedding, wedding website',
@@ -206,7 +208,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('persists all three new fields together', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       faviconUrl: '/uploads/favicon.ico',
@@ -227,7 +229,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('calls revalidatePath("/", "layout") after successful update', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq(validConfigData);
     await PUT(req);
 
@@ -235,7 +237,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('returns 400 for invalid latitude', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       latitude: 'not-a-number',
@@ -248,7 +250,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('returns 400 for invalid longitude', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       longitude: 'bad-coord',
@@ -261,7 +263,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('uses fallback color when invalid hex is provided for themePrimary', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       themePrimary: 'notacolor',
@@ -278,7 +280,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('uses fallback color when invalid hex is provided for themeSecondary', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       themeSecondary: 'invalid',
@@ -295,7 +297,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('uses fallback color when invalid hex is provided for themeAccent', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       themeAccent: 'bad',
@@ -312,7 +314,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('does not call revalidatePath when update fails with invalid coordinates', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
       ...validConfigData,
       latitude: 'invalid-coord',
@@ -323,7 +325,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('returns 500 when prisma update throws', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     (mockPrisma.appConfig.update as jest.Mock).mockRejectedValue(new Error('DB connection failed'));
 
     const req = makeAuthReq(validConfigData);
@@ -335,7 +337,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('does not call revalidatePath when prisma throws', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     (mockPrisma.appConfig.update as jest.Mock).mockRejectedValue(new Error('DB error'));
 
     const req = makeAuthReq(validConfigData);
@@ -345,7 +347,7 @@ describe('PUT /api/admin/settings', () => {
   });
 
   it('returns the public config (without adminPassword) on success', async () => {
-    mockVerifyAdminToken.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq(validConfigData);
     const res = await PUT(req);
 
