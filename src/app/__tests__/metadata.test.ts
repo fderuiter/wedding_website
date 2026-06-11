@@ -33,8 +33,8 @@ describe('generateMetadata', () => {
       images: [
         {
           url: 'https://testsite.com/images/sunset-embrace.jpg',
-          width: 1200,
-          height: 630,
+          width: 1024,
+          height: 1024,
           alt: 'A photo of TestBride and TestGroom embracing.',
         },
       ],
