@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
-import { verifyAdminToken } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 import { revalidatePath } from 'next/cache';
 import { coordinateSchema } from '@/utils/validation';
 
+/**
+ * Return the public application configuration for authorized admin requests.
+ *
+ * @returns A JSON HTTP response containing the public app configuration when the requester is an admin; otherwise a 401 JSON response `{ error: 'Unauthorized' }`.
+ */
 export async function GET(req: NextRequest) {
-  const token = req.cookies.get('admin_auth')?.value;
-  if (!token || !verifyAdminToken(token)) {
+  if (!(await isAdminRequest(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -15,9 +19,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(toPublicAppConfig(config));
 }
 
+/**
+ * Updates the global application configuration from the JSON request body and returns the public view of the updated configuration.
+ *
+ * Performs an admin authorization check, validates latitude/longitude and color values, persists the updated settings, creates a version snapshot, and prunes older snapshots keeping the most recent 50.
+ *
+ * @param req - The incoming NextRequest whose JSON body contains the app configuration fields to update (e.g., names, venue info, coordinates, theme colors, SEO and hero content).
+ * @returns The updated application configuration transformed to its public shape.
+ */
 export async function PUT(req: NextRequest) {
-  const token = req.cookies.get('admin_auth')?.value;
-  if (!token || !verifyAdminToken(token)) {
+  if (!(await isAdminRequest(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

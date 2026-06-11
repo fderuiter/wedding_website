@@ -3,7 +3,11 @@ import { isAdminRequest, signAdminToken } from '../adminAuth.server';
 
 describe('admin authentication helpers', () => {
   describe('isAdminRequest', () => {
-    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+    let token: string;
+    
+    beforeAll(async () => {
+      token = await signAdminToken({ isAdmin: true, iat: Date.now() });
+    });
 
     it('returns true for request with valid signed admin cookie', async () => {
       const req = {

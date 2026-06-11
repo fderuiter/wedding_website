@@ -1,12 +1,24 @@
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
+import { getAppConfig } from '@/lib/config';
 
 const ADMIN_COOKIE = 'admin_auth';
 
-// Use the admin password hash as the secret for signing tokens.
-// In a real app, use a dedicated SESSION_SECRET environment variable.
-const SECRET = process.env.ADMIN_PASSWORD || crypto.randomBytes(32).toString('hex');
+/**
+ * Resolve the admin signing secret used for token HMAC operations.
+ *
+ * Prefers the `ADMIN_PASSWORD` environment variable; if absent, loads the application
+ * configuration and returns `config.adminPassword`; if that is also missing, returns
+ * the literal string `'fallback-secret'`.
+ *
+ * @returns The secret string used to sign and verify admin tokens
+ */
+async function getSecret(): Promise<string> {
+  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  const config = await getAppConfig();
+  return config.adminPassword || 'fallback-secret';
+}
 
 interface AdminTokenPayload {
   isAdmin: boolean;
@@ -16,29 +28,35 @@ interface AdminTokenPayload {
 }
 
 /**
- * Creates a signed token string.
- * Format: payloadBase64.signatureBase64
+ * Signs an admin payload and returns a compact token.
+ *
+ * @param payload - The admin token payload to sign.
+ * @returns A signed token string in the format `base64url(payload).base64url(signature)`.
  */
-export function signAdminToken(payload: AdminTokenPayload): string {
+export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const secret = await getSecret();
   const signature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', secret)
     .update(data)
     .digest('base64url');
   return `${data}.${signature}`;
 }
 
 /**
- * Verifies a signed token string.
- * Returns the payload if valid, or null if invalid.
+ * Validate a base64url-signed admin token and return its decoded payload.
+ *
+ * @param token - Signed token in the form `base64url(payload).base64url(hmac)` 
+ * @returns The parsed `AdminTokenPayload` if the token is valid and the signature matches, `null` otherwise.
  */
-export function verifyAdminToken(token: string): AdminTokenPayload | null {
+export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;
 
+  const secret = await getSecret();
   const expectedSignature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', secret)
     .update(data)
     .digest('base64url');
 
@@ -62,13 +80,10 @@ export function verifyAdminToken(token: string): AdminTokenPayload | null {
 }
 
 /**
- * Checks for the admin authentication cookie on the server-side.
- * This function is designed to work in different Next.js contexts:
- * - In API Routes (Edge or Node), it checks the `req.cookies`.
- * - In Server Components (App Router), it uses the `cookies()` function from `next/headers`.
+ * Determine whether the current request/session represents an authenticated admin.
  *
- * @param {NextRequest} [req] - The optional Next.js request object. If provided, the function assumes it's running in an API route context.
- * @returns {Promise<boolean>} A promise that resolves to true if the user is an admin, false otherwise.
+ * @param req - Optional Next.js request object; provide this in API route contexts. Omit when running in Server Components.
+ * @returns `true` if the request/session represents an authenticated admin, `false` otherwise.
  */
 export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
   let cookieValue: string | undefined;
@@ -85,7 +100,7 @@ export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
 
   if (!cookieValue) return false;
 
-  const payload = verifyAdminToken(cookieValue);
+  const payload = await verifyAdminToken(cookieValue);
 
   if (!payload || payload.isAdmin !== true) {
     return false;

@@ -11,7 +11,7 @@ describe('isAdminRequest server component', () => {
   });
 
   it('resolves true when admin cookie is present and valid', async () => {
-    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+    const token = await signAdminToken({ isAdmin: true, iat: Date.now() });
 
     (cookies as jest.Mock).mockResolvedValue({
       get: () => ({ value: token }),
