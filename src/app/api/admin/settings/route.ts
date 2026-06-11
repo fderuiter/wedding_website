@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/utils/adminAuth.server';
+import { revalidatePath } from 'next/cache';
 import { coordinateSchema } from '@/utils/validation';
 
 /**
@@ -68,6 +69,9 @@ export async function PUT(req: NextRequest) {
         heroSubtitle: data.heroSubtitle,
         seoTitle: data.seoTitle,
         seoDescription: data.seoDescription,
+        faviconUrl: data.faviconUrl,
+        ogImageUrl: data.ogImageUrl,
+        seoKeywords: data.seoKeywords,
         themePrimary: safeColor(data.themePrimary, '#f43f5e'),
         themeSecondary: safeColor(data.themeSecondary, '#fbbf24'),
         themeAccent: safeColor(data.themeAccent, '#e11d48'),
@@ -96,6 +100,8 @@ export async function PUT(req: NextRequest) {
         where: { id: { in: idsToDelete } }
       });
     }
+
+    revalidatePath('/', 'layout');
 
     return NextResponse.json(toPublicAppConfig(updatedConfig));
   } catch (err) {

@@ -3,44 +3,46 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { ContentNode } from '@prisma/client';
+import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
+/**
+ * Admin interface for listing, creating, editing, deleting, and previewing content nodes.
+ *
+ * Renders a dashboard UI that enforces admin authentication, shows existing content nodes,
+ * provides an inline editor for node metadata and dynamic key/value fields, supports
+ * creating and removing nodes, and offers a preview integration (including optional
+ * photo metadata scraping when a node is of type `Photo`).
+ *
+ * @returns A React element rendering the content dashboard UI with list, editor, and preview controls.
+ */
 export default function ContentDashboardPage() {
   const router = useRouter();
-  const [nodes, setNodes] = useState<ContentNode[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const {
+    data: nodes,
+    loading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove
+  } = useAdminEntity<ContentNode>('content-nodes');
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentNode, setCurrentNode] = useState<Partial<ContentNode>>({});
   const [dynamicData, setDynamicData] = useState<{key: string, value: string}[]>([]);
 
   useEffect(() => {
-    async function checkAuthAndFetch() {
+    async function checkAuth() {
       const isAdmin = await checkAdminClient();
       if (!isAdmin) {
         router.replace('/admin/login');
-        return;
       }
-      fetchNodes();
     }
-    checkAuthAndFetch();
+    checkAuth();
   }, [router]);
-
-  const fetchNodes = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/admin/content');
-      if (!res.ok) throw new Error('Failed to fetch content nodes');
-      const data = await res.json();
-      setNodes(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSave = async () => {
     try {
@@ -55,21 +57,12 @@ export default function ContentDashboardPage() {
         data: dataObj
       };
 
-      const url = currentNode.id ? `/api/admin/content/${currentNode.id}` : '/api/admin/content';
-      const method = currentNode.id ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to save node');
+      if (currentNode.id) {
+        await update(currentNode.id, payload);
+      } else {
+        await create(payload);
       }
-
       setIsEditing(false);
-      fetchNodes();
     } catch (e: unknown) {
       alert((e instanceof Error ? e.message : String(e)) || 'Error saving node');
     }
@@ -78,9 +71,7 @@ export default function ContentDashboardPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this content node?')) return;
     try {
-      const res = await fetch(`/api/admin/content/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete node');
-      setNodes((prev) => prev.filter((i) => i.id !== id));
+      await remove(id);
     } catch (e: unknown) {
       alert((e instanceof Error ? e.message : String(e)) || 'Error deleting node');
     }
@@ -163,7 +154,7 @@ export default function ContentDashboardPage() {
       entityId={currentNode.id}
       onRestore={() => {
         setIsEditing(false);
-        fetchNodes();
+        fetchAll();
       }}
     >
       <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
