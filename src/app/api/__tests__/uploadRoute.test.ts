@@ -255,6 +255,11 @@ describe('POST /api/admin/upload', () => {
     });
 
     it('generates a unique filename for each upload', async () => {
+      const mockRandomBytes = jest.requireMock('crypto').randomBytes as jest.Mock;
+      mockRandomBytes
+        .mockReturnValueOnce({ toString: () => '1111111111111111' })
+        .mockReturnValueOnce({ toString: () => '2222222222222222' });
+
       const file1 = {
         name: 'image.png',
         size: 100,
@@ -277,10 +282,9 @@ describe('POST /api/admin/upload', () => {
       const json1 = await res1.json();
       const json2 = await res2.json();
 
-      // The crypto mock returns the same value here, but the structure is the same
-      // In production, two calls would produce different hashes
       expect(json1.url).toMatch(/^\/uploads\//);
       expect(json2.url).toMatch(/^\/uploads\//);
+      expect(json1.url).not.toEqual(json2.url);
     });
   });
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 import { coordinateSchema } from '@/utils/validation';
+import { toPublicAppConfig } from '@/lib/config';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const isAdmin = await isAdminRequest();
@@ -89,7 +90,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       data: {
         entityType: version.entityType,
         entityId: version.entityId,
-        data: snapshotData,
+        data: version.entityType === 'AppConfig' ? toPublicAppConfig(snapshotData) as any : snapshotData,
         author: 'Admin (Rollback)',
       }
     });

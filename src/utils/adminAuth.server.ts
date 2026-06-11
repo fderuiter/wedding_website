@@ -19,7 +19,13 @@ async function getSecret(): Promise<string | null> {
   if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
 
   if (!cachedConfigSecret) {
-    cachedConfigSecret = getAppConfig().then((config) => config.adminPassword ?? null);
+    cachedConfigSecret = getAppConfig().then((config) => {
+      const secret = config.adminPassword ?? null;
+      if (secret === null) {
+        cachedConfigSecret = null;
+      }
+      return secret;
+    });
   }
 
   return cachedConfigSecret;

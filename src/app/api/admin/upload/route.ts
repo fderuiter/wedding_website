@@ -6,7 +6,21 @@ import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('admin_auth')?.value;
-  if (!token || !(await verifyAdminToken(token))) {
+  let isAuthorized = false;
+
+  if (token) {
+    const payload = await verifyAdminToken(token);
+    if (payload && payload.isAdmin === true) {
+      const now = Date.now();
+      let valid = true;
+      if (payload.iat && payload.iat > now) valid = false;
+      if (payload.exp && payload.exp < now) valid = false;
+      if (!payload.exp && payload.iat && payload.iat + 60 * 60 * 8 * 1000 < now) valid = false;
+      isAuthorized = valid;
+    }
+  }
+
+  if (!isAuthorized) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

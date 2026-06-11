@@ -5,6 +5,18 @@ import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
+    $transaction: jest.fn(async (callback) => {
+      // Create a mock transaction object that forwards calls to prisma mock
+      const mockTx = {
+        appConfig: { update: require('@/lib/prisma').prisma.appConfig.update },
+        snapshotVersion: { 
+          create: require('@/lib/prisma').prisma.snapshotVersion.create,
+          findMany: require('@/lib/prisma').prisma.snapshotVersion.findMany,
+          deleteMany: require('@/lib/prisma').prisma.snapshotVersion.deleteMany,
+        }
+      };
+      return await callback(mockTx);
+    }),
     appConfig: {
       update: jest.fn(),
     },

@@ -11,12 +11,17 @@ import { coordinateSchema } from '@/utils/validation';
  * @returns A JSON HTTP response containing the public app configuration when the requester is an admin; otherwise a 401 JSON response `{ error: 'Unauthorized' }`.
  */
 export async function GET(req: NextRequest) {
-  if (!(await isAdminRequest(req))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  try {
+    if (!(await isAdminRequest(req))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-  const config = await getAppConfig();
-  return NextResponse.json(toPublicAppConfig(config));
+    const config = await getAppConfig();
+    return NextResponse.json(toPublicAppConfig(config));
+  } catch (err) {
+    console.error('Failed to load config:', err);
+    return NextResponse.json({ error: 'Failed to load config' }, { status: 500 });
+  }
 }
 
 /**
@@ -28,11 +33,11 @@ export async function GET(req: NextRequest) {
  * @returns The updated application configuration transformed to its public shape.
  */
 export async function PUT(req: NextRequest) {
-  if (!(await isAdminRequest(req))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
+    if (!(await isAdminRequest(req))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const data = await req.json();
 
     const parsedLat = coordinateSchema.safeParse(data.latitude);
@@ -48,60 +53,68 @@ export async function PUT(req: NextRequest) {
     const HEX = /^#([0-9a-fA-F]{6})$/;
     const safeColor = (v: unknown, fallback: string) =>
       typeof v === 'string' && HEX.test(v) ? v : fallback;
-    const updatedConfig = await prisma.appConfig.update({
-      where: { id: 'global' },
-      data: {
-        brideName: data.brideName,
-        groomName: data.groomName,
-        weddingDate: new Date(data.weddingDate),
-        baseUrl: data.baseUrl,
-        venueName: data.venueName,
-        venueAddress: data.venueAddress,
-        venueCity: data.venueCity,
-        venueState: data.venueState,
-        venueZip: data.venueZip,
-        latitude: parsedLat.data,
-        longitude: parsedLon.data,
-        storyText: data.storyText,
-        venueDescription: data.venueDescription,
-        travelAdvice: data.travelAdvice,
-        heroTitle: data.heroTitle,
-        heroSubtitle: data.heroSubtitle,
-        seoTitle: data.seoTitle,
-        seoDescription: data.seoDescription,
-        faviconUrl: data.faviconUrl,
-        ogImageUrl: data.ogImageUrl,
-        seoKeywords: data.seoKeywords,
-        themePrimary: safeColor(data.themePrimary, '#f43f5e'),
-        themeSecondary: safeColor(data.themeSecondary, '#fbbf24'),
-        themeAccent: safeColor(data.themeAccent, '#e11d48'),
-      },
-    });
-
-    // Create a version snapshot
-    await prisma.snapshotVersion.create({
-      data: {
-        entityType: 'AppConfig',
-        entityId: 'global',
-        data: updatedConfig as any,
-        author: 'Admin', // In a real app we'd get the actual user from auth
-      }
-    });
-    
-    // Prune old versions (keep max 50)
-    const versions = await prisma.snapshotVersion.findMany({
-      where: { entityType: 'AppConfig', entityId: 'global' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
-    if (versions.length > 50) {
-      const idsToDelete = versions.slice(50).map(v => v.id);
-      await prisma.snapshotVersion.deleteMany({
-        where: { id: { in: idsToDelete } }
+    const updatedConfig = await prisma.$transaction(async (tx) => {
+      const config = await tx.appConfig.update({
+        where: { id: 'global' },
+        data: {
+          brideName: data.brideName,
+          groomName: data.groomName,
+          weddingDate: new Date(data.weddingDate),
+          baseUrl: data.baseUrl,
+          venueName: data.venueName,
+          venueAddress: data.venueAddress,
+          venueCity: data.venueCity,
+          venueState: data.venueState,
+          venueZip: data.venueZip,
+          latitude: parsedLat.data,
+          longitude: parsedLon.data,
+          storyText: data.storyText,
+          venueDescription: data.venueDescription,
+          travelAdvice: data.travelAdvice,
+          heroTitle: data.heroTitle,
+          heroSubtitle: data.heroSubtitle,
+          seoTitle: data.seoTitle,
+          seoDescription: data.seoDescription,
+          faviconUrl: data.faviconUrl,
+          ogImageUrl: data.ogImageUrl,
+          seoKeywords: data.seoKeywords,
+          themePrimary: safeColor(data.themePrimary, '#f43f5e'),
+          themeSecondary: safeColor(data.themeSecondary, '#fbbf24'),
+          themeAccent: safeColor(data.themeAccent, '#e11d48'),
+        },
       });
-    }
 
-    revalidatePath('/', 'layout');
+      // Create a version snapshot
+      await tx.snapshotVersion.create({
+        data: {
+          entityType: 'AppConfig',
+          entityId: 'global',
+          data: toPublicAppConfig(config) as any,
+          author: 'Admin', // In a real app we'd get the actual user from auth
+        }
+      });
+      
+      // Prune old versions (keep max 50)
+      const versions = await tx.snapshotVersion.findMany({
+        where: { entityType: 'AppConfig', entityId: 'global' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (versions.length > 50) {
+        const idsToDelete = versions.slice(50).map(v => v.id);
+        await tx.snapshotVersion.deleteMany({
+          where: { id: { in: idsToDelete } }
+        });
+      }
+
+      return config;
+    });
+
+    try {
+      revalidatePath('/', 'layout');
+    } catch (err) {
+      console.error('Failed to revalidate layout after config update:', err);
+    }
 
     return NextResponse.json(toPublicAppConfig(updatedConfig));
   } catch (err) {
