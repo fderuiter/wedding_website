@@ -6,12 +6,26 @@ jest.mock('next/headers', () => ({
 }));
 
 describe('isAdminRequest server component', () => {
+  const previousAdminPassword = process.env.ADMIN_PASSWORD;
+
+  beforeAll(() => {
+    process.env.ADMIN_PASSWORD = 'test-admin-secret';
+  });
+
+  afterAll(() => {
+    if (previousAdminPassword === undefined) {
+      delete process.env.ADMIN_PASSWORD;
+    } else {
+      process.env.ADMIN_PASSWORD = previousAdminPassword;
+    }
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
 
   it('resolves true when admin cookie is present and valid', async () => {
-    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+    const token = await signAdminToken({ isAdmin: true, iat: Date.now() });
 
     (cookies as jest.Mock).mockResolvedValue({
       get: () => ({ value: token }),

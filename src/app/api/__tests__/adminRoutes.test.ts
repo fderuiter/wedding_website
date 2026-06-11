@@ -79,7 +79,7 @@ describe('Admin API routes', () => {
 
   test('me returns admin status based on cookie', async () => {
     // We need to generate a valid signed token for the test
-    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+    const token = await signAdminToken({ isAdmin: true, iat: Date.now() });
 
     const reqAdmin = new NextRequest('http://localhost/api/admin/me', {
       headers: { cookie: `admin_auth=${token}` },

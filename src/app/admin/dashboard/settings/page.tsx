@@ -261,15 +261,15 @@ export default function AdminSettingsPage() {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">SEO Keywords</label>
-              <textarea name="seoKeywords" value={config.seoKeywords || ''} onChange={handleChange} rows={3} className="w-full p-2 border rounded text-black" placeholder="{{brideName}} and {{groomName}}'s wedding..." />
+              <label htmlFor="seoKeywords" className="block text-sm font-medium mb-1">SEO Keywords</label>
+              <textarea id="seoKeywords" name="seoKeywords" value={config.seoKeywords || ''} onChange={handleChange} rows={3} className="w-full p-2 border rounded text-black" placeholder="{{brideName}} and {{groomName}}'s wedding..." />
               <p className="text-xs text-gray-500 mt-1">Comma-separated list. Use templates like {"{{brideName}}"}. Variables: brideName, groomName, venueName, venueCity, venueState.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <div>
-                <label className="block text-sm font-medium mb-1">Favicon (.ico, .png)</label>
+                <label htmlFor="faviconUpload" className="block text-sm font-medium mb-1">Favicon (.ico, .png)</label>
                 <div className="flex flex-col space-y-2">
-                  <input type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="w-full text-sm" />
+                  <input id="faviconUpload" type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="w-full text-sm" />
                   {config.faviconUrl && (
                     <div className="flex items-center gap-2">
                       <img src={config.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
@@ -279,9 +279,9 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Social Sharing Image (OG Image)</label>
+                <label htmlFor="ogImageUpload" className="block text-sm font-medium mb-1">Social Sharing Image (OG Image)</label>
                 <div className="flex flex-col space-y-2">
-                  <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="w-full text-sm" />
+                  <input id="ogImageUpload" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="w-full text-sm" />
                   {config.ogImageUrl && (
                     <div className="flex items-center gap-2">
                       <img src={config.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />

@@ -2,8 +2,26 @@ import type { NextRequest } from 'next/server';
 import { isAdminRequest, signAdminToken } from '../adminAuth.server';
 
 describe('admin authentication helpers', () => {
+  const previousAdminPassword = process.env.ADMIN_PASSWORD;
+
+  beforeAll(() => {
+    process.env.ADMIN_PASSWORD = 'test-admin-secret';
+  });
+
+  afterAll(() => {
+    if (previousAdminPassword === undefined) {
+      delete process.env.ADMIN_PASSWORD;
+    } else {
+      process.env.ADMIN_PASSWORD = previousAdminPassword;
+    }
+  });
+
   describe('isAdminRequest', () => {
-    const token = signAdminToken({ isAdmin: true, iat: Date.now() });
+    let token: string;
+    
+    beforeAll(async () => {
+      token = await signAdminToken({ isAdmin: true, iat: Date.now() });
+    });
 
     it('returns true for request with valid signed admin cookie', async () => {
       const req = {
