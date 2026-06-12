@@ -2,6 +2,15 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
+/**
+ * Render a multi-step admin setup wizard for configuring a wedding site.
+ *
+ * The component presents a login form, an essentials form to collect site and venue details,
+ * and a final content step that links to admin pages; it handles authentication and saving
+ * settings via the app's admin API endpoints and navigates to the site when setup completes.
+ *
+ * @returns The setup wizard UI as JSX when active, or `null` when nothing should be rendered.
+ */
 export default function SetupWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
