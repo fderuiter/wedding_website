@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
+import type { PublicAppConfig } from '@/lib/config';
 
 const pushMock = jest.fn();
 
@@ -17,6 +18,12 @@ jest.mock('next/navigation', () => ({
   usePathname: () => '/',
 }));
 
+jest.mock('@/components/ThemeProvider', () => ({
+  useAppConfig: () => null,
+}));
+
+const mockConfig = {} as PublicAppConfig;
+
 describe('RootLayoutClient', () => {
   beforeEach(() => {
     pushMock.mockClear();
@@ -27,7 +34,7 @@ describe('RootLayoutClient', () => {
     localStorage.setItem('isAdminLoggedIn', 'true');
 
     render(
-      <RootLayoutClient>
+      <RootLayoutClient config={mockConfig}>
         <div>Child content</div>
       </RootLayoutClient>
     );
