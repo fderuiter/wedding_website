@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import HeartClient from '../HeartClient';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
+import { getAppConfig } from '@/lib/config';
 
 import { ContactForceEvent } from '@react-three/rapier';
 
@@ -21,6 +22,7 @@ const mockRigidBodyApi = {
     angvel: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
     setNextKinematicTranslation: jest.fn(),
     addForce: jest.fn(),
+    setEnabled: jest.fn(),
 };
 
 jest.mock('@react-three/fiber', () => ({
@@ -112,6 +114,10 @@ jest.mock('next/link', () => {
     MockLink.displayName = 'MockLink';
     return MockLink;
 })
+
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn(),
+}));
 
 // Mock three.js because JSDOM doesn't have a canvas
 jest.mock('three', () => {
@@ -213,6 +219,27 @@ describe('HeartPage', () => {
   it('renders the ScreenBounds component with four walls', () => {
     render(<HeartPage />);
     const colliders = screen.getAllByTestId('cuboid-collider');
-    expect(colliders.length).toBe(4);
+    // 4 walls + 1 main heart + 2 shards = 7 colliders
+    expect(colliders.length).toBe(7);
+  });
+
+  it('should pass config names from getAppConfig to HeartClient', async () => {
+    // Mock getAppConfig to return sentinel values
+    const mockConfig = {
+      brideName: 'SentinelA',
+      groomName: 'SentinelB',
+    };
+    (getAppConfig as jest.Mock).mockResolvedValue(mockConfig);
+
+    // Import the actual page component
+    const HeartPageModule = await import('../page');
+    const HeartPage = HeartPageModule.default;
+
+    // Render the page component
+    const { container } = render(await HeartPage());
+
+    // Verify sentinel names are rendered (which means they were passed to HeartClient)
+    expect(screen.getAllByText('SentinelA').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('SentinelB').length).toBeGreaterThan(0);
   });
 });

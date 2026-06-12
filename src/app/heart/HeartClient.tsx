@@ -48,9 +48,10 @@ function Sparkles({ count = 200, color = "#ffa0e0" }: { count?: number, color?: 
  * materials (gold and silver) and displays names on each side.
  * @param {object} props - The component props.
  * @param {number} props.scale - The scale factor for the heart model.
+ * @param {string} [props.shardSide] - Optional side to render ("left" or "right"), or undefined for full heart.
  * @returns {JSX.Element} The rendered 3D heart component.
  */
-function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomName }: { scale: number; primaryColor: string; secondaryColor: string; brideName: string; groomName: string }) {
+function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomName, shardSide }: { scale: number; primaryColor: string; secondaryColor: string; brideName: string; groomName: string; shardSide?: 'left' | 'right' }) {
   const geom = useMemo(() => {
     const s = new THREE.Shape()
     s.moveTo(0, -1.4)
@@ -98,28 +99,32 @@ function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomName }: 
 
   return (
     <group scale={scale} rotation={[0, Math.PI, Math.PI]}>
-      <mesh geometry={geom} material={gold} />
-      <mesh geometry={geom} material={silver} />
-      <Text
-        position={[-1, 0.1, 0.71]}
-        fontSize={0.35}
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.015}
-        outlineColor={theme.colors.outline}
-      >
-        {brideName}
-      </Text>
-      <Text
-        position={[1, 0.1, 0.71]}
-        fontSize={0.35}
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.015}
-        outlineColor={theme.colors.outline}
-      >
-        {groomName}
-      </Text>
+      {(!shardSide || shardSide === 'left') && <mesh geometry={geom} material={gold} />}
+      {(!shardSide || shardSide === 'right') && <mesh geometry={geom} material={silver} />}
+      {(!shardSide || shardSide === 'left') && (
+        <Text
+          position={[-1, 0.1, 0.71]}
+          fontSize={0.35}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.015}
+          outlineColor={theme.colors.outline}
+        >
+          {brideName}
+        </Text>
+      )}
+      {(!shardSide || shardSide === 'right') && (
+        <Text
+          position={[1, 0.1, 0.71]}
+          fontSize={0.35}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.015}
+          outlineColor={theme.colors.outline}
+        >
+          {groomName}
+        </Text>
+      )}
     </group>
   )
 }
@@ -185,13 +190,14 @@ function PhysicsHeart({
       const linvel = mainRb.linvel()
       const angvel = mainRb.angvel()
 
-      // Hide main heart
-      mainRb.setBodyType(RigidBodyType.Fixed, true)
+      // Disable main heart physics (not just hide visually)
+      mainRb.setEnabled(false)
 
-      // Show broken pieces
-      const newType = RigidBodyType.Dynamic
-      leftRb.setBodyType(newType, true)
-      rightRb.setBodyType(newType, true)
+      // Enable broken pieces physics
+      leftRb.setEnabled(true)
+      leftRb.setBodyType(RigidBodyType.Dynamic, true)
+      rightRb.setEnabled(true)
+      rightRb.setBodyType(RigidBodyType.Dynamic, true)
 
       leftRb.setTranslation(position, true)
       leftRb.setRotation(rotation, true)
@@ -227,16 +233,27 @@ function PhysicsHeart({
       }, 3000)
       return () => clearTimeout(timer)
     } else {
-      // Heart is reforming
+      // Heart is reforming - reset shard physics completely
+      leftRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      leftRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      leftRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
+      leftRb.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
+      leftRb.setBodyType(RigidBodyType.Fixed, true)
+      leftRb.setEnabled(false)
+
+      rightRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      rightRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      rightRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
+      rightRb.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
+      rightRb.setBodyType(RigidBodyType.Fixed, true)
+      rightRb.setEnabled(false)
+
+      // Re-enable main heart
+      mainRb.setEnabled(true)
       mainRb.setBodyType(RigidBodyType.Dynamic, true)
       mainRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
       mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
       mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
-
-      // Hide broken pieces
-      const newType = RigidBodyType.Fixed
-      leftRb.setBodyType(newType, true)
-      rightRb.setBodyType(newType, true)
     }
   }, [isBroken])
 
@@ -324,11 +341,12 @@ function PhysicsHeart({
       <RigidBody
         ref={heartRef}
         restitution={0.9}
-        colliders="hull"
+        colliders={false}
         onContactForce={handleContactForce}
         // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
         activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
       >
+        <CuboidCollider args={[1.5, 1.5, 0.8]} />
         {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
         {/* @ts-ignore */}
         <group ref={groupRef} {...bind()} visible={!isBroken}>
@@ -336,14 +354,16 @@ function PhysicsHeart({
         </group>
       </RigidBody>
 
-      <RigidBody ref={brokenHeartLeftRef} colliders="hull" restitution={0.9} type={'fixed'}>
+      <RigidBody ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
+        <CuboidCollider args={[0.75, 1.5, 0.8]} position={[-0.75, 0, 0]} />
         <group visible={isBroken}>
-          <Heart3D scale={scale * 0.7} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} />
+          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="left" />
         </group>
       </RigidBody>
-      <RigidBody ref={brokenHeartRightRef} colliders="hull" restitution={0.9} type={'fixed'}>
+      <RigidBody ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
+        <CuboidCollider args={[0.75, 1.5, 0.8]} position={[0.75, 0, 0]} />
         <group visible={isBroken}>
-          <Heart3D scale={scale * 0.7} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} />
+          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="right" />
         </group>
       </RigidBody>
 
@@ -422,7 +442,7 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
           Back Home
         </Link>
       </div>
-      <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]}>
+      <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
         <Suspense fallback={<Html>Loading…</Html>}>
