@@ -346,7 +346,7 @@ function PhysicsHeart({
         // @ts-expect-error - activeEvents is not in the type definition but is required for onContactForce
         activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
       >
-        <CuboidCollider args={[1.5, 1.5, 0.8]} />
+        <CuboidCollider args={[1.5 * scale, 1.5 * scale, 0.8 * scale]} />
         {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
         {/* @ts-ignore */}
         <group ref={groupRef} {...bind()} visible={!isBroken}>
@@ -355,13 +355,13 @@ function PhysicsHeart({
       </RigidBody>
 
       <RigidBody ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
-        <CuboidCollider args={[0.75, 1.5, 0.8]} position={[-0.75, 0, 0]} />
+        <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[-0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="left" />
         </group>
       </RigidBody>
       <RigidBody ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
-        <CuboidCollider args={[0.75, 1.5, 0.8]} position={[0.75, 0, 0]} />
+        <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="right" />
         </group>
