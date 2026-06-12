@@ -7,6 +7,7 @@ import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { WebVitals } from '@/components/WebVitals';
 import Navbar from './Navbar';
+import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 
 const queryClient = new QueryClient();
 
@@ -80,6 +81,7 @@ export default function RootLayoutClient({
 
   return (
     <QueryClientProvider client={queryClient}>
+      <GlobalRadialGlow />
       {!isHeartPage && (
         <Navbar
           headerRef={headerRef}

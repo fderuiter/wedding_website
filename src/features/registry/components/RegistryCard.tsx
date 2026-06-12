@@ -2,6 +2,7 @@ import React from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import { getRegistryItemStatus } from '@/features/registry/lib/registryStatusUtils';
 import Image from 'next/image';
+import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 
 /**
  * Props for the RegistryCard component.
@@ -47,16 +48,17 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   };
 
   return (
-    <div
-      className={cardClasses}
-      onClick={isClickable ? () => onClick(item) : undefined}
-      style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' }}
-      data-testid="registry-card"
-      tabIndex={isClickable ? 0 : -1}
-      aria-label={`${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`}
-      role={isClickable ? 'button' : undefined}
-      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(item); } : undefined}
-    >
+    <Interactive3DCard className="h-full">
+      <div
+        className={`${cardClasses} h-full`}
+        onClick={isClickable ? () => onClick(item) : undefined}
+        style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' }}
+        data-testid="registry-card"
+        tabIndex={isClickable ? 0 : -1}
+        aria-label={`${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`}
+        role={isClickable ? 'button' : undefined}
+        onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(item); } : undefined}
+      >
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-2xl">
@@ -133,7 +135,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </Interactive3DCard>
   );
 };
 
