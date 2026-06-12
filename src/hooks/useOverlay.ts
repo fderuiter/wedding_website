@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+const overlayStack: string[] = [];
+
 /**
  * Manages overlay focus and close behavior, and provides a ref and backdrop click handler.
  *
@@ -16,15 +18,29 @@ import { useEffect, useRef } from 'react';
 export function useOverlay(isOpen: boolean, onClose: () => void) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onClose);
+  const idRef = useRef(Math.random().toString(36).substring(2, 9));
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
+
+    const id = idRef.current;
+    overlayStack.push(id);
 
     // Save previous focus
     previousFocusRef.current = document.activeElement as HTMLElement;
 
     const focusableSelectors = [
-      'button', 'a[href]', 'input', 'select', 'textarea', '[tabindex]:not([tabindex="-1"])'
+      'button:not(:disabled)', 
+      'a[href]:not(:disabled)', 
+      'input:not(:disabled)', 
+      'select:not(:disabled)', 
+      'textarea:not(:disabled)', 
+      '[tabindex]:not([tabindex="-1"]):not(:disabled):not([aria-disabled="true"])'
     ];
 
     const modal = overlayRef.current;
@@ -36,9 +52,12 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
     }
 
     function handleKeyDown(e: KeyboardEvent) {
+      const isTopmost = overlayStack[overlayStack.length - 1] === id;
+      if (!isTopmost) return;
+
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        closeRef.current();
       } else if (e.key === 'Tab') {
         const modal = overlayRef.current;
         if (!modal) return;
@@ -63,26 +82,36 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
     }
 
     function handleClickOutside(e: MouseEvent) {
+      const isTopmost = overlayStack[overlayStack.length - 1] === id;
+      if (!isTopmost) return;
+
       if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
-        onClose();
+        closeRef.current();
       }
     }
 
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('mousedown', handleClickOutside);
+    
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('mousedown', handleClickOutside);
+      
+      const index = overlayStack.indexOf(id);
+      if (index !== -1) {
+        overlayStack.splice(index, 1);
+      }
+
       // Restore focus
-      if (previousFocusRef.current) {
+      if (previousFocusRef.current && previousFocusRef.current.isConnected) {
         previousFocusRef.current.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      closeRef.current();
     }
   };
 

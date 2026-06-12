@@ -75,7 +75,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
   }
 
   return (
-    <div className={`relative inline-block text-left ${className}`} ref={overlayRef}>
+    <div className={`relative inline-block text-left ${className}`}>
       <div>
         <button
           ref={triggerRef}
@@ -92,6 +92,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
 
       {isOpen && (
         <div
+          ref={overlayRef}
           className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10"
         >
           <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
