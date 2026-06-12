@@ -66,12 +66,28 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full" style={{ height: 'calc(224px * var(--scale-factor))' }}> {/* Added a wrapper for layout */}
+      <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-2xl"> {/* Added a wrapper for layout */}
+        {/* Blurred Background Layer */}
+        <Image
+          src={item.image || '/images/placeholder.png'}
+          alt=""
+          className="object-cover blur-2xl opacity-50 scale-125"
+          fill
+          sizes="(max-width: 639px) 100vw, (max-width: 767px) 50vw, (max-width: 1279px) 33vw, 25vw"
+          loading="lazy"
+          aria-hidden="true"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.onerror = null; // Prevent infinite loop if placeholder also fails
+            target.srcset = '/images/placeholder.png'; // Use srcset for next/image
+            target.src = '/images/placeholder.png'; // Fallback src
+          }}
+        />
+        {/* Main Image Layer */}
         <Image
           src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing
           alt={item.name}
-          // Updated placeholder background
-          className="object-cover bg-gray-100 rounded-t-2xl" // Removed w-full, h-56
+          className="object-contain relative z-10" // Prevent cropping
           fill // Use fill layout
           // Added sizes prop for performance optimization
           // Matches grid layout:
