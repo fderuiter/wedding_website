@@ -16,10 +16,15 @@ interface AddToCalendarProps {
 }
 
 /**
- * @function AddToCalendar
- * @description A React component that provides a dropdown menu to add a specified event to various calendar services.
- * @param {AddToCalendarProps} props - The props for the component.
- * @returns {JSX.Element} - The rendered AddToCalendar component.
+ * Render a button that opens a dropdown for exporting the provided event to multiple calendar services.
+ *
+ * The dropdown lists Google, Apple, iCal, Outlook.com, and Yahoo options; selecting an option opens the corresponding
+ * calendar link or downloads an `.ics` file. Keyboard arrow navigation is supported within the menu and focus is
+ * restored to the trigger after an action.
+ *
+ * @param event - Event data used to generate calendar entries (title, start/end, location, etc.)
+ * @param className - Optional additional CSS classes applied to the root container
+ * @returns The component's JSX element
  */
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false)

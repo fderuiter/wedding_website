@@ -1,5 +1,18 @@
 import { useEffect, useRef } from 'react';
 
+/**
+ * Manages overlay focus and close behavior, and provides a ref and backdrop click handler.
+ *
+ * While the overlay is open, this hook saves and restores the previously focused element,
+ * moves focus to the first focusable element inside the overlay, traps focus with
+ * Tab/Shift+Tab, closes on Escape, and closes when the user clicks outside the overlay.
+ *
+ * @param isOpen - Whether the overlay is currently open
+ * @param onClose - Callback invoked when the overlay should close
+ * @returns An object containing:
+ *  - `overlayRef`: a ref to attach to the overlay container element
+ *  - `handleBackdropClick`: a click handler that closes the overlay only when the backdrop itself is clicked
+ */
 export function useOverlay(isOpen: boolean, onClose: () => void) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
