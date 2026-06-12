@@ -164,7 +164,12 @@ export async function getAppConfig(): Promise<AppConfig> {
   const envOverrides: Partial<LocalAppConfig> = {};
   if (process.env.NEXT_PUBLIC_BRIDE_NAME || process.env.BRIDE_NAME) envOverrides.brideName = process.env.NEXT_PUBLIC_BRIDE_NAME || process.env.BRIDE_NAME;
   if (process.env.NEXT_PUBLIC_GROOM_NAME || process.env.GROOM_NAME) envOverrides.groomName = process.env.NEXT_PUBLIC_GROOM_NAME || process.env.GROOM_NAME;
-  if (process.env.WEDDING_DATE) envOverrides.weddingDate = new Date(process.env.WEDDING_DATE);
+  if (process.env.WEDDING_DATE) {
+    const parsedDate = new Date(process.env.WEDDING_DATE);
+    if (!isNaN(parsedDate.getTime())) {
+      envOverrides.weddingDate = parsedDate;
+    }
+  }
   if (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL) envOverrides.baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL;
   if (process.env.NEXT_PUBLIC_VENUE_NAME || process.env.VENUE_NAME) envOverrides.venueName = process.env.NEXT_PUBLIC_VENUE_NAME || process.env.VENUE_NAME;
   if (process.env.NEXT_PUBLIC_THEME_PRIMARY || process.env.THEME_PRIMARY) envOverrides.themePrimary = process.env.NEXT_PUBLIC_THEME_PRIMARY || process.env.THEME_PRIMARY;
@@ -178,11 +183,23 @@ export async function getAppConfig(): Promise<AppConfig> {
   };
 
   // Guarantee all properties have fallbacks if falsy
+  const setupFields = ['brideName', 'groomName', 'baseUrl'];
   const finalConfig = Object.fromEntries(
-    Object.entries(mergedConfig).map(([k, v]) => [
-      k,
-      v === null || v === undefined || v === '' ? (fallbackAppConfig as any)[k] : v,
-    ])
+    Object.entries(mergedConfig).map(([k, v]) => {
+      // Only replace null or undefined with fallback
+      if (v === null || v === undefined) {
+        return [k, (fallbackAppConfig as any)[k]];
+      }
+      // Preserve empty strings for setup detection fields
+      if (v === '' && setupFields.includes(k)) {
+        return [k, ''];
+      }
+      // Replace other empty strings with fallback
+      if (v === '') {
+        return [k, (fallbackAppConfig as any)[k]];
+      }
+      return [k, v];
+    })
   ) as LocalAppConfig;
 
   return {

@@ -41,7 +41,10 @@ export default function Navbar({ isAdmin, handleLogout, headerRef }: NavbarProps
   let features: any[] = [];
   try {
     if (config && typeof config.features === 'string') {
-      features = JSON.parse(config.features);
+      const parsed = JSON.parse(config.features);
+      if (Array.isArray(parsed)) {
+        features = parsed;
+      }
     } else if (config && Array.isArray(config.features)) {
       features = config.features;
     }

@@ -7,13 +7,11 @@ type AppContextType = {
   config: PublicAppConfig | null;
 };
 
-const AppContext = createContext<AppContextType>({
-  config: null,
-});
+const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const useAppConfig = () => {
   const context = useContext(AppContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAppConfig must be used within an AppProvider');
   }
   return context.config;
