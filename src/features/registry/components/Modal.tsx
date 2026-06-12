@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image';
 import { X, Loader2 } from 'lucide-react';
+import { useOverlay } from '@/hooks/useOverlay';
 
 /**
  * @interface ModalProps
@@ -29,44 +30,8 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const [amount, setAmount] = useState<number | string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const modalRef = useRef<HTMLDivElement>(null);
-  const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    const focusableSelectors = [
-      'button', 'a[href]', 'input', '[tabindex]:not([tabindex="-1"])'
-    ];
-    const modal = modalRef.current;
-    if (!modal) return;
-    const focusableEls = modal.querySelectorAll<HTMLElement>(focusableSelectors.join(','));
-    if (focusableEls.length > 0) {
-      (focusableEls[0] as HTMLElement).focus();
-    }
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === 'Tab') {
-        const focusable = Array.from(focusableEls);
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            (last as HTMLElement).focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            (first as HTMLElement).focus();
-          }
-        }
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  const { overlayRef, handleBackdropClick } = useOverlay(true, onClose);
 
   const handleContributeClick = async () => {
     setError(null);
@@ -110,13 +75,12 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const isVendorUrlSafe = item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={modalRef}>
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={overlayRef} onClick={handleBackdropClick}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
         <button
           className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           onClick={onClose}
           aria-label="Close modal"
-          ref={firstFocusableRef}
         >
           <X className="w-6 h-6" />
         </button>
@@ -175,7 +139,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 id="contributorName"
                 type="text"
                 placeholder="Jane Doe"
-                className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                className="form-input"
                 value={contributorName}
                 onChange={(e) => setContributorName(e.target.value)}
                 disabled={isSubmitting}
@@ -192,7 +156,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                   id="contributionAmount"
                   type="number"
                   placeholder={`Up to $${remainingAmount.toFixed(2)}`}
-                  className="border border-gray-300 dark:border-gray-600 p-2 rounded w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                  className="form-input"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   min="0.01"
@@ -206,7 +170,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             )}
             {error && <p id="contribution-error" className="text-red-600 text-sm mb-3" role="alert">{error}</p>}
             <button
-              className={`w-full bg-gradient-to-r from-primary to-secondary text-white font-bold px-4 py-2 rounded shadow hover:from-secondary hover:to-primary transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
+              className="w-full btn-primary"
               onClick={handleContributeClick}
               disabled={isSubmitting}
               aria-busy={isSubmitting}

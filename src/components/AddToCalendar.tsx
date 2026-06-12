@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar'
+import { useOverlay } from '@/hooks/useOverlay'
 
 /**
  * @interface AddToCalendarProps
@@ -15,52 +16,31 @@ interface AddToCalendarProps {
 }
 
 /**
- * @function AddToCalendar
- * @description A React component that provides a dropdown menu to add a specified event to various calendar services.
- * @param {AddToCalendarProps} props - The props for the component.
- * @returns {JSX.Element} - The rendered AddToCalendar component.
+ * Render a button that opens a dropdown for exporting the provided event to multiple calendar services.
+ *
+ * The dropdown lists Google, Apple, iCal, Outlook.com, and Yahoo options; selecting an option opens the corresponding
+ * calendar link or downloads an `.ics` file. Keyboard arrow navigation is supported within the menu and focus is
+ * restored to the trigger after an action.
+ *
+ * @param event - Event data used to generate calendar entries (title, start/end, location, etc.)
+ * @param className - Optional additional CSS classes applied to the root container
+ * @returns The component's JSX element
  */
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const handleToggle = () => setIsOpen(!isOpen)
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isOpen])
-
-  // Focus first item when opened
-  useEffect(() => {
-    if (isOpen) {
-      const firstButton = dropdownRef.current?.querySelector('button[role="menuitem"]') as HTMLElement
-      firstButton?.focus()
-    }
-  }, [isOpen])
+  const { overlayRef } = useOverlay(isOpen, () => {
+    setIsOpen(false)
+    triggerRef.current?.focus()
+  });
 
   const handleMenuKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const buttons = dropdownRef.current?.querySelectorAll('button[role="menuitem"]')
+      const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]')
       if (!buttons) return
       const index = Array.from(buttons).indexOf(document.activeElement as Element)
       let nextIndex = 0
@@ -98,12 +78,12 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
   }
 
   return (
-    <div className={`relative inline-block text-left ${className}`} ref={dropdownRef}>
+    <div className={`relative inline-block text-left ${className}`}>
       <div>
         <button
           ref={triggerRef}
           type="button"
-          className="inline-flex justify-center w-full rounded-full px-8 py-3 bg-primary text-white font-semibold shadow-md hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+          className="btn-primary w-full rounded-full px-8 py-3"
           id="options-menu"
           aria-haspopup="true"
           aria-expanded={isOpen}
@@ -115,6 +95,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
 
       {isOpen && (
         <div
+          ref={overlayRef}
           className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10"
         >
           <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
