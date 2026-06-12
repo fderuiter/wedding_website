@@ -32,7 +32,10 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
 
   const handleToggle = () => setIsOpen(!isOpen)
 
-  const { overlayRef } = useOverlay(isOpen, () => setIsOpen(false));
+  const { overlayRef } = useOverlay(isOpen, () => {
+    setIsOpen(false)
+    triggerRef.current?.focus()
+  });
 
   const handleMenuKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
