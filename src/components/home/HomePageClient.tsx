@@ -10,6 +10,7 @@ import type { PublicAppConfig } from '@/lib/config'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
+import { Interactive3DCard } from '@/components/ui/Interactive3DCard'
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
@@ -147,10 +148,12 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
             <h2 className="text-4xl font-bold text-primary">{feature.title || 'Travel & Things to Do'}</h2>
             {travelNodes.length > 0 ? (
               travelNodes.map((node: any, i: number) => (
-                <div key={i} className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg mt-4 border border-primary dark:border-primary">
-                  {node.title && <h3 className="font-semibold text-xl mb-2 text-primary">{node.title}</h3>}
-                  {node.description && <p className="text-lg">{node.description}</p>}
-                </div>
+                <Interactive3DCard key={i} className="mt-4">
+                  <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-primary dark:border-primary h-full">
+                    {node.title && <h3 className="font-semibold text-xl mb-2 text-primary translate-z-10">{node.title}</h3>}
+                    {node.description && <p className="text-lg translate-z-10">{node.description}</p>}
+                  </div>
+                </Interactive3DCard>
               ))
             ) : (
               <div className="text-center text-gray-500">Travel details coming soon...</div>
@@ -202,7 +205,6 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
       >
         <main id="main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
-            <div className="absolute inset-0 -z-10 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)] animate-pulse-scale" />
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               {config.heroTitle || 'We Tied the Knot!'}
             </motion.h1>
