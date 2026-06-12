@@ -113,6 +113,19 @@ jest.mock('next/link', () => {
     return MockLink;
 })
 
+jest.mock('@/components/ThemeProvider', () => ({
+  useTheme: () => ({
+    themePrimary: '#000000',
+    themeSecondary: '#ffffff',
+    themeAccent: '#d4af37',
+  }),
+  useAppConfig: () => ({
+    themePrimary: '#000000',
+    themeSecondary: '#ffffff',
+    themeAccent: '#d4af37',
+  }),
+}));
+
 // Mock three.js because JSDOM doesn't have a canvas
 jest.mock('three', () => {
   const THREE = jest.requireActual('three');
