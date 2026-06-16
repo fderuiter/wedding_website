@@ -47,8 +47,10 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     onDelete?.(item.id);
   };
 
+  const Wrapper = isAdmin ? 'div' : Interactive3DCard;
+
   return (
-    <Interactive3DCard className="h-full">
+    <Wrapper className="h-full">
       <div
         className={`${cardClasses} h-full`}
         onClick={isClickable ? () => onClick(item) : undefined}
@@ -136,7 +138,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         )}
       </div>
       </div>
-    </Interactive3DCard>
+    </Wrapper>
   );
 };
 
