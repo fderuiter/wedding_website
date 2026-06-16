@@ -150,8 +150,8 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
               travelNodes.map((node: any, i: number) => (
                 <Interactive3DCard key={i} className="mt-4">
                   <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-primary dark:border-primary h-full">
-                    {node.title && <h3 className="font-semibold text-xl mb-2 text-primary translate-z-10">{node.title}</h3>}
-                    {node.description && <p className="text-lg translate-z-10">{node.description}</p>}
+                    {node.title && <h3 className="font-semibold text-xl mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
+                    {node.description && <p className="text-lg [transform:translateZ(10px)]">{node.description}</p>}
                   </div>
                 </Interactive3DCard>
               ))

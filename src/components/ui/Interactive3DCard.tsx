@@ -26,12 +26,12 @@ export function Interactive3DCard({ children, className = '', onClick }: Interac
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!ref.current) return;
     const rect = ref.current.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const xPct = mouseX / width - 0.5;
-    const yPct = mouseY / height - 0.5;
+    const { width, height, left, top } = rect;
+    if (width === 0 || height === 0) return;
+    const mouseX = e.clientX - left;
+    const mouseY = e.clientY - top;
+    const xPct = Math.max(-0.5, Math.min(0.5, mouseX / width - 0.5));
+    const yPct = Math.max(-0.5, Math.min(0.5, mouseY / height - 0.5));
 
     x.set(xPct);
     y.set(yPct);
@@ -45,13 +45,13 @@ export function Interactive3DCard({ children, className = '', onClick }: Interac
   const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (!ref.current || !e.touches[0]) return;
     const rect = ref.current.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    const { width, height, left, top } = rect;
+    if (width === 0 || height === 0) return;
     const touch = e.touches[0];
-    const mouseX = touch.clientX - rect.left;
-    const mouseY = touch.clientY - rect.top;
-    const xPct = mouseX / width - 0.5;
-    const yPct = mouseY / height - 0.5;
+    const mouseX = touch.clientX - left;
+    const mouseY = touch.clientY - top;
+    const xPct = Math.max(-0.5, Math.min(0.5, mouseX / width - 0.5));
+    const yPct = Math.max(-0.5, Math.min(0.5, mouseY / height - 0.5));
 
     x.set(xPct);
     y.set(yPct);
@@ -62,18 +62,23 @@ export function Interactive3DCard({ children, className = '', onClick }: Interac
     y.set(0);
   };
 
+  const reduceMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   return (
     <motion.div
       ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onMouseMove={reduceMotion ? undefined : handleMouseMove}
+      onMouseLeave={reduceMotion ? undefined : handleMouseLeave}
+      onTouchMove={reduceMotion ? undefined : handleTouchMove}
+      onTouchEnd={reduceMotion ? undefined : handleTouchEnd}
       onClick={onClick}
       style={{
         transformPerspective: 1000,
-        rotateX,
-        rotateY,
+        rotateX: reduceMotion ? '0deg' : rotateX,
+        rotateY: reduceMotion ? '0deg' : rotateY,
         transformStyle: 'preserve-3d',
         willChange: 'transform',
       }}
