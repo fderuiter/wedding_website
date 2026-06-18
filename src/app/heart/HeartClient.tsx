@@ -12,6 +12,7 @@ import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
 import { theme } from '../../styles/theme'
 import { useTheme } from '@/components/ThemeProvider'
+import { useOverlay } from '@/hooks/useOverlay'
 
 /**
  * @function Sparkles
@@ -338,6 +339,34 @@ function PhysicsHeart({
 
   return (
     <>
+      <Html zIndexRange={[100, 0]} prepend center>
+        <div className="sr-only" aria-live="polite">
+          {isBroken ? 'Heart is broken.' : 'Heart is whole.'}
+        </div>
+        {!isBroken && (
+          <button
+            className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+            aria-label={`Interactive 3D Heart. Status: Whole. Use arrow keys to move, Space or Enter to break.`}
+            onKeyDown={(e) => {
+              if (isBroken || !heartRef.current) return;
+              const impulse = 20;
+              if (e.key === 'ArrowUp') {
+                 heartRef.current.applyImpulse({ x: 0, y: impulse, z: 0 }, true);
+              } else if (e.key === 'ArrowDown') {
+                 heartRef.current.applyImpulse({ x: 0, y: -impulse, z: 0 }, true);
+              } else if (e.key === 'ArrowLeft') {
+                 heartRef.current.applyImpulse({ x: -impulse, y: 0, z: 0 }, true);
+              } else if (e.key === 'ArrowRight') {
+                 heartRef.current.applyImpulse({ x: impulse, y: 0, z: 0 }, true);
+              } else if (e.key === ' ' || e.key === 'Enter') {
+                 e.preventDefault();
+                 setIsBroken(true);
+              }
+            }}
+          />
+        )}
+      </Html>
+
       <RigidBody
         ref={heartRef}
         restitution={0.9}
@@ -359,12 +388,42 @@ function PhysicsHeart({
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="left" />
         </group>
+        {isBroken && (
+          <Html zIndexRange={[100, 0]} prepend center>
+            <button
+              className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+              aria-label={`Broken heart left segment. Press space or enter to bump.`}
+              onKeyDown={(e) => {
+                if (!brokenHeartLeftRef.current) return;
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+                }
+              }}
+            />
+          </Html>
+        )}
       </RigidBody>
       <RigidBody ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="right" />
         </group>
+        {isBroken && (
+          <Html zIndexRange={[100, 0]} prepend center>
+            <button
+              className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+              aria-label={`Broken heart right segment. Press space or enter to bump.`}
+              onKeyDown={(e) => {
+                if (!brokenHeartRightRef.current) return;
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+                }
+              }}
+            />
+          </Html>
+        )}
       </RigidBody>
 
       {showEasterEgg && (
@@ -412,6 +471,8 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
   const [scale, setScale] = useState(0.6)
   const [resetKey, setResetKey] = useState(0)
 
+  const { overlayRef } = useOverlay(true, () => {})
+
   const handleReset = () => {
     setInteracted(false)
     setResetKey((prevKey) => prevKey + 1)
@@ -429,7 +490,7 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
   }, [])
 
   return (
-    <div className="fixed inset-0 bg-black select-none">
+    <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
       <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
         <button
           onClick={handleReset}

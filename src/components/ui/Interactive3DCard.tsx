@@ -62,6 +62,40 @@ export function Interactive3DCard({ children, className = '', onClick }: Interac
     y.set(0);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = 0.25;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      x.set(Math.max(-0.5, x.get() - step));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      x.set(Math.min(0.5, x.get() + step));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      y.set(Math.max(-0.5, y.get() - step));
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      y.set(Math.min(0.5, y.get() + step));
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      // Provide an accessible trigger for standard clickable cards if not caught inside
+      if (onClick) {
+        e.preventDefault();
+        onClick(e as any);
+      }
+    }
+  };
+
+  const handleFocus = () => {
+    // Reset or give a slight tilt when focused to show activity
+    x.set(0.15);
+    y.set(-0.15);
+  };
+
+  const handleBlur = () => {
+    x.set(0);
+    y.set(0);
+  };
+
   const reduceMotion =
     typeof window !== 'undefined' &&
     window.matchMedia &&
@@ -74,6 +108,9 @@ export function Interactive3DCard({ children, className = '', onClick }: Interac
       onMouseLeave={reduceMotion ? undefined : handleMouseLeave}
       onTouchMove={reduceMotion ? undefined : handleTouchMove}
       onTouchEnd={reduceMotion ? undefined : handleTouchEnd}
+      onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       onClick={onClick}
       style={{
         transformPerspective: 1000,
