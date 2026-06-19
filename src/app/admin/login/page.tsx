@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { apiClient } from '@/lib/admin/apiClient';
 
 /**
  * @page LoginPage
@@ -27,19 +28,14 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      if (res.ok) {
-        router.push('/admin/dashboard');
+      await apiClient.post('/api/admin/login', { password });
+      router.push('/admin/dashboard');
+    } catch (err: any) {
+      if (err.name === 'ApiError') {
+        setError(err.message || 'Login failed.');
       } else {
-        const data = await res.json();
-        setError(data.error || 'Login failed.');
+        setError('Network error.');
       }
-    } catch {
-      setError('Network error.');
     } finally {
       setLoading(false);
     }

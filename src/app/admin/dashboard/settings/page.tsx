@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
+import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
@@ -15,14 +16,11 @@ export default function AdminSettingsPage() {
 
   const refreshConfig = async () => {
     try {
-      const res = await fetch('/api/admin/settings');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.weddingDate) {
-          data.weddingDate = data.weddingDate.split('T')[0];
-        }
-        setConfig(data);
+      const data = await apiClient.get<any>('/api/admin/settings');
+      if (data.weddingDate) {
+        data.weddingDate = data.weddingDate.split('T')[0];
       }
+      setConfig(data);
     } catch (err) {
       console.error(err);
     }
@@ -47,21 +45,13 @@ export default function AdminSettingsPage() {
     setMessage("");
 
     try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...config,
-          weddingDate: new Date(config.weddingDate).toISOString(),
-        }),
+      await apiClient.put('/api/admin/settings', {
+        ...config,
+        weddingDate: new Date(config.weddingDate).toISOString(),
       });
 
-      if (res.ok) {
-        setMessage("Settings saved successfully.");
-        await refreshConfig(); // ensure we have latest after save
-      } else {
-        setMessage("Failed to save settings.");
-      }
+      setMessage("Settings saved successfully.");
+      await refreshConfig(); // ensure we have latest after save
     } catch (err) {
       console.error(err);
       setMessage("Failed to save settings.");
@@ -83,21 +73,11 @@ export default function AdminSettingsPage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.ok) {
-        const { url } = await res.json();
-        setConfig((prev: any) => ({ ...prev, [fieldName]: url }));
-        setMessage(`${fieldName} uploaded successfully.`);
-      } else {
-        const { error } = await res.json();
-        setMessage(`Upload failed: ${error}`);
-      }
-    } catch (err) {
-      setMessage(`Upload failed: ${err}`);
+      const { url } = await apiClient.post<{ url: string }>('/api/admin/upload', formData);
+      setConfig((prev: any) => ({ ...prev, [fieldName]: url }));
+      setMessage(`${fieldName} uploaded successfully.`);
+    } catch (err: any) {
+      setMessage(`Upload failed: ${err.message || err}`);
     }
   };
 
