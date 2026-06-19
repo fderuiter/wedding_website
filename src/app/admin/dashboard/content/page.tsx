@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { ContentNode } from '@prisma/client';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
@@ -85,14 +86,7 @@ export default function ContentDashboardPage() {
         return;
       }
       
-      const res = await fetch('/api/registry/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: urlItem.value })
-      });
-      
-      if (!res.ok) throw new Error('Scrape failed');
-      const scraped = await res.json();
+      const scraped = await apiClient.post<any>('/api/registry/scrape', { url: urlItem.value });
       
       setDynamicData(prev => {
         const newData = [...prev];

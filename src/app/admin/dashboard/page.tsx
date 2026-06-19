@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RegistryItem} from "@/features/registry/types";
 import { checkAdminClient } from '@/utils/adminAuth.client';
+import { apiClient } from '@/lib/admin/apiClient';
 
 /**
  * @page AdminDashboardPage
@@ -30,13 +31,9 @@ export default function AdminDashboardPage() {
         return;
       }
       // Fetch registry items
-      fetch('/api/registry/items')
-        .then((res) => {
-          if (!res.ok) throw new Error('Failed to fetch items');
-          return res.json();
-        })
+      apiClient.get<RegistryItem[]>('/api/registry/items')
         .then((data) => setItems(data))
-        .catch((err) => setError(err.message))
+        .catch((err: any) => setError(err.name === 'ApiError' ? 'Failed to fetch items' : err.message))
         .finally(() => setLoading(false));
     }
     checkAuthAndFetch();
@@ -122,12 +119,11 @@ export default function AdminDashboardPage() {
                         onClick={async () => {
                           if (!confirm('Are you sure you want to delete this item?')) return;
                           try {
-                            const res = await fetch(`/api/registry/items/${item.id}`, { method: 'DELETE' });
-                            if (!res.ok) throw new Error('Failed to delete item');
+                            await apiClient.delete(`/api/registry/items/${item.id}`);
                             setItems((prev) => prev.filter((i) => i.id !== item.id));
                             alert('Item deleted successfully.');
-                          } catch (e: unknown) { // Changed from any to unknown
-                            alert((e instanceof Error ? e.message : String(e)) || 'Error deleting item');
+                          } catch (e: any) {
+                            alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
                           }
                         }}
                       >
@@ -181,12 +177,11 @@ export default function AdminDashboardPage() {
                   onClick={async () => {
                     if (!confirm('Are you sure you want to delete this item?')) return;
                     try {
-                      const res = await fetch(`/api/registry/items/${item.id}`, { method: 'DELETE' });
-                      if (!res.ok) throw new Error('Failed to delete item');
+                      await apiClient.delete(`/api/registry/items/${item.id}`);
                       setItems((prev) => prev.filter((i) => i.id !== item.id));
                       alert('Item deleted successfully.');
-                    } catch (e: unknown) { // Changed from any to unknown
-                      alert((e instanceof Error ? e.message : String(e)) || 'Error deleting item');
+                    } catch (e: any) {
+                      alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
                     }
                   }}
                 >

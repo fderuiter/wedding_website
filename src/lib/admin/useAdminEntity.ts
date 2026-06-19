@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiClient } from './apiClient';
 
 /**
  * Manages admin CRUD, reordering, and visibility state for a collection of entities identified by `entityKey`.
@@ -23,9 +24,7 @@ export function useAdminEntity<T extends { id: string }>(entityKey: string) {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/${entityKey}`);
-      if (!res.ok) throw new Error('Failed to fetch data');
-      const json = await res.json();
+      const json = await apiClient.get<T[]>(`/api/admin/${entityKey}`);
       setData(json);
       setError(null);
     } catch (err: any) {
@@ -40,34 +39,19 @@ export function useAdminEntity<T extends { id: string }>(entityKey: string) {
   }, [fetchAll]);
 
   const create = async (payload: any) => {
-    const res = await fetch(`/api/admin/${entityKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('Failed to create');
-    const newItem = await res.json();
+    const newItem = await apiClient.post<T>(`/api/admin/${entityKey}`, payload);
     setData(prev => [newItem, ...prev]);
     return newItem;
   };
 
   const update = async (id: string, payload: any) => {
-    const res = await fetch(`/api/admin/${entityKey}/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('Failed to update');
-    const updatedItem = await res.json();
+    const updatedItem = await apiClient.put<T>(`/api/admin/${entityKey}/${id}`, payload);
     setData(prev => prev.map(item => item.id === id ? updatedItem : item));
     return updatedItem;
   };
 
   const remove = async (id: string) => {
-    const res = await fetch(`/api/admin/${entityKey}/${id}`, {
-      method: 'DELETE'
-    });
-    if (!res.ok) throw new Error('Failed to delete');
+    await apiClient.delete(`/api/admin/${entityKey}/${id}`);
     setData(prev => prev.filter(item => item.id !== id));
   };
 
@@ -76,15 +60,12 @@ export function useAdminEntity<T extends { id: string }>(entityKey: string) {
     const sorted = [...data].sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
     setData(sorted);
     
-    const res = await fetch(`/api/admin/${entityKey}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reorder', orderedIds })
-    });
-    if (!res.ok) {
+    try {
+      await apiClient.put(`/api/admin/${entityKey}`, { action: 'reorder', orderedIds });
+    } catch (err) {
       // Revert on failure
       fetchAll();
-      throw new Error('Failed to reorder');
+      throw err;
     }
   };
 
