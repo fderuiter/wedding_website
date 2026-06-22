@@ -111,3 +111,25 @@ model SnapshotVersion {
   author      String   @default("Admin")
   createdAt   DateTime @default(now())
 }
+
+model Guest {
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  email     String   @unique
+  isPlusOne Boolean  @default(false)
+  rsvps     Rsvp[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Rsvp {
+  id           String   @id @default(uuid())
+  guestId      String
+  guest        Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  attending    Boolean
+  mealChoice   String?
+  dietaryNotes String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

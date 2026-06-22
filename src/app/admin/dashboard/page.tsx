@@ -67,6 +67,7 @@ export default function AdminDashboardPage() {
             <a href="/admin/dashboard/attractions" className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Attractions</a>
             <a href="/admin/dashboard/content" className="px-4 py-2 bg-secondary text-white rounded hover:brightness-90 transition">Manage Content</a>
             <a href="/admin/dashboard/settings" className="px-4 py-2 bg-primary text-white rounded hover:brightness-90 transition">Site Settings</a>
+            <a href="/admin/dashboard/maintenance" className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition">Maintenance Hub</a>
           </div>
         </div>
         {/* Responsive Table for Desktop, Cards for Mobile */}
