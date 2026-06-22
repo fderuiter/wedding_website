@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import { Loader2 } from 'lucide-react';
+import { validateAddItemInput } from '@/utils/validation';
 
 /**
  * Props for the RegistryItemForm component.
@@ -89,21 +90,21 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    // Basic validation
-    if (!values.name || !values.price || !values.quantity || !values.category) {
-      setFormError('Name, price, quantity, and category are required.');
-      return;
-    }
-    if (isNaN(Number(values.price)) || isNaN(Number(values.quantity))) {
-      setFormError('Price and Quantity must be valid numbers.');
-      return;
-    }
-    await onSubmit({
+
+    const dataToValidate = {
       ...values,
       price: Number(values.price),
       quantity: Number(values.quantity),
       isGroupGift: !!values.isGroupGift,
-    });
+    };
+
+    const validationError = validateAddItemInput(dataToValidate);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    await onSubmit(dataToValidate);
   };
 
   return (

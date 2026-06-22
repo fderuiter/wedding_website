@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { registryService } from '@/features/registry/service';
 import { isAdminRequest } from '@/utils/adminAuth.server';
+import { validateAddItemInput } from '@/utils/validation';
 
 /**
  * @api {get} /api/registry/items/:id
@@ -50,9 +51,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const body = await request.json();
-  if (!body.name || typeof body.price !== 'number' || typeof body.quantity !== 'number') {
+  const validationError = validateAddItemInput(body);
+  if (validationError) {
     return NextResponse.json(
-      { error: 'Missing or invalid required fields (name, price, quantity)' },
+      { error: validationError },
       { status: 400 }
     );
   }
