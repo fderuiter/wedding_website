@@ -1,10 +1,12 @@
-"use client";
+'use client';
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { ContentNode } from '@prisma/client';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import { apiClient } from '@/lib/admin/apiClient';
+import { Button } from '@/components/ui/Button';
+
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
@@ -155,12 +157,12 @@ export default function ContentDashboardPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-extrabold text-primary">Content Hub</h1>
           <div>
-            <button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Registry</button>
-            <button onClick={() => { 
+            <Button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Registry</Button>
+            <Button onClick={() => { 
               setCurrentNode({ type: 'FAQ', tags: ['Homepage'] }); 
               setDynamicData([{key: 'question', value: ''}, {key: 'answer', value: ''}]); 
               setIsEditing(true); 
-            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Content</button>
+            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Content</Button>
           </div>
         </div>
 
@@ -183,19 +185,19 @@ export default function ContentDashboardPage() {
                   <div key={idx} className="flex gap-2 mb-2 items-center">
                     <input type="text" placeholder="Key" className="border rounded p-2 text-black w-1/3" value={field.key} onChange={(e) => updateField(idx, 'key', e.target.value)} />
                     <input type="text" placeholder="Value" className="border rounded p-2 text-black w-2/3" value={field.value} onChange={(e) => updateField(idx, 'value', e.target.value)} />
-                    <button onClick={() => removeField(idx)} className="bg-red-500 text-white px-2 py-2 rounded font-bold">X</button>
+                    <Button onClick={() => removeField(idx)} className="bg-red-500 text-white px-2 py-2 rounded font-bold">X</Button>
                   </div>
                 ))}
-                <button onClick={addField} className="text-sm bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded mt-2">+ Add Field</button>
+                <Button onClick={addField} className="text-sm bg-gray-200 dark:bg-gray-700   rounded mt-2">+ Add Field</Button>
               </div>
 
             </div>
             <div className="flex gap-4 mt-6">
-              <button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Save</button>
+              <Button onClick={handleSave} className="bg-green-600 text-white   rounded font-bold">Save</Button>
               {currentNode.type === 'Photo' && (
-                <button onClick={handleScrapePhoto} className="bg-blue-600 text-white px-4 py-2 rounded">Scrape Metadata from URL</button>
+                <Button onClick={handleScrapePhoto} className="bg-blue-600 text-white   rounded">Scrape Metadata from URL</Button>
               )}
-              <button onClick={() => setIsEditing(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+              <Button onClick={() => setIsEditing(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</Button>
             </div>
           </div>
         )}
@@ -210,13 +212,13 @@ export default function ContentDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex">
-                <button onClick={() => { 
+                <Button onClick={() => { 
                   setCurrentNode(node); 
                   const d = node.data as Record<string, string>;
                   setDynamicData(Object.keys(d).map(k => ({key: k, value: String(d[k])})));
                   setIsEditing(true); 
-                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(node.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
+                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</Button>
+                <Button onClick={() => handleDelete(node.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</Button>
               </div>
             </div>
           ))}

@@ -1,9 +1,11 @@
-"use client";
+'use client';
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { WeddingPartyMember } from '@prisma/client';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { Button } from '@/components/ui/Button';
+
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
@@ -99,11 +101,11 @@ export default function WeddingPartyDashboardPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-extrabold text-primary">Wedding Party Studio</h1>
           <div>
-            <button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
-            <button onClick={() => { 
+            <Button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</Button>
+            <Button onClick={() => { 
               setCurrentMember({ name: '', role: '', bio: '', photo: '', link: '', order: 0 }); 
               setIsEditing(true); 
-            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Member</button>
+            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Member</Button>
           </div>
         </div>
 
@@ -137,8 +139,8 @@ export default function WeddingPartyDashboardPage() {
               </div>
             </div>
             <div className="flex gap-4 mt-6">
-              <button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Save</button>
-              <button onClick={() => setIsEditing(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+              <Button onClick={handleSave} className="bg-green-600 text-white   rounded font-bold">Save</Button>
+              <Button onClick={() => setIsEditing(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</Button>
             </div>
           </div>
         )}
@@ -157,11 +159,11 @@ export default function WeddingPartyDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex flex-col gap-2">
-                <button onClick={() => { 
+                <Button onClick={() => { 
                   setCurrentMember(member); 
                   setIsEditing(true); 
-                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(member.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
+                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</Button>
+                <Button onClick={() => handleDelete(member.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</Button>
               </div>
             </div>
           ))}

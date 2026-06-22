@@ -3,6 +3,7 @@ import { RegistryItem } from '@/features/registry/types';
 import { getRegistryItemStatus } from '@/features/registry/lib/registryStatusUtils';
 import Image from 'next/image';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Props for the RegistryCard component.
@@ -99,7 +100,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           }}
         />
       </div>
-      <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
+      <div className="p-6 relative z-20 flex flex-col gap-2 flex-grow">
         {/* Updated heading color */}
         <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
         {/* Updated text color */}
@@ -119,21 +120,23 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           </p>
         )}
         {isAdmin && (
-          <div className="absolute bottom-4 right-4 flex gap-2 z-20">
-            <button
+          <div className="mt-auto pt-[10px] flex justify-end gap-2 z-20">
+            <Button
               onClick={handleEdit}
-              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+              variant="primary"
+              className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white"
               aria-label={`Edit ${item.name}`}
             >
               Edit
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleDelete}
-              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+              variant="danger"
+              className="px-3 py-1"
               aria-label={`Delete ${item.name}`}
             >
               Delete
-            </button>
+            </Button>
           </div>
         )}
       </div>

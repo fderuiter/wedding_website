@@ -1,4 +1,6 @@
-'use client'
+'use client';
+
+import { Button } from '@/components/ui/Button';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Environment, Html, Text, Points, PointMaterial } from '@react-three/drei'
@@ -344,7 +346,7 @@ function PhysicsHeart({
           {isBroken ? 'Heart is broken.' : 'Heart is whole.'}
         </div>
         {!isBroken && (
-          <button
+          <Button
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
             aria-label={`Interactive 3D Heart. Status: Whole. Use arrow keys to move, Space or Enter to break.`}
             onKeyDown={(e) => {
@@ -390,7 +392,7 @@ function PhysicsHeart({
         </group>
         {isBroken && (
           <Html zIndexRange={[100, 0]} prepend center>
-            <button
+            <Button
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
               aria-label={`Broken heart left segment. Press space or enter to bump.`}
               onKeyDown={(e) => {
@@ -411,7 +413,7 @@ function PhysicsHeart({
         </group>
         {isBroken && (
           <Html zIndexRange={[100, 0]} prepend center>
-            <button
+            <Button
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
               aria-label={`Broken heart right segment. Press space or enter to bump.`}
               onKeyDown={(e) => {
@@ -492,16 +494,16 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
   return (
     <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
       <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
-        <button
+        <Button
           onClick={handleReset}
-          className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white"
+          className="rounded bg-white/80   text-sm hover:bg-white"
           aria-label="Reset heart"
         >
           Reset
-        </button>
-        <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
+        </Button>
+        <Button href="/" variant="ghost" className="rounded bg-white/80 text-sm hover:bg-white min-h-[44px]">
           Back Home
-        </Link>
+        </Button>
       </div>
       <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
         <ambientLight intensity={0.8} />

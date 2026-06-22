@@ -1,9 +1,11 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
+import { Button } from '@/components/ui/Button';
+
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 
@@ -104,7 +106,7 @@ export default function AdminSettingsPage() {
       <div className="mx-auto max-w-4xl p-6">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Site Settings</h1>
-          <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
+          <Button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</Button>
         </div>
         
         {message && (
@@ -274,13 +276,13 @@ export default function AdminSettingsPage() {
           </section>
 
           <div className="flex justify-end sticky bottom-0 bg-gray-100 dark:bg-gray-900 py-4 shadow-t">
-            <button
+            <Button
               type="submit"
               disabled={saving}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+              className="  bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save Settings"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

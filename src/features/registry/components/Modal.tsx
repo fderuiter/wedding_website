@@ -4,6 +4,7 @@ import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image';
 import { X, Loader2 } from 'lucide-react';
 import { useOverlay } from '@/hooks/useOverlay';
+import { Button } from '@/components/ui/Button';
 
 /**
  * @interface ModalProps
@@ -76,14 +77,15 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={overlayRef} onClick={handleBackdropClick}>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
-        <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto flex flex-col text-gray-800 dark:text-gray-100">
+        <Button
+          variant="ghost"
+          className="absolute top-3 right-3 text-gray-500 rounded-full p-2"
           onClick={onClose}
           aria-label="Close modal"
         >
           <X className="w-6 h-6" />
-        </button>
+        </Button>
         <div className="relative w-full h-64 mb-4">
           <Image
             src={item.image || '/images/placeholder.png'}
@@ -117,14 +119,15 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
           </div>
         )}
         {isVendorUrlSafe && (
-          <a
+          <Button
             href={item.vendorUrl as string}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
+            variant="ghost"
+            className="self-start text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline mb-4 text-sm"
           >
             View on Vendor Site
-          </a>
+          </Button>
         )}
         {!item.purchased ? (
           <div className="mt-5 pt-4 border-t border-primary">
@@ -169,8 +172,9 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               </div>
             )}
             {error && <p id="contribution-error" className="text-red-600 text-sm mb-3" role="alert">{error}</p>}
-            <button
-              className="w-full btn-primary"
+            <Button
+              className="w-full"
+              variant="primary"
               onClick={handleContributeClick}
               disabled={isSubmitting}
               aria-busy={isSubmitting}
@@ -183,7 +187,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               ) : (
                 item.isGroupGift ? 'Submit Contribution' : 'Claim Gift'
               )}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="mt-5 pt-4 border-t border-primary text-center">

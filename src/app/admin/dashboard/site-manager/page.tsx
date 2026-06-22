@@ -1,8 +1,10 @@
-"use client";
+'use client';
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
+import { Button } from '@/components/ui/Button';
+
 
 export default function SiteManagerPage() {
   const router = useRouter();
@@ -113,8 +115,8 @@ export default function SiteManagerPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
           <div className="space-x-4">
-            <button onClick={() => setShowCustomModal(true)} className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary transition">Add Custom Section</button>
-            <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">Back to Dashboard</button>
+            <Button onClick={() => setShowCustomModal(true)} className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary transition">Add Custom Section</Button>
+            <Button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">Back to Dashboard</Button>
           </div>
         </div>
 
@@ -144,12 +146,12 @@ export default function SiteManagerPage() {
                 </div>
               </div>
               <div>
-                <button 
+                <Button 
                   onClick={() => toggleVisibility(feature.id)} 
                   className={`px-4 py-2 rounded text-sm font-bold ${feature.visible ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
                 >
                   {feature.visible ? 'Visible' : 'Hidden'}
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -169,8 +171,8 @@ export default function SiteManagerPage() {
                   <textarea value={customContent} onChange={e => setCustomContent(e.target.value)} className="w-full border rounded p-2 text-black" rows={5} placeholder="Add your content here... Use double line breaks for paragraphs." />
                 </div>
                 <div className="flex gap-4 mt-6">
-                  <button onClick={addCustomSection} className="flex-1 bg-green-600 text-white px-4 py-2 rounded font-bold">Save Section</button>
-                  <button onClick={() => setShowCustomModal(false)} className="flex-1 bg-gray-400 text-white px-4 py-2 rounded font-bold">Cancel</button>
+                  <Button onClick={addCustomSection} className="flex-1 bg-green-600 text-white   rounded font-bold">Save Section</Button>
+                  <Button onClick={() => setShowCustomModal(false)} className="flex-1 bg-gray-400 text-white px-4 py-2 rounded font-bold">Cancel</Button>
                 </div>
               </div>
             </div>
