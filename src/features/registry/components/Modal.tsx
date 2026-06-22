@@ -4,6 +4,7 @@ import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image';
 import { X, Loader2 } from 'lucide-react';
 import { useOverlay } from '@/hooks/useOverlay';
+import { validateContributeInput } from '@/utils/validation';
 
 /**
  * @interface ModalProps
@@ -36,17 +37,20 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const handleContributeClick = async () => {
     setError(null);
     const contributionAmount = Number(amount);
+    const finalAmount = item.isGroupGift ? contributionAmount : item.price;
 
-    if (!contributorName.trim()) {
-      setError("Please enter your name.");
+    const validationError = validateContributeInput({
+      itemId: item.id,
+      name: contributorName,
+      amount: finalAmount,
+    });
+
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     if (item.isGroupGift) {
-      if (isNaN(contributionAmount) || contributionAmount <= 0) {
-        setError("Please enter a valid contribution amount.");
-        return;
-      }
       const remainingAmount = item.price - item.amountContributed;
       if (contributionAmount > remainingAmount) {
         setError(`Amount cannot exceed the remaining $${remainingAmount.toFixed(2)}.`);
