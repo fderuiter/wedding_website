@@ -219,16 +219,16 @@ describe('Registry API routes', () => {
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(400);
         const json = await res.json();
-        expect(json.error).toBe('Missing or invalid required fields (name, price, quantity)');
+        expect(json.error).toBe('Price must be a positive number.');
       });
 
       it('updates item when authorized and data valid', async () => {
         mockIsAdminRequest.mockResolvedValue(true);
-        const updated = { id: itemId, name: 'Lamp', price: 20, quantity: 2 };
+        const updated = { id: itemId, name: 'Lamp', price: 20, quantity: 2, category: 'Home' };
         mockUpdateItem.mockResolvedValue(updated);
         const req = new Request(baseUrl, {
           method: 'PUT',
-          body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 2 }),
+          body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 2, category: 'Home' }),
         });
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
