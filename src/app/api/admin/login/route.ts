@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { signAdminToken } from '@/utils/adminAuth.server';
 import { rateLimit } from '@/utils/rateLimit';
-import { getAppConfig } from '@/lib/config';
+import { env } from '@/env';
 
 const ADMIN_COOKIE = 'admin_auth';
 
@@ -20,8 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { password } = await req.json();
-  const config = await getAppConfig();
-  const adminPassword = process.env.ADMIN_PASSWORD || config.adminPassword;
+  const adminPassword = env.ADMIN_PASSWORD;
 
   if (!adminPassword) {
     return NextResponse.json({ error: 'Admin password not set.' }, { status: 500 });
@@ -47,7 +46,7 @@ export async function POST(req: NextRequest) {
   const response = NextResponse.json({ success: true });
   response.cookies.set(ADMIN_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 8, // 8 hours
