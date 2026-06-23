@@ -8,6 +8,8 @@ import type { PublicAppConfig } from '@/lib/config';
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/photos', label: 'Photos' },
+  { href: '/registry', label: 'Registry' },
+  { href: '/rsvp', label: 'RSVP' },
   { href: '/archive', label: 'Archive' },
 ];
 
@@ -51,6 +53,8 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   if (features.length === 0) {
     features = [
       { id: 'story', type: 'story', title: 'Our Story', visible: true },
+      { id: 'registry', type: 'registry', title: 'Gift Registry', visible: true },
+      { id: 'rsvp', type: 'rsvp', title: 'RSVP', visible: true },
       { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
       { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
       { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
@@ -60,7 +64,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   }
 
   const homeNavLinks = features
-    .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story')
+    .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story' && f.id !== 'registry' && f.id !== 'rsvp')
     .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
 
   const allLinks =

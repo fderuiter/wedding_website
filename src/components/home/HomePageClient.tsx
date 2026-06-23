@@ -66,6 +66,8 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
   if (features.length === 0) {
     features = [
       { id: 'story', type: 'story', title: 'Our Story', visible: true },
+      { id: 'registry', type: 'registry', title: 'Gift Registry', visible: true },
+      { id: 'rsvp', type: 'rsvp', title: 'RSVP', visible: true },
       { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
       { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
       { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
@@ -85,6 +87,34 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
             {config.storyText.split('\n\n').map((paragraph, i) => (
               <p key={i} className="text-lg leading-relaxed">{paragraph}</p>
             ))}
+          </motion.section>
+        );
+      case 'registry':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-primary">{feature.title || 'Gift Registry'}</h2>
+            <p className="mx-auto max-w-xl text-lg">
+              We&apos;re so grateful for your love and support. If you&apos;d like to give a gift, we&apos;ve created a custom registry with some things we&apos;d love for our new life together.
+            </p>
+            <div className="flex justify-center mt-6">
+              <Link href="/registry" className="group inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-white shadow-lg transition hover:shadow-xl hover:scale-105">
+                View Registry
+              </Link>
+            </div>
+          </motion.section>
+        );
+      case 'rsvp':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-primary">{feature.title || 'RSVP'}</h2>
+            <p className="mx-auto max-w-xl text-lg">
+              Please let us know if you can make it! We can&apos;t wait to celebrate with all of you.
+            </p>
+            <div className="flex justify-center mt-6">
+              <Link href="/rsvp" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl">
+                RSVP Now
+              </Link>
+            </div>
           </motion.section>
         );
       case 'details': {
@@ -218,6 +248,12 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
               </a>
               <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 dark:text-gray-100 shadow-lg transition hover:shadow-xl">
                 View Photos
+              </Link>
+              <Link href="/registry" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 dark:text-gray-100 shadow-lg transition hover:shadow-xl">
+                Gift Registry
+              </Link>
+              <Link href="/rsvp" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-secondary to-primary px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
+                RSVP
               </Link>
             </motion.div>
           </section>
