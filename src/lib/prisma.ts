@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { env } from '@/env';
 
 /**
  * Global object extended with the prisma client type to prevent multiple instances
@@ -9,7 +10,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 const createPrismaClient = () => {
-  const connectionString = process.env.POSTGRES_PRISMA_URL;
+  const connectionString = env.POSTGRES_PRISMA_URL;
   const pool = new Pool({ connectionString });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
@@ -23,4 +24,4 @@ const createPrismaClient = () => {
  */
 export const prisma = globalForPrisma.prisma || createPrismaClient();
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;

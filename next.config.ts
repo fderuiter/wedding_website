@@ -2,6 +2,7 @@
  * @type {import('next').NextConfig}
  */
 import type { NextConfig } from "next";
+import './src/env';
 
 /**
  * @description Configuration object for Next.js.

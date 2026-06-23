@@ -1,28 +1,17 @@
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
-import { getAppConfig } from '@/lib/config';
+import { env } from '@/env';
 
 const ADMIN_COOKIE = 'admin_auth';
 
 /**
  * Resolve the admin signing secret used for token HMAC operations.
  *
- * Prefers the `ADMIN_PASSWORD` environment variable; if absent, loads the application
- * configuration and returns `config.adminPassword`; if that is also missing, returns `null`.
- *
- * @returns The secret string used to sign and verify admin tokens, or null if unavailable
+ * @returns The secret string used to sign and verify admin tokens
  */
-let cachedConfigSecret: Promise<string | null> | null = null;
-
-async function getSecret(): Promise<string | null> {
-  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
-
-  if (!cachedConfigSecret) {
-    cachedConfigSecret = getAppConfig().then((config) => config.adminPassword ?? null);
-  }
-
-  return cachedConfigSecret;
+async function getSecret(): Promise<string> {
+  return env.ADMIN_PASSWORD;
 }
 
 interface AdminTokenPayload {
