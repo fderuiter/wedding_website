@@ -64,10 +64,12 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
 
   const allLinks =
-    pathname === '/' ? [...navLinks, ...homeNavLinks] : navLinks;
+    pathname === '/' ? [...navLinks, ...homeNavLinks] : [...navLinks];
 
   if (isAdmin) {
     allLinks.push({ href: '/admin/dashboard', label: 'Dashboard' });
+  } else {
+    allLinks.push({ href: '/admin/login', label: 'Admin' });
   }
 
   return (

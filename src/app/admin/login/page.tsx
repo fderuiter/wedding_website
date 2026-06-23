@@ -2,8 +2,22 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
+import { motion, Variants } from 'framer-motion';
 import { apiClient } from '@/lib/admin/apiClient';
+
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.6,
+      ease: [0.22, 1, 0.36, 1] // Custom cubic-bezier for smoother feel
+    }
+  }
+};
 
 /**
  * @page LoginPage
@@ -44,52 +58,93 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-2 text-[var(--color-foreground)]">
-      <form onSubmit={handleLogin} className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-primary dark:border-gray-700">
-        <h1 className="text-3xl font-extrabold text-center text-primary mb-2 tracking-tight">Admin Login</h1>
-        {error && <p id="login-error" role="alert" className="text-red-500 text-sm text-center -mt-2">{error}</p>}
-        <div className="flex flex-col gap-2">
-          <label htmlFor="password" className="block text-gray-700 dark:text-gray-300 font-semibold">Password</label>
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="border border-gray-300 dark:border-gray-600 p-3 rounded-lg w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-white dark:bg-gray-700 text-lg text-gray-800 dark:text-gray-100 pr-12"
-              required
-              autoFocus
-              autoComplete="current-password"
-              placeholder="Enter admin password"
-              aria-invalid={error ? "true" : undefined}
-              aria-describedby={error ? "login-error" : undefined}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-full p-1"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
-          </div>
-        </div>
-        <button
-          type="submit"
-          className="w-full bg-primary text-white px-6 py-3 rounded-lg font-bold text-lg shadow-md hover:bg-primary transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center"
-          disabled={loading}
-          aria-busy={loading}
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12 text-[var(--color-foreground)]">
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={fadeUp}
+        className="w-full max-w-md"
+      >
+        <Link
+          href="/"
+          className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-primary transition mb-8 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md px-2 py-1"
         >
-          {loading ? (
-            <>
-              <Loader2 className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
-              Logging in...
-            </>
-          ) : (
-            'Login'
+          <ArrowLeft size={16} className="mr-2 transition-transform group-hover:-translate-x-1" />
+          Back to home
+        </Link>
+
+        <form
+          onSubmit={handleLogin}
+          className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-gray-100 dark:border-gray-700 relative overflow-hidden"
+        >
+          {/* Subtle accent line at the top */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary to-secondary" />
+
+          <div className="text-center space-y-2">
+            <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary tracking-tight py-1">
+              Admin Login
+            </h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
+              Enter your password to access the dashboard.
+            </p>
+          </div>
+
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              id="login-error"
+              role="alert"
+              className="text-red-500 text-sm font-medium bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 p-3 rounded-xl text-center"
+            >
+              {error}
+            </motion.p>
           )}
-        </button>
-      </form>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="password" className="block text-gray-700 dark:text-gray-300 font-semibold text-sm ml-1">
+              Password
+            </label>
+            <div className="relative group">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="border border-gray-200 dark:border-gray-600 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
+                required
+                autoFocus
+                autoComplete="current-password"
+                placeholder="••••••••"
+                aria-invalid={error ? "true" : undefined}
+                aria-describedby={error ? "login-error" : undefined}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary dark:text-gray-500 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={22} /> : <Eye size={22} />}
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-gradient-to-r from-primary to-secondary text-white px-6 py-4 rounded-2xl font-bold text-lg shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center overflow-hidden relative"
+            disabled={loading}
+            aria-busy={loading}
+          >
+            <span className={loading ? 'opacity-0' : 'opacity-100'}>Login</span>
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="animate-spin h-6 w-6" aria-hidden="true" />
+              </div>
+            )}
+          </button>
+        </form>
+      </motion.div>
     </div>
   );
 }
