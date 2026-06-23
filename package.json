@@ -18,6 +18,7 @@
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/config": "^7.3.0",
@@ -74,6 +75,7 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "0.170.0",
     "abort-controller": "^3.0.0",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
