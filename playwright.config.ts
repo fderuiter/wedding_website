@@ -7,6 +7,10 @@ export default defineConfig({
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    env: {
+      POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'dummy-build-password',
+    },
   },
   use: {
     baseURL: 'http://127.0.0.1:3000',
