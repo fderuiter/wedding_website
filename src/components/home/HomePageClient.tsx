@@ -71,7 +71,9 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
       { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
       { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
       { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+      { id: 'wedding-party', type: 'wedding-party', title: 'Wedding Party', visible: true },
       { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+      { id: 'weather', type: 'weather', title: 'Weather Forecast', visible: true },
       { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
     ];
   }
@@ -87,6 +89,20 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
             {config.storyText.split('\n\n').map((paragraph, i) => (
               <p key={i} className="text-lg leading-relaxed">{paragraph}</p>
             ))}
+          </motion.section>
+        );
+      case 'wedding-party':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-primary">{feature.title || 'Wedding Party'}</h2>
+            <p className="mx-auto max-w-xl text-lg">
+              Meet the wonderful people who will be standing by our side on our big day.
+            </p>
+            <div className="flex justify-center mt-6">
+              <Link href="/wedding-party" className="group inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-white shadow-lg transition hover:shadow-xl hover:scale-105">
+                Meet the Party
+              </Link>
+            </div>
           </motion.section>
         );
       case 'registry':
@@ -186,11 +202,30 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
                 </Interactive3DCard>
               ))
             ) : (
-              <div className="text-center text-gray-500">Travel details coming soon...</div>
+              <div className="flex flex-col items-center gap-4">
+                <p className="mx-auto max-w-xl text-lg text-gray-500">Explore our favorite spots in the city!</p>
+                <Link href="/things-to-do" className="group inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-white shadow-lg transition hover:shadow-xl hover:scale-105">
+                  Things to Do
+                </Link>
+              </div>
             )}
           </motion.section>
         );
       }
+      case 'weather':
+        return (
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+            <h2 className="text-4xl font-bold text-primary">{feature.title || 'Weather Forecast'}</h2>
+            <p className="mx-auto max-w-xl text-lg">
+              Check out the forecast for our wedding day so you can plan your outfit accordingly!
+            </p>
+            <div className="flex justify-center mt-6">
+              <Link href="/weather" className="group inline-flex items-center gap-2 rounded-full bg-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl hover:scale-105">
+                Check Weather
+              </Link>
+            </div>
+          </motion.section>
+        );
       case 'faq':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>

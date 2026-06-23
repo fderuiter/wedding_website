@@ -10,7 +10,9 @@ const navLinks = [
   { href: '/photos', label: 'Photos' },
   { href: '/registry', label: 'Registry' },
   { href: '/rsvp', label: 'RSVP' },
-  { href: '/archive', label: 'Archive' },
+  { href: '/wedding-party', label: 'Party' },
+  { href: '/things-to-do', label: 'To Do' },
+  { href: '/weather', label: 'Weather' },
 ];
 
 /**
@@ -64,7 +66,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   }
 
   const homeNavLinks = features
-    .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story' && f.id !== 'registry' && f.id !== 'rsvp')
+    .filter((f) => f.visible && !['hero', 'story', 'registry', 'rsvp', 'wedding-party', 'travel', 'weather'].includes(f.id))
     .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
 
   const allLinks =

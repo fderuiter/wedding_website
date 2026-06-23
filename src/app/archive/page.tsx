@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Rss, Users, Map, Cloud } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: "Archive",
+  title: "Features",
   alternates: {
     canonical: '/archive',
   },
@@ -12,25 +12,25 @@ export const metadata: Metadata = {
 
 const archivedPages = [
   {
-    href: '/archive/rsvp',
+    href: '/rsvp',
     title: 'RSVP',
-    description: 'View the original RSVP form.',
+    description: 'View the RSVP form.',
     icon: <Rss className="w-8 h-8 text-primary" />,
   },
   {
-    href: '/archive/wedding-party',
+    href: '/wedding-party',
     title: 'Wedding Party',
     description: 'Meet the people who stood by our side.',
     icon: <Users className="w-8 h-8 text-primary" />,
   },
   {
-    href: '/archive/things-to-do',
+    href: '/things-to-do',
     title: 'Things to Do',
     description: 'Explore our favorite spots in City.',
     icon: <Map className="w-8 h-8 text-primary" />,
   },
   {
-    href: '/archive/weather',
+    href: '/weather',
     title: 'Weather',
     description: 'See the weather forecast for our wedding day.',
     icon: <Cloud className="w-8 h-8 text-primary" />,
@@ -40,7 +40,7 @@ const archivedPages = [
 /**
  * @page ArchivePage
  * @description The main page for the archive section.
- * It displays a grid of links to other archived pages of the wedding website,
+ * It displays a grid of links to other pages of the wedding website,
  * such as RSVP, Wedding Party, Things to Do, and Weather.
  *
  * @returns {JSX.Element} The rendered archive page.
@@ -49,10 +49,10 @@ export default function ArchivePage() {
   return (
     <main className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
-        Website Archive
+        Wedding Features
       </h1>
       <p className="text-center text-lg mb-12">
-        Here are some pages from our original wedding website.
+        Explore more details about our wedding celebration.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {archivedPages.map((page) => (

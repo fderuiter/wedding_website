@@ -43,7 +43,9 @@ const fallbackAppConfig: LocalAppConfig = {
     { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
     { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
     { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+    { id: 'wedding-party', type: 'wedding-party', title: 'Wedding Party', visible: true },
     { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+    { id: 'weather', type: 'weather', title: 'Weather Forecast', visible: true },
     { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
   ],
   createdAt: new Date(),
