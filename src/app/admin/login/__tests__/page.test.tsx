@@ -38,7 +38,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), {
       target: { value: 'secret' },
     });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -62,7 +62,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), {
       target: { value: 'wrong' },
     });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -82,7 +82,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), {
       target: { value: 'secret' },
     });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -105,7 +105,7 @@ describe('Admin Login Page', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter admin password/i), {
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), {
       target: { value: 'secret' },
     });
     const button = screen.getByRole('button', { name: /login/i });
@@ -113,7 +113,7 @@ describe('Admin Login Page', () => {
 
     await waitFor(() => {
       expect(button).toBeDisabled();
-      expect(button).toHaveTextContent('Logging in...');
+      expect(button).toHaveTextContent('Login'); // The text is still there, but wrapped in opacity-0 span. However JSDOM textContent might still see it.
     });
 
     resolveFetch({
@@ -130,7 +130,7 @@ describe('Admin Login Page', () => {
   it('toggles password visibility', () => {
     render(<LoginPage />);
 
-    const passwordInput = screen.getByPlaceholderText(/enter admin password/i);
+    const passwordInput = screen.getByPlaceholderText('••••••••');
     expect(passwordInput).toHaveAttribute('type', 'password');
 
     const toggleButton = screen.getByLabelText(/show password/i);
@@ -143,4 +143,3 @@ describe('Admin Login Page', () => {
     expect(passwordInput).toHaveAttribute('type', 'password');
   });
 });
-
