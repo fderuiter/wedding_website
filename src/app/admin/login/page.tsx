@@ -29,6 +29,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await apiClient.post('/api/admin/login', { password });
+      localStorage.setItem('isAdminLoggedIn', 'true');
+      window.dispatchEvent(new Event('storage'));
       router.push('/admin/dashboard');
     } catch (err: any) {
       if (err.name === 'ApiError') {
