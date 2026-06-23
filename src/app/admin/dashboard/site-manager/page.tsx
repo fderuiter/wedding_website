@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
+import { apiClient } from '@/lib/admin/apiClient';
 
 export default function SiteManagerPage() {
   const router = useRouter();
@@ -28,9 +29,7 @@ export default function SiteManagerPage() {
   const fetchFeatures = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/features');
-      if (!res.ok) throw new Error('Failed to fetch features');
-      let data = await res.json();
+      let data = await apiClient.get<any[]>('/api/admin/features');
       
       // Fallback defaults
       if (!data || data.length === 0) {
@@ -44,8 +43,8 @@ export default function SiteManagerPage() {
         ];
       }
       setFeatures(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (err: any) {
+      setError(err.message || String(err));
     } finally {
       setLoading(false);
     }
@@ -53,15 +52,10 @@ export default function SiteManagerPage() {
 
   const saveFeatures = async (newFeatures: any[]) => {
     try {
-      const res = await fetch('/api/admin/features', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ features: newFeatures })
-      });
-      if (!res.ok) throw new Error('Failed to save configuration');
+      await apiClient.put('/api/admin/features', { features: newFeatures });
       setFeatures(newFeatures);
-    } catch (e: unknown) {
-      alert((e instanceof Error ? e.message : String(e)) || 'Error saving');
+    } catch (e: any) {
+      alert(e.message || 'Error saving');
     }
   };
 

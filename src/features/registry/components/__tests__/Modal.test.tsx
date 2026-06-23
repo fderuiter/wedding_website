@@ -179,7 +179,7 @@ describe('Modal Component', () => {
     render(<Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />);
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
-    expect(await screen.findByText('Please enter your name.')).toBeInTheDocument();
+    expect(await screen.findByText('Name is required and must be under 100 characters.')).toBeInTheDocument();
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
 
@@ -188,7 +188,7 @@ describe('Modal Component', () => {
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Test User' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
-    expect(await screen.findByText('Please enter a valid contribution amount.')).toBeInTheDocument();
+    expect(await screen.findByText('Contribution amount must be a positive number.')).toBeInTheDocument();
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
 

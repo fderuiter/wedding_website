@@ -17,7 +17,7 @@ describe('RegistryItemForm', () => {
 
     fireEvent.submit(screen.getByTestId('form'));
 
-    expect(await screen.findByText('Name, price, quantity, and category are required.')).toBeInTheDocument();
+    expect(await screen.findByText('Item name is required and must be under 255 characters.')).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 

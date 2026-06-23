@@ -17,58 +17,28 @@ export const coordinateSchema = z.union([z.number(), z.string()]).superRefine((v
   return isNaN(parsed) ? 0 : parsed;
 });
 
-// Centralized validation utility for registry API endpoints
+// Centralized Zod schemas for registry
+export const ContributionSchema = z.object({
+  itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
+  name: z.string({ message: 'Name is required and must be under 100 characters.' }).trim().min(1, 'Name is required and must be under 100 characters.').max(100, 'Name is required and must be under 100 characters.'),
+  amount: z.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+}, { message: 'Invalid request body.' });
 
-/**
- * Validates if a value is a non-empty string and does not exceed a maximum length.
- * @param {unknown} value - The value to check.
- * @param {number} [maxLength=255] - The maximum allowed length for the string.
- * @returns {boolean} True if valid, false otherwise.
- */
+export const RegistryItemSchema = z.object({
+  name: z.string({ message: 'Item name is required and must be under 255 characters.' }).trim().min(1, 'Item name is required and must be under 255 characters.').max(255, 'Item name is required and must be under 255 characters.'),
+  price: z.number({ message: 'Price must be a positive number.' }).positive('Price must be a positive number.'),
+  quantity: z.number({ message: 'Quantity must be a positive integer.' }).int('Quantity must be a positive integer.').positive('Quantity must be a positive integer.'),
+  category: z.string({ message: 'Category is required and must be under 255 characters.' }).trim().min(1, 'Category is required and must be under 255 characters.').max(255, 'Category is required and must be under 255 characters.'),
+  description: z.string().max(2000, 'Description must be under 2000 characters.').optional().or(z.literal('')),
+  image: z.string().max(2000, 'Image URL must be under 2000 characters.').optional().or(z.literal('')),
+  vendorUrl: z.string().max(2000, 'Vendor URL must be under 2000 characters.').optional().nullable().or(z.literal('')),
+  isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
+}, { message: 'Invalid request body.' });
+
 function isValidString(value: unknown, maxLength: number = 255): boolean {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
 }
 
-/**
- * Validates if a value is a positive finite number.
- * @param {unknown} value - The value to check.
- * @returns {boolean} True if valid, false otherwise.
- */
-export function isValidPositiveNumber(value: unknown): boolean {
-  return typeof value === 'number' && !isNaN(value) && Number.isFinite(value) && value > 0;
-}
-
-/**
- * Validates if a value is a positive integer.
- * @param {unknown} value - The value to check.
- * @returns {boolean} True if valid, false otherwise.
- */
-function isValidPositiveInteger(value: unknown): boolean {
-  return isValidPositiveNumber(value) && Number.isInteger(value);
-}
-
-/**
- * Validates the input for a contribution to a registry item.
- * @param {unknown} input - The input data to validate.
- * @returns {string | null} An error message if validation fails, otherwise null.
- */
-export function validateContributeInput(input: unknown): string | null {
-  if (!input || typeof input !== 'object') return 'Invalid request body.';
-
-  const data = input as Record<string, unknown>;
-
-  if (!isValidString(data.itemId)) return 'Missing or invalid itemId.';
-  if (!isValidString(data.name, 100)) return 'Name is required and must be under 100 characters.';
-  if (!isValidPositiveNumber(data.amount)) return 'Contribution amount must be a positive number.';
-
-  return null;
-}
-
-/**
- * Validates the input for adding a new registry item.
- * @param {unknown} input - The input data to validate.
- * @returns {string | null} An error message if validation fails, otherwise null.
- */
 export function validateContentNodeInput(input: unknown): string | null {
   if (!input || typeof input !== 'object') return 'Invalid request body.';
   const data = input as Record<string, unknown>;
@@ -81,8 +51,6 @@ export function validateContentNodeInput(input: unknown): string | null {
 
   if (typeof data.data !== 'object' || data.data === null) return 'Data must be an object.';
 
-  // Basic type validation for common flexible fields:
-  // e.g. ensuring any key ending in "Url" or "url" contains a valid link
   for (const [key, value] of Object.entries(data.data)) {
     if (key.toLowerCase().includes('url') && typeof value === 'string' && value !== '') {
       try {
@@ -96,27 +64,18 @@ export function validateContentNodeInput(input: unknown): string | null {
   return null;
 }
 
+export function validateContributeInput(input: unknown): string | null {
+  const result = ContributionSchema.safeParse(input);
+  if (!result.success) {
+    return result.error.issues[0].message;
+  }
+  return null;
+}
+
 export function validateAddItemInput(input: unknown): string | null {
-  if (!input || typeof input !== 'object') return 'Invalid request body.';
-
-  const data = input as Record<string, unknown>;
-
-  if (!isValidString(data.name)) return 'Item name is required and must be under 255 characters.';
-  if (!isValidPositiveNumber(data.price)) return 'Price must be a positive number.';
-  if (!isValidPositiveInteger(data.quantity)) return 'Quantity must be a positive integer.';
-  if (!isValidString(data.category)) return 'Category is required and must be under 255 characters.';
-
-  if (data.description !== undefined && data.description !== null && !isValidString(data.description, 2000) && data.description !== '') {
-      return 'Description must be under 2000 characters.';
+  const result = RegistryItemSchema.safeParse(input);
+  if (!result.success) {
+    return result.error.issues[0].message;
   }
-
-  if (data.image !== undefined && data.image !== null && !isValidString(data.image, 2000) && data.image !== '') {
-      return 'Image URL must be under 2000 characters.';
-  }
-
-  if (data.vendorUrl !== undefined && data.vendorUrl !== null && !isValidString(data.vendorUrl, 2000) && data.vendorUrl !== '') {
-      return 'Vendor URL must be under 2000 characters.';
-  }
-
   return null;
 }
