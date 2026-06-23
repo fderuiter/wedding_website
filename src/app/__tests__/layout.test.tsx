@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 
 const pushMock = jest.fn();
@@ -36,7 +36,9 @@ describe('RootLayoutClient', () => {
     const logoutButton = screen.getByRole('button', { name: 'Logout' });
 
     fireEvent.click(logoutButton);
-    expect(localStorage.getItem('isAdminLoggedIn')).toBeNull();
-    expect(pushMock).toHaveBeenCalledWith('/');
+    await waitFor(() => {
+      expect(localStorage.getItem('isAdminLoggedIn')).toBeNull();
+    });
+    expect(pushMock).toHaveBeenCalledWith('/admin/login');
   });
 });

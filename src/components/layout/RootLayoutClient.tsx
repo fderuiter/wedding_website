@@ -73,10 +73,16 @@ export default function RootLayoutClient({
 
   const isHeartPage = pathname === '/heart';
 
-  const handleLogout = () => {
-    localStorage.removeItem('isAdminLoggedIn');
-    setIsAdmin(false);
-    router.push('/');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/logout', { method: 'POST' });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem('isAdminLoggedIn');
+      setIsAdmin(false);
+      router.push('/admin/login');
+    }
   };
 
   return (

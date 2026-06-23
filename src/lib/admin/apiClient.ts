@@ -29,6 +29,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
   }
 
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('isAdminLoggedIn');
+      window.dispatchEvent(new Event('storage'));
+      window.location.href = '/admin/login';
+    }
     const message = (data && data.error) ? data.error : (data && data.message) ? data.message : res.statusText || 'API Error';
     throw new ApiError(res.status || 500, message, data);
   }
