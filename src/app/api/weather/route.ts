@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import 'isomorphic-fetch';
 import { getAppConfig } from '@/lib/config';
 
 /**
