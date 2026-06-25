@@ -10,8 +10,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: appTheme.colors.primary,
-        secondary: appTheme.colors.secondary,
+        primary: 'var(--color-primary, ' + appTheme.colors.primary + ')',
+        secondary: 'var(--color-secondary, ' + appTheme.colors.secondary + ')',
         'primary-light': appTheme.colors.primaryLight,
         'secondary-light': appTheme.colors.secondaryLight,
         background: appTheme.colors.backgroundDark,
@@ -19,12 +19,17 @@ const config: Config = {
         text: appTheme.colors.text,
         'text-on-primary': appTheme.colors.textOnPrimary,
         'text-on-secondary': appTheme.colors.textOnSecondary,
-        accent: appTheme.colors.accent,
-        'accent-from': appTheme.colors.primary,
-        'accent-to': appTheme.colors.secondary,
+        accent: 'var(--color-accent, ' + appTheme.colors.accent + ')',
+        'accent-from': 'var(--color-primary, ' + appTheme.colors.primary + ')',
+        'accent-to': 'var(--color-secondary, ' + appTheme.colors.secondary + ')',
         gold: appTheme.colors.gold,
         silver: appTheme.colors.silver,
         border: appTheme.colors.border,
+      },
+      textColor: {
+        primary: 'var(--color-primary-text, var(--color-primary, ' + appTheme.colors.primary + '))',
+        secondary: 'var(--color-secondary-text, var(--color-secondary, ' + appTheme.colors.secondary + '))',
+        accent: 'var(--color-accent-text, var(--color-accent, ' + appTheme.colors.accent + '))',
       },
     },
   },
