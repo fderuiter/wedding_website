@@ -4,9 +4,8 @@
  * using the Prisma Client.
  */
 
-const { PrismaClient } = require('@prisma/client');
-const fs = require('fs').promises;
-const path = require('path');
+import { prisma } from '@/lib/prisma';
+import jsonData from '@/data/registry.json' with { type: 'json' };
 
 /**
  * Interface representing the structure of a registry item in the JSON data.
@@ -31,18 +30,6 @@ interface RegistryItem {
   }>;
 }
 
-const prisma = new PrismaClient();
-
-/**
- * Reads the registry data from the 'src/data/registry.json' file.
- * @returns {Promise<RegistryItem[]>} A promise that resolves to an array of RegistryItem objects.
- */
-async function readJsonData(): Promise<RegistryItem[]> {
-  const filePath = path.join(process.cwd(), 'src', 'data', 'registry.json');
-  const jsonData = await fs.readFile(filePath, 'utf8');
-  return JSON.parse(jsonData);
-}
-
 /**
  * Main migration function.
  * Reads data from the JSON file and creates corresponding records in the database.
@@ -55,9 +42,9 @@ async function readJsonData(): Promise<RegistryItem[]> {
 async function migrateData() {
   try {
     console.log('Starting migration...');
-    const jsonData = await readJsonData();
+    const data = jsonData as RegistryItem[];
     
-    for (const item of jsonData) {
+    for (const item of data) {
       // Create the registry item
       const registryItem = await prisma.registryItem.create({
         data: {
