@@ -271,7 +271,7 @@ Submits a contribution towards a group gift or marks a regular item as purchased
 
 ### `POST /api/registry/scrape`
 
-**(Admin Only)** Scrapes a URL to pre-fill the "Add Item" form. This endpoint uses `metascraper` to pull `title`, `description`, and `image` from the target page's Open Graph or metadata tags.
+**(Admin Only)** Scrapes a URL to pre-fill the "Add Item" form. This endpoint uses `open-graph-scraper` to pull `title`, `description`, and `image` from the target page's Open Graph or metadata tags.
 
 **Request Body:**
 ```json
