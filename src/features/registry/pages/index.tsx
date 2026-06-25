@@ -2,7 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useInView } from 'react-intersection-observer';
+import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
 import RegistryCard from '@/features/registry/components/RegistryCard';
 import Modal from '@/features/registry/components/Modal';
@@ -50,14 +50,6 @@ export default function RegistryPage() {
     handleDelete,
     handleContribute,
   } = useRegistry();
-
-  const { ref, inView } = useInView({ threshold: 0, triggerOnce: false });
-
-  useEffect(() => {
-    if (inView) {
-      setVisibleItemsCount(prevCount => prevCount + 8);
-    }
-  }, [inView, setVisibleItemsCount]);
 
   const handleClearFilters = () => {
     setCategoryFilter([]);
@@ -179,9 +171,12 @@ export default function RegistryPage() {
       )}
 
       {visibleItems.length < filteredItems.length && !isLoading && (
-        <div ref={ref} className="text-center p-4 col-span-full">
+        <VisibilitySentinel
+          onVisible={() => setVisibleItemsCount(prevCount => prevCount + 8)}
+          className="text-center p-4 col-span-full"
+        >
           <p className="text-gray-500">Loading more gifts...</p>
-        </div>
+        </VisibilitySentinel>
       )}
       <AnimatePresence>
         {selectedItem && isModalOpen && (
