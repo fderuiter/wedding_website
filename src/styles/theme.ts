@@ -64,8 +64,8 @@ interface ThemeConfig {
  */
 export const theme: ThemeConfig = {
   colors: {
-    primary: '#B91C1C', // Darker red for better contrast
-    secondary: '#B8860B', // Darker gold for better contrast
+    primary: '#EF4444', // Lighter red for better contrast
+    secondary: '#EAB308', // Lighter gold for better contrast
     primaryLight: '#FCA5A5', // Light red for backgrounds
     secondaryLight: '#FFE066', // Light gold for backgrounds
     background: '#FFFFFF',
