@@ -14,7 +14,7 @@
     "test:cov": "jest --coverage",
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
-    "db:seed": "ts-node -r tsconfig-paths/register scripts/migrateToSqlite.ts",
+    "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/migrateToSqlite.ts",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
@@ -85,8 +85,6 @@
     "prisma": "^7.6.0",
     "tailwindcss": "^4.1.18",
     "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
     "typescript": "^5",
     "web-streams-polyfill": "^4.2.0"
   }
