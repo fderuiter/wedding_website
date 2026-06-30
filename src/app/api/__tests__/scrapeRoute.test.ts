@@ -1,16 +1,16 @@
 /** @jest-environment node */
 
 import { POST } from '../registry/scrape/route';
-import ogs from 'open-graph-scraper';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
-jest.mock('open-graph-scraper');
 jest.mock('@/utils/adminAuth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-const mockOgs = ogs as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+
+const fetchMock = jest.fn();
+global.fetch = fetchMock;
 
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
@@ -38,15 +38,21 @@ describe('POST /api/registry/scrape', () => {
 
   it('returns scraped metadata for valid URL when admin', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    mockOgs.mockResolvedValue({
-      error: false,
-      result: {
-        ogTitle: 'Mock Item',
-        ogDescription: 'Mock Description',
-        ogImage: [{ url: 'https://example.com/image.jpg' }],
-        success: true,
-      },
-    });
+    
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta property="og:title" content="Mock Item" />
+          <meta property="og:description" content="Mock Description" />
+          <meta property="og:image" content="https://example.com/image.jpg" />
+        </head>
+        <body></body>
+      </html>
+    `;
+    fetchMock.mockResolvedValue(new Response(mockHtml, {
+      headers: { 'Content-Type': 'text/html' },
+    }));
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -78,13 +84,13 @@ describe('POST /api/registry/scrape', () => {
     expect(json.error).toContain('URL is required');
   });
 
-  it('returns 500 when scraping fails', async () => {
+  it('returns 500 when scraping fails (e.g. response not ok)', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    const mockResult = { success: false, error: 'some scraping error' };
-    mockOgs.mockResolvedValue({
-      error: true,
-      result: mockResult,
-    });
+    
+    fetchMock.mockResolvedValue(new Response('Not Found', {
+      status: 404,
+      statusText: 'Not Found',
+    }));
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -94,14 +100,14 @@ describe('POST /api/registry/scrape', () => {
     const res = await POST(req);
     expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toContain('Failed to scrape product info');
-    expect(console.error).toHaveBeenCalledWith('Scraping failed:', mockResult);
+    expect(json.error).toContain('Failed to fetch the provided URL');
+    expect(console.error).toHaveBeenCalledWith('Scraping failed:', expect.any(Error));
   });
 
-  it('returns 500 when an unexpected error occurs', async () => {
+  it('returns 500 when an unexpected error occurs (e.g. fetch throws)', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const error = new Error('network error');
-    mockOgs.mockRejectedValue(error);
+    fetchMock.mockRejectedValue(error);
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -111,7 +117,7 @@ describe('POST /api/registry/scrape', () => {
     const res = await POST(req);
     expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toContain('network error');
-    expect(console.error).toHaveBeenCalledWith('Unhandled API Error:', error);
+    expect(json.error).toContain('Failed to scrape product info');
+    expect(console.error).toHaveBeenCalledWith('Scraping failed:', error);
   });
 });

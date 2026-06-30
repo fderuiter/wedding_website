@@ -1,17 +1,13 @@
 /** @jest-environment node */
 
 import { POST } from '@/app/api/registry/scrape/route';
-import ogs from 'open-graph-scraper';
 import { isAdminRequest } from '@/utils/adminAuth.server';
 
-// Mock open-graph-scraper
-jest.mock('open-graph-scraper');
 // Mock admin auth
 jest.mock('@/utils/adminAuth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-const ogsMock = ogs as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
 
 // Mock native fetch
@@ -24,17 +20,22 @@ describe('POST /api/registry/scrape', () => {
     mockIsAdminRequest.mockResolvedValue(true);
   });
 
-  it('should return an empty image string when ogs fails and the URL is not from Amazon', async () => {
+  it('should return an empty image string when no image tags exist and the URL is not from Amazon', async () => {
     const testUrl = 'https://www.example.com';
-    ogsMock.mockResolvedValue({
-      error: false,
-      result: {
-        ogTitle: 'Example Site',
-        ogDescription: 'An example site.',
-        ogImage: [], // No image found
-        success: true,
-      },
-    });
+    
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta property="og:title" content="Example Site" />
+          <meta property="og:description" content="An example site." />
+        </head>
+        <body></body>
+      </html>
+    `;
+    fetchMock.mockResolvedValue(new Response(mockHtml, {
+      headers: { 'Content-Type': 'text/html' },
+    }));
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -53,22 +54,14 @@ describe('POST /api/registry/scrape', () => {
     const amazonUrl = 'https://www.amazon.com/dp/B08C1F553M';
     const expectedImageUrl = 'https://m.media-amazon.com/images/I/CORRECT_IMAGE.jpg';
 
-    // Simulate open-graph-scraper failing to find an image
-    ogsMock.mockResolvedValue({
-      error: false,
-      result: {
-        ogTitle: 'Keurig K-Mini Coffee Maker',
-        ogDescription: 'A great coffee maker.',
-        ogImage: [], // Simulate no OG image
-        twitterImage: [], // Simulate no Twitter image
-        success: true,
-      },
-    });
-
     // Mock the raw HTML fetch for the new fallback mechanism
     const mockHtml = `
       <!DOCTYPE html>
       <html>
+        <head>
+          <meta property="og:title" content="Keurig K-Mini Coffee Maker" />
+          <meta property="og:description" content="A great coffee maker." />
+        </head>
         <body>
           <div id="imgTagWrapperId">
             <img src="${expectedImageUrl}" />
@@ -80,7 +73,6 @@ describe('POST /api/registry/scrape', () => {
       headers: { 'Content-Type': 'text/html' },
     }));
 
-
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
       body: JSON.stringify({ url: amazonUrl }),
@@ -91,29 +83,20 @@ describe('POST /api/registry/scrape', () => {
 
     expect(response.status).toBe(200);
     expect(body.data.name).toBe('Keurig K-Mini Coffee Maker');
-    // This assertion will now pass with the simplified logic
     expect(body.data.image).toBe(expectedImageUrl);
   });
 
   it('should return an empty image string if the Amazon fallback fails to find the element', async () => {
     const amazonUrl = 'https://www.amazon.com/dp/B09XYZ1234';
 
-    // Simulate OGS failing to find an image
-    ogsMock.mockResolvedValue({
-      error: false,
-      result: {
-        ogTitle: 'A Different Product',
-        ogDescription: 'Another great product.',
-        ogImage: [],
-        twitterImage: [],
-        success: true,
-      },
-    });
-
     // Mock HTML that does NOT contain the target selector
     const mockHtml = `
       <!DOCTYPE html>
       <html>
+        <head>
+          <meta property="og:title" content="A Different Product" />
+          <meta property="og:description" content="Another great product." />
+        </head>
         <body>
           <div id="some-other-wrapper">
             <img src="https://m.media-amazon.com/images/I/WRONG_IMAGE.jpg" />
