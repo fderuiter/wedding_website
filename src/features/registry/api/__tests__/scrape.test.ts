@@ -45,8 +45,8 @@ describe('POST /api/registry/scrape', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.name).toBe('Example Site');
-    expect(body.image).toBe(''); // Expect empty image
+    expect(body.data.name).toBe('Example Site');
+    expect(body.data.image).toBe(''); // Expect empty image
   });
 
   it('should correctly scrape an Amazon image using the simplified fallback selector', async () => {
@@ -90,9 +90,9 @@ describe('POST /api/registry/scrape', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.name).toBe('Keurig K-Mini Coffee Maker');
+    expect(body.data.name).toBe('Keurig K-Mini Coffee Maker');
     // This assertion will now pass with the simplified logic
-    expect(body.image).toBe(expectedImageUrl);
+    expect(body.data.image).toBe(expectedImageUrl);
   });
 
   it('should return an empty image string if the Amazon fallback fails to find the element', async () => {
@@ -134,8 +134,8 @@ describe('POST /api/registry/scrape', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.name).toBe('A Different Product');
+    expect(body.data.name).toBe('A Different Product');
     // Should be empty since the fallback selector was not found
-    expect(body.image).toBe('');
+    expect(body.data.image).toBe('');
   });
 });
