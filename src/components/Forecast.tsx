@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Sun, Cloud, CloudRain, CloudSnow, Wind, Droplets, Thermometer } from 'lucide-react';
+import { apiClient, ApiError } from '../lib/apiClient';
 
 /**
  * @interface WeatherData
@@ -72,9 +73,7 @@ const Forecast: React.FC = () => {
     useEffect(() => {
         const fetchWeather = async () => {
             try {
-                const response = await fetch('/api/weather');
-                if (!response.ok) throw new Error('Failed to fetch weather data');
-                const data: WeatherData = await response.json();
+                const data = await apiClient.get<WeatherData>('/api/weather');
                 setWeather(data.daily);
             } catch (error) {
                 console.error('Error fetching weather:', error);

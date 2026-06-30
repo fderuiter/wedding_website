@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RegistryItem } from '@/features/registry/types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/apiClient';
 
 /**
  * @function useRegistry
@@ -43,24 +44,13 @@ export function useRegistry() {
   } = useQuery<RegistryItem[], Error>({
     queryKey: ['registry-items'],
     queryFn: async () => {
-      const res = await fetch('/api/registry/items');
-      if (!res.ok) throw new Error('Failed to fetch registry items');
-      return res.json();
+      return apiClient.get<RegistryItem[]>('/api/registry/items');
     },
   });
 
   const { mutate: contribute } = useMutation({
     mutationFn: async ({ itemId, purchaserName, amount }: { itemId: string; purchaserName: string; amount: number }) => {
-      const res = await fetch('/api/registry/contribute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId, purchaserName, amount }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Contribution failed');
-      }
-      return res.json();
+      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
@@ -100,11 +90,7 @@ export function useRegistry() {
 
   const { mutate: deleteItem } = useMutation({
     mutationFn: async (itemId: string) => {
-      const res = await fetch(`/api/registry/items/${itemId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to delete item');
-      }
+      return apiClient.delete(`/api/registry/items/${itemId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registry-items'] });
