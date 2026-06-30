@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import { Loader2 } from 'lucide-react';
 import { validateAddItemInput } from '@/utils/validation';
+import { apiClient } from '@/lib/apiClient';
 
 /**
  * Props for the RegistryItemForm component.
@@ -64,19 +65,9 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     setScrapeLoading(true);
     setScrapeError(null);
     try {
-      const res = await fetch('/api/registry/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: scrapeUrl }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to scrape URL');
-      }
-      const data = await res.json();
+      const data = await apiClient.post('/api/registry/scrape', { url: scrapeUrl });
       setValues((prev) => ({ ...prev, ...data }));
-    } catch (err: unknown) { // Changed 'any' to 'unknown'
-      // Type guard for Error object
+    } catch (err: unknown) {
       if (err instanceof Error) {
         setScrapeError(err.message || 'Scraping failed');
       } else {
