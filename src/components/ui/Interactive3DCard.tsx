@@ -2,6 +2,7 @@
 
 import React, { useRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 
 export interface Interactive3DCardProps {
   children: React.ReactNode;
@@ -96,10 +97,7 @@ export function Interactive3DCard({ children, className = '', onClick }: Interac
     y.set(0);
   };
 
-  const reduceMotion =
-    typeof window !== 'undefined' &&
-    window.matchMedia &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = useReducedMotion();
 
   return (
     <motion.div
