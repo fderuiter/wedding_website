@@ -86,12 +86,16 @@ model RegistryItem {
 }
 
 model Contributor {
-  id            String       @id @default(uuid())
-  name          String
-  amount        Float
-  date          DateTime
-  registryItem  RegistryItem @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
-  registryItemId String
+  id              String       @id @default(uuid())
+  name            String
+  email           String?
+  isPlusOne       Boolean      @default(false)
+  amount          Float        @default(0)
+  date            DateTime     @default(now())
+  registryItem    RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
+  registryItemId  String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 }
 
 model ContentNode {
@@ -112,24 +116,3 @@ model SnapshotVersion {
   createdAt   DateTime @default(now())
 }
 
-model Guest {
-  id        String   @id @default(uuid())
-  firstName String
-  lastName  String
-  email     String   @unique
-  isPlusOne Boolean  @default(false)
-  rsvps     Rsvp[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Rsvp {
-  id           String   @id @default(uuid())
-  guestId      String
-  guest        Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
-  attending    Boolean
-  mealChoice   String?
-  dietaryNotes String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}

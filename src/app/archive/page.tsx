@@ -12,12 +12,6 @@ export const metadata: Metadata = {
 
 const archivedPages = [
   {
-    href: '/archive/rsvp',
-    title: 'RSVP',
-    description: 'View the original RSVP form.',
-    icon: <Rss className="w-8 h-8 text-primary" />,
-  },
-  {
     href: '/archive/wedding-party',
     title: 'Wedding Party',
     description: 'Meet the people who stood by our side.',
@@ -41,7 +35,7 @@ const archivedPages = [
  * @page ArchivePage
  * @description The main page for the archive section.
  * It displays a grid of links to other archived pages of the wedding website,
- * such as RSVP, Wedding Party, Things to Do, and Weather.
+ * such as Wedding Party, Things to Do, and Weather.
  *
  * @returns {JSX.Element} The rendered archive page.
  */

@@ -104,7 +104,7 @@ export default function MaintenanceHubPage() {
           <section className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-primary dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4 text-primary">Export Data</h2>
             <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Download a complete JSON backup of your wedding database, including registry items, guest lists, RSVPs, settings, and snapshot history. Keep this file in a safe place, as it may contain PII (Personally Identifiable Information).
+              Download a complete JSON backup of your wedding database, including registry items, settings, unified contributors, and snapshot history. Keep this file in a safe place, as it may contain PII (Personally Identifiable Information).
             </p>
             <button
               onClick={handleExport}

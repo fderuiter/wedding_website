@@ -31,9 +31,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   await prisma.$transaction(async (tx) => {
     await tx.contributor.deleteMany();
-    await tx.rsvp.deleteMany();
     await tx.registryItem.deleteMany();
-    await tx.guest.deleteMany();
     await tx.attraction.deleteMany();
     await tx.weddingPartyMember.deleteMany();
     await tx.contentNode.deleteMany();
@@ -44,12 +42,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     if (data.contentNode?.length) await tx.contentNode.createMany({ data: data.contentNode });
     if (data.weddingPartyMember?.length) await tx.weddingPartyMember.createMany({ data: data.weddingPartyMember });
     if (data.attraction?.length) await tx.attraction.createMany({ data: data.attraction });
-    if (data.guest?.length) await tx.guest.createMany({ data: data.guest });
     if (data.registryItem?.length) await tx.registryItem.createMany({ data: data.registryItem });
     if (data.snapshotVersion?.length) await tx.snapshotVersion.createMany({ data: data.snapshotVersion });
     
     if (data.contributor?.length) await tx.contributor.createMany({ data: data.contributor });
-    if (data.rsvp?.length) await tx.rsvp.createMany({ data: data.rsvp });
   });
 
   return NextResponse.json({ success: true });

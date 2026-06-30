@@ -10,8 +10,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     attraction,
     registryItem,
     contributor,
-    guest,
-    rsvp,
     snapshotVersion
   ] = await Promise.all([
     prisma.appConfig.findMany(),
@@ -20,8 +18,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     prisma.attraction.findMany(),
     prisma.registryItem.findMany(),
     prisma.contributor.findMany(),
-    prisma.guest.findMany(),
-    prisma.rsvp.findMany(),
     prisma.snapshotVersion.findMany()
   ]);
 
@@ -32,8 +28,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     attraction,
     registryItem,
     contributor,
-    guest,
-    rsvp,
     snapshotVersion
   };
 
