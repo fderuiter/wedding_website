@@ -1,19 +1,21 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import fetchMock from 'jest-fetch-mock';
 import Forecast from '@/components/Forecast';
 
-// Enable fetch mocks
-fetchMock.enableMocks();
-
 describe('Forecast Component', () => {
+  let fetchSpy: jest.SpyInstance;
+
   beforeEach(() => {
-    fetchMock.resetMocks();
+    fetchSpy = jest.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('should display a loading state initially', async () => {
     // Mock a successful response to ensure the promise resolves cleanly
-    fetchMock.mockResponseOnce(JSON.stringify({
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
       daily: {
         time: ['2025-10-10'],
         weathercode: [0],
@@ -23,7 +25,7 @@ describe('Forecast Component', () => {
         precipitation_probability_max: [0],
         wind_speed_10m_max: [5],
       },
-    }));
+    })));
 
     render(<Forecast />);
 
@@ -40,7 +42,7 @@ describe('Forecast Component', () => {
     // Suppress console.error for this test as we expect an error
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    fetchMock.mockReject(new Error('API is down'));
+    fetchSpy.mockRejectedValueOnce(new Error('API is down'));
     render(<Forecast />);
 
     await waitFor(() => {
@@ -63,7 +65,7 @@ describe('Forecast Component', () => {
       },
     };
 
-    fetchMock.mockResponseOnce(JSON.stringify(mockWeatherData));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockWeatherData)));
     render(<Forecast />);
 
     await waitFor(() => {

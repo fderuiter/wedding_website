@@ -1,6 +1,3 @@
-import fetchMock from 'jest-fetch-mock';
-fetchMock.enableMocks();
-
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useRegistry } from '../useRegistry';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -51,15 +48,20 @@ const mockItems: RegistryItem[] = [
 
 describe('useRegistry', () => {
     let queryClient: QueryClient;
+    let fetchSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    fetchMock.resetMocks();
+    fetchSpy = jest.spyOn(global, 'fetch');
     mockedCheckAdminClient.mockResolvedValue(false);
     queryClient = createTestQueryClient();
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('should fetch registry items and return initial state', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => {
@@ -71,7 +73,7 @@ describe('useRegistry', () => {
   });
 
   it('should handle card click and open modal', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     const item = result.current.items[0];
@@ -85,7 +87,7 @@ describe('useRegistry', () => {
   });
 
   it('should not open modal for purchased item', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     const item = result.current.items[1];
@@ -99,7 +101,7 @@ describe('useRegistry', () => {
   });
 
   it('should handle modal close', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -118,7 +120,7 @@ describe('useRegistry', () => {
   });
 
   it('should handle edit', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -131,8 +133,8 @@ describe('useRegistry', () => {
 
   it('should handle delete', async () => {
     // We need to return valid items for the initial query, then handle the delete
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
-    fetchMock.mockResponseOnce(JSON.stringify({}));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({})));
 
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
@@ -144,20 +146,20 @@ describe('useRegistry', () => {
     });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/registry/items/1', { method: 'DELETE' });
+      expect(fetchSpy).toHaveBeenCalledWith('/api/registry/items/1', { method: 'DELETE' });
     });
   });
 
   it('should handle contribution', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify({}));
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({})));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
     await act(async () => {
         await result.current.handleContribute('1', 'Jane Doe', 50);
     });
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/registry/contribute', {
+    expect(fetchSpy).toHaveBeenCalledWith('/api/registry/contribute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 }),
@@ -165,7 +167,7 @@ describe('useRegistry', () => {
   });
 
   it('should filter items by category', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -179,7 +181,7 @@ describe('useRegistry', () => {
   });
 
   it('should filter by price range', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -192,7 +194,7 @@ describe('useRegistry', () => {
   });
 
   it('should filter by group gifts only', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -205,7 +207,7 @@ describe('useRegistry', () => {
   });
 
   it('should filter by available only', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify(mockItems));
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
