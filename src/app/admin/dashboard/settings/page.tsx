@@ -6,6 +6,7 @@ import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+import { FormGroup, Label, Input, Textarea, FormMessage } from "@/components/ui/forms";
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -117,111 +118,111 @@ export default function AdminSettingsPage() {
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">Core Identity</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Bride Name</label>
-                <input required type="text" name="brideName" value={config.brideName || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Groom Name</label>
-                <input required type="text" name="groomName" value={config.groomName || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Wedding Date</label>
-                <input required type="date" name="weddingDate" value={config.weddingDate || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Base URL</label>
-                <input required type="url" name="baseUrl" value={config.baseUrl || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
+              <FormGroup>
+                <Label>Bride Name</Label>
+                <Input required type="text" name="brideName" value={config.brideName || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Groom Name</Label>
+                <Input required type="text" name="groomName" value={config.groomName || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Wedding Date</Label>
+                <Input required type="date" name="weddingDate" value={config.weddingDate || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Base URL</Label>
+                <Input required type="url" name="baseUrl" value={config.baseUrl || ''} onChange={handleChange} />
+              </FormGroup>
             </div>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">Venue & Location</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Venue Name</label>
-                <input required type="text" name="venueName" value={config.venueName || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Address</label>
-                <input required type="text" name="venueAddress" value={config.venueAddress || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">City</label>
-                <input required type="text" name="venueCity" value={config.venueCity || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">State</label>
-                <input required type="text" name="venueState" value={config.venueState || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Zip Code</label>
-                <input required type="text" name="venueZip" value={config.venueZip || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
+              <FormGroup>
+                <Label>Venue Name</Label>
+                <Input required type="text" name="venueName" value={config.venueName || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Address</Label>
+                <Input required type="text" name="venueAddress" value={config.venueAddress || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>City</Label>
+                <Input required type="text" name="venueCity" value={config.venueCity || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>State</Label>
+                <Input required type="text" name="venueState" value={config.venueState || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Zip Code</Label>
+                <Input required type="text" name="venueZip" value={config.venueZip || ''} onChange={handleChange} />
+              </FormGroup>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Latitude</label>
-                <input required type="number" step="any" name="latitude" value={config.latitude || 0} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Longitude</label>
-                <input required type="number" step="any" name="longitude" value={config.longitude || 0} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
+              <FormGroup>
+                <Label>Latitude</Label>
+                <Input required type="number" step="any" name="latitude" value={config.latitude || 0} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Longitude</Label>
+                <Input required type="number" step="any" name="longitude" value={config.longitude || 0} onChange={handleChange} />
+              </FormGroup>
             </div>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">Narrative Content</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Hero Title</label>
-                <input required type="text" name="heroTitle" value={config.heroTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Hero Subtitle</label>
-                <input required type="text" name="heroSubtitle" value={config.heroSubtitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
+              <FormGroup>
+                <Label>Hero Title</Label>
+                <Input required type="text" name="heroTitle" value={config.heroTitle || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Hero Subtitle</Label>
+                <Input required type="text" name="heroSubtitle" value={config.heroSubtitle || ''} onChange={handleChange} />
+              </FormGroup>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Our Story</label>
-              <textarea required name="storyText" value={config.storyText || ''} onChange={handleChange} rows={6} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Venue Description</label>
-              <textarea required name="venueDescription" value={config.venueDescription || ''} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Travel Advice</label>
-              <textarea required name="travelAdvice" value={config.travelAdvice || ''} onChange={handleChange} rows={4} className="w-full p-2 border rounded text-black" />
-            </div>
+            <FormGroup>
+              <Label>Our Story</Label>
+              <Textarea required name="storyText" value={config.storyText || ''} onChange={handleChange} rows={6} />
+            </FormGroup>
+            <FormGroup>
+              <Label>Venue Description</Label>
+              <Textarea required name="venueDescription" value={config.venueDescription || ''} onChange={handleChange} rows={4} />
+            </FormGroup>
+            <FormGroup>
+              <Label>Travel Advice</Label>
+              <Textarea required name="travelAdvice" value={config.travelAdvice || ''} onChange={handleChange} rows={4} />
+            </FormGroup>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">Branding & Colors</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="flex flex-col items-center">
-                <label className="block text-sm font-medium mb-2">Primary Color</label>
+              <FormGroup className="flex flex-col items-center">
+                <Label className="mb-1">Primary Color</Label>
                 <div className="flex items-center gap-2 w-full">
-                  <input type="color" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <input type="text" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="w-full p-2 border rounded text-black font-mono text-sm uppercase" />
+                  <Input type="color" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <Input type="text" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="font-mono text-sm uppercase" />
                 </div>
-              </div>
-              <div className="flex flex-col items-center">
-                <label className="block text-sm font-medium mb-2">Secondary Color</label>
+              </FormGroup>
+              <FormGroup className="flex flex-col items-center">
+                <Label className="mb-1">Secondary Color</Label>
                 <div className="flex items-center gap-2 w-full">
-                  <input type="color" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <input type="text" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="w-full p-2 border rounded text-black font-mono text-sm uppercase" />
+                  <Input type="color" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <Input type="text" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="font-mono text-sm uppercase" />
                 </div>
-              </div>
-              <div className="flex flex-col items-center">
-                <label className="block text-sm font-medium mb-2">Accent Color</label>
+              </FormGroup>
+              <FormGroup className="flex flex-col items-center">
+                <Label className="mb-1">Accent Color</Label>
                 <div className="flex items-center gap-2 w-full">
-                  <input type="color" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <input type="text" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="w-full p-2 border rounded text-black font-mono text-sm uppercase" />
+                  <Input type="color" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <Input type="text" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="font-mono text-sm uppercase" />
                 </div>
-              </div>
+              </FormGroup>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
               These colors will automatically synchronize across the UI components and 3D scenes.
@@ -231,25 +232,25 @@ export default function AdminSettingsPage() {
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">SEO Title</label>
-                <input required type="text" name="seoTitle" value={config.seoTitle || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">SEO Description</label>
-                <input required type="text" name="seoDescription" value={config.seoDescription || ''} onChange={handleChange} className="w-full p-2 border rounded text-black" />
-              </div>
+              <FormGroup>
+                <Label>SEO Title</Label>
+                <Input required type="text" name="seoTitle" value={config.seoTitle || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>SEO Description</Label>
+                <Input required type="text" name="seoDescription" value={config.seoDescription || ''} onChange={handleChange} />
+              </FormGroup>
             </div>
-            <div>
-              <label htmlFor="seoKeywords" className="block text-sm font-medium mb-1">SEO Keywords</label>
-              <textarea id="seoKeywords" name="seoKeywords" value={config.seoKeywords || ''} onChange={handleChange} rows={3} className="w-full p-2 border rounded text-black" placeholder="{{brideName}} and {{groomName}}'s wedding..." />
-              <p className="text-xs text-gray-500 mt-1">Comma-separated list. Use templates like {"{{brideName}}"}. Variables: brideName, groomName, venueName, venueCity, venueState.</p>
-            </div>
+            <FormGroup>
+              <Label>SEO Keywords</Label>
+              <Textarea name="seoKeywords" value={config.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{brideName}} and {{groomName}}'s wedding..." />
+              <FormMessage>Comma-separated list. Use templates like {"{{brideName}}"}. Variables: brideName, groomName, venueName, venueCity, venueState.</FormMessage>
+            </FormGroup>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <div>
-                <label htmlFor="faviconUpload" className="block text-sm font-medium mb-1">Favicon (.ico, .png)</label>
+              <FormGroup>
+                <Label>Favicon (.ico, .png)</Label>
                 <div className="flex flex-col space-y-2">
-                  <input id="faviconUpload" type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="w-full text-sm" />
+                  <Input type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="file:pt-1" />
                   {config.faviconUrl && (
                     <div className="flex items-center gap-2">
                       <img src={config.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
@@ -257,11 +258,11 @@ export default function AdminSettingsPage() {
                     </div>
                   )}
                 </div>
-              </div>
-              <div>
-                <label htmlFor="ogImageUpload" className="block text-sm font-medium mb-1">Social Sharing Image (OG Image)</label>
+              </FormGroup>
+              <FormGroup>
+                <Label>Social Sharing Image (OG Image)</Label>
                 <div className="flex flex-col space-y-2">
-                  <input id="ogImageUpload" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="w-full text-sm" />
+                  <Input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="file:pt-1" />
                   {config.ogImageUrl && (
                     <div className="flex items-center gap-2">
                       <img src={config.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
@@ -269,7 +270,7 @@ export default function AdminSettingsPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </FormGroup>
             </div>
           </section>
 
