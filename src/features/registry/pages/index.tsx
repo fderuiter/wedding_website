@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
@@ -51,6 +51,38 @@ export default function RegistryPage() {
     handleContribute,
   } = useRegistry();
 
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const isLoadingMore = useRef(false);
+  const counterRef = useRef<HTMLParagraphElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const wasButtonFocused = useRef(false);
+
+  const handleLoadMore = useCallback(() => {
+    if (isLoadingMore.current) return;
+    if (visibleItems.length >= filteredItems.length) return;
+    
+    wasButtonFocused.current = document.activeElement === buttonRef.current;
+    
+    isLoadingMore.current = true;
+    setLiveAnnouncement("Loading more gifts...");
+    
+    setTimeout(() => {
+      setVisibleItemsCount(prevCount => prevCount + 8);
+      isLoadingMore.current = false;
+    }, 500);
+  }, [setVisibleItemsCount, visibleItems.length, filteredItems.length]);
+
+  useEffect(() => {
+    if (!isLoadingMore.current && visibleItems.length > 0) {
+      setLiveAnnouncement(`Showing ${visibleItems.length} of ${filteredItems.length} gifts`);
+      
+      if (wasButtonFocused.current && visibleItems.length >= filteredItems.length) {
+        counterRef.current?.focus();
+        wasButtonFocused.current = false;
+      }
+    }
+  }, [visibleItems.length, filteredItems.length]);
+
   const handleClearFilters = () => {
     setCategoryFilter([]);
     setPriceRange([minPrice, maxPrice]);
@@ -69,6 +101,9 @@ export default function RegistryPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary pb-32 px-2 sm:px-4">
+      <div aria-live="polite" className="sr-only">
+        {liveAnnouncement}
+      </div>
       <motion.h1
         className="text-5xl font-extrabold text-center mb-12 pt-12 text-primary tracking-tight drop-shadow-lg"
         initial={{ opacity: 0, y: -30 }}
@@ -170,13 +205,33 @@ export default function RegistryPage() {
         </>
       )}
 
-      {visibleItems.length < filteredItems.length && !isLoading && (
-        <VisibilitySentinel
-          onVisible={() => setVisibleItemsCount(prevCount => prevCount + 8)}
-          className="text-center p-4 col-span-full"
-        >
-          <p className="text-gray-500">Loading more gifts...</p>
-        </VisibilitySentinel>
+      {!isLoading && visibleItems.length > 0 && (
+        <div className="flex flex-col items-center justify-center p-8 gap-4 max-w-7xl mx-auto">
+          <p 
+            ref={counterRef}
+            tabIndex={-1}
+            className="text-sm text-gray-600 dark:text-gray-400 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-2" 
+            aria-hidden="true"
+          >
+            Showing {visibleItems.length} of {filteredItems.length} gifts
+          </p>
+          {visibleItems.length < filteredItems.length && (
+            <>
+              <button 
+                ref={buttonRef}
+                type="button"
+                className="btn-primary mt-2"
+                onClick={handleLoadMore}
+              >
+                Load More
+              </button>
+              <VisibilitySentinel
+                onVisible={handleLoadMore}
+                className="h-1 w-full"
+              />
+            </>
+          )}
+        </div>
       )}
       <AnimatePresence>
         {selectedItem && isModalOpen && (
