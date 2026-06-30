@@ -13,6 +13,7 @@ import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
 import { theme } from '../../styles/theme'
 import { useTheme } from '@/components/ThemeProvider'
 import { useOverlay } from '@/hooks/useOverlay'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 /**
  * @function Sparkles
@@ -23,6 +24,7 @@ import { useOverlay } from '@/hooks/useOverlay'
  * @returns {JSX.Element} The rendered sparkles component.
  */
 function Sparkles({ count = 200, color = "#ffa0e0" }: { count?: number, color?: string }) {
+  const reduceMotion = useReducedMotion()
   const pointsRef = useRef<THREE.Points>(null!)
   const positions = useMemo(
     () => inSphere(new Float32Array(count * 3), { radius: 10 }) as Float32Array,
@@ -30,7 +32,7 @@ function Sparkles({ count = 200, color = "#ffa0e0" }: { count?: number, color?: 
   )
 
   useFrame(() => {
-    if (pointsRef.current) {
+    if (pointsRef.current && !reduceMotion) {
       pointsRef.current.rotation.y += 0.001
     }
   })
@@ -160,6 +162,7 @@ function PhysicsHeart({
   brideName: string
   groomName: string
 }) {
+  const reduceMotion = useReducedMotion()
   const heartRef = useRef<RapierRigidBody>(null!)
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!)
@@ -211,22 +214,24 @@ function PhysicsHeart({
       rightRb.setAngvel(angvel, true)
 
       // Apply explosion
-      leftRb.applyImpulse({ x: 20, y: 15, z: 5 }, true)
-      rightRb.applyImpulse({ x: -20, y: 15, z: -5 }, true)
+      if (!reduceMotion) {
+        leftRb.applyImpulse({ x: 20, y: 15, z: 5 }, true)
+        rightRb.applyImpulse({ x: -20, y: 15, z: -5 }, true)
 
-      const torqueStrength = 40
-      const leftTorque = {
-        x: (Math.random() - 0.5) * torqueStrength,
-        y: (Math.random() - 0.5) * torqueStrength,
-        z: (Math.random() - 0.5) * torqueStrength,
+        const torqueStrength = 40
+        const leftTorque = {
+          x: (Math.random() - 0.5) * torqueStrength,
+          y: (Math.random() - 0.5) * torqueStrength,
+          z: (Math.random() - 0.5) * torqueStrength,
+        }
+        const rightTorque = {
+          x: (Math.random() - 0.5) * torqueStrength,
+          y: (Math.random() - 0.5) * torqueStrength,
+          z: (Math.random() - 0.5) * torqueStrength,
+        }
+        leftRb.applyTorqueImpulse(leftTorque, true)
+        rightRb.applyTorqueImpulse(rightTorque, true)
       }
-      const rightTorque = {
-        x: (Math.random() - 0.5) * torqueStrength,
-        y: (Math.random() - 0.5) * torqueStrength,
-        z: (Math.random() - 0.5) * torqueStrength,
-      }
-      leftRb.applyTorqueImpulse(leftTorque, true)
-      rightRb.applyTorqueImpulse(rightTorque, true)
 
       // Set up timer to reform
       const timer = setTimeout(() => {
@@ -256,7 +261,7 @@ function PhysicsHeart({
       mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
       mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
     }
-  }, [isBroken])
+  }, [isBroken, reduceMotion])
 
   useFrame((state) => {
     if (heartRef.current && !isBroken) {
@@ -274,27 +279,40 @@ function PhysicsHeart({
       }
 
       if (!interacted) {
-        const rotation = heartRef.current.rotation()
-        const euler = new THREE.Euler().setFromQuaternion(
-          new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
-        )
-        euler.y += 0.002
-        heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
+        if (!reduceMotion) {
+          const rotation = heartRef.current.rotation()
+          const euler = new THREE.Euler().setFromQuaternion(
+            new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+          )
+          euler.y += 0.002
+          heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
+        }
       } else {
         const distance = Math.sqrt(position.x ** 2 + position.y ** 2)
         if (distance > 0.1) {
-          const force = new THREE.Vector3(-position.x, -position.y, 0).normalize().multiplyScalar(15)
-          heartRef.current.addForce(force, true)
+          if (!reduceMotion) {
+            const force = new THREE.Vector3(-position.x, -position.y, 0).normalize().multiplyScalar(15)
+            heartRef.current.addForce(force, true)
+          } else {
+            heartRef.current.setTranslation({ x: 0, y: 0, z: position.z }, true)
+            heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
+          }
         } else {
           heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
         }
       }
     }
 
-    const t = state.clock.getElapsedTime()
-    const pulseScale = 1 + Math.sin(t * pulseSpeed) * 0.05
-    if (groupRef.current) {
-      groupRef.current.scale.set(pulseScale, pulseScale, pulseScale)
+    if (!reduceMotion) {
+      const t = state.clock.getElapsedTime()
+      const pulseScale = 1 + Math.sin(t * pulseSpeed) * 0.05
+      if (groupRef.current) {
+        groupRef.current.scale.set(pulseScale, pulseScale, pulseScale)
+      }
+    } else {
+      if (groupRef.current) {
+        groupRef.current.scale.set(1, 1, 1)
+      }
     }
   })
 
@@ -321,17 +339,19 @@ function PhysicsHeart({
         setPulseSpeed(1)
         if (heartRef.current) {
           heartRef.current.setBodyType(RigidBodyType.Dynamic, true)
-          const impulseStrength = 50
-          heartRef.current.applyImpulse({ x: vx * impulseStrength, y: -vy * impulseStrength, z: 0 }, true)
-          const torqueStrength = 20
-          heartRef.current.applyTorqueImpulse(
-            {
-              x: (Math.random() - 0.5) * torqueStrength,
-              y: (Math.random() - 0.5) * torqueStrength,
-              z: (Math.random() - 0.5) * torqueStrength,
-            },
-            true,
-          )
+          if (!reduceMotion) {
+            const impulseStrength = 50
+            heartRef.current.applyImpulse({ x: vx * impulseStrength, y: -vy * impulseStrength, z: 0 }, true)
+            const torqueStrength = 20
+            heartRef.current.applyTorqueImpulse(
+              {
+                x: (Math.random() - 0.5) * torqueStrength,
+                y: (Math.random() - 0.5) * torqueStrength,
+                z: (Math.random() - 0.5) * torqueStrength,
+              },
+              true,
+            )
+          }
         }
       }
     },
@@ -347,20 +367,23 @@ function PhysicsHeart({
           <button
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
             aria-label={`Interactive 3D Heart. Status: Whole. Use arrow keys to move, Space or Enter to break.`}
-            onKeyDown={(e) => {
+              onKeyDown={(e) => {
               if (isBroken || !heartRef.current) return;
-              const impulse = 20;
-              if (e.key === 'ArrowUp') {
-                 heartRef.current.applyImpulse({ x: 0, y: impulse, z: 0 }, true);
-              } else if (e.key === 'ArrowDown') {
-                 heartRef.current.applyImpulse({ x: 0, y: -impulse, z: 0 }, true);
-              } else if (e.key === 'ArrowLeft') {
-                 heartRef.current.applyImpulse({ x: -impulse, y: 0, z: 0 }, true);
-              } else if (e.key === 'ArrowRight') {
-                 heartRef.current.applyImpulse({ x: impulse, y: 0, z: 0 }, true);
-              } else if (e.key === ' ' || e.key === 'Enter') {
+              if (e.key === ' ' || e.key === 'Enter') {
                  e.preventDefault();
                  setIsBroken(true);
+              } else if (!reduceMotion) {
+                const impulse = 20;
+                if (!interacted) onInteract();
+                if (e.key === 'ArrowUp') {
+                   heartRef.current.applyImpulse({ x: 0, y: impulse, z: 0 }, true);
+                } else if (e.key === 'ArrowDown') {
+                   heartRef.current.applyImpulse({ x: 0, y: -impulse, z: 0 }, true);
+                } else if (e.key === 'ArrowLeft') {
+                   heartRef.current.applyImpulse({ x: -impulse, y: 0, z: 0 }, true);
+                } else if (e.key === 'ArrowRight') {
+                   heartRef.current.applyImpulse({ x: impulse, y: 0, z: 0 }, true);
+                }
               }
             }}
           />
@@ -397,7 +420,9 @@ function PhysicsHeart({
                 if (!brokenHeartLeftRef.current) return;
                 if (e.key === ' ' || e.key === 'Enter') {
                   e.preventDefault();
-                  brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+                  if (!reduceMotion) {
+                    brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+                  }
                 }
               }}
             />
@@ -418,7 +443,9 @@ function PhysicsHeart({
                 if (!brokenHeartRightRef.current) return;
                 if (e.key === ' ' || e.key === 'Enter') {
                   e.preventDefault();
-                  brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+                  if (!reduceMotion) {
+                    brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+                  }
                 }
               }}
             />
