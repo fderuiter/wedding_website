@@ -12,6 +12,15 @@ import { FormGroup, Label, Input, FormMessage } from "@/components/ui/forms";
  *
  * @returns The setup wizard UI as JSX when active, or `null` when nothing should be rendered.
  */
+function isDefaultUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url.includes("://") ? url : `https://${url}`);
+    return urlObj.hostname === "abbifred.com" || urlObj.hostname.endsWith(".abbifred.com");
+  } catch {
+    return false;
+  }
+}
+
 export default function SetupWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -156,10 +165,10 @@ export default function SetupWizard() {
               <Label>Wedding Date</Label>
               <Input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} required />
             </FormGroup>
-            <FormGroup state={baseUrl.includes("abbifred.com") ? "error" : "default"}>
+            <FormGroup state={isDefaultUrl(baseUrl) ? "error" : "default"}>
               <Label>Site URL (e.g. https://ourwedding.com)</Label>
               <Input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
-              {baseUrl.includes("abbifred.com") && <FormMessage>Please use your own URL.</FormMessage>}
+              {isDefaultUrl(baseUrl) && <FormMessage>Please use your own URL.</FormMessage>}
             </FormGroup>
             <div className="grid grid-cols-3 gap-4">
               <FormGroup className="col-span-3 md:col-span-1">
