@@ -1,6 +1,6 @@
 'use client'
 
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber'
 import { Environment, Html, Text, Points, PointMaterial } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
@@ -8,7 +8,6 @@ import React, { Suspense, useMemo, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayload } from '@react-three/rapier'
 import { inSphere } from 'maath/random'
-import { useDrag } from '@use-gesture/react'
 import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
 import { theme } from '../../styles/theme'
 import { useTheme } from '@/components/ThemeProvider'
@@ -316,46 +315,98 @@ function PhysicsHeart({
     }
   })
 
-  const bind = useDrag(
-    ({ active, xy: [sx, sy], velocity: [vx, vy], first, last }) => {
-      if (isBroken) return
-      if (first) {
-        if (!interacted) onInteract()
-        setPulseSpeed(5)
-        heartRef.current?.setBodyType(RigidBodyType.KinematicPositionBased, true)
-      }
+  const dragState = useRef({
+    active: false,
+    lastTime: 0,
+    lastX: 0,
+    lastY: 0,
+    vx: 0,
+    vy: 0,
+  })
 
-      if (active && heartRef.current) {
-        const x = (sx / size.width) * viewport.width - viewport.width / 2
-        const y = -(sy / size.height) * viewport.height + viewport.height / 2
-        heartRef.current.setNextKinematicTranslation({
-          x: x,
-          y: y,
-          z: heartRef.current.translation().z,
-        })
-      }
+  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    if (isBroken) return
+    e.stopPropagation()
+    const target = e.target as any
+    if (target.setPointerCapture) {
+      try { target.setPointerCapture(e.pointerId) } catch(err) {}
+    }
 
-      if (last) {
-        setPulseSpeed(1)
-        if (heartRef.current) {
-          heartRef.current.setBodyType(RigidBodyType.Dynamic, true)
-          if (!reduceMotion) {
-            const impulseStrength = 50
-            heartRef.current.applyImpulse({ x: vx * impulseStrength, y: -vy * impulseStrength, z: 0 }, true)
-            const torqueStrength = 20
-            heartRef.current.applyTorqueImpulse(
-              {
-                x: (Math.random() - 0.5) * torqueStrength,
-                y: (Math.random() - 0.5) * torqueStrength,
-                z: (Math.random() - 0.5) * torqueStrength,
-              },
-              true,
-            )
-          }
-        }
+    if (!interacted) onInteract()
+    setPulseSpeed(5)
+    heartRef.current?.setBodyType(RigidBodyType.KinematicPositionBased, true)
+
+    dragState.current = {
+      active: true,
+      lastTime: performance.now(),
+      lastX: e.clientX,
+      lastY: e.clientY,
+      vx: 0,
+      vy: 0,
+    }
+  }
+
+  const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
+    if (!dragState.current.active || isBroken) return
+    e.stopPropagation()
+
+    const now = performance.now()
+    const dt = now - dragState.current.lastTime
+    
+    if (dt > 0) {
+      dragState.current.vx = (e.clientX - dragState.current.lastX) / dt
+      dragState.current.vy = (e.clientY - dragState.current.lastY) / dt
+    }
+    
+    dragState.current.lastTime = now
+    dragState.current.lastX = e.clientX
+    dragState.current.lastY = e.clientY
+
+    if (heartRef.current) {
+      const x = (e.clientX / size.width) * viewport.width - viewport.width / 2
+      const y = -(e.clientY / size.height) * viewport.height + viewport.height / 2
+      heartRef.current.setNextKinematicTranslation({
+        x: x,
+        y: y,
+        z: heartRef.current.translation().z,
+      })
+    }
+  }
+
+  const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
+    if (!dragState.current.active) return
+    e.stopPropagation()
+    const target = e.target as any
+    if (target.releasePointerCapture) {
+      try { target.releasePointerCapture(e.pointerId) } catch (err) {}
+    }
+
+    dragState.current.active = false
+    let { vx, vy } = dragState.current
+
+    if (performance.now() - dragState.current.lastTime > 50) {
+      vx = 0
+      vy = 0
+    }
+
+    setPulseSpeed(1)
+    if (heartRef.current) {
+      heartRef.current.setBodyType(RigidBodyType.Dynamic, true)
+      if (!reduceMotion) {
+        const impulseStrength = 50
+        heartRef.current.applyImpulse({ x: vx * impulseStrength, y: -vy * impulseStrength, z: 0 }, true)
+        const torqueStrength = 20
+        heartRef.current.applyTorqueImpulse(
+          {
+            x: (Math.random() - 0.5) * torqueStrength,
+            y: (Math.random() - 0.5) * torqueStrength,
+            z: (Math.random() - 0.5) * torqueStrength,
+          },
+          true,
+        )
       }
-    },
-  )
+    }
+  }
 
   return (
     <>
@@ -399,9 +450,14 @@ function PhysicsHeart({
         activeEvents={ActiveCollisionTypes.CONTACT_FORCE_EVENTS}
       >
         <CuboidCollider args={[1.5 * scale, 1.5 * scale, 0.8 * scale]} />
-        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-        {/* @ts-ignore */}
-        <group ref={groupRef} {...bind()} visible={!isBroken}>
+        <group
+          ref={groupRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          visible={!isBroken}
+        >
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} />
         </group>
       </RigidBody>
