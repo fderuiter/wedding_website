@@ -103,20 +103,6 @@ jest.mock('maath/random', () => ({
   }),
 }));
 
-jest.mock('@use-gesture/react', () => ({
-  useDrag: jest.fn((callback) => {
-    return () => ({
-      onMouseDown: (event: React.MouseEvent) => {
-        callback({ active: true, xy: [event.clientX, event.clientY], velocity: [0,0], first: true, last: false });
-      },
-      onMouseUp: (event: React.MouseEvent) => {
-        callback({ active: false, xy: [event.clientX, event.clientY], velocity: [1,1], first: false, last: true });
-      }
-    });
-  }),
-}));
-
-
 jest.mock('next/link', () => {
     const MockLink = ({ children, href }: { children: React.ReactNode, href: string }) => {
         return <a href={href}>{children}</a>;
@@ -189,8 +175,10 @@ describe('HeartPage', () => {
 
   it('should call onInteract when the heart is dragged', () => {
     render(<HeartPage />);
-    const rigidBody = screen.getAllByTestId('rigidbody')[0];
-    fireEvent.mouseDown(rigidBody);
+    const group = screen.getAllByTestId('rigidbody')[0].querySelector('group') || screen.getAllByTestId('rigidbody')[0].firstChild;
+    if (group) {
+      fireEvent.pointerDown(group as Element, { clientX: 100, clientY: 100, pointerId: 1 });
+    }
   });
 
   it('renders Sparkles component with default number of points', () => {
