@@ -110,8 +110,4 @@ html:focus-within {
   .btn-secondary {
     @apply inline-flex justify-center items-center px-4 py-2 border-2 border-primary text-primary font-bold rounded-md hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
-  .form-input {
-    @apply block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:text-sm p-2 disabled:opacity-50 disabled:cursor-not-allowed;
-  }
 }

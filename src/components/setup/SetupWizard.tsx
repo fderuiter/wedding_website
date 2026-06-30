@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { FormGroup, Label, Input, FormMessage } from "@/components/ui/forms";
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -105,14 +106,16 @@ export default function SetupWizard() {
           <h1 className="text-2xl font-bold text-rose-700 mb-4">Welcome to Your Wedding Site!</h1>
           <p className="mb-4 text-gray-600">Please enter the admin password to begin setup (default is <strong>admin</strong>).</p>
           <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="password"
-              placeholder="Admin Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="form-input"
-              required
-            />
+            <FormGroup>
+              <Label className="sr-only">Admin Password</Label>
+              <Input
+                type="password"
+                placeholder="Admin Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </FormGroup>
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button disabled={loading} className="w-full btn-primary py-3">
               {loading ? "Authenticating..." : "Continue"}
@@ -131,36 +134,37 @@ export default function SetupWizard() {
           <p className="mb-4 text-gray-600">Let's start with your names and when the big day is.</p>
           <form onSubmit={handleSaveConfig} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold mb-1">Partner 1</label>
-                <input type="text" value={brideName} onChange={(e) => setBrideName(e.target.value)} className="form-input" required />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Partner 2</label>
-                <input type="text" value={groomName} onChange={(e) => setGroomName(e.target.value)} className="form-input" required />
-              </div>
+              <FormGroup>
+                <Label>Partner 1</Label>
+                <Input type="text" value={brideName} onChange={(e) => setBrideName(e.target.value)} required />
+              </FormGroup>
+              <FormGroup>
+                <Label>Partner 2</Label>
+                <Input type="text" value={groomName} onChange={(e) => setGroomName(e.target.value)} required />
+              </FormGroup>
             </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1">Wedding Date</label>
-              <input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} className="form-input" required />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1">Site URL (e.g. https://ourwedding.com)</label>
-              <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="form-input" required />
-            </div>
+            <FormGroup>
+              <Label>Wedding Date</Label>
+              <Input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} required />
+            </FormGroup>
+            <FormGroup state={baseUrl.includes("abbifred.com") ? "error" : "default"}>
+              <Label>Site URL (e.g. https://ourwedding.com)</Label>
+              <Input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
+              {baseUrl.includes("abbifred.com") && <FormMessage>Please use your own URL.</FormMessage>}
+            </FormGroup>
             <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-3 md:col-span-1">
-                <label className="block text-sm font-semibold mb-1">Venue Name</label>
-                <input type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} className="form-input" required />
-              </div>
-              <div className="col-span-3 md:col-span-1">
-                <label className="block text-sm font-semibold mb-1">City</label>
-                <input type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} className="form-input" required />
-              </div>
-              <div className="col-span-3 md:col-span-1">
-                <label className="block text-sm font-semibold mb-1">State</label>
-                <input type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} className="form-input" required />
-              </div>
+              <FormGroup className="col-span-3 md:col-span-1">
+                <Label>Venue Name</Label>
+                <Input type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} required />
+              </FormGroup>
+              <FormGroup className="col-span-3 md:col-span-1">
+                <Label>City</Label>
+                <Input type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} required />
+              </FormGroup>
+              <FormGroup className="col-span-3 md:col-span-1">
+                <Label>State</Label>
+                <Input type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} required />
+              </FormGroup>
             </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button disabled={loading} className="w-full btn-primary py-3">
