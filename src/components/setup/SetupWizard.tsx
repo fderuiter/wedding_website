@@ -56,10 +56,19 @@ export default function SetupWizard() {
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (baseUrl.includes("abbifred.com")) {
-      setError("Please use your own URL, not the default abbifred.com");
+    try {
+      const urlObj = new URL(baseUrl);
+      if (urlObj.hostname === "abbifred.com" || urlObj.hostname.endsWith(".abbifred.com")) {
+        setError("Please use your own URL, not the default abbifred.com");
+        return;
+      }
+    } catch (err) {
+      // If it's not a valid URL, it will fail backend validation anyway.
+      // But we can also set an error here.
+      setError("Please enter a valid URL.");
       return;
     }
+
     setLoading(true);
     setError("");
     try {
