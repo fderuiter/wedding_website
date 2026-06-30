@@ -68,7 +68,7 @@ describe('Registry API routes', () => {
       expect(res.status).toBe(201);
       expect(mockCreateItem).toHaveBeenCalledWith(expect.objectContaining(validItem));
       const json = await res.json();
-      expect(json.item).toEqual(expect.objectContaining(validItem));
+      expect(json.data).toEqual(expect.objectContaining({ item: expect.objectContaining(validItem) }));
     });
 
     it('returns 400 for invalid input', async () => {
@@ -150,7 +150,7 @@ describe('Registry API routes', () => {
       const res = await contribute(req);
       expect(res.status).toBe(500);
       const json = await res.json();
-      expect(json).toEqual({ error: 'DB error' });
+      expect(json).toEqual({ success: false, error: 'DB error' });
     });
   });
 
@@ -161,7 +161,7 @@ describe('Registry API routes', () => {
       const res = await getItems();
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json).toEqual(items);
+      expect(json.data).toEqual(items);
     });
 
     it('returns 500 on service failure', async () => {
@@ -169,7 +169,7 @@ describe('Registry API routes', () => {
       const res = await getItems();
       expect(res.status).toBe(500);
       const json = await res.json();
-      expect(json.error).toBe('Failed to load registry items');
+      expect(json.error).toBe('db error');
     });
   });
 
@@ -186,7 +186,7 @@ describe('Registry API routes', () => {
         const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json).toEqual(item);
+        expect(json.data).toEqual(item);
       });
 
       it('returns 404 when item not found', async () => {
@@ -195,7 +195,7 @@ describe('Registry API routes', () => {
         const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(404);
         const json = await res.json();
-        expect(json).toEqual({ error: 'Item not found' });
+        expect(json).toEqual({ success: false, error: 'Item not found' });
       });
     });
 
@@ -233,7 +233,7 @@ describe('Registry API routes', () => {
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json).toEqual({ message: 'Item updated successfully', item: updated });
+        expect(json.data).toEqual({ message: 'Item updated successfully', item: updated });
       });
     });
 
@@ -252,7 +252,7 @@ describe('Registry API routes', () => {
         const res = await deleteItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json).toEqual({ message: 'Item deleted successfully' });
+        expect(json.data).toEqual({ message: 'Item deleted successfully' });
       });
     });
   });

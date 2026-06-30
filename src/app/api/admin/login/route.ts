@@ -1,46 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { signAdminToken } from '@/utils/adminAuth.server';
-import { rateLimit } from '@/utils/rateLimit';
 import { env } from '@/env';
+import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { ApiError } from '@/utils/ApiError';
 
 const ADMIN_COOKIE = 'admin_auth';
 
-/**
- * Authenticate an administrator and set an HTTP-only admin auth cookie.
- *
- * @param req - Incoming Next.js request whose JSON body must include a `password` string.
- * @returns A NextResponse: on success contains `{ success: true }` and sets the `admin_auth` cookie; on failure contains an `{ error: string }` with an appropriate 4xx/5xx status.
- */
-export async function POST(req: NextRequest) {
-  // Apply rate limiting: max 5 requests per 15 minutes per IP
-  const rateLimitResponse = await rateLimit(req, 5, 15 * 60 * 1000);
-  if (rateLimitResponse) {
-    return rateLimitResponse;
-  }
-
+export const POST = withApiMiddleware(async (req: NextRequest) => {
   const { password } = await req.json();
   const adminPassword = env.ADMIN_PASSWORD;
 
   if (!adminPassword) {
-    return NextResponse.json({ error: 'Admin password not set.' }, { status: 500 });
+    throw new ApiError(500, 'Admin password not set.');
   }
 
-  // Input validation: ensure password is a string
   if (typeof password !== 'string') {
-    return NextResponse.json({ error: 'Invalid password format.' }, { status: 400 });
+    throw new ApiError(400, 'Invalid password format.');
   }
 
-  // Compare password using secure password hashing (bcrypt)
   const isMatch = await bcrypt.compare(password, adminPassword);
 
   if (!isMatch) {
-    return NextResponse.json({ error: 'Invalid password.' }, { status: 401 });
+    throw new ApiError(401, 'Invalid password.');
   }
 
-  // Generate signed token with expiration
   const iat = Date.now();
-  const exp = iat + 60 * 60 * 8 * 1000; // 8 hours
+  const exp = iat + 60 * 60 * 8 * 1000;
   const token = await signAdminToken({ isAdmin: true, iat, exp });
 
   const response = NextResponse.json({ success: true });
@@ -49,7 +35,7 @@ export async function POST(req: NextRequest) {
     secure: env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: 60 * 60 * 8, // 8 hours
+    maxAge: 60 * 60 * 8,
   });
   return response;
-}
+});

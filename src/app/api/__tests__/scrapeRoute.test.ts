@@ -56,7 +56,7 @@ describe('POST /api/registry/scrape', () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual({
+    expect(json.data).toEqual({
       name: 'Mock Item',
       description: 'Mock Description',
       image: 'https://example.com/image.jpg',
@@ -111,7 +111,7 @@ describe('POST /api/registry/scrape', () => {
     const res = await POST(req);
     expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toContain('Failed to scrape product info');
-    expect(console.error).toHaveBeenCalledWith('Scraping error:', error);
+    expect(json.error).toContain('network error');
+    expect(console.error).toHaveBeenCalledWith('Unhandled API Error:', error);
   });
 });

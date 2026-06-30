@@ -333,7 +333,7 @@ describe('PUT /api/admin/settings', () => {
 
     expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toBe('Failed to update config');
+    expect(json.error).toBe('DB connection failed');
   });
 
   it('does not call revalidatePath when prisma throws', async () => {

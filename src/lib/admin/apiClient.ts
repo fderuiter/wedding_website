@@ -38,6 +38,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
     throw new ApiError(res.status || 500, message, data);
   }
 
+  // Unwrap the standard response format if present
+  if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
+    return data.data as T;
+  }
+
   return data as T;
 }
 

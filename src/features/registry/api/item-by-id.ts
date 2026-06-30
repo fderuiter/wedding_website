@@ -1,62 +1,25 @@
-// src/app/api/registry/items/[id]/route.ts
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '@/features/registry/service';
-import { isAdminRequest } from '@/utils/adminAuth.server';
 import { validateAddItemInput } from '@/utils/validation';
+import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { ApiError } from '@/utils/ApiError';
 
-/**
- * @api {get} /api/registry/items/:id
- * @description Retrieves a single registry item by its ID.
- *
- * This function handles a GET request for a specific registry item. It extracts the
- * item ID from the URL and uses the `RegistryService` to fetch the corresponding item
- * from the database.
- *
- * @param {NextRequest} request - The incoming Next.js request object.
- * @param {object} context - The context object containing route parameters.
- * @param {Promise<{ id: string }>} context.params - The dynamic route parameters.
- * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
- * Returns the item if found, otherwise returns a 404 error.
- */
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const item = await registryService.getItemById(id);
 
   if (!item) {
-    return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+    throw new ApiError(404, 'Item not found');
   }
   return NextResponse.json(item);
-}
+});
 
-/**
- * @api {put} /api/registry/items/:id
- * @description Updates an existing registry item.
- *
- * This function handles a PUT request to update a specific registry item. It requires
- * admin authentication. It validates the request body and then uses the `RegistryService`
- * to apply the updates to the item in the database.
- *
- * @param {NextRequest} request - The incoming Next.js request object, containing the update data.
- * @param {object} context - The context object containing route parameters.
- * @param {Promise<{ id: string }>} context.params - The dynamic route parameters.
- * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
- * On success, returns a success message and the updated item.
- * On failure, returns an appropriate error message and status code.
- */
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-
-  if (!(await isAdminRequest(request))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   const body = await request.json();
   const validationError = validateAddItemInput(body);
   if (validationError) {
-    return NextResponse.json(
-      { error: validationError },
-      { status: 400 }
-    );
+    throw new ApiError(400, validationError);
   }
 
   const updatedItem = await registryService.updateItem(id, {
@@ -67,29 +30,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   });
 
   return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
-}
+});
 
-/**
- * @api {delete} /api/registry/items/:id
- * @description Deletes a registry item.
- *
- * This function handles a DELETE request to remove a specific registry item from the
- * database. It requires admin authentication.
- *
- * @param {NextRequest} request - The incoming Next.js request object.
- * @param {object} context - The context object containing route parameters.
- * @param {Promise<{ id: string }>} context.params - The dynamic route parameters.
- * @returns {Promise<NextResponse>} A promise that resolves to a `NextResponse` object.
- * On success, returns a success message.
- * On failure (e.g., unauthorized), returns an appropriate error message and status code.
- */
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-
-  if (!(await isAdminRequest(request))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   await registryService.deleteItem(id);
   return NextResponse.json({ message: 'Item deleted successfully' });
-}
+});

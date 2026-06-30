@@ -37,7 +37,7 @@ describe('Weather API Route', () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual(mockWeatherData);
+    expect(body.data).toEqual(mockWeatherData);
   });
 
   it('should return a 500 status code on fetch failure', async () => {
@@ -49,8 +49,8 @@ describe('Weather API Route', () => {
 
     expect(response.status).toBe(500);
     const body = await response.json();
-    expect(body).toEqual({ error: 'Failed to fetch weather data' });
-    expect(console.error).toHaveBeenCalledWith('Weather API error:', error);
+    expect(body).toEqual({ success: false, error: 'API is down' });
+    expect(console.error).toHaveBeenCalledWith('Unhandled API Error:', error);
   });
 
   it('should return a 500 status code on non-ok response from Open-Meteo', async () => {
@@ -63,7 +63,6 @@ describe('Weather API Route', () => {
 
     expect(response.status).toBe(500);
     const body = await response.json();
-    expect(body).toEqual({ error: 'Failed to fetch weather data' });
-    expect(console.error).toHaveBeenCalledWith('Weather API error:', expect.any(Error));
+    expect(body).toEqual({ success: false, error: 'Failed to fetch weather data from Open-Meteo' });
   });
 });
