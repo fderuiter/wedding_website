@@ -16,10 +16,10 @@ jest.mock('crypto', () => ({
   randomBytes: jest.fn().mockReturnValue({ toString: () => 'abcd1234ef56789a' }),
 }));
 
-import { verifyAdminToken } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/utils/adminAuth.server';
 import { writeFile } from 'fs/promises';
 
-const mockVerifyAdminToken = verifyAdminToken as jest.MockedFunction<typeof verifyAdminToken>;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
 
 function makeRequest(overrides: {
@@ -48,6 +48,7 @@ function makeRequest(overrides: {
   }
 
   return {
+    url: 'http://localhost/api/admin/upload',
     cookies: {
       get: jest.fn((key: string) => cookies.get(key)),
     },
@@ -64,6 +65,10 @@ describe('POST /api/admin/upload', () => {
   });
 
   describe('authentication', () => {
+    beforeEach(() => {
+      mockIsAdminRequest.mockResolvedValue(false);
+    });
+
     it('returns 401 when no auth cookie is present', async () => {
       const req = makeRequest({ hasAuth: false });
       const res = await POST(req);
@@ -74,7 +79,7 @@ describe('POST /api/admin/upload', () => {
     });
 
     it('returns 401 when token verification fails', async () => {
-      mockVerifyAdminToken.mockResolvedValue(null);
+      mockIsAdminRequest.mockResolvedValueOnce(false);
       const req = makeRequest({ hasAuth: true, token: 'bad-token' });
       const res = await POST(req);
 
@@ -86,7 +91,7 @@ describe('POST /api/admin/upload', () => {
 
   describe('file validation', () => {
     beforeEach(() => {
-      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
+      mockIsAdminRequest.mockResolvedValue(true);
     });
 
     it('returns 400 when no file is provided', async () => {
@@ -212,7 +217,7 @@ describe('POST /api/admin/upload', () => {
 
   describe('successful upload', () => {
     beforeEach(() => {
-      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
+      mockIsAdminRequest.mockResolvedValue(true);
     });
 
     it('writes the file to the public/uploads directory', async () => {
@@ -237,7 +242,7 @@ describe('POST /api/admin/upload', () => {
 
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.url).toMatch(/^\/uploads\//);
+      expect(json.data.url).toMatch(/^\/uploads\//);
     });
 
     it('preserves the original file extension in the returned URL', async () => {
@@ -251,7 +256,7 @@ describe('POST /api/admin/upload', () => {
       const res = await POST(req);
 
       const json = await res.json();
-      expect(json.url).toMatch(/\.jpg$/);
+      expect(json.data.url).toMatch(/\.jpg$/);
     });
 
     it('generates a unique filename for each upload', async () => {
@@ -279,14 +284,14 @@ describe('POST /api/admin/upload', () => {
 
       // The crypto mock returns the same value here, but the structure is the same
       // In production, two calls would produce different hashes
-      expect(json1.url).toMatch(/^\/uploads\//);
-      expect(json2.url).toMatch(/^\/uploads\//);
+      expect(json1.data.url).toMatch(/^\/uploads\//);
+      expect(json2.data.url).toMatch(/^\/uploads\//);
     });
   });
 
   describe('error handling', () => {
     beforeEach(() => {
-      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
+      mockIsAdminRequest.mockResolvedValue(true);
     });
 
     it('returns 500 when writeFile throws an error', async () => {
@@ -296,12 +301,13 @@ describe('POST /api/admin/upload', () => {
 
       expect(res.status).toBe(500);
       const json = await res.json();
-      expect(json.error).toBe('Upload failed');
+      expect(json.error).toBe('ENOENT: no such file or directory');
     });
 
     it('returns 500 when formData throws an error', async () => {
-      mockVerifyAdminToken.mockResolvedValue({ isAdmin: true, iat: Date.now() });
+      mockIsAdminRequest.mockResolvedValueOnce(true);
       const brokenReq = {
+        url: 'http://localhost/api/admin/upload',
         cookies: {
           get: jest.fn().mockReturnValue({ name: 'admin_auth', value: 'token' }),
         },
@@ -312,7 +318,7 @@ describe('POST /api/admin/upload', () => {
 
       expect(res.status).toBe(500);
       const json = await res.json();
-      expect(json.error).toBe('Upload failed');
+      expect(json.error).toBe('Failed to parse form data');
     });
   });
 });
