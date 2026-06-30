@@ -4,13 +4,27 @@
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom'
-import 'jest-fetch-mock/setupJest';
-import 'web-streams-polyfill/dist/polyfill.js';
-import 'abort-controller/polyfill';
 import { TextEncoder, TextDecoder } from 'util';
 
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
+
+if (typeof global.fetch === 'undefined') {
+  global.fetch = jest.fn();
+}
+if (typeof global.Response === 'undefined') {
+  global.Response = class Response {
+    constructor(body, init) {
+      this.body = body;
+      this.init = init;
+      this.ok = init?.status ? (init.status >= 200 && init.status < 300) : true;
+      this.status = init?.status || 200;
+    }
+    json() {
+      return Promise.resolve(this.body ? JSON.parse(this.body) : {});
+    }
+  };
+}
 
 jest.mock('@vercel/analytics', () => ({
   track: jest.fn(),
