@@ -110,26 +110,16 @@ export const POST = withApiMiddleware(async (request: NextRequest, { params }: {
       update: data,
       create: { id: version.entityId, ...data }
     });
-  } else if (version.entityType === 'Guest') {
+  } else if (version.entityType === 'Contributor') {
     const data = {
-      firstName: snapshotData.firstName,
-      lastName: snapshotData.lastName,
+      name: snapshotData.name,
       email: snapshotData.email,
       isPlusOne: snapshotData.isPlusOne || false,
+      amount: snapshotData.amount || 0,
+      date: snapshotData.date ? new Date(snapshotData.date) : new Date(),
+      registryItemId: snapshotData.registryItemId,
     };
-    await prisma.guest.upsert({
-      where: { id: version.entityId },
-      update: data,
-      create: { id: version.entityId, ...data }
-    });
-  } else if (version.entityType === 'Rsvp') {
-    const data = {
-      guestId: snapshotData.guestId,
-      attending: snapshotData.attending,
-      mealChoice: snapshotData.mealChoice,
-      dietaryNotes: snapshotData.dietaryNotes,
-    };
-    await prisma.rsvp.upsert({
+    await prisma.contributor.upsert({
       where: { id: version.entityId },
       update: data,
       create: { id: version.entityId, ...data }
