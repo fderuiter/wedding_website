@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
-import { ContentNode } from '@prisma/client';
+import type { ContentNodeDTO } from '@/features/content/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import { apiClient } from '@/lib/admin/apiClient';
 
@@ -29,10 +29,10 @@ export default function ContentDashboardPage() {
     create,
     update,
     remove
-  } = useAdminEntity<ContentNode>('content-nodes');
+  } = useAdminEntity<ContentNodeDTO>('content-nodes');
 
   const [isEditing, setIsEditing] = useState(false);
-  const [currentNode, setCurrentNode] = useState<Partial<ContentNode>>({});
+  const [currentNode, setCurrentNode] = useState<Partial<ContentNodeDTO>>({});
   const [dynamicData, setDynamicData] = useState<{key: string, value: string}[]>([]);
 
   useEffect(() => {
@@ -137,7 +137,7 @@ export default function ContentDashboardPage() {
 
   const currentNodesWithDraft = nodes.map(n => n.id === currentNode.id ? draftNode : n);
   if (!currentNode.id && isEditing) {
-    currentNodesWithDraft.push(draftNode as ContentNode);
+    currentNodesWithDraft.push(draftNode as ContentNodeDTO);
   }
 
   return (

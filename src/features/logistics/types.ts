@@ -1,5 +1,5 @@
-import { ContentNode } from '@prisma/client';
+import { ContentNodeDTO } from '../content/schemas';
 
 export interface ILogisticsRepository {
-  getLogisticsNodes(): Promise<ContentNode[]>;
+  getLogisticsNodes(): Promise<ContentNodeDTO[]>;
 }

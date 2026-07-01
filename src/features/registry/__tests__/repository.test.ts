@@ -79,9 +79,15 @@ describe('RegistryRepository', () => {
         quantity: 1,
         isGroupGift: true,
       };
-      (prisma.registryItem.create as jest.Mock).mockResolvedValue({ ...newItemData, id: '2' });
+      (prisma.registryItem.create as jest.Mock).mockResolvedValue({ 
+        ...newItemData, 
+        id: '2', 
+        purchased: false, 
+        amountContributed: 0,
+        contributors: []
+      });
       const item = await registryRepository.createItem(newItemData);
-      expect(item).toEqual({ ...newItemData, id: '2' });
+      expect(item).toEqual({ ...newItemData, id: '2', purchased: false, amountContributed: 0, contributors: [] });
       expect(prisma.registryItem.create).toHaveBeenCalledWith({
         data: {
           ...newItemData,

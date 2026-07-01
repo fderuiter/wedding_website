@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Camera } from 'lucide-react';
 import Script from 'next/script';
 import { contentService } from '@/features/content/service';
+import type { ContentNodeDTO } from '@/features/content/schemas';
 
 export const metadata: Metadata = {
   title: "Photos",
@@ -23,7 +24,7 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered photos page.
  */
 export default async function PhotosPage() {
-  let photoNodes: import('@prisma/client').ContentNode[] = [];
+  let photoNodes: ContentNodeDTO[] = [];
   try {
     photoNodes = await contentService.getPublicPhotos();
   } catch (e) {
@@ -49,7 +50,7 @@ export default async function PhotosPage() {
     "https://lh3.googleusercontent.com/pw/AP1GczNRCQSC2TVH8_X2AzVvddlrHTfto9aLCYtVUVT1VpLItwZSRwAsT7bhag2TeCy4RGxRDjQ3SzKfgLuB4NUdDkOcPB5OYrjhaVLAbwzdspw_EoTL5HdO=w1920-h1080"
   ];
 
-  const urls = photoNodes.length > 0 ? photoNodes.map(n => (n.data as { url: string }).url).filter(Boolean) : defaultUrls;
+  const urls = photoNodes.length > 0 ? photoNodes.map(n => n.data?.url).filter(Boolean) : defaultUrls;
 
   return (
     <main className="container mx-auto px-4 py-8">

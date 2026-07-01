@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import { Attraction } from '@prisma/client';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -20,10 +20,10 @@ L.Icon.Default.mergeOptions({
 /**
  * @interface ThingsToDoMapProps
  * @description Defines the props for the ThingsToDoMap component.
- * @property {Attraction[]} attractions - An array of attraction objects to be displayed as markers on the map.
+ * @property {AttractionDTO[]} attractions - An array of attraction objects to be displayed as markers on the map.
  */
 interface ThingsToDoMapProps {
-  attractions: Attraction[];
+  attractions: AttractionDTO[];
 }
 
 /**

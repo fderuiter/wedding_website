@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import WeddingPartyCard from './WeddingPartyCard';
-import { WeddingPartyMember } from '@prisma/client';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 
 interface WeddingPartyListProps {
-  members: WeddingPartyMember[];
+  members: WeddingPartyMemberDTO[];
 }
 
 const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMembers }) => {

@@ -1,70 +1,73 @@
 import { prisma } from '@/lib/prisma';
 import type { IContentRepository } from './types';
-import { ContentNode, AppConfig, Attraction, WeddingPartyMember } from '@prisma/client';
+import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
+import { AttractionSchema, type AttractionDTO } from '@/features/attractions/schemas';
+import { WeddingPartyMemberSchema, type WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 
 export class ContentRepository implements IContentRepository {
   async getFeatures() {
     const config = await prisma.appConfig.findUnique({ where: { id: 'global' } });
-    if (!config || !config.features) return [];
+    if (!config) return [];
     
-    let features: any[] = [];
-    if (typeof config.features === 'string') {
-      try {
-        features = JSON.parse(config.features);
-      } catch(e) {}
-    } else if (Array.isArray(config.features)) {
-      features = config.features;
-    }
-    return features;
+    const parsed = AppConfigSchema.parse(config);
+    return parsed.features || [];
   }
 
-  async updateFeatures(features: any[]): Promise<AppConfig> {
-    return await prisma.appConfig.update({
+  async updateFeatures(features: any[]): Promise<AppConfigDTO> {
+    const updated = await prisma.appConfig.update({
       where: { id: 'global' },
       data: { features }
     });
+    return AppConfigSchema.parse(updated);
   }
 
-  async getAllNodes(): Promise<ContentNode[]> {
-    return await prisma.contentNode.findMany();
+  async getAllNodes(): Promise<ContentNodeDTO[]> {
+    const nodes = await prisma.contentNode.findMany();
+    return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
 
-  async getNodesByType(type: string): Promise<ContentNode[]> {
-    return await prisma.contentNode.findMany({
+  async getNodesByType(type: string): Promise<ContentNodeDTO[]> {
+    const nodes = await prisma.contentNode.findMany({
       where: { type }
     });
+    return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
 
-  async createNode(data: Omit<ContentNode, 'id' | 'createdAt' | 'updatedAt'>): Promise<ContentNode> {
-    return await prisma.contentNode.create({
+  async createNode(data: Omit<ContentNodeDTO, 'id' | 'createdAt' | 'updatedAt'>): Promise<ContentNodeDTO> {
+    const created = await prisma.contentNode.create({
       data: {
         type: data.type,
         tags: data.tags,
         data: data.data || {}
       }
     });
+    return ContentNodeSchema.parse(created);
   }
 
-  async updateNode(id: string, data: Partial<ContentNode>): Promise<ContentNode> {
-    const updateData: any = { ...data };
-    return await prisma.contentNode.update({
+  async updateNode(id: string, data: Partial<ContentNodeDTO>): Promise<ContentNodeDTO> {
+    const updateData = { ...data } as any;
+    const updated = await prisma.contentNode.update({
       where: { id },
       data: updateData
     });
+    return ContentNodeSchema.parse(updated);
   }
 
-  async deleteNode(id: string): Promise<ContentNode> {
-    return await prisma.contentNode.delete({
+  async deleteNode(id: string): Promise<ContentNodeDTO> {
+    const deleted = await prisma.contentNode.delete({
       where: { id }
     });
+    return ContentNodeSchema.parse(deleted);
   }
 
-  async getAttractions(): Promise<Attraction[]> {
-    return await prisma.attraction.findMany();
+  async getAttractions(): Promise<AttractionDTO[]> {
+    const attractions = await prisma.attraction.findMany();
+    return attractions.map(a => AttractionSchema.parse(a));
   }
 
-  async getWeddingPartyMembers(): Promise<WeddingPartyMember[]> {
-    return await prisma.weddingPartyMember.findMany();
+  async getWeddingPartyMembers(): Promise<WeddingPartyMemberDTO[]> {
+    const members = await prisma.weddingPartyMember.findMany();
+    return members.map(m => WeddingPartyMemberSchema.parse(m));
   }
 }
 

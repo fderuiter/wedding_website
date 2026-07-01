@@ -3,12 +3,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
-import { Attraction } from '@prisma/client';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 
 interface ThingsToDoListProps {
-  attractions: Attraction[];
+  attractions: AttractionDTO[];
 }
 
 const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions }) => {
@@ -19,7 +19,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
     selectedCategories,
     setSelectedCategories,
     filteredItems: filteredAttractions,
-  } = useFilter(attractions, useCallback((attraction: Attraction) => attraction.category, []));
+  } = useFilter(attractions, useCallback((attraction: AttractionDTO) => attraction.category, []));
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window !== window.parent) {

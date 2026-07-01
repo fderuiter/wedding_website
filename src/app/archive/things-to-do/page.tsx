@@ -2,6 +2,7 @@ import React from 'react';
 import { Metadata } from 'next';
 import ThingsToDoList from './components/ThingsToDoList';
 import { contentService } from '@/features/content/service';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 
 export const metadata: Metadata = {
   title: "Things to Do",
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered "Things to Do" page.
  */
 export default async function ThingsToDoPage() {
-  let attractions: import('@prisma/client').Attraction[] = [];
+  let attractions: AttractionDTO[] = [];
   try {
     attractions = await contentService.getPublicAttractions();
   } catch (error) {
