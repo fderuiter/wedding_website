@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import WeddingPartyList from '@/components/WeddingPartyList';
-import { prisma } from '@/lib/prisma';
+import { contentService } from '@/features/content/service';
 
 export const metadata: Metadata = {
   title: "Wedding Party",
@@ -22,9 +22,7 @@ export const metadata: Metadata = {
 export default async function WeddingPartyPage() {
   let members: import('@prisma/client').WeddingPartyMember[] = [];
   try {
-    members = await prisma.weddingPartyMember.findMany({
-      orderBy: { order: 'asc' },
-    });
+    members = await contentService.getPublicWeddingPartyMembers();
   } catch (error) {
     console.warn("Database unreachable, using empty members array.");
   }

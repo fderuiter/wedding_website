@@ -41,6 +41,30 @@ export class ContentService {
     });
     return await this.repo.updateFeatures(features);
   }
+
+  async getPublicPhotos() {
+    const nodes = await this.repo.getNodesByType('Photo');
+    // For ContentNodes, apply generic sorting by createdAt descending.
+    // If there is any visibility flag in data, enforce it.
+    return nodes
+      .filter((node) => {
+        const data = node.data as any;
+        return data?.isVisible !== false;
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getPublicAttractions() {
+    const attractions = await this.repo.getAttractions();
+    return attractions
+      .filter((attraction) => attraction.isVisible)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getPublicWeddingPartyMembers() {
+    const members = await this.repo.getWeddingPartyMembers();
+    return members.sort((a, b) => a.order - b.order);
+  }
 }
 
 export const contentService = new ContentService(contentRepository);

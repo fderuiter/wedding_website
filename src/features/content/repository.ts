@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import type { IContentRepository } from './types';
-import { ContentNode, AppConfig } from '@prisma/client';
+import { ContentNode, AppConfig, Attraction, WeddingPartyMember } from '@prisma/client';
 
 export class ContentRepository implements IContentRepository {
   async getFeatures() {
@@ -57,6 +57,14 @@ export class ContentRepository implements IContentRepository {
     return await prisma.contentNode.delete({
       where: { id }
     });
+  }
+
+  async getAttractions(): Promise<Attraction[]> {
+    return await prisma.attraction.findMany();
+  }
+
+  async getWeddingPartyMembers(): Promise<WeddingPartyMember[]> {
+    return await prisma.weddingPartyMember.findMany();
   }
 }
 
