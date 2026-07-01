@@ -122,42 +122,36 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
-  it('handles keyboard activation with Enter and Space', () => {
+  it('is rendered as a native button when clickable for standard keyboard accessibility', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    fireEvent.keyDown(card, { key: 'Enter' });
-    fireEvent.keyDown(card, { key: ' ' });
-
-    expect(mockOnClick).toHaveBeenCalledTimes(2);
+    // It should be rendered as a button to natively support Enter/Space activation
+    expect(card.tagName).toBe('BUTTON');
   });
 
-  it('disables keyboard activation and tabbing when item is purchased', () => {
+  it('renders as a div without tabIndex when item is purchased to disable focus', () => {
     const mockOnClick = jest.fn();
     const purchasedItem = { ...mockItem, purchased: true };
     render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    expect(card).toHaveAttribute('tabIndex', '-1');
-
-    fireEvent.keyDown(card, { key: 'Enter' });
-    fireEvent.keyDown(card, { key: ' ' });
-
-    expect(mockOnClick).not.toHaveBeenCalled();
+    // It should be rendered as a div without tabIndex to prevent tabbing
+    expect(card.tagName).toBe('DIV');
+    expect(card).not.toHaveAttribute('tabIndex');
+    expect(card).not.toHaveAttribute('role', 'button');
   });
 
-  it('disables keyboard activation and tabbing when admin', () => {
+  it('renders as a div without tabIndex when admin to disable focus', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
     const card = screen.getByTestId('registry-card');
 
-    expect(card).toHaveAttribute('tabIndex', '-1');
-
-    fireEvent.keyDown(card, { key: 'Enter' });
-    fireEvent.keyDown(card, { key: ' ' });
-
-    expect(mockOnClick).not.toHaveBeenCalled();
+    // Admin cards have separate buttons, the card itself should not be focusable
+    expect(card.tagName).toBe('DIV');
+    expect(card).not.toHaveAttribute('tabIndex');
+    expect(card).not.toHaveAttribute('role', 'button');
   });
 
   it('shows overlay and badge for claimed item', () => {
