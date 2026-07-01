@@ -49,6 +49,7 @@ const config = {
     '^@/features/(.*)$': '<rootDir>/src/features/$1',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/', '.skip.tsx$'],
+  modulePathIgnorePatterns: ['<rootDir>/.next/'],
   transformIgnorePatterns: [
     '/node_modules/(?!(node-fetch|cheerio|metascraper|metascraper-description|metascraper-image|metascraper-title|@vercel/analytics)/.*)',
   ],
