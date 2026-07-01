@@ -1,13 +1,11 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
 import { Attraction } from '@prisma/client';
-
-const categories = ['all', 'food', 'coffee', 'park', 'museum', 'hotel', 'venue'] as const;
-
-type Category = typeof categories[number];
+import { useFilter } from '@/hooks/useFilter';
+import { CategoryFilter } from '@/components/ui/CategoryFilter';
 
 interface ThingsToDoListProps {
   attractions: Attraction[];
@@ -15,7 +13,13 @@ interface ThingsToDoListProps {
 
 const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions }) => {
   const [attractions, setAttractions] = useState(initialAttractions);
-  const [filter, setFilter] = useState<Category>('all');
+
+  const {
+    categories,
+    selectedCategories,
+    setSelectedCategories,
+    filteredItems: filteredAttractions,
+  } = useFilter(attractions, useCallback((attraction: Attraction) => attraction.category, []));
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window !== window.parent) {
@@ -34,27 +38,14 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
     loading: () => <div className="bg-gray-200 dark:bg-gray-800 animate-pulse w-full h-full" />,
   }), []);
 
-  const filteredAttractions =
-    filter === 'all'
-      ? attractions
-      : attractions.filter((attraction) => attraction.category === filter);
-
   return (
     <div>
       <div className="flex justify-center gap-2 mb-8 flex-wrap print:hidden">
-        {categories.map((category) => (
-          <button
-            key={category}
-            onClick={() => setFilter(category)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-              filter === category
-                ? 'bg-primary text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-primary dark:hover:bg-primary'
-            }`}
-          >
-            {category.charAt(0).toUpperCase() + category.slice(1)}
-          </button>
-        ))}
+        <CategoryFilter
+          categories={categories}
+          selected={selectedCategories}
+          onChange={setSelectedCategories}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" style={{ minHeight: '600px' }}>
