@@ -78,7 +78,6 @@ model RegistryItem {
   quantity          Int
   isGroupGift       Boolean      @default(false)
   purchased         Boolean      @default(false)
-  purchaserName     String?
   amountContributed Float        @default(0)
   contributors      Contributor[]
   createdAt         DateTime     @default(now())

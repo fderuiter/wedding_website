@@ -33,7 +33,7 @@ const mockPurchasedItem: RegistryItem = {
   id: 'item-3',
   name: 'Purchased Item',
   purchased: true,
-  purchaserName: 'Generous Guest',
+  contributors: [{ name: 'Generous Guest', amount: 100, date: '2023-11-01' }],
 };
 
 const mockFundedGroupItem: RegistryItem = {

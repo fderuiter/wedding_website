@@ -20,7 +20,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     vendorUrl: newItemData.vendorUrl || null,
     quantity: Number(newItemData.quantity),
     isGroupGift: newItemData.isGroupGift || false,
-    purchaserName: null,
   });
 
   return NextResponse.json({ message: 'Item added successfully', item: newItem }, { status: 201 });

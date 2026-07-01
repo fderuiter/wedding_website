@@ -45,6 +45,20 @@ async function migrateData() {
     const data = jsonData as RegistryItem[];
     
     for (const item of data) {
+      const contributorsToCreate = item.contributors.map(contributor => ({
+        name: contributor.name,
+        amount: contributor.amount,
+        date: new Date(contributor.date),
+      }));
+
+      if (item.purchaserName && contributorsToCreate.length === 0) {
+        contributorsToCreate.push({
+          name: item.purchaserName,
+          amount: item.amountContributed > 0 ? item.amountContributed : item.price,
+          date: new Date(),
+        });
+      }
+
       // Create the registry item
       const registryItem = await prisma.registryItem.create({
         data: {
@@ -58,14 +72,9 @@ async function migrateData() {
           quantity: item.quantity,
           isGroupGift: item.isGroupGift,
           purchased: item.purchased,
-          purchaserName: item.purchaserName,
           amountContributed: item.amountContributed,
           contributors: {
-            create: item.contributors.map(contributor => ({
-              name: contributor.name,
-              amount: contributor.amount,
-              date: new Date(contributor.date),
-            }))
+            create: contributorsToCreate
           }
         }
       });

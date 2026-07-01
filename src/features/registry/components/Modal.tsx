@@ -194,8 +194,8 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             <p className="text-xl font-semibold text-green-600">
               {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
             </p>
-            {item.purchaserName && !item.isGroupGift && (
-              <p className="text-sm text-gray-600 dark:text-gray-400">Claimed by: {item.purchaserName}</p>
+            {!item.isGroupGift && item.contributors?.length > 0 && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">Claimed by: {item.contributors[0].name}</p>
             )}
             {item.isGroupGift && item.contributors.length > 0 && (
               <>

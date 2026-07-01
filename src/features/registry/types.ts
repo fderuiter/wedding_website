@@ -25,7 +25,6 @@ export interface Contributor {
  * @property {number} quantity - The desired quantity of the item.
  * @property {boolean} isGroupGift - A flag indicating if the item can be contributed to as a group.
  * @property {boolean} purchased - A flag indicating if the item is fully claimed or funded.
- * @property {string | null} [purchaserName] - The name of the person who claimed the item (for non-group gifts).
  * @property {number} amountContributed - The total amount that has been contributed towards the item (for group gifts).
  * @property {Contributor[]} contributors - An array of contributors for a group gift.
  */
@@ -40,7 +39,6 @@ export interface RegistryItem {
   quantity: number;
   isGroupGift: boolean;
   purchased: boolean; // True if fully claimed/funded
-  purchaserName?: string | null; // Name of the person who claimed it (if not group gift)
   amountContributed: number;
   contributors: Contributor[];
 }

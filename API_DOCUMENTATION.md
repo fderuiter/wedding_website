@@ -95,7 +95,6 @@ Retrieves a list of all items in the registry.
         "quantity": 1,
         "isGroupGift": true,
         "purchased": false,
-        "purchaserName": null,
         "amountContributed": 75.00,
         "contributors": [
           {
@@ -142,7 +141,6 @@ Adds a new item to the registry.
       "quantity": 1,
       "isGroupGift": false,
       "purchased": false,
-      "purchaserName": null,
       "amountContributed": 0,
       "contributors": []
     }
@@ -168,7 +166,6 @@ Retrieves a single registry item by its unique ID.
       "quantity": 1,
       "isGroupGift": true,
       "purchased": false,
-      "purchaserName": null,
       "amountContributed": 75.00,
       "contributors": []
     }
@@ -201,7 +198,6 @@ Updates an existing registry item.
       "quantity": 1,
       "isGroupGift": true,
       "purchased": false,
-      "purchaserName": null,
       "amountContributed": 75.00,
       "contributors": []
     }
@@ -237,7 +233,6 @@ Submits a contribution towards a group gift or marks a regular item as purchased
     ```json
     {
       "itemId": "clxfa3tqv0000u8k4h2v3c1x9",
-      "purchaserName": "Another Generous Guest",
       "amount": 50.00
     }
     ```
@@ -245,7 +240,6 @@ Submits a contribution towards a group gift or marks a regular item as purchased
     ```json
     {
       "itemId": "clxfa5z...",
-      "purchaserName": "Thoughtful Friend"
     }
     ```
 
@@ -263,7 +257,6 @@ Submits a contribution towards a group gift or marks a regular item as purchased
       "quantity": 1,
       "isGroupGift": true,
       "purchased": false,
-      "purchaserName": null,
       "amountContributed": 125.00,
       "contributors": []
     }

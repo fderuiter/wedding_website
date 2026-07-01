@@ -49,8 +49,8 @@ export function useRegistry() {
   });
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount }: { itemId: string; purchaserName: string; amount: number }) => {
-      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount });
+    mutationFn: async ({ itemId, name, amount }: { itemId: string; name: string; amount: number }) => {
+      return apiClient.post('/api/registry/contribute', { itemId, name, amount });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
@@ -63,14 +63,14 @@ export function useRegistry() {
             return {
               ...item,
               amountContributed: Math.min(item.price, newAmount),
-              contributors: [...item.contributors, { name: variables.purchaserName, amount: variables.amount, date: new Date().toISOString() }],
+              contributors: [...item.contributors, { name: variables.name, amount: variables.amount, date: new Date().toISOString() }],
               purchased: newAmount >= item.price,
             };
           } else {
             return {
               ...item,
               purchased: true,
-              purchaserName: variables.purchaserName,
+              contributors: [{ name: variables.name, amount: item.price, date: new Date().toISOString() }],
             };
           }
         }) || []);
@@ -161,9 +161,9 @@ export function useRegistry() {
     }
   }, [deleteItem]);
 
-  const handleContribute = useCallback(async (itemId: string, purchaserName: string, amount: number) => {
+  const handleContribute = useCallback(async (itemId: string, name: string, amount: number) => {
     return new Promise<void>((resolve, reject) => {
-      contribute({ itemId, purchaserName, amount }, {
+      contribute({ itemId, name, amount }, {
         onSuccess: () => {
           handleCloseModal();
           alert('Thank you for your contribution!');

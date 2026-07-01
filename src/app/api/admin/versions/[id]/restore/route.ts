@@ -102,7 +102,6 @@ export const POST = withApiMiddleware(async (request: NextRequest, { params }: {
       quantity: snapshotData.quantity || 1,
       isGroupGift: snapshotData.isGroupGift || false,
       purchased: snapshotData.purchased || false,
-      purchaserName: snapshotData.purchaserName,
       amountContributed: snapshotData.amountContributed || 0,
     };
     await prisma.registryItem.upsert({

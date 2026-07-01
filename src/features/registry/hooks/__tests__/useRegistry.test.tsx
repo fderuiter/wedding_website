@@ -42,7 +42,7 @@ const wrapper = (client: QueryClient) => {
 
 const mockItems: RegistryItem[] = [
     { id: '1', name: 'Item 1', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
-    { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', imageUrl: '', description: '' },
+    { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [{ name: 'John Doe', amount: 200, date: new Date().toISOString() }], imageUrl: '', description: '' },
     { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: true, amountContributed: 150, contributors: [], imageUrl: '', description: '' },
 ];
 
@@ -162,7 +162,7 @@ describe('useRegistry', () => {
     expect(fetchSpy).toHaveBeenCalledWith('/api/registry/contribute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 }),
+        body: JSON.stringify({ itemId: '1', name: 'Jane Doe', amount: 50 }),
     });
   });
 
