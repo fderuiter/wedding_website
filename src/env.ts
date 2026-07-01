@@ -4,6 +4,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().url("DATABASE_URL must be a valid URL").min(1, "DATABASE_URL is required"),
   ADMIN_PASSWORD: z.string().min(1, "ADMIN_PASSWORD is required"),
+  HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
 });
 
 // Conditionally skip validation during build (e.g., for Prisma generation without secrets)
@@ -21,6 +22,7 @@ if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD)) {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'dummy-build-password',
+    HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
   };
 } else {
   const parsed = envSchema.safeParse(process.env);

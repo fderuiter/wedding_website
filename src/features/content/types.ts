@@ -1,4 +1,6 @@
 import { ContentNodeDTO, AppConfigDTO } from './schemas';
+import type { AttractionDTO } from '@/features/attractions/schemas';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 
 export interface IContentRepository {
   getFeatures(): Promise<any[]>;
@@ -8,4 +10,7 @@ export interface IContentRepository {
   createNode(data: Omit<ContentNodeDTO, 'id' | 'createdAt' | 'updatedAt'>): Promise<ContentNodeDTO>;
   updateNode(id: string, data: Partial<ContentNodeDTO>): Promise<ContentNodeDTO>;
   deleteNode(id: string): Promise<ContentNodeDTO>;
+  getAttractions(): Promise<AttractionDTO[]>;
+  getWeddingPartyMembers(): Promise<WeddingPartyMemberDTO[]>;
 }
+

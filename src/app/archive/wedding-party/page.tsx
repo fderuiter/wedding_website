@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import WeddingPartyList from '@/components/WeddingPartyList';
-import { weddingPartyRepository } from '@/features/wedding-party/repository';
+import { contentService } from '@/features/content/service';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 export default async function WeddingPartyPage() {
   let members: WeddingPartyMemberDTO[] = [];
   try {
-    members = await weddingPartyRepository.getMembers();
+    members = await contentService.getPublicWeddingPartyMembers();
   } catch (error) {
     console.warn("Database unreachable or invalid data, using empty members array.");
   }

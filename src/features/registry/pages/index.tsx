@@ -6,7 +6,7 @@ import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
 import RegistryCard from '@/features/registry/components/RegistryCard';
 import Modal from '@/features/registry/components/Modal';
-import { CategoryFilter } from '@/features/registry/components/CategoryFilter';
+import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import { PriceRangeFilter } from '@/features/registry/components/PriceRangeFilter';
 import RegistryCardSkeleton from '@/features/registry/components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';

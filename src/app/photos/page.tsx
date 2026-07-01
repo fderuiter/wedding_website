@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import { Camera } from 'lucide-react';
 import Script from 'next/script';
-import { contentRepository } from '@/features/content/repository';
+import { contentService } from '@/features/content/service';
 import type { ContentNodeDTO } from '@/features/content/schemas';
 
 export const metadata: Metadata = {
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default async function PhotosPage() {
   let photoNodes: ContentNodeDTO[] = [];
   try {
-    photoNodes = await contentRepository.getNodesByType('Photo');
+    photoNodes = await contentService.getPublicPhotos();
   } catch (e) {
     console.warn("Could not fetch photo nodes");
   }

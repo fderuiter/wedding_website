@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import type { IContentRepository } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
+import { AttractionSchema, type AttractionDTO } from '@/features/attractions/schemas';
+import { WeddingPartyMemberSchema, type WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 
 export class ContentRepository implements IContentRepository {
   async getFeatures() {
@@ -56,6 +58,16 @@ export class ContentRepository implements IContentRepository {
       where: { id }
     });
     return ContentNodeSchema.parse(deleted);
+  }
+
+  async getAttractions(): Promise<AttractionDTO[]> {
+    const attractions = await prisma.attraction.findMany();
+    return attractions.map(a => AttractionSchema.parse(a));
+  }
+
+  async getWeddingPartyMembers(): Promise<WeddingPartyMemberDTO[]> {
+    const members = await prisma.weddingPartyMember.findMany();
+    return members.map(m => WeddingPartyMemberSchema.parse(m));
   }
 }
 

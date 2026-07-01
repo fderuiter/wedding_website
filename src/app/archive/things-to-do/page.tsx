@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import ThingsToDoList from './components/ThingsToDoList';
-import { attractionsRepository } from '@/features/attractions/repository';
+import { contentService } from '@/features/content/service';
 import type { AttractionDTO } from '@/features/attractions/schemas';
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 export default async function ThingsToDoPage() {
   let attractions: AttractionDTO[] = [];
   try {
-    attractions = await attractionsRepository.getVisibleAttractions();
+    attractions = await contentService.getPublicAttractions();
   } catch (error) {
     console.warn("Database unreachable, using empty attractions array.");
   }

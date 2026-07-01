@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import type { IRegistryRepository } from '@/features/registry/types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
@@ -53,12 +54,12 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User');
     return RegistryItemSchema.parse(item);
   }
 
   /**
    * Updates an existing registry item in the database.
-   * @param {string} id - The unique identifier of the item to update.
    * @param {Partial<RegistryItemDTO>} data - The data to update.
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the updated registry item.
    */
@@ -72,18 +73,19 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User');
     return RegistryItemSchema.parse(item);
   }
 
   /**
    * Deletes a registry item from the database.
-   * @param {string} id - The unique identifier of the item to delete.
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the deleted item.
    */
   async deleteItem(id: string) {
     const item = await prisma.registryItem.delete({
       where: { id }
     });
+    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, 'Guest/User');
     return RegistryItemSchema.parse(item);
   }
 
@@ -132,6 +134,8 @@ export class RegistryRepository implements IRegistryRepository {
           contributors: true
         }
       });
+      
+      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, contribution.name || 'Guest/Contributor', tx);
 
       return RegistryItemSchema.parse(updatedItem);
     });

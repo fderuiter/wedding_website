@@ -7,6 +7,8 @@ import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 
+import { useFilter } from '@/hooks/useFilter';
+
 /**
  * @function useRegistry
  * @description Custom hook for managing registry state and operations.
@@ -101,16 +103,16 @@ export function useRegistry() {
     },
   });
 
-  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
   const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach(item => set.add(item.category));
-    return Array.from(set).sort();
-  }, [items]);
+  const {
+    categories,
+    selectedCategories: categoryFilter,
+    setSelectedCategories: setCategoryFilter,
+    filteredItems: categoryFilteredItems,
+  } = useFilter(items, useCallback((item: RegistryItem) => item.category, []));
 
   const [minPrice, maxPrice] = useMemo(() => {
     if (items.length === 0) return [0, 1000];
@@ -127,14 +129,13 @@ export function useRegistry() {
   }, [minPrice, maxPrice]);
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
-      const inCategory = categoryFilter.length === 0 || categoryFilter.includes(item.category);
+    return categoryFilteredItems.filter(item => {
       const inPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
       const isGroupGift = !showGroupGiftsOnly || item.isGroupGift;
       const isAvailable = !showAvailableOnly || !item.purchased;
-      return inCategory && inPrice && isGroupGift && isAvailable;
+      return inPrice && isGroupGift && isAvailable;
     });
-  }, [items, categoryFilter, priceRange, showGroupGiftsOnly, showAvailableOnly]);
+  }, [categoryFilteredItems, priceRange, showGroupGiftsOnly, showAvailableOnly]);
 
   const visibleItems = useMemo(() => {
     return filteredItems.slice(0, visibleItemsCount);
