@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import { Camera } from 'lucide-react';
 import Script from 'next/script';
-import { prisma } from '@/lib/prisma';
+import { contentService } from '@/features/content/service';
 
 export const metadata: Metadata = {
   title: "Photos",
@@ -25,11 +25,7 @@ export const metadata: Metadata = {
 export default async function PhotosPage() {
   let photoNodes: import('@prisma/client').ContentNode[] = [];
   try {
-    photoNodes = await prisma.contentNode.findMany({
-      where: {
-        type: 'Photo'
-      }
-    });
+    photoNodes = await contentService.getPublicPhotos();
   } catch (e) {
     console.warn("Could not fetch photo nodes");
   }

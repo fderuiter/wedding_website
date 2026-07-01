@@ -1,4 +1,4 @@
-import { ContentNode, AppConfig } from '@prisma/client';
+import { ContentNode, AppConfig, Attraction, WeddingPartyMember } from '@prisma/client';
 
 export interface IContentRepository {
   getFeatures(): Promise<any[]>;
@@ -8,4 +8,7 @@ export interface IContentRepository {
   createNode(data: Omit<ContentNode, 'id' | 'createdAt' | 'updatedAt'>): Promise<ContentNode>;
   updateNode(id: string, data: Partial<ContentNode>): Promise<ContentNode>;
   deleteNode(id: string): Promise<ContentNode>;
+  getAttractions(): Promise<Attraction[]>;
+  getWeddingPartyMembers(): Promise<WeddingPartyMember[]>;
 }
+
