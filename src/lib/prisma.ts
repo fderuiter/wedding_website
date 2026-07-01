@@ -10,7 +10,7 @@ import { env } from '@/env';
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 const createPrismaClient = () => {
-  const connectionString = env.POSTGRES_PRISMA_URL;
+  const connectionString = env.DATABASE_URL;
   const pool = new Pool({ connectionString });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
