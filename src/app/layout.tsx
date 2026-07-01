@@ -5,6 +5,7 @@ import { generateMetadata } from './metadata';
 import { getAppConfig, toPublicAppConfig } from "@/lib/config";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import SetupWizard from "@/components/setup/SetupWizard";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -48,8 +49,10 @@ export default async function RootLayout({
             themeSecondary={config?.themeSecondary}
             themeAccent={config?.themeAccent}
           >
-            <a href="#main-content" className="skip-link">Skip to main content</a>
-            <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
+            <ToastProvider>
+              <a href="#main-content" className="skip-link">Skip to main content</a>
+              <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
+            </ToastProvider>
           </ThemeProvider>
         )}
       </body>
