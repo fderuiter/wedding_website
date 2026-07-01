@@ -7,22 +7,14 @@
   --foreground: theme('colors.foreground');
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-primary: theme('colors.primary');
-  --color-secondary: theme('colors.secondary');
-  --color-accent-from: theme('colors.accent-from');
-  --color-accent-to: theme('colors.accent-to');
-  --color-text-on-primary: theme('colors.text-on-primary');
-  --color-text-on-secondary: theme('colors.text-on-secondary');
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --header-h: 56px; /* Height of sticky header */
+  --header-h: theme('spacing.header'); /* Height of sticky header */
   --scale-factor: 1; /* Fluid scaling multiplier */
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif; /* Consider using Geist font variable if set up */
+  font-family: theme('fontFamily.sans');
 }
 
 input, textarea, select {
@@ -31,10 +23,9 @@ input, textarea, select {
   border-color: theme('colors.border');
 }
 input:focus, textarea:focus, select:focus {
-  border-color: var(--color-primary); /* rose-700 */
-  outline-color: var(--color-primary);
+  border-color: theme('colors.primary');
+  outline-color: theme('colors.primary');
 }
-
 
 /* Utility classes - simplified */
 .text-universal {
@@ -44,10 +35,10 @@ input:focus, textarea:focus, select:focus {
   background: var(--color-background) !important;
 }
 .text-on-primary {
-  color: var(--color-text-on-primary) !important;
+  color: theme('colors.text-on-primary') !important;
 }
 .text-on-secondary {
-  color: var(--color-text-on-secondary) !important;
+  color: theme('colors.text-on-secondary') !important;
 }
 
 /* Smooth scroll behavior with reduced motion respect */
@@ -108,6 +99,6 @@ html:focus-within {
   }
   
   .btn-secondary {
-    @apply inline-flex justify-center items-center px-4 py-2 border-2 border-primary text-primary font-bold rounded-md hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex justify-center items-center px-4 py-2 border-2 border-primary text-primary font-bold rounded-md hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
   }
 }
