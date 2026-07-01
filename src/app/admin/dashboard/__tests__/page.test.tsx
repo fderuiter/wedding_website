@@ -58,8 +58,8 @@ describe('AdminDashboardPage', () => {
     const { unmount } = render(<AdminDashboardPage />);
 
     expect(await screen.findByRole('button', { name: 'Add New Item' })).toBeInTheDocument();
-    expect((await screen.findAllByRole('button', { name: 'Edit' })).length).toBeGreaterThan(0);
-    expect((await screen.findAllByRole('button', { name: 'Delete' })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole('button', { name: 'Edit registry item: Sample Item' })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole('button', { name: 'Delete registry item: Sample Item' })).length).toBeGreaterThan(0);
 
     unmount();
 
@@ -71,8 +71,8 @@ describe('AdminDashboardPage', () => {
     });
 
     expect(screen.queryByRole('button', { name: 'Add New Item' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit registry item: Sample Item' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete registry item: Sample Item' })).not.toBeInTheDocument();
   });
 
   it('renders loading state while fetching items', async () => {
@@ -125,7 +125,7 @@ describe('AdminDashboardPage', () => {
 
     expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete registry item: Sample Item' })[0]);
 
     await waitFor(() => {
       expect(screen.queryByText('Sample Item')).not.toBeInTheDocument();
@@ -157,7 +157,7 @@ describe('AdminDashboardPage', () => {
 
     expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete registry item: Sample Item' })[0]);
 
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith('Failed to delete item');
