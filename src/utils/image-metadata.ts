@@ -58,12 +58,13 @@ export function getLocalImageDimensions(imageUrl: string): ImageDimensions | nul
 
             if (buf[0] !== 0xff) break; // Not a marker
 
+            const markerType = buf[1] as number;
             if (
-              buf[1] >= 0xc0 &&
-              buf[1] <= 0xcf &&
-              buf[1] !== 0xc4 &&
-              buf[1] !== 0xc8 &&
-              buf[1] !== 0xcc
+              markerType >= 0xc0 &&
+              markerType <= 0xcf &&
+              markerType !== 0xc4 &&
+              markerType !== 0xc8 &&
+              markerType !== 0xcc
             ) {
               const sofBuf = Buffer.alloc(9);
               fs.readSync(fd, sofBuf, 0, 9, offset + 2);
