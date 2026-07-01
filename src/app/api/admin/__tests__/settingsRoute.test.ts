@@ -72,6 +72,7 @@ const validConfigData = {
 const updatedConfig = {
   id: 'global',
   ...validConfigData,
+  weddingDate: new Date(validConfigData.weddingDate),
   adminPassword: 'hashed-password',
   features: [],
   createdAt: new Date(),
