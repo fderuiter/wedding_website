@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
 import { getAppConfig } from '@/lib/config';
-import sizeOf from 'image-size';
-import path from 'path';
-import fs from 'fs';
+import { getLocalImageDimensions } from '@/utils/image-metadata';
 
 function interpolateKeywords(templateStr: string, config: any): string[] {
   if (!templateStr) return [];
@@ -12,19 +10,6 @@ function interpolateKeywords(templateStr: string, config: any): string[] {
   return interpolated.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-function getLocalImageDimensions(imageUrl: string) {
-  try {
-    if (imageUrl.startsWith('/')) {
-      const filePath = path.join(process.cwd(), 'public', imageUrl);
-      const buffer = fs.readFileSync(filePath);
-      const dimensions = sizeOf(buffer);
-      return dimensions;
-    }
-  } catch (err) {
-    console.error('Failed to read image dimensions:', err);
-  }
-  return null;
-}
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
