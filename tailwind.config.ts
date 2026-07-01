@@ -31,6 +31,13 @@ const config: Config = {
         secondary: 'var(--color-secondary-text, var(--color-secondary, ' + appTheme.colors.secondary + '))',
         accent: 'var(--color-accent-text, var(--color-accent, ' + appTheme.colors.accent + '))',
       },
+      fontFamily: {
+        sans: appTheme.typography.fontFamily.sans.split(', '),
+        mono: appTheme.typography.fontFamily.mono.split(', '),
+      },
+      spacing: {
+        header: appTheme.spacing.headerHeight,
+      },
     },
   },
   plugins: [],

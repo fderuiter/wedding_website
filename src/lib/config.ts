@@ -1,6 +1,7 @@
 import { prisma } from './prisma';
 import type { AppConfig } from '@prisma/client';
 import { coordinateSchema } from '../utils/validation';
+import { theme } from '../styles/theme';
 
 export type PublicAppConfig = Omit<AppConfig, 'adminPassword'>;
 
@@ -33,9 +34,9 @@ const fallbackAppConfig: LocalAppConfig = {
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
   adminPassword: '',
-  themePrimary: '#000000',
-  themeSecondary: '#ffffff',
-  themeAccent: '#d4af37',
+  themePrimary: theme.colors.primary,
+  themeSecondary: theme.colors.secondary,
+  themeAccent: theme.colors.accent,
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),
