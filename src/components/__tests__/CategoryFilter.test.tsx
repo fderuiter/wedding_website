@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { CategoryFilter } from '../CategoryFilter';
+import { CategoryFilter } from '../ui/CategoryFilter';
 
 describe('CategoryFilter', () => {
   it('renders a checkbox for each category', () => {

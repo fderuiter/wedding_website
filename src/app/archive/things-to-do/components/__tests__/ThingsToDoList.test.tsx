@@ -47,29 +47,28 @@ describe('ThingsToDoList', () => {
     expect(attractionCards.length).toBe(attractions.length);
   });
 
-  it('filters attractions when a category is clicked', async () => {
+  it('filters attractions when a category is toggled', async () => {
     render(<ThingsToDoList attractions={attractions as any} />);
     await screen.findByTestId('things-to-do-map');
 
-    const foodButton = screen.getByText('Food');
-    fireEvent.click(foodButton);
+    const foodCheckbox = screen.getByLabelText('food');
+    fireEvent.click(foodCheckbox);
 
     const foodAttractions = attractions.filter(a => a.category === 'food');
     const attractionCards = screen.getAllByText(/Directions/);
     expect(attractionCards.length).toBe(foodAttractions.length);
   });
 
-  it('shows all attractions when "all" category is clicked', async () => {
+  it('shows all attractions when no categories are selected', async () => {
     render(<ThingsToDoList attractions={attractions as any} />);
     await screen.findByTestId('things-to-do-map');
 
-    // First filter to something else
-    const foodButton = screen.getByText('Food');
-    fireEvent.click(foodButton);
+    // First filter to food
+    const foodCheckbox = screen.getByLabelText('food');
+    fireEvent.click(foodCheckbox);
 
-    // Then click "all"
-    const allButton = screen.getByText('All');
-    fireEvent.click(allButton);
+    // Then uncheck food
+    fireEvent.click(foodCheckbox);
 
     const attractionCards = screen.getAllByText(/Directions/);
     expect(attractionCards.length).toBe(attractions.length);
