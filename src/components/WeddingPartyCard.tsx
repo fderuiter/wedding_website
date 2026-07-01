@@ -1,15 +1,15 @@
 import React from 'react';
 import Image from 'next/image';
-import { WeddingPartyMember } from '@prisma/client';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 import { ExternalLink } from 'lucide-react';
 
 /**
  * @interface WeddingPartyCardProps
  * @description Defines the props for the WeddingPartyCard component.
- * @property {WeddingPartyMember} member - The wedding party member's data to display.
+ * @property {WeddingPartyMemberDTO} member - The wedding party member's data to display.
  */
 interface WeddingPartyCardProps {
-  member: WeddingPartyMember;
+  member: WeddingPartyMemberDTO;
 }
 
 /**

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { coordinateSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { AppConfigSchema } from '@/features/content/schemas';
 
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
@@ -78,5 +79,5 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
 
   revalidatePath('/', 'layout');
 
-  return NextResponse.json(toPublicAppConfig(updatedConfig));
+  return NextResponse.json(toPublicAppConfig(AppConfigSchema.parse(updatedConfig)));
 });

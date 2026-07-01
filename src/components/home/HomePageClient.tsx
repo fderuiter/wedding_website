@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import AddToCalendar from '@/components/AddToCalendar'
 import { CalendarEvent } from '@/utils/calendar'
-import type { ContentNode } from '@prisma/client'
+import type { ContentNodeDTO } from '@/features/content/schemas'
 import type { PublicAppConfig } from '@/lib/config'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
@@ -24,9 +24,9 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
  * @param contentNodes - Optional initial array of CMS content nodes that drive FAQs, logistics, and custom sections.
  * @returns The rendered homepage JSX element.
  */
-export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: PublicAppConfig, contentNodes?: ContentNode[] }) {
+export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: PublicAppConfig, contentNodes?: ContentNodeDTO[] }) {
   const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
-  const [contentNodes, setContentNodes] = useState<ContentNode[]>(initialContentNodes);
+  const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
 
   useEffect(() => {
     // Only listen for messages if inside an iframe
@@ -51,17 +51,15 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
     day: 'numeric',
   });
 
-  const faqs = contentNodes.filter(n => n.type === 'FAQ').map(n => n.data as { question?: string, answer?: string });
-  const logisticsNodes = contentNodes.filter(n => n.type === 'Logistics').map(n => n.data as any);
+  const faqs = contentNodes
+    .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
+    .map(n => n.data);
 
-  let features: any[] = [];
-  try {
-    if (typeof config.features === 'string') {
-      features = JSON.parse(config.features);
-    } else if (Array.isArray(config.features)) {
-      features = config.features;
-    }
-  } catch(e) {}
+  const logisticsNodes = contentNodes
+    .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
+    .map(n => n.data);
+
+  let features = config.features || [];
 
   if (features.length === 0) {
     features = [

@@ -1,11 +1,12 @@
 import { prisma } from './prisma';
-import type { AppConfig } from '@prisma/client';
+import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
+import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { theme } from '../styles/theme';
 
-export type PublicAppConfig = Omit<AppConfig, 'adminPassword'>;
+export type PublicAppConfig = PublicAppConfigDTO;
 
-export type LocalAppConfig = Omit<AppConfig, 'latitude' | 'longitude'> & {
+export type LocalAppConfig = Omit<AppConfigDTO, 'latitude' | 'longitude'> & {
   latitude: string | number;
   longitude: string | number;
 };
@@ -48,7 +49,7 @@ const fallbackAppConfig: LocalAppConfig = {
  * @param config - The full `AppConfig` object
  * @returns The same configuration with the `adminPassword` field removed
  */
-export function toPublicAppConfig(config: AppConfig): PublicAppConfig {
+export function toPublicAppConfig(config: AppConfigDTO): PublicAppConfig {
   const { adminPassword, ...publicConfig } = config;
   return publicConfig;
 }
@@ -129,15 +130,15 @@ async function bootstrapLogisticsNodes() {
  *
  * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
  */
-export async function getAppConfig(): Promise<AppConfig> {
-  let dbConfig: AppConfig | null = null;
+export async function getAppConfig(): Promise<AppConfigDTO> {
+  let dbConfig: AppConfigDTO | null = null;
   try {
-    dbConfig = await prisma.appConfig.findUnique({
+    const rawDbConfig = await prisma.appConfig.findUnique({
       where: { id: 'global' },
     });
 
-    if (!dbConfig) {
-      dbConfig = await prisma.appConfig.create({
+    if (!rawDbConfig) {
+      dbConfig = AppConfigSchema.parse(await prisma.appConfig.create({
         data: { 
           id: 'global',
           venueName: 'Plummer House',
@@ -153,7 +154,9 @@ export async function getAppConfig(): Promise<AppConfig> {
           ogImageUrl: '/images/sunset-embrace.jpg',
           seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
         },
-      });
+      }));
+    } else {
+      dbConfig = AppConfigSchema.parse(rawDbConfig);
     }
 
     await bootstrapLogisticsNodes();
@@ -165,9 +168,9 @@ export async function getAppConfig(): Promise<AppConfig> {
     ? { ...fallbackAppConfig, ...dbConfig }
     : fallbackAppConfig;
 
-  return {
+  return AppConfigSchema.parse({
     ...mergedConfig,
     latitude: coordinateSchema.parse(mergedConfig.latitude),
     longitude: coordinateSchema.parse(mergedConfig.longitude),
-  };
+  });
 }

@@ -1,15 +1,15 @@
 import React from 'react';
 import Image from 'next/image';
-import { Attraction } from '@prisma/client';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 import { MapPin, Globe } from 'lucide-react';
 
 /**
  * @interface ThingsToDoCardProps
  * @description Defines the props for the ThingsToDoCard component.
- * @property {Attraction} attraction - The attraction object containing details to display.
+ * @property {AttractionDTO} attraction - The attraction object containing details to display.
  */
 interface ThingsToDoCardProps {
-  attraction: Attraction;
+  attraction: AttractionDTO;
 }
 
 /**

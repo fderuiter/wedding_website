@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
-import { WeddingPartyMember } from '@prisma/client';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
@@ -28,10 +28,10 @@ export default function WeddingPartyDashboardPage() {
     create,
     update,
     remove
-  } = useAdminEntity<WeddingPartyMember>('wedding-party');
+  } = useAdminEntity<WeddingPartyMemberDTO>('wedding-party');
 
   const [isEditing, setIsEditing] = useState(false);
-  const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMember>>({});
+  const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});
 
   useEffect(() => {
     async function checkAuth() {
@@ -80,7 +80,7 @@ export default function WeddingPartyDashboardPage() {
 
   const currentMembersWithDraft = members.map(m => m.id === currentMember.id ? draftMember : m);
   if (!currentMember.id && isEditing) {
-    currentMembersWithDraft.push(draftMember as WeddingPartyMember);
+    currentMembersWithDraft.push(draftMember as WeddingPartyMemberDTO);
   }
   
   // Sort by order so preview looks right

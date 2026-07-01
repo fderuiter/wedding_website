@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import type { IRegistryRepository, RegistryItem } from '@/features/registry/types';
+import type { IRegistryRepository } from '@/features/registry/types';
+import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
 /**
  * @class RegistryRepository
@@ -9,7 +10,7 @@ import type { IRegistryRepository, RegistryItem } from '@/features/registry/type
 export class RegistryRepository implements IRegistryRepository {
   /**
    * Retrieves all registry items from the database, including their contributors.
-   * @returns {Promise<RegistryItem[]>} A promise that resolves to an array of all registry items.
+   * @returns {Promise<RegistryItemDTO[]>} A promise that resolves to an array of all registry items.
    */
   async getAllItems() {
     const items = await prisma.registryItem.findMany({
@@ -17,16 +18,13 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    // Ensure the return type matches RegistryItem (handling Date vs string for date field if necessary,
-    // though Prisma usually returns Date objects which might need casting or formatting if RegistryItem expects string.
-    // Assuming type compatibility for now based on previous code).
-    return items as unknown as RegistryItem[];
+    return items.map((item: any) => RegistryItemSchema.parse(item));
   }
 
   /**
    * Retrieves a single registry item by its ID, including its contributors.
    * @param {string} id - The unique identifier of the item.
-   * @returns {Promise<RegistryItem | null>} A promise that resolves to the registry item or null if not found.
+   * @returns {Promise<RegistryItemDTO | null>} A promise that resolves to the registry item or null if not found.
    */
   async getItemById(id: string) {
     const item = await prisma.registryItem.findUnique({
@@ -35,15 +33,15 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    return item as unknown as RegistryItem | null;
+    return item ? RegistryItemSchema.parse(item) : null;
   }
 
   /**
    * Creates a new registry item in the database.
-   * @param {Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>} data - The data for the new item.
-   * @returns {Promise<RegistryItem>} A promise that resolves to the newly created registry item.
+   * @param {Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>} data - The data for the new item.
+   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the newly created registry item.
    */
-  async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>) {
+  async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>) {
     const item = await prisma.registryItem.create({
       data: {
         ...data,
@@ -55,16 +53,16 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    return item as unknown as RegistryItem;
+    return RegistryItemSchema.parse(item);
   }
 
   /**
    * Updates an existing registry item in the database.
    * @param {string} id - The unique identifier of the item to update.
-   * @param {Partial<RegistryItem>} data - The data to update.
-   * @returns {Promise<RegistryItem>} A promise that resolves to the updated registry item.
+   * @param {Partial<RegistryItemDTO>} data - The data to update.
+   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the updated registry item.
    */
-  async updateItem(id: string, data: Partial<RegistryItem>) {
+  async updateItem(id: string, data: Partial<RegistryItemDTO>) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { contributors, ...updateData } = data;
     const item = await prisma.registryItem.update({
@@ -74,19 +72,19 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    return item as unknown as RegistryItem;
+    return RegistryItemSchema.parse(item);
   }
 
   /**
    * Deletes a registry item from the database.
    * @param {string} id - The unique identifier of the item to delete.
-   * @returns {Promise<RegistryItem>} A promise that resolves to the deleted item.
+   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the deleted item.
    */
   async deleteItem(id: string) {
     const item = await prisma.registryItem.delete({
       where: { id }
     });
-    return item as unknown as RegistryItem;
+    return RegistryItemSchema.parse(item);
   }
 
   /**
@@ -98,14 +96,14 @@ export class RegistryRepository implements IRegistryRepository {
    * @param {object} contribution - The contribution details.
    * @param {string} contribution.name - The name of the contributor.
    * @param {number} contribution.amount - The amount contributed.
-   * @returns {Promise<RegistryItem>} A promise that resolves to the updated registry item.
+   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the updated registry item.
    * @throws {Error} If the item is not found.
    */
   async contributeToItem(
     itemId: string,
     contribution: { name: string; amount: number }
   ) {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: any) => {
       const item = await tx.registryItem.findUnique({
         where: { id: itemId },
       });
@@ -135,7 +133,7 @@ export class RegistryRepository implements IRegistryRepository {
         }
       });
 
-      return updatedItem as unknown as RegistryItem;
+      return RegistryItemSchema.parse(updatedItem);
     });
   }
 }

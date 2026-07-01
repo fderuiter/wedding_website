@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { checkAdminClient } from '@/utils/adminAuth.client';
-import { Attraction } from '@prisma/client';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
@@ -28,10 +28,10 @@ export default function AttractionsDashboardPage() {
     create,
     update,
     remove
-  } = useAdminEntity<Attraction>('attractions');
+  } = useAdminEntity<AttractionDTO>('attractions');
 
   const [isEditing, setIsEditing] = useState(false);
-  const [currentAttraction, setCurrentAttraction] = useState<Partial<Attraction>>({});
+  const [currentAttraction, setCurrentAttraction] = useState<Partial<AttractionDTO>>({});
 
   useEffect(() => {
     async function checkAuth() {
@@ -47,10 +47,10 @@ export default function AttractionsDashboardPage() {
     try {
       if (currentAttraction.id) {
         await update(currentAttraction.id, currentAttraction);
-        addToast('Attraction updated successfully', 'success');
+        addToast('AttractionDTO updated successfully', 'success');
       } else {
         await create(currentAttraction);
-        addToast('Attraction created successfully', 'success');
+        addToast('AttractionDTO created successfully', 'success');
       }
       setIsEditing(false);
     } catch (e: any) {
@@ -63,7 +63,7 @@ export default function AttractionsDashboardPage() {
     if (!isConfirmed) return;
     try {
       await remove(id);
-      addToast('Attraction deleted successfully', 'success');
+      addToast('AttractionDTO deleted successfully', 'success');
     } catch (e: any) {
       addToast(e.message || 'Error deleting attraction', 'error');
     }
@@ -87,7 +87,7 @@ export default function AttractionsDashboardPage() {
 
   const currentAttractionsWithDraft = attractions.map(a => a.id === currentAttraction.id ? draftAttraction : a);
   if (!currentAttraction.id && isEditing) {
-    currentAttractionsWithDraft.push(draftAttraction as Attraction);
+    currentAttractionsWithDraft.push(draftAttraction as AttractionDTO);
   }
 
   return (
@@ -109,13 +109,13 @@ export default function AttractionsDashboardPage() {
             <button onClick={() => { 
               setCurrentAttraction({ name: '', description: '', image: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true }); 
               setIsEditing(true); 
-            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Attraction</button>
+            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New AttractionDTO</button>
           </div>
         </div>
 
         {isEditing && (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} Attraction</h2>
+            <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} AttractionDTO</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <FormGroup>
                 <Label>Name</Label>

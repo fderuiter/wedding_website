@@ -1,11 +1,11 @@
 import { ILogisticsRepository } from './types';
 import { logisticsRepository } from './repository';
-import { ContentNode } from '@prisma/client';
+import type { ContentNodeDTO } from '../content/schemas';
 
 export class LogisticsService {
   constructor(private readonly repo: ILogisticsRepository) {}
 
-  async getHomepageLogistics(): Promise<ContentNode[]> {
+  async getHomepageLogistics(): Promise<ContentNodeDTO[]> {
     return await this.repo.getLogisticsNodes();
   }
 }

@@ -3,14 +3,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
-import { Attraction } from '@prisma/client';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 
 const categories = ['all', 'food', 'coffee', 'park', 'museum', 'hotel', 'venue'] as const;
 
 type Category = typeof categories[number];
 
 interface ThingsToDoListProps {
-  attractions: Attraction[];
+  attractions: AttractionDTO[];
 }
 
 const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions }) => {

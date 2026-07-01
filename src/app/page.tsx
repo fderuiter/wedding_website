@@ -89,7 +89,7 @@ export default async function HomePage() {
     description: config.venueDescription,
   };
 
-  let contentNodes: import('@prisma/client').ContentNode[] = [];
+  let contentNodes: import('@/features/content/schemas').ContentNodeDTO[] = [];
   try {
     contentNodes = await logisticsService.getHomepageLogistics();
   } catch (error) {

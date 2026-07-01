@@ -1,7 +1,8 @@
 import React from 'react';
 import { Metadata } from 'next';
 import ThingsToDoList from './components/ThingsToDoList';
-import { prisma } from '@/lib/prisma';
+import { attractionsRepository } from '@/features/attractions/repository';
+import type { AttractionDTO } from '@/features/attractions/schemas';
 
 export const metadata: Metadata = {
   title: "Things to Do",
@@ -20,11 +21,9 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered "Things to Do" page.
  */
 export default async function ThingsToDoPage() {
-  let attractions: import('@prisma/client').Attraction[] = [];
+  let attractions: AttractionDTO[] = [];
   try {
-    attractions = await prisma.attraction.findMany({
-      where: { isVisible: true },
-    });
+    attractions = await attractionsRepository.getVisibleAttractions();
   } catch (error) {
     console.warn("Database unreachable, using empty attractions array.");
   }
