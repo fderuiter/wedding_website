@@ -5,6 +5,7 @@ import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
+import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Button } from "@/components/ui/Button";
 import { useOverlay } from "@/hooks/useOverlay";
@@ -153,9 +154,7 @@ export default function SiteManagerPage() {
                       >
                         <div className="flex items-center gap-4">
                           <div className="text-gray-400">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16" />
-                            </svg>
+                            <Icon name="DragHandle" className="h-6 w-6" />
                           </div>
                           <div>
                             <h3 className="font-bold text-xl text-primary">{feature.title || feature.id}</h3>

@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react'
 import Image from 'next/image'
 import { GalleryImage } from './Gallery'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Icon } from '@/components/ui/Icon'
 import { useOverlay } from '@/hooks/useOverlay'
 
 /**
@@ -77,21 +77,21 @@ const Lightbox: React.FC<LightboxProps> = ({
           className="absolute top-4 right-4 text-white hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
           aria-label="Close"
         >
-          <X size="calc(32px * var(--scale-factor))" />
+          <Icon name="X" size="calc(32px * var(--scale-factor))" />
         </button>
         <button
           onClick={onPrev}
           className="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
           aria-label="Previous image"
         >
-          <ChevronLeft size="calc(48px * var(--scale-factor))" />
+          <Icon name="ChevronLeft" size="calc(48px * var(--scale-factor))" />
         </button>
         <button
           onClick={onNext}
           className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
           aria-label="Next image"
         >
-          <ChevronRight size="calc(48px * var(--scale-factor))" />
+          <Icon name="ChevronRight" size="calc(48px * var(--scale-factor))" />
         </button>
       </div>
     </div>

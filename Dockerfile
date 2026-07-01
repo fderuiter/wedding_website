@@ -3,11 +3,9 @@ WORKDIR /app
 
 # Builder stage
 FROM base AS builder
-# Install dependencies needed for compiling native modules (bcrypt, re2, prisma)
+# Install dependencies needed for prisma
 RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./

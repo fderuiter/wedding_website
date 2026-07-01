@@ -10,9 +10,6 @@ import './src/env';
  * This configuration includes:
  * - `images.remotePatterns`: A list of allowed hostnames for optimized image loading via `next/image`.
  *   This is a security measure to prevent arbitrary image hosting.
- * - `webpack`: A function to customize the Webpack configuration.
- *   - It excludes the 're2' module from the server-side bundle. 're2' is a native C++
- *     module that can cause issues with serverless environments if not handled as an external dependency.
  */
 const securityHeaders = [
   {
@@ -61,14 +58,6 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'upload.wikimedia.org' },
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
     ],
-  },
-  webpack: (config, { isServer }) => {
-    // Exclude re2 from bundling for server-side code
-    if (isServer) {
-      config.externals.push("re2");
-    }
-    // Important: return the modified config
-    return config;
   },
 };
 

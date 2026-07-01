@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sun, Cloud, CloudRain, CloudSnow, Wind, Droplets, Thermometer } from 'lucide-react';
+import { Icon, IconName } from '@/components/ui/Icon';
 import { apiClient, ApiError } from '../lib/apiClient';
 
 /**
@@ -49,14 +49,14 @@ const getWeatherDescription = (code: number): string => {
 /**
  * Helper function to select an appropriate icon based on the WMO weather code.
  * @param {number} code - The WMO weather code.
- * @returns {React.ReactElement} A Lucide React icon component representing the weather.
+ * @returns {{ name: IconName, color: string }} An object with registry identifier and color for the weather icon.
  */
-const getWeatherIcon = (code: number): React.ReactElement => {
-    if (code <= 1) return <Sun className="text-secondary" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
-    if (code <= 3) return <Cloud className="text-gray-400" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
-    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return <CloudRain className="text-blue-400" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
-    if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return <CloudSnow className="text-sky-300" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
-    return <Cloud className="text-gray-400" style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />;
+const getWeatherIcon = (code: number): { name: IconName, color: string } => {
+    if (code <= 1) return { name: "Sun", color: "text-secondary" };
+    if (code <= 3) return { name: "Cloud", color: "text-gray-400" };
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: "CloudRain", color: "text-blue-400" };
+    if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: "CloudSnow", color: "text-sky-300" };
+    return { name: "Cloud", color: "text-gray-400" };
 };
 
 /**
@@ -111,7 +111,7 @@ const Forecast: React.FC = () => {
         >
             <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="text-center md:text-left">
-                    {today.icon}
+                    <Icon name={today.icon.name} className={today.icon.color} style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />
                     <p className="text-2xl font-bold mt-2">{today.description}</p>
                 </div>
                 <div className="text-center">
@@ -126,17 +126,17 @@ const Forecast: React.FC = () => {
 
             <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
                 <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-                    <Droplets className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
+                    <Icon name="Droplets" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
                     <p className="font-bold mt-1">Precipitation</p>
                     <p className="text-lg">{today.precipitation}%</p>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-                    <Wind className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
+                    <Icon name="Wind" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
                     <p className="font-bold mt-1">Wind</p>
                     <p className="text-lg">{today.windSpeed} mph</p>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-                    <Thermometer className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
+                    <Icon name="Thermometer" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
                     <p className="font-bold mt-1">Feels Like</p>
                     <p className="text-lg">{today.feelsLikeHigh}°</p>
                 </motion.div>

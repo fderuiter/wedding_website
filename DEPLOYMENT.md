@@ -46,4 +46,4 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
 
 ## Multi-platform Builds
 
-The included `Dockerfile` and `deploy.yml` are configured for multi-platform architectures (`linux/amd64` and `linux/arm64`). The build environment includes all necessary system-level libraries (`python3`, `make`, `g++`, `openssl`) to compile native modules such as `bcrypt` and `re2` safely across platforms.
+The included `Dockerfile` and `deploy.yml` are configured for multi-platform architectures (`linux/amd64` and `linux/arm64`). The build environment includes necessary system-level libraries (`openssl`) to support the application architecture safely across platforms.

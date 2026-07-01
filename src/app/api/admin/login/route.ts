@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import { verifyPassword } from '@/utils/password';
 import { signAdminToken } from '@/utils/adminAuth.server';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -19,7 +19,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(400, 'Invalid password format.');
   }
 
-  const isMatch = await bcrypt.compare(password, adminPassword);
+  const isMatch = await verifyPassword(password, adminPassword);
 
   if (!isMatch) {
     throw new ApiError(401, 'Invalid password.');

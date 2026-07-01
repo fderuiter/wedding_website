@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
-import { Camera } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 import Script from 'next/script';
 import { contentService } from '@/features/content/service';
 import type { ContentNodeDTO } from '@/features/content/schemas';
@@ -73,7 +73,7 @@ export default async function PhotosPage() {
         <Link href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
           target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
             View Full Album
-            <Camera className="w-5 h-5" />
+            <Icon name="Camera" className="w-5 h-5" />
         </Link>
       </div>
     </main>

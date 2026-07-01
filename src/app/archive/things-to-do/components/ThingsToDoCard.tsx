@@ -1,7 +1,7 @@
 import React from 'react';
 import Image from 'next/image';
 import type { AttractionDTO } from '@/features/attractions/schemas';
-import { MapPin, Globe } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 
 /**
  * @interface ThingsToDoCardProps
@@ -41,7 +41,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
             rel="noopener noreferrer"
             className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
           >
-            <Globe size={18} className="mr-2" />
+            <Icon name="Globe" size={18} className="mr-2" />
             Website
           </a>
           <a
@@ -50,7 +50,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
             rel="noopener noreferrer"
             className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
           >
-            <MapPin size={18} className="mr-2" />
+            <Icon name="MapPin" size={18} className="mr-2" />
             Directions
           </a>
         </div>

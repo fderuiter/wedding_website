@@ -9,8 +9,8 @@ import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 describe('Admin API routes', () => {
   beforeEach(() => {
-    // Hash for 'secret' generated with bcrypt
-    process.env.ADMIN_PASSWORD = '$2b$10$HYiV4HBBMU9iB5GEaeWV2u0Yt51iTwj4Hm7tlNR7OQuzAL7F8uNUO';
+    // Hash for 'secret' generated with native scrypt
+    process.env.ADMIN_PASSWORD = 'scrypt:8R6mvU36W2Cqp3C8vq+r1g==:XlhFCFplIJUauzo9FzPUPVgA5458RRwbTpQtFCRWjoLN4AI6VCH76jOksMQdQX/5f45ALowp67Xxo58mFrcb3g==';
     resetRateLimitsForTesting();
   });
 

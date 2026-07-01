@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image';
-import { X, Loader2 } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 import { useOverlay } from '@/hooks/useOverlay';
 import { validateContributeInput } from '@/utils/validation';
 
@@ -86,7 +86,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
           onClick={onClose}
           aria-label="Close modal"
         >
-          <X className="w-6 h-6" />
+          <Icon name="X" className="w-6 h-6" />
         </button>
         <div className="relative w-full h-64 mb-4">
           <Image
@@ -181,7 +181,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
+                  <Icon name="Loader2" className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
                   Processing...
                 </>
               ) : (
