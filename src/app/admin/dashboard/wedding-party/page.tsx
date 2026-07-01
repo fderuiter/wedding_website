@@ -6,6 +6,8 @@ import { WeddingPartyMember } from '@prisma/client';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+import { Button } from "@/components/ui/Button";
+import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 
 /**
  * Render the admin CRUD interface and live archive preview for wedding-party members.
@@ -63,8 +65,8 @@ export default function WeddingPartyDashboardPage() {
     }
   };
 
-  if (loading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
-  if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error}</p></main>;
+  if (loading) return <div className="min-h-[50vh] flex items-center justify-center"><p>Loading...</p></div>;
+  if (error) return <div className="min-h-[50vh] flex items-center justify-center"><p className="text-red-500">Error: {error}</p></div>;
 
   const draftMember = {
     id: currentMember.id || 'draft',
@@ -99,11 +101,10 @@ export default function WeddingPartyDashboardPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-extrabold text-primary">Wedding Party Studio</h1>
           <div>
-            <button onClick={() => router.push('/admin/dashboard')} className="mr-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
-            <button onClick={() => { 
+            <Button onClick={() => { 
               setCurrentMember({ name: '', role: '', bio: '', photo: '', link: '', order: 0 }); 
               setIsEditing(true); 
-            }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary transition">Add New Member</button>
+            }}>Add New Member</Button>
           </div>
         </div>
 
@@ -111,34 +112,34 @@ export default function WeddingPartyDashboardPage() {
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">{currentMember.id ? 'Edit' : 'Create'} Member</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-semibold mb-1">Name</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentMember.name || ''} onChange={e => setCurrentMember({...currentMember, name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Role</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentMember.role || ''} onChange={e => setCurrentMember({...currentMember, role: e.target.value})} />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold mb-1">Bio</label>
-                <textarea className="w-full border rounded p-2 text-black" value={currentMember.bio || ''} onChange={e => setCurrentMember({...currentMember, bio: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Photo URL</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentMember.photo || ''} onChange={e => setCurrentMember({...currentMember, photo: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Social Link</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentMember.link || ''} onChange={e => setCurrentMember({...currentMember, link: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Order</label>
-                <input type="number" className="w-full border rounded p-2 text-black" value={currentMember.order || 0} onChange={e => setCurrentMember({...currentMember, order: parseInt(e.target.value) || 0})} />
-              </div>
+              <FormGroup>
+                <Label>Name</Label>
+                <Input type="text" value={currentMember.name || ''} onChange={e => setCurrentMember({...currentMember, name: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Role</Label>
+                <Input type="text" value={currentMember.role || ''} onChange={e => setCurrentMember({...currentMember, role: e.target.value})} />
+              </FormGroup>
+              <FormGroup className="md:col-span-2">
+                <Label>Bio</Label>
+                <Textarea value={currentMember.bio || ''} onChange={e => setCurrentMember({...currentMember, bio: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Photo URL</Label>
+                <Input type="text" value={currentMember.photo || ''} onChange={e => setCurrentMember({...currentMember, photo: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Social Link</Label>
+                <Input type="text" value={currentMember.link || ''} onChange={e => setCurrentMember({...currentMember, link: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Order</Label>
+                <Input type="number" value={currentMember.order || 0} onChange={e => setCurrentMember({...currentMember, order: parseInt(e.target.value) || 0})} />
+              </FormGroup>
             </div>
             <div className="flex gap-4 mt-6">
-              <button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Save</button>
-              <button onClick={() => setIsEditing(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+              <Button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">Save</Button>
+              <Button onClick={() => setIsEditing(false)} variant="ghost">Cancel</Button>
             </div>
           </div>
         )}
@@ -157,11 +158,11 @@ export default function WeddingPartyDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex flex-col gap-2">
-                <button onClick={() => { 
+                <Button variant="secondary" size="sm" onClick={() => { 
                   setCurrentMember(member); 
                   setIsEditing(true); 
-                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(member.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
+                }}>Edit</Button>
+                <Button variant="danger" size="sm" onClick={() => handleDelete(member.id)}>Delete</Button>
               </div>
             </div>
           ))}
