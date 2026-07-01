@@ -6,6 +6,8 @@ import { apiClient } from '@/lib/admin/apiClient';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 import { useToast } from "@/components/ui/ToastProvider";
+import { Button } from "@/components/ui/Button";
+import { useOverlay } from "@/hooks/useOverlay";
 
 export default function SiteManagerPage() {
   const router = useRouter();
@@ -17,6 +19,8 @@ export default function SiteManagerPage() {
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customTitle, setCustomTitle] = useState("");
   const [customContent, setCustomContent] = useState("");
+
+  const { overlayRef, handleBackdropClick } = useOverlay(showCustomModal, () => setShowCustomModal(false));
 
   useEffect(() => {
     async function init() {
@@ -117,13 +121,12 @@ export default function SiteManagerPage() {
   if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
 
   return (
-    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-4 sm:px-6">
+    <div className="py-10">
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
           <div className="space-x-4">
-            <button onClick={() => setShowCustomModal(true)} className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary transition">Add Custom Section</button>
-            <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">Back to Dashboard</button>
+            <Button onClick={() => setShowCustomModal(true)} variant="secondary">Add Custom Section</Button>
           </div>
         </div>
 
@@ -160,17 +163,18 @@ export default function SiteManagerPage() {
                           </div>
                         </div>
                         <div>
-                          <button 
+                          <Button 
                             type="button"
                             onClick={(e) => {
                               // Stop propagation so it doesn't trigger drag
                               e.stopPropagation();
                               toggleVisibility(feature.id);
                             }} 
-                            className={`px-4 py-2 rounded text-sm font-bold ${feature.visible ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+                            variant={feature.visible ? 'outline' : 'ghost'}
+                            className={`px-4 py-2 rounded text-sm font-bold ${feature.visible ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}
                           >
                             {feature.visible ? 'Visible' : 'Hidden'}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     )}
@@ -183,9 +187,18 @@ export default function SiteManagerPage() {
         </DragDropContext>
 
         {showCustomModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl max-w-lg w-full">
-              <h2 className="text-2xl font-bold mb-4 text-primary">Add Custom Section</h2>
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={handleBackdropClick}
+          >
+            <div 
+              ref={overlayRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-title"
+              className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl max-w-lg w-full"
+            >
+              <h2 id="modal-title" className="text-2xl font-bold mb-4 text-primary">Add Custom Section</h2>
               <div className="space-y-4">
                 <FormGroup>
                   <Label>Section Title</Label>
@@ -196,14 +209,14 @@ export default function SiteManagerPage() {
                   <Textarea value={customContent} onChange={e => setCustomContent(e.target.value)} rows={5} placeholder="Add your content here... Use double line breaks for paragraphs." />
                 </FormGroup>
                 <div className="flex gap-4 mt-6">
-                  <button onClick={addCustomSection} className="flex-1 bg-green-600 text-white px-4 py-2 rounded font-bold">Save Section</button>
-                  <button onClick={() => setShowCustomModal(false)} className="flex-1 bg-gray-400 text-white px-4 py-2 rounded font-bold">Cancel</button>
+                  <Button onClick={addCustomSection} className="flex-1 bg-green-600 hover:bg-green-700">Save Section</Button>
+                  <Button onClick={() => setShowCustomModal(false)} variant="ghost" className="flex-1">Cancel</Button>
                 </div>
               </div>
             </div>
           </div>
         )}
       </div>
-    </main>
+    </div>
   );
 }
