@@ -33,9 +33,8 @@ export interface RegistryCardProps {
 const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onEdit, onDelete }) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
-  // Updated card styling, removed dark mode, updated focus ring
   const isClickable = !isClaimed && !isAdmin;
-  const cardClasses = `border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-within:ring-4 focus-within:ring-primary outline-none ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
+  const cardClasses = `border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -47,20 +46,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     onDelete?.(item.id);
   };
 
-  const Wrapper = isAdmin ? 'div' : Interactive3DCard;
-
-  return (
-    <Wrapper className="h-full">
-      <div
-        className={`${cardClasses} h-full`}
-        onClick={isClickable ? () => onClick(item) : undefined}
-        style={{ cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' }}
-        data-testid="registry-card"
-        tabIndex={isClickable ? 0 : -1}
-        aria-label={`${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`}
-        role={isClickable ? 'button' : undefined}
-        onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(item); } : undefined}
-      >
+  const innerContent = (
+    <>
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-2xl">
@@ -70,7 +57,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-2xl"> {/* Added a wrapper for layout */}
+      <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-2xl">
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
@@ -83,12 +70,6 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           alt={item.name}
           className="object-contain relative z-10" // Prevent cropping
           fill // Use fill layout
-          // Added sizes prop for performance optimization
-          // Matches grid layout:
-          // < 640px: 1 col (100vw)
-          // 640-768px: 2 cols (50vw)
-          // 768-1280px: 3 cols (33vw)
-          // > 1280px: 4 cols (25vw)
           sizes="(max-width: 639px) 100vw, (max-width: 767px) 50vw, (max-width: 1279px) 33vw, 25vw"
           loading="lazy"
           onError={(e) => {
@@ -100,20 +81,15 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         />
       </div>
       <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
-        {/* Updated heading color */}
         <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
-        {/* Updated text color */}
         <p className="text-base text-gray-600 dark:text-gray-300 mb-1 font-medium">{item.category}</p>
-        {/* Updated price color */}
         <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">$ {item.price.toFixed(2)}</p>
         {item.isGroupGift && !isClaimed && (
-          // Updated group gift text color
           <p className="text-base text-secondary mt-1 font-semibold">
             Group Gift: <span className="font-bold">${item.amountContributed.toFixed(2)}</span> contributed
           </p>
         )}
         {isClaimed && (
-          // Updated claimed text color
           <p className="text-base text-green-700 font-semibold mt-1">
             {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
           </p>
@@ -122,14 +98,14 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           <div className="absolute bottom-4 right-4 flex gap-2 z-20">
             <button
               onClick={handleEdit}
-              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 focus-visible:ring-2 focus-visible:ring-primary outline-none"
               aria-label={`Edit ${item.name}`}
             >
               Edit
             </button>
             <button
               onClick={handleDelete}
-              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 focus-visible:ring-2 focus-visible:ring-primary outline-none"
               aria-label={`Delete ${item.name}`}
             >
               Delete
@@ -137,8 +113,28 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           </div>
         )}
       </div>
-      </div>
-    </Wrapper>
+    </>
+  );
+
+  const commonProps = {
+    className: `${cardClasses} h-full`,
+    style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' },
+    'data-testid': "registry-card",
+    'aria-label': `${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`,
+  };
+
+  if (isAdmin) {
+    return <div {...commonProps}>{innerContent}</div>;
+  }
+
+  return (
+    <Interactive3DCard
+      as={isClickable ? 'button' : 'div'}
+      {...commonProps}
+      onClick={isClickable ? () => onClick(item) : undefined}
+    >
+      {innerContent}
+    </Interactive3DCard>
   );
 };
 
