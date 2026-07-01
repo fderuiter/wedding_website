@@ -6,6 +6,8 @@ import { Attraction } from '@prisma/client';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+import { FormGroup, Label, Input, Textarea, Select, Checkbox } from "@/components/ui/forms";
+import { useToast } from "@/components/ui/ToastProvider";
 
 /**
  * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
@@ -16,6 +18,7 @@ import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
  */
 export default function AttractionsDashboardPage() {
   const router = useRouter();
+  const { addToast, confirm } = useToast();
 
   const {
     data: attractions,
@@ -44,21 +47,25 @@ export default function AttractionsDashboardPage() {
     try {
       if (currentAttraction.id) {
         await update(currentAttraction.id, currentAttraction);
+        addToast('Attraction updated successfully', 'success');
       } else {
         await create(currentAttraction);
+        addToast('Attraction created successfully', 'success');
       }
       setIsEditing(false);
     } catch (e: any) {
-      alert(e.message || 'Error saving attraction');
+      addToast(e.message || 'Error saving attraction', 'error');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this attraction?')) return;
+    const isConfirmed = await confirm('Are you sure you want to delete this attraction?');
+    if (!isConfirmed) return;
     try {
       await remove(id);
+      addToast('Attraction deleted successfully', 'success');
     } catch (e: any) {
-      alert(e.message || 'Error deleting attraction');
+      addToast(e.message || 'Error deleting attraction', 'error');
     }
   };
 
@@ -110,51 +117,51 @@ export default function AttractionsDashboardPage() {
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} Attraction</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-semibold mb-1">Name</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentAttraction.name || ''} onChange={e => setCurrentAttraction({...currentAttraction, name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Category</label>
-                <select className="w-full border rounded p-2 text-black" value={currentAttraction.category || 'food'} onChange={e => setCurrentAttraction({...currentAttraction, category: e.target.value})}>
+              <FormGroup>
+                <Label>Name</Label>
+                <Input type="text" value={currentAttraction.name || ''} onChange={e => setCurrentAttraction({...currentAttraction, name: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Category</Label>
+                <Select value={currentAttraction.category || 'food'} onChange={e => setCurrentAttraction({...currentAttraction, category: e.target.value})}>
                   <option value="food">Food</option>
                   <option value="coffee">Coffee</option>
                   <option value="park">Park</option>
                   <option value="museum">Museum</option>
                   <option value="hotel">Hotel</option>
                   <option value="venue">Venue</option>
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold mb-1">Description</label>
-                <textarea className="w-full border rounded p-2 text-black" value={currentAttraction.description || ''} onChange={e => setCurrentAttraction({...currentAttraction, description: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Image URL</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentAttraction.image || ''} onChange={e => setCurrentAttraction({...currentAttraction, image: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Website URL</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentAttraction.website || ''} onChange={e => setCurrentAttraction({...currentAttraction, website: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Directions URL</label>
-                <input type="text" className="w-full border rounded p-2 text-black" value={currentAttraction.directions || ''} onChange={e => setCurrentAttraction({...currentAttraction, directions: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1 flex items-center gap-2">
-                  <input type="checkbox" checked={currentAttraction.isVisible !== false} onChange={e => setCurrentAttraction({...currentAttraction, isVisible: e.target.checked})} />
+                </Select>
+              </FormGroup>
+              <FormGroup className="md:col-span-2">
+                <Label>Description</Label>
+                <Textarea value={currentAttraction.description || ''} onChange={e => setCurrentAttraction({...currentAttraction, description: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Image URL</Label>
+                <Input type="text" value={currentAttraction.image || ''} onChange={e => setCurrentAttraction({...currentAttraction, image: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Website URL</Label>
+                <Input type="text" value={currentAttraction.website || ''} onChange={e => setCurrentAttraction({...currentAttraction, website: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Directions URL</Label>
+                <Input type="text" value={currentAttraction.directions || ''} onChange={e => setCurrentAttraction({...currentAttraction, directions: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label className="flex items-center gap-2">
+                  <Checkbox checked={currentAttraction.isVisible !== false} onChange={e => setCurrentAttraction({...currentAttraction, isVisible: e.target.checked})} />
                   Is Visible
-                </label>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Latitude</label>
-                <input type="number" step="any" className="w-full border rounded p-2 text-black" value={currentAttraction.latitude || 0} onChange={e => setCurrentAttraction({...currentAttraction, latitude: parseFloat(e.target.value)})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Longitude</label>
-                <input type="number" step="any" className="w-full border rounded p-2 text-black" value={currentAttraction.longitude || 0} onChange={e => setCurrentAttraction({...currentAttraction, longitude: parseFloat(e.target.value)})} />
-              </div>
+                </Label>
+              </FormGroup>
+              <FormGroup>
+                <Label>Latitude</Label>
+                <Input type="number" step="any" value={currentAttraction.latitude || 0} onChange={e => setCurrentAttraction({...currentAttraction, latitude: parseFloat(e.target.value)})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Longitude</Label>
+                <Input type="number" step="any" value={currentAttraction.longitude || 0} onChange={e => setCurrentAttraction({...currentAttraction, longitude: parseFloat(e.target.value)})} />
+              </FormGroup>
             </div>
             <div className="flex gap-4 mt-6">
               <button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Save</button>
