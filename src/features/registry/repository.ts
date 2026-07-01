@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import type { IRegistryRepository, RegistryItem } from '@/features/registry/types';
 
 /**
@@ -55,6 +56,9 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
+    
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User');
+    
     return item as unknown as RegistryItem;
   }
 
@@ -74,6 +78,9 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
+    
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User');
+    
     return item as unknown as RegistryItem;
   }
 
@@ -86,6 +93,9 @@ export class RegistryRepository implements IRegistryRepository {
     const item = await prisma.registryItem.delete({
       where: { id }
     });
+    
+    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, 'Guest/User');
+    
     return item as unknown as RegistryItem;
   }
 
@@ -134,6 +144,8 @@ export class RegistryRepository implements IRegistryRepository {
           contributors: true
         }
       });
+      
+      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, contribution.name || 'Guest/Contributor', tx);
 
       return updatedItem as unknown as RegistryItem;
     });

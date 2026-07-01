@@ -11,6 +11,11 @@ jest.mock('@/lib/prisma', () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    snapshotVersion: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     $transaction: jest.fn(),
   },
 }));
@@ -124,6 +129,11 @@ describe('RegistryRepository', () => {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
         },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
       };
       (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
 

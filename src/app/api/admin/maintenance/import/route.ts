@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { createAuditSnapshot } from '@/lib/audit';
 
 function reviveDates(obj: any): any {
   if (obj === null || obj === undefined) return obj;
@@ -35,18 +36,52 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     await tx.attraction.deleteMany();
     await tx.weddingPartyMember.deleteMany();
     await tx.contentNode.deleteMany();
-    await tx.snapshotVersion.deleteMany();
     await tx.appConfig.deleteMany();
+    
+    // We intentionally DO NOT delete snapshotVersion here, so history is retained across imports.
+    // Also we don't import snapshotVersion from the backup (to avoid duplicating history).
 
     if (data.appConfig?.length) await tx.appConfig.createMany({ data: data.appConfig });
     if (data.contentNode?.length) await tx.contentNode.createMany({ data: data.contentNode });
     if (data.weddingPartyMember?.length) await tx.weddingPartyMember.createMany({ data: data.weddingPartyMember });
     if (data.attraction?.length) await tx.attraction.createMany({ data: data.attraction });
     if (data.registryItem?.length) await tx.registryItem.createMany({ data: data.registryItem });
-    if (data.snapshotVersion?.length) await tx.snapshotVersion.createMany({ data: data.snapshotVersion });
     
     if (data.contributor?.length) await tx.contributor.createMany({ data: data.contributor });
   });
+
+  // Track mass changes in background
+  void (async () => {
+    try {
+      if (data.appConfig?.length) {
+        for (const item of data.appConfig) {
+          await createAuditSnapshot('AppConfig', item.id, item, 'Admin/BulkImport');
+        }
+      }
+      if (data.contentNode?.length) {
+        for (const item of data.contentNode) {
+          await createAuditSnapshot('ContentNode', item.id, item, 'Admin/BulkImport');
+        }
+      }
+      if (data.weddingPartyMember?.length) {
+        for (const item of data.weddingPartyMember) {
+          await createAuditSnapshot('WeddingPartyMember', item.id, item, 'Admin/BulkImport');
+        }
+      }
+      if (data.attraction?.length) {
+        for (const item of data.attraction) {
+          await createAuditSnapshot('Attraction', item.id, item, 'Admin/BulkImport');
+        }
+      }
+      if (data.registryItem?.length) {
+        for (const item of data.registryItem) {
+          await createAuditSnapshot('RegistryItem', item.id, item, 'Admin/BulkImport');
+        }
+      }
+    } catch (e) {
+      console.error('Error during bulk import audit snapshot creation:', e);
+    }
+  })();
 
   return NextResponse.json({ success: true });
 });

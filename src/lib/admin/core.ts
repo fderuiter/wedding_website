@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 
 export class BaseRepository<T extends { id: string }> {
   constructor(public modelName: string) {}
@@ -75,13 +76,6 @@ export class BaseService<T extends { id: string }> {
   }
 
   protected async createSnapshot(entityId: string, data: any, author: string) {
-    await prisma.snapshotVersion.create({
-      data: {
-        entityType: this.entityType,
-        entityId,
-        data,
-        author
-      }
-    });
+    await createAuditSnapshot(this.entityType, entityId, data, author);
   }
 }
