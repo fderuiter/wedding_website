@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  POSTGRES_PRISMA_URL: z.string().url("POSTGRES_PRISMA_URL must be a valid URL").min(1, "POSTGRES_PRISMA_URL is required"),
+  DATABASE_URL: z.string().url("DATABASE_URL must be a valid URL").min(1, "DATABASE_URL is required"),
   ADMIN_PASSWORD: z.string().min(1, "ADMIN_PASSWORD is required"),
 });
 
@@ -15,11 +15,11 @@ const isBuildTime = process.env.npm_lifecycle_event === 'build' ||
 
 let _env: z.infer<typeof envSchema>;
 
-if (isBuildTime && (!process.env.POSTGRES_PRISMA_URL || !process.env.ADMIN_PASSWORD)) {
+if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD)) {
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
-    POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
+    DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'dummy-build-password',
   };
 } else {
