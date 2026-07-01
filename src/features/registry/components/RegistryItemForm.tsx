@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
-import { Loader2 } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 import { validateAddItemInput } from '@/utils/validation';
 import { apiClient } from '@/lib/apiClient';
 
@@ -123,7 +123,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
             >
               {scrapeLoading ? (
                 <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />
                   Importing...
                 </>
               ) : (
@@ -168,7 +168,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       </div>
       {formError && <p className="text-red-500 text-sm mt-2">{formError}</p>}
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
-        {isSubmitting && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
+        {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
         {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
       </button>
     </form>

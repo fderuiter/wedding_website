@@ -1,7 +1,7 @@
 import React from 'react';
 import Image from 'next/image';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
-import { ExternalLink } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 
 /**
  * @interface WeddingPartyCardProps
@@ -44,7 +44,7 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
             className="inline-flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             aria-label={`Learn more about ${member.name}`}
           >
-            Learn more <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
+            Learn more <Icon name="ExternalLink" className="ml-2 h-4 w-4" aria-hidden="true" />
           </a>
         )}
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 
 /**
  * @function BackToTop
@@ -50,7 +50,7 @@ export default function BackToTop() {
         'transition-opacity',
       ].join(' ')}
     >
-      <ArrowUp className="w-4 h-4" />
+      <Icon name="ArrowUp" className="w-4 h-4" />
       Back to top
     </button>
   );

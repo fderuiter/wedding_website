@@ -38,7 +38,6 @@
     "image-size": "^2.0.2",
     "keen-slider": "^6.8.6",
     "leaflet": "^1.9.4",
-    "lucide-react": "^0.563.0",
     "maath": "^0.10.8",
     "next": "^16.2.6",
     "node-html-parser": "^8.0.4",

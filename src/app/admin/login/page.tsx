@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
+import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { apiClient } from '@/lib/admin/apiClient';
 
@@ -69,7 +69,7 @@ export default function LoginPage() {
           href="/"
           className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-primary transition mb-8 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md px-2 py-1"
         >
-          <ArrowLeft size={16} className="mr-2 transition-transform group-hover:-translate-x-1" />
+          <Icon name="ArrowLeft" size={16} className="mr-2 transition-transform group-hover:-translate-x-1" />
           Back to home
         </Link>
 
@@ -125,7 +125,7 @@ export default function LoginPage() {
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary dark:text-gray-500 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
-                {showPassword ? <EyeOff size={22} /> : <Eye size={22} />}
+                {showPassword ? <Icon name="EyeOff" size={22} /> : <Icon name="Eye" size={22} />}
               </button>
             </div>
           </div>
@@ -139,7 +139,7 @@ export default function LoginPage() {
             <span className={loading ? 'opacity-0' : 'opacity-100'}>Login</span>
             {loading && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="animate-spin h-6 w-6" aria-hidden="true" />
+                <Icon name="Loader2" className="animate-spin h-6 w-6" aria-hidden="true" />
               </div>
             )}
           </button>
