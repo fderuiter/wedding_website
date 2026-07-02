@@ -1,22 +1,11 @@
 import React from 'react';
 import { render as tlRender, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
+import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
 import AdminDashboardPage from '../page';
 import type { RegistryItem } from '@/types/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/utils/adminAuth.client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ToastProvider } from '@/components/ui/ToastProvider';
-
-const render = (ui: React.ReactElement) => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return tlRender(
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>{ui}</ToastProvider>
-    </QueryClientProvider>
-  );
-};
 
 // Mock next/navigation's useRouter
 const mockReplace = jest.fn();
@@ -62,13 +51,42 @@ afterEach(() => {
 });
 
 describe('AdminDashboardPage', () => {
+  const renderWithProviders = (ui: React.ReactElement) => {
+    return tlRender(
+      <ToastProvider>
+        <TestWrapper>{ui}</TestWrapper>
+      </ToastProvider>
+    );
+  };
+
+  const TestWrapper = ({ children }: { children: React.ReactNode }) => {
+    const { addToast } = useToast();
+    const queryClient = React.useMemo(() => new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+      mutationCache: new MutationCache({
+        onSuccess: (_data, _variables, _context, mutation) => {
+          if (mutation.meta?.successMessage) addToast(mutation.meta.successMessage as string, 'success');
+        },
+        onError: () => {
+          addToast('Failed to delete item', 'error');
+        }
+      })
+    }), [addToast]);
+
+    return (
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    );
+  };
+
   it('shows admin controls', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => [mockItem],
     });
 
-    const { unmount } = render(<AdminDashboardPage />);
+    const { unmount } = renderWithProviders(<AdminDashboardPage />);
 
     expect(await screen.findByRole('button', { name: 'Add New Item' })).toBeInTheDocument();
     expect((await screen.findAllByRole('button', { name: 'Edit registry item: Sample Item' })).length).toBeGreaterThan(0);
@@ -85,7 +103,7 @@ describe('AdminDashboardPage', () => {
       })
     );
 
-    render(<AdminDashboardPage />);
+    renderWithProviders(<AdminDashboardPage />);
     expect(screen.getByText('Loading items...')).toBeInTheDocument();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
 
@@ -102,7 +120,7 @@ describe('AdminDashboardPage', () => {
   it('shows error when item fetch fails', async () => {
     mockFetch.mockResolvedValueOnce({ ok: false });
 
-    render(<AdminDashboardPage />);
+    renderWithProviders(<AdminDashboardPage />);
 
     expect(await screen.findByText(/Error: API Error/i)).toBeInTheDocument();
   });
@@ -120,20 +138,21 @@ describe('AdminDashboardPage', () => {
       return Promise.reject(new Error(`Unhandled request: ${url}`));
     });
 
-    const originalConfirm = window.confirm;
-    window.confirm = jest.fn().mockReturnValue(true);
-
-    render(<AdminDashboardPage />);
+    renderWithProviders(<AdminDashboardPage />);
 
     expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete registry item: Sample Item' })[0]);
+    
+    // Click custom confirm dialog button
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmButton);
 
     await waitFor(() => {
       expect(screen.queryAllByText('Sample Item').length).toBe(0);
     });
 
-    window.confirm = originalConfirm;
+    expect(await screen.findByText('Deleted registry item successfully.')).toBeInTheDocument();
   });
 
   it('shows error and keeps item when delete fails', async () => {
@@ -147,20 +166,20 @@ describe('AdminDashboardPage', () => {
       return Promise.reject(new Error(`Unhandled request: ${url}`));
     });
 
-    const originalConfirm = window.confirm;
-    window.confirm = jest.fn().mockReturnValue(true);
-
-    render(<AdminDashboardPage />);
+    renderWithProviders(<AdminDashboardPage />);
 
     expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete registry item: Sample Item' })[0]);
 
+    // Click custom confirm dialog button
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmButton);
+
     await waitFor(() => {
-      expect(screen.getAllByText('Sample Item').length).toBeGreaterThan(0);
+      expect(screen.getByText('Failed to delete item')).toBeInTheDocument();
     });
 
-    window.confirm = originalConfirm;
+    expect(screen.getAllByText('Sample Item').length).toBeGreaterThan(0);
   });
 });
-

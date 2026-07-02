@@ -20,11 +20,17 @@ jest.mock('../../components/RegistryItemForm', () => {
   return RegistryItemForm;
 });
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AddRegistryItemPage from '../add-item';
 
 describe('AddRegistryItemPage', () => {
   it('renders the RegistryItemForm', async () => {
-    render(<AddRegistryItemPage />);
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AddRegistryItemPage />
+      </QueryClientProvider>
+    );
     expect(await screen.findByTestId('registry-item-form')).toBeInTheDocument();
   });
 });

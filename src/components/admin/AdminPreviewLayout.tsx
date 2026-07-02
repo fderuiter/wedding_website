@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/ToastProvider";
 import { formatDate } from "@/utils/intl";
 
 interface AdminPreviewLayoutProps {
@@ -24,6 +25,7 @@ export default function AdminPreviewLayout({
   const [viewState, setViewState] = useState<'Live' | 'Draft' | 'Historical'>('Live');
   const [versions, setVersions] = useState<any[]>([]);
   const [showVersions, setShowVersions] = useState(false);
+  const { confirm, addToast } = useToast();
 
   // Send draft updates to the iframe within 500ms
   useEffect(() => {
@@ -63,19 +65,19 @@ export default function AdminPreviewLayout({
   }, [entityId, showVersions, draftType]);
 
   const handleRestore = async (versionId: string) => {
-    if (!confirm("Are you sure you want to restore this version? This will instantly replace the Live content.")) return;
+    if (!(await confirm("Are you sure you want to restore this version? This will instantly replace the Live content."))) return;
     try {
       const res = await fetch(`/api/admin/versions/${versionId}/restore`, { method: 'POST' });
       if (res.ok) {
-        alert("Restored successfully.");
+        addToast("Restored successfully.", "success");
         setShowVersions(false);
         if (onRestore) onRestore();
       } else {
-        alert("Failed to restore.");
+        addToast("Failed to restore.", "error");
       }
     } catch (e) {
       console.error(e);
-      alert("Error restoring.");
+      addToast("Error restoring.", "error");
     }
   };
 

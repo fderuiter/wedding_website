@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { apiClient } from '@/lib/apiClient';
 import { RegistryItem } from '@/features/registry/types';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
 
@@ -21,61 +23,36 @@ export default function EditRegistryItemPage() {
   const params = useParams();
   const itemId = params?.id as string;
 
-  const [itemData, setItemData] = useState<Partial<RegistryItem>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { data: itemData, isLoading: loading, error } = useQuery<RegistryItem, Error>({
+    queryKey: ['registry-item', itemId],
+    queryFn: () => apiClient.get<RegistryItem>(`/api/registry/items/${itemId}`),
+    enabled: !!itemId,
+  });
 
-  useEffect(() => {
-    async function fetchItem() {
-      if (!itemId) {
-        setError('Item ID is missing.');
-        setLoading(false);
-        return;
-      }
-      try {
-        const response = await fetch(`/api/registry/items/${itemId}`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch item: ${response.statusText}`);
-        }
-        const data: RegistryItem = await response.json();
-        setItemData(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      } finally {
-        setLoading(false);
-      }
+  const mutation = useMutation({
+    mutationFn: async (values: Partial<RegistryItem>) => {
+      return apiClient.put(`/api/registry/items/${itemId}`, values);
+    },
+    onSuccess: () => {
+      router.push('/admin/dashboard');
+    },
+    meta: {
+      successMessage: 'Item updated successfully!'
     }
-    fetchItem();
-  }, [itemId]);
+  });
 
   const handleEdit = async (values: Partial<RegistryItem>) => {
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/registry/items/${itemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-      alert('Item updated successfully!');
-      router.push('/admin/dashboard');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update item');
-    } finally {
-      setIsSubmitting(false);
-    }
+    mutation.mutate(values);
   };
 
+  if (!itemId) {
+    return <p className="text-red-500">Error: Item ID is missing.</p>;
+  }
   if (loading) {
     return <p>Loading item data...</p>;
   }
   if (error) {
-    return <p className="text-red-500">Error: {error}</p>;
+    return <p className="text-red-500">Error: {error.message}</p>;
   }
 
   return (
@@ -85,7 +62,7 @@ export default function EditRegistryItemPage() {
         mode="edit"
         initialValues={itemData}
         onSubmit={handleEdit}
-        isSubmitting={isSubmitting}
+        isSubmitting={mutation.isPending}
         submitLabel="Save Changes"
       />
     </div>

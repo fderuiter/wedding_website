@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '@/features/registry/types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
@@ -25,6 +26,7 @@ import { useFilter } from '@/hooks/useFilter';
  */
 export function useRegistry() {
   const queryClient = useQueryClient();
+  const { confirm } = useToast();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(12);
@@ -83,11 +85,14 @@ export function useRegistry() {
       if (context?.previousItems) {
         queryClient.setQueryData(['registry-items'], context.previousItems);
       }
-      alert('Error: Could not process contribution.');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['registry-items'] });
     },
+    meta: {
+      successMessage: 'Thank you for your contribution!',
+      errorMessage: 'Error: Could not process contribution.'
+    }
   });
 
   const { mutate: deleteItem } = useMutation({
@@ -96,11 +101,10 @@ export function useRegistry() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registry-items'] });
-      alert('Item deleted successfully.');
     },
-    onError: (error) => {
-      alert(`Error deleting item: ${error.message}`);
-    },
+    meta: {
+      successMessage: 'Item deleted successfully.'
+    }
   });
 
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
@@ -156,18 +160,17 @@ export function useRegistry() {
     router.push(`/registry/edit-item/${id}`);
   }, [router]);
 
-  const handleDelete = useCallback((id: string) => {
-    if (window.confirm('Are you sure you want to delete this item?')) {
+  const handleDelete = useCallback(async (id: string) => {
+    if (await confirm('Are you sure you want to delete this item?')) {
       deleteItem(id);
     }
-  }, [deleteItem]);
+  }, [deleteItem, confirm]);
 
   const handleContribute = useCallback(async (itemId: string, purchaserName: string, amount: number) => {
     return new Promise<void>((resolve, reject) => {
       contribute({ itemId, purchaserName, amount }, {
         onSuccess: () => {
           handleCloseModal();
-          alert('Thank you for your contribution!');
           resolve();
         },
         onError: (error) => {

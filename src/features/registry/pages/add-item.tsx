@@ -4,6 +4,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
+import { apiClient } from '@/lib/apiClient';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
 import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem type
 
@@ -20,34 +22,22 @@ import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem
  */
 export default function AddRegistryItemPage() {
   const router = useRouter();
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-
-  const handleAdd = async (values: Partial<RegistryItem>) => { // Use Partial<RegistryItem> type
-    setIsSubmitting(true);
-    try {
-      const response = await fetch('/api/registry/add-item', {
-        method: 'POST', // Specify the POST method
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      if (!response.ok) {
-        let errorText = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorText = errorData.error || JSON.stringify(errorData);
-        } catch {}
-        throw new Error(errorText);
-      }
-      alert('Item added successfully!');
+  const mutation = useMutation({
+    mutationFn: async (values: Partial<RegistryItem>) => {
+      return apiClient.post('/api/registry/add-item', values);
+    },
+    onSuccess: () => {
       router.push('/admin/dashboard');
-    } catch (error) {
-      alert(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsSubmitting(false);
+    },
+    meta: {
+      successMessage: 'Item added successfully!'
     }
-  };
+  });
 
+  const handleAdd = async (values: Partial<RegistryItem>) => {
+    mutation.mutate(values);
+  };
 
   return (
     <div className="container mx-auto p-4">
@@ -55,7 +45,7 @@ export default function AddRegistryItemPage() {
       <RegistryItemForm
         mode="add"
         onSubmit={handleAdd}
-        isSubmitting={isSubmitting}
+        isSubmitting={mutation.isPending}
         submitLabel="Add Item"
       />
     </div>

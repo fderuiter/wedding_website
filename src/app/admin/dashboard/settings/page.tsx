@@ -38,7 +38,7 @@ export default function AdminSettingsPage() {
     if (!file) return;
     
     if (file.size > 5 * 1024 * 1024) {
-      alert('File size exceeds 5MB limit');
+      addToast('File size exceeds 5MB limit', 'error');
       return;
     }
 
