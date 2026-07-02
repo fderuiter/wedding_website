@@ -3,6 +3,7 @@ import { RegistryItem } from '@/features/registry/types';
 import { Icon } from '@/components/ui/Icon';
 import { validateAddItemInput } from '@/utils/validation';
 import { apiClient } from '@/lib/apiClient';
+import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/components/ui/forms';
 
 /**
  * Props for the RegistryItemForm component.
@@ -99,78 +100,83 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-lg mx-auto bg-white dark:bg-gray-800 p-6 rounded shadow" data-testid="form">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-gray-800 p-6 rounded shadow" data-testid="form">
       {mode === 'add' && (
-        <div className="mb-4">
-          <label htmlFor="scrapeUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Import from Product URL:</label>
-          <div className="flex gap-2 mt-1">
-            <input
-              type="url"
-              id="scrapeUrl"
-              name="scrapeUrl"
-              value={scrapeUrl}
-              onChange={e => setScrapeUrl(e.target.value)}
-              placeholder="https://..."
-              className="form-input flex-1"
-              disabled={scrapeLoading}
-            />
-            <button
-              type="button"
-              onClick={handleScrape}
-              className="btn-primary"
-              disabled={scrapeLoading || !scrapeUrl}
-              aria-busy={scrapeLoading}
-            >
-              {scrapeLoading ? (
-                <>
-                  <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />
-                  Importing...
-                </>
-              ) : (
-                'Import'
-              )}
-            </button>
-          </div>
-          {scrapeError && <p className="text-red-500 text-sm mt-1">{scrapeError}</p>}
+        <div className="col-span-1 md:col-span-2 mb-2">
+          <FormGroup state={scrapeError ? 'error' : 'default'}>
+            <Label>Import from Product URL:</Label>
+            <div className="flex gap-2 mt-1">
+              <Input
+                type="url"
+                name="scrapeUrl"
+                value={scrapeUrl}
+                onChange={e => setScrapeUrl(e.target.value)}
+                placeholder="https://..."
+                className="flex-1"
+                disabled={scrapeLoading}
+              />
+              <button
+                type="button"
+                onClick={handleScrape}
+                className="btn-primary"
+                disabled={scrapeLoading || !scrapeUrl}
+                aria-busy={scrapeLoading}
+              >
+                {scrapeLoading ? (
+                  <>
+                    <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />
+                    Importing...
+                  </>
+                ) : (
+                  'Import'
+                )}
+              </button>
+            </div>
+            {scrapeError && <FormMessage>{scrapeError}</FormMessage>}
+          </FormGroup>
         </div>
       )}
-      <div>
-        <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Item Name <span className="text-red-500">*</span></label>
-        <input type="text" id="name" name="name" value={values.name || ''} onChange={handleChange} required aria-required="true" className="mt-1 form-input" />
+      <FormGroup>
+        <Label>Item Name <span className="text-red-500">*</span></Label>
+        <Input type="text" name="name" value={values.name || ''} onChange={handleChange} required aria-required="true" />
+      </FormGroup>
+      <FormGroup>
+        <Label>Category <span className="text-red-500">*</span></Label>
+        <Input type="text" name="category" value={values.category || ''} onChange={handleChange} required aria-required="true" />
+      </FormGroup>
+      <FormGroup>
+        <Label>Price ($) <span className="text-red-500">*</span></Label>
+        <Input type="number" name="price" value={values.price ?? ''} onChange={handleChange} step="0.01" required aria-required="true" />
+      </FormGroup>
+      <FormGroup>
+        <Label>Quantity <span className="text-red-500">*</span></Label>
+        <Input type="number" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required aria-required="true" />
+      </FormGroup>
+      <FormGroup>
+        <Label>Image URL:</Label>
+        <Input type="url" name="image" value={values.image || ''} onChange={handleChange} placeholder="https://..." />
+      </FormGroup>
+      <FormGroup>
+        <Label>Vendor/Product URL:</Label>
+        <Input type="url" name="vendorUrl" value={values.vendorUrl || ''} onChange={handleChange} placeholder="https://..." />
+      </FormGroup>
+      <FormGroup className="col-span-1 md:col-span-2">
+        <Label>Description:</Label>
+        <Textarea name="description" value={values.description || ''} onChange={handleChange} rows={3} />
+      </FormGroup>
+      <FormGroup className="col-span-1 md:col-span-2">
+        <div className="flex items-center">
+          <Checkbox name="isGroupGift" checked={!!values.isGroupGift} onChange={handleChange} />
+          <Label className="ml-2 font-normal">Allow Group Gifting?</Label>
+        </div>
+      </FormGroup>
+      <div className="col-span-1 md:col-span-2">
+        {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
+        <button type="submit" className="btn-primary w-full mt-2" disabled={isSubmitting} aria-busy={isSubmitting}>
+          {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
+          {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
+        </button>
       </div>
-      <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description:</label>
-        <textarea id="description" name="description" value={values.description || ''} onChange={handleChange} rows={3} className="mt-1 form-input"></textarea>
-      </div>
-      <div>
-        <label htmlFor="price" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Price ($) <span className="text-red-500">*</span></label>
-        <input type="number" id="price" name="price" value={values.price ?? ''} onChange={handleChange} step="0.01" required aria-required="true" className="mt-1 form-input" />
-      </div>
-      <div>
-        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity <span className="text-red-500">*</span></label>
-        <input type="number" id="quantity" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required aria-required="true" className="mt-1 form-input" />
-      </div>
-      <div>
-        <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category <span className="text-red-500">*</span></label>
-        <input type="text" id="category" name="category" value={values.category || ''} onChange={handleChange} required aria-required="true" className="mt-1 form-input" />
-      </div>
-      <div>
-        <label htmlFor="image" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Image URL:</label>
-        <input type="url" id="image" name="image" value={values.image || ''} onChange={handleChange} placeholder="https://..." className="mt-1 form-input" />
-      </div>
-      <div>
-        <label htmlFor="vendorUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Vendor/Product URL:</label>
-        <input type="url" id="vendorUrl" name="vendorUrl" value={values.vendorUrl || ''} onChange={handleChange} placeholder="https://..." className="mt-1 form-input" />
-      </div>
-      <div className="flex items-center">
-        <input type="checkbox" id="isGroupGift" name="isGroupGift" checked={!!values.isGroupGift} onChange={handleChange} className="h-4 w-4 text-primary border-gray-300 dark:border-gray-600 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2" />
-        <label htmlFor="isGroupGift" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">Allow Group Gifting?</label>
-      </div>
-      {formError && <p className="text-red-500 text-sm mt-2">{formError}</p>}
-      <button type="submit" className="btn-primary w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
-        {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
-        {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
-      </button>
     </form>
   );
 };
