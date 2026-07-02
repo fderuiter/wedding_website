@@ -121,6 +121,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' },
     'data-testid': "registry-card",
     'aria-label': `${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`,
+    tabIndex: 0,
+    role: isClickable ? 'button' : undefined,
   };
 
   if (isAdmin) {
