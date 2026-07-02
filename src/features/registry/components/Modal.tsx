@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon';
 import { useOverlay } from '@/hooks/useOverlay';
 import { validateContributeInput } from '@/utils/validation';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
+import { Button } from '@/components/ui/Button';
 
 /**
  * @interface ModalProps
@@ -169,9 +170,10 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               </FormGroup>
             )}
             {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
-            <button
+            <Button
               type="submit"
-              className="w-full btn-primary"
+              className="w-full"
+              variant="primary"
               disabled={isSubmitting}
               aria-busy={isSubmitting}
             >
@@ -183,7 +185,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
               ) : (
                 item.isGroupGift ? 'Submit Contribution' : 'Claim Gift'
               )}
-            </button>
+            </Button>
           </form>
         ) : (
           <div className="mt-5 pt-4 border-t border-primary text-center">

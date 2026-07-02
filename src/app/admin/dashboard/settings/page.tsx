@@ -273,7 +273,7 @@ export default function AdminSettingsPage() {
             <Button
               type="submit"
               disabled={saving}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              variant="primary"
             >
               {saving ? "Saving..." : "Save Settings"}
             </Button>

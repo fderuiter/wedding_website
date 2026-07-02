@@ -193,9 +193,9 @@ export default function ContentDashboardPage() {
 
             </div>
             <div className="flex gap-4 mt-6">
-              <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white">Save</Button>
+              <Button onClick={handleSave} variant="primary">Save</Button>
               {currentNode.type === 'Photo' && (
-                <Button onClick={handleScrapePhoto} className="bg-blue-600 hover:bg-blue-700 text-white">Scrape Metadata from URL</Button>
+                <Button onClick={handleScrapePhoto} variant="secondary">Scrape Metadata from URL</Button>
               )}
               <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
             </div>
@@ -218,7 +218,7 @@ export default function ContentDashboardPage() {
                   setDynamicData(Object.keys(d).map(k => ({key: k, value: String(d[k])})));
                   setIsEditing(true); 
                 }}>Edit</Button>
-                <Button variant="primary" size="sm" onClick={(e) => handleDelete(node.id, e)}>Delete</Button>
+                <Button variant="danger" size="sm" onClick={(e) => handleDelete(node.id, e)}>Delete</Button>
               </div>
             </div>
           ))}

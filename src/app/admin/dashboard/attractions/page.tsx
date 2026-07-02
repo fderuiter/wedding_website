@@ -40,10 +40,10 @@ export default function AttractionsDashboardPage() {
     try {
       if (currentAttraction.id) {
         await update(currentAttraction.id, currentAttraction);
-        addToast('AttractionDTO updated successfully', 'success');
+        addToast('Attraction updated successfully', 'success');
       } else {
         await create(currentAttraction);
-        addToast('AttractionDTO created successfully', 'success');
+        addToast('Attraction created successfully', 'success');
       }
       setIsEditing(false);
     } catch (e: any) {
@@ -60,7 +60,7 @@ export default function AttractionsDashboardPage() {
     }
     try {
       await remove(id);
-      addToast('AttractionDTO deleted successfully', 'success');
+      addToast('Attraction deleted successfully', 'success');
     } catch (e: any) {
       addToast(e.message || 'Error deleting attraction', 'error');
     }
@@ -112,7 +112,7 @@ export default function AttractionsDashboardPage() {
 
         {isEditing && (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} AttractionDTO</h2>
+            <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} Attraction</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <FormGroup>
                 <Label>Name</Label>
@@ -161,7 +161,7 @@ export default function AttractionsDashboardPage() {
               </FormGroup>
             </div>
             <div className="flex gap-4 mt-6">
-              <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white">Save</Button>
+              <Button onClick={handleSave} variant="primary">Save</Button>
               <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
             </div>
           </div>
