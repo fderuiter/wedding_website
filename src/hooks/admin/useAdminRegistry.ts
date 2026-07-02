@@ -1,6 +1,12 @@
-import { useAdminDomain } from './useAdminDomain';
+import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { RegistryItem } from '@/features/registry/types';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminRegistry() {
-  return useAdminDomain<RegistryItem>('registry', 'registry item', '/api/registry/items');
+  return useEntityOrchestration<RegistryItem>({
+    queryKey: ['admin-registry'],
+    endpoint: '/api/registry/items',
+    entityName: 'registry item',
+    apiClient,
+  });
 }

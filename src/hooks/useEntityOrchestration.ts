@@ -1,36 +1,53 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/features/admin/apiClient';
+import { ApiClient } from '@/lib/apiClient';
 
-export function useAdminDomain<T extends { id: string }>(domain: string, entityName: string, endpointOverride?: string) {
+interface UseEntityOrchestrationOptions<T> {
+  queryKey: string[];
+  endpoint: string;
+  entityName: string;
+  apiClient: ApiClient;
+}
+
+export function useEntityOrchestration<T extends { id: string }>({
+  queryKey,
+  endpoint,
+  entityName,
+  apiClient,
+}: UseEntityOrchestrationOptions<T>) {
   const queryClient = useQueryClient();
-  const queryKey = [`admin-${domain}`];
-  const endpoint = endpointOverride || `/api/admin/${domain}`;
 
-  const { data = [], isLoading: loading, error: queryError } = useQuery<T[], Error>({
+  const {
+    data = [],
+    isLoading,
+    isError,
+    error,
+    refetch: fetchAll,
+  } = useQuery<T[], Error>({
     queryKey,
     queryFn: async () => apiClient.get<T[]>(endpoint),
   });
-
-  const error = queryError ? queryError.message : null;
 
   const { mutateAsync: create } = useMutation({
     mutationFn: async (payload: Partial<T>) => apiClient.post<T>(endpoint, payload),
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
+      const optimisticId = `temp-${Date.now()}-${Math.random()}`;
       if (previousData) {
-        const optimisticItem = { id: `temp-${Date.now()}`, ...payload } as unknown as T;
+        const optimisticItem = { id: optimisticId, ...payload } as unknown as T;
         queryClient.setQueryData<T[]>(queryKey, old => [optimisticItem, ...(old || [])]);
       }
-      return { previousData };
+      return { previousData, optimisticId };
     },
-    onError: (err: any, variables, context) => {
+    onError: (err, variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: (newItem, variables, context) => {
+      queryClient.setQueryData<T[]>(queryKey, old => 
+        old?.map(item => item.id === context?.optimisticId ? newItem : item)
+      );
     },
     meta: {
       successMessage: `Created ${entityName} successfully.`,
@@ -49,13 +66,15 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       }
       return { previousData };
     },
-    onError: (err: any, variables, context) => {
+    onError: (err, variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: (updatedItem) => {
+      queryClient.setQueryData<T[]>(queryKey, old =>
+        old?.map(item => item.id === updatedItem.id ? updatedItem : item)
+      );
     },
     meta: {
       successMessage: `Updated ${entityName} successfully.`,
@@ -72,13 +91,10 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       }
       return { previousData };
     },
-    onError: (err: any, variables, context) => {
+    onError: (err, variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
     },
     meta: {
       successMessage: `Deleted ${entityName} successfully.`,
@@ -96,13 +112,10 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       }
       return { previousData };
     },
-    onError: (err: any, variables, context) => {
+    onError: (err, variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
     },
     meta: {
       successMessage: `Reordered ${entityName} successfully.`,
@@ -111,12 +124,13 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
 
   return {
     data,
-    loading,
+    isLoading,
+    isError,
     error,
+    fetchAll,
     create,
     update: (id: string, payload: Partial<T>) => update({ id, payload }),
     remove,
     reorder,
-    fetchAll: () => queryClient.invalidateQueries({ queryKey })
   };
 }
