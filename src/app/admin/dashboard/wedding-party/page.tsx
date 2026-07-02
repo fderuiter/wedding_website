@@ -8,6 +8,7 @@ import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { Button } from "@/components/ui/Button";
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { useToast } from "@/components/ui/ToastProvider";
 
 /**
  * Render the admin CRUD interface and live preview for wedding-party members.
@@ -20,6 +21,7 @@ import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 export default function WeddingPartyDashboardPage() {
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
+  const { addToast, confirm } = useToast();
   
   const {
     data: members,
@@ -44,20 +46,20 @@ export default function WeddingPartyDashboardPage() {
       }
       setIsEditing(false);
     } catch (e: any) {
-      alert(e.message || 'Error saving member');
+      addToast(e.message || 'Error saving member', 'error');
     }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
     const card = e.currentTarget.closest('.bg-white');
-    if (!confirm('Are you sure you want to delete this member?')) return;
+    if (!(await confirm('Are you sure you want to delete this member?'))) return;
     if (card) {
       captureFocusTarget(card as HTMLElement);
     }
     try {
       await remove(id);
     } catch (e: any) {
-      alert(e.message || 'Error deleting member');
+      addToast(e.message || 'Error deleting member', 'error');
     }
   };
 

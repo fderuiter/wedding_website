@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import '@testing-library/jest-dom';
 import AdminSettingsPage from '../page';
 import { checkAdminClient as mockCheckAdminClient } from '@/utils/adminAuth.client';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -66,8 +67,12 @@ afterEach(() => {
 });
 
 describe('AdminSettingsPage - handleUpload', () => {
+  const renderWithProviders = (ui: React.ReactElement) => {
+    return render(<ToastProvider>{ui}</ToastProvider>);
+  };
+
   it('renders the favicon upload input', async () => {
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -77,7 +82,7 @@ describe('AdminSettingsPage - handleUpload', () => {
   });
 
   it('renders the OG image upload input', async () => {
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -87,7 +92,7 @@ describe('AdminSettingsPage - handleUpload', () => {
   });
 
   it('shows alert and does nothing when no file is selected', async () => {
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -108,10 +113,7 @@ describe('AdminSettingsPage - handleUpload', () => {
   });
 
   it('shows alert and aborts when file exceeds 5MB', async () => {
-    const originalAlert = window.alert;
-    window.alert = jest.fn();
-
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -129,14 +131,14 @@ describe('AdminSettingsPage - handleUpload', () => {
       fireEvent.change(faviconInput);
     });
 
-    expect(window.alert).toHaveBeenCalledWith('File size exceeds 5MB limit');
+    await waitFor(() => {
+      expect(screen.getByText('File size exceeds 5MB limit')).toBeInTheDocument();
+    });
 
     const uploadCalls = mockFetch.mock.calls.filter(
       (call: any[]) => call[0] === '/api/admin/upload'
     );
     expect(uploadCalls).toHaveLength(0);
-
-    window.alert = originalAlert;
   });
 
   it('updates faviconUrl in config state and shows success message on successful upload', async () => {
@@ -153,7 +155,7 @@ describe('AdminSettingsPage - handleUpload', () => {
       return Promise.reject(new Error(`Unhandled: ${url}`));
     });
 
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -190,7 +192,7 @@ describe('AdminSettingsPage - handleUpload', () => {
       return Promise.reject(new Error(`Unhandled: ${url}`));
     });
 
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -227,7 +229,7 @@ describe('AdminSettingsPage - handleUpload', () => {
       return Promise.reject(new Error(`Unhandled: ${url}`));
     });
 
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -261,7 +263,7 @@ describe('AdminSettingsPage - handleUpload', () => {
       return Promise.reject(new Error(`Unhandled: ${url}`));
     });
 
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -302,7 +304,7 @@ describe('AdminSettingsPage - handleUpload', () => {
       return Promise.reject(new Error(`Unhandled: ${url}`));
     });
 
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -330,8 +332,12 @@ describe('AdminSettingsPage - handleUpload', () => {
 });
 
 describe('AdminSettingsPage - SEO keywords field', () => {
+  const renderWithProviders = (ui: React.ReactElement) => {
+    return render(<ToastProvider>{ui}</ToastProvider>);
+  };
+
   it('renders the SEO keywords textarea', async () => {
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -341,7 +347,7 @@ describe('AdminSettingsPage - SEO keywords field', () => {
   });
 
   it('shows current seoKeywords value in the textarea', async () => {
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
@@ -352,7 +358,7 @@ describe('AdminSettingsPage - SEO keywords field', () => {
   });
 
   it('updates seoKeywords value when user types', async () => {
-    render(<AdminSettingsPage />);
+    renderWithProviders(<AdminSettingsPage />);
 
     await waitFor(() => {
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();

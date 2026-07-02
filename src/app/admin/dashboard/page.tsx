@@ -6,6 +6,8 @@ import { apiClient } from '@/lib/admin/apiClient';
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { useToast } from "@/components/ui/ToastProvider";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 /**
  * @page AdminDashboardPage
@@ -24,9 +26,22 @@ export default function AdminDashboardPage() {
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, addToast } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
+
+  const mutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return apiClient.delete(`/api/registry/items/${itemId}`);
+    },
+    onSuccess: (_, itemId) => {
+      setItems((prev) => prev.filter((i) => i.id !== itemId));
+    },
+    meta: {
+      successMessage: 'Item deleted successfully.'
+    }
+  });
 
   useEffect(() => {
     async function fetchItems() {
@@ -106,19 +121,13 @@ export default function AdminDashboardPage() {
                         aria-label={"Delete registry item: " + item.name}
                         onClick={async (e) => {
                           const row = e.currentTarget.closest('tr');
-                          if (!confirm('Are you sure you want to delete this item?')) return;
+                          if (!(await confirm('Are you sure you want to delete this item?'))) return;
                           
                           if (row) {
                             captureDesktopFocus(row as HTMLElement);
                           }
                           
-                          try {
-                            await apiClient.delete(`/api/registry/items/${item.id}`);
-                            setItems((prev) => prev.filter((i) => i.id !== item.id));
-                            alert('Item deleted successfully.');
-                          } catch (e: any) {
-                            alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
-                          }
+                          mutation.mutate(item.id);
                         }}
                       >
                         Delete
@@ -173,19 +182,13 @@ export default function AdminDashboardPage() {
                   aria-label={"Delete registry item: " + item.name}
                   onClick={async (e) => {
                     const card = e.currentTarget.closest('.rounded-xl');
-                    if (!confirm('Are you sure you want to delete this item?')) return;
+                    if (!(await confirm('Are you sure you want to delete this item?'))) return;
 
                     if (card) {
                       captureMobileFocus(card as HTMLElement);
                     }
 
-                    try {
-                      await apiClient.delete(`/api/registry/items/${item.id}`);
-                      setItems((prev) => prev.filter((i) => i.id !== item.id));
-                      alert('Item deleted successfully.');
-                    } catch (e: any) {
-                      alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
-                    }
+                    mutation.mutate(item.id);
                   }}
                 >
                   Delete

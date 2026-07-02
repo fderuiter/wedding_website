@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { useToast } from "@/components/ui/ToastProvider";
 
 /**
  * Admin interface for listing, creating, editing, deleting, and previewing content nodes.
@@ -21,6 +22,7 @@ import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 export default function ContentDashboardPage() {
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
+  const { addToast, confirm } = useToast();
 
   const {
     data: nodes,
@@ -57,20 +59,20 @@ export default function ContentDashboardPage() {
       }
       setIsEditing(false);
     } catch (e: unknown) {
-      alert((e instanceof Error ? e.message : String(e)) || 'Error saving node');
+      addToast((e instanceof Error ? e.message : String(e)) || 'Error saving node', 'error');
     }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
     const card = e.currentTarget.closest('.bg-white');
-    if (!confirm('Are you sure you want to delete this content node?')) return;
+    if (!(await confirm('Are you sure you want to delete this content node?'))) return;
     if (card) {
       captureFocusTarget(card as HTMLElement);
     }
     try {
       await remove(id);
     } catch (err: unknown) {
-      alert((err instanceof Error ? err.message : String(err)) || 'Error deleting node');
+      addToast((err instanceof Error ? err.message : String(err)) || 'Error deleting node', 'error');
     }
   };
 
@@ -78,7 +80,7 @@ export default function ContentDashboardPage() {
     try {
       const urlItem = dynamicData.find(d => d.key === 'url');
       if (!urlItem || !urlItem.value) {
-        alert("Please add a 'url' key with a value first.");
+        addToast("Please add a 'url' key with a value first.", 'error');
         return;
       }
       
@@ -98,7 +100,7 @@ export default function ContentDashboardPage() {
         return newData;
       });
     } catch (e: unknown) {
-      alert((e instanceof Error ? e.message : String(e)) || 'Error scraping');
+      addToast((e instanceof Error ? e.message : String(e)) || 'Error scraping', 'error');
     }
   };
 

@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { FormGroup, Label, Input, Textarea, FormMessage } from "@/components/ui/forms";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<any>(null);
   const [message, setMessage] = useState("");
+  const { addToast } = useToast();
 
   const refreshConfig = async () => {
     try {
@@ -60,7 +62,7 @@ export default function AdminSettingsPage() {
     if (!file) return;
     
     if (file.size > 5 * 1024 * 1024) {
-      alert('File size exceeds 5MB limit');
+      addToast('File size exceeds 5MB limit', 'error');
       return;
     }
 

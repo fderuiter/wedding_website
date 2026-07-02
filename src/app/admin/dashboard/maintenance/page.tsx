@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export default function MaintenanceHubPage() {
   const router = useRouter();
+  const { confirm } = useToast();
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState("");
@@ -31,7 +33,7 @@ export default function MaintenanceHubPage() {
       setError("Please select a file to import.");
       return;
     }
-    if (!confirm("WARNING: Importing data will completely overwrite the existing database state. Are you sure you want to proceed?")) {
+    if (!(await confirm("WARNING: Importing data will completely overwrite the existing database state. Are you sure you want to proceed?"))) {
       return;
     }
 
