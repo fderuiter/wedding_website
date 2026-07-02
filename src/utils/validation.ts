@@ -17,7 +17,26 @@ export const coordinateSchema = z.union([z.number(), z.string()]).superRefine((v
   return isNaN(parsed) ? 0 : parsed;
 });
 
-export const DynamicSchema = z.record(z.string(), z.any());
+export const AdminLoginSchema = z.object({
+  password: z.string({ message: 'Password is required' }).min(1, 'Password cannot be empty')
+});
+
+export const AdminUploadSchema = z.any();
+
+export const AdminLogoutSchema = z.object({});
+
+export const AdminEntityCreateSchema = z.record(z.string(), z.any());
+
+export const AdminEntityUpdateSchema = z.record(z.string(), z.any());
+
+export const AdminEntityReorderSchema = z.object({
+  action: z.literal('reorder'),
+  orderedIds: z.array(z.string())
+});
+
+export const ScrapeUrlSchema = z.object({
+  url: z.string({ message: 'URL is required' }).min(1, 'URL is required').url('Invalid URL format')
+});
 
 export const UpdateFeaturesSchema = z.object({
   features: z.array(z.any())

@@ -1,4 +1,4 @@
-import { DynamicSchema } from "@/utils/validation";
+import { ScrapeUrlSchema } from "@/utils/validation";
 import { NextResponse, NextRequest } from 'next/server';
 import { parse } from 'node-html-parser';
 import { isPrivateUrl } from '@/utils/ssrf';
@@ -6,18 +6,14 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const { url } = await request.json();
-  DynamicSchema.safeParse({ url });
-
-  if (!url || typeof url !== 'string') {
-    throw new ApiError(400, 'URL is required and must be a string');
+  const body = await request.json();
+  const parseResult = ScrapeUrlSchema.safeParse(body);
+  
+  if (!parseResult.success) {
+    throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  try {
-    new URL(url);
-  } catch {
-    throw new ApiError(400, 'Invalid URL format');
-  }
+  const { url } = parseResult.data;
 
   /**
    * SSRF Guard Clause:
