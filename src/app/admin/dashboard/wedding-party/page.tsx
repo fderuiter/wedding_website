@@ -21,7 +21,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 export default function WeddingPartyDashboardPage() {
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
-  const { addToast, confirm } = useToast();
+  const { confirm } = useToast();
   
   const {
     data: members,
@@ -46,7 +46,7 @@ export default function WeddingPartyDashboardPage() {
       }
       setIsEditing(false);
     } catch (e: any) {
-      addToast(e.message || 'Error saving member', 'error');
+      // Error handled globally
     }
   };
 
@@ -59,7 +59,7 @@ export default function WeddingPartyDashboardPage() {
     try {
       await remove(id);
     } catch (e: any) {
-      addToast(e.message || 'Error deleting member', 'error');
+      // Error handled globally
     }
   };
 

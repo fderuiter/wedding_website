@@ -22,7 +22,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 export default function ContentDashboardPage() {
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
-  const { addToast, confirm } = useToast();
+  const { confirm, addToast } = useToast();
 
   const {
     data: nodes,
@@ -59,7 +59,7 @@ export default function ContentDashboardPage() {
       }
       setIsEditing(false);
     } catch (e: unknown) {
-      addToast((e instanceof Error ? e.message : String(e)) || 'Error saving node', 'error');
+      // Error handled by global MutationCache
     }
   };
 
@@ -72,7 +72,7 @@ export default function ContentDashboardPage() {
     try {
       await remove(id);
     } catch (err: unknown) {
-      addToast((err instanceof Error ? err.message : String(err)) || 'Error deleting node', 'error');
+      // Error handled by global MutationCache
     }
   };
 
