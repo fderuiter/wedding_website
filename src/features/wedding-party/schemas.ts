@@ -7,7 +7,7 @@ export const WeddingPartyMemberSchema = z.object({
   bio: z.string(),
   photo: z.string(),
   link: z.string().nullable(),
-  order: z.number(),
+  order: z.coerce.number(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

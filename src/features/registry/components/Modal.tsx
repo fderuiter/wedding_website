@@ -4,7 +4,7 @@ import RegistryItemProgressBar from './RegistryItemProgressBar';
 import Image from 'next/image';
 import { Icon } from '@/components/ui/Icon';
 import { useOverlay } from '@/hooks/useOverlay';
-import { validateContributeInput } from '@/utils/validation';
+import { ContributionSchema } from '@/features/registry/schemas';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
@@ -39,31 +39,32 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
 
   const handleContributeClick = async () => {
     setError(null);
-    const contributionAmount = Number(amount);
-    const finalAmount = item.isGroupGift ? contributionAmount : item.price;
+    const rawAmount = item.isGroupGift ? amount : item.price;
 
-    const validationError = validateContributeInput({
+    const result = ContributionSchema.safeParse({
       itemId: item.id,
       name: contributorName,
-      amount: finalAmount,
+      amount: rawAmount,
     });
 
-    if (validationError) {
-      setError(validationError);
+    if (!result.success) {
+      setError(result.error.issues[0].message);
       return;
     }
 
+    const validData = result.data;
+    const finalAmount = validData.amount;
+
     if (item.isGroupGift) {
       const remainingAmount = item.price - item.amountContributed;
-      if (contributionAmount > remainingAmount) {
+      if (finalAmount > remainingAmount) {
         setError(`Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`);
         return;
       }
     }
     setIsSubmitting(true);
     try {
-      const finalAmount = item.isGroupGift ? contributionAmount : item.price;
-      await onContribute(item.id, contributorName, finalAmount);
+      await onContribute(item.id, validData.name, finalAmount);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message || "Failed to process contribution. Please try again.");
