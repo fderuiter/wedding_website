@@ -166,7 +166,7 @@ describe('useRegistry', () => {
   it('should handle contribution', async () => {
     let contributeBody = null;
     server.use(
-      rest.post('/api/registry/contribute', async (_req, res, ctx) => {
+      rest.post('/api/registry/contribute', async (req, res, ctx) => {
         contributeBody = await req.json();
         return res(ctx.json({ success: true }));
       })
