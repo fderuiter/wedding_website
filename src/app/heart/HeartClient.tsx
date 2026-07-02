@@ -1,148 +1,28 @@
 'use client'
 
-import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber'
-import { Environment, Html, Text, Points, PointMaterial } from '@react-three/drei'
+import { Canvas, useThree } from '@react-three/fiber'
+import { Environment, Html, Text } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
-import React, { Suspense, useMemo, useRef, useState, useEffect } from 'react'
+import React, { Suspense, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Physics, RigidBody, CuboidCollider, RapierRigidBody, ContactForcePayload } from '@react-three/rapier'
-import { inSphere } from 'maath/random'
-import { RigidBodyType, ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
-import { theme } from '../../styles/theme'
+import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier'
+import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+
 import { useTheme } from '@/components/ThemeProvider'
 import { useOverlay } from '@/hooks/useOverlay'
-import { useReducedMotion } from '../../hooks/useReducedMotion'
-import { use3DInteraction } from '../../hooks/use3DInteraction'
 import { useUnified3DInput } from '../../hooks/useUnified3DInput'
-
-/**
- * @function Sparkles
- * @description A React component for @react-three/fiber that creates a cloud of sparkling points.
- * These points are distributed in a sphere and slowly rotate.
- * @param {object} props - The component props.
- * @param {number} [props.count=200] - The number of sparkles to render.
- * @returns {JSX.Element} The rendered sparkles component.
- */
-function Sparkles({ count = 200, color = "#ffa0e0" }: { count?: number, color?: string }) {
-  const reduceMotion = useReducedMotion()
-  const pointsRef = useRef<THREE.Points>(null!)
-  const positions = useMemo(
-    () => inSphere(new Float32Array(count * 3), { radius: 10 }) as Float32Array,
-    [count],
-  )
-
-  useFrame(() => {
-    if (pointsRef.current && !reduceMotion) {
-      pointsRef.current.rotation.y += 0.001
-    }
-  })
-
-  return (
-    <Points ref={pointsRef} positions={positions} stride={3} frustumCulled={false}>
-      <PointMaterial transparent color={color} size={0.1} sizeAttenuation={true} depthWrite={false} />
-    </Points>
-  )
-}
-
-/**
- * @function Heart3D
- * @description A React component for @react-three/fiber that creates a 3D heart shape.
- * This is a visual component without physics. It's composed of two halves with different
- * materials (gold and silver) and displays names on each side.
- * @param {object} props - The component props.
- * @param {number} props.scale - The scale factor for the heart model.
- * @param {string} [props.shardSide] - Optional side to render ("left" or "right"), or undefined for full heart.
- * @returns {JSX.Element} The rendered 3D heart component.
- */
-function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomName, shardSide }: { scale: number; primaryColor: string; secondaryColor: string; brideName: string; groomName: string; shardSide?: 'left' | 'right' }) {
-  const geom = useMemo(() => {
-    const s = new THREE.Shape()
-    s.moveTo(0, -1.4)
-    s.bezierCurveTo(-1.6, -3.2, -4, -0.8, 0, 2.5)
-    s.bezierCurveTo(4, -0.8, 1.6, -3.2, 0, -1.4)
-    const g = new THREE.ExtrudeGeometry(s, {
-      depth: 1.3,
-      bevelEnabled: true,
-      bevelSegments: 4,
-      bevelThickness: 0.25,
-      bevelSize: 0.18,
-    })
-    g.center()
-    return g
-  }, [])
-
-  const planeLeft = useMemo(() => new THREE.Plane(new THREE.Vector3(1, 0, 0), 0), [])
-  const planeRight = useMemo(() => new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0), [])
-
-  const gold = useMemo(
-    () =>
-      new THREE.MeshPhysicalMaterial({
-        color: primaryColor,
-        metalness: 1,
-        roughness: 0.2,
-        envMapIntensity: 1.2,
-        clippingPlanes: [planeLeft],
-        clipShadows: true,
-      }),
-    [planeLeft, primaryColor],
-  )
-
-  const silver = useMemo(
-    () =>
-      new THREE.MeshPhysicalMaterial({
-        color: secondaryColor,
-        metalness: 1,
-        roughness: 0.25,
-        envMapIntensity: 1.2,
-        clippingPlanes: [planeRight],
-        clipShadows: true,
-      }),
-    [planeRight, secondaryColor],
-  )
-
-  return (
-    <group scale={scale} rotation={[0, Math.PI, Math.PI]}>
-      {(!shardSide || shardSide === 'left') && <mesh geometry={geom} material={gold} />}
-      {(!shardSide || shardSide === 'right') && <mesh geometry={geom} material={silver} />}
-      {(!shardSide || shardSide === 'left') && (
-        <Text
-          position={[-1, 0.1, 0.71]}
-          fontSize={0.35}
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.015}
-          outlineColor={theme.colors.outline}
-        >
-          {brideName}
-        </Text>
-      )}
-      {(!shardSide || shardSide === 'right') && (
-        <Text
-          position={[1, 0.1, 0.71]}
-          fontSize={0.35}
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.015}
-          outlineColor={theme.colors.outline}
-        >
-          {groomName}
-        </Text>
-      )}
-    </group>
-  )
-}
+import { Sparkles } from './components/Sparkles'
+import { Heart3D } from './components/Heart3D'
+import { ScreenBounds } from './components/ScreenBounds'
+import { useHeartPhysics } from './hooks/useHeartPhysics'
+import { PHYSICS_CONSTANTS } from './constants'
 
 /**
  * @function PhysicsHeart
  * @description The main interactive component of the HeartPage.
  * It's a physics-based heart that can be dragged around the screen. It pulses,
  * can be "broken" by colliding with the screen boundaries, and has an easter egg.
- * @param {object} props - The component props.
- * @param {number} props.scale - The scale of the heart.
- * @param {boolean} props.interacted - A boolean indicating if the user has interacted with the heart.
- * @param {() => void} props.onInteract - A callback function to be called when the user first interacts with the heart.
- * @returns {JSX.Element} The rendered physics-enabled heart.
  */
 function PhysicsHeart({
   scale,
@@ -167,7 +47,7 @@ function PhysicsHeart({
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!)
   const groupRef = useRef<THREE.Group>(null!)
-  const [pulseSpeed, setPulseSpeed] = useState(1)
+  const [pulseSpeed, setPulseSpeed] = useState(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE)
   const [showEasterEgg, setShowEasterEgg] = useState(false)
   const { size, viewport } = useThree()
 
@@ -187,22 +67,22 @@ function PhysicsHeart({
       onUp: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 0, y: 20, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: 0, y: PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, z: 0 }, true);
       },
       onDown: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 0, y: -20, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: 0, y: -PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, z: 0 }, true);
       },
       onLeft: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: -20, y: 0, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: -PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, y: 0, z: 0 }, true);
       },
       onRight: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 20, y: 0, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, y: 0, z: 0 }, true);
       },
       onAction: (e: any) => {
         if (!heartRef.current) return;
@@ -212,7 +92,7 @@ function PhysicsHeart({
     },
     onDragStart: () => {
       if (!interacted) onInteract()
-      setPulseSpeed(5)
+      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING)
     },
     onDragMove: (norm) => {
       if (heartRef.current) {
@@ -224,11 +104,11 @@ function PhysicsHeart({
       }
     },
     onDragEnd: ({ vx, vy }) => {
-      setPulseSpeed(1)
+      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE)
       if (heartRef.current && !reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
         heartRef.current.setLinvel({
-          x: vx * 20,
-          y: -vy * 20,
+          x: vx * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
+          y: -vy * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
           z: 0
         }, true)
       }
@@ -243,7 +123,7 @@ function PhysicsHeart({
         if (!brokenHeartLeftRef.current) return;
         e.preventDefault();
         if (!reduceMotion) {
-          brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+          brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER, y: PHYSICS_CONSTANTS.BUMP_IMPULSE_Y, z: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER }, true);
         }
       }
     }
@@ -257,149 +137,25 @@ function PhysicsHeart({
         if (!brokenHeartRightRef.current) return;
         e.preventDefault();
         if (!reduceMotion) {
-          brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+          brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER, y: PHYSICS_CONSTANTS.BUMP_IMPULSE_Y, z: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER }, true);
         }
       }
     }
   });
 
-  const handleContactForce = (payload: ContactForcePayload) => {
-    if (!isBroken && payload.totalForceMagnitude > 200) {
-      breakHeart()
-    }
-  }
-
-  useEffect(() => {
-    const mainRb = heartRef.current
-    const leftRb = brokenHeartLeftRef.current
-    const rightRb = brokenHeartRightRef.current
-
-    if (!mainRb || !leftRb || !rightRb) {
-      return
-    }
-
-    if (isBroken) {
-      // Heart just broke
-      const position = mainRb.translation()
-      const rotation = mainRb.rotation()
-      const linvel = mainRb.linvel()
-      const angvel = mainRb.angvel()
-
-      // Disable main heart physics (not just hide visually)
-      mainRb.setEnabled(false)
-
-      // Enable broken pieces physics
-      leftRb.setEnabled(true)
-      leftRb.setBodyType(RigidBodyType.Dynamic, true)
-      rightRb.setEnabled(true)
-      rightRb.setBodyType(RigidBodyType.Dynamic, true)
-
-      leftRb.setTranslation(position, true)
-      leftRb.setRotation(rotation, true)
-      leftRb.setLinvel(linvel, true)
-      leftRb.setAngvel(angvel, true)
-
-      rightRb.setTranslation(position, true)
-      rightRb.setRotation(rotation, true)
-      rightRb.setLinvel(linvel, true)
-      rightRb.setAngvel(angvel, true)
-
-      // Apply explosion
-      if (!reduceMotion) {
-        leftRb.applyImpulse({ x: 20, y: 15, z: 5 }, true)
-        rightRb.applyImpulse({ x: -20, y: 15, z: -5 }, true)
-
-        const torqueStrength = 40
-        const leftTorque = {
-          x: (Math.random() - 0.5) * torqueStrength,
-          y: (Math.random() - 0.5) * torqueStrength,
-          z: (Math.random() - 0.5) * torqueStrength,
-        }
-        const rightTorque = {
-          x: (Math.random() - 0.5) * torqueStrength,
-          y: (Math.random() - 0.5) * torqueStrength,
-          z: (Math.random() - 0.5) * torqueStrength,
-        }
-        leftRb.applyTorqueImpulse(leftTorque, true)
-        rightRb.applyTorqueImpulse(rightTorque, true)
-      }
-
-    } else {
-      // Heart is reforming - reset shard physics completely
-      leftRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      leftRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
-      leftRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
-      leftRb.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
-      leftRb.setBodyType(RigidBodyType.Fixed, true)
-      leftRb.setEnabled(false)
-
-      rightRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      rightRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
-      rightRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
-      rightRb.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
-      rightRb.setBodyType(RigidBodyType.Fixed, true)
-      rightRb.setEnabled(false)
-
-      // Re-enable main heart
-      mainRb.setEnabled(true)
-      mainRb.setBodyType(RigidBodyType.Dynamic, true)
-      mainRb.setTranslation({ x: 0, y: 0, z: 0 }, true)
-      mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true)
-    }
-  }, [isBroken, reduceMotion])
-
-  useFrame((state) => {
-    if (heartRef.current && !isBroken) {
-      const position = heartRef.current.translation()
-
-      // Easter egg logic
-      const secretSpot = {
-        x: viewport.width / 2 - 2,
-        y: viewport.height / 2 - 2,
-      }
-      if (position.x > secretSpot.x && position.y > secretSpot.y) {
-        setShowEasterEgg(true)
-      } else {
-        setShowEasterEgg(false)
-      }
-
-      if (!interacted) {
-        if (!reduceMotion) {
-          const rotation = heartRef.current.rotation()
-          const euler = new THREE.Euler().setFromQuaternion(
-            new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
-          )
-          euler.y += 0.002
-          heartRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true)
-        }
-      } else {
-        const distance = Math.sqrt(position.x ** 2 + position.y ** 2)
-        if (distance > 0.1) {
-          if (!reduceMotion) {
-            const force = new THREE.Vector3(-position.x, -position.y, 0).normalize().multiplyScalar(15)
-            heartRef.current.addForce(force, true)
-          } else {
-            heartRef.current.setTranslation({ x: 0, y: 0, z: position.z }, true)
-            heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
-          }
-        } else {
-          heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
-        }
-      }
-    }
-
-    if (!reduceMotion) {
-      const t = state.clock.getElapsedTime()
-      const pulseScale = 1 + Math.sin(t * pulseSpeed) * 0.05
-      if (groupRef.current) {
-        groupRef.current.scale.set(pulseScale, pulseScale, pulseScale)
-      }
-    } else {
-      if (groupRef.current) {
-        groupRef.current.scale.set(1, 1, 1)
-      }
-    }
+  const { handleContactForce } = useHeartPhysics({
+    mainRbRef: heartRef,
+    leftRbRef: brokenHeartLeftRef,
+    rightRbRef: brokenHeartRightRef,
+    groupRef,
+    isBroken,
+    reduceMotion,
+    interacted,
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
+    pulseSpeed,
+    breakHeart,
+    setShowEasterEgg
   })
 
   return (
@@ -476,24 +232,6 @@ function PhysicsHeart({
         </Text>
       )}
     </>
-  )
-}
-
-/**
- * @function ScreenBounds
- * @description A component that creates invisible physics colliders around the screen
- * to keep the `PhysicsHeart` contained within the viewport.
- * @returns {JSX.Element} The rendered screen bounds component.
- */
-function ScreenBounds() {
-  const { viewport } = useThree()
-  return (
-    <RigidBody type="fixed" restitution={0.9}>
-      <CuboidCollider args={[viewport.width / 2, 1, 10]} position={[0, -viewport.height / 2 - 1, 0]} />
-      <CuboidCollider args={[viewport.width / 2, 1, 10]} position={[0, viewport.height / 2 + 1, 0]} />
-      <CuboidCollider args={[1, viewport.height / 2, 10]} position={[-viewport.width / 2 - 1, 0, 0]} />
-      <CuboidCollider args={[1, viewport.height / 2, 10]} position={[viewport.width / 2 + 1, 0, 0]} />
-    </RigidBody>
   )
 }
 
