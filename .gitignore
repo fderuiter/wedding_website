@@ -62,3 +62,4 @@ node_modules/@prisma/client
 # Jules
 .jules/
 .Jules/
+test-results/

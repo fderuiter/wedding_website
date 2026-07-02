@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { formatDate } from '@/utils/intl';
 
 /**
  * @typedef {object} TimeLeft
@@ -97,11 +98,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
       </span>
       <noscript>
         <div className="text-2xl font-bold text-primary dark:text-primary">
-          {weddingDate.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
+          {formatDate(weddingDate)}
         </div>
       </noscript>
     </div>

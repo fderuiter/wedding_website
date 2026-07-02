@@ -7,6 +7,7 @@ import { useAdminSettings } from "@/hooks/admin/useAdminSettings";
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { FormGroup, Label, Input, Textarea, FormMessage } from "@/components/ui/forms";
+import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/ToastProvider";
 
 export default function AdminSettingsPage() {
@@ -79,7 +80,7 @@ export default function AdminSettingsPage() {
       <div className="mx-auto max-w-4xl p-6">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Site Settings</h1>
-          <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
+          <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8 pb-10">
@@ -222,7 +223,7 @@ export default function AdminSettingsPage() {
                   {localConfig.faviconUrl && (
                     <div className="flex items-center gap-2">
                       <img src={localConfig.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
-                      <span className="text-xs text-gray-500 break-all">{localConfig.faviconUrl}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.faviconUrl}</span>
                     </div>
                   )}
                 </div>
@@ -234,7 +235,7 @@ export default function AdminSettingsPage() {
                   {localConfig.ogImageUrl && (
                     <div className="flex items-center gap-2">
                       <img src={localConfig.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
-                      <span className="text-xs text-gray-500 break-all">{localConfig.ogImageUrl}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.ogImageUrl}</span>
                     </div>
                   )}
                 </div>
@@ -243,13 +244,13 @@ export default function AdminSettingsPage() {
           </section>
 
           <div className="flex justify-end sticky bottom-0 bg-gray-100 dark:bg-gray-900 py-4 shadow-t">
-            <button
+            <Button
               type="submit"
               disabled={saving}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+              variant="primary"
             >
               {saving ? "Saving..." : "Save Settings"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

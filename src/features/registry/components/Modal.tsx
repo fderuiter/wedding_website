@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon';
 import { useOverlay } from '@/hooks/useOverlay';
 import { ContributionSchema } from '@/features/registry/schemas';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
+import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 
 /**
@@ -57,7 +58,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
     if (item.isGroupGift) {
       const remainingAmount = item.price - item.amountContributed;
       if (finalAmount > remainingAmount) {
-        setError(`Amount cannot exceed the remaining $${remainingAmount.toFixed(2)}.`);
+        setError(`Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`);
         return;
       }
     }
@@ -109,16 +110,16 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
         <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
         <p className="text-lg font-semibold mb-1 text-secondary">
-          Price: ${item.price.toFixed(2)}
+          Price: {formatCurrency(item.price)}
         </p>
         {item.isGroupGift && (
           <div className="mb-3">
             <p className="text-sm text-secondary">
-              Group Gift - ${item.amountContributed.toFixed(2)} contributed so far.
+              Group Gift - {formatCurrency(item.amountContributed)} contributed so far.
             </p>
             {!isFullyFunded && (
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                ${remainingAmount.toFixed(2)} still needed.
+                {formatCurrency(remainingAmount)} still needed.
               </p>
             )}
             <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
@@ -161,7 +162,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 </Label>
                 <Input
                   type="number"
-                  placeholder={`Up to $${remainingAmount.toFixed(2)}`}
+                  placeholder={`Up to ${formatCurrency(remainingAmount)}`}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   min="0.01"
@@ -204,8 +205,8 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                   <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400">
                     {item.contributors.map((c, idx) => (
                       <li key={idx}>
-                        <span className="font-medium">{c.name}</span> {c.amount ? `($${c.amount.toFixed(2)})` : ''}
-                        {c.date ? <span className="ml-1 text-gray-400">{new Date(c.date).toLocaleDateString()}</span> : null}
+                        <span className="font-medium">{c.name}</span> {c.amount ? `(${formatCurrency(c.amount)})` : ''}
+                        {c.date ? <span className="ml-1 text-gray-400">{formatDate(c.date)}</span> : null}
                       </li>
                     ))}
                   </ul>

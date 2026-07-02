@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { formatDate } from "@/utils/intl";
 
 interface AdminPreviewLayoutProps {
   children: React.ReactNode;
@@ -99,7 +100,7 @@ export default function AdminPreviewLayout({
               {versions.map((v) => (
                 <div key={v.id} className="p-4 border rounded bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
                   <div>
-                    <p className="font-semibold">{new Date(v.createdAt).toLocaleString()}</p>
+                    <p className="font-semibold">{formatDate(v.createdAt, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                     <p className="text-sm text-gray-500">By {v.author}</p>
                   </div>
                   <div className="space-x-2">
