@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import { Icon } from '@/components/ui/Icon';
-import { validateAddItemInput } from '@/utils/validation';
+import { RegistryItemBaseSchema } from '@/features/registry/schemas';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/components/ui/forms';
 
@@ -85,18 +85,16 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
     const dataToValidate = {
       ...values,
-      price: Number(values.price),
-      quantity: Number(values.quantity),
       isGroupGift: !!values.isGroupGift,
     };
 
-    const validationError = validateAddItemInput(dataToValidate);
-    if (validationError) {
-      setFormError(validationError);
+    const parseResult = RegistryItemBaseSchema.safeParse(dataToValidate);
+    if (!parseResult.success) {
+      setFormError(parseResult.error.issues[0]?.message || 'Invalid form input.');
       return;
     }
 
-    await onSubmit(dataToValidate);
+    await onSubmit(parseResult.data as Partial<RegistryItem>);
   };
 
   return (
