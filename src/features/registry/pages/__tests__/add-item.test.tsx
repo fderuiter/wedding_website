@@ -1,6 +1,7 @@
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
 
 // Mock the router to prevent actual navigation
@@ -23,9 +24,19 @@ jest.mock('../../components/RegistryItemForm', () => {
 
 import AddRegistryItemPage from '../add-item';
 
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 describe('AddRegistryItemPage', () => {
   it('renders the RegistryItemForm', async () => {
-    render(<ToastProvider><AddRegistryItemPage /></ToastProvider>);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <AddRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
     expect(await screen.findByTestId('registry-item-form')).toBeInTheDocument();
   });
 });

@@ -2,11 +2,11 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { RegistryItem } from "@/features/registry/types";
-import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { useToast } from "@/components/ui/ToastProvider";
+import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
-import { useToast } from "@/components/ui/ToastProvider";
 
 /**
  * @page AdminDashboardPage
@@ -22,7 +22,7 @@ import { useToast } from "@/components/ui/ToastProvider";
  */
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const { data: items, loading, error, remove } = useAdminEntity<RegistryItem>('registry');
+  const { data: items, loading, error, remove } = useAdminRegistry();
   const { addToast } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
@@ -104,8 +104,8 @@ export default function AdminDashboardPage() {
                           try {
                             await remove(item.id);
                             addToast('Item deleted successfully.', 'success');
-                          } catch (err: any) {
-                            addToast(err.name === 'ApiError' ? 'Failed to delete item' : (err.message || 'Error deleting item'), 'error');
+                          } catch (e: any) {
+                            // Error is handled by useAdminRegistry hook
                           }
                         }}
                       >
@@ -170,8 +170,8 @@ export default function AdminDashboardPage() {
                     try {
                       await remove(item.id);
                       addToast('Item deleted successfully.', 'success');
-                    } catch (err: any) {
-                      addToast(err.name === 'ApiError' ? 'Failed to delete item' : (err.message || 'Error deleting item'), 'error');
+                    } catch (e: any) {
+                      // Error is handled by useAdminRegistry hook
                     }
                   }}
                 >

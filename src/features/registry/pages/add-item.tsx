@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
 import { RegistryItem } from '@/features/registry/types';
-import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
 import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -24,7 +24,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 export default function AddRegistryItemPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { create } = useAdminEntity<RegistryItem>('registry');
+  const { create } = useAdminRegistry();
   const { addToast } = useToast();
 
   const handleAdd = async (values: Partial<RegistryItem>) => {

@@ -3,55 +3,32 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient } from '@/lib/admin/apiClient';
+import { useAdminSettings } from "@/hooks/admin/useAdminSettings";
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { FormGroup, Label, Input, Textarea, FormMessage } from "@/components/ui/forms";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export default function AdminSettingsPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [config, setConfig] = useState<any>(null);
-  const [message, setMessage] = useState("");
-
-  const refreshConfig = async () => {
-    try {
-      const data = await apiClient.get<any>('/api/admin/settings');
-      if (data.weddingDate) {
-        data.weddingDate = data.weddingDate.split('T')[0];
-      }
-      setConfig(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const { addToast } = useToast();
+  const { config: initialConfig, loading, saving, error, saveSettings, fetchAll } = useAdminSettings();
+  
+  const [localConfig, setLocalConfig] = useState<any>(null);
 
   useEffect(() => {
-    async function init() {
-      await refreshConfig();
-      setLoading(false);
+    if (initialConfig && !localConfig) {
+      setLocalConfig(initialConfig);
     }
-    init();
-  }, []);
+  }, [initialConfig, localConfig]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setMessage("");
-
+    if (!localConfig) return;
     try {
-      await apiClient.put('/api/admin/settings', {
-        ...config,
-        weddingDate: new Date(config.weddingDate).toISOString(),
-      });
-
-      setMessage("Settings saved successfully.");
-      await refreshConfig(); // ensure we have latest after save
+      await saveSettings(localConfig);
     } catch (err) {
-      console.error(err);
-      setMessage("Failed to save settings.");
-    } finally {
-      setSaving(false);
+      // Error is handled by hook
     }
   };
 
@@ -69,44 +46,41 @@ export default function AdminSettingsPage() {
 
     try {
       const { url } = await apiClient.post<{ url: string }>('/api/admin/upload', formData);
-      setConfig((prev: any) => ({ ...prev, [fieldName]: url }));
-      setMessage(`${fieldName} uploaded successfully.`);
+      setLocalConfig((prev: any) => ({ ...prev, [fieldName]: url }));
+      addToast(`${fieldName} uploaded successfully.`, 'success');
     } catch (err: any) {
-      setMessage(`Upload failed: ${err.message || err}`);
+      addToast(`Upload failed: ${err.message || err}`, 'error');
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setConfig((prev: any) => ({ ...prev, [name]: value }));
+    setLocalConfig((prev: any) => ({ ...prev, [name]: value }));
   };
 
   if (loading) return <div className="p-8 text-center">Loading settings...</div>;
 
-  if (!config) return <div className="p-8 text-center text-red-500">Failed to load settings.</div>;
+  if (!localConfig) return <div className="p-8 text-center text-red-500">Failed to load settings.</div>;
 
   return (
     <AdminPreviewLayout
       previewUrl="/"
       draftType="config"
       draftData={{
-         ...config,
-         weddingDate: config.weddingDate ? new Date(config.weddingDate).toISOString() : new Date().toISOString()
+         ...localConfig,
+         weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
       }}
       entityId="global"
-      onRestore={() => refreshConfig()}
+      onRestore={() => {
+        setLocalConfig(initialConfig);
+        fetchAll();
+      }}
     >
       <div className="mx-auto max-w-4xl p-6">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Site Settings</h1>
           <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
         </div>
-        
-        {message && (
-          <div className="mb-6 p-4 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-            {message}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-8 pb-10">
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
@@ -114,19 +88,19 @@ export default function AdminSettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>
                 <Label>Bride Name</Label>
-                <Input required type="text" name="brideName" value={config.brideName || ''} onChange={handleChange} />
+                <Input required type="text" name="brideName" value={localConfig.brideName || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Groom Name</Label>
-                <Input required type="text" name="groomName" value={config.groomName || ''} onChange={handleChange} />
+                <Input required type="text" name="groomName" value={localConfig.groomName || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Wedding Date</Label>
-                <Input required type="date" name="weddingDate" value={config.weddingDate || ''} onChange={handleChange} />
+                <Input required type="date" name="weddingDate" value={localConfig.weddingDate || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Base URL</Label>
-                <Input required type="url" name="baseUrl" value={config.baseUrl || ''} onChange={handleChange} />
+                <Input required type="url" name="baseUrl" value={localConfig.baseUrl || ''} onChange={handleChange} />
               </FormGroup>
             </div>
           </section>
@@ -136,33 +110,33 @@ export default function AdminSettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>
                 <Label>Venue Name</Label>
-                <Input required type="text" name="venueName" value={config.venueName || ''} onChange={handleChange} />
+                <Input required type="text" name="venueName" value={localConfig.venueName || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Address</Label>
-                <Input required type="text" name="venueAddress" value={config.venueAddress || ''} onChange={handleChange} />
+                <Input required type="text" name="venueAddress" value={localConfig.venueAddress || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>City</Label>
-                <Input required type="text" name="venueCity" value={config.venueCity || ''} onChange={handleChange} />
+                <Input required type="text" name="venueCity" value={localConfig.venueCity || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>State</Label>
-                <Input required type="text" name="venueState" value={config.venueState || ''} onChange={handleChange} />
+                <Input required type="text" name="venueState" value={localConfig.venueState || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Zip Code</Label>
-                <Input required type="text" name="venueZip" value={config.venueZip || ''} onChange={handleChange} />
+                <Input required type="text" name="venueZip" value={localConfig.venueZip || ''} onChange={handleChange} />
               </FormGroup>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <FormGroup>
                 <Label>Latitude</Label>
-                <Input required type="number" step="any" name="latitude" value={config.latitude || 0} onChange={handleChange} />
+                <Input required type="number" step="any" name="latitude" value={localConfig.latitude || 0} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Longitude</Label>
-                <Input required type="number" step="any" name="longitude" value={config.longitude || 0} onChange={handleChange} />
+                <Input required type="number" step="any" name="longitude" value={localConfig.longitude || 0} onChange={handleChange} />
               </FormGroup>
             </div>
           </section>
@@ -172,24 +146,24 @@ export default function AdminSettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>
                 <Label>Hero Title</Label>
-                <Input required type="text" name="heroTitle" value={config.heroTitle || ''} onChange={handleChange} />
+                <Input required type="text" name="heroTitle" value={localConfig.heroTitle || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Hero Subtitle</Label>
-                <Input required type="text" name="heroSubtitle" value={config.heroSubtitle || ''} onChange={handleChange} />
+                <Input required type="text" name="heroSubtitle" value={localConfig.heroSubtitle || ''} onChange={handleChange} />
               </FormGroup>
             </div>
             <FormGroup>
               <Label>Our Story</Label>
-              <Textarea required name="storyText" value={config.storyText || ''} onChange={handleChange} rows={6} />
+              <Textarea required name="storyText" value={localConfig.storyText || ''} onChange={handleChange} rows={6} />
             </FormGroup>
             <FormGroup>
               <Label>Venue Description</Label>
-              <Textarea required name="venueDescription" value={config.venueDescription || ''} onChange={handleChange} rows={4} />
+              <Textarea required name="venueDescription" value={localConfig.venueDescription || ''} onChange={handleChange} rows={4} />
             </FormGroup>
             <FormGroup>
               <Label>Travel Advice</Label>
-              <Textarea required name="travelAdvice" value={config.travelAdvice || ''} onChange={handleChange} rows={4} />
+              <Textarea required name="travelAdvice" value={localConfig.travelAdvice || ''} onChange={handleChange} rows={4} />
             </FormGroup>
           </section>
 
@@ -199,22 +173,22 @@ export default function AdminSettingsPage() {
               <FormGroup className="flex flex-col items-center">
                 <Label className="mb-1">Primary Color</Label>
                 <div className="flex items-center gap-2 w-full">
-                  <Input type="color" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <Input type="text" name="themePrimary" value={config.themePrimary || '#f43f5e'} onChange={handleChange} className="font-mono text-sm uppercase" />
+                  <Input type="color" name="themePrimary" value={localConfig.themePrimary || '#f43f5e'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <Input type="text" name="themePrimary" value={localConfig.themePrimary || '#f43f5e'} onChange={handleChange} className="font-mono text-sm uppercase" />
                 </div>
               </FormGroup>
               <FormGroup className="flex flex-col items-center">
                 <Label className="mb-1">Secondary Color</Label>
                 <div className="flex items-center gap-2 w-full">
-                  <Input type="color" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <Input type="text" name="themeSecondary" value={config.themeSecondary || '#fbbf24'} onChange={handleChange} className="font-mono text-sm uppercase" />
+                  <Input type="color" name="themeSecondary" value={localConfig.themeSecondary || '#fbbf24'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <Input type="text" name="themeSecondary" value={localConfig.themeSecondary || '#fbbf24'} onChange={handleChange} className="font-mono text-sm uppercase" />
                 </div>
               </FormGroup>
               <FormGroup className="flex flex-col items-center">
                 <Label className="mb-1">Accent Color</Label>
                 <div className="flex items-center gap-2 w-full">
-                  <Input type="color" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <Input type="text" name="themeAccent" value={config.themeAccent || '#e11d48'} onChange={handleChange} className="font-mono text-sm uppercase" />
+                  <Input type="color" name="themeAccent" value={localConfig.themeAccent || '#e11d48'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
+                  <Input type="text" name="themeAccent" value={localConfig.themeAccent || '#e11d48'} onChange={handleChange} className="font-mono text-sm uppercase" />
                 </div>
               </FormGroup>
             </div>
@@ -228,16 +202,16 @@ export default function AdminSettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>
                 <Label>SEO Title</Label>
-                <Input required type="text" name="seoTitle" value={config.seoTitle || ''} onChange={handleChange} />
+                <Input required type="text" name="seoTitle" value={localConfig.seoTitle || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>SEO Description</Label>
-                <Input required type="text" name="seoDescription" value={config.seoDescription || ''} onChange={handleChange} />
+                <Input required type="text" name="seoDescription" value={localConfig.seoDescription || ''} onChange={handleChange} />
               </FormGroup>
             </div>
             <FormGroup>
               <Label>SEO Keywords</Label>
-              <Textarea name="seoKeywords" value={config.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{brideName}} and {{groomName}}'s wedding..." />
+              <Textarea name="seoKeywords" value={localConfig.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{brideName}} and {{groomName}}'s wedding..." />
               <FormMessage>Comma-separated list. Use templates like {"{{brideName}}"}. Variables: brideName, groomName, venueName, venueCity, venueState.</FormMessage>
             </FormGroup>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -245,10 +219,10 @@ export default function AdminSettingsPage() {
                 <Label>Favicon (.ico, .png)</Label>
                 <div className="flex flex-col space-y-2">
                   <Input type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="file:pt-1" />
-                  {config.faviconUrl && (
+                  {localConfig.faviconUrl && (
                     <div className="flex items-center gap-2">
-                      <img src={config.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
-                      <span className="text-xs text-gray-500 break-all">{config.faviconUrl}</span>
+                      <img src={localConfig.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
+                      <span className="text-xs text-gray-500 break-all">{localConfig.faviconUrl}</span>
                     </div>
                   )}
                 </div>
@@ -257,10 +231,10 @@ export default function AdminSettingsPage() {
                 <Label>Social Sharing Image (OG Image)</Label>
                 <div className="flex flex-col space-y-2">
                   <Input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="file:pt-1" />
-                  {config.ogImageUrl && (
+                  {localConfig.ogImageUrl && (
                     <div className="flex items-center gap-2">
-                      <img src={config.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
-                      <span className="text-xs text-gray-500 break-all">{config.ogImageUrl}</span>
+                      <img src={localConfig.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
+                      <span className="text-xs text-gray-500 break-all">{localConfig.ogImageUrl}</span>
                     </div>
                   )}
                 </div>

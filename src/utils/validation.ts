@@ -79,3 +79,4 @@ export function validateAddItemInput(input: unknown): string | null {
   }
   return null;
 }
+export const DynamicSchema = z.record(z.string(), z.any());

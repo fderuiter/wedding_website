@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/features/registry/types';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
-import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
 import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -24,7 +24,7 @@ export default function EditRegistryItemPage() {
   const params = useParams();
   const itemId = params?.id as string;
   const { addToast } = useToast();
-  const { data: items, loading: itemsLoading, error: itemsError, update } = useAdminEntity<RegistryItem>('registry');
+  const { data: items, loading: itemsLoading, error: itemsError, update } = useAdminRegistry();
 
   const [itemData, setItemData] = useState<Partial<RegistryItem>>({});
   const [loading, setLoading] = useState(true);

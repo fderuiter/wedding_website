@@ -1,6 +1,7 @@
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import EditRegistryItemPage from '../edit-item';
 
 const mockPush = jest.fn();
@@ -21,6 +22,10 @@ jest.mock('next/navigation', () => ({
   useParams: () => ({ id: mockItem.id }),
 }));
 
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 describe('EditRegistryItemPage', () => {
   beforeEach(() => {
     (global.fetch as jest.Mock) = jest.fn((url: RequestInfo) => {
@@ -31,7 +36,7 @@ describe('EditRegistryItemPage', () => {
             json: () => Promise.resolve({ isAdmin: true }),
           });
         }
-        if (url.includes('/api/admin/registry')) {
+        if (url.includes('/api/registry/items')) {
           return Promise.resolve({
             ok: true,
             json: () => Promise.resolve([mockItem]),
@@ -47,7 +52,13 @@ describe('EditRegistryItemPage', () => {
   });
 
   it('prefills form fields with fetched data', async () => {
-    render(<ToastProvider><EditRegistryItemPage /></ToastProvider>);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
 
     expect(await screen.findByLabelText(/item name/i)).toHaveValue(mockItem.name);
     expect(screen.getByLabelText(/price/i)).toHaveValue(mockItem.price);

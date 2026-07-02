@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import { Icon } from '@/components/ui/Icon';
+import { Button } from '@/components/ui/Button';
 import { validateAddItemInput } from '@/utils/validation';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/components/ui/forms';
-import { Button } from '@/components/ui/Button';
 
 /**
  * Props for the RegistryItemForm component.
@@ -118,8 +118,9 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
               />
               <Button
                 type="button"
-                onClick={handleScrape}
                 variant="primary"
+                onClick={handleScrape}
+                className="flex items-center justify-center"
                 disabled={scrapeLoading || !scrapeUrl}
                 aria-busy={scrapeLoading}
               >
@@ -173,7 +174,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       </FormGroup>
       <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
-        <Button type="submit" variant="primary" className="w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
+        <Button type="submit" variant="primary" className="w-full mt-2 flex items-center justify-center" disabled={isSubmitting} aria-busy={isSubmitting}>
           {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
           {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
         </Button>
