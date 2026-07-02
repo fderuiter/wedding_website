@@ -5,6 +5,8 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import React from 'react';
 import { RegistryItem } from '../../types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
+import { server } from '@/mocks/server';
+import { rest } from 'msw';
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -17,7 +19,6 @@ jest.mock('next/navigation', () => ({
 // Mock admin check
 jest.mock('@/utils/adminAuth.client');
 const mockedCheckAdminClient = checkAdminClient as jest.Mock;
-
 
 // Mock window.confirm and window.alert
 global.confirm = jest.fn(() => true);
@@ -51,20 +52,24 @@ const mockItems: RegistryItem[] = [
 
 describe('useRegistry', () => {
     let queryClient: QueryClient;
-    let fetchSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    fetchSpy = jest.spyOn(global, 'fetch');
     mockedCheckAdminClient.mockResolvedValue(false);
     queryClient = createTestQueryClient();
+    
+    // Default success handler for fetching items
+    server.use(
+      rest.get('/api/registry/items', (req, res, ctx) => {
+        return res(ctx.json({ success: true, data: mockItems }));
+      })
+    );
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   it('should fetch registry items and return initial state', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => {
@@ -76,7 +81,6 @@ describe('useRegistry', () => {
   });
 
   it('should handle card click and open modal', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     const item = result.current.items[0];
@@ -90,7 +94,6 @@ describe('useRegistry', () => {
   });
 
   it('should not open modal for purchased item', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     const item = result.current.items[1];
@@ -104,7 +107,6 @@ describe('useRegistry', () => {
   });
 
   it('should handle modal close', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -123,7 +125,6 @@ describe('useRegistry', () => {
   });
 
   it('should handle edit', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -135,21 +136,22 @@ describe('useRegistry', () => {
   });
 
   it('should handle delete', async () => {
-    // We need to return valid items for the initial query, then handle the delete
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({})));
+    let deleteCalled = false;
+    server.use(
+      rest.delete('/api/registry/items/1', (req, res, ctx) => {
+        deleteCalled = true;
+        return res(ctx.json({ success: true }));
+      })
+    );
 
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
-    // Wait for initial load
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // Call delete
     act(() => {
         result.current.handleDelete('1');
     });
 
-    // Wait for the confirm dialog and click Confirm
     const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
     
     await act(async () => {
@@ -157,28 +159,30 @@ describe('useRegistry', () => {
     });
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith('/api/registry/items/1', { method: 'DELETE' });
+      expect(deleteCalled).toBe(true);
     });
   });
 
   it('should handle contribution', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({})));
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
+    let contributeBody = null;
+    server.use(
+      rest.post('/api/registry/contribute', async (req, res, ctx) => {
+        contributeBody = await req.json();
+        return res(ctx.json({ success: true }));
+      })
+    );
+
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
         await result.current.handleContribute('1', 'Jane Doe', 50);
     });
 
-    expect(fetchSpy).toHaveBeenCalledWith('/api/registry/contribute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 }),
-    });
+    expect(contributeBody).toEqual({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 });
   });
 
   it('should filter items by category', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -192,7 +196,6 @@ describe('useRegistry', () => {
   });
 
   it('should filter by price range', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -205,7 +208,6 @@ describe('useRegistry', () => {
   });
 
   it('should filter by group gifts only', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -218,7 +220,6 @@ describe('useRegistry', () => {
   });
 
   it('should filter by available only', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockItems)));
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 

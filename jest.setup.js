@@ -12,22 +12,28 @@ import { TextEncoder, TextDecoder } from 'util';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
-if (typeof global.fetch === 'undefined') {
-  global.fetch = jest.fn();
-}
-if (typeof global.Response === 'undefined') {
-  global.Response = class Response {
-    constructor(body, init) {
-      this.body = body;
-      this.init = init;
-      this.ok = init?.status ? (init.status >= 200 && init.status < 300) : true;
-      this.status = init?.status || 200;
+import 'whatwg-fetch';
+
+import { server } from './src/mocks/server';
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (typeof args[0] === 'string') {
+    if (
+      args[0].includes('is using incorrect casing.') ||
+      args[0].includes('is unrecognized in this browser.') ||
+      args[0].includes('for a non-boolean attribute') ||
+      args[0].includes('is not recognized in this browser')
+    ) {
+      return;
     }
-    json() {
-      return Promise.resolve(this.body ? JSON.parse(this.body) : {});
-    }
-  };
-}
+  }
+  originalConsoleError(...args);
+};
 
 jest.mock('@vercel/analytics', () => ({
   track: jest.fn(),
