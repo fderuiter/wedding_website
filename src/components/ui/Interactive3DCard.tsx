@@ -2,8 +2,7 @@
 
 import React, { useRef, useEffect, ElementType, ComponentPropsWithoutRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
-import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { use3DInteraction } from '../../hooks/use3DInteraction';
+import { useUnified3DInput } from '../../hooks/useUnified3DInput';
 
 export type Interactive3DCardProps<T extends ElementType> = {
   as?: T;
@@ -32,70 +31,40 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
   const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['10deg', '-10deg']);
   const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-10deg', '10deg']);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const { width, height, left, top } = rect;
-    if (width === 0 || height === 0) return;
-    const mouseX = e.clientX - left;
-    const mouseY = e.clientY - top;
-    const xPct = Math.max(-0.5, Math.min(0.5, mouseX / width - 0.5));
-    const yPct = Math.max(-0.5, Math.min(0.5, mouseY / height - 0.5));
-
-    x.set(xPct);
-    y.set(yPct);
-  };
-
-  const handleMouseLeave = () => {
-    x.set(0);
-    y.set(0);
-  };
-  
-  const handleTouchMove = (e: React.TouchEvent<HTMLElement>) => {
-    if (!ref.current || !e.touches[0]) return;
-    const rect = ref.current.getBoundingClientRect();
-    const { width, height, left, top } = rect;
-    if (width === 0 || height === 0) return;
-    const touch = e.touches[0];
-    const mouseX = touch.clientX - left;
-    const mouseY = touch.clientY - top;
-    const xPct = Math.max(-0.5, Math.min(0.5, mouseX / width - 0.5));
-    const yPct = Math.max(-0.5, Math.min(0.5, mouseY / height - 0.5));
-
-    x.set(xPct);
-    y.set(yPct);
-  };
-
-  const handleTouchEnd = () => {
-    x.set(0);
-    y.set(0);
-  };
-
   const Component = as || 'div';
   const isInteractive = Component === 'button' || Component === 'a';
 
   const step = 0.25;
-  const { getInteractiveProps, AccessibleElements } = use3DInteraction({
-    instructions: 'Use arrow keys to tilt the card.',
-    labels: {
-      up: 'Tilted up',
-      down: 'Tilted down',
-      left: 'Tilted left',
-      right: 'Tilted right',
+  const { mixedHandlers, AccessibleElements, reduceMotion } = useUnified3DInput({
+    domRef: ref as any,
+    onDragMove: (norm) => {
+      x.set(norm.x);
+      y.set(norm.y);
     },
-    onUp: () => y.set(Math.max(-0.5, y.get() - step)),
-    onDown: () => y.set(Math.min(0.5, y.get() + step)),
-    onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
-    onRight: () => x.set(Math.min(0.5, x.get() + step)),
-    onAction: (e) => {
-      if (onClick && !isInteractive) {
-        e.preventDefault();
-        onClick(e as any);
-      }
+    onDragEnd: () => {
+      x.set(0);
+      y.set(0);
     },
+    accessibility: {
+      instructions: 'Use arrow keys to tilt the card.',
+      labels: {
+        up: 'Tilted up',
+        down: 'Tilted down',
+        left: 'Tilted left',
+        right: 'Tilted right',
+      },
+      onUp: () => y.set(Math.max(-0.5, y.get() - step)),
+      onDown: () => y.set(Math.min(0.5, y.get() + step)),
+      onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
+      onRight: () => x.set(Math.min(0.5, x.get() + step)),
+      onAction: (e: any) => {
+        if (onClick && !isInteractive) {
+          e.preventDefault();
+          onClick(e as any);
+        }
+      },
+    }
   });
-
-  const interactiveProps = getInteractiveProps(props as any);
 
   const handleFocus = (e: React.FocusEvent<HTMLElement>) => {
     // Reset or give a slight tilt when focused to show activity
@@ -115,28 +84,6 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
         (props.onBlur as any)(e);
     }
   };
-  
-  const reduceMotion = useReducedMotion();
-  
-  const onMouseMove = (e: React.MouseEvent<HTMLElement>) => {
-    if (!reduceMotion) handleMouseMove(e);
-    if (props.onMouseMove) (props.onMouseMove as any)(e);
-  };
-  
-  const onMouseLeave = (e: React.MouseEvent<HTMLElement>) => {
-    if (!reduceMotion) handleMouseLeave();
-    if (props.onMouseLeave) (props.onMouseLeave as any)(e);
-  };
-  
-  const onTouchMove = (e: React.TouchEvent<HTMLElement>) => {
-    if (!reduceMotion) handleTouchMove(e);
-    if (props.onTouchMove) (props.onTouchMove as any)(e);
-  };
-  
-  const onTouchEnd = (e: React.TouchEvent<HTMLElement>) => {
-    if (!reduceMotion) handleTouchEnd();
-    if (props.onTouchEnd) (props.onTouchEnd as any)(e);
-  };
 
 useEffect(() => {
     if (process.env.NODE_ENV !== 'production' && ref.current && isInteractive) {
@@ -155,11 +102,7 @@ useEffect(() => {
       {...(props as any)}
       className={className}
       onClick={onClick}
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      {...interactiveProps}
+      {...mixedHandlers}
       onFocus={handleFocus}
       onBlur={handleBlur}
       style={{

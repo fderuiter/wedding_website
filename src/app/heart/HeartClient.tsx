@@ -14,6 +14,7 @@ import { useTheme } from '@/components/ThemeProvider'
 import { useOverlay } from '@/hooks/useOverlay'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { use3DInteraction } from '../../hooks/use3DInteraction'
+import { useUnified3DInput } from '../../hooks/useUnified3DInput'
 
 /**
  * @function Sparkles
@@ -162,79 +163,109 @@ function PhysicsHeart({
   brideName: string
   groomName: string
 }) {
-  const reduceMotion = useReducedMotion()
   const heartRef = useRef<RapierRigidBody>(null!)
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!)
   const groupRef = useRef<THREE.Group>(null!)
   const [pulseSpeed, setPulseSpeed] = useState(1)
-  const [isBroken, setIsBroken] = useState(false)
   const [showEasterEgg, setShowEasterEgg] = useState(false)
   const { size, viewport } = useThree()
 
-  const { getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements } = use3DInteraction({
-    instructions: 'Use arrow keys to move the heart, Space or Enter to break it.',
-    labels: {
-      up: 'Moved up',
-      down: 'Moved down',
-      left: 'Moved left',
-      right: 'Moved right',
-      action: 'Heart broken',
+  const { handlers: mainHandlers, getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements, lifecycle: { isDestroyed: isBroken, destroy: breakHeart }, reduceMotion } = useUnified3DInput({
+    r3f: { size, viewport },
+    physicsBodyRef: heartRef,
+    reconstructTimeout: 3000,
+    accessibility: {
+      instructions: 'Use arrow keys to move the heart, Space or Enter to break it.',
+      labels: {
+        up: 'Moved up',
+        down: 'Moved down',
+        left: 'Moved left',
+        right: 'Moved right',
+        action: 'Heart broken',
+      },
+      onUp: () => {
+        if (!heartRef.current) return;
+        if (!interacted) onInteract();
+        heartRef.current.applyImpulse({ x: 0, y: 20, z: 0 }, true);
+      },
+      onDown: () => {
+        if (!heartRef.current) return;
+        if (!interacted) onInteract();
+        heartRef.current.applyImpulse({ x: 0, y: -20, z: 0 }, true);
+      },
+      onLeft: () => {
+        if (!heartRef.current) return;
+        if (!interacted) onInteract();
+        heartRef.current.applyImpulse({ x: -20, y: 0, z: 0 }, true);
+      },
+      onRight: () => {
+        if (!heartRef.current) return;
+        if (!interacted) onInteract();
+        heartRef.current.applyImpulse({ x: 20, y: 0, z: 0 }, true);
+      },
+      onAction: (e: any) => {
+        if (!heartRef.current) return;
+        e.preventDefault();
+        breakHeart();
+      }
     },
-    onUp: () => {
-      if (isBroken || !heartRef.current || reduceMotion) return;
-      if (!interacted) onInteract();
-      heartRef.current.applyImpulse({ x: 0, y: 20, z: 0 }, true);
+    onDragStart: () => {
+      if (!interacted) onInteract()
+      setPulseSpeed(5)
     },
-    onDown: () => {
-      if (isBroken || !heartRef.current || reduceMotion) return;
-      if (!interacted) onInteract();
-      heartRef.current.applyImpulse({ x: 0, y: -20, z: 0 }, true);
+    onDragMove: (norm) => {
+      if (heartRef.current) {
+        heartRef.current.setNextKinematicTranslation({
+          x: norm.x * viewport.width,
+          y: -norm.y * viewport.height,
+          z: heartRef.current.translation().z,
+        })
+      }
     },
-    onLeft: () => {
-      if (isBroken || !heartRef.current || reduceMotion) return;
-      if (!interacted) onInteract();
-      heartRef.current.applyImpulse({ x: -20, y: 0, z: 0 }, true);
-    },
-    onRight: () => {
-      if (isBroken || !heartRef.current || reduceMotion) return;
-      if (!interacted) onInteract();
-      heartRef.current.applyImpulse({ x: 20, y: 0, z: 0 }, true);
-    },
-    onAction: (e) => {
-      if (isBroken || !heartRef.current) return;
-      e.preventDefault();
-      setIsBroken(true);
+    onDragEnd: ({ vx, vy }) => {
+      setPulseSpeed(1)
+      if (heartRef.current && !reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
+        heartRef.current.setLinvel({
+          x: vx * 20,
+          y: -vy * 20,
+          z: 0
+        }, true)
+      }
     }
-  });
+  })
 
-  const { getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = use3DInteraction({
-    instructions: 'Press Space or Enter to bump the left segment.',
-    labels: { action: 'Bumped left segment' },
-    onAction: (e) => {
-      if (!brokenHeartLeftRef.current) return;
-      e.preventDefault();
-      if (!reduceMotion) {
-        brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+  const { handlers: leftHandlers, getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = useUnified3DInput({
+    accessibility: {
+      instructions: 'Press Space or Enter to bump the left segment.',
+      labels: { action: 'Bumped left segment' },
+      onAction: (e: any) => {
+        if (!brokenHeartLeftRef.current) return;
+        e.preventDefault();
+        if (!reduceMotion) {
+          brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+        }
       }
     }
   });
 
-  const { getInteractiveProps: getRightInteractiveProps, AccessibleElements: RightAccessibleElements } = use3DInteraction({
-    instructions: 'Press Space or Enter to bump the right segment.',
-    labels: { action: 'Bumped right segment' },
-    onAction: (e) => {
-      if (!brokenHeartRightRef.current) return;
-      e.preventDefault();
-      if (!reduceMotion) {
-        brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+  const { handlers: rightHandlers, getInteractiveProps: getRightInteractiveProps, AccessibleElements: RightAccessibleElements } = useUnified3DInput({
+    accessibility: {
+      instructions: 'Press Space or Enter to bump the right segment.',
+      labels: { action: 'Bumped right segment' },
+      onAction: (e: any) => {
+        if (!brokenHeartRightRef.current) return;
+        e.preventDefault();
+        if (!reduceMotion) {
+          brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+        }
       }
     }
   });
 
   const handleContactForce = (payload: ContactForcePayload) => {
     if (!isBroken && payload.totalForceMagnitude > 200) {
-      setIsBroken(true)
+      breakHeart()
     }
   }
 
@@ -293,11 +324,6 @@ function PhysicsHeart({
         rightRb.applyTorqueImpulse(rightTorque, true)
       }
 
-      // Set up timer to reform
-      const timer = setTimeout(() => {
-        setIsBroken(false)
-      }, 3000)
-      return () => clearTimeout(timer)
     } else {
       // Heart is reforming - reset shard physics completely
       leftRb.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -376,99 +402,6 @@ function PhysicsHeart({
     }
   })
 
-  const dragState = useRef({
-    active: false,
-    lastTime: 0,
-    lastX: 0,
-    lastY: 0,
-    vx: 0,
-    vy: 0,
-  })
-
-  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (isBroken) return
-    e.stopPropagation()
-    const target = e.target as any
-    if (target.setPointerCapture) {
-      try { target.setPointerCapture(e.pointerId) } catch(err) {}
-    }
-
-    if (!interacted) onInteract()
-    setPulseSpeed(5)
-    heartRef.current?.setBodyType(RigidBodyType.KinematicPositionBased, true)
-
-    dragState.current = {
-      active: true,
-      lastTime: performance.now(),
-      lastX: e.clientX,
-      lastY: e.clientY,
-      vx: 0,
-      vy: 0,
-    }
-  }
-
-  const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
-    if (!dragState.current.active || isBroken) return
-    e.stopPropagation()
-
-    const now = performance.now()
-    const dt = now - dragState.current.lastTime
-    
-    if (dt > 0) {
-      dragState.current.vx = (e.clientX - dragState.current.lastX) / dt
-      dragState.current.vy = (e.clientY - dragState.current.lastY) / dt
-    }
-    
-    dragState.current.lastTime = now
-    dragState.current.lastX = e.clientX
-    dragState.current.lastY = e.clientY
-
-    if (heartRef.current) {
-      const x = (e.clientX / size.width) * viewport.width - viewport.width / 2
-      const y = -(e.clientY / size.height) * viewport.height + viewport.height / 2
-      heartRef.current.setNextKinematicTranslation({
-        x: x,
-        y: y,
-        z: heartRef.current.translation().z,
-      })
-    }
-  }
-
-  const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
-    if (!dragState.current.active) return
-    e.stopPropagation()
-    const target = e.target as any
-    if (target.releasePointerCapture) {
-      try { target.releasePointerCapture(e.pointerId) } catch (err) {}
-    }
-
-    dragState.current.active = false
-    let { vx, vy } = dragState.current
-
-    if (performance.now() - dragState.current.lastTime > 50) {
-      vx = 0
-      vy = 0
-    }
-
-    setPulseSpeed(1)
-    if (heartRef.current) {
-      heartRef.current.setBodyType(RigidBodyType.Dynamic, true)
-      if (!reduceMotion) {
-        const impulseStrength = 50
-        heartRef.current.applyImpulse({ x: vx * impulseStrength, y: -vy * impulseStrength, z: 0 }, true)
-        const torqueStrength = 20
-        heartRef.current.applyTorqueImpulse(
-          {
-            x: (Math.random() - 0.5) * torqueStrength,
-            y: (Math.random() - 0.5) * torqueStrength,
-            z: (Math.random() - 0.5) * torqueStrength,
-          },
-          true,
-        )
-      }
-    }
-  }
-
   return (
     <>
       <Html zIndexRange={[100, 0]} prepend center>
@@ -496,10 +429,7 @@ function PhysicsHeart({
         <CuboidCollider args={[1.5 * scale, 1.5 * scale, 0.8 * scale]} />
         <group
           ref={groupRef}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          {...mainHandlers}
           visible={!isBroken}
         >
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} />
