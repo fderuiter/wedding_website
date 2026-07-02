@@ -1,5 +1,4 @@
 import { createAuditSnapshot } from '@/lib/audit';
-import { prisma } from '@/lib/prisma';
 import { BaseRepository } from './repository';
 
 export class BaseService<T extends { id: string }> {
@@ -14,15 +13,19 @@ export class BaseService<T extends { id: string }> {
   }
 
   async create(data: any, author: string = 'Admin'): Promise<T> {
-    const record = await this.repo.create(data);
-    await this.createSnapshot(record.id, record, author);
-    return record;
+    return this.repo.transaction(async (txRepo) => {
+      const record = await txRepo.create(data);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
   }
 
   async update(id: string, data: any, author: string = 'Admin'): Promise<T> {
-    const record = await this.repo.update(id, data);
-    await this.createSnapshot(record.id, record, author);
-    return record;
+    return this.repo.transaction(async (txRepo) => {
+      const record = await txRepo.update(id, data);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
   }
 
   async delete(id: string, _author: string = 'Admin'): Promise<T> {
@@ -31,20 +34,18 @@ export class BaseService<T extends { id: string }> {
   }
 
   async reorder(orderedIds: string[]): Promise<void> {
-    const updates = orderedIds.map((id, index) => {
-      return this.repo.model.update({
-        where: { id },
-        data: { order: index }
-      });
+    await this.repo.transaction(async (txRepo) => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        await txRepo.update(orderedIds[i], { order: i });
+      }
     });
-    await prisma.$transaction(updates);
   }
 
   async toggleVisibility(id: string, isVisible: boolean): Promise<T> {
     return this.update(id, { isVisible });
   }
 
-  protected async createSnapshot(entityId: string, data: any, author: string) {
-    await createAuditSnapshot(this.entityType, entityId, data, author);
+  protected async createSnapshot(entityId: string, data: any, author: string, client?: any) {
+    await createAuditSnapshot(this.entityType, entityId, data, author, client || this.repo.client);
   }
 }

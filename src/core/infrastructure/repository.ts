@@ -1,10 +1,24 @@
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
+
+export type DbClient = any;
 
 export class BaseRepository<T extends { id: string }> {
-  constructor(public modelName: string) {}
+  constructor(public modelName: string, public client: DbClient = prisma) {}
+
+  withClient(client: DbClient): this {
+    return new (this.constructor as any)(this.modelName, client);
+  }
+
+  async transaction<R>(fn: (txRepo: this) => Promise<R>): Promise<R> {
+    if ('$transaction' in this.client) {
+      return this.client.$transaction((tx: any) => fn(this.withClient(tx)));
+    }
+    return fn(this);
+  }
 
   get model() {
-    return (prisma as any)[this.modelName];
+    return (this.client as any)[this.modelName];
   }
 
   async findMany(args?: any): Promise<T[]> {
@@ -24,6 +38,8 @@ export class BaseRepository<T extends { id: string }> {
   }
 
   async delete(id: string): Promise<T> {
-    return this.model.delete({ where: { id } });
+    const record = await this.model.delete({ where: { id } });
+    await createAuditSnapshot(this.modelName, id, { deleted: true, ...record }, 'System', this.client);
+    return record;
   }
 }

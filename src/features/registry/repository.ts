@@ -9,12 +9,18 @@ import { RegistryItemSchema, RegistryItemDTO } from './schemas';
  * This class abstracts the database interactions from the service layer.
  */
 export class RegistryRepository implements IRegistryRepository {
+  constructor(public client: any = prisma) {}
+
+  withClient(client: any): this {
+    return new (this.constructor as any)(client);
+  }
+
   /**
    * Retrieves all registry items from the database, including their contributors.
    * @returns {Promise<RegistryItemDTO[]>} A promise that resolves to an array of all registry items.
    */
   async getAllItems() {
-    const items = await prisma.registryItem.findMany({
+    const items = await this.client.registryItem.findMany({
       include: { image: true, 
         contributors: true
       }
@@ -28,7 +34,7 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItemDTO | null>} A promise that resolves to the registry item or null if not found.
    */
   async getItemById(id: string) {
-    const item = await prisma.registryItem.findUnique({
+    const item = await this.client.registryItem.findUnique({
       where: { id },
       include: { image: true, 
         contributors: true
@@ -45,7 +51,7 @@ export class RegistryRepository implements IRegistryRepository {
   async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     let mediaId = data.imageId;
     if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
-       const media = await prisma.media.create({
+       const media = await this.client.media.create({
          data: {
            url: data.imageUrl || '/images/placeholder.png',
            altText: data.imageAlt,
@@ -54,7 +60,7 @@ export class RegistryRepository implements IRegistryRepository {
        });
        mediaId = media.id;
     } else if (!mediaId) {
-       const media = await prisma.media.create({
+       const media = await this.client.media.create({
          data: {
            url: '/images/placeholder.png',
            isDecorative: true
@@ -63,7 +69,7 @@ export class RegistryRepository implements IRegistryRepository {
        mediaId = media.id;
     }
 
-    const item = await prisma.registryItem.create({
+    const item = await this.client.registryItem.create({
       data: {
         name: data.name,
         price: data.price,
@@ -81,7 +87,7 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User');
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', this.client);
     return RegistryItemSchema.parse(item);
   }
 
@@ -90,9 +96,9 @@ export class RegistryRepository implements IRegistryRepository {
     
     let updateMediaId = imageId;
     if (imageUrl || imageAlt !== undefined || imageDecorative !== undefined) {
-      const existing = await prisma.registryItem.findUnique({ where: { id }, select: { imageId: true } });
+      const existing = await this.client.registryItem.findUnique({ where: { id }, select: { imageId: true } });
       if (existing && existing.imageId) {
-        await prisma.media.update({
+        await this.client.media.update({
           where: { id: existing.imageId },
           data: {
              ...(imageUrl !== undefined && { url: imageUrl }),
@@ -104,7 +110,7 @@ export class RegistryRepository implements IRegistryRepository {
       }
     }
 
-    const item = await prisma.registryItem.update({
+    const item = await this.client.registryItem.update({
       where: { id },
       data: {
          ...updateData,
@@ -114,7 +120,7 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User');
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', this.client);
     return RegistryItemSchema.parse(item);
   }
 
@@ -123,10 +129,10 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the deleted item.
    */
   async deleteItem(id: string) {
-    const item = await prisma.registryItem.delete({
+    const item = await this.client.registryItem.delete({
       where: { id }
     });
-    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, 'Guest/User');
+    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, 'Guest/User', this.client);
     return RegistryItemSchema.parse(item);
   }
 
@@ -146,8 +152,8 @@ export class RegistryRepository implements IRegistryRepository {
     itemId: string,
     contribution: { name: string; amount: number }
   ) {
-    return prisma.$transaction(async (tx: any) => {
-      const item = await tx.registryItem.findUnique({
+    const runTransaction = async (txClient: any) => {
+      const item = await txClient.registryItem.findUnique({
         where: { id: itemId },
       });
 
@@ -158,7 +164,7 @@ export class RegistryRepository implements IRegistryRepository {
 
       const newTotal = item.amountContributed + contribution.amount;
 
-      const updatedItem = await tx.registryItem.update({
+      const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
         data: {
           amountContributed: newTotal,
@@ -176,10 +182,15 @@ export class RegistryRepository implements IRegistryRepository {
         }
       });
       
-      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, contribution.name || 'Guest/Contributor', tx);
+      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, contribution.name || 'Guest/Contributor', txClient);
 
       return RegistryItemSchema.parse(updatedItem);
-    });
+    };
+
+    if ('$transaction' in this.client) {
+      return this.client.$transaction(runTransaction);
+    }
+    return runTransaction(this.client);
   }
 }
 
