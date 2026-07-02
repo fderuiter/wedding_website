@@ -21,7 +21,7 @@ export const RegistryItemBaseSchema = z.object({
   image: z.string().max(2000, 'Image URL must be under 2000 characters.').optional().or(z.literal('')),
   vendorUrl: z.string().max(2000, 'Vendor URL must be under 2000 characters.').optional().nullable().or(z.literal('')),
   isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
-}, { invalid_type_error: 'Invalid request body.', required_error: 'Invalid request body.', message: 'Invalid request body.' });
+}, { message: 'Invalid request body.' });
 
 export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   id: z.string(),

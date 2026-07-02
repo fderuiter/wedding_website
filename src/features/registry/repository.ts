@@ -46,6 +46,9 @@ export class RegistryRepository implements IRegistryRepository {
     const item = await prisma.registryItem.create({
       data: {
         ...data,
+        description: data.description || '',
+        image: data.image || '/images/placeholder.png',
+        vendorUrl: data.vendorUrl || null,
         contributors: {
           create: []
         }

@@ -27,7 +27,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { 
 
   const updatedItem = await registryService.updateItem(id, {
     ...updatedData,
-    isGroupGift: updatedData.isGroupGift === true || updatedData.isGroupGift === 'on',
+    isGroupGift: !!updatedData.isGroupGift,
   });
 
   return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });

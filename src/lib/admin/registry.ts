@@ -45,7 +45,7 @@ const WeddingPartyInputSchema = WeddingPartyMemberSchema.omit({ id: true, create
 function validateWeddingParty(data: any): string | null {
   const result = WeddingPartyInputSchema.safeParse(data);
   if (!result.success) {
-    return result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    return result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
   }
   return null;
 }
@@ -59,17 +59,17 @@ const ContentNodeInputSchema = z.union([
 function validateContentNodeUpdate(data: any): string | null {
   const result = ContentNodeInputSchema.safeParse(data);
   if (!result.success) {
-    return result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    return result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
   }
   return null;
 }
 
-const RegistryItemInputSchema = RegistryItemSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial();
+const RegistryItemInputSchema = RegistryItemSchema.omit({ id: true }).partial();
 
 function validateRegistryItem(data: any): string | null {
   const result = RegistryItemInputSchema.safeParse(data);
   if (!result.success) {
-    return result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    return result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
   }
   return null;
 }
