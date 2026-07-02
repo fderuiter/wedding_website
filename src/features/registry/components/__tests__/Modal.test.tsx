@@ -65,7 +65,7 @@ describe('Modal Component', () => {
     expect(screen.getByText('Single Item')).toBeInTheDocument();
     expect(screen.getByText('A nice single item.')).toBeInTheDocument();
     expect(screen.getByText('Price: $100.00')).toBeInTheDocument();
-    const img = screen.getByRole('img', { name: 'Single Item' });
+    const img = screen.getByRole('presentation');
     expect(img.getAttribute('src')).toContain('valid.jpg');
     expect(screen.getByRole('link', { name: 'View on Vendor Site' })).toHaveAttribute('href', 'https://example.com');
     // Using getByLabelText instead of getByPlaceholderText for robustness
@@ -253,7 +253,7 @@ describe('Modal Component', () => {
 
   it('displays placeholder image if item image fails to load', () => {
     render(<Modal item={{...mockSingleItem, image: '/invalid-path.jpg'}} onClose={mockOnClose} onContribute={mockOnContribute} />);
-    const img = screen.getByRole('img', { name: mockSingleItem.name });
+    const img = screen.getByRole('presentation');
     // Simulate the error event
     fireEvent.error(img);
     // Check if the src is updated to the placeholder

@@ -7,6 +7,7 @@ import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { FormGroup, Label, Input, Textarea, Select, Checkbox } from "@/components/ui/forms";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 
 /**
  * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
@@ -18,6 +19,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 export default function AttractionsDashboardPage() {
   const router = useRouter();
   const { addToast, confirm } = useToast();
+  const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
 
   const {
     data: attractions,
@@ -48,9 +50,13 @@ export default function AttractionsDashboardPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    const card = e.currentTarget.closest('.bg-white');
     const isConfirmed = await confirm('Are you sure you want to delete this attraction?');
     if (!isConfirmed) return;
+    if (card) {
+      captureFocusTarget(card as HTMLElement);
+    }
     try {
       await remove(id);
       addToast('AttractionDTO deleted successfully', 'success');
@@ -160,7 +166,7 @@ export default function AttractionsDashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4 pb-10">
+        <div className="grid gap-4 pb-10" ref={containerRef}>
           {attractions.map(attraction => (
             <div key={attraction.id} className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center ${!attraction.isVisible ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-4">
@@ -178,7 +184,7 @@ export default function AttractionsDashboardPage() {
                   setCurrentAttraction(attraction); 
                   setIsEditing(true); 
                 }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(attraction.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
+                <button onClick={(e) => handleDelete(attraction.id, e)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
               </div>
             </div>
           ))}

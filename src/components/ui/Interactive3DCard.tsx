@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, ElementType, ComponentPropsWithoutRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { use3DInteraction } from '../../hooks/use3DInteraction';
 
 export type Interactive3DCardProps<T extends ElementType> = {
   as?: T;
@@ -73,33 +74,28 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
   const Component = as || 'div';
   const isInteractive = Component === 'button' || Component === 'a';
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
-    const step = 0.25;
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      x.set(Math.max(-0.5, x.get() - step));
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      x.set(Math.min(0.5, x.get() + step));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      y.set(Math.max(-0.5, y.get() - step));
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      y.set(Math.min(0.5, y.get() + step));
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      // Provide an accessible trigger for standard clickable cards if not caught inside
-      // If it's a semantic element like button, the browser handles the click event natively
+  const step = 0.25;
+  const { getInteractiveProps, AccessibleElements } = use3DInteraction({
+    instructions: 'Use arrow keys to tilt the card.',
+    labels: {
+      up: 'Tilted up',
+      down: 'Tilted down',
+      left: 'Tilted left',
+      right: 'Tilted right',
+    },
+    onUp: () => y.set(Math.max(-0.5, y.get() - step)),
+    onDown: () => y.set(Math.min(0.5, y.get() + step)),
+    onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
+    onRight: () => x.set(Math.min(0.5, x.get() + step)),
+    onAction: (e) => {
       if (onClick && !isInteractive) {
         e.preventDefault();
         onClick(e as any);
       }
-    }
-    
-    if (props.onKeyDown) {
-        (props.onKeyDown as any)(e);
-    }
-  };
+    },
+  });
+
+  const interactiveProps = getInteractiveProps(props as any);
 
   const handleFocus = (e: React.FocusEvent<HTMLElement>) => {
     // Reset or give a slight tilt when focused to show activity
@@ -163,7 +159,7 @@ useEffect(() => {
       onMouseLeave={onMouseLeave}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
-      onKeyDown={handleKeyDown}
+      {...interactiveProps}
       onFocus={handleFocus}
       onBlur={handleBlur}
       style={{
@@ -175,6 +171,7 @@ useEffect(() => {
         ...((props as any).style || {})
       }}
     >
+      {AccessibleElements}
       {children}
     </MotionComponent>
   );

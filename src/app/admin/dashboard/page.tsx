@@ -5,6 +5,7 @@ import { RegistryItem} from "@/features/registry/types";
 import { apiClient } from '@/lib/admin/apiClient';
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
+import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 
 /**
  * @page AdminDashboardPage
@@ -23,6 +24,9 @@ export default function AdminDashboardPage() {
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
+  const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
 
   useEffect(() => {
     async function fetchItems() {
@@ -68,7 +72,7 @@ export default function AdminDashboardPage() {
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody ref={desktopContainerRef}>
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-semibold">{item.name}</TableCell>
@@ -100,8 +104,14 @@ export default function AdminDashboardPage() {
                         variant="danger"
                         size="sm"
                         aria-label={"Delete registry item: " + item.name}
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          const row = e.currentTarget.closest('tr');
                           if (!confirm('Are you sure you want to delete this item?')) return;
+                          
+                          if (row) {
+                            captureDesktopFocus(row as HTMLElement);
+                          }
+                          
                           try {
                             await apiClient.delete(`/api/registry/items/${item.id}`);
                             setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -122,7 +132,7 @@ export default function AdminDashboardPage() {
         </div>
         
         {/* Card Layout for Mobile */}
-        <div className="md:hidden space-y-6">
+        <div className="md:hidden space-y-6" ref={mobileContainerRef}>
           {items.map((item) => (
             <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-primary dark:border-gray-700">
               <div className="flex justify-between items-center mb-2">
@@ -161,8 +171,14 @@ export default function AdminDashboardPage() {
                   variant="danger"
                   size="sm"
                   aria-label={"Delete registry item: " + item.name}
-                  onClick={async () => {
+                  onClick={async (e) => {
+                    const card = e.currentTarget.closest('.rounded-xl');
                     if (!confirm('Are you sure you want to delete this item?')) return;
+
+                    if (card) {
+                      captureMobileFocus(card as HTMLElement);
+                    }
+
                     try {
                       await apiClient.delete(`/api/registry/items/${item.id}`);
                       setItems((prev) => prev.filter((i) => i.id !== item.id));
