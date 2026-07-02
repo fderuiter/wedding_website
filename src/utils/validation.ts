@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ContributionSchema, RegistryItemBaseSchema as RegistryItemSchema } from '@/features/registry/schemas';
 
 export const coordinateSchema = z.union([z.number(), z.string()]).superRefine((val, ctx) => {
   if (typeof val === 'number') return;
@@ -17,23 +18,7 @@ export const coordinateSchema = z.union([z.number(), z.string()]).superRefine((v
   return isNaN(parsed) ? 0 : parsed;
 });
 
-// Centralized Zod schemas for registry
-export const ContributionSchema = z.object({
-  itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
-  name: z.string({ message: 'Name is required and must be under 100 characters.' }).trim().min(1, 'Name is required and must be under 100 characters.').max(100, 'Name is required and must be under 100 characters.'),
-  amount: z.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
-}, { message: 'Invalid request body.' });
-
-export const RegistryItemSchema = z.object({
-  name: z.string({ message: 'Item name is required and must be under 255 characters.' }).trim().min(1, 'Item name is required and must be under 255 characters.').max(255, 'Item name is required and must be under 255 characters.'),
-  price: z.number({ message: 'Price must be a positive number.' }).positive('Price must be a positive number.'),
-  quantity: z.number({ message: 'Quantity must be a positive integer.' }).int('Quantity must be a positive integer.').positive('Quantity must be a positive integer.'),
-  category: z.string({ message: 'Category is required and must be under 255 characters.' }).trim().min(1, 'Category is required and must be under 255 characters.').max(255, 'Category is required and must be under 255 characters.'),
-  description: z.string().max(2000, 'Description must be under 2000 characters.').optional().or(z.literal('')),
-  image: z.string().max(2000, 'Image URL must be under 2000 characters.').optional().or(z.literal('')),
-  vendorUrl: z.string().max(2000, 'Vendor URL must be under 2000 characters.').optional().nullable().or(z.literal('')),
-  isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
-}, { message: 'Invalid request body.' });
+// Schemas are imported from features/registry/schemas.ts
 
 function isValidString(value: unknown, maxLength: number = 255): boolean {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;

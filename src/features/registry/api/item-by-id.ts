@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '@/features/registry/service';
-import { validateAddItemInput } from '@/utils/validation';
+import { RegistryItemBaseSchema } from '@/features/registry/schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
@@ -17,16 +17,17 @@ export const GET = withApiMiddleware(async (request: NextRequest, { params }: { 
 export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const body = await request.json();
-  const validationError = validateAddItemInput(body);
-  if (validationError) {
-    throw new ApiError(400, validationError);
+  const parseResult = RegistryItemBaseSchema.safeParse(body);
+  
+  if (!parseResult.success) {
+    throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
+  const updatedData = parseResult.data;
+
   const updatedItem = await registryService.updateItem(id, {
-    ...body,
-    price: Number(body.price),
-    quantity: Number(body.quantity),
-    isGroupGift: body.isGroupGift === true || body.isGroupGift === 'on',
+    ...updatedData,
+    isGroupGift: updatedData.isGroupGift === true || updatedData.isGroupGift === 'on',
   });
 
   return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
