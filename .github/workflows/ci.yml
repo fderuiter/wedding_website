@@ -25,3 +25,22 @@ jobs:
         run: npm test
       - name: Run e2e tests
         run: npx playwright test
+      - name: Generate A11y Report
+        if: always()
+        run: node scripts/a11y-report.mjs
+      - name: Post A11y Report to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'test-results/a11y-summary.md';
+            if (fs.existsSync(reportPath)) {
+              const body = fs.readFileSync(reportPath, 'utf8');
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
