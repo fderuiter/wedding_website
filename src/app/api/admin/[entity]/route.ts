@@ -6,49 +6,39 @@ import { ApiError } from '@/utils/ApiError';
 
 export const GET = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
-  const serviceData = getEntityService(entity);
+  const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const { searchParams } = new URL(request.url);
   const orderField = searchParams.get('orderBy') || 'createdAt';
   const orderDir = searchParams.get('orderDir') || 'desc';
   
-  let orderBy: any = { [orderField]: orderDir };
-  let include: any = undefined;
-  if (serviceData.config.entityType === 'WeddingPartyMember') {
-     orderBy = { order: 'asc' };
-     include = { photo: true };
-  } else if (serviceData.config.entityType === 'Attraction') {
-     include = { image: true };
-  } else if (serviceData.config.entityType === 'RegistryItem') {
-     include = { image: true, contributors: true };
-  }
-  
-  const records = await serviceData.service.findMany({ orderBy, include });
+  const records = await serviceData.service.findMany({ orderBy: { [orderField]: orderDir } });
   return NextResponse.json(records);
 });
 
 export const POST = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
-  const serviceData = getEntityService(entity);
+  const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
   AdminEntityCreateSchema.safeParse(body);
   
-  if (serviceData.config.validateCreate) {
-    const error = serviceData.config.validateCreate(body);
-    if (error) throw new ApiError(400, error);
+  try {
+    const newRecord = await serviceData.service.create(body);
+    return NextResponse.json(newRecord, { status: 201 });
+  } catch (error: any) {
+    if (error.message && error.message.startsWith('Validation Error:')) {
+      throw new ApiError(400, error.message.replace('Validation Error: ', ''));
+    }
+    throw error;
   }
-
-  const mappedBody = serviceData.config.mapData ? await serviceData.config.mapData(body) : body;
-  const newRecord = await serviceData.service.create(mappedBody);
-  return NextResponse.json(newRecord, { status: 201 });
 });
 
 export const PUT = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
-  const serviceData = getEntityService(entity);
+  const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();

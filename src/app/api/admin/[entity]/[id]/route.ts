@@ -6,7 +6,7 @@ import { ApiError } from '@/utils/ApiError';
 
 export const GET = withApiMiddleware(async (_request: NextRequest, context: { params: Promise<{ entity: string, id: string }> }) => {
   const { entity, id } = await context.params;
-  const serviceData = getEntityService(entity);
+  const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const record = await serviceData.service.findById(id);
@@ -17,26 +17,26 @@ export const GET = withApiMiddleware(async (_request: NextRequest, context: { pa
 
 export const PUT = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string, id: string }> }) => {
   const { entity, id } = await context.params;
-  const serviceData = getEntityService(entity);
+  const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
   AdminEntityUpdateSchema.safeParse(body);
   
-  if (serviceData.config.validateUpdate) {
-    const error = serviceData.config.validateUpdate(body);
-    if (error) throw new ApiError(400, error);
+  try {
+    const updatedRecord = await serviceData.service.update(id, body);
+    return NextResponse.json(updatedRecord);
+  } catch (error: any) {
+    if (error.message && error.message.startsWith('Validation Error:')) {
+      throw new ApiError(400, error.message.replace('Validation Error: ', ''));
+    }
+    throw error;
   }
-
-  const mappedBody = serviceData.config.mapData ? await serviceData.config.mapData(body) : body;
-  const updatedRecord = await serviceData.service.update(id, mappedBody);
-  
-  return NextResponse.json(updatedRecord);
 });
 
 export const DELETE = withApiMiddleware(async (_request: NextRequest, context: { params: Promise<{ entity: string, id: string }> }) => {
   const { entity, id } = await context.params;
-  const serviceData = getEntityService(entity);
+  const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const deletedRecord = await serviceData.service.delete(id);
