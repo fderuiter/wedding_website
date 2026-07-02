@@ -5,6 +5,7 @@ import { RegistryItem } from "@/features/registry/types";
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { formatCurrency, formatDate } from "@/utils/intl";
 import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 
 /**
@@ -64,14 +65,14 @@ export default function AdminDashboardPage() {
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-semibold">{item.name}</TableCell>
-                    <TableCell>${item.price.toFixed(2)}</TableCell>
+                    <TableCell>{formatCurrency(item.price)}</TableCell>
                     <TableCell>{item.purchased ? "Yes" : "No"}</TableCell>
                     <TableCell>
                       {item.contributors && item.contributors.length > 0 ? (
                         <ul className="text-xs space-y-1">
                           {item.contributors.map((c, idx) => (
                             <li key={idx}>
-                              {c.name} - ${c.amount.toFixed(2)} on {new Date(c.date).toLocaleDateString()}
+                              {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
                             </li>
                           ))}
                         </ul>
@@ -123,7 +124,7 @@ export default function AdminDashboardPage() {
             <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-primary dark:border-gray-700">
               <div className="flex justify-between items-center mb-2">
                 <span className="font-bold text-lg text-primary">{item.name}</span>
-                <span className="text-sm font-semibold">${item.price.toFixed(2)}</span>
+                <span className="text-sm font-semibold">{formatCurrency(item.price)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-xs mb-1">
                 <span className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.purchased ? 'Claimed' : 'Available'}</span>
@@ -134,7 +135,7 @@ export default function AdminDashboardPage() {
                   <ul className="ml-2 mt-1 space-y-1">
                     {item.contributors.map((c, idx) => (
                       <li key={idx} className="text-xs">
-                        {c.name} - ${c.amount.toFixed(2)} on {new Date(c.date).toLocaleDateString()}
+                        {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
                       </li>
                     ))}
                   </ul>
