@@ -1,5 +1,5 @@
 import React from 'react';
-import Image from 'next/image';
+import { MediaImage } from '@/components/MediaImage';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 import { Icon } from '@/components/ui/Icon';
 
@@ -23,13 +23,11 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
   return (
     <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden transform transition-transform hover:scale-105">
       <div className="relative h-64 w-full">
-        <Image
-          src={member.photo}
-          alt={`Photo of ${member.name}`}
-          fill
-          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          style={{ objectFit: 'cover' }}
-          className="rounded-t-lg"
+        <MediaImage
+          media={member.photo}
+          fallbackUrl="/images/placeholder.png"
+          fallbackAlt={`Photo of ${member.name}`}
+          className="rounded-t-lg w-full h-full object-cover"
         />
       </div>
       <div className="p-6">

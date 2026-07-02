@@ -15,7 +15,7 @@ export class RegistryRepository implements IRegistryRepository {
    */
   async getAllItems() {
     const items = await prisma.registryItem.findMany({
-      include: {
+      include: { image: true, 
         contributors: true
       }
     });
@@ -30,7 +30,7 @@ export class RegistryRepository implements IRegistryRepository {
   async getItemById(id: string) {
     const item = await prisma.registryItem.findUnique({
       where: { id },
-      include: {
+      include: { image: true, 
         contributors: true
       }
     });
@@ -42,18 +42,42 @@ export class RegistryRepository implements IRegistryRepository {
    * @param {Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>} data - The data for the new item.
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the newly created registry item.
    */
-  async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>) {
+  async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+    let mediaId = data.imageId;
+    if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
+       const media = await prisma.media.create({
+         data: {
+           url: data.imageUrl || '/images/placeholder.png',
+           altText: data.imageAlt,
+           isDecorative: data.imageDecorative || false,
+         }
+       });
+       mediaId = media.id;
+    } else if (!mediaId) {
+       const media = await prisma.media.create({
+         data: {
+           url: '/images/placeholder.png',
+           isDecorative: true
+         }
+       });
+       mediaId = media.id;
+    }
+
     const item = await prisma.registryItem.create({
       data: {
-        ...data,
+        name: data.name,
+        price: data.price,
+        quantity: data.quantity,
+        category: data.category,
         description: data.description || '',
-        image: data.image || '/images/placeholder.png',
+        imageId: mediaId,
         vendorUrl: data.vendorUrl || null,
+        isGroupGift: data.isGroupGift,
         contributors: {
           create: []
         }
       },
-      include: {
+      include: { image: true, 
         contributors: true
       }
     });
@@ -61,18 +85,32 @@ export class RegistryRepository implements IRegistryRepository {
     return RegistryItemSchema.parse(item);
   }
 
-  /**
-   * Updates an existing registry item in the database.
-   * @param {Partial<RegistryItemDTO>} data - The data to update.
-   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the updated registry item.
-   */
-  async updateItem(id: string, data: Partial<RegistryItemDTO>) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { contributors, ...updateData } = data;
+  async updateItem(id: string, data: Partial<RegistryItemDTO> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+    const { contributors, image, imageId, imageUrl, imageAlt, imageDecorative, ...updateData } = data;
+    
+    let updateMediaId = imageId;
+    if (imageUrl || imageAlt !== undefined || imageDecorative !== undefined) {
+      const existing = await prisma.registryItem.findUnique({ where: { id }, select: { imageId: true } });
+      if (existing && existing.imageId) {
+        await prisma.media.update({
+          where: { id: existing.imageId },
+          data: {
+             ...(imageUrl !== undefined && { url: imageUrl }),
+             ...(imageAlt !== undefined && { altText: imageAlt }),
+             ...(imageDecorative !== undefined && { isDecorative: imageDecorative }),
+          }
+        });
+        updateMediaId = existing.imageId;
+      }
+    }
+
     const item = await prisma.registryItem.update({
       where: { id },
-      data: updateData,
-      include: {
+      data: {
+         ...updateData,
+         ...(updateMediaId && { imageId: updateMediaId }),
+      },
+      include: { image: true, 
         contributors: true
       }
     });
@@ -133,7 +171,7 @@ export class RegistryRepository implements IRegistryRepository {
             }
           }
         },
-        include: {
+        include: { image: true, 
           contributors: true
         }
       });

@@ -29,6 +29,11 @@ export default function AdminDashboardLayout({
                 </Link>
               </li>
               <li>
+                <Link href="/admin/dashboard/media" className="text-gray-700 dark:text-gray-300 hover:text-primary">
+                  Media
+                </Link>
+              </li>
+              <li>
                 <Link href="/admin/dashboard/attractions" className="text-gray-700 dark:text-gray-300 hover:text-primary">
                   Attractions
                 </Link>

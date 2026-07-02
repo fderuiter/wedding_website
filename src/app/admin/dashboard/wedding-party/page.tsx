@@ -71,7 +71,11 @@ export default function WeddingPartyDashboardPage() {
     name: currentMember.name || '',
     role: currentMember.role || '',
     bio: currentMember.bio || '',
-    photo: currentMember.photo || '',
+    photo: {
+      url: currentMember.photoUrl || (currentMember.photo as any)?.url || '',
+      altText: currentMember.photoAlt || (currentMember.photo as any)?.altText || '',
+      isDecorative: currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false,
+    },
     link: currentMember.link || '',
     order: currentMember.order || 0,
   };
@@ -100,7 +104,7 @@ export default function WeddingPartyDashboardPage() {
           <h1 className="text-3xl font-extrabold text-primary">Wedding Party Studio</h1>
           <div>
             <Button onClick={() => { 
-              setCurrentMember({ name: '', role: '', bio: '', photo: '', link: '', order: 0 }); 
+              setCurrentMember({ name: '', role: '', bio: '', photoUrl: '', link: '', order: 0 }); 
               setIsEditing(true); 
             }}>Add New Member</Button>
           </div>
@@ -124,7 +128,17 @@ export default function WeddingPartyDashboardPage() {
               </FormGroup>
               <FormGroup>
                 <Label>Photo URL</Label>
-                <Input type="text" value={currentMember.photo || ''} onChange={e => setCurrentMember({...currentMember, photo: e.target.value})} />
+                <Input type="text" value={currentMember.photoUrl || (currentMember.photo as any)?.url || ''} onChange={e => setCurrentMember({...currentMember, photoUrl: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Photo Alt Text</Label>
+                <Input type="text" value={currentMember.photoAlt || (currentMember.photo as any)?.altText || ''} onChange={e => setCurrentMember({...currentMember, photoAlt: e.target.value})} disabled={currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative} />
+              </FormGroup>
+              <FormGroup className="md:col-span-2">
+                <div className="flex items-center">
+                  <input type="checkbox" checked={currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false} onChange={e => setCurrentMember({...currentMember, photoDecorative: e.target.checked})} className="mr-2" />
+                  <Label className="mb-0">Decorative (no alt text)</Label>
+                </div>
               </FormGroup>
               <FormGroup>
                 <Label>Social Link</Label>
@@ -146,7 +160,7 @@ export default function WeddingPartyDashboardPage() {
           {members.map(member => (
             <div key={member.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
               <div className="flex items-center gap-4">
-                {member.photo && <img src={member.photo} alt={member.name} className="w-16 h-16 rounded-full object-cover" />}
+                {member.photo && <img src={(member.photo as any)?.url || '/images/placeholder.png'} alt={(member.photo as any)?.isDecorative ? '' : ((member.photo as any)?.altText || member.name)} className="w-16 h-16 rounded-full object-cover" />}
                 <div>
                   <div className="font-bold text-lg">{member.name}</div>
                   <div className="text-sm font-semibold text-primary">{member.role}</div>

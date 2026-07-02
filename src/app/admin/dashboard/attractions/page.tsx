@@ -71,7 +71,11 @@ export default function AttractionsDashboardPage() {
     id: currentAttraction.id || 'draft',
     name: currentAttraction.name || '',
     description: currentAttraction.description || '',
-    image: currentAttraction.image || '',
+    image: {
+      url: currentAttraction.imageUrl || (currentAttraction.image as any)?.url || '',
+      altText: currentAttraction.imageAlt || (currentAttraction.image as any)?.altText || '',
+      isDecorative: currentAttraction.imageDecorative || (currentAttraction.image as any)?.isDecorative || false,
+    },
     category: currentAttraction.category || 'food',
     website: currentAttraction.website || '',
     directions: currentAttraction.directions || '',
@@ -102,7 +106,7 @@ export default function AttractionsDashboardPage() {
           <div className="flex gap-4">
             <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
             <Button onClick={() => { 
-              setCurrentAttraction({ name: '', description: '', image: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true }); 
+              setCurrentAttraction({ name: '', description: '', imageUrl: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true }); 
               setIsEditing(true); 
             }}>Add New Attraction</Button>
           </div>
@@ -132,7 +136,17 @@ export default function AttractionsDashboardPage() {
               </FormGroup>
               <FormGroup>
                 <Label>Image URL</Label>
-                <Input type="text" value={currentAttraction.image || ''} onChange={e => setCurrentAttraction({...currentAttraction, image: e.target.value})} />
+                <Input type="text" value={currentAttraction.imageUrl || (currentAttraction.image as any)?.url || ''} onChange={e => setCurrentAttraction({...currentAttraction, imageUrl: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Image Alt Text</Label>
+                <Input type="text" value={currentAttraction.imageAlt || (currentAttraction.image as any)?.altText || ''} onChange={e => setCurrentAttraction({...currentAttraction, imageAlt: e.target.value})} disabled={currentAttraction.imageDecorative || (currentAttraction.image as any)?.isDecorative} />
+              </FormGroup>
+              <FormGroup className="md:col-span-2">
+                <div className="flex items-center">
+                  <input type="checkbox" checked={currentAttraction.imageDecorative || (currentAttraction.image as any)?.isDecorative || false} onChange={e => setCurrentAttraction({...currentAttraction, imageDecorative: e.target.checked})} className="mr-2" />
+                  <Label className="mb-0">Decorative (no alt text)</Label>
+                </div>
               </FormGroup>
               <FormGroup>
                 <Label>Website URL</Label>
@@ -168,7 +182,7 @@ export default function AttractionsDashboardPage() {
           {attractions.map(attraction => (
             <div key={attraction.id} className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center ${!attraction.isVisible ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-4">
-                {attraction.image && <img src={attraction.image} alt={attraction.name} className="w-16 h-16 rounded-lg object-cover" />}
+                {attraction.image && <img src={(attraction.image as any)?.url || '/images/placeholder.png'} alt={(attraction.image as any)?.isDecorative ? '' : ((attraction.image as any)?.altText || attraction.name)} className="w-16 h-16 rounded-lg object-cover" />}
                 <div>
                   <div className="font-bold text-lg">{attraction.name} {!attraction.isVisible && <span className="text-red-500 text-sm">(Hidden)</span>}</div>
                   <div className="text-sm font-semibold text-secondary uppercase">{attraction.category}</div>

@@ -27,7 +27,7 @@ const defaultValues: Partial<RegistryItem> = {
   description: '',
   category: '',
   price: 0,
-  image: '',
+  imageUrl: '',
   vendorUrl: '',
   quantity: 1,
   isGroupGift: false,
@@ -154,7 +154,17 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       </FormGroup>
       <FormGroup>
         <Label>Image URL:</Label>
-        <Input type="url" name="image" value={values.image || ''} onChange={handleChange} placeholder="https://..." />
+        <Input type="url" name="imageUrl" value={values.imageUrl || (values.image as any)?.url || ''} onChange={handleChange} placeholder="https://..." />
+      </FormGroup>
+      <FormGroup>
+        <Label>Image Alt Text:</Label>
+        <Input type="text" name="imageAlt" value={values.imageAlt || (values.image as any)?.altText || ''} onChange={handleChange} placeholder="A descriptive text for screen readers..." disabled={!!(values.imageDecorative || (values.image as any)?.isDecorative)} />
+      </FormGroup>
+      <FormGroup>
+        <div className="flex items-center mt-8">
+          <Checkbox name="imageDecorative" checked={values.imageDecorative || (values.image as any)?.isDecorative || false} onChange={handleChange} />
+          <Label className="ml-2 font-normal">Decorative (no alt text)</Label>
+        </div>
       </FormGroup>
       <FormGroup>
         <Label>Vendor/Product URL:</Label>

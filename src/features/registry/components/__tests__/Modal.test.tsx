@@ -9,7 +9,7 @@ const mockSingleItem: RegistryItem = {
   name: 'Single Item',
   description: 'A nice single item.',
   price: 100,
-  image: '/images/valid.jpg',
+  image: { id: 'm1', url: '/images/valid.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() },
   vendorUrl: 'https://example.com',
   quantity: 1,
   category: 'Home',
@@ -251,7 +251,7 @@ describe('Modal Component', () => {
   });
 
   it('displays placeholder image if item image fails to load', () => {
-    render(<Modal item={{...mockSingleItem, image: '/invalid-path.jpg'}} onClose={mockOnClose} onContribute={mockOnContribute} />);
+    render(<Modal item={{...mockSingleItem, image: { id: 'm2', url: '/invalid-path.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }}} onClose={mockOnClose} onContribute={mockOnContribute} />);
     const img = screen.getByRole('presentation');
     // Simulate the error event
     fireEvent.error(img);

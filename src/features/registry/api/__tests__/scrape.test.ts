@@ -57,7 +57,7 @@ describe('POST /api/registry/scrape', () => {
 
     expect(response.status).toBe(200);
     expect(body.data.name).toBe('Example Site');
-    expect(body.data.image).toBe(''); // Expect empty image
+    expect(body.data.imageUrl).toBe(''); // Expect empty image
   });
 
   it('should correctly scrape an Amazon image using the simplified fallback selector', async () => {
@@ -98,7 +98,7 @@ describe('POST /api/registry/scrape', () => {
 
     expect(response.status).toBe(200);
     expect(body.data.name).toBe('Keurig K-Mini Coffee Maker');
-    expect(body.data.image).toBe(expectedImageUrl);
+    expect(body.data.imageUrl).toBe(expectedImageUrl);
   });
 
   it('should return an empty image string if the Amazon fallback fails to find the element', async () => {
@@ -139,6 +139,6 @@ describe('POST /api/registry/scrape', () => {
     expect(response.status).toBe(200);
     expect(body.data.name).toBe('A Different Product');
     // Should be empty since the fallback selector was not found
-    expect(body.data.image).toBe('');
+    expect(body.data.imageUrl).toBe('');
   });
 });

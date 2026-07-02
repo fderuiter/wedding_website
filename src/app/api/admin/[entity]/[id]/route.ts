@@ -28,7 +28,7 @@ export const PUT = withApiMiddleware(async (_request: NextRequest, context: { pa
     if (error) throw new ApiError(400, error);
   }
 
-  const mappedBody = serviceData.config.mapData ? serviceData.config.mapData(body) : body;
+  const mappedBody = serviceData.config.mapData ? await serviceData.config.mapData(body) : body;
   const updatedRecord = await serviceData.service.update(id, mappedBody);
   
   return NextResponse.json(updatedRecord);
