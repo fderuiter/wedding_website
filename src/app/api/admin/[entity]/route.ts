@@ -1,4 +1,4 @@
-import { DynamicSchema } from "@/utils/validation";
+import { AdminEntityCreateSchema, AdminEntityReorderSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/lib/admin/registry';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -28,7 +28,7 @@ export const POST = withApiMiddleware(async (request: NextRequest, context: { pa
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
-  DynamicSchema.safeParse(body);
+  AdminEntityCreateSchema.safeParse(body);
   
   if (serviceData.config.validateCreate) {
     const error = serviceData.config.validateCreate(body);
@@ -46,9 +46,13 @@ export const PUT = withApiMiddleware(async (request: NextRequest, context: { par
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
-  DynamicSchema.safeParse(body);
-  if (body.action === 'reorder' && Array.isArray(body.orderedIds)) {
-    await serviceData.service.reorder(body.orderedIds);
+  
+  if (body.action === 'reorder') {
+    const parseResult = AdminEntityReorderSchema.safeParse(body);
+    if (!parseResult.success) {
+      throw new ApiError(400, 'Invalid reorder payload');
+    }
+    await serviceData.service.reorder(parseResult.data.orderedIds);
     return NextResponse.json({ success: true });
   }
   throw new ApiError(400, 'Invalid action');

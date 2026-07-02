@@ -1,4 +1,4 @@
-import { DynamicSchema } from "@/utils/validation";
+import { AdminLoginSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
 import { signAdminToken } from '@/utils/adminAuth.server';
@@ -9,16 +9,19 @@ import { ApiError } from '@/utils/ApiError';
 const ADMIN_COOKIE = 'admin_auth';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const { password } = await req.json();
-  DynamicSchema.safeParse({ password });
+  const body = await req.json();
+  const parseResult = AdminLoginSchema.safeParse(body);
+  
+  if (!parseResult.success) {
+    throw new ApiError(400, parseResult.error.issues[0].message);
+  }
+
+  const { password } = parseResult.data;
+  
   const adminPassword = env.ADMIN_PASSWORD;
 
   if (!adminPassword) {
     throw new ApiError(500, 'Admin password not set.');
-  }
-
-  if (typeof password !== 'string') {
-    throw new ApiError(400, 'Invalid password format.');
   }
 
   const isMatch = await verifyPassword(password, adminPassword);
