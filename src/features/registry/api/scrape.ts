@@ -54,6 +54,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     const description = getMetaContent('og:description');
 
     let image = getMetaContent('og:image');
+    let imageAlt = getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
+
     if (!image) {
       image = getMetaContent('twitter:image');
     }
@@ -77,6 +79,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         const imageSrc = imageElement.getAttribute('src');
         if (imageSrc) {
           image = imageSrc;
+          imageAlt = imageAlt || imageElement.getAttribute('alt') || '';
         }
       }
     }
@@ -84,7 +87,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     const scrapedData = {
       name: name,
       description: description,
-      image: image,
+      imageUrl: image,
+      imageAlt: imageAlt,
       vendorUrl: url,
       quantity: 1,
     };

@@ -40,12 +40,26 @@ model AppConfig {
   updatedAt        DateTime @updatedAt
 }
 
+model Media {
+  id           String               @id @default(uuid())
+  url          String
+  altText      String?
+  isDecorative Boolean              @default(false)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  weddingPartyMembers WeddingPartyMember[]
+  attractions         Attraction[]
+  registryItems       RegistryItem[]
+}
+
 model WeddingPartyMember {
   id        String   @id @default(uuid())
   name      String
   role      String
   bio       String
-  photo     String
+  photoId   String
+  photo     Media    @relation(fields: [photoId], references: [id])
   link      String?
   order     Int      @default(0)
   createdAt DateTime @default(now())
@@ -56,7 +70,8 @@ model Attraction {
   id          String   @id @default(uuid())
   name        String
   description String
-  image       String?
+  imageId     String?
+  image       Media?   @relation(fields: [imageId], references: [id])
   category    String
   website     String
   directions  String
@@ -73,7 +88,8 @@ model RegistryItem {
   description       String
   category          String
   price             Float
-  image             String
+  imageId           String
+  image             Media        @relation(fields: [imageId], references: [id])
   vendorUrl         String?
   quantity          Int
   isGroupGift       Boolean      @default(false)

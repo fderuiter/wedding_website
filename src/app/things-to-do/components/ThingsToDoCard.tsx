@@ -1,5 +1,5 @@
 import React from 'react';
-import Image from 'next/image';
+import { MediaImage } from '@/components/MediaImage';
 import type { AttractionDTO } from '@/features/attractions/schemas';
 import { Icon } from '@/components/ui/Icon';
 
@@ -23,12 +23,11 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   return (
     <div className="group bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 flex flex-col h-full">
       <div className="relative h-48 w-full">
-        <Image
-          src={attraction.image || '/images/placeholder.png'}
-          alt={attraction.name}
-          fill
-          style={{ objectFit: 'cover' }}
-          className="transition-transform duration-300 group-hover:scale-110"
+        <MediaImage
+          media={attraction.image}
+          fallbackUrl="/images/placeholder.png"
+          fallbackAlt={attraction.name}
+          className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-110"
         />
       </div>
       <div className="p-6 flex flex-col flex-grow">

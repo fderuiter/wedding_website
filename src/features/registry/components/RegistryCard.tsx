@@ -1,7 +1,7 @@
 import React from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import { getRegistryItemStatus } from '@/features/registry/lib/registryStatusUtils';
-import Image from 'next/image';
+import { MediaImage } from '@/components/MediaImage';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatCurrency } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
@@ -63,22 +63,19 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
-          style={{ backgroundImage: `url("${item.image || '/images/placeholder.png'}")` }}
+          style={{ backgroundImage: `url("${item.image?.url || '/images/placeholder.png'}")` }}
           aria-hidden="true"
         />
         {/* Main Image Layer */}
-        <Image
-          src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing
-          alt=""
-          className="object-contain relative z-10" // Prevent cropping
-          fill // Use fill layout
-          sizes="(max-width: 639px) 100vw, (max-width: 767px) 50vw, (max-width: 1279px) 33vw, 25vw"
+        <MediaImage
+          media={item.image}
+          fallbackUrl="/images/placeholder.png"
+          className="object-contain relative z-10 w-full h-full"
           loading="lazy"
-          onError={(e) => {
+          onError={(e: any) => {
             const target = e.target as HTMLImageElement;
-            target.onerror = null; // Prevent infinite loop if placeholder also fails
-            target.srcset = '/images/placeholder.png'; // Use srcset for next/image
-            target.src = '/images/placeholder.png'; // Fallback src
+            target.onerror = null;
+            target.src = '/images/placeholder.png';
           }}
         />
       </div>

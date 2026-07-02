@@ -65,7 +65,8 @@ describe('POST /api/registry/scrape', () => {
     expect(json.data).toEqual({
       name: 'Mock Item',
       description: 'Mock Description',
-      image: 'https://example.com/image.jpg',
+      imageUrl: 'https://example.com/image.jpg',
+      imageAlt: '',
       vendorUrl: 'https://example.com/product',
       quantity: 1,
     });

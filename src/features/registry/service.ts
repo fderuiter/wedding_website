@@ -34,7 +34,7 @@ export class RegistryService {
    * @param data - The data for the new item.
    * @returns A promise that resolves to the newly created registry item.
    */
-  async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>) {
+  async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     return this.repository.createItem(data);
   }
 
@@ -44,7 +44,7 @@ export class RegistryService {
    * @param data - An object containing the fields to update.
    * @returns A promise that resolves to the updated registry item.
    */
-  async updateItem(id: string, data: Partial<RegistryItem>) {
+  async updateItem(id: string, data: Partial<RegistryItem> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     return this.repository.updateItem(id, data);
   }
 

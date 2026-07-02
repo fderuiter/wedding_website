@@ -1,3 +1,4 @@
+import { prisma } from '@/lib/prisma';
 import { BaseRepository } from './repository';
 import { BaseService } from './service';
 import { coordinateSchema } from '@/utils/validation';
@@ -12,7 +13,56 @@ export interface EntityConfig {
   // declarative custom validation or mapping can be added here
   validateCreate?: (data: any) => string | null;
   validateUpdate?: (data: any) => string | null;
-  mapData?: (data: any) => any;
+  mapData?: (data: any) => Promise<any> | any;
+}
+
+async function handleMediaFields(data: any, idField: string, urlField: string, altField: string, decField: string) {
+  let mediaId = data[idField];
+  const url = data[urlField];
+  const alt = data[altField];
+  const dec = data[decField];
+  
+  if (url || alt !== undefined || dec !== undefined) {
+     if (mediaId) {
+        await prisma.media.update({
+          where: { id: mediaId },
+          data: {
+             ...(url !== undefined && { url }),
+             ...(alt !== undefined && { altText: alt }),
+             ...(dec !== undefined && { isDecorative: dec }),
+          }
+        });
+     } else {
+        const media = await prisma.media.create({
+          data: {
+             url: url || '/images/placeholder.png',
+             altText: alt || null,
+             isDecorative: dec || false,
+          }
+        });
+        mediaId = media.id;
+     }
+  } else if (!mediaId) {
+     const media = await prisma.media.create({
+        data: {
+           url: '/images/placeholder.png',
+           isDecorative: true
+        }
+     });
+     mediaId = media.id;
+  }
+  
+  const mapped = { ...data, [idField]: mediaId };
+  delete mapped[urlField];
+  delete mapped[altField];
+  delete mapped[decField];
+  delete mapped.photo;
+  delete mapped.image;
+  return mapped;
+}
+
+async function mapWeddingPartyData(data: any): Promise<any> {
+  return await handleMediaFields(data, 'photoId', 'photoUrl', 'photoAlt', 'photoDecorative');
 }
 
 function validateCoordinates(data: any): string | null {
@@ -30,11 +80,12 @@ function validateCoordinates(data: any): string | null {
   return null;
 }
 
-function mapAttractionData(data: any): any {
+async function mapAttractionData(data: any): Promise<any> {
   const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
   const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
+  const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative');
   return {
-    ...data,
+    ...mapped,
     latitude: parsedLat.success ? parsedLat.data : 0,
     longitude: parsedLon.success ? parsedLon.data : 0,
   };
@@ -78,6 +129,7 @@ function validateRegistryItem(data: any): string | null {
 const entityConfigs: Record<string, EntityConfig> = {
   'wedding-party': {
     modelName: 'weddingPartyMember',
+    mapData: mapWeddingPartyData,
     entityType: 'WeddingPartyMember',
     validateCreate: validateWeddingParty,
     validateUpdate: validateWeddingParty,

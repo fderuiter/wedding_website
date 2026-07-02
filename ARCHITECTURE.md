@@ -70,6 +70,8 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_content
     node_admin_dashboard_maintenance["maintenance"]
     node_admin_dashboard --> node_admin_dashboard_maintenance
+    node_admin_dashboard_media["media"]
+    node_admin_dashboard --> node_admin_dashboard_media
     node_admin_dashboard_settings["settings"]
     node_admin_dashboard --> node_admin_dashboard_settings
     node_admin_dashboard_sitemanager["site-manager"]
@@ -110,6 +112,10 @@ flowchart LR
     node_api_admin_versions --> node_api_admin_versions_id
     node_api_admin_versions_id_restore["restore"]
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
+    node_api_media["media"]
+    node_api --> node_api_media
+    node_api_media_id["[id]"]
+    node_api_media --> node_api_media_id
     node_api_registry["registry"]
     node_api --> node_api_registry
     node_api_registry_additem["add-item"]
