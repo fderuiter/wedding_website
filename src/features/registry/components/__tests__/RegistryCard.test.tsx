@@ -27,7 +27,7 @@ describe('RegistryCard', () => {
     // Check if the item name, category, and price are displayed
     expect(screen.getByText('Test Item')).toBeInTheDocument();
     expect(screen.getByText('Test Category')).toBeInTheDocument();
-    expect(screen.getByText('$ 99.99')).toBeInTheDocument(); // Note the space added by the component
+    expect(screen.getByText('$99.99')).toBeInTheDocument(); // Note the space added by the component
     const img = screen.getByRole('presentation');
     expect(img.getAttribute('src')).toContain('placeholder.png');
   });

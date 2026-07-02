@@ -3,6 +3,7 @@ import { RegistryItem } from '@/features/registry/types';
 import { getRegistryItemStatus } from '@/features/registry/lib/registryStatusUtils';
 import Image from 'next/image';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
+import { formatCurrency } from '@/utils/intl';
 
 /**
  * Props for the RegistryCard component.
@@ -83,10 +84,10 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
         <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
         <p className="text-base text-gray-600 dark:text-gray-300 mb-1 font-medium">{item.category}</p>
-        <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">$ {item.price.toFixed(2)}</p>
+        <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">{formatCurrency(item.price)}</p>
         {item.isGroupGift && !isClaimed && (
           <p className="text-base text-secondary mt-1 font-semibold">
-            Group Gift: <span className="font-bold">${item.amountContributed.toFixed(2)}</span> contributed
+            Group Gift: <span className="font-bold">{formatCurrency(item.amountContributed)}</span> contributed
           </p>
         )}
         {isClaimed && (
@@ -120,7 +121,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     className: `${cardClasses} h-full`,
     style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' },
     'data-testid': "registry-card",
-    'aria-label': `${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`,
+    'aria-label': `${item.name}, ${formatCurrency(item.price)}${isClaimed ? ', Claimed' : ''}`,
     tabIndex: 0,
     role: isClickable ? 'button' : undefined,
   };
