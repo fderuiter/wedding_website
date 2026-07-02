@@ -1,4 +1,4 @@
-import { isAdminRequest, signAdminToken } from '@/features/admin/auth.server';
+import { isAdminRequest, signAdminToken } from '@/core/auth/auth.server';
 import { cookies } from 'next/headers';
 
 jest.mock('next/headers', () => ({

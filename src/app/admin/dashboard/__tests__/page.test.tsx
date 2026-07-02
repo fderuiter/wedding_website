@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
 import AdminDashboardPage from '../page';
 import type { RegistryItem } from '@/types/registry';
-import { checkAdminClient as mockCheckAdminClient } from '@/features/admin/auth.client';
+import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
 
 // Mock next/navigation's useRouter
 const mockReplace = jest.fn();
@@ -18,7 +18,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 // Mock admin check
-jest.mock('@/features/admin/auth.client');
+jest.mock('@/core/auth/auth.client');
 (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
 
 // Sample registry item for fetch mock

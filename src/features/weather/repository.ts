@@ -1,4 +1,4 @@
-import { BaseRepository } from '@/features/admin';
+import { BaseRepository } from '@/core/infrastructure/repository';
 import { Weather } from './types';
 
 export class WeatherRepository extends BaseRepository<Weather> {

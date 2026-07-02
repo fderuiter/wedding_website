@@ -2,7 +2,7 @@
 
 import { POST } from '../admin/upload/route';
 
-jest.mock('@/features/admin/auth.server', () => ({
+jest.mock('@/core/auth/auth.server', () => ({
   verifyAdminToken: jest.fn(),
   isAdminRequest: jest.fn(),
 }));
@@ -16,7 +16,7 @@ jest.mock('crypto', () => ({
   randomBytes: jest.fn().mockReturnValue({ toString: () => 'abcd1234ef56789a' }),
 }));
 
-import { isAdminRequest } from '@/features/admin/auth.server';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { writeFile } from 'fs/promises';
 
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;

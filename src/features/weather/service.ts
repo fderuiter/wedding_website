@@ -1,4 +1,4 @@
-import { BaseService } from '@/features/admin';
+import { BaseService } from '@/core/infrastructure/service';
 import { WeatherRepository } from './repository';
 import { Weather } from './types';
 
