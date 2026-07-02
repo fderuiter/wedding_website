@@ -8,7 +8,7 @@ import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Button } from "@/components/ui/Button";
-import { useOverlay } from "@/hooks/useOverlay";
+import { Dialog } from "@/components/ui/Dialog";
 
 export default function SiteManagerPage() {
   const router = useRouter();
@@ -20,8 +20,6 @@ export default function SiteManagerPage() {
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customTitle, setCustomTitle] = useState("");
   const [customContent, setCustomContent] = useState("");
-
-  const { overlayRef, handleBackdropClick } = useOverlay(showCustomModal, () => setShowCustomModal(false));
 
   useEffect(() => {
     async function init() {
@@ -185,36 +183,28 @@ export default function SiteManagerPage() {
           </Droppable>
         </DragDropContext>
 
-        {showCustomModal && (
-          <div 
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            onClick={handleBackdropClick}
-          >
-            <div 
-              ref={overlayRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="modal-title"
-              className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl max-w-lg w-full"
-            >
-              <h2 id="modal-title" className="text-2xl font-bold mb-4 text-primary">Add Custom Section</h2>
-              <div className="space-y-4">
-                <FormGroup>
-                  <Label>Section Title</Label>
-                  <Input type="text" value={customTitle} onChange={e => setCustomTitle(e.target.value)} placeholder="e.g. Health & Safety" />
-                </FormGroup>
-                <FormGroup>
-                  <Label>Content</Label>
-                  <Textarea value={customContent} onChange={e => setCustomContent(e.target.value)} rows={5} placeholder="Add your content here... Use double line breaks for paragraphs." />
-                </FormGroup>
-                <div className="flex gap-4 mt-6">
-                  <Button onClick={addCustomSection} className="flex-1 bg-green-600 hover:bg-green-700">Save Section</Button>
-                  <Button onClick={() => setShowCustomModal(false)} variant="ghost" className="flex-1">Cancel</Button>
-                </div>
-              </div>
+        <Dialog
+          isOpen={showCustomModal}
+          onClose={() => setShowCustomModal(false)}
+          title="Add Custom Section"
+          aria-labelledby="modal-title"
+          className="dark:bg-gray-800"
+        >
+          <div className="space-y-4">
+            <FormGroup>
+              <Label>Section Title</Label>
+              <Input type="text" value={customTitle} onChange={e => setCustomTitle(e.target.value)} placeholder="e.g. Health & Safety" />
+            </FormGroup>
+            <FormGroup>
+              <Label>Content</Label>
+              <Textarea value={customContent} onChange={e => setCustomContent(e.target.value)} rows={5} placeholder="Add your content here... Use double line breaks for paragraphs." />
+            </FormGroup>
+            <div className="flex gap-4 mt-6">
+              <Button onClick={addCustomSection} className="flex-1 bg-green-600 hover:bg-green-700">Save Section</Button>
+              <Button onClick={() => setShowCustomModal(false)} variant="ghost" className="flex-1">Cancel</Button>
             </div>
           </div>
-        )}
+        </Dialog>
       </div>
     </div>
   );
