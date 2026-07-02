@@ -15,7 +15,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest, context: { pa
   return NextResponse.json(record);
 });
 
-export const PUT = withApiMiddleware(async (_request: NextRequest, context: { params: Promise<{ entity: string, id: string }> }) => {
+export const PUT = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string, id: string }> }) => {
   const { entity, id } = await context.params;
   const serviceData = getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');

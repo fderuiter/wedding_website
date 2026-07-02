@@ -23,7 +23,7 @@ function reviveDates(obj: any): any {
   return obj;
 }
 
-export const POST = withApiMiddleware(async (_request: NextRequest) => {
+export const POST = withApiMiddleware(async (request: NextRequest) => {
   const rawData = await request.json();
   ImportBackupSchema.parse(rawData);
   const data = reviveDates(rawData);

@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { mediaRepository } from '@/features/media/repository';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
-export const GET = withApiMiddleware(async (request: NextRequest) => {
+export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const media = await mediaRepository.getAllMedia();
   return NextResponse.json(media);
 });

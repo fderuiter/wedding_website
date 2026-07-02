@@ -1,6 +1,6 @@
 "use client";
 
-
+import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 import { Button } from "@/components/ui/Button";
@@ -36,7 +36,7 @@ const ContributionsList = ({ contributors }: { contributors?: { name: string; am
  * @returns {JSX.Element} The rendered admin dashboard page, or a loading/error state.
  */
 export default function AdminDashboardPage() {
-  
+  const router = useRouter();
   const { data: items, isLoading, error, remove } = useAdminRegistry();
   const { addToast, confirm } = useToast();
 

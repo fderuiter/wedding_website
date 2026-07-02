@@ -9,7 +9,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { 
   return NextResponse.json(updatedMedia);
 });
 
-export const DELETE = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   await mediaRepository.deleteMedia(id);
   return NextResponse.json({ success: true });

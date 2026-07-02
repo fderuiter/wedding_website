@@ -1,19 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiClient } from '@/lib/apiClient';
 
-interface UseEntityOrchestrationOptions<_T> {
+interface UseEntityOrchestrationOptions {
   queryKey: string[];
   endpoint: string;
   entityName: string;
   apiClient: ApiClient;
 }
 
-export function useEntityOrchestration<_T extends { id: string }>({
+export function useEntityOrchestration<T extends { id: string }>({
   queryKey,
   endpoint,
   entityName,
   apiClient,
-}: UseEntityOrchestrationOptions<T>) {
+}: UseEntityOrchestrationOptions) {
   const queryClient = useQueryClient();
 
   const {
