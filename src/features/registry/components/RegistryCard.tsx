@@ -4,6 +4,7 @@ import { getRegistryItemStatus } from '@/features/registry/lib/registryStatusUti
 import Image from 'next/image';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatCurrency } from '@/utils/intl';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Props for the RegistryCard component.
@@ -97,20 +98,22 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         )}
         {isAdmin && (
           <div className="absolute bottom-4 right-4 flex gap-2 z-20">
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleEdit}
-              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 focus-visible:ring-2 focus-visible:ring-primary outline-none"
               aria-label={`Edit ${item.name}`}
             >
               Edit
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
               onClick={handleDelete}
-              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 focus-visible:ring-2 focus-visible:ring-primary outline-none"
               aria-label={`Delete ${item.name}`}
             >
               Delete
-            </button>
+            </Button>
           </div>
         )}
       </div>
