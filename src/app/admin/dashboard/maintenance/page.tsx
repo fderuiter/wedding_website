@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 
 export default function MaintenanceHubPage() {
   const router = useRouter();
@@ -13,16 +12,8 @@ export default function MaintenanceHubPage() {
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
-    async function init() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-        return;
-      }
-      setLoading(false);
-    }
-    init();
-  }, [router]);
+    setLoading(false);
+  }, []);
 
   const handleExport = () => {
     window.open('/api/admin/maintenance/export', '_blank');

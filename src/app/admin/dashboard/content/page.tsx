@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import type { ContentNodeDTO } from '@/features/content/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import { apiClient } from '@/lib/admin/apiClient';
@@ -35,15 +34,6 @@ export default function ContentDashboardPage() {
   const [currentNode, setCurrentNode] = useState<Partial<ContentNodeDTO>>({});
   const [dynamicData, setDynamicData] = useState<{key: string, value: string}[]>([]);
 
-  useEffect(() => {
-    async function checkAuth() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-      }
-    }
-    checkAuth();
-  }, [router]);
 
   const handleSave = async () => {
     try {

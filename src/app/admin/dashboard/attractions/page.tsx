@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
@@ -33,15 +32,6 @@ export default function AttractionsDashboardPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentAttraction, setCurrentAttraction] = useState<Partial<AttractionDTO>>({});
 
-  useEffect(() => {
-    async function checkAuth() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-      }
-    }
-    checkAuth();
-  }, [router]);
 
   const handleSave = async () => {
     try {
