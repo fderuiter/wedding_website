@@ -17,7 +17,7 @@ export default function EditRegistryItemPage() {
   const params = useParams();
   const itemId = params?.id as string;
   const { addToast } = useToast();
-  const { data: items, loading: itemsLoading, error: itemsError, update } = useAdminRegistry();
+  const { data: items, isLoading: itemsLoading, error: itemsError, update } = useAdminRegistry();
 
   const [itemData, setItemData] = useState<RegistryItem | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export default function EditRegistryItemPage() {
       if (foundItem) {
         setItemData(foundItem);
       } else if (itemsError) {
-        setError(itemsError);
+        setError(itemsError.message);
       } else {
         setError('Item not found.');
       }

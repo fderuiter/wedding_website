@@ -38,13 +38,13 @@ const ContributionsList = ({ contributors }: { contributors?: { name: string; am
  */
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const { data: items, loading, error, remove } = useAdminRegistry();
+  const { data: items, isLoading, error, remove } = useAdminRegistry();
   const { addToast, confirm } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
 
-  if (loading) return (
+  if (isLoading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
       <h1 className="text-3xl font-bold mb-4 text-primary">Admin Dashboard</h1>
       <p className="text-lg text-gray-500 dark:text-gray-400">Loading items...</p>
@@ -53,7 +53,7 @@ export default function AdminDashboardPage() {
   if (error) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
       <h1 className="text-3xl font-bold mb-4 text-primary">Admin Dashboard</h1>
-      <p className="text-red-500 text-lg">Error: {error}</p>
+      <p className="text-red-500 text-lg">Error: {error.message}</p>
     </div>
   );
 

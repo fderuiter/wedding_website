@@ -28,7 +28,7 @@ export default function ContentDashboardPage() {
 
   const {
     data: nodes,
-    loading,
+    isLoading,
     error,
     fetchAll,
     create,
@@ -120,8 +120,8 @@ export default function ContentDashboardPage() {
     setDynamicData(newData);
   };
 
-  if (loading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
-  if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error}</p></main>;
+  if (isLoading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
+  if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></main>;
 
   const draftDataObj: Record<string, string> = {};
   dynamicData.forEach(item => {

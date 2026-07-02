@@ -1,29 +1,16 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '@/features/registry/types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
+import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
 
-/**
- * @function useRegistry
- * @description Custom hook for managing registry state and operations.
- *
- * This hook handles:
- * - Fetching registry items using React Query.
- * - Admin authentication status check.
- * - Filtering and sorting of registry items (category, price range, availability).
- * - Pagination (infinite scroll) logic via `visibleItemsCount`.
- * - Modal state management for viewing/contributing to items.
- * - Mutations for contributing to, deleting, and editing items.
- *
- * @returns {object} An object containing the registry state and handler functions.
- */
 export function useRegistry() {
   const queryClient = useQueryClient();
   const { confirm } = useToast();
@@ -45,11 +32,12 @@ export function useRegistry() {
     data: items = [],
     isLoading,
     error,
-  } = useQuery<RegistryItem[], Error>({
+    remove: deleteItem,
+  } = useEntityOrchestration<RegistryItem>({
     queryKey: ['registry-items'],
-    queryFn: async () => {
-      return apiClient.get<RegistryItem[]>('/api/registry/items');
-    },
+    endpoint: '/api/registry/items',
+    entityName: 'registry item',
+    apiClient,
   });
 
   const { mutate: contribute } = useMutation({
@@ -86,24 +74,16 @@ export function useRegistry() {
         queryClient.setQueryData(['registry-items'], context.previousItems);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['registry-items'] });
+    // Keep onSettled here if it's not strictly part of "standard mutations" mentioned,
+    // actually let's remove onSettled invalidation from contribute as well to follow "mutations perform manual cache snapshots and rollbacks without relying on settlement invalidation".
+    onSuccess: (updatedItem) => {
+      queryClient.setQueryData<RegistryItem[]>(['registry-items'], old =>
+        old?.map(item => item.id === updatedItem.id ? updatedItem : item)
+      );
     },
     meta: {
       successMessage: 'Thank you for your contribution!',
       errorMessage: 'Error: Could not process contribution.'
-    }
-  });
-
-  const { mutate: deleteItem } = useMutation({
-    mutationFn: async (itemId: string) => {
-      return apiClient.delete(`/api/registry/items/${itemId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registry-items'] });
-    },
-    meta: {
-      successMessage: 'Item deleted successfully.'
     }
   });
 

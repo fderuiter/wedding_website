@@ -25,7 +25,7 @@ export default function AttractionsDashboardPage() {
 
   const {
     data: attractions,
-    loading,
+    isLoading,
     error,
     fetchAll,
     create,
@@ -64,8 +64,8 @@ export default function AttractionsDashboardPage() {
     }
   };
 
-  if (loading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
-  if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error}</p></main>;
+  if (isLoading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
+  if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></main>;
 
   const draftAttraction = {
     id: currentAttraction.id || 'draft',
