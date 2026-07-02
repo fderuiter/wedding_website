@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/admin/apiClient';
-import { useToast } from '@/components/ui/ToastProvider';
 
 export function useAdminFeatures() {
   const queryClient = useQueryClient();
-  const { addToast } = useToast();
   const queryKey = ['admin-features'];
   const endpoint = '/api/admin/features';
 
@@ -40,12 +38,13 @@ export function useAdminFeatures() {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-      addToast(err.message || 'Error saving sections', 'error');
     },
     onSuccess: () => {
-      // Intentionally not adding a success toast here to avoid spamming on every drag drop
       queryClient.invalidateQueries({ queryKey });
     },
+    meta: {
+      showSuccessToast: false
+    }
   });
 
   return {
