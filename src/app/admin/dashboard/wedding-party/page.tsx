@@ -10,10 +10,10 @@ import { Button } from "@/components/ui/Button";
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 
 /**
- * Render the admin CRUD interface and live archive preview for wedding-party members.
+ * Render the admin CRUD interface and live preview for wedding-party members.
  *
  * Renders an admin page that lists wedding party members, provides create/edit/delete controls,
- * shows an inline form for drafting a member, and supplies a preview of the archive via AdminPreviewLayout.
+ * shows an inline form for drafting a member, and supplies a preview via AdminPreviewLayout.
  *
  * @returns The React element for the Wedding Party admin dashboard and preview.
  */
@@ -88,7 +88,7 @@ export default function WeddingPartyDashboardPage() {
 
   return (
     <AdminPreviewLayout
-      previewUrl="/archive/wedding-party"
+      previewUrl="/wedding-party"
       draftType="wedding-party"
       draftData={currentMembersWithDraft}
       entityId={currentMember.id}
