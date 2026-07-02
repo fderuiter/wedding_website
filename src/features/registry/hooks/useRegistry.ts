@@ -5,7 +5,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '@/features/registry/types';
 import { checkAdminClient } from '@/features/admin/auth.client';
-import { useRouter } from 'next/navigation';
+
 import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
@@ -18,7 +18,7 @@ export function useRegistry() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(12);
   const [isAdmin, setIsAdmin] = useState(false);
-  const router = useRouter();
+  
 
   useEffect(() => {
     const checkAdminStatus = async () => {

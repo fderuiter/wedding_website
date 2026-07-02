@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+
 import { FormGroup, Label, Input, FormMessage } from "@/components/ui/forms";
 import { AccessibleStep } from "@/components/ui/AccessibleStep";
 import { Container, Card, Heading } from "@/components/ui/Layout";
@@ -25,7 +25,7 @@ function isDefaultUrl(url: string): boolean {
 }
 
 export default function SetupWizard() {
-  const router = useRouter();
+  
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

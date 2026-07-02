@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+
 import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 
@@ -19,7 +19,7 @@ import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
  * @returns The React element for the Attractions admin dashboard page.
  */
 export default function AttractionsDashboardPage() {
-  const router = useRouter();
+  
   const { confirm } = useToast();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
 

@@ -1,5 +1,5 @@
 import { generateMetadata } from '../metadata';
-import { getAppConfig } from '@/lib/config';
+
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({

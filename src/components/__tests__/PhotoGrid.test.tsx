@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import PhotoGrid from '../PhotoGrid';
 import Lightbox from '../Lightbox';

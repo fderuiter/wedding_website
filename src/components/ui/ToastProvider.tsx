@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { Dialog } from "./Dialog";
 
 export type ToastType = "success" | "error" | "info" | "confirm";

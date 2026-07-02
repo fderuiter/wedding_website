@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
-export const GET = withApiMiddleware(async (request: NextRequest) => {
+export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const [
     appConfig,
     contentNode,

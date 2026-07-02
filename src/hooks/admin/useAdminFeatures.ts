@@ -34,7 +34,7 @@ export function useAdminFeatures() {
       queryClient.setQueryData<any[]>(queryKey, newFeatures);
       return { previousData };
     },
-    onError: (err: any, variables, context) => {
+    onError: ( _err: any, _variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }

@@ -1,15 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Icon } from '@/components/ui/Icon'
-import AddToCalendar from '@/components/AddToCalendar'
-import { CalendarEvent } from '@/utils/calendar'
 import type { ContentNodeDTO } from '@/features/content/schemas'
 import type { PublicAppConfig } from '@/lib/config'
 import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
-import Countdown from '@/components/Countdown'
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard'
 import { formatDate } from '@/utils/intl'
 
@@ -25,7 +22,7 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
  * @param contentNodes - Optional initial array of CMS content nodes that drive FAQs, logistics, and custom sections.
  * @returns The rendered homepage JSX element.
  */
-export default function HomePageClient({ calendarEvent, config: initialConfig, contentNodes: initialContentNodes = [] }: { calendarEvent: CalendarEvent, config: PublicAppConfig, contentNodes?: ContentNodeDTO[] }) {
+export default function HomePageClient({ config: initialConfig, contentNodes: initialContentNodes = [] }: { config: PublicAppConfig, contentNodes?: ContentNodeDTO[] }) {
   const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
 

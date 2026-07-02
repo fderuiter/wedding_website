@@ -1,6 +1,6 @@
 "use client";
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 import { Icon } from "@/components/ui/Icon";
@@ -10,7 +10,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { useAdminFeatures } from "@/hooks/admin/useAdminFeatures";
 
 export default function SiteManagerPage() {
-  const router = useRouter();
+  
   const { addToast } = useToast();
   const { features, loading, error, saveFeatures } = useAdminFeatures();
   

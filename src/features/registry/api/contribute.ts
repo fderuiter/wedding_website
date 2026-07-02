@@ -4,7 +4,7 @@ import { ContributionSchema } from '@/features/registry/schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const POST = withApiMiddleware(async (request: NextRequest) => {
+export const POST = withApiMiddleware(async (_request: NextRequest) => {
   const data = await request.json();
   const parseResult = ContributionSchema.safeParse(data);
   

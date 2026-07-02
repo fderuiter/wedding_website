@@ -9,7 +9,7 @@ export const GET = withApiMiddleware(async () => {
   return NextResponse.json(features);
 });
 
-export const PUT = withApiMiddleware(async (request: NextRequest) => {
+export const PUT = withApiMiddleware(async (_request: NextRequest) => {
   const body = await request.json();
   UpdateFeaturesSchema.parse(body);
   if (!body.features) {

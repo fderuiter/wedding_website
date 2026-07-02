@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import Forecast from '../Forecast';
 import { server } from '@/mocks/server';
@@ -11,7 +10,7 @@ describe('Forecast Component', () => {
 
   it('should display a loading state initially', async () => {
     server.use(
-      rest.get('/api/weather', (req, res, ctx) => {
+      rest.get('/api/weather', (_req, res, ctx) => {
         return res(ctx.json({
           daily: {
             time: ['2025-10-10'],
@@ -42,7 +41,7 @@ describe('Forecast Component', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     server.use(
-      rest.get('/api/weather', (req, res, ctx) => {
+      rest.get('/api/weather', (_req, res, ctx) => {
         return res(ctx.status(500), ctx.json({ error: 'API is down' }));
       })
     );
@@ -70,7 +69,7 @@ describe('Forecast Component', () => {
     };
 
     server.use(
-      rest.get('/api/weather', (req, res, ctx) => {
+      rest.get('/api/weather', (_req, res, ctx) => {
         return res(ctx.json(mockWeatherData));
       })
     );

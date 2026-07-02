@@ -1,5 +1,5 @@
 import sitemap from '../sitemap';
-import { getAppConfig } from '@/lib/config';
+
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({

@@ -25,7 +25,7 @@ describe('Weather API Route', () => {
     };
 
     server.use(
-      rest.get('https://api.open-meteo.com/v1/forecast', (req, res, ctx) => {
+      rest.get('https://api.open-meteo.com/v1/forecast', (_req, res, ctx) => {
         return res(ctx.json(mockWeatherData));
       })
     );
@@ -39,7 +39,7 @@ describe('Weather API Route', () => {
 
   it('should return a 500 status code on fetch failure', async () => {
     server.use(
-      rest.get('https://api.open-meteo.com/v1/forecast', (req, res, ctx) => {
+      rest.get('https://api.open-meteo.com/v1/forecast', (_req, res) => {
         return res.networkError('API is down');
       })
     );
@@ -54,7 +54,7 @@ describe('Weather API Route', () => {
 
   it('should return a 500 status code on non-ok response from Open-Meteo', async () => {
     server.use(
-      rest.get('https://api.open-meteo.com/v1/forecast', (req, res, ctx) => {
+      rest.get('https://api.open-meteo.com/v1/forecast', (_req, res, ctx) => {
         return res(ctx.status(500));
       })
     );

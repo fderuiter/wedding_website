@@ -1,4 +1,3 @@
-import React from 'react';
 import { Metadata } from 'next';
 import WeddingPartyList from '@/components/WeddingPartyList';
 import { contentService } from '@/features/content/service';

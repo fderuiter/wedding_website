@@ -4,12 +4,12 @@ import { Attraction, ContentNode } from '@prisma/client';
 
 class MockContentRepository implements IContentRepository {
   async getFeatures() { return []; }
-  async updateFeatures(features: any[]) { return {} as any; }
+  async updateFeatures(_features: any[]) { return {} as any; }
   async getAllNodes() { return []; }
-  async getNodesByType(type: string) { return []; }
-  async createNode(data: any) { return {} as any; }
-  async updateNode(id: string, data: any) { return {} as any; }
-  async deleteNode(id: string) { return {} as any; }
+  async getNodesByType(_type: string) { return []; }
+  async createNode(_data: any) { return {} as any; }
+  async updateNode(_id: string, _data: any) { return {} as any; }
+  async deleteNode(_id: string) { return {} as any; }
   async getAttractions() { return []; }
 }
 

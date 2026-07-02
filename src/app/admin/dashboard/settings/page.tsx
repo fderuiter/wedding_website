@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+
 import { apiClient } from '@/features/admin/apiClient';
 import { useAdminSettings } from "@/hooks/admin/useAdminSettings";
 
@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/ToastProvider";
 
 export default function AdminSettingsPage() {
-  const router = useRouter();
+  
   const { addToast } = useToast();
-  const { config: initialConfig, loading, saving, error, saveSettings, fetchAll } = useAdminSettings();
+  const { config: initialConfig, loading, saving, saveSettings, fetchAll } = useAdminSettings();
   
   const [localConfig, setLocalConfig] = useState<any>(null);
 

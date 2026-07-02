@@ -59,7 +59,7 @@ describe('useRegistry', () => {
     
     // Default success handler for fetching items
     server.use(
-      rest.get('/api/registry/items', (req, res, ctx) => {
+      rest.get('/api/registry/items', (_req, res, ctx) => {
         return res(ctx.json({ success: true, data: mockItems }));
       })
     );
@@ -138,7 +138,7 @@ describe('useRegistry', () => {
   it('should handle delete', async () => {
     let deleteCalled = false;
     server.use(
-      rest.delete('/api/registry/items/1', (req, res, ctx) => {
+      rest.delete('/api/registry/items/1', (_req, res, ctx) => {
         deleteCalled = true;
         return res(ctx.json({ success: true }));
       })
@@ -166,7 +166,7 @@ describe('useRegistry', () => {
   it('should handle contribution', async () => {
     let contributeBody = null;
     server.use(
-      rest.post('/api/registry/contribute', async (req, res, ctx) => {
+      rest.post('/api/registry/contribute', async (_req, res, ctx) => {
         contributeBody = await req.json();
         return res(ctx.json({ success: true }));
       })

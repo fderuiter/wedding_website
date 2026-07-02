@@ -4,7 +4,7 @@ import { getEntityService } from '@/features/admin/registry';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const GET = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
+export const GET = withApiMiddleware(async (_request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
   const serviceData = getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
@@ -22,7 +22,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, context: { par
   return NextResponse.json(records);
 });
 
-export const POST = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
+export const POST = withApiMiddleware(async (_request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
   const serviceData = getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
@@ -40,7 +40,7 @@ export const POST = withApiMiddleware(async (request: NextRequest, context: { pa
   return NextResponse.json(newRecord, { status: 201 });
 });
 
-export const PUT = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
+export const PUT = withApiMiddleware(async (_request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
   const serviceData = getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');

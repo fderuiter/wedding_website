@@ -4,13 +4,13 @@ import '@testing-library/jest-dom';
 import AdminSettingsPage from '../page';
 import { checkAdminClient as mockCheckAdminClient } from '@/features/admin/auth.client';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
-import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 const render = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
     mutationCache: new MutationCache({
-      onSuccess: (_data, _variables, _context, mutation) => {
+      onSuccess: (_data, _variables, _context) => {
         // We can just rely on the test wrapper injecting toasts
       }
     })

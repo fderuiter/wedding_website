@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
-import { Icon } from '@/components/ui/Icon';
+
 
 export const metadata: Metadata = {
   title: "Archive",
