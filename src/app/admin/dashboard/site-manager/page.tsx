@@ -142,12 +142,12 @@ export default function SiteManagerPage() {
                         className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 transition ${!feature.visible ? 'opacity-50' : ''}`}
                       >
                         <div className="flex items-center gap-4">
-                          <div className="text-gray-400">
+                          <div className="text-gray-500 dark:text-gray-400">
                             <Icon name="DragHandle" className="h-6 w-6" />
                           </div>
                           <div>
                             <h3 className="font-bold text-xl text-primary">{feature.title || feature.id}</h3>
-                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{feature.type}</span>
+                            <span className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{feature.type}</span>
                           </div>
                         </div>
                         <div>

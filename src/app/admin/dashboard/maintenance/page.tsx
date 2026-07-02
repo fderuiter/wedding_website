@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
 
 export default function MaintenanceHubPage() {
   const router = useRouter();
@@ -77,7 +78,7 @@ export default function MaintenanceHubPage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-primary tracking-tight drop-shadow-lg">Maintenance Hub</h1>
-          <button onClick={() => router.push('/admin/dashboard')} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">Back to Dashboard</button>
+          <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
         </div>
 
         {message && (
@@ -97,12 +98,12 @@ export default function MaintenanceHubPage() {
             <p className="text-gray-600 dark:text-gray-300 mb-6">
               Download a complete JSON backup of your wedding database, including registry items, settings, unified contributors, and snapshot history. Keep this file in a safe place, as it may contain PII (Personally Identifiable Information).
             </p>
-            <button
+            <Button
               onClick={handleExport}
-              className="bg-primary hover:brightness-90 text-white px-6 py-3 rounded-lg text-base font-semibold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-primary"
+              size="lg"
             >
               Export All Data
-            </button>
+            </Button>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-primary dark:border-gray-700">
@@ -124,13 +125,14 @@ export default function MaintenanceHubPage() {
                     hover:file:brightness-90"
                 />
               </div>
-              <button
+              <Button
                 type="submit"
+                variant="danger"
+                size="lg"
                 disabled={!file || importing}
-                className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-lg text-base font-semibold shadow-lg transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-orange-600"
               >
                 {importing ? "Importing..." : "Import Data"}
-              </button>
+              </Button>
             </form>
           </section>
         </div>

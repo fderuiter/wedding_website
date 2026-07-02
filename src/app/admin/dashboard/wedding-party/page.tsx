@@ -128,7 +128,7 @@ export default function WeddingPartyDashboardPage() {
               </FormGroup>
             </div>
             <div className="flex gap-4 mt-6">
-              <Button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">Save</Button>
+              <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white">Save</Button>
               <Button onClick={() => setIsEditing(false)} variant="ghost">Cancel</Button>
             </div>
           </div>
@@ -156,7 +156,7 @@ export default function WeddingPartyDashboardPage() {
               </div>
             </div>
           ))}
-          {members.length === 0 && <p className="text-gray-500">No wedding party members found.</p>}
+          {members.length === 0 && <p className="text-gray-500 dark:text-gray-400">No wedding party members found.</p>}
         </div>
       </div>
     </AdminPreviewLayout>
