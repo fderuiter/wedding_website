@@ -17,6 +17,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, 'Invalid URL format');
   }
 
+  /**
+   * SSRF Guard Clause:
+   * Resolves the target hostname to an IP address (IPv4 or IPv6) and validates it
+   * against known private, loopback, and restricted address ranges (e.g., 10.0.0.0/8,
+   * 127.0.0.0/8, 192.168.0.0/16, fc00::/7). This prevents Server-Side Request Forgery
+   * by ensuring the scraper only accesses publicly routable external infrastructure.
+   */
   if (await isPrivateUrl(url)) {
     throw new ApiError(400, 'Invalid URL: Private or restricted address');
   }
@@ -60,6 +67,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       (hostname.endsWith('.amazon.com'))
     );
     
+    /**
+     * Vendor-Specific Logic: Amazon Fallback
+     * Amazon product pages often lack standard Open Graph image tags or load primary images dynamically.
+     * This fallback targets the specific DOM selector `#imgTagWrapperId img`, which wraps the primary
+     * product image on most standard Amazon item pages, extracting its `src` attribute.
+     */
     if (!image && isAmazonDomain) {
       const imageElement = root.querySelector('#imgTagWrapperId img');
       if (imageElement) {
