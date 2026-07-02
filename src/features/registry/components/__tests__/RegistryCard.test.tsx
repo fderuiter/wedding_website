@@ -28,7 +28,7 @@ describe('RegistryCard', () => {
     expect(screen.getByText('Test Item')).toBeInTheDocument();
     expect(screen.getByText('Test Category')).toBeInTheDocument();
     expect(screen.getByText('$ 99.99')).toBeInTheDocument(); // Note the space added by the component
-    const img = screen.getByAltText('Test Item');
+    const img = screen.getByRole('presentation');
     expect(img.getAttribute('src')).toContain('placeholder.png');
   });
 
@@ -84,7 +84,7 @@ describe('RegistryCard', () => {
   // Test for image error handling
   it('displays placeholder image if item image fails to load', () => {
     render(<RegistryCard item={{ ...mockItem, image: '/invalid-path.jpg' }} onClick={() => {}} />);
-    const img = screen.getByAltText(mockItem.name);
+    const img = screen.getByRole('presentation');
     // Simulate the error event
     fireEvent.error(img);
     // Check if the src is updated to the placeholder

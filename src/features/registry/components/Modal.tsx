@@ -91,7 +91,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         <div className="relative w-full h-64 mb-4">
           <Image
             src={item.image || '/images/placeholder.png'}
-            alt={item.name}
+            alt=""
             className="object-cover rounded bg-gray-100"
             fill
             onError={(e) => {
