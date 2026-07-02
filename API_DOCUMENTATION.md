@@ -271,7 +271,7 @@ Submits a contribution towards a group gift or marks a regular item as purchased
 
 ### `POST /api/registry/scrape`
 
-**(Admin Only)** Scrapes a URL to pre-fill the "Add Item" form. This endpoint uses `open-graph-scraper` to pull `title`, `description`, and `image` from the target page's Open Graph or metadata tags.
+**(Admin Only)** Scrapes a URL to pre-fill the "Add Item" form. This endpoint uses `node-html-parser` to pull `title`, `description`, and `image` from the target page's Open Graph or metadata tags.
 
 **Request Body:**
 ```json
@@ -281,12 +281,23 @@ Submits a contribution towards a group gift or marks a regular item as purchased
 ```
 
 **Response:**
-*   **`200 OK`** - Returns the scraped data.
+*   **`200 OK`** - Returns the scraped data, wrapped by standard API middleware.
     ```json
     {
-      "name": "Product Title from Amazon",
-      "description": "Product description scraped from the page.",
-      "image": "https://m.media-amazon.com/images/I/some-image.jpg"
+      "success": true,
+      "data": {
+        "name": "Product Title from Amazon",
+        "description": "Product description scraped from the page.",
+        "image": "https://m.media-amazon.com/images/I/some-image.jpg",
+        "vendorUrl": "https://www.amazon.com/some-product-link",
+        "quantity": 1
+      }
     }
     ```
 *   **`400 Bad Request`** - If the URL is invalid or scraping fails.
+    ```json
+    {
+      "success": false,
+      "error": "Invalid URL format"
+    }
+    ```

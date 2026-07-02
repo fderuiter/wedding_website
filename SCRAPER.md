@@ -6,15 +6,18 @@ This document provides details on the web scraper functionality used to pre-fill
 
 The web scraper is exposed via the `POST /api/registry/scrape` API endpoint. It is an admin-only feature designed to simplify adding new items to the registry by automatically fetching metadata from a product page.
 
-The backend uses the `open-graph-scraper` library, which is a powerful tool to extract metadata from a webpage. It primarily looks for Open Graph tags (`og:title`, `og:description`, `og:image`), but will fall back to other metadata like standard meta tags.
+The backend uses the `node-html-parser` library, which is a lightweight and robust tool to parse HTML and extract metadata from a webpage. It primarily looks for Open Graph tags (`og:title`, `og:description`, `og:image`), but will fall back to other metadata like standard meta tags.
 
-## How It Works
+## Architecture and Extraction Workflow
 
-1.  An administrator provides a URL to the "Add Item" form in the admin dashboard.
-2.  The frontend sends a request to the `POST /api/registry/scrape` endpoint with the URL in the request body.
-3.  The backend processes the URL using `open-graph-scraper` to fetch and parse the target site's content.
-4.  The extracted `name` (title), `description`, and `image` are returned to the client.
-5.  The "Add Item" form is then pre-filled with this data.
+The scraper follows a strict sequence to ensure security and reliability when fetching external resources:
+
+1.  **Request Initiation:** An administrator provides a URL to the "Add Item" form in the admin dashboard, sending a POST request to `/api/registry/scrape`.
+2.  **URL Validation & SSRF Protection:** The system validates the URL format. Crucially, before any request is made, a Server-Side Request Forgery (SSRF) guard clause verifies the target hostname. It resolves the hostname to an IP address and blocks any requests to private or restricted network ranges.
+3.  **Content Fetching:** Once the URL is deemed safe, a `fetch` request is executed with standard user-agent headers to mimic a normal browser visit and avoid basic bot protections.
+4.  **HTML Parsing:** The HTML response body is parsed using `node-html-parser`.
+5.  **Data Extraction:** The parsed DOM is queried for relevant product data (Title, Description, Image) using Open Graph tags. Vendor-specific fallbacks (like Amazon image selectors) are executed if standard tags are missing.
+6.  **Response Generation:** The extracted metadata is structured into a standard response object and wrapped by the API middleware before being returned to the client to pre-fill the form.
 
 ## Known Issues and Limitations
 
