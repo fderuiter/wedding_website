@@ -1,3 +1,4 @@
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import EditRegistryItemPage from '../edit-item';
@@ -30,10 +31,10 @@ describe('EditRegistryItemPage', () => {
             json: () => Promise.resolve({ isAdmin: true }),
           });
         }
-        if (url.includes(`/api/registry/items/${mockItem.id}`)) {
+        if (url.includes('/api/admin/registry')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve(mockItem),
+            json: () => Promise.resolve([mockItem]),
           });
         }
       }
@@ -46,7 +47,7 @@ describe('EditRegistryItemPage', () => {
   });
 
   it('prefills form fields with fetched data', async () => {
-    render(<EditRegistryItemPage />);
+    render(<ToastProvider><EditRegistryItemPage /></ToastProvider>);
 
     expect(await screen.findByLabelText(/item name/i)).toHaveValue(mockItem.name);
     expect(screen.getByLabelText(/price/i)).toHaveValue(mockItem.price);

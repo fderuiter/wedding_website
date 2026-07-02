@@ -1,3 +1,4 @@
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import React from 'react';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -55,7 +56,7 @@ describe('AdminDashboardPage', () => {
       json: async () => [mockItem],
     });
 
-    const { unmount } = render(<AdminDashboardPage />);
+    const { unmount } = render(<ToastProvider><AdminDashboardPage /></ToastProvider>);
 
     expect(await screen.findByRole('button', { name: 'Add New Item' })).toBeInTheDocument();
     expect((await screen.findAllByRole('button', { name: 'Edit registry item: Sample Item' })).length).toBeGreaterThan(0);
@@ -72,7 +73,7 @@ describe('AdminDashboardPage', () => {
       })
     );
 
-    render(<AdminDashboardPage />);
+    render(<ToastProvider><AdminDashboardPage /></ToastProvider>);
     expect(screen.getByText('Loading items...')).toBeInTheDocument();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
 
@@ -89,17 +90,17 @@ describe('AdminDashboardPage', () => {
   it('shows error when item fetch fails', async () => {
     mockFetch.mockResolvedValueOnce({ ok: false });
 
-    render(<AdminDashboardPage />);
+    render(<ToastProvider><AdminDashboardPage /></ToastProvider>);
 
-    expect(await screen.findByText('Error: Failed to fetch items')).toBeInTheDocument();
+    expect(await screen.findByText('Error: API Error')).toBeInTheDocument();
   });
 
   it('deletes item successfully', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/registry/items') {
+      if (url === '/api/admin/registry') {
         return Promise.resolve({ ok: true, json: async () => [mockItem] });
       }
-      if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
+      if (url === `/api/admin/registry/${mockItem.id}` && options?.method === 'DELETE') {
         return Promise.resolve({ ok: true });
       }
       return Promise.reject(new Error(`Unhandled request: ${url}`));
@@ -110,7 +111,7 @@ describe('AdminDashboardPage', () => {
     window.confirm = jest.fn().mockReturnValue(true);
     window.alert = jest.fn();
 
-    render(<AdminDashboardPage />);
+    render(<ToastProvider><AdminDashboardPage /></ToastProvider>);
 
     expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
 
@@ -120,7 +121,8 @@ describe('AdminDashboardPage', () => {
       expect(screen.queryByText('Sample Item')).not.toBeInTheDocument();
     });
 
-    expect(window.alert).toHaveBeenCalledWith('Item deleted successfully.');
+    // Check for success toast
+    expect(await screen.findByText('Item deleted successfully.')).toBeInTheDocument();
 
     window.confirm = originalConfirm;
     window.alert = originalAlert;
@@ -128,10 +130,10 @@ describe('AdminDashboardPage', () => {
 
   it('shows alert and keeps item when delete fails', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/registry/items') {
+      if (url === '/api/admin/registry') {
         return Promise.resolve({ ok: true, json: async () => [mockItem] });
       }
-      if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
+      if (url === `/api/admin/registry/${mockItem.id}` && options?.method === 'DELETE') {
         return Promise.resolve({ ok: false });
       }
       return Promise.reject(new Error(`Unhandled request: ${url}`));
@@ -142,14 +144,14 @@ describe('AdminDashboardPage', () => {
     window.confirm = jest.fn().mockReturnValue(true);
     window.alert = jest.fn();
 
-    render(<AdminDashboardPage />);
+    render(<ToastProvider><AdminDashboardPage /></ToastProvider>);
 
     expect((await screen.findAllByText('Sample Item')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete registry item: Sample Item' })[0]);
 
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Failed to delete item');
+      expect(screen.getByText('Failed to delete item')).toBeInTheDocument();
     });
 
     expect(screen.getAllByText('Sample Item').length).toBeGreaterThan(0);

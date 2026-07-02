@@ -1,3 +1,4 @@
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -24,7 +25,7 @@ import AddRegistryItemPage from '../add-item';
 
 describe('AddRegistryItemPage', () => {
   it('renders the RegistryItemForm', async () => {
-    render(<AddRegistryItemPage />);
+    render(<ToastProvider><AddRegistryItemPage /></ToastProvider>);
     expect(await screen.findByTestId('registry-item-form')).toBeInTheDocument();
   });
 });
