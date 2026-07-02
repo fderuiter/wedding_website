@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { WebVitals } from '@/components/WebVitals';
 import Navbar from './Navbar';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
-
-const queryClient = new QueryClient();
+import { useToast } from '@/components/ui/ToastProvider';
 
 import type { PublicAppConfig } from '@/lib/config';
 
@@ -42,6 +41,36 @@ export default function RootLayoutClient({
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const [mainPaddingTop, setMainPaddingTop] = useState(0);
+  const { addToast } = useToast();
+
+  const [queryClient] = useState(() => new QueryClient({
+    mutationCache: new MutationCache({
+      onSuccess: (_data, _variables, _context, mutation) => {
+        if (mutation.meta?.successMessage) {
+          addToast(mutation.meta.successMessage as string, 'success');
+        } else if (mutation.meta?.showSuccessToast !== false) {
+          addToast('Operation completed successfully!', 'success');
+        }
+      },
+      onError: (error: any, _variables, _context, mutation) => {
+        if (mutation.meta?.errorMessage) {
+          addToast(mutation.meta.errorMessage as string, 'error');
+        } else if (mutation.meta?.showErrorToast !== false) {
+          let message = error?.message || 'An error occurred during the operation.';
+          if (error && typeof error === 'object' && 'status' in error) {
+            switch (error.status) {
+              case 400: message = 'Invalid request. Please check your inputs.'; break;
+              case 401: message = 'Please log in to continue.'; break;
+              case 403: message = 'You do not have permission to perform this action.'; break;
+              case 404: message = 'The requested resource was not found.'; break;
+              case 500: message = 'An unexpected server error occurred. Please try again later.'; break;
+            }
+          }
+          addToast(message, 'error');
+        }
+      },
+    }),
+  }));
 
   useEffect(() => {
     const checkLoginStatus = () => {

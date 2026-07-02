@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 const pushMock = jest.fn();
 
@@ -27,9 +28,11 @@ describe('RootLayoutClient', () => {
     localStorage.setItem('isAdminLoggedIn', 'true');
 
     render(
-      <RootLayoutClient>
-        <div>Child content</div>
-      </RootLayoutClient>
+      <ToastProvider>
+        <RootLayoutClient config={{ brideName: 'Alice', groomName: 'Bob', weddingDate: '2026-06-20', baseUrl: 'http://localhost' } as any}>
+          <div>Child content</div>
+        </RootLayoutClient>
+      </ToastProvider>
     );
 
     expect(await screen.findByText('Admin Mode')).toBeInTheDocument();

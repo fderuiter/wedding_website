@@ -1,9 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useToast } from '@/components/ui/ToastProvider';
 
 export function useAdminMaintenance() {
   const queryClient = useQueryClient();
-  const { addToast } = useToast();
 
   const exportData = () => {
     window.open('/api/admin/maintenance/export', '_blank');
@@ -34,12 +32,11 @@ export function useAdminMaintenance() {
       return data;
     },
     onSuccess: () => {
-      addToast("Data imported successfully! The database state has been overwritten.", "success");
       // Invalidate all queries since we completely overwrote the DB
       queryClient.invalidateQueries();
     },
-    onError: (err: any) => {
-      addToast(err.message || "An error occurred during import.", "error");
+    meta: {
+      successMessage: "Data imported successfully! The database state has been overwritten."
     }
   });
 

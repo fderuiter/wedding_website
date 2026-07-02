@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import EditRegistryItemPage from '../edit-item';
 
 const mockPush = jest.fn();
@@ -46,7 +47,12 @@ describe('EditRegistryItemPage', () => {
   });
 
   it('prefills form fields with fetched data', async () => {
-    render(<EditRegistryItemPage />);
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EditRegistryItemPage />
+      </QueryClientProvider>
+    );
 
     expect(await screen.findByLabelText(/item name/i)).toHaveValue(mockItem.name);
     expect(screen.getByLabelText(/price/i)).toHaveValue(mockItem.price);

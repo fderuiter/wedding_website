@@ -1,6 +1,7 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor, screen, fireEvent } from '@testing-library/react';
 import { useRegistry } from '../useRegistry';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 import React from 'react';
 import { RegistryItem } from '../../types';
 import { checkAdminClient } from '@/utils/adminAuth.client';
@@ -33,7 +34,9 @@ const createTestQueryClient = () => new QueryClient({
 const wrapper = (client: QueryClient) => {
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
         <QueryClientProvider client={client}>
-            {children}
+            <ToastProvider>
+                {children}
+            </ToastProvider>
         </QueryClientProvider>
     );
     Wrapper.displayName = 'QueryClientWrapper';
@@ -141,8 +144,16 @@ describe('useRegistry', () => {
     // Wait for initial load
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await act(async () => {
+    // Call delete
+    act(() => {
         result.current.handleDelete('1');
+    });
+
+    // Wait for the confirm dialog and click Confirm
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
+    
+    await act(async () => {
+      fireEvent.click(confirmButton);
     });
 
     await waitFor(() => {
