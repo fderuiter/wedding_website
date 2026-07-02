@@ -1,6 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { AttractionDTO } from '@/features/attractions/schemas';
-import { apiClient } from '@/lib/admin/apiClient';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminAttractions() {
   return useEntityOrchestration<AttractionDTO>({

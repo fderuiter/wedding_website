@@ -1,6 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
-import { apiClient } from '@/lib/admin/apiClient';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminWeddingParty() {
   return useEntityOrchestration<WeddingPartyMemberDTO>({

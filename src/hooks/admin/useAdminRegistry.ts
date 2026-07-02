@@ -1,6 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { RegistryItem } from '@/features/registry/types';
-import { apiClient } from '@/lib/admin/apiClient';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminRegistry() {
   return useEntityOrchestration<RegistryItem>({

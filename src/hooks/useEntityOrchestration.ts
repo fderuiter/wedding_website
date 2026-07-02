@@ -32,7 +32,7 @@ export function useEntityOrchestration<T extends { id: string }>({
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
-      const optimisticId = \`temp-\${Date.now()}-\${Math.random()}\`;
+      const optimisticId = `temp-${Date.now()}-${Math.random()}`;
       if (previousData) {
         const optimisticItem = { id: optimisticId, ...payload } as unknown as T;
         queryClient.setQueryData<T[]>(queryKey, old => [optimisticItem, ...(old || [])]);
@@ -50,12 +50,12 @@ export function useEntityOrchestration<T extends { id: string }>({
       );
     },
     meta: {
-      successMessage: \`Created \${entityName} successfully.\`,
+      successMessage: `Created ${entityName} successfully.`,
     }
   });
 
   const { mutateAsync: update } = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => apiClient.put<T>(\`\${endpoint}/\${id}\`, payload),
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => apiClient.put<T>(`${endpoint}/${id}`, payload),
     onMutate: async ({ id, payload }) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
@@ -77,12 +77,12 @@ export function useEntityOrchestration<T extends { id: string }>({
       );
     },
     meta: {
-      successMessage: \`Updated \${entityName} successfully.\`,
+      successMessage: `Updated ${entityName} successfully.`,
     }
   });
 
   const { mutateAsync: remove } = useMutation({
-    mutationFn: async (id: string) => apiClient.delete(\`\${endpoint}/\${id}\`),
+    mutationFn: async (id: string) => apiClient.delete(`${endpoint}/${id}`),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
@@ -97,7 +97,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
     },
     meta: {
-      successMessage: \`Deleted \${entityName} successfully.\`,
+      successMessage: `Deleted ${entityName} successfully.`,
     }
   });
 
@@ -118,7 +118,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
     },
     meta: {
-      successMessage: \`Reordered \${entityName} successfully.\`,
+      successMessage: `Reordered ${entityName} successfully.`,
     }
   });
 
