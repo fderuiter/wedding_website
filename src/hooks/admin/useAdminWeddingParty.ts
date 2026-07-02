@@ -1,6 +1,12 @@
-import { useAdminDomain } from './useAdminDomain';
+import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminWeddingParty() {
-  return useAdminDomain<WeddingPartyMemberDTO>('wedding-party', 'wedding party member');
+  return useEntityOrchestration<WeddingPartyMemberDTO>({
+    queryKey: ['admin-wedding-party'],
+    endpoint: '/api/admin/wedding-party',
+    entityName: 'wedding party member',
+    apiClient,
+  });
 }

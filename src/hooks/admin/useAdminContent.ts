@@ -1,6 +1,12 @@
-import { useAdminDomain } from './useAdminDomain';
+import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { ContentNodeDTO } from '@/features/content/schemas';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminContent() {
-  return useAdminDomain<ContentNodeDTO>('content-nodes', 'content node');
+  return useEntityOrchestration<ContentNodeDTO>({
+    queryKey: ['admin-content-nodes'],
+    endpoint: '/api/admin/content-nodes',
+    entityName: 'content node',
+    apiClient,
+  });
 }

@@ -128,6 +128,8 @@ flowchart LR
     App --> node_archive
     node_heart["heart"]
     App --> node_heart
+    node_heart_hooks["hooks"]
+    node_heart --> node_heart_hooks
     node_photos["photos"]
     App --> node_photos
     node_projectinfo["project-info"]
