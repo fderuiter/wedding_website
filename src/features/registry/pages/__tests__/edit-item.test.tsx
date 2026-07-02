@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import EditRegistryItemPage from '../edit-item';
 
 const mockPush = jest.fn();
@@ -21,6 +22,10 @@ jest.mock('next/navigation', () => ({
   useParams: () => ({ id: mockItem.id }),
 }));
 
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 describe('EditRegistryItemPage', () => {
   beforeEach(() => {
     (global.fetch as jest.Mock) = jest.fn((url: RequestInfo) => {
@@ -31,10 +36,10 @@ describe('EditRegistryItemPage', () => {
             json: () => Promise.resolve({ isAdmin: true }),
           });
         }
-        if (url.includes(`/api/registry/items/${mockItem.id}`)) {
+        if (url.includes('/api/registry/items')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve(mockItem),
+            json: () => Promise.resolve([mockItem]),
           });
         }
       }
@@ -47,10 +52,11 @@ describe('EditRegistryItemPage', () => {
   });
 
   it('prefills form fields with fetched data', async () => {
-    const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
-        <EditRegistryItemPage />
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
       </QueryClientProvider>
     );
 

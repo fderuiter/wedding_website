@@ -5,6 +5,7 @@ import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+import { AdminEditorContainer } from "@/components/admin/AdminEditorContainer";
 import { FormGroup, Label, Input, Textarea, Select, Checkbox } from "@/components/ui/forms";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -108,8 +109,7 @@ export default function AttractionsDashboardPage() {
         </div>
 
         {isEditing && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} Attraction</h2>
+          <AdminEditorContainer title={`${currentAttraction.id ? 'Edit' : 'Create'} Attraction`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <FormGroup>
                 <Label>Name</Label>
@@ -159,9 +159,9 @@ export default function AttractionsDashboardPage() {
             </div>
             <div className="flex gap-4 mt-6">
               <Button onClick={handleSave} variant="primary">Save</Button>
-              <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setIsEditing(false)}>Cancel</Button>
             </div>
-          </div>
+          </AdminEditorContainer>
         )}
 
         <div className="grid gap-4 pb-10" ref={containerRef}>

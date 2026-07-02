@@ -99,7 +99,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-gray-800 p-6 rounded shadow" data-testid="form">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="form">
       {mode === 'add' && (
         <div className="col-span-1 md:col-span-2 mb-2">
           <FormGroup state={scrapeError ? 'error' : 'default'}>
@@ -170,7 +170,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
           <Label className="ml-2 font-normal">Allow Group Gifting?</Label>
         </div>
       </FormGroup>
-      <div className="col-span-1 md:col-span-2">
+      <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
         <Button type="submit" variant="primary" className="w-full mt-2 flex items-center justify-center" disabled={isSubmitting} aria-busy={isSubmitting}>
           {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}

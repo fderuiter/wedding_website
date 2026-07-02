@@ -1,4 +1,4 @@
-import { DynamicSchema } from "@/utils/validation";
+import { UpdateFeaturesSchema } from "@/utils/validation";
 import { NextResponse, NextRequest } from 'next/server';
 import { contentService } from '@/features/content/service';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -11,7 +11,7 @@ export const GET = withApiMiddleware(async () => {
 
 export const PUT = withApiMiddleware(async (request: NextRequest) => {
   const body = await request.json();
-  DynamicSchema.parse(body);
+  UpdateFeaturesSchema.parse(body);
   if (!body.features) {
     throw new ApiError(400, 'Features required');
   }

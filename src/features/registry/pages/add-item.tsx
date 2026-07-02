@@ -2,12 +2,13 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation } from '@tanstack/react-query';
-import { apiClient } from '@/lib/apiClient';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
-import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem type
+import { RegistryItem } from '@/features/registry/types';
+import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
+import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
+import { useToast } from '@/components/ui/ToastProvider';
 
 /**
  * @page AddRegistryItemPage
@@ -16,38 +17,37 @@ import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem
  * This client component first verifies that the user is an authenticated admin.
  * If not, it redirects to the login page.
  * It renders the `RegistryItemForm` in 'add' mode and handles the form submission
- * by sending the new item data to the `/api/registry/add-item` endpoint.
+ * by sending the new item data via the unified useAdminEntity hook.
  *
  * @returns {JSX.Element} The rendered "Add Registry Item" page, or a loading/redirecting message.
  */
 export default function AddRegistryItemPage() {
   const router = useRouter();
-
-  const mutation = useMutation({
-    mutationFn: async (values: Partial<RegistryItem>) => {
-      return apiClient.post('/api/registry/add-item', values);
-    },
-    onSuccess: () => {
-      router.push('/admin/dashboard');
-    },
-    meta: {
-      successMessage: 'Item added successfully!'
-    }
-  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { create } = useAdminRegistry();
+  const { addToast } = useToast();
 
   const handleAdd = async (values: Partial<RegistryItem>) => {
-    mutation.mutate(values);
+    setIsSubmitting(true);
+    try {
+      await create(values);
+      addToast('Item added successfully!', 'success');
+      router.push('/admin/dashboard');
+    } catch (error) {
+      addToast(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Add New Registry Item</h1>
+    <AdminEditorContainer title="Add New Registry Item">
       <RegistryItemForm
         mode="add"
         onSubmit={handleAdd}
-        isSubmitting={mutation.isPending}
+        isSubmitting={isSubmitting}
         submitLabel="Add Item"
       />
-    </div>
+    </AdminEditorContainer>
   );
 }

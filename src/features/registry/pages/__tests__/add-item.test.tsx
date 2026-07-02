@@ -1,6 +1,9 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
+import { ToastProvider } from "@/components/ui/ToastProvider";
+import AddRegistryItemPage from '../add-item';
 
 // Mock the router to prevent actual navigation
 jest.mock('next/navigation', () => ({
@@ -20,15 +23,17 @@ jest.mock('../../components/RegistryItemForm', () => {
   return RegistryItemForm;
 });
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import AddRegistryItemPage from '../add-item';
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
 
 describe('AddRegistryItemPage', () => {
   it('renders the RegistryItemForm', async () => {
-    const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
-        <AddRegistryItemPage />
+        <ToastProvider>
+          <AddRegistryItemPage />
+        </ToastProvider>
       </QueryClientProvider>
     );
     expect(await screen.findByTestId('registry-item-form')).toBeInTheDocument();

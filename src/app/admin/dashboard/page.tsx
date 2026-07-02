@@ -2,12 +2,27 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { RegistryItem } from "@/features/registry/types";
+import { useToast } from "@/components/ui/ToastProvider";
+import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
-import { useToast } from "@/components/ui/ToastProvider";
 import { formatCurrency, formatDate } from "@/utils/intl";
-import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
+
+const ContributionsList = ({ contributors }: { contributors?: { name: string; amount: number; date: string }[] }) => {
+  if (!contributors || contributors.length === 0) {
+    return <span className="text-gray-500 dark:text-gray-400">None</span>;
+  }
+  return (
+    <ul className="text-xs space-y-1">
+      {contributors.map((c, idx) => (
+        <li key={idx}>
+          {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 /**
  * @page AdminDashboardPage
@@ -23,9 +38,8 @@ import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
  */
 export default function AdminDashboardPage() {
   const router = useRouter();
-  
   const { data: items, loading, error, remove } = useAdminRegistry();
-  const { confirm } = useToast();
+  const { addToast, confirm } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
@@ -70,24 +84,14 @@ export default function AdminDashboardPage() {
                     <TableCell>{formatCurrency(item.price)}</TableCell>
                     <TableCell>{item.purchased ? "Yes" : "No"}</TableCell>
                     <TableCell>
-                      {item.contributors && item.contributors.length > 0 ? (
-                        <ul className="text-xs space-y-1">
-                          {item.contributors.map((c, idx) => (
-                            <li key={idx}>
-                              {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <span className="text-gray-500 dark:text-gray-400">None</span>
-                      )}
+                      <ContributionsList contributors={item.contributors} />
                     </TableCell>
                     <TableCell className="space-x-2">
                       <Button
                         variant="secondary"
                         size="sm"
                         aria-label={"Edit registry item: " + item.name}
-                        onClick={() => router.push(`/registry/edit-item/${item.id}`)}
+                        onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                       >
                         Edit
                       </Button>
@@ -105,6 +109,7 @@ export default function AdminDashboardPage() {
                           
                           try {
                             await remove(item.id);
+                            addToast('Item deleted successfully.', 'success');
                           } catch (e: any) {
                             // Error is handled by useAdminRegistry hook
                           }
@@ -133,17 +138,9 @@ export default function AdminDashboardPage() {
               </div>
               <div className="mb-2">
                 <span className="font-semibold">Contributions:</span>
-                {item.contributors && item.contributors.length > 0 ? (
-                  <ul className="ml-2 mt-1 space-y-1">
-                    {item.contributors.map((c, idx) => (
-                      <li key={idx} className="text-xs">
-                        {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="ml-2 text-gray-500 dark:text-gray-400">None</span>
-                )}
+                <div className="ml-2 mt-1">
+                  <ContributionsList contributors={item.contributors} />
+                </div>
               </div>
               <div className="flex gap-2 mt-2">
                 <Button
@@ -151,7 +148,7 @@ export default function AdminDashboardPage() {
                   variant="secondary"
                   size="sm"
                   aria-label={"Edit registry item: " + item.name}
-                  onClick={() => router.push(`/registry/edit-item/${item.id}`)}
+                  onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                 >
                   Edit
                 </Button>
@@ -170,6 +167,7 @@ export default function AdminDashboardPage() {
 
                     try {
                       await remove(item.id);
+                      addToast('Item deleted successfully.', 'success');
                     } catch (e: any) {
                       // Error is handled by useAdminRegistry hook
                     }
@@ -184,7 +182,7 @@ export default function AdminDashboardPage() {
         <div className="mt-10 flex justify-center">
           <Button
             size="lg"
-            onClick={() => router.push('/registry/add-item')}
+            onClick={() => router.push('/admin/dashboard/registry/add-item')}
           >
             Add New Item
           </Button>
