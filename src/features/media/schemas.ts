@@ -10,3 +10,11 @@ export const MediaSchema = z.object({
 });
 
 export type MediaDTO = z.infer<typeof MediaSchema>;
+
+export const MediaCreateSchema = z.object({
+  url: z.string().url(),
+  altText: z.string().nullable(),
+  isDecorative: z.boolean().default(false),
+});
+
+export const MediaUpdateSchema = MediaCreateSchema.partial();
