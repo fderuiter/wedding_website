@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
@@ -33,15 +32,6 @@ export default function WeddingPartyDashboardPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});
 
-  useEffect(() => {
-    async function checkAuth() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-      }
-    }
-    checkAuth();
-  }, [router]);
 
   const handleSave = async () => {
     try {

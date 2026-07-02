@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
 import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem type
 
@@ -21,19 +20,8 @@ import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem
  */
 export default function AddRegistryItemPage() {
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // Use null for initial state
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    async function checkAuth() {
-      const adminStatus = await checkAdminClient();
-      setIsAdmin(adminStatus);
-      if (!adminStatus) {
-        router.push('/admin/login');
-      }
-    }
-    checkAuth();
-  }, [router]);
 
   const handleAdd = async (values: Partial<RegistryItem>) => { // Use Partial<RegistryItem> type
     setIsSubmitting(true);
@@ -60,9 +48,6 @@ export default function AddRegistryItemPage() {
     }
   };
 
-  if (!isAdmin) {
-    return <p>Loading or redirecting...</p>;
-  }
 
   return (
     <div className="container mx-auto p-4">

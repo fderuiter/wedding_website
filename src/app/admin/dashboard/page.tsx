@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RegistryItem} from "@/features/registry/types";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
@@ -26,20 +25,15 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function checkAuthAndFetch() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-        return;
-      }
+    async function fetchItems() {
       // Fetch registry items
       apiClient.get<RegistryItem[]>('/api/registry/items')
         .then((data) => setItems(data))
         .catch((err: any) => setError(err.name === 'ApiError' ? 'Failed to fetch items' : err.message))
         .finally(() => setLoading(false));
     }
-    checkAuthAndFetch();
-  }, [router]);
+    fetchItems();
+  }, []);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">

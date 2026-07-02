@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/features/registry/types';
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
 
 /**
@@ -25,17 +24,10 @@ export default function EditRegistryItemPage() {
   const [itemData, setItemData] = useState<Partial<RegistryItem>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    async function checkAuthAndFetch() {
-      const isAdmin = await checkAdminClient();
-      setIsAdmin(isAdmin);
-      if (!isAdmin) {
-        router.push('/admin/login');
-        return;
-      }
+    async function fetchItem() {
       if (!itemId) {
         setError('Item ID is missing.');
         setLoading(false);
@@ -54,8 +46,8 @@ export default function EditRegistryItemPage() {
         setLoading(false);
       }
     }
-    checkAuthAndFetch();
-  }, [router, itemId]);
+    fetchItem();
+  }, [itemId]);
 
   const handleEdit = async (values: Partial<RegistryItem>) => {
     setIsSubmitting(true);
@@ -79,9 +71,6 @@ export default function EditRegistryItemPage() {
     }
   };
 
-  if (!isAdmin) {
-    return <p>Redirecting to login...</p>;
-  }
   if (loading) {
     return <p>Loading item data...</p>;
   }

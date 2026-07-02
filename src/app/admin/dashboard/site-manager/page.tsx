@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
@@ -24,16 +23,8 @@ export default function SiteManagerPage() {
   const { overlayRef, handleBackdropClick } = useOverlay(showCustomModal, () => setShowCustomModal(false));
 
   useEffect(() => {
-    async function init() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-        return;
-      }
-      fetchFeatures();
-    }
-    init();
-  }, [router]);
+    fetchFeatures();
+  }, []);
 
   const fetchFeatures = async () => {
     setLoading(true);

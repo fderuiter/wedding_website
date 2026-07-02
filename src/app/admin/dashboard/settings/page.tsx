@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { checkAdminClient } from '@/utils/adminAuth.client';
 import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
@@ -29,16 +28,11 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     async function init() {
-      const isAdmin = await checkAdminClient();
-      if (!isAdmin) {
-        router.replace('/admin/login');
-        return;
-      }
       await refreshConfig();
       setLoading(false);
     }
     init();
-  }, [router]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
