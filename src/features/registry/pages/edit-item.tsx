@@ -11,13 +11,6 @@ import { useToast } from '@/components/ui/ToastProvider';
 /**
  * @page EditRegistryItemPage
  * @description A page for administrators to edit an existing item in the wedding registry.
- *
- * This client component first verifies admin authentication. It then fetches the data
- * for the specific registry item based on the ID from the URL. It renders the
- * `RegistryItemForm` in 'edit' mode, populated with the fetched data. On submission,
- * it sends the updated data using the unified useAdminEntity hook.
- *
- * @returns {JSX.Element} The rendered "Edit Registry Item" page, or a loading/error/redirecting message.
  */
 export default function EditRegistryItemPage() {
   const router = useRouter();
@@ -26,9 +19,9 @@ export default function EditRegistryItemPage() {
   const { addToast } = useToast();
   const { data: items, loading: itemsLoading, error: itemsError, update } = useAdminRegistry();
 
-  const [itemData, setItemData] = useState<Partial<RegistryItem>>({});
-  const [loading, setLoading] = useState(true);
+  const [itemData, setItemData] = useState<RegistryItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -65,7 +58,10 @@ export default function EditRegistryItemPage() {
     }
   };
 
-  if (loading) {
+  if (!itemId) {
+    return <p className="text-red-500">Error: Item ID is missing.</p>;
+  }
+  if (loading || !itemData) {
     return <p>Loading item data...</p>;
   }
   if (error) {

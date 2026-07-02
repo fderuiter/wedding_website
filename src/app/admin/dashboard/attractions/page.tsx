@@ -20,7 +20,7 @@ import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
  */
 export default function AttractionsDashboardPage() {
   const router = useRouter();
-  const { addToast, confirm } = useToast();
+  const { confirm } = useToast();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
 
   const {
@@ -41,14 +41,12 @@ export default function AttractionsDashboardPage() {
     try {
       if (currentAttraction.id) {
         await update(currentAttraction.id, currentAttraction);
-        addToast('Attraction updated successfully', 'success');
       } else {
         await create(currentAttraction);
-        addToast('Attraction created successfully', 'success');
       }
       setIsEditing(false);
     } catch (e: any) {
-      addToast(e.message || 'Error saving attraction', 'error');
+      // Error is handled by global MutationCache
     }
   };
 
@@ -61,9 +59,8 @@ export default function AttractionsDashboardPage() {
     }
     try {
       await remove(id);
-      addToast('Attraction deleted successfully', 'success');
     } catch (e: any) {
-      addToast(e.message || 'Error deleting attraction', 'error');
+      // Error is handled by global MutationCache
     }
   };
 

@@ -39,7 +39,7 @@ const ContributionsList = ({ contributors }: { contributors?: { name: string; am
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { data: items, loading, error, remove } = useAdminRegistry();
-  const { addToast } = useToast();
+  const { addToast, confirm } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
@@ -101,7 +101,7 @@ export default function AdminDashboardPage() {
                         aria-label={"Delete registry item: " + item.name}
                         onClick={async (e) => {
                           const row = e.currentTarget.closest('tr');
-                          if (!confirm('Are you sure you want to delete this item?')) return;
+                          if (!(await confirm('Are you sure you want to delete this item?'))) return;
                           
                           if (row) {
                             captureDesktopFocus(row as HTMLElement);
@@ -159,7 +159,7 @@ export default function AdminDashboardPage() {
                   aria-label={"Delete registry item: " + item.name}
                   onClick={async (e) => {
                     const card = e.currentTarget.closest('.rounded-xl');
-                    if (!confirm('Are you sure you want to delete this item?')) return;
+                    if (!(await confirm('Are you sure you want to delete this item?'))) return;
 
                     if (card) {
                       captureMobileFocus(card as HTMLElement);
