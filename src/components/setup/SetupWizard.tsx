@@ -3,6 +3,8 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FormGroup, Label, Input, FormMessage } from "@/components/ui/forms";
 import { AccessibleStep } from "@/components/ui/AccessibleStep";
+import { Container, Card, Heading } from "@/components/ui/Layout";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -121,9 +123,9 @@ export default function SetupWizard() {
   return (
     <>
       <AccessibleStep isActive={!isAuthenticated || step === 1}>
-        <div className="min-h-screen flex items-center justify-center bg-rose-50 text-gray-900 p-4">
-          <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg">
-            <h1 className="text-2xl font-bold text-rose-700 mb-4">Welcome to Your Wedding Site!</h1>
+        <Container>
+          <Card className="max-w-md">
+            <Heading className="mb-4">Welcome to Your Wedding Site!</Heading>
             <p className="mb-4 text-gray-600">Please enter the admin password to begin setup (default is <strong>admin</strong>).</p>
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup>
@@ -137,18 +139,18 @@ export default function SetupWizard() {
                 />
               </FormGroup>
               {error && <p className="text-red-500 text-sm">{error}</p>}
-              <button disabled={loading} className="w-full btn-primary py-3">
+              <Button disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? "Authenticating..." : "Continue"}
-              </button>
+              </Button>
             </form>
-          </div>
-        </div>
+          </Card>
+        </Container>
       </AccessibleStep>
 
       <AccessibleStep isActive={isAuthenticated && step === 2}>
-        <div className="min-h-screen flex items-center justify-center bg-rose-50 text-gray-900 p-4">
-          <div className="max-w-xl w-full bg-white p-8 rounded-xl shadow-lg">
-            <h1 className="text-2xl font-bold text-rose-700 mb-4">Step 1: The Essentials</h1>
+        <Container>
+          <Card className="max-w-xl">
+            <Heading className="mb-4">Step 1: The Essentials</Heading>
             <p className="mb-4 text-gray-600">Let's start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -185,35 +187,35 @@ export default function SetupWizard() {
                 </FormGroup>
               </div>
               {error && <p className="text-red-500 text-sm">{error}</p>}
-              <button disabled={loading} className="w-full btn-primary py-3">
+              <Button disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? "Saving..." : "Next Step"}
-              </button>
+              </Button>
             </form>
-          </div>
-        </div>
+          </Card>
+        </Container>
       </AccessibleStep>
 
       <AccessibleStep isActive={isAuthenticated && step === 3}>
-        <div className="min-h-screen flex items-center justify-center bg-rose-50 text-gray-900 p-4">
-          <div className="max-w-2xl w-full bg-white p-8 rounded-xl shadow-lg text-center">
-            <h1 className="text-2xl font-bold text-rose-700 mb-4">Step 2: Add Content</h1>
+        <Container>
+          <Card className="max-w-2xl text-center">
+            <Heading className="mb-4">Step 2: Add Content</Heading>
             <p className="mb-6 text-gray-600">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
             <div className="space-y-4">
-              <button onClick={() => window.open("/admin/dashboard/wedding-party", "_blank")} className="w-full btn-secondary py-3">
+              <Button onClick={() => window.open("/admin/dashboard/wedding-party", "_blank")} variant="secondary" className="w-full py-3">
                 Manage Wedding Party (Opens in New Tab)
-              </button>
-              <button onClick={() => window.open("/admin/dashboard/attractions", "_blank")} className="w-full btn-secondary py-3">
+              </Button>
+              <Button onClick={() => window.open("/admin/dashboard/attractions", "_blank")} variant="secondary" className="w-full py-3">
                 Manage Attractions (Opens in New Tab)
-              </button>
+              </Button>
             </div>
             <p className="mt-6 mb-4 text-sm text-gray-500">You can also do this later from the Admin Dashboard.</p>
-            <button onClick={() => {
+            <Button onClick={() => {
               window.location.href = "/";
-            }} className="w-full btn-primary py-3">
+            }} variant="primary" className="w-full py-3">
               Finish Setup & View Site
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Card>
+        </Container>
       </AccessibleStep>
     </>
   );

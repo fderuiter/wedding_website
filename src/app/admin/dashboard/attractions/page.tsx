@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AttractionDTO } from '@/features/attractions/schemas';
-import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { FormGroup, Label, Input, Textarea, Select, Checkbox } from "@/components/ui/forms";
@@ -29,7 +29,7 @@ export default function AttractionsDashboardPage() {
     create,
     update,
     remove
-  } = useAdminEntity<AttractionDTO>('attractions');
+  } = useAdminAttractions();
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentAttraction, setCurrentAttraction] = useState<Partial<AttractionDTO>>({});

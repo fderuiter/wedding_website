@@ -1,9 +1,26 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render as tlRender, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AdminSettingsPage from '../page';
 import { checkAdminClient as mockCheckAdminClient } from '@/utils/adminAuth.client';
-import { ToastProvider } from '@/components/ui/ToastProvider';
+import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
+import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
+
+const render = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+    mutationCache: new MutationCache({
+      onSuccess: (_data, _variables, _context, mutation) => {
+        // We can just rely on the test wrapper injecting toasts
+      }
+    })
+  });
+  return tlRender(
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>{ui}</ToastProvider>
+    </QueryClientProvider>
+  );
+};
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -68,7 +85,7 @@ afterEach(() => {
 
 describe('AdminSettingsPage - handleUpload', () => {
   const renderWithProviders = (ui: React.ReactElement) => {
-    return render(<ToastProvider>{ui}</ToastProvider>);
+    return render(ui);
   };
 
   it('renders the favicon upload input', async () => {
@@ -333,7 +350,7 @@ describe('AdminSettingsPage - handleUpload', () => {
 
 describe('AdminSettingsPage - SEO keywords field', () => {
   const renderWithProviders = (ui: React.ReactElement) => {
-    return render(<ToastProvider>{ui}</ToastProvider>);
+    return render(ui);
   };
 
   it('renders the SEO keywords textarea', async () => {

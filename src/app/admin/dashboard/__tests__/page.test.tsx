@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render as tlRender, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
@@ -52,7 +52,7 @@ afterEach(() => {
 
 describe('AdminDashboardPage', () => {
   const renderWithProviders = (ui: React.ReactElement) => {
-    return render(
+    return tlRender(
       <ToastProvider>
         <TestWrapper>{ui}</TestWrapper>
       </ToastProvider>
@@ -62,6 +62,7 @@ describe('AdminDashboardPage', () => {
   const TestWrapper = ({ children }: { children: React.ReactNode }) => {
     const { addToast } = useToast();
     const queryClient = React.useMemo(() => new QueryClient({
+      defaultOptions: { queries: { retry: false } },
       mutationCache: new MutationCache({
         onSuccess: (_data, _variables, _context, mutation) => {
           if (mutation.meta?.successMessage) addToast(mutation.meta.successMessage as string, 'success');
@@ -121,15 +122,17 @@ describe('AdminDashboardPage', () => {
 
     renderWithProviders(<AdminDashboardPage />);
 
-    expect(await screen.findByText('Error: Failed to fetch items')).toBeInTheDocument();
+    expect(await screen.findByText(/Error: API Error/i)).toBeInTheDocument();
   });
 
   it('deletes item successfully', async () => {
+    let items = [mockItem];
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
       if (url === '/api/registry/items') {
-        return Promise.resolve({ ok: true, json: async () => [mockItem] });
+        return Promise.resolve({ ok: true, json: async () => items });
       }
       if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
+        items = [];
         return Promise.resolve({ ok: true });
       }
       return Promise.reject(new Error(`Unhandled request: ${url}`));
@@ -146,19 +149,19 @@ describe('AdminDashboardPage', () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(screen.queryByText('Sample Item')).not.toBeInTheDocument();
+      expect(screen.queryAllByText('Sample Item').length).toBe(0);
     });
 
-    expect(await screen.findByText('Item deleted successfully.')).toBeInTheDocument();
+    expect(await screen.findByText('Deleted registry item successfully.')).toBeInTheDocument();
   });
 
-  it('shows alert and keeps item when delete fails', async () => {
+  it('shows error and keeps item when delete fails', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
       if (url === '/api/registry/items') {
         return Promise.resolve({ ok: true, json: async () => [mockItem] });
       }
       if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
-        return Promise.resolve({ ok: false });
+        return Promise.resolve({ ok: false, json: async () => ({ error: 'Delete failed' }) });
       }
       return Promise.reject(new Error(`Unhandled request: ${url}`));
     });
@@ -180,4 +183,3 @@ describe('AdminDashboardPage', () => {
     expect(screen.getAllByText('Sample Item').length).toBeGreaterThan(0);
   });
 });
-
