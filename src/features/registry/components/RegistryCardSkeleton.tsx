@@ -1,4 +1,5 @@
 import React from 'react';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 /**
  * @function RegistryCardSkeleton
@@ -9,11 +10,11 @@ import React from 'react';
 const RegistryCardSkeleton: React.FC = () => {
   return (
     <div className="border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md bg-white dark:bg-gray-800">
-      <div className="relative w-full aspect-square bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+      <Skeleton className="relative w-full aspect-square !rounded-none" />
       <div className="p-6">
-        <div className="h-6 w-3/4 mb-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-        <div className="h-4 w-1/2 mb-2 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-        <div className="h-4 w-1/4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        <Skeleton className="h-6 w-3/4 mb-4" />
+        <Skeleton className="h-4 w-1/2 mb-2" />
+        <Skeleton className="h-4 w-1/4" />
       </div>
     </div>
   );

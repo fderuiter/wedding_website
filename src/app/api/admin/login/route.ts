@@ -1,3 +1,4 @@
+import { DynamicSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
 import { signAdminToken } from '@/utils/adminAuth.server';
@@ -9,6 +10,7 @@ const ADMIN_COOKIE = 'admin_auth';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const { password } = await req.json();
+  DynamicSchema.safeParse({ password });
   const adminPassword = env.ADMIN_PASSWORD;
 
   if (!adminPassword) {

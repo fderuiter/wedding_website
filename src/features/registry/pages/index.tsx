@@ -11,6 +11,7 @@ import { PriceRangeFilter } from '@/features/registry/components/PriceRangeFilte
 import RegistryCardSkeleton from '@/features/registry/components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
 import { useRegistry } from '@/features/registry/hooks/useRegistry';
+import { Button } from '@/components/ui/Button';
 
 /**
  * @page RegistryPage
@@ -217,14 +218,15 @@ export default function RegistryPage() {
           </p>
           {visibleItems.length < filteredItems.length && (
             <>
-              <button 
+              <Button 
                 ref={buttonRef}
                 type="button"
-                className="btn-primary mt-2"
+                variant="primary"
+                className="mt-2"
                 onClick={handleLoadMore}
               >
                 Load More
-              </button>
+              </Button>
               <VisibilitySentinel
                 onVisible={handleLoadMore}
                 className="h-1 w-full"
@@ -246,14 +248,15 @@ export default function RegistryPage() {
             aria-label={selectedItem.name}
           >
             <div className="absolute top-4 right-4 z-50">
-              <button
+              <Button
+                variant="ghost"
                 onClick={handleCloseModal}
-                className="bg-white dark:bg-gray-800 rounded-full p-2 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="bg-white dark:bg-gray-800 rounded-full w-10 h-10 p-0 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"
                 aria-label="Close modal"
                 tabIndex={0}
               >
-                <span aria-hidden="true" className="text-2xl text-gray-600 dark:text-gray-300">×</span>
-              </button>
+                <span aria-hidden="true" className="text-2xl text-gray-600 dark:text-gray-300 leading-none">×</span>
+              </Button>
             </div>
             <Modal
               item={selectedItem}
