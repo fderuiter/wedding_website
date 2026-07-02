@@ -11,6 +11,14 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    rules: {
+      "react/forbid-elements": [
+        "error",
+        { forbid: ["button", "input", "label"] }
+      ]
+    }
+  }
 ];
 
 export default eslintConfig;

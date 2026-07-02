@@ -4,6 +4,29 @@ import { validateAddItemInput } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
+/**
+ * Adds a new item to the registry.
+ * 
+ * **Response:**
+ * *   **`201 Created`** - Returns the newly created `RegistryItem` object.
+ *     ```json
+ *     {
+ *       "id": "clxfa5z...",
+ *       "name": "Stand Mixer",
+ *       "description": "A powerful stand mixer for all our baking adventures.",
+ *       "category": "Kitchen",
+ *       "price": 299.99,
+ *       "image": "/images/mixer.jpg",
+ *       "vendorUrl": "https://example.com/mixer",
+ *       "quantity": 1,
+ *       "isGroupGift": false,
+ *       "purchased": false,
+ *       "purchaserName": null,
+ *       "amountContributed": 0,
+ *       "contributors": []
+ *     }
+ *     ```
+ */
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const newItemData = await request.json();
   const validationError = validateAddItemInput(newItemData);
