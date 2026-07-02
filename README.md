@@ -94,7 +94,7 @@ ADMIN_PASSWORD="scrypt:salt:hash"
 
 # Required for Prisma (PostgreSQL connection)
 # Obtain this from your database provider
-DATABASE_URL="postgresql://user:password@host:port/database"
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
 ```
 
 ### Database Setup
