@@ -6,8 +6,6 @@ import { getAppConfig } from '@/lib/config';
 
 import { ContactForceEvent } from '@react-three/rapier';
 
-let onContactForceCallback: (payload: ContactForceEvent) => void;
-
 const mockCreateRigidBodyApi = () => ({
     setBodyType: jest.fn(),
     setTranslation: jest.fn(),
@@ -23,12 +21,12 @@ const mockCreateRigidBodyApi = () => ({
     setNextKinematicTranslation: jest.fn(),
     addForce: jest.fn(),
     setEnabled: jest.fn(),
+    __triggerContactForce: null as ((payload: ContactForceEvent) => void) | null,
 });
 
 const mockMainBodyApi = mockCreateRigidBodyApi();
 const mockLeftBodyApi = mockCreateRigidBodyApi();
 const mockRightBodyApi = mockCreateRigidBodyApi();
-let mockRigidBodyCount = 0;
 
 jest.mock('@react-three/fiber', () => ({
   Canvas: ({ children }: { children: React.ReactNode }) => <div data-testid="canvas">{children}</div>,
@@ -57,18 +55,17 @@ jest.mock('@react-three/postprocessing', () => ({
 }));
 
 jest.mock('@react-three/rapier', () => {
-    const RigidBodyMock = React.forwardRef(({ children, onContactForce }: { children: React.ReactNode, onContactForce: (payload: ContactForceEvent) => void }, ref: React.Ref<unknown>) => {
+    const RigidBodyMock = React.forwardRef(({ children, onContactForce, userData }: { children: React.ReactNode, onContactForce: (payload: ContactForceEvent) => void, userData?: { id: string } }, ref: React.Ref<unknown>) => {
         if (ref) {
             // @ts-expect-error This is a mock implementation
-            if (mockRigidBodyCount === 0) ref.current = mockMainBodyApi;
+            if (userData?.id === 'main') ref.current = mockMainBodyApi;
             // @ts-expect-error This is a mock implementation
-            else if (mockRigidBodyCount === 1) ref.current = mockLeftBodyApi;
+            else if (userData?.id === 'left') ref.current = mockLeftBodyApi;
             // @ts-expect-error This is a mock implementation
-            else if (mockRigidBodyCount === 2) ref.current = mockRightBodyApi;
-            mockRigidBodyCount++;
+            else if (userData?.id === 'right') ref.current = mockRightBodyApi;
         }
-        if (onContactForce) {
-            onContactForceCallback = onContactForce;
+        if (onContactForce && userData?.id === 'main') {
+            mockMainBodyApi.__triggerContactForce = onContactForce;
         }
         return <div data-testid="rigidbody">{children}</div>;
     });
@@ -144,7 +141,7 @@ const HeartPage = () => <HeartClient brideName="Abbi" groomName="Fred" />;
 describe('HeartPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRigidBodyCount = 0;
+    mockMainBodyApi.__triggerContactForce = null;
     const useThree = jest.requireMock('@react-three/fiber').useThree;
     useThree.mockReturnValue({
       size: { width: 800, height: 600 },
@@ -199,10 +196,12 @@ describe('HeartPage', () => {
     jest.useFakeTimers();
     render(<HeartPage />);
 
-    expect(onContactForceCallback).toBeDefined();
+    expect(mockMainBodyApi.__triggerContactForce).not.toBeNull();
 
     act(() => {
-        onContactForceCallback({ totalForceMagnitude: 300 });
+        if (mockMainBodyApi.__triggerContactForce) {
+            mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as ContactForceEvent);
+        }
     });
 
     expect(mockMainBodyApi.setEnabled).toHaveBeenCalledWith(false);

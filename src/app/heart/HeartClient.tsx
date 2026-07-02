@@ -175,6 +175,7 @@ function PhysicsHeart({
       </Html>
 
       <RigidBody
+        userData={{ id: 'main' }}
         ref={heartRef}
         restitution={0.9}
         colliders={false}
@@ -192,7 +193,7 @@ function PhysicsHeart({
         </group>
       </RigidBody>
 
-      <RigidBody ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
+      <RigidBody userData={{ id: 'left' }} ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[-0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="left" />
@@ -208,7 +209,7 @@ function PhysicsHeart({
           </Html>
         )}
       </RigidBody>
-      <RigidBody ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
+      <RigidBody userData={{ id: 'right' }} ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="right" />

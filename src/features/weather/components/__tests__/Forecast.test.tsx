@@ -1,31 +1,30 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import Forecast from '../Forecast';
+import { server } from '@/mocks/server';
+import { rest } from 'msw';
 
 describe('Forecast Component', () => {
-  let fetchSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    fetchSpy = jest.spyOn(global, 'fetch');
-  });
-
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
   it('should display a loading state initially', async () => {
-    // Mock a successful response to ensure the promise resolves cleanly
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
-      daily: {
-        time: ['2025-10-10'],
-        weathercode: [0],
-        temperature_2m_max: [70],
-        temperature_2m_min: [50],
-        apparent_temperature_max: [65],
-        precipitation_probability_max: [0],
-        wind_speed_10m_max: [5],
-      },
-    })));
+    server.use(
+      rest.get('/api/weather', (req, res, ctx) => {
+        return res(ctx.json({
+          daily: {
+            time: ['2025-10-10'],
+            weathercode: [0],
+            temperature_2m_max: [70],
+            temperature_2m_min: [50],
+            apparent_temperature_max: [65],
+            precipitation_probability_max: [0],
+            wind_speed_10m_max: [5],
+          }
+        }));
+      })
+    );
 
     render(<Forecast />);
 
@@ -42,7 +41,12 @@ describe('Forecast Component', () => {
     // Suppress console.error for this test as we expect an error
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    fetchSpy.mockRejectedValueOnce(new Error('API is down'));
+    server.use(
+      rest.get('/api/weather', (req, res, ctx) => {
+        return res(ctx.status(500), ctx.json({ error: 'API is down' }));
+      })
+    );
+
     render(<Forecast />);
 
     await waitFor(() => {
@@ -65,7 +69,11 @@ describe('Forecast Component', () => {
       },
     };
 
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(mockWeatherData)));
+    server.use(
+      rest.get('/api/weather', (req, res, ctx) => {
+        return res(ctx.json(mockWeatherData));
+      })
+    );
     render(<Forecast />);
 
     await waitFor(() => {

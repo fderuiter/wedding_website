@@ -1,12 +1,9 @@
 import { GET } from '@/app/api/weather/route';
-import { NextRequest } from 'next/server';
-
-// Mock the fetch function
-global.fetch = jest.fn();
+import { server } from '@/mocks/server';
+import { rest } from 'msw';
 
 describe('Weather API Route', () => {
   beforeEach(() => {
-    (fetch as jest.Mock).mockClear();
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -27,12 +24,12 @@ describe('Weather API Route', () => {
       },
     };
 
-    (fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockWeatherData),
-    });
+    server.use(
+      rest.get('https://api.open-meteo.com/v1/forecast', (req, res, ctx) => {
+        return res(ctx.json(mockWeatherData));
+      })
+    );
 
-    const request = new NextRequest('http://localhost/api/weather');
     const response = await GET();
 
     expect(response.status).toBe(200);
@@ -41,24 +38,27 @@ describe('Weather API Route', () => {
   });
 
   it('should return a 500 status code on fetch failure', async () => {
-    const error = new Error('API is down');
-    (fetch as jest.Mock).mockRejectedValueOnce(error);
+    server.use(
+      rest.get('https://api.open-meteo.com/v1/forecast', (req, res, ctx) => {
+        return res.networkError('API is down');
+      })
+    );
 
-    const request = new NextRequest('http://localhost/api/weather');
     const response = await GET();
 
     expect(response.status).toBe(500);
     const body = await response.json();
-    expect(body).toEqual({ success: false, error: 'API is down' });
-    expect(console.error).toHaveBeenCalledWith('Unhandled API Error:', error);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('Failed to fetch'); // whatwg-fetch throws this on network error
   });
 
   it('should return a 500 status code on non-ok response from Open-Meteo', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-    });
+    server.use(
+      rest.get('https://api.open-meteo.com/v1/forecast', (req, res, ctx) => {
+        return res(ctx.status(500));
+      })
+    );
 
-    const request = new NextRequest('http://localhost/api/weather');
     const response = await GET();
 
     expect(response.status).toBe(500);

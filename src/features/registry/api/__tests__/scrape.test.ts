@@ -2,6 +2,15 @@
 
 import { POST } from '@/app/api/registry/scrape/route';
 import { isAdminRequest } from '@/features/admin/auth.server';
+import { server } from '@/mocks/server';
+import { rest } from 'msw';
+
+// Mock DNS for SSRF check
+jest.mock('dns', () => ({
+  promises: {
+    lookup: jest.fn().mockResolvedValue({ address: '93.184.216.34', family: 4 }),
+  },
+}));
 
 // Mock admin auth
 jest.mock('@/features/admin/auth.server', () => ({
@@ -9,10 +18,6 @@ jest.mock('@/features/admin/auth.server', () => ({
 }));
 
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
-
-// Mock native fetch
-const fetchMock = jest.fn();
-global.fetch = fetchMock;
 
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
@@ -33,9 +38,14 @@ describe('POST /api/registry/scrape', () => {
         <body></body>
       </html>
     `;
-    fetchMock.mockResolvedValue(new Response(mockHtml, {
-      headers: { 'Content-Type': 'text/html' },
-    }));
+    server.use(
+      rest.get('https://www.example.com/', (req, res, ctx) => {
+        return res(
+          ctx.set('Content-Type', 'text/html'),
+          ctx.body(mockHtml)
+        );
+      })
+    );
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -69,9 +79,14 @@ describe('POST /api/registry/scrape', () => {
         </body>
       </html>
     `;
-    fetchMock.mockResolvedValue(new Response(mockHtml, {
-      headers: { 'Content-Type': 'text/html' },
-    }));
+    server.use(
+      rest.get('https://www.amazon.com/dp/B08C1F553M', (req, res, ctx) => {
+        return res(
+          ctx.set('Content-Type', 'text/html'),
+          ctx.body(mockHtml)
+        );
+      })
+    );
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
@@ -104,9 +119,14 @@ describe('POST /api/registry/scrape', () => {
         </body>
       </html>
     `;
-    fetchMock.mockResolvedValue(new Response(mockHtml, {
-      headers: { 'Content-Type': 'text/html' },
-    }));
+    server.use(
+      rest.get('https://www.amazon.com/dp/B09XYZ1234', (req, res, ctx) => {
+        return res(
+          ctx.set('Content-Type', 'text/html'),
+          ctx.body(mockHtml)
+        );
+      })
+    );
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
