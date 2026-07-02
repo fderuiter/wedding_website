@@ -1,6 +1,7 @@
 'use client';
 
 import { Icon } from "../ui/Icon";
+import { Overlay } from "../ui/Overlay";
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -135,8 +136,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         </div>
       </div>
 
-      {isMenuOpen && (
-        <div className="md:hidden" id="mobile-menu">
+      <Overlay isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} id="mobile-menu" className="md:hidden bg-white dark:bg-gray-800 shadow-xl border-t border-gray-200 dark:border-gray-700 absolute top-16 left-0 right-0">
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
             {allLinks.map((link) => (
               <Link
@@ -157,7 +157,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               <div className="pt-4 pb-3 border-t border-gray-700">
                 <div className="flex items-center px-5">
                   <div className="ml-3">
-                    <div className="text-base font-medium leading-none text-white">Admin Mode</div>
+                    <div className="text-base font-medium leading-none text-gray-800 dark:text-white">Admin Mode</div>
                   </div>
                 </div>
                 <div className="mt-3 px-2 space-y-1">
@@ -166,7 +166,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                       handleLogout();
                       setIsMenuOpen(false);
                     }}
-                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   >
                     Logout
                   </button>
@@ -174,8 +174,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               </div>
             )}
           </div>
-        </div>
-      )}
+      </Overlay>
     </header>
   );
 }
