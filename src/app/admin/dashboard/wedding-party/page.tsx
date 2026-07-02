@@ -7,6 +7,7 @@ import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { Button } from "@/components/ui/Button";
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
+import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 
 /**
  * Render the admin CRUD interface and live preview for wedding-party members.
@@ -18,6 +19,7 @@ import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
  */
 export default function WeddingPartyDashboardPage() {
   const router = useRouter();
+  const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   
   const {
     data: members,
@@ -46,8 +48,12 @@ export default function WeddingPartyDashboardPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    const card = e.currentTarget.closest('.bg-white');
     if (!confirm('Are you sure you want to delete this member?')) return;
+    if (card) {
+      captureFocusTarget(card as HTMLElement);
+    }
     try {
       await remove(id);
     } catch (e: any) {
@@ -134,7 +140,7 @@ export default function WeddingPartyDashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4 pb-10">
+        <div className="grid gap-4 pb-10" ref={containerRef}>
           {members.map(member => (
             <div key={member.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
               <div className="flex items-center gap-4">
@@ -152,7 +158,7 @@ export default function WeddingPartyDashboardPage() {
                   setCurrentMember(member); 
                   setIsEditing(true); 
                 }}>Edit</Button>
-                <Button variant="danger" size="sm" onClick={() => handleDelete(member.id)}>Delete</Button>
+                <Button variant="danger" size="sm" onClick={(e) => handleDelete(member.id, e as React.MouseEvent<HTMLButtonElement>)}>Delete</Button>
               </div>
             </div>
           ))}

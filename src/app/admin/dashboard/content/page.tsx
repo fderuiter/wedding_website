@@ -6,6 +6,7 @@ import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 
 /**
  * Admin interface for listing, creating, editing, deleting, and previewing content nodes.
@@ -19,6 +20,7 @@ import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
  */
 export default function ContentDashboardPage() {
   const router = useRouter();
+  const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
 
   const {
     data: nodes,
@@ -59,12 +61,16 @@ export default function ContentDashboardPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    const card = e.currentTarget.closest('.bg-white');
     if (!confirm('Are you sure you want to delete this content node?')) return;
+    if (card) {
+      captureFocusTarget(card as HTMLElement);
+    }
     try {
       await remove(id);
-    } catch (e: unknown) {
-      alert((e instanceof Error ? e.message : String(e)) || 'Error deleting node');
+    } catch (err: unknown) {
+      alert((err instanceof Error ? err.message : String(err)) || 'Error deleting node');
     }
   };
 
@@ -190,7 +196,7 @@ export default function ContentDashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4 pb-10">
+        <div className="grid gap-4 pb-10" ref={containerRef}>
           {nodes.map(node => (
             <div key={node.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
               <div>
@@ -206,7 +212,7 @@ export default function ContentDashboardPage() {
                   setDynamicData(Object.keys(d).map(k => ({key: k, value: String(d[k])})));
                   setIsEditing(true); 
                 }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={() => handleDelete(node.id)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
+                <button onClick={(e) => handleDelete(node.id, e)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
               </div>
             </div>
           ))}
