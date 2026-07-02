@@ -1,11 +1,11 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useRouter } from "next/navigation";
-import { RegistryItem} from "@/features/registry/types";
-import { apiClient } from '@/lib/admin/apiClient';
+import { RegistryItem } from "@/features/registry/types";
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 
 /**
  * @page AdminDashboardPage
@@ -21,23 +21,11 @@ import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
  */
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const [items, setItems] = useState<RegistryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  
+  const { data: items, loading, error, remove } = useAdminRegistry();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
-
-  useEffect(() => {
-    async function fetchItems() {
-      // Fetch registry items
-      apiClient.get<RegistryItem[]>('/api/registry/items')
-        .then((data) => setItems(data))
-        .catch((err: any) => setError(err.name === 'ApiError' ? 'Failed to fetch items' : err.message))
-        .finally(() => setLoading(false));
-    }
-    fetchItems();
-  }, []);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
@@ -113,11 +101,9 @@ export default function AdminDashboardPage() {
                           }
                           
                           try {
-                            await apiClient.delete(`/api/registry/items/${item.id}`);
-                            setItems((prev) => prev.filter((i) => i.id !== item.id));
-                            alert('Item deleted successfully.');
+                            await remove(item.id);
                           } catch (e: any) {
-                            alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
+                            // Error is handled by useAdminRegistry hook
                           }
                         }}
                       >
@@ -180,11 +166,9 @@ export default function AdminDashboardPage() {
                     }
 
                     try {
-                      await apiClient.delete(`/api/registry/items/${item.id}`);
-                      setItems((prev) => prev.filter((i) => i.id !== item.id));
-                      alert('Item deleted successfully.');
+                      await remove(item.id);
                     } catch (e: any) {
-                      alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
+                      // Error is handled by useAdminRegistry hook
                     }
                   }}
                 >

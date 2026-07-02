@@ -1,8 +1,21 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render as tlRender, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AdminSettingsPage from '../page';
 import { checkAdminClient as mockCheckAdminClient } from '@/utils/adminAuth.client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from '@/components/ui/ToastProvider';
+
+const render = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return tlRender(
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>{ui}</ToastProvider>
+    </QueryClientProvider>
+  );
+};
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
