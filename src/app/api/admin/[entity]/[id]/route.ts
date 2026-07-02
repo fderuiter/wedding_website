@@ -1,6 +1,6 @@
-import { DynamicSchema } from "@/utils/validation";
+import { AdminEntityUpdateSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
-import { getEntityService } from '@/lib/admin/registry';
+import { getEntityService } from '@/features/admin/registry';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
@@ -21,7 +21,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, context: { par
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
-  DynamicSchema.safeParse(body);
+  AdminEntityUpdateSchema.safeParse(body);
   
   if (serviceData.config.validateUpdate) {
     const error = serviceData.config.validateUpdate(body);

@@ -18,7 +18,8 @@
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
     "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/migrateToSqlite.ts",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "scaffold": "node scripts/scaffold-feature.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

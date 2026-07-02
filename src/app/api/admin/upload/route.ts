@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DynamicSchema } from '@/utils/validation';
+import { AdminUploadSchema } from '@/utils/validation';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -8,7 +8,7 @@ import { ApiError } from '@/utils/ApiError';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const formData = await req.formData();
-  DynamicSchema.safeParse(formData);
+  AdminUploadSchema.safeParse(formData);
   const file = formData.get('file') as File | null;
 
   if (!file) {

@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { isAdminRequest, signAdminToken } from '../adminAuth.server';
+import { isAdminRequest, signAdminToken } from '@/features/admin/auth.server';
 
 describe('admin authentication expiration', () => {
   const previousAdminPassword = process.env.ADMIN_PASSWORD;

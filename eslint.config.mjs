@@ -16,6 +16,17 @@ const eslintConfig = [
       "react/forbid-elements": [
         "error",
         { forbid: ["button", "input", "label"] }
+      ],
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/features/*/*"],
+              message: "Features should only be imported via their public index.ts exported interfaces to prevent cross-domain leakage."
+            }
+          ]
+        }
       ]
     }
   }

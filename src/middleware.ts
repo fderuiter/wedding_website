@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { isAdminRequest } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/features/admin/auth.server';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

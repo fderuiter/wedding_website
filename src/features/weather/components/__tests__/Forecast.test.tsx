@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import Forecast from '@/components/Forecast';
+import Forecast from '../Forecast';
 import { server } from '@/mocks/server';
 import { rest } from 'msw';
 
