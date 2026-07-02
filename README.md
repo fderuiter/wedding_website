@@ -65,7 +65,7 @@ This project is built with a modern, full-stack TypeScript architecture.
 
 ### Prerequisites
 
-*   **Node.js**: LTS version recommended (v18+).
+*   **Node.js**: LTS version recommended (v22+).
 *   **Git**: For version control.
 *   **PostgreSQL Database**: You can use a local Postgres instance or a cloud provider like Neon or Supabase.
 
@@ -150,7 +150,7 @@ npm test
 
 ## Project Structure
 
-*   `src/app`: Next.js App Router pages and API routes.
+*   `src/app`: Next.js App Router pages and Route Handlers.
 *   `src/components`: Shared React components (Layout, UI elements, 3D scenes).
 *   `src/features`: Feature-specific logic (e.g., `src/features/registry` contains all registry-related components, hooks, and services).
 *   `src/data`: Static data files (e.g., wedding party members, things to do).
