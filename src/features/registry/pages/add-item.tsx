@@ -2,10 +2,13 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
-import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem type
+import { RegistryItem } from '@/features/registry/types';
+import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
+import { useToast } from '@/components/ui/ToastProvider';
 
 /**
  * @page AddRegistryItemPage
@@ -14,50 +17,37 @@ import { RegistryItem } from '@/features/registry/types'; // Import RegistryItem
  * This client component first verifies that the user is an authenticated admin.
  * If not, it redirects to the login page.
  * It renders the `RegistryItemForm` in 'add' mode and handles the form submission
- * by sending the new item data to the `/api/registry/add-item` endpoint.
+ * by sending the new item data via the unified useAdminEntity hook.
  *
  * @returns {JSX.Element} The rendered "Add Registry Item" page, or a loading/redirecting message.
  */
 export default function AddRegistryItemPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { create } = useAdminEntity<RegistryItem>('registry');
+  const { addToast } = useToast();
 
-
-  const handleAdd = async (values: Partial<RegistryItem>) => { // Use Partial<RegistryItem> type
+  const handleAdd = async (values: Partial<RegistryItem>) => {
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/registry/add-item', {
-        method: 'POST', // Specify the POST method
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      if (!response.ok) {
-        let errorText = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorText = errorData.error || JSON.stringify(errorData);
-        } catch {}
-        throw new Error(errorText);
-      }
-      alert('Item added successfully!');
+      await create(values);
+      addToast('Item added successfully!', 'success');
       router.push('/admin/dashboard');
     } catch (error) {
-      alert(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`);
+      addToast(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Add New Registry Item</h1>
+    <AdminEditorContainer title="Add New Registry Item">
       <RegistryItemForm
         mode="add"
         onSubmit={handleAdd}
         isSubmitting={isSubmitting}
         submitLabel="Add Item"
       />
-    </div>
+    </AdminEditorContainer>
   );
 }

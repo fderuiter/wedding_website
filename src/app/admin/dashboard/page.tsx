@@ -1,11 +1,12 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useRouter } from "next/navigation";
-import { RegistryItem} from "@/features/registry/types";
-import { apiClient } from '@/lib/admin/apiClient';
+import { RegistryItem } from "@/features/registry/types";
+import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { useToast } from "@/components/ui/ToastProvider";
 
 /**
  * @page AdminDashboardPage
@@ -21,23 +22,11 @@ import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
  */
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const [items, setItems] = useState<RegistryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: items, loading, error, remove } = useAdminEntity<RegistryItem>('registry');
+  const { addToast } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
-
-  useEffect(() => {
-    async function fetchItems() {
-      // Fetch registry items
-      apiClient.get<RegistryItem[]>('/api/registry/items')
-        .then((data) => setItems(data))
-        .catch((err: any) => setError(err.name === 'ApiError' ? 'Failed to fetch items' : err.message))
-        .finally(() => setLoading(false));
-    }
-    fetchItems();
-  }, []);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
@@ -96,7 +85,7 @@ export default function AdminDashboardPage() {
                         variant="secondary"
                         size="sm"
                         aria-label={"Edit registry item: " + item.name}
-                        onClick={() => router.push(`/registry/edit-item/${item.id}`)}
+                        onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                       >
                         Edit
                       </Button>
@@ -113,11 +102,10 @@ export default function AdminDashboardPage() {
                           }
                           
                           try {
-                            await apiClient.delete(`/api/registry/items/${item.id}`);
-                            setItems((prev) => prev.filter((i) => i.id !== item.id));
-                            alert('Item deleted successfully.');
-                          } catch (e: any) {
-                            alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
+                            await remove(item.id);
+                            addToast('Item deleted successfully.', 'success');
+                          } catch (err: any) {
+                            addToast(err.name === 'ApiError' ? 'Failed to delete item' : (err.message || 'Error deleting item'), 'error');
                           }
                         }}
                       >
@@ -162,7 +150,7 @@ export default function AdminDashboardPage() {
                   variant="secondary"
                   size="sm"
                   aria-label={"Edit registry item: " + item.name}
-                  onClick={() => router.push(`/registry/edit-item/${item.id}`)}
+                  onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                 >
                   Edit
                 </Button>
@@ -180,11 +168,10 @@ export default function AdminDashboardPage() {
                     }
 
                     try {
-                      await apiClient.delete(`/api/registry/items/${item.id}`);
-                      setItems((prev) => prev.filter((i) => i.id !== item.id));
-                      alert('Item deleted successfully.');
-                    } catch (e: any) {
-                      alert(e.name === 'ApiError' ? 'Failed to delete item' : (e.message || 'Error deleting item'));
+                      await remove(item.id);
+                      addToast('Item deleted successfully.', 'success');
+                    } catch (err: any) {
+                      addToast(err.name === 'ApiError' ? 'Failed to delete item' : (err.message || 'Error deleting item'), 'error');
                     }
                   }}
                 >
@@ -197,7 +184,7 @@ export default function AdminDashboardPage() {
         <div className="mt-10 flex justify-center">
           <Button
             size="lg"
-            onClick={() => router.push('/registry/add-item')}
+            onClick={() => router.push('/admin/dashboard/registry/add-item')}
           >
             Add New Item
           </Button>

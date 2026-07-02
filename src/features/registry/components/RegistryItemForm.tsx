@@ -4,6 +4,7 @@ import { Icon } from '@/components/ui/Icon';
 import { validateAddItemInput } from '@/utils/validation';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/components/ui/forms';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Props for the RegistryItemForm component.
@@ -100,7 +101,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-gray-800 p-6 rounded shadow" data-testid="form">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="form">
       {mode === 'add' && (
         <div className="col-span-1 md:col-span-2 mb-2">
           <FormGroup state={scrapeError ? 'error' : 'default'}>
@@ -115,10 +116,10 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
                 className="flex-1"
                 disabled={scrapeLoading}
               />
-              <button
+              <Button
                 type="button"
                 onClick={handleScrape}
-                className="btn-primary"
+                variant="primary"
                 disabled={scrapeLoading || !scrapeUrl}
                 aria-busy={scrapeLoading}
               >
@@ -130,7 +131,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
                 ) : (
                   'Import'
                 )}
-              </button>
+              </Button>
             </div>
             {scrapeError && <FormMessage>{scrapeError}</FormMessage>}
           </FormGroup>
@@ -170,12 +171,12 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
           <Label className="ml-2 font-normal">Allow Group Gifting?</Label>
         </div>
       </FormGroup>
-      <div className="col-span-1 md:col-span-2">
+      <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
-        <button type="submit" className="btn-primary w-full mt-2" disabled={isSubmitting} aria-busy={isSubmitting}>
+        <Button type="submit" variant="primary" className="w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
           {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
           {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
-        </button>
+        </Button>
       </div>
     </form>
   );

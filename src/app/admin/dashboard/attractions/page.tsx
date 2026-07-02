@@ -5,7 +5,9 @@ import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useAdminEntity } from '@/lib/admin/useAdminEntity';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
+import { AdminEditorContainer } from "@/components/admin/AdminEditorContainer";
 import { FormGroup, Label, Input, Textarea, Select, Checkbox } from "@/components/ui/forms";
+import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
 
@@ -110,8 +112,7 @@ export default function AttractionsDashboardPage() {
         </div>
 
         {isEditing && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">{currentAttraction.id ? 'Edit' : 'Create'} AttractionDTO</h2>
+          <AdminEditorContainer title={`${currentAttraction.id ? 'Edit' : 'Create'} Attraction`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <FormGroup>
                 <Label>Name</Label>
@@ -160,10 +161,10 @@ export default function AttractionsDashboardPage() {
               </FormGroup>
             </div>
             <div className="flex gap-4 mt-6">
-              <button onClick={handleSave} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Save</button>
-              <button onClick={() => setIsEditing(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+              <Button onClick={handleSave} variant="primary">Save</Button>
+              <Button onClick={() => setIsEditing(false)} variant="secondary">Cancel</Button>
             </div>
-          </div>
+          </AdminEditorContainer>
         )}
 
         <div className="grid gap-4 pb-10" ref={containerRef}>
@@ -180,11 +181,11 @@ export default function AttractionsDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex flex-col gap-2">
-                <button onClick={() => { 
+                <Button onClick={() => { 
                   setCurrentAttraction(attraction); 
                   setIsEditing(true); 
-                }} className="bg-secondary text-white px-3 py-1 rounded text-sm">Edit</button>
-                <button onClick={(e) => handleDelete(attraction.id, e)} className="bg-primary text-white px-3 py-1 rounded text-sm">Delete</button>
+                }} variant="secondary" size="sm">Edit</Button>
+                <Button onClick={(e) => handleDelete(attraction.id, e as any)} variant="danger" size="sm">Delete</Button>
               </div>
             </div>
           ))}

@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '@/features/registry/types';
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
+import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
+import { useToast } from '@/components/ui/ToastProvider';
 
 /**
  * @page EditRegistryItemPage
@@ -12,7 +15,7 @@ import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
  * This client component first verifies admin authentication. It then fetches the data
  * for the specific registry item based on the ID from the URL. It renders the
  * `RegistryItemForm` in 'edit' mode, populated with the fetched data. On submission,
- * it sends the updated data to the `/api/registry/items/:id` endpoint.
+ * it sends the updated data using the unified useAdminEntity hook.
  *
  * @returns {JSX.Element} The rendered "Edit Registry Item" page, or a loading/error/redirecting message.
  */
@@ -20,6 +23,8 @@ export default function EditRegistryItemPage() {
   const router = useRouter();
   const params = useParams();
   const itemId = params?.id as string;
+  const { addToast } = useToast();
+  const { data: items, loading: itemsLoading, error: itemsError, update } = useAdminEntity<RegistryItem>('registry');
 
   const [itemData, setItemData] = useState<Partial<RegistryItem>>({});
   const [loading, setLoading] = useState(true);
@@ -27,45 +32,34 @@ export default function EditRegistryItemPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    async function fetchItem() {
-      if (!itemId) {
-        setError('Item ID is missing.');
-        setLoading(false);
-        return;
-      }
-      try {
-        const response = await fetch(`/api/registry/items/${itemId}`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch item: ${response.statusText}`);
-        }
-        const data: RegistryItem = await response.json();
-        setItemData(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      } finally {
-        setLoading(false);
-      }
+    if (!itemId) {
+      setError('Item ID is missing.');
+      setLoading(false);
+      return;
     }
-    fetchItem();
-  }, [itemId]);
+    if (!itemsLoading) {
+      const foundItem = items.find(item => item.id === itemId);
+      if (foundItem) {
+        setItemData(foundItem);
+      } else if (itemsError) {
+        setError(itemsError);
+      } else {
+        setError('Item not found.');
+      }
+      setLoading(false);
+    }
+  }, [itemId, items, itemsLoading, itemsError]);
 
   const handleEdit = async (values: Partial<RegistryItem>) => {
     setIsSubmitting(true);
     setError(null);
     try {
-      const response = await fetch(`/api/registry/items/${itemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-      alert('Item updated successfully!');
+      await update(itemId, values);
+      addToast('Item updated successfully!', 'success');
       router.push('/admin/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update item');
+      addToast('Failed to update item', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -79,8 +73,7 @@ export default function EditRegistryItemPage() {
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Edit Registry Item</h1>
+    <AdminEditorContainer title="Edit Registry Item">
       <RegistryItemForm
         mode="edit"
         initialValues={itemData}
@@ -88,6 +81,6 @@ export default function EditRegistryItemPage() {
         isSubmitting={isSubmitting}
         submitLabel="Save Changes"
       />
-    </div>
+    </AdminEditorContainer>
   );
 }
