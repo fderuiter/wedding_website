@@ -25,7 +25,7 @@ export default function WeddingPartyDashboardPage() {
   
   const {
     data: members,
-    loading,
+    isLoading,
     error,
     fetchAll,
     create,
@@ -63,8 +63,8 @@ export default function WeddingPartyDashboardPage() {
     }
   };
 
-  if (loading) return <div className="min-h-[50vh] flex items-center justify-center"><p>Loading...</p></div>;
-  if (error) return <div className="min-h-[50vh] flex items-center justify-center"><p className="text-red-500">Error: {error}</p></div>;
+  if (isLoading) return <div className="min-h-[50vh] flex items-center justify-center"><p>Loading...</p></div>;
+  if (error) return <div className="min-h-[50vh] flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
   const draftMember = {
     id: currentMember.id || 'draft',
