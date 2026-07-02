@@ -43,7 +43,7 @@ describe('RegistryItemForm', () => {
       price: 12.34,
       quantity: 2,
       category: 'Kitchen',
-      image: 'http://example.com/img.jpg',
+      imageUrl: 'http://example.com/img.jpg',
       vendorUrl: 'http://vendor.com/item',
       isGroupGift: true,
     });
@@ -76,7 +76,7 @@ describe('RegistryItemForm', () => {
       price: 120.5,
       quantity: 2,
       category: 'Kitchen',
-      image: '',
+      imageUrl: '',
       vendorUrl: '',
       isGroupGift: false,
     });

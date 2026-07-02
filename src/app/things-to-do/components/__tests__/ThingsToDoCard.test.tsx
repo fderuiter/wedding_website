@@ -40,6 +40,6 @@ describe('ThingsToDoCard', () => {
     render(<ThingsToDoCard attraction={attractionWithoutImage} />);
     const image = screen.getByAltText('Test Attraction') as HTMLImageElement;
     // The src will be encoded, so we check for the presence of the placeholder filename
-    expect(image.src).toContain(encodeURIComponent('/images/placeholder.png'));
+    expect(image.src).toContain('/images/placeholder.png');
   });
 });

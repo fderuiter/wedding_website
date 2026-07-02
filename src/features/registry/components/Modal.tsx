@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { RegistryItem } from '@/features/registry/types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
-import Image from 'next/image';
+import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
 import { useOverlay } from '@/hooks/useOverlay';
 import { ContributionSchema } from '@/features/registry/schemas';
@@ -94,15 +94,13 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
           <Icon name="X" className="w-6 h-6" />
         </Button>
         <div className="relative w-full h-64 mb-4">
-          <Image
-            src={item.image || '/images/placeholder.png'}
-            alt=""
-            className="object-cover rounded bg-gray-100"
-            fill
-            onError={(e) => {
+          <MediaImage
+            media={item.image}
+            fallbackUrl="/images/placeholder.png"
+            className="object-cover rounded bg-gray-100 w-full h-full absolute inset-0"
+            onError={(e: any) => {
               const target = e.target as HTMLImageElement;
               target.onerror = null;
-              target.srcset = '/images/placeholder.png';
               target.src = '/images/placeholder.png';
             }}
           />

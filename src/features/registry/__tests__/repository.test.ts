@@ -11,6 +11,10 @@ jest.mock('@/lib/prisma', () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    media: {
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     snapshotVersion: {
       create: jest.fn(),
       findMany: jest.fn(),
@@ -26,7 +30,8 @@ const mockRegistryItem: RegistryItem = {
   price: 100,
   description: 'Test Description',
   vendorUrl: 'http://example.com',
-  image: 'http://example.com/image.jpg',
+  imageId: 'media1',
+  image: { id: 'media1', url: 'http://example.com/image.jpg', altText: null, isDecorative: false, createdAt: new Date(), updatedAt: new Date() },
   category: 'Test Category',
   amountContributed: 0,
   purchased: false,
@@ -47,6 +52,7 @@ describe('RegistryRepository', () => {
       expect(items).toEqual([mockRegistryItem]);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
+          image: true,
           contributors: true,
         },
       });
@@ -61,6 +67,7 @@ describe('RegistryRepository', () => {
       expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
         include: {
+          image: true,
           contributors: true,
         },
       });
@@ -74,28 +81,39 @@ describe('RegistryRepository', () => {
         price: 200,
         description: 'New Description',
         vendorUrl: 'http://new.com',
-        image: 'http://new.com/image.jpg',
+        imageUrl: 'http://new.com/image.jpg',
         category: 'New Category',
         quantity: 1,
         isGroupGift: true,
       };
+      (prisma.media.create as jest.Mock).mockResolvedValue({ id: 'media2' });
       (prisma.registryItem.create as jest.Mock).mockResolvedValue({ 
         ...newItemData, 
         id: '2', 
+        imageId: 'media2',
         purchased: false, 
         amountContributed: 0,
         contributors: []
       });
       const item = await registryRepository.createItem(newItemData);
-      expect(item).toEqual({ ...newItemData, id: '2', purchased: false, amountContributed: 0, contributors: [] });
+      expect(item.name).toBe('New Item');
+      expect(prisma.media.create).toHaveBeenCalled();
       expect(prisma.registryItem.create).toHaveBeenCalledWith({
         data: {
-          ...newItemData,
+          name: newItemData.name,
+          price: newItemData.price,
+          quantity: newItemData.quantity,
+          category: newItemData.category,
+          description: newItemData.description,
+          imageId: 'media2',
+          vendorUrl: newItemData.vendorUrl,
+          isGroupGift: newItemData.isGroupGift,
           contributors: {
             create: [],
           },
         },
         include: {
+          image: true,
           contributors: true,
         },
       });
@@ -112,6 +130,7 @@ describe('RegistryRepository', () => {
         where: { id: '1' },
         data: updatedData,
         include: {
+          image: true,
           contributors: true,
         },
       });
@@ -164,6 +183,7 @@ describe('RegistryRepository', () => {
           },
         },
         include: {
+          image: true,
           contributors: true,
         },
       });

@@ -14,11 +14,17 @@ export const GET = withApiMiddleware(async (request: NextRequest, context: { par
   const orderDir = searchParams.get('orderDir') || 'desc';
   
   let orderBy: any = { [orderField]: orderDir };
+  let include: any = undefined;
   if (serviceData.config.entityType === 'WeddingPartyMember') {
      orderBy = { order: 'asc' };
+     include = { photo: true };
+  } else if (serviceData.config.entityType === 'Attraction') {
+     include = { image: true };
+  } else if (serviceData.config.entityType === 'RegistryItem') {
+     include = { image: true, contributors: true };
   }
   
-  const records = await serviceData.service.findMany({ orderBy });
+  const records = await serviceData.service.findMany({ orderBy, include });
   return NextResponse.json(records);
 });
 
@@ -35,7 +41,7 @@ export const POST = withApiMiddleware(async (request: NextRequest, context: { pa
     if (error) throw new ApiError(400, error);
   }
 
-  const mappedBody = serviceData.config.mapData ? serviceData.config.mapData(body) : body;
+  const mappedBody = serviceData.config.mapData ? await serviceData.config.mapData(body) : body;
   const newRecord = await serviceData.service.create(mappedBody);
   return NextResponse.json(newRecord, { status: 201 });
 });

@@ -1,10 +1,15 @@
 import { z } from 'zod';
+import { MediaSchema } from '@/features/media/schemas';
 
 export const AttractionSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  image: z.string().nullable(),
+  imageId: z.string().nullable().optional(),
+  imageUrl: z.string().optional(),
+  imageAlt: z.string().optional().nullable(),
+  imageDecorative: z.boolean().optional(),
+  image: MediaSchema.nullable().optional(),
   category: z.string(),
   website: z.string(),
   directions: z.string(),
