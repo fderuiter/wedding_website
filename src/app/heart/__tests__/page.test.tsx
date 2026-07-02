@@ -244,7 +244,7 @@ describe('HeartPage', () => {
     const HeartPage = HeartPageModule.default;
 
     // Render the page component
-    const { container } = render(await HeartPage());
+    render(await HeartPage());
 
     // Verify sentinel names are rendered (which means they were passed to HeartClient)
     expect(screen.getAllByText('SentinelA').length).toBeGreaterThan(0);

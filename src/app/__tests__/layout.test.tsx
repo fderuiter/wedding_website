@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';

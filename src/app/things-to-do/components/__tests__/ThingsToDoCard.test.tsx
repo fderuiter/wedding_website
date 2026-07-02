@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ThingsToDoCard from '../ThingsToDoCard';
 import { Attraction } from '@/data/things-to-do';

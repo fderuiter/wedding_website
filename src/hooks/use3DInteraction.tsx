@@ -1,4 +1,4 @@
-import React, { useId, useState, useCallback, KeyboardEvent, useEffect } from 'react';
+import { useId, useState, useCallback, KeyboardEvent } from 'react';
 
 export type Use3DInteractionOptions = {
   instructions: string;

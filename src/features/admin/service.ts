@@ -25,7 +25,7 @@ export class BaseService<T extends { id: string }> {
     return record;
   }
 
-  async delete(id: string, author: string = 'Admin'): Promise<T> {
+  async delete(id: string, _author: string = 'Admin'): Promise<T> {
     const record = await this.repo.delete(id);
     return record;
   }

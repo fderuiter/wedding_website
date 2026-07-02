@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useKeenSlider } from 'keen-slider/react';
-import 'keen-slider/keen-slider.min.css';
 
 /**
  * @interface GalleryImage

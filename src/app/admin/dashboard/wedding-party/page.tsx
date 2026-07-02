@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
@@ -19,7 +19,7 @@ import { useToast } from "@/components/ui/ToastProvider";
  * @returns The React element for the Wedding Party admin dashboard and preview.
  */
 export default function WeddingPartyDashboardPage() {
-  const router = useRouter();
+  
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   const { confirm } = useToast();
   

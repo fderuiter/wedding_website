@@ -12,7 +12,7 @@ export const GET = withApiMiddleware(async () => {
   return NextResponse.json(toPublicAppConfig(config));
 });
 
-export const PUT = withApiMiddleware(async (req: NextRequest) => {
+export const PUT = withApiMiddleware(async (_req: NextRequest) => {
   const data = await req.json();
 
   const parsedLat = coordinateSchema.safeParse(data.latitude);

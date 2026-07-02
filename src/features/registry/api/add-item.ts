@@ -27,7 +27,7 @@ import { ApiError } from '@/utils/ApiError';
  *     }
  *     ```
  */
-export const POST = withApiMiddleware(async (request: NextRequest) => {
+export const POST = withApiMiddleware(async (_request: NextRequest) => {
   const body = await request.json();
   const parseResult = RegistryItemBaseSchema.safeParse(body);
   

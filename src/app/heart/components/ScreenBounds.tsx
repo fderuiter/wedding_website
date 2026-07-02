@@ -1,4 +1,3 @@
-import React from 'react'
 import { useThree } from '@react-three/fiber'
 import { RigidBody, CuboidCollider } from '@react-three/rapier'
 

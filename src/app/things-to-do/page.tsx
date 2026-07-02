@@ -1,4 +1,3 @@
-import React from 'react';
 import { Metadata } from 'next';
 import ThingsToDoList from './components/ThingsToDoList';
 import { contentService } from '@/features/content/service';

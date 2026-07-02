@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+
 import type { ContentNodeDTO } from '@/features/content/schemas';
 import { useAdminContent } from '@/hooks/admin/useAdminContent';
 import { apiClient } from '@/features/admin/apiClient';
@@ -22,7 +22,7 @@ import { useToast } from "@/components/ui/ToastProvider";
  * @returns A React element rendering the content dashboard UI with list, editor, and preview controls.
  */
 export default function ContentDashboardPage() {
-  const router = useRouter();
+  
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   const { confirm, addToast } = useToast();
 

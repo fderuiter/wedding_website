@@ -4,7 +4,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { Environment, Html, Text } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
-import React, { Suspense, useRef, useState, useEffect } from 'react'
+import { Suspense, useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier'
 import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
@@ -115,7 +115,7 @@ function PhysicsHeart({
     }
   })
 
-  const { handlers: leftHandlers, getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = useUnified3DInput({
+  const {   getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = useUnified3DInput({
     accessibility: {
       instructions: 'Press Space or Enter to bump the left segment.',
       labels: { action: 'Bumped left segment' },
@@ -129,7 +129,7 @@ function PhysicsHeart({
     }
   });
 
-  const { handlers: rightHandlers, getInteractiveProps: getRightInteractiveProps, AccessibleElements: RightAccessibleElements } = useUnified3DInput({
+  const {   getInteractiveProps: getRightInteractiveProps, AccessibleElements: RightAccessibleElements } = useUnified3DInput({
     accessibility: {
       instructions: 'Press Space or Enter to bump the right segment.',
       labels: { action: 'Bumped right segment' },

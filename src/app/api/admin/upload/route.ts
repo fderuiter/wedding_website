@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const POST = withApiMiddleware(async (req: NextRequest) => {
+export const POST = withApiMiddleware(async (_req: NextRequest) => {
   const formData = await req.formData();
   AdminUploadSchema.safeParse(formData);
   const file = formData.get('file') as File | null;

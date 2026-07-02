@@ -1,14 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiClient } from '@/lib/apiClient';
 
-interface UseEntityOrchestrationOptions<T> {
+interface UseEntityOrchestrationOptions<_T> {
   queryKey: string[];
   endpoint: string;
   entityName: string;
   apiClient: ApiClient;
 }
 
-export function useEntityOrchestration<T extends { id: string }>({
+export function useEntityOrchestration<_T extends { id: string }>({
   queryKey,
   endpoint,
   entityName,
@@ -39,12 +39,12 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
       return { previousData, optimisticId };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
     },
-    onSuccess: (newItem, variables, context) => {
+    onSuccess: (newItem, _variables, context) => {
       queryClient.setQueryData<T[]>(queryKey, old => 
         old?.map(item => item.id === context?.optimisticId ? newItem : item)
       );
@@ -66,7 +66,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
       return { previousData };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
@@ -91,7 +91,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
       return { previousData };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
@@ -112,7 +112,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
       return { previousData };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }

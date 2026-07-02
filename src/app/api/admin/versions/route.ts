@@ -4,7 +4,7 @@ import { toPublicAppConfig } from '@/lib/config';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const GET = withApiMiddleware(async (request: NextRequest) => {
+export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const url = new URL(request.url);
   const entityType = url.searchParams.get('entityType');
   const entityId = url.searchParams.get('entityId');

@@ -32,7 +32,7 @@ export function useAdminSettings() {
       queryClient.setQueryData<any>(queryKey, newConfig);
       return { previousData };
     },
-    onError: (err: any, variables, context) => {
+    onError: ( _err: any, _variables, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }

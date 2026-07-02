@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Icon, IconName } from '@/components/ui/Icon';
-import { apiClient, ApiError } from '@/lib/apiClient';
+import { apiClient } from '@/lib/apiClient';
 
 /**
  * @interface WeatherData

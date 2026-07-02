@@ -4,7 +4,7 @@ import { RegistryItemBaseSchema } from '@/features/registry/schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const GET = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const GET = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const item = await registryService.getItemById(id);
 
@@ -14,7 +14,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, { params }: { 
   return NextResponse.json(item);
 });
 
-export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const PUT = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const body = await request.json();
   const parseResult = RegistryItemBaseSchema.safeParse(body);
@@ -33,7 +33,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { 
   return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
 });
 
-export const DELETE = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   await registryService.deleteItem(id);
   return NextResponse.json({ message: 'Item deleted successfully' });

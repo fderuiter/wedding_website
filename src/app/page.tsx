@@ -1,7 +1,5 @@
-import React from 'react';
 import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
-import { CalendarEvent } from '@/utils/calendar';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { logisticsService } from '@/features/logistics/service';
 
@@ -78,17 +76,6 @@ export default async function HomePage() {
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
 
-  const calendarEvent: CalendarEvent = {
-    name: `${config.brideName} & ${config.groomName}'s Wedding`,
-    startDate: config.weddingDate.toISOString().split('T')[0],
-    startTime: '16:00',
-    endDate: config.weddingDate.toISOString().split('T')[0],
-    endTime: '22:00',
-    timeZone: 'America/Chicago',
-    location: `${config.venueName}, ${config.venueAddress}, ${config.venueCity}, ${config.venueState}`,
-    description: config.venueDescription,
-  };
-
   let contentNodes: import('@/features/content/schemas').ContentNodeDTO[] = [];
   try {
     contentNodes = await logisticsService.getHomepageLogistics();
@@ -96,5 +83,5 @@ export default async function HomePage() {
     console.warn("Could not fetch content nodes for Homepage");
   }
 
-  return <HomePageClient calendarEvent={calendarEvent} config={publicConfig} contentNodes={contentNodes} />;
+  return <HomePageClient config={publicConfig} contentNodes={contentNodes} />;
 }

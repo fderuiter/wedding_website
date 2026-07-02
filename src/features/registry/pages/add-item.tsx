@@ -2,8 +2,8 @@
 
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+
 import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
 import { RegistryItem } from '@/features/registry/types';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
@@ -22,7 +22,7 @@ import { useToast } from '@/components/ui/ToastProvider';
  * @returns {JSX.Element} The rendered "Add Registry Item" page, or a loading/redirecting message.
  */
 export default function AddRegistryItemPage() {
-  const router = useRouter();
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { create } = useAdminRegistry();
   const { addToast } = useToast();

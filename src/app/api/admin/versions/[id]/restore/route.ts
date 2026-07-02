@@ -4,7 +4,7 @@ import { coordinateSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const POST = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const POST = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const version = await prisma.snapshotVersion.findUnique({
     where: { id }

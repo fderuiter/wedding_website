@@ -39,7 +39,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.example.com/', (req, res, ctx) => {
+      rest.get('https://www.example.com/', (_req, res, ctx) => {
         return res(
           ctx.set('Content-Type', 'text/html'),
           ctx.body(mockHtml)
@@ -80,7 +80,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.amazon.com/dp/B08C1F553M', (req, res, ctx) => {
+      rest.get('https://www.amazon.com/dp/B08C1F553M', (_req, res, ctx) => {
         return res(
           ctx.set('Content-Type', 'text/html'),
           ctx.body(mockHtml)
@@ -120,7 +120,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.amazon.com/dp/B09XYZ1234', (req, res, ctx) => {
+      rest.get('https://www.amazon.com/dp/B09XYZ1234', (_req, res, ctx) => {
         return res(
           ctx.set('Content-Type', 'text/html'),
           ctx.body(mockHtml)
