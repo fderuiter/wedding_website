@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
-import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { Button } from "@/components/ui/Button";
@@ -29,7 +29,7 @@ export default function WeddingPartyDashboardPage() {
     create,
     update,
     remove
-  } = useAdminEntity<WeddingPartyMemberDTO>('wedding-party');
+  } = useAdminWeddingParty();
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});

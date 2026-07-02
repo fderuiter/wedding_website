@@ -1,23 +1,18 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useAdminMaintenance } from "@/hooks/admin/useAdminMaintenance";
 
 export default function MaintenanceHubPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [importing, setImporting] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const { importing, exportData, importData } = useAdminMaintenance();
+  
   const [file, setFile] = useState<File | null>(null);
 
-  useEffect(() => {
-    setLoading(false);
-  }, []);
-
   const handleExport = () => {
-    window.open('/api/admin/maintenance/export', '_blank');
+    exportData();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,49 +24,19 @@ export default function MaintenanceHubPage() {
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setError("Please select a file to import.");
       return;
     }
     if (!confirm("WARNING: Importing data will completely overwrite the existing database state. Are you sure you want to proceed?")) {
       return;
     }
 
-    setImporting(true);
-    setMessage("");
-    setError("");
-
     try {
-      const text = await file.text();
-      let payload;
-      try {
-        payload = JSON.parse(text);
-      } catch (err) {
-        throw new Error("File is not valid JSON.");
-      }
-
-      const res = await fetch('/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to import data.");
-      }
-
-      setMessage("Data imported successfully! The database state has been overwritten.");
+      await importData(file);
       setFile(null);
-    } catch (err: any) {
-      setError(err.message || "An error occurred during import.");
-    } finally {
-      setImporting(false);
+    } catch (err) {
+      // Error handled by hook
     }
   };
-
-  if (loading) return <div className="p-8 text-center">Loading...</div>;
 
   return (
     <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-2 sm:px-6">
@@ -80,17 +45,6 @@ export default function MaintenanceHubPage() {
           <h1 className="text-4xl font-extrabold text-primary tracking-tight drop-shadow-lg">Maintenance Hub</h1>
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
         </div>
-
-        {message && (
-          <div className="mb-6 p-4 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-            {message}
-          </div>
-        )}
-        {error && (
-          <div className="mb-6 p-4 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">
-            {error}
-          </div>
-        )}
 
         <div className="space-y-8">
           <section className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-primary dark:border-gray-700">

@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ContentNodeDTO } from '@/features/content/schemas';
-import { useAdminEntity } from '@/lib/admin/useAdminEntity';
+import { useAdminContent } from '@/hooks/admin/useAdminContent';
 import { apiClient } from '@/lib/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
@@ -32,7 +32,7 @@ export default function ContentDashboardPage() {
     create,
     update,
     remove
-  } = useAdminEntity<ContentNodeDTO>('content-nodes');
+  } = useAdminContent();
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentNode, setCurrentNode] = useState<Partial<ContentNodeDTO>>({});

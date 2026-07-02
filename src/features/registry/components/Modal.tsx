@@ -83,13 +83,14 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={overlayRef} onClick={handleBackdropClick}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
-        <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        <Button
+          variant="ghost"
+          className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center w-8 h-8"
           onClick={onClose}
           aria-label="Close modal"
         >
           <Icon name="X" className="w-6 h-6" />
-        </button>
+        </Button>
         <div className="relative w-full h-64 mb-4">
           <Image
             src={item.image || '/images/placeholder.png'}
@@ -172,8 +173,8 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
             <Button
               type="submit"
-              className="w-full"
               variant="primary"
+              className="w-full flex items-center justify-center"
               disabled={isSubmitting}
               aria-busy={isSubmitting}
             >

@@ -1,66 +1,26 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiClient } from '@/lib/admin/apiClient';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
+import { useAdminFeatures } from "@/hooks/admin/useAdminFeatures";
 
 export default function SiteManagerPage() {
   const router = useRouter();
   const { addToast } = useToast();
-  const [features, setFeatures] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { features, loading, error, saveFeatures } = useAdminFeatures();
   
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customTitle, setCustomTitle] = useState("");
   const [customContent, setCustomContent] = useState("");
 
-  useEffect(() => {
-    fetchFeatures();
-  }, []);
-
-  const fetchFeatures = async () => {
-    setLoading(true);
-    try {
-      let data = await apiClient.get<any[]>('/api/admin/features');
-      
-      // Fallback defaults
-      if (!data || data.length === 0) {
-        data = [
-          { id: 'story', type: 'story', title: 'Our Story', visible: true },
-          { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
-          { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
-          { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
-          { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
-          { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
-        ];
-      }
-      setFeatures(data);
-    } catch (err: any) {
-      setError(err.message || String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveFeatures = async (newFeatures: any[]) => {
-    try {
-      await apiClient.put('/api/admin/features', { features: newFeatures });
-      setFeatures(newFeatures);
-      addToast('Sections updated successfully', 'success');
-    } catch (e: any) {
-      addToast(e.message || 'Error saving', 'error');
-    }
-  };
-
   const toggleVisibility = (id: string) => {
     const updated = features.map(f => f.id === id ? { ...f, visible: !f.visible } : f);
-    saveFeatures(updated);
+    saveFeatures(updated).then(() => addToast('Section visibility updated', 'success'));
   };
 
   const addCustomSection = () => {
@@ -77,7 +37,7 @@ export default function SiteManagerPage() {
       visible: true
     };
     const updated = [...features, newFeature];
-    saveFeatures(updated);
+    saveFeatures(updated).then(() => addToast('Section added', 'success'));
     setShowCustomModal(false);
     setCustomTitle("");
     setCustomContent("");
@@ -95,16 +55,7 @@ export default function SiteManagerPage() {
     const [draggedItem] = newFeatures.splice(dragIndex, 1);
     newFeatures.splice(dropIndex, 0, draggedItem);
     
-    // Optimistic update
-    setFeatures(newFeatures);
-    
-    // Save to backend without triggering immediate success toast to avoid spam
-    apiClient.put('/api/admin/features', { features: newFeatures })
-      .catch((e: any) => {
-        addToast(e.message || 'Error saving reordered sections', 'error');
-        // Revert on error
-        fetchFeatures();
-      });
+    saveFeatures(newFeatures);
   };
 
   if (loading) return <div className="p-8 text-center text-primary">Loading Site Manager...</div>;
