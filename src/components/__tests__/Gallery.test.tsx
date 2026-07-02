@@ -1,6 +1,10 @@
 import React from 'react';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe } from 'jest-axe';
+import fs from 'fs';
+import path from 'path';
+import { a11yConfig } from '../../a11y-config';
 import Gallery from '../Gallery';
 
 const mockNext = jest.fn();
@@ -104,5 +108,36 @@ describe('Gallery Component', () => {
     expect(mockNext).toHaveBeenCalledTimes(1);
 
     unmount();
+  });
+
+  it('should not have accessibility violations', async () => {
+    const images = [
+      { src: '/img1.jpg', alt: 'Image 1' },
+      { src: '/img2.jpg', alt: 'Image 2' },
+    ];
+    
+    // We don't want fake timers to mess with axe
+    jest.useRealTimers();
+    
+    const { container } = render(<Gallery images={images} />);
+    
+    act(() => {
+      createdCallback?.();
+    });
+
+    const results = await axe(container, {
+      rules: a11yConfig.rules
+    });
+    
+    const reportDir = path.join(process.cwd(), 'test-results');
+    if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
+    const reportFile = path.join(reportDir, 'jest-a11y-violations.json');
+    let existingViolations = [];
+    if (fs.existsSync(reportFile)) {
+      existingViolations = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+    }
+    fs.writeFileSync(reportFile, JSON.stringify([...existingViolations, ...results.violations], null, 2));
+
+    expect(results).toHaveNoViolations();
   });
 });

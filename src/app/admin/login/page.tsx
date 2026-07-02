@@ -67,7 +67,7 @@ export default function LoginPage() {
       >
         <Link
           href="/"
-          className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-primary transition mb-8 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md px-2 py-1"
+          className="inline-flex items-center text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-primary transition mb-8 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md px-2 py-1"
         >
           <Icon name="ArrowLeft" size={16} className="mr-2 transition-transform group-hover:-translate-x-1" />
           Back to home

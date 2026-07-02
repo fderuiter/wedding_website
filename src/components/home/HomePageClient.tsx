@@ -11,6 +11,7 @@ import Link from 'next/link'
 import BackToTop from '@/components/BackToTop'
 import Countdown from '@/components/Countdown'
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard'
+import { formatDate } from '@/utils/intl'
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
 
@@ -45,11 +46,7 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
     }
   }, [config]);
 
-  const formattedDate = new Date(config.weddingDate).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const formattedDate = formatDate(config.weddingDate);
 
   const faqs = contentNodes
     .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')

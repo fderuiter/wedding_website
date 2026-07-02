@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatCurrency } from '@/utils/intl';
 
 /**
  * @interface PriceRangeFilterProps
@@ -36,7 +37,7 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
 
   return (
     <div className="flex items-center gap-2 mb-4">
-      <span className="text-sm">${min}</span>
+      <span className="text-sm">{formatCurrency(min)}</span>
       <input
         type="range"
         min={min}
@@ -46,7 +47,7 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
         className="accent-yellow-600 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
         aria-label="Minimum price"
       />
-      <span className="text-sm">${minValue}</span>
+      <span className="text-sm">{formatCurrency(minValue)}</span>
       <span className="mx-1">-</span>
       <input
         type="range"
@@ -57,8 +58,8 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
         className="accent-yellow-600 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
         aria-label="Maximum price"
       />
-      <span className="text-sm">${maxValue}</span>
-      <span className="text-sm">/ ${max}</span>
+      <span className="text-sm">{formatCurrency(maxValue)}</span>
+      <span className="text-sm">/ {formatCurrency(max)}</span>
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useId, useState, useCallback, KeyboardEvent, useEffect } from 'react';
 
-type Use3DInteractionOptions = {
+export type Use3DInteractionOptions = {
   instructions: string;
   labels?: {
     up?: string;

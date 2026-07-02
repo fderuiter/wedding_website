@@ -7,6 +7,22 @@ import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { formatCurrency, formatDate } from "@/utils/intl";
+
+const ContributionsList = ({ contributors }: { contributors?: { name: string; amount: number; date: string }[] }) => {
+  if (!contributors || contributors.length === 0) {
+    return <span className="text-gray-500 dark:text-gray-400">None</span>;
+  }
+  return (
+    <ul className="text-xs space-y-1">
+      {contributors.map((c, idx) => (
+        <li key={idx}>
+          {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 /**
  * @page AdminDashboardPage
@@ -31,7 +47,7 @@ export default function AdminDashboardPage() {
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
       <h1 className="text-3xl font-bold mb-4 text-primary">Admin Dashboard</h1>
-      <p className="text-lg text-gray-500">Loading items...</p>
+      <p className="text-lg text-gray-500 dark:text-gray-400">Loading items...</p>
     </div>
   );
   if (error) return (
@@ -65,20 +81,10 @@ export default function AdminDashboardPage() {
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-semibold">{item.name}</TableCell>
-                    <TableCell>${item.price.toFixed(2)}</TableCell>
+                    <TableCell>{formatCurrency(item.price)}</TableCell>
                     <TableCell>{item.purchased ? "Yes" : "No"}</TableCell>
                     <TableCell>
-                      {item.contributors && item.contributors.length > 0 ? (
-                        <ul className="text-xs space-y-1">
-                          {item.contributors.map((c, idx) => (
-                            <li key={idx}>
-                              {c.name} - ${c.amount.toFixed(2)} on {new Date(c.date).toLocaleDateString()}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <span className="text-gray-400">None</span>
-                      )}
+                      <ContributionsList contributors={item.contributors} />
                     </TableCell>
                     <TableCell className="space-x-2">
                       <Button
@@ -125,24 +131,16 @@ export default function AdminDashboardPage() {
             <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-primary dark:border-gray-700">
               <div className="flex justify-between items-center mb-2">
                 <span className="font-bold text-lg text-primary">{item.name}</span>
-                <span className="text-sm font-semibold">${item.price.toFixed(2)}</span>
+                <span className="text-sm font-semibold">{formatCurrency(item.price)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-xs mb-1">
                 <span className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.purchased ? 'Claimed' : 'Available'}</span>
               </div>
               <div className="mb-2">
                 <span className="font-semibold">Contributions:</span>
-                {item.contributors && item.contributors.length > 0 ? (
-                  <ul className="ml-2 mt-1 space-y-1">
-                    {item.contributors.map((c, idx) => (
-                      <li key={idx} className="text-xs">
-                        {c.name} - ${c.amount.toFixed(2)} on {new Date(c.date).toLocaleDateString()}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="ml-2 text-gray-400">None</span>
-                )}
+                <div className="ml-2 mt-1">
+                  <ContributionsList contributors={item.contributors} />
+                </div>
               </div>
               <div className="flex gap-2 mt-2">
                 <Button
