@@ -7,7 +7,7 @@ interface RateLimitInfo {
 
 const rateLimits = new Map<string, RateLimitInfo>();
 
-export async function rateLimit(_req: NextRequest, limit: number, windowMs: number): Promise<NextResponse | null> {
+export async function rateLimit(req: NextRequest, limit: number, windowMs: number): Promise<NextResponse | null> {
   // Try to get IP from x-forwarded-for header, fallback to '127.0.0.1'
   // In Next.js App Router, 'req.ip' is often undefined or requires proxy setup
   const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';

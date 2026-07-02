@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '@/features/registry/types';
@@ -18,7 +19,7 @@ export function useRegistry() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(12);
   const [isAdmin, setIsAdmin] = useState(false);
-  
+  const router = useRouter();
 
   useEffect(() => {
     const checkAdminStatus = async () => {

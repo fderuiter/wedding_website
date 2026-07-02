@@ -5,7 +5,7 @@ import { isPrivateUrl } from '@/utils/ssrf';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
-export const POST = withApiMiddleware(async (_request: NextRequest) => {
+export const POST = withApiMiddleware(async (request: NextRequest) => {
   const body = await request.json();
   const parseResult = ScrapeUrlSchema.safeParse(body);
   

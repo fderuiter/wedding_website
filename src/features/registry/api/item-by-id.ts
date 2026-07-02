@@ -14,7 +14,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest, { params }: {
   return NextResponse.json(item);
 });
 
-export const PUT = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const body = await request.json();
   const parseResult = RegistryItemBaseSchema.safeParse(body);

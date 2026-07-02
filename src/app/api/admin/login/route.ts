@@ -8,7 +8,7 @@ import { ApiError } from '@/utils/ApiError';
 
 const ADMIN_COOKIE = 'admin_auth';
 
-export const POST = withApiMiddleware(async (_req: NextRequest) => {
+export const POST = withApiMiddleware(async (req: NextRequest) => {
   const body = await req.json();
   const parseResult = AdminLoginSchema.safeParse(body);
   

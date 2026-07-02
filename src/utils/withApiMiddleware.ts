@@ -3,10 +3,10 @@ import { isAdminRequest } from '@/features/admin/auth.server';
 import { rateLimit } from './rateLimit';
 import { ApiError } from './ApiError';
 
-type RouteHandler = (_req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
+type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
 export function withApiMiddleware(handler: RouteHandler) {
-  return async (_req: NextRequest, context: any) => {
+  return async (req: NextRequest, context: any) => {
     try {
       let pathname = '/';
       let method = 'GET';
@@ -28,7 +28,7 @@ export function withApiMiddleware(handler: RouteHandler) {
       // Stricter limits for login, general limits for everything else
       const limit = isLoginPath ? 5 : 100;
       const windowMs = isLoginPath ? 15 * 60 * 1000 : 60 * 1000;
-      const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(_req, limit, windowMs) : null;
+      const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(req, limit, windowMs) : null;
       
       if (rateLimitResponse) {
         // If rate limit exceeded, standardise its error response
@@ -48,7 +48,7 @@ export function withApiMiddleware(handler: RouteHandler) {
       }
 
       // 3. Execute Handler
-      const response = await handler(_req, context);
+      const response = await handler(req, context);
       
       // Pass-through attachments (e.g. backup files)
       const contentType = response.headers?.get?.('content-type') || 'application/json';
