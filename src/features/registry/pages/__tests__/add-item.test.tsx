@@ -10,7 +10,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 // Mock admin auth to always resolve as true
-jest.mock('@/features/admin/auth.client', () => ({
+jest.mock('@/core/auth/auth.client', () => ({
   checkAdminClient: jest.fn().mockResolvedValue(true),
 }));
 

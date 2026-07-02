@@ -1,7 +1,7 @@
 import { AdminLoginSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
-import { signAdminToken } from '@/features/admin/auth.server';
+import { signAdminToken } from '@/core/auth/auth.server';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';

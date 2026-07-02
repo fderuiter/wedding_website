@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminRequest } from '@/features/admin/auth.server';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {

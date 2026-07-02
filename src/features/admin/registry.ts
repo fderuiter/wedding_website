@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import { BaseRepository } from './repository';
-import { BaseService } from './service';
+import { BaseRepository } from '@/core/infrastructure/repository';
+import { BaseService } from '@/core/infrastructure/service';
 import { coordinateSchema } from '@/utils/validation';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
 import { ContentNodeSchema } from '@/features/content/schemas';

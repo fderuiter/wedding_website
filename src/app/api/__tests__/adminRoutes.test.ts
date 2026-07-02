@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 import { POST as login } from '../admin/login/route';
 import { POST as logout } from '../admin/logout/route';
 import { GET as me } from '../admin/me/route';
-import { signAdminToken } from '@/features/admin/auth.server';
+import { signAdminToken } from '@/core/auth/auth.server';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 describe('Admin API routes', () => {

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '@/features/registry/types';
-import { checkAdminClient } from '@/features/admin/auth.client';
+import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';

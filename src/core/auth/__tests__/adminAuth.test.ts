@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { isAdminRequest, signAdminToken } from '@/features/admin/auth.server';
+import { isAdminRequest, signAdminToken } from '@/core/auth/auth.server';
 
 describe('admin authentication helpers', () => {
   const previousAdminPassword = process.env.ADMIN_PASSWORD;
