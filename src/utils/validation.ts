@@ -80,3 +80,16 @@ export function validateAddItemInput(input: unknown): string | null {
   return null;
 }
 export const DynamicSchema = z.record(z.string(), z.any());
+
+export const UpdateFeaturesSchema = z.object({
+  features: z.array(z.any())
+});
+
+export const ImportBackupSchema = z.object({
+  appConfig: z.array(z.any()).optional(),
+  contentNode: z.array(z.any()).optional(),
+  weddingPartyMember: z.array(z.any()).optional(),
+  attraction: z.array(z.any()).optional(),
+  registryItem: z.array(z.any()).optional(),
+  contributor: z.array(z.any()).optional(),
+});

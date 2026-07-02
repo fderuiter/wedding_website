@@ -38,7 +38,10 @@ Any valid JSON object.
 
 **Request Body:**
 
-Any valid JSON object.
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `features` | `any` | Yes |  |
+
 
 ### `POST /api/admin/login`
 
@@ -59,7 +62,15 @@ Any valid JSON object.
 
 **Request Body:**
 
-Any valid JSON object.
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `appConfig` | `any` | No |  |
+| `contentNode` | `any` | No |  |
+| `weddingPartyMember` | `any` | No |  |
+| `attraction` | `any` | No |  |
+| `registryItem` | `any` | No |  |
+| `contributor` | `any` | No |  |
+
 
 ### `GET /api/admin/me`
 

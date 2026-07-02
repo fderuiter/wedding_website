@@ -1,4 +1,4 @@
-import { DynamicSchema } from "@/utils/validation";
+import { ImportBackupSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -25,7 +25,7 @@ function reviveDates(obj: any): any {
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const rawData = await request.json();
-  DynamicSchema.parse(rawData);
+  ImportBackupSchema.parse(rawData);
   const data = reviveDates(rawData);
 
   if (!data.appConfig || !data.registryItem) {
