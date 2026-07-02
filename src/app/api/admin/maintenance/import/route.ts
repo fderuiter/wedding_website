@@ -1,3 +1,4 @@
+import { DynamicSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
