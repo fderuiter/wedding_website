@@ -30,7 +30,7 @@ export default function AdminDashboardPage() {
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
       <h1 className="text-3xl font-bold mb-4 text-primary">Admin Dashboard</h1>
-      <p className="text-lg text-gray-500">Loading items...</p>
+      <p className="text-lg text-gray-500 dark:text-gray-400">Loading items...</p>
     </div>
   );
   if (error) return (
@@ -76,7 +76,7 @@ export default function AdminDashboardPage() {
                           ))}
                         </ul>
                       ) : (
-                        <span className="text-gray-400">None</span>
+                        <span className="text-gray-500 dark:text-gray-400">None</span>
                       )}
                     </TableCell>
                     <TableCell className="space-x-2">
@@ -139,7 +139,7 @@ export default function AdminDashboardPage() {
                     ))}
                   </ul>
                 ) : (
-                  <span className="ml-2 text-gray-400">None</span>
+                  <span className="ml-2 text-gray-500 dark:text-gray-400">None</span>
                 )}
               </div>
               <div className="flex gap-2 mt-2">
