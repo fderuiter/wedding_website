@@ -1,4 +1,4 @@
-import { ApiClient, ApiError } from '../apiClient';
+import { ApiClient, ApiError } from '@/lib/apiClient';
 
 export { ApiError };
 

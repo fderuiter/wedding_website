@@ -177,6 +177,23 @@ The database stores all the data for the application, primarily the registry ite
 
 The use of Prisma allows for easy schema management through migrations and provides a type-safe client for querying the database from the backend API. The project was originally built with SQLite for local development and has since been migrated to PostgreSQL for production on Vercel.
 
+### 4. Feature Organization
+
+To maintain modularity and prevent logic smear, the codebase adopts a strict layered feature architecture. All domain-specific logic is encapsulated in isolated feature directories under `src/features/`.
+
+-   **Location:** `src/features/`
+-   **Structure:** Each feature contains:
+    -   `api/`: Route handlers and server-side logic (e.g., proxying).
+    -   `components/`: UI components specific to the feature.
+    -   `hooks/`: Custom React hooks.
+    -   `repository.ts`: Data access layer for Prisma queries.
+    -   `service.ts`: Business logic layer.
+    -   `schemas.ts`: Validation schemas (Zod).
+    -   `types.ts`: TypeScript interfaces.
+    -   `index.ts`: The public interface. To prevent cross-domain internal leakage, other modules must solely import from this file.
+
+New features should be scaffolded using the included CLI utility (`npm run scaffold <feature-name>`) to ensure correct structural boundaries and naming conventions.
+
 ## System Configuration
 
 The system uses a centrally defined configuration schema to validate runtime settings.

@@ -1,4 +1,4 @@
-import { checkAdminClient } from '../adminAuth.client';
+import { checkAdminClient } from '@/features/admin/auth.client';
 
 describe('checkAdminClient', () => {
   const originalFetch = global.fetch;

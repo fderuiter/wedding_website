@@ -24,7 +24,7 @@ jest.mock('@/lib/config', () => ({
   }),
 }));
 
-jest.mock('@/utils/adminAuth.server', () => ({
+jest.mock('@/features/admin/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
@@ -34,7 +34,7 @@ jest.mock('next/cache', () => ({
 
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
-import { isAdminRequest } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/features/admin/auth.server';
 import { revalidatePath } from 'next/cache';
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;

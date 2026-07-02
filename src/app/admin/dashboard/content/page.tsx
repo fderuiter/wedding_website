@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ContentNodeDTO } from '@/features/content/schemas';
 import { useAdminContent } from '@/hooks/admin/useAdminContent';
-import { apiClient } from '@/lib/admin/apiClient';
+import { apiClient } from '@/features/admin/apiClient';
 
 import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { Button } from "@/components/ui/Button";
