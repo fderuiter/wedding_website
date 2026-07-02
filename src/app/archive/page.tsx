@@ -10,26 +10,7 @@ export const metadata: Metadata = {
   },
 };
 
-const archivedPages = [
-  {
-    href: '/archive/wedding-party',
-    title: 'Wedding Party',
-    description: 'Meet the people who stood by our side.',
-    icon: <Icon name="Users" className="w-8 h-8 text-primary" />,
-  },
-  {
-    href: '/archive/things-to-do',
-    title: 'Things to Do',
-    description: 'Explore our favorite spots in City.',
-    icon: <Icon name="Map" className="w-8 h-8 text-primary" />,
-  },
-  {
-    href: '/archive/weather',
-    title: 'Weather',
-    description: 'See the weather forecast for our wedding day.',
-    icon: <Icon name="Cloud" className="w-8 h-8 text-primary" />,
-  },
-];
+const archivedPages: Array<{ href: string, title: string, description: string, icon: React.ReactNode }> = [];
 
 /**
  * @page ArchivePage

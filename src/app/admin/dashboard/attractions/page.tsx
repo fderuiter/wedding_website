@@ -92,7 +92,7 @@ export default function AttractionsDashboardPage() {
 
   return (
     <AdminPreviewLayout
-      previewUrl="/archive/things-to-do"
+      previewUrl="/things-to-do"
       draftType="attractions"
       draftData={currentAttractionsWithDraft}
       entityId={currentAttraction.id}
