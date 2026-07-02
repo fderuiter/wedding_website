@@ -3,14 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RegistryPage from '../page';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RegistryItem } from '@/types/registry';
-import { checkAdminClient } from '@/utils/adminAuth.client';
+import { checkAdminClient } from '@/features/admin/auth.client';
 
 const pushMock = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-jest.mock('@/utils/adminAuth.client', () => ({
+jest.mock('@/features/admin/auth.client', () => ({
   checkAdminClient: jest.fn(),
 }));
 

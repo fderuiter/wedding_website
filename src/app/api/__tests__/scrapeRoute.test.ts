@@ -1,9 +1,9 @@
 /** @jest-environment node */
 
 import { POST } from '../registry/scrape/route';
-import { isAdminRequest } from '@/utils/adminAuth.server';
+import { isAdminRequest } from '@/features/admin/auth.server';
 
-jest.mock('@/utils/adminAuth.server', () => ({
+jest.mock('@/features/admin/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 

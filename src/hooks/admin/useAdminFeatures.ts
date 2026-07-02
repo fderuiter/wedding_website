@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/lib/admin/apiClient';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminFeatures() {
   const queryClient = useQueryClient();

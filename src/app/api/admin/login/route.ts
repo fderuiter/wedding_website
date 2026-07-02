@@ -1,7 +1,7 @@
 import { DynamicSchema } from "@/utils/validation";
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
-import { signAdminToken } from '@/utils/adminAuth.server';
+import { signAdminToken } from '@/features/admin/auth.server';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';

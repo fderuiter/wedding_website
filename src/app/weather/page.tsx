@@ -1,6 +1,6 @@
 import React from 'react';
 import { Metadata } from 'next';
-import Forecast from '@/components/Forecast';
+import { Forecast } from '@/features/weather';
 
 export const metadata: Metadata = {
   title: 'Weather Forecast',

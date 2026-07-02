@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import React from 'react';
 import { RegistryItem } from '../../types';
-import { checkAdminClient } from '@/utils/adminAuth.client';
+import { checkAdminClient } from '@/features/admin/auth.client';
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -15,7 +15,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 // Mock admin check
-jest.mock('@/utils/adminAuth.client');
+jest.mock('@/features/admin/auth.client');
 const mockedCheckAdminClient = checkAdminClient as jest.Mock;
 
 

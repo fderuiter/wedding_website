@@ -1,4 +1,5 @@
-import { BaseRepository, BaseService } from './core';
+import { BaseRepository } from './repository';
+import { BaseService } from './service';
 import { coordinateSchema } from '@/utils/validation';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
 import { ContentNodeSchema } from '@/features/content/schemas';

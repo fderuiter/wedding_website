@@ -2,7 +2,7 @@ import React from 'react';
 import { render as tlRender, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AdminSettingsPage from '../page';
-import { checkAdminClient as mockCheckAdminClient } from '@/utils/adminAuth.client';
+import { checkAdminClient as mockCheckAdminClient } from '@/features/admin/auth.client';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
 
@@ -31,7 +31,7 @@ jest.mock('next/navigation', () => ({
   }),
 }));
 
-jest.mock('@/utils/adminAuth.client');
+jest.mock('@/features/admin/auth.client');
 
 jest.mock('@/components/admin/AdminPreviewLayout', () => ({
   __esModule: true,
