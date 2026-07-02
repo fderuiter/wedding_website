@@ -1,6 +1,6 @@
 # API Documentation
 
-The backend is a RESTful API built with Next.js API Routes. It handles all data operations for the gift registry.
+The backend is a RESTful API built with Next.js Route Handlers. It handles all data operations for the gift registry.
 
 ---
 

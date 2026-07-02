@@ -67,7 +67,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         {/* Main Image Layer */}
         <Image
           src={item.image || '/images/placeholder.png'} // Fallback to placeholder if image is missing
-          alt={item.name}
+          alt=""
           className="object-contain relative z-10" // Prevent cropping
           fill // Use fill layout
           sizes="(max-width: 639px) 100vw, (max-width: 767px) 50vw, (max-width: 1279px) 33vw, 25vw"
@@ -121,6 +121,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' },
     'data-testid': "registry-card",
     'aria-label': `${item.name}, $${item.price.toFixed(2)}${isClaimed ? ', Claimed' : ''}`,
+    tabIndex: 0,
+    role: isClickable ? 'button' : undefined,
   };
 
   if (isAdmin) {

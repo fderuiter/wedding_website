@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { Icon } from '@/components/ui/Icon';
 import { useOverlay } from '@/hooks/useOverlay';
 import { validateContributeInput } from '@/utils/validation';
+import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 
 /**
  * @interface ModalProps
@@ -91,7 +92,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
         <div className="relative w-full h-64 mb-4">
           <Image
             src={item.image || '/images/placeholder.png'}
-            alt={item.name}
+            alt=""
             className="object-cover rounded bg-gray-100"
             fill
             onError={(e) => {
@@ -131,51 +132,46 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
           </a>
         )}
         {!item.purchased ? (
-          <div className="mt-5 pt-4 border-t border-primary">
+          <form noValidate 
+            className="mt-5 pt-4 border-t border-primary"
+            onSubmit={(e) => { e.preventDefault(); handleContributeClick(); }}
+          >
             <h3 className="font-semibold text-lg mb-3 text-primary">
               {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
             </h3>
-            <div className="mb-3">
-              <label htmlFor="contributorName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+              <Label>
                 Your Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="contributorName"
+              </Label>
+              <Input
                 type="text"
                 placeholder="Jane Doe"
-                className="form-input"
                 value={contributorName}
                 onChange={(e) => setContributorName(e.target.value)}
                 disabled={isSubmitting}
-                aria-invalid={error ? "true" : undefined}
-                aria-describedby={error ? "contribution-error" : undefined}
               />
-            </div>
+            </FormGroup>
             {item.isGroupGift && (
-              <div className="mb-3">
-                <label htmlFor="contributionAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+                <Label>
                   Contribution Amount <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="contributionAmount"
+                </Label>
+                <Input
                   type="number"
                   placeholder={`Up to $${remainingAmount.toFixed(2)}`}
-                  className="form-input"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   min="0.01"
                   step="0.01"
                   max={remainingAmount}
                   disabled={isSubmitting}
-                  aria-invalid={error ? "true" : undefined}
-                  aria-describedby={error ? "contribution-error" : undefined}
                 />
-              </div>
+              </FormGroup>
             )}
-            {error && <p id="contribution-error" className="text-red-600 text-sm mb-3" role="alert">{error}</p>}
+            {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
             <button
+              type="submit"
               className="w-full btn-primary"
-              onClick={handleContributeClick}
               disabled={isSubmitting}
               aria-busy={isSubmitting}
             >
@@ -188,7 +184,7 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
                 item.isGroupGift ? 'Submit Contribution' : 'Claim Gift'
               )}
             </button>
-          </div>
+          </form>
         ) : (
           <div className="mt-5 pt-4 border-t border-primary text-center">
             <p className="text-xl font-semibold text-green-600">

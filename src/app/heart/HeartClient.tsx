@@ -13,6 +13,7 @@ import { theme } from '../../styles/theme'
 import { useTheme } from '@/components/ThemeProvider'
 import { useOverlay } from '@/hooks/useOverlay'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
+import { use3DInteraction } from '../../hooks/use3DInteraction'
 
 /**
  * @function Sparkles
@@ -170,6 +171,66 @@ function PhysicsHeart({
   const [isBroken, setIsBroken] = useState(false)
   const [showEasterEgg, setShowEasterEgg] = useState(false)
   const { size, viewport } = useThree()
+
+  const { getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements } = use3DInteraction({
+    instructions: 'Use arrow keys to move the heart, Space or Enter to break it.',
+    labels: {
+      up: 'Moved up',
+      down: 'Moved down',
+      left: 'Moved left',
+      right: 'Moved right',
+      action: 'Heart broken',
+    },
+    onUp: () => {
+      if (isBroken || !heartRef.current || reduceMotion) return;
+      if (!interacted) onInteract();
+      heartRef.current.applyImpulse({ x: 0, y: 20, z: 0 }, true);
+    },
+    onDown: () => {
+      if (isBroken || !heartRef.current || reduceMotion) return;
+      if (!interacted) onInteract();
+      heartRef.current.applyImpulse({ x: 0, y: -20, z: 0 }, true);
+    },
+    onLeft: () => {
+      if (isBroken || !heartRef.current || reduceMotion) return;
+      if (!interacted) onInteract();
+      heartRef.current.applyImpulse({ x: -20, y: 0, z: 0 }, true);
+    },
+    onRight: () => {
+      if (isBroken || !heartRef.current || reduceMotion) return;
+      if (!interacted) onInteract();
+      heartRef.current.applyImpulse({ x: 20, y: 0, z: 0 }, true);
+    },
+    onAction: (e) => {
+      if (isBroken || !heartRef.current) return;
+      e.preventDefault();
+      setIsBroken(true);
+    }
+  });
+
+  const { getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = use3DInteraction({
+    instructions: 'Press Space or Enter to bump the left segment.',
+    labels: { action: 'Bumped left segment' },
+    onAction: (e) => {
+      if (!brokenHeartLeftRef.current) return;
+      e.preventDefault();
+      if (!reduceMotion) {
+        brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+      }
+    }
+  });
+
+  const { getInteractiveProps: getRightInteractiveProps, AccessibleElements: RightAccessibleElements } = use3DInteraction({
+    instructions: 'Press Space or Enter to bump the right segment.',
+    labels: { action: 'Bumped right segment' },
+    onAction: (e) => {
+      if (!brokenHeartRightRef.current) return;
+      e.preventDefault();
+      if (!reduceMotion) {
+        brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
+      }
+    }
+  });
 
   const handleContactForce = (payload: ContactForcePayload) => {
     if (!isBroken && payload.totalForceMagnitude > 200) {
@@ -411,32 +472,15 @@ function PhysicsHeart({
   return (
     <>
       <Html zIndexRange={[100, 0]} prepend center>
+        {MainAccessibleElements}
         <div className="sr-only" aria-live="polite">
           {isBroken ? 'Heart is broken.' : 'Heart is whole.'}
         </div>
         {!isBroken && (
           <button
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-            aria-label={`Interactive 3D Heart. Status: Whole. Use arrow keys to move, Space or Enter to break.`}
-              onKeyDown={(e) => {
-              if (isBroken || !heartRef.current) return;
-              if (e.key === ' ' || e.key === 'Enter') {
-                 e.preventDefault();
-                 setIsBroken(true);
-              } else if (!reduceMotion) {
-                const impulse = 20;
-                if (!interacted) onInteract();
-                if (e.key === 'ArrowUp') {
-                   heartRef.current.applyImpulse({ x: 0, y: impulse, z: 0 }, true);
-                } else if (e.key === 'ArrowDown') {
-                   heartRef.current.applyImpulse({ x: 0, y: -impulse, z: 0 }, true);
-                } else if (e.key === 'ArrowLeft') {
-                   heartRef.current.applyImpulse({ x: -impulse, y: 0, z: 0 }, true);
-                } else if (e.key === 'ArrowRight') {
-                   heartRef.current.applyImpulse({ x: impulse, y: 0, z: 0 }, true);
-                }
-              }
-            }}
+            aria-label={`Interactive 3D Heart. Status: Whole.`}
+            {...getMainInteractiveProps()}
           />
         )}
       </Html>
@@ -469,18 +513,11 @@ function PhysicsHeart({
         </group>
         {isBroken && (
           <Html zIndexRange={[100, 0]} prepend center>
+            {LeftAccessibleElements}
             <button
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={`Broken heart left segment. Press space or enter to bump.`}
-              onKeyDown={(e) => {
-                if (!brokenHeartLeftRef.current) return;
-                if (e.key === ' ' || e.key === 'Enter') {
-                  e.preventDefault();
-                  if (!reduceMotion) {
-                    brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
-                  }
-                }
-              }}
+              aria-label={`Broken heart left segment.`}
+              {...getLeftInteractiveProps()}
             />
           </Html>
         )}
@@ -492,18 +529,11 @@ function PhysicsHeart({
         </group>
         {isBroken && (
           <Html zIndexRange={[100, 0]} prepend center>
+            {RightAccessibleElements}
             <button
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={`Broken heart right segment. Press space or enter to bump.`}
-              onKeyDown={(e) => {
-                if (!brokenHeartRightRef.current) return;
-                if (e.key === ' ' || e.key === 'Enter') {
-                  e.preventDefault();
-                  if (!reduceMotion) {
-                    brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 }, true);
-                  }
-                }
-              }}
+              aria-label={`Broken heart right segment.`}
+              {...getRightInteractiveProps()}
             />
           </Html>
         )}
