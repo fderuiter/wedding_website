@@ -84,17 +84,17 @@ This project is built with a modern, full-stack TypeScript architecture.
 
 ### Environment Variables
 
-Create a `.env.development.local` file in the root directory by copying the example or creating a new one. You need to define the following variables:
+Create a `.env.development.local` file in the root directory by copying the `.env.example` file or creating a new one. You need to define the following variables:
 
 ```env
-# Required for Admin Login (Must be a BCrypt hash, NOT plaintext)
-# Generate a hash by running: node scripts/generate-password-hash.js "your_password"
-ADMIN_PASSWORD="$2b$10$..."
+# Required for Admin Login (Must be a scrypt hash, NOT plaintext)
+# Generate a hash by running: node scripts/generate-password-hash.mjs "your_password"
+# The format must be: scrypt:salt:hash
+ADMIN_PASSWORD="scrypt:salt:hash"
 
 # Required for Prisma (PostgreSQL connection)
-# Obtain these from your database provider
-POSTGRES_PRISMA_URL="postgresql://user:password@host:port/database?pgbouncer=true&connect_timeout=15"
-POSTGRES_URL_NON_POOLING="postgresql://user:password@host:port/database?connect_timeout=15"
+# Obtain this from your database provider
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
 ```
 
 ### Database Setup
