@@ -25,6 +25,7 @@ function reviveDates(obj: any): any {
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const rawData = await request.json();
+  DynamicSchema.parse(rawData);
   const data = reviveDates(rawData);
 
   if (!data.appConfig || !data.registryItem) {

@@ -11,6 +11,7 @@ export const GET = withApiMiddleware(async () => {
 
 export const PUT = withApiMiddleware(async (request: NextRequest) => {
   const body = await request.json();
+  DynamicSchema.parse(body);
   if (!body.features) {
     throw new ApiError(400, 'Features required');
   }
