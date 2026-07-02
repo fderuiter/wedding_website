@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/admin/apiClient';
-import { useToast } from '@/components/ui/ToastProvider';
 
 export function useAdminSettings() {
   const queryClient = useQueryClient();
-  const { addToast } = useToast();
   const queryKey = ['admin-settings'];
   const endpoint = '/api/admin/settings';
 
@@ -38,12 +36,13 @@ export function useAdminSettings() {
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-      addToast(err.message || 'Failed to save settings.', 'error');
     },
     onSuccess: () => {
-      addToast('Settings saved successfully.', 'success');
       queryClient.invalidateQueries({ queryKey });
     },
+    meta: {
+      successMessage: 'Settings saved successfully.'
+    }
   });
 
   return {

@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/admin/apiClient';
-import { useToast } from '@/components/ui/ToastProvider';
 
 export function useAdminDomain<T extends { id: string }>(domain: string, entityName: string, endpointOverride?: string) {
   const queryClient = useQueryClient();
-  const { addToast } = useToast();
   const queryKey = [`admin-${domain}`];
   const endpoint = endpointOverride || `/api/admin/${domain}`;
 
@@ -22,7 +20,6 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       const previousData = queryClient.getQueryData<T[]>(queryKey);
       if (previousData) {
         const optimisticItem = { id: `temp-${Date.now()}`, ...payload } as unknown as T;
-        // Depending on list display, prepend or append. We will prepend.
         queryClient.setQueryData<T[]>(queryKey, old => [optimisticItem, ...(old || [])]);
       }
       return { previousData };
@@ -31,11 +28,13 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-      addToast(err.message || `Error creating ${entityName}`, 'error');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
     },
+    meta: {
+      successMessage: `Created ${entityName} successfully.`,
+    }
   });
 
   const { mutateAsync: update } = useMutation({
@@ -54,11 +53,13 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-      addToast(err.message || `Error updating ${entityName}`, 'error');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
     },
+    meta: {
+      successMessage: `Updated ${entityName} successfully.`,
+    }
   });
 
   const { mutateAsync: remove } = useMutation({
@@ -75,11 +76,13 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-      addToast(err.message || `Error deleting ${entityName}`, 'error');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
     },
+    meta: {
+      successMessage: `Deleted ${entityName} successfully.`,
+    }
   });
 
   const { mutateAsync: reorder } = useMutation({
@@ -97,11 +100,13 @@ export function useAdminDomain<T extends { id: string }>(domain: string, entityN
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
-      addToast(err.message || `Error reordering ${entityName}`, 'error');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
     },
+    meta: {
+      successMessage: `Reordered ${entityName} successfully.`,
+    }
   });
 
   return {

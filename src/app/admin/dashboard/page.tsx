@@ -5,6 +5,7 @@ import { RegistryItem } from "@/features/registry/types";
 import { Button } from "@/components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import { useToast } from "@/components/ui/ToastProvider";
 import { formatCurrency, formatDate } from "@/utils/intl";
 import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
 
@@ -24,6 +25,7 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   
   const { data: items, loading, error, remove } = useAdminRegistry();
+  const { confirm } = useToast();
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
@@ -95,7 +97,7 @@ export default function AdminDashboardPage() {
                         aria-label={"Delete registry item: " + item.name}
                         onClick={async (e) => {
                           const row = e.currentTarget.closest('tr');
-                          if (!confirm('Are you sure you want to delete this item?')) return;
+                          if (!(await confirm('Are you sure you want to delete this item?'))) return;
                           
                           if (row) {
                             captureDesktopFocus(row as HTMLElement);
@@ -160,7 +162,7 @@ export default function AdminDashboardPage() {
                   aria-label={"Delete registry item: " + item.name}
                   onClick={async (e) => {
                     const card = e.currentTarget.closest('.rounded-xl');
-                    if (!confirm('Are you sure you want to delete this item?')) return;
+                    if (!(await confirm('Are you sure you want to delete this item?'))) return;
 
                     if (card) {
                       captureMobileFocus(card as HTMLElement);
