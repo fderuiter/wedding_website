@@ -8,6 +8,7 @@ import * as registrySchemas from '../src/features/registry/schemas.js';
 import * as attractionSchemas from '../src/features/attractions/schemas.js';
 import * as weddingPartySchemas from '../src/features/wedding-party/schemas.js';
 import * as contentSchemas from '../src/features/content/schemas.js';
+import * as mediaSchemas from '../src/features/media/schemas.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +19,8 @@ const ALL_SCHEMAS: Record<string, any> = {
   ...registrySchemas,
   ...attractionSchemas,
   ...weddingPartySchemas,
-  ...contentSchemas
+  ...contentSchemas,
+  ...mediaSchemas
 };
 
 const project = new Project({ tsConfigFilePath: path.join(rootPath, 'tsconfig.json') });

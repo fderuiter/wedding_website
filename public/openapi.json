@@ -466,6 +466,135 @@
         }
       }
     },
+    "/api/media/{id}": {
+      "put": {
+        "summary": "PUT /api/media/[id]",
+        "description": "Endpoint for /api/media/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "altText": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "isDecorative": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/media/[id]",
+        "description": "Endpoint for /api/media/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/media": {
+      "get": {
+        "summary": "GET /api/media",
+        "description": "Endpoint for /api/media",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/media",
+        "description": "Endpoint for /api/media",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "altText": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "isDecorative": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "url",
+                  "altText",
+                  "isDecorative"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/add-item": {
       "post": {
         "summary": "POST /api/registry/add-item",
@@ -509,7 +638,10 @@
                       }
                     ]
                   },
-                  "image": {
+                  "imageId": {
+                    "type": "string"
+                  },
+                  "imageUrl": {
                     "anyOf": [
                       {
                         "type": "string",
@@ -520,6 +652,54 @@
                         "const": ""
                       }
                     ]
+                  },
+                  "imageAlt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "imageDecorative": {
+                    "type": "boolean"
+                  },
+                  "image": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "altText": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "isDecorative": {
+                        "type": "boolean"
+                      },
+                      "createdAt": {},
+                      "updatedAt": {}
+                    },
+                    "required": [
+                      "id",
+                      "url",
+                      "altText",
+                      "isDecorative",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "additionalProperties": false
                   },
                   "vendorUrl": {
                     "anyOf": [
@@ -676,7 +856,10 @@
                       }
                     ]
                   },
-                  "image": {
+                  "imageId": {
+                    "type": "string"
+                  },
+                  "imageUrl": {
                     "anyOf": [
                       {
                         "type": "string",
@@ -687,6 +870,54 @@
                         "const": ""
                       }
                     ]
+                  },
+                  "imageAlt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "imageDecorative": {
+                    "type": "boolean"
+                  },
+                  "image": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "altText": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "isDecorative": {
+                        "type": "boolean"
+                      },
+                      "createdAt": {},
+                      "updatedAt": {}
+                    },
+                    "required": [
+                      "id",
+                      "url",
+                      "altText",
+                      "isDecorative",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "additionalProperties": false
                   },
                   "vendorUrl": {
                     "anyOf": [
