@@ -146,7 +146,7 @@ export default function HomePageClient({ calendarEvent, config: initialConfig, c
             <h2 className="text-4xl font-bold text-primary">{feature.title || 'Travel & Things to Do'}</h2>
             {travelNodes.length > 0 ? (
               travelNodes.map((node: any, i: number) => (
-                <Interactive3DCard key={i} className="mt-4" tabIndex={0} aria-label={node.title || 'Travel details'}>
+                <Interactive3DCard as="button" type="button" key={i} className="mt-4 focus-visible:ring-4 focus-visible:ring-primary outline-none" tabIndex={0} aria-label={node.title || 'Travel details'}>
                   <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-primary dark:border-primary h-full">
                     {node.title && <h3 className="font-semibold text-xl mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
                     {node.description && <p className="text-lg [transform:translateZ(10px)]">{node.description}</p>}

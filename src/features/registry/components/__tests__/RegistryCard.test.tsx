@@ -131,26 +131,26 @@ describe('RegistryCard', () => {
     expect(card.tagName).toBe('BUTTON');
   });
 
-  it('renders as a div without tabIndex when item is purchased to disable focus', () => {
+  it('renders as a div with tabIndex when item is purchased to enable focus', () => {
     const mockOnClick = jest.fn();
     const purchasedItem = { ...mockItem, purchased: true };
     render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    // It should be rendered as a div without tabIndex to prevent tabbing
+    // It should be rendered as a div with tabIndex to allow tabbing
     expect(card.tagName).toBe('DIV');
-    expect(card).not.toHaveAttribute('tabIndex');
+    expect(card).toHaveAttribute('tabIndex', '0');
     expect(card).not.toHaveAttribute('role', 'button');
   });
 
-  it('renders as a div without tabIndex when admin to disable focus', () => {
+  it('renders as a div with tabIndex when admin to enable focus', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
     const card = screen.getByTestId('registry-card');
 
-    // Admin cards have separate buttons, the card itself should not be focusable
+    // Admin cards have separate buttons, but the card itself should still be focusable
     expect(card.tagName).toBe('DIV');
-    expect(card).not.toHaveAttribute('tabIndex');
+    expect(card).toHaveAttribute('tabIndex', '0');
     expect(card).not.toHaveAttribute('role', 'button');
   });
 
