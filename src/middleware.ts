@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { isProtectedRoute } from '@/lib/routes';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const method = request.method;
 
-  // Protect /admin/dashboard and specific /registry routes
-  if (
-    pathname.startsWith('/admin/dashboard') ||
-    pathname.startsWith('/registry/add-item') ||
-    pathname.startsWith('/registry/edit-item')
-  ) {
+  if (isProtectedRoute(pathname, method)) {
     const isAuth = await isAdminRequest(request);
 
     if (!isAuth) {
@@ -24,11 +21,9 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// See "Matching Paths" below to learn more
+// Run middleware on all requests except static files and images
 export const config = {
   matcher: [
-    '/admin/dashboard/:path*',
-    '/registry/add-item/:path*',
-    '/registry/edit-item/:path*',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
