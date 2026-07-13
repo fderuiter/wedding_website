@@ -40,6 +40,10 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
 
   return (
     <div>
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {filteredAttractions.length} attraction{filteredAttractions.length === 1 ? '' : 's'} available.
+      </div>
+
       <div className="flex justify-center gap-2 mb-8 flex-wrap print:hidden">
         <CategoryFilter
           categories={categories}
@@ -49,9 +53,33 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" style={{ minHeight: '600px' }}>
-        <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden">
+        <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden" aria-hidden="true">
           <ThingsToDoMap attractions={filteredAttractions} />
         </div>
+
+        <div className="sr-only" role="grid" aria-label="Attractions Grid Alternative">
+          <div role="rowgroup">
+            <div role="row">
+              <span role="columnheader">Name</span>
+              <span role="columnheader">Category</span>
+              <span role="columnheader">Directions</span>
+            </div>
+          </div>
+          <div role="rowgroup">
+            {filteredAttractions.map((attraction) => (
+              <div key={attraction.id || attraction.name} role="row">
+                <span role="gridcell">{attraction.name}</span>
+                <span role="gridcell">{attraction.category}</span>
+                <span role="gridcell">
+                  <a href={attraction.directions} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+                    Directions to {attraction.name}
+                  </a>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.map((attraction) => (
             <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />

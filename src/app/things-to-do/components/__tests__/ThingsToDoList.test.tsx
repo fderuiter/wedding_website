@@ -42,8 +42,8 @@ describe('ThingsToDoList', () => {
   it('renders all attractions by default', async () => {
     render(<ThingsToDoList attractions={attractions as any} />);
     await screen.findByTestId('things-to-do-map');
-    const attractionCards = screen.getAllByText(/Directions/);
-    expect(attractionCards.length).toBe(attractions.length);
+    const attractionCards = screen.getAllByRole('link', { name: /^Directions/ });
+    expect(attractionCards.length).toBe(attractions.length * 2);
   });
 
   it('filters attractions when a category is toggled', async () => {
@@ -54,8 +54,8 @@ describe('ThingsToDoList', () => {
     fireEvent.click(foodCheckbox);
 
     const foodAttractions = attractions.filter(a => a.category === 'food');
-    const attractionCards = screen.getAllByText(/Directions/);
-    expect(attractionCards.length).toBe(foodAttractions.length);
+    const attractionCards = screen.getAllByRole('link', { name: /^Directions/ });
+    expect(attractionCards.length).toBe(foodAttractions.length * 2);
   });
 
   it('shows all attractions when no categories are selected', async () => {
@@ -69,7 +69,7 @@ describe('ThingsToDoList', () => {
     // Then uncheck food
     fireEvent.click(foodCheckbox);
 
-    const attractionCards = screen.getAllByText(/Directions/);
-    expect(attractionCards.length).toBe(attractions.length);
+    const attractionCards = screen.getAllByRole('link', { name: /^Directions/ });
+    expect(attractionCards.length).toBe(attractions.length * 2);
   });
 });

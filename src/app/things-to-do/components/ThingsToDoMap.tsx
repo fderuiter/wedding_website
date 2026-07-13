@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import type { AttractionDTO } from '@/features/attractions/schemas';
 import 'leaflet/dist/leaflet.css';
@@ -34,28 +34,56 @@ interface ThingsToDoMapProps {
  * @returns {JSX.Element | null} The rendered ThingsToDoMap component, or null if on the server.
  */
 const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions }) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    
+    const disableFocus = () => {
+      if (!mapRef.current) return;
+      const focusableElements = mapRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button, input, textarea, select, details, [tabindex]:not([tabindex="-1"])'
+      );
+      focusableElements.forEach((el) => {
+        el.setAttribute('tabindex', '-1');
+      });
+    };
+
+    disableFocus();
+    
+    const observer = new MutationObserver(() => {
+      disableFocus();
+    });
+    
+    observer.observe(mapRef.current, { childList: true, subtree: true });
+    
+    return () => observer.disconnect();
+  }, [attractions]);
+
   if (typeof window === 'undefined') {
     return null;
   }
 
   return (
-    <MapContainer center={[0.0, 0.0]} zoom={13} style={{ height: '100%', width: '100%' }}>
-      <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      />
-      {attractions.map((attraction) => (
-        <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]}>
-          <Popup>
-            <b>{attraction.name}</b>
-            <br />
-            <a href={attraction.directions} target="_blank" rel="noopener noreferrer">
-              Directions
-            </a>
-          </Popup>
-        </Marker>
-      ))}
-    </MapContainer>
+    <div ref={mapRef} style={{ height: '100%', width: '100%' }} className="h-full w-full">
+      <MapContainer keyboard={false} center={[0.0, 0.0]} zoom={13} style={{ height: '100%', width: '100%' }}>
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright" tabindex="-1">OpenStreetMap</a> contributors'
+        />
+        {attractions.map((attraction) => (
+          <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]}>
+            <Popup>
+              <b>{attraction.name}</b>
+              <br />
+              <a href={attraction.directions} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+                Directions
+              </a>
+            </Popup>
+          </Marker>
+        ))}
+      </MapContainer>
+    </div>
   );
 };
 
