@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Overlay } from '@/components/ui/Overlay';
 import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
 import RegistryCard from '@/features/registry/components/RegistryCard';
@@ -235,37 +236,15 @@ export default function RegistryPage() {
           )}
         </div>
       )}
-      <AnimatePresence>
-        {selectedItem && isModalOpen && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-            aria-label={selectedItem.name}
-          >
-            <div className="absolute top-4 right-4 z-50">
-              <Button
-                variant="ghost"
-                onClick={handleCloseModal}
-                className="bg-white dark:bg-gray-800 rounded-full w-10 h-10 p-0 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"
-                aria-label="Close modal"
-                tabIndex={0}
-              >
-                <span aria-hidden="true" className="text-2xl text-gray-600 dark:text-gray-300 leading-none">×</span>
-              </Button>
-            </div>
-            <Modal
-              item={selectedItem}
-              onClose={handleCloseModal}
-              onContribute={handleContribute}
-            />
-          </motion.div>
+      <Overlay isOpen={!!(selectedItem && isModalOpen)} onClose={handleCloseModal} animationType="scale">
+        {selectedItem && (
+          <Modal
+            item={selectedItem}
+            onClose={handleCloseModal}
+            onContribute={handleContribute}
+          />
         )}
-      </AnimatePresence>
+      </Overlay>
     </div>
   );
 }
