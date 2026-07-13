@@ -22,7 +22,7 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}
     depends_on:
       db:
         condition: service_healthy

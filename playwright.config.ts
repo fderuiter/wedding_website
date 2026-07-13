@@ -10,7 +10,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
       POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
-      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'dummy-build-password',
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:dummy:dummy',
     },
   },
   use: {
