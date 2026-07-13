@@ -57,15 +57,14 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({ images }) => {
           />
         ))}
       </div>
-      {lightboxOpen && (
-        <Lightbox
-          images={images}
-          currentIndex={currentIndex}
-          onClose={closeLightbox}
-          onNext={nextImage}
-          onPrev={prevImage}
-        />
-      )}
+      <Lightbox
+        isOpen={lightboxOpen}
+        images={images}
+        currentIndex={currentIndex}
+        onClose={closeLightbox}
+        onNext={nextImage}
+        onPrev={prevImage}
+      />
     </>
   )
 }

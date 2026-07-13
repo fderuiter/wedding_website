@@ -3,7 +3,6 @@ import { RegistryItem } from '@/features/registry/types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
-import { useOverlay } from '@/hooks/useOverlay';
 import { ContributionSchema } from '@/features/registry/schemas';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
@@ -34,8 +33,6 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const [amount, setAmount] = useState<number | string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { overlayRef, handleBackdropClick } = useOverlay(true, onClose);
 
   const handleContributeClick = async () => {
     setError(null);
@@ -83,11 +80,10 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   const isVendorUrlSafe = item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50 p-4" role="dialog" aria-modal="true" ref={overlayRef} onClick={handleBackdropClick}>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100">
-        <Button
-          variant="ghost"
-          className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center w-8 h-8"
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100" onClick={(e) => e.stopPropagation()}>
+      <Button
+        variant="ghost"
+        className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center w-8 h-8"
           onClick={onClose}
           aria-label="Close modal"
         >
@@ -214,7 +210,6 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
             <p className="mt-2 text-secondary">Thank you for your generosity!</p>
           </div>
         )}
-      </div>
     </div>
   );
 };
