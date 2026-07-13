@@ -6,15 +6,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
-
-const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/photos', label: 'Photos' },
-  { href: '/wedding-party', label: 'Wedding Party' },
-  { href: '/things-to-do', label: 'Things to Do' },
-  { href: '/weather', label: 'Weather' },
-  { href: '/archive', label: 'Archive' },
-];
+import { getNavLinks } from '@/lib/routes';
 
 /**
  * @interface NavbarProps
@@ -68,14 +60,16 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story')
     .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
 
-  const allLinks =
-    pathname === '/' ? [...navLinks, ...homeNavLinks] : [...navLinks];
+  const role = isAdmin ? 'admin' : 'public';
+  const baseLinks = getNavLinks(role);
 
-  if (isAdmin) {
-    allLinks.push({ href: '/admin/dashboard', label: 'Dashboard' });
-  } else {
-    allLinks.push({ href: '/admin/login', label: 'Admin' });
-  }
+  const adminLinks = baseLinks.filter(l => l.href.startsWith('/admin'));
+  const regularLinks = baseLinks.filter(l => !l.href.startsWith('/admin'));
+
+  const allLinks =
+    pathname === '/' 
+      ? [...regularLinks, ...homeNavLinks, ...adminLinks] 
+      : [...baseLinks];
 
   return (
     <>
