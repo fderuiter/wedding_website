@@ -10,6 +10,7 @@ import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
 import { FormGroup, Label, Input, Textarea, FormMessage } from "@/components/ui/forms";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/ToastProvider";
+import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from "@/utils/validation";
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -38,8 +39,13 @@ export default function AdminSettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_UPLOAD_SIZE) {
       addToast('File size exceeds 5MB limit', 'error');
+      return;
+    }
+
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      addToast('Invalid file format. Only JPG, PNG, and ICO are supported', 'error');
       return;
     }
 

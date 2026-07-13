@@ -8,21 +8,15 @@ import { ApiError } from '@/utils/ApiError';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const formData = await req.formData();
-  AdminUploadSchema.safeParse(formData);
-  const file = formData.get('file') as File | null;
-
-  if (!file) {
-    throw new ApiError(400, 'No file provided');
+  const fileData = formData.get('file');
+  
+  const parsed = AdminUploadSchema.safeParse({ file: fileData });
+  if (!parsed.success) {
+    const errorMessage = parsed.error.issues[0]?.message || 'Validation failed';
+    throw new ApiError(400, errorMessage);
   }
 
-  if (file.size > 5 * 1024 * 1024) {
-    throw new ApiError(400, 'File size exceeds 5MB limit');
-  }
-
-  const validTypes = ['image/jpeg', 'image/png', 'image/x-icon', 'image/vnd.microsoft.icon'];
-  if (!validTypes.includes(file.type)) {
-    throw new ApiError(400, 'Invalid file format. Only JPG, PNG, and ICO are supported');
-  }
+  const file = parsed.data.file as File;
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const hash = crypto.randomBytes(8).toString('hex');
