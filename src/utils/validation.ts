@@ -21,7 +21,15 @@ export const AdminLoginSchema = z.object({
   password: z.string({ message: 'Password is required' }).min(1, 'Password cannot be empty')
 });
 
-export const AdminUploadSchema = z.any();
+export const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
+export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/x-icon', 'image/vnd.microsoft.icon'];
+
+export const AdminUploadSchema = z.object({
+  file: z.any()
+    .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
+    .refine((file) => file?.size <= MAX_UPLOAD_SIZE, { message: 'File size exceeds 5MB limit' })
+    .refine((file) => ACCEPTED_IMAGE_TYPES.includes(file?.type), { message: 'Invalid file format. Only JPG, PNG, and ICO are supported' })
+});
 
 export const AdminLogoutSchema = z.object({});
 
