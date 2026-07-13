@@ -15,11 +15,9 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER: prisma
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
-          PGUSER: prisma
-          PGDATABASE: testing
         ports:
           - 5432:5432
         options: >-
@@ -29,7 +27,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://prisma:password@localhost:5432/testing
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/testing
       ADMIN_PASSWORD: testing-password
 
     steps:
