@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { rateLimit } from './rateLimit';
 import { ApiError } from './ApiError';
+import { isProtectedRoute } from '@/lib/routes';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
@@ -17,12 +18,7 @@ export function withApiMiddleware(handler: RouteHandler) {
       }
       const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/admin/logout' || pathname === '/api/admin/me';
       
-      const isRegistryAdminPath = 
-        pathname === '/api/registry/add-item' || 
-        pathname === '/api/registry/scrape' ||
-        (pathname.startsWith('/api/registry/items/') && (method === 'PUT' || method === 'DELETE'));
-
-      const isAdminPath = pathname.startsWith('/api/admin') || isRegistryAdminPath;
+      const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
       // Stricter limits for login, general limits for everything else
@@ -39,8 +35,8 @@ export function withApiMiddleware(handler: RouteHandler) {
         );
       }
 
-      // 2. Admin Verification (apply to all /api/admin paths except login/logout/session)
-      if (isAdminPath && !isLoginPath) {
+      // 2. Admin Verification
+      if (isAdminPath) {
         const isAdmin = await isAdminRequest(req);
         if (!isAdmin) {
           throw new ApiError(401, 'Unauthorized');
