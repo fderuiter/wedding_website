@@ -10,9 +10,9 @@ import { CategoryFilter } from '@/components/ui/CategoryFilter';
 const getSafeUrl = (url: string | undefined): string => {
   if (!url) return '#';
   try {
-    const parsed = new URL(url, 'https://dummy.com');
+    const parsed = new URL(url);
     if (['http:', 'https:'].includes(parsed.protocol)) {
-      return url;
+      return parsed.href;
     }
     return '#';
   } catch {
