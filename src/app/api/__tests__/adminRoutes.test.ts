@@ -38,18 +38,6 @@ describe('Admin API routes', () => {
     expect(json.error).toBe('Invalid password.');
   });
 
-  test.skip('login fails when admin password is not set', async () => {
-    delete process.env.ADMIN_PASSWORD;
-    const req = new NextRequest('http://localhost/api/admin/login', {
-      method: 'POST',
-      body: JSON.stringify({ password: 'anything' }),
-    });
-    const res = await login(req);
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json).toEqual({ error: 'Admin password not set.' });
-  });
-
   test('login is rate limited after 5 failed attempts', async () => {
     const makeReq = () => new NextRequest('http://localhost/api/admin/login', {
       method: 'POST',

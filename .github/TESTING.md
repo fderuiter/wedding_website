@@ -27,6 +27,32 @@ You can also run Jest in watch mode, which is useful during development:
 npm run test:watch
 ```
 
+## End-to-End & Accessibility Testing
+
+We use Playwright for end-to-end (E2E) testing, visual regression testing, and accessibility checks.
+
+### Playwright Installation
+Before running E2E tests for the first time, you need to install Playwright browsers:
+
+```bash
+npx playwright install --with-deps
+```
+
+### Accessibility Checks
+We maintain an automated accessibility testing suite. You can run these checks using:
+
+```bash
+npm run test:a11y
+```
+This command runs component tests, E2E tests, and generates a summary report of any accessibility violations. 
+
+### Visual Regression Testing
+Playwright is configured to capture and compare screenshots for visual regressions. You can update baseline screenshots (when intended visual changes are made) by running:
+
+```bash
+npx playwright test --update-snapshots
+```
+
 ## Test Structure
 
 Tests are co-located with the source code in `__tests__` directories. For example:

@@ -11,6 +11,25 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://prisma:password@localhost:5432/testing
+      ADMIN_PASSWORD: testing-password
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +38,10 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Run DB Migrations
+        run: npx prisma migrate deploy
+      - name: Seed Database
+        run: npx tsx seed.ts
       - name: Generate API Docs & Check Schemas
         run: npx tsx scripts/generate-openapi.ts
       - name: Commit API Docs updates
@@ -53,3 +76,9 @@ jobs:
                 body: body
               });
             }
+      - name: Upload A11y Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-report
+          path: test-results/a11y-summary.md
