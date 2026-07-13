@@ -4,7 +4,7 @@ import React, { useEffect } from 'react'
 import Image from 'next/image'
 import { GalleryImage } from './Gallery'
 import { Icon } from '@/components/ui/Icon'
-import { useOverlay } from '@/hooks/useOverlay'
+import { Overlay } from '@/components/ui/Overlay'
 
 /**
  * @interface LightboxProps
@@ -16,6 +16,7 @@ import { useOverlay } from '@/hooks/useOverlay'
  * @property {() => void} onPrev - Callback function to navigate to the previous image.
  */
 interface LightboxProps {
+  isOpen: boolean
   images: GalleryImage[]
   currentIndex: number
   onClose: () => void
@@ -31,15 +32,15 @@ interface LightboxProps {
  * @returns {JSX.Element} The rendered Lightbox component.
  */
 const Lightbox: React.FC<LightboxProps> = ({
+  isOpen,
   images,
   currentIndex,
   onClose,
   onNext,
   onPrev,
 }) => {
-  const { overlayRef, handleBackdropClick } = useOverlay(true, onClose);
-
   useEffect(() => {
+    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') {
         onNext()
@@ -52,19 +53,15 @@ const Lightbox: React.FC<LightboxProps> = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onNext, onPrev])
+  }, [onNext, onPrev, isOpen])
 
-  const image = images[currentIndex]
+  if (images.length === 0) return null;
+
+  const image = images[currentIndex] || images[0]
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="relative w-full h-full max-w-4xl max-h-4/5" onClick={(e) => e.stopPropagation()}>
+    <Overlay isOpen={isOpen} onClose={onClose} animationType="scale" layoutClassName="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="relative w-screen h-screen max-w-[90vw] max-h-[90vh]">
         <Image
           src={image.src}
           alt={image.alt}
@@ -94,7 +91,7 @@ const Lightbox: React.FC<LightboxProps> = ({
           <Icon name="ChevronRight" size="calc(48px * var(--scale-factor))" />
         </button>
       </div>
-    </div>
+    </Overlay>
   )
 }
 

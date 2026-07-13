@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import PhotoGrid from '../PhotoGrid';
 import Lightbox from '../Lightbox';
 import { GalleryImage } from '../Gallery';
@@ -30,7 +30,7 @@ describe('PhotoGrid', () => {
     expect(lightboxImage).toBeInTheDocument();
   });
 
-  it('opens the lightbox when an image receives Enter or Space key press', () => {
+  it('opens the lightbox when an image receives Enter or Space key press', async () => {
     render(<PhotoGrid images={mockImages} />);
     const images = screen.getAllByRole('button');
     // Test Enter
@@ -41,7 +41,7 @@ describe('PhotoGrid', () => {
     // Close lightbox
     const closeButton = screen.getByLabelText('Close');
     fireEvent.click(closeButton);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     // Test Space
     fireEvent.keyDown(images[1], { key: ' ' });
@@ -64,7 +64,7 @@ describe('Lightbox', () => {
 
   it('displays the correct image', () => {
     render(
-      <Lightbox
+      <Lightbox isOpen={true}
         images={mockImages}
         currentIndex={1}
         onClose={mockOnClose}
@@ -78,7 +78,7 @@ describe('Lightbox', () => {
 
   it('calls onClose when the close button is clicked', () => {
     render(
-      <Lightbox
+      <Lightbox isOpen={true}
         images={mockImages}
         currentIndex={0}
         onClose={mockOnClose}
@@ -93,7 +93,7 @@ describe('Lightbox', () => {
 
   it('calls onClose when the background is clicked', () => {
     render(
-      <Lightbox
+      <Lightbox isOpen={true}
         images={mockImages}
         currentIndex={0}
         onClose={mockOnClose}
@@ -108,7 +108,7 @@ describe('Lightbox', () => {
 
   it('calls onNext when the next button is clicked', () => {
     render(
-      <Lightbox
+      <Lightbox isOpen={true}
         images={mockImages}
         currentIndex={0}
         onClose={mockOnClose}
@@ -123,7 +123,7 @@ describe('Lightbox', () => {
 
   it('calls onPrev when the previous button is clicked', () => {
     render(
-      <Lightbox
+      <Lightbox isOpen={true}
         images={mockImages}
         currentIndex={0}
         onClose={mockOnClose}
@@ -138,7 +138,7 @@ describe('Lightbox', () => {
 
   it('responds to keyboard events', () => {
     render(
-      <Lightbox
+      <Lightbox isOpen={true}
         images={mockImages}
         currentIndex={0}
         onClose={mockOnClose}
