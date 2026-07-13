@@ -7,6 +7,19 @@ import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 
+const getSafeUrl = (url: string | undefined): string => {
+  if (!url) return '#';
+  try {
+    const parsed = new URL(url, 'https://dummy.com');
+    if (['http:', 'https:'].includes(parsed.protocol)) {
+      return url;
+    }
+    return '#';
+  } catch {
+    return '#';
+  }
+};
+
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
 }
@@ -71,7 +84,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
                 <span role="gridcell">{attraction.name}</span>
                 <span role="gridcell">{attraction.category}</span>
                 <span role="gridcell">
-                  <a href={attraction.directions} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+                  <a href={getSafeUrl(attraction.directions)} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
                     Directions to {attraction.name}
                   </a>
                 </span>
