@@ -8,7 +8,11 @@ const getSafeUrl = (url: string | undefined): string => {
   try {
     const parsed = new URL(url);
     if (['http:', 'https:'].includes(parsed.protocol)) {
-      return parsed.href;
+      let safeUrl = parsed.href;
+      if (!url.endsWith('/') && safeUrl.endsWith('/')) {
+        safeUrl = safeUrl.slice(0, -1);
+      }
+      return safeUrl;
     }
     return '#';
   } catch {
