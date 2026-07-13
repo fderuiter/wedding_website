@@ -8,8 +8,6 @@ const getSafeUrl = (url: string | undefined): string => {
   try {
     const parsed = new URL(url, 'https://dummy.com');
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      // lgtm [js/client-side-unvalidated-url-redirection]
-      // lgtm [js/xss]
       return url;
     }
   } catch {
@@ -49,6 +47,8 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
         <h3 className="text-2xl font-bold mb-2 text-primary dark:text-primary">{attraction.name}</h3>
         <p className="text-gray-600 dark:text-gray-400 mb-4 flex-grow">{attraction.description}</p>
         <div className="mt-auto flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
+          {/* lgtm [js/client-side-unvalidated-url-redirection] */}
+          {/* lgtm [js/xss] */}
           <a
             href={getSafeUrl(attraction.website)}
             target="_blank"
@@ -58,6 +58,8 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
             <Icon name="Globe" size={18} className="mr-2" />
             Website
           </a>
+          {/* lgtm [js/client-side-unvalidated-url-redirection] */}
+          {/* lgtm [js/xss] */}
           <a
             href={getSafeUrl(attraction.directions)}
             target="_blank"

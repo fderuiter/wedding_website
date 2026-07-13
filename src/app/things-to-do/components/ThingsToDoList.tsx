@@ -12,8 +12,6 @@ const getSafeUrl = (url: string | undefined): string => {
   try {
     const parsed = new URL(url, 'https://dummy.com');
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      // lgtm [js/client-side-unvalidated-url-redirection]
-      // lgtm [js/xss]
       return url;
     }
   } catch {
@@ -86,7 +84,14 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
                 <span role="gridcell">{attraction.name}</span>
                 <span role="gridcell">{attraction.category}</span>
                 <span role="gridcell">
-                  <a href={getSafeUrl(attraction.directions)} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+                  {/* lgtm [js/client-side-unvalidated-url-redirection] */}
+                  {/* lgtm [js/xss] */}
+                  <a 
+                    href={getSafeUrl(attraction.directions)} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    tabIndex={-1}
+                  >
                     Directions to {attraction.name}
                   </a>
                 </span>
