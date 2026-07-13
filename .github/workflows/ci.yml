@@ -18,8 +18,6 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
-          PGUSER: postgres
-          PGDATABASE: testing
         ports:
           - 5432:5432
         options: >-
