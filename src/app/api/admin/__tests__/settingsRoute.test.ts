@@ -19,8 +19,7 @@ jest.mock('@/lib/prisma', () => ({
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn(),
   toPublicAppConfig: jest.fn((config) => {
-    const { adminPassword, ...rest } = config;
-    return rest;
+    return config;
   }),
 }));
 
@@ -73,7 +72,6 @@ const updatedConfig = {
   id: 'global',
   ...validConfigData,
   weddingDate: new Date(validConfigData.weddingDate),
-  adminPassword: 'hashed-password',
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -347,7 +345,7 @@ describe('PUT /api/admin/settings', () => {
     expect(mockRevalidatePath).not.toHaveBeenCalled();
   });
 
-  it('returns the public config (without adminPassword) on success', async () => {
+  it('returns the public config on success', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq(validConfigData);
     const res = await PUT(req);

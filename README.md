@@ -89,8 +89,8 @@ Create a `.env.development.local` file in the root directory by copying the `.en
 ```env
 # Required for Admin Login (Must be a scrypt hash, NOT plaintext)
 # Generate a hash by running: node scripts/generate-password-hash.mjs "your_password"
-# The format must be: scrypt:salt:hash
-ADMIN_PASSWORD="scrypt:salt:hash"
+# The format must be: scrypt:[saltBase64]:[keyBase64]
+ADMIN_PASSWORD="scrypt:c2FsdA==:aGFzaA=="
 
 # Required for Prisma (PostgreSQL connection)
 # Obtain this from your database provider

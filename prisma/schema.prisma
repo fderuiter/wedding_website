@@ -28,7 +28,6 @@ model AppConfig {
   heroSubtitle     String   @default("")
   seoTitle         String   @default("")
   seoDescription   String   @default("")
-  adminPassword    String   @default("$2b$10$Ep3/07xWd34e9/jV91KIn.u2L1xW5G5S3T.eP28j8/qX5x81A0xLq") // hashed "admin"
   themePrimary     String   @default("#f43f5e") // rose-500
   themeSecondary   String   @default("#fbbf24") // amber-400
   themeAccent      String   @default("#e11d48") // rose-600
@@ -41,12 +40,12 @@ model AppConfig {
 }
 
 model Media {
-  id           String               @id @default(uuid())
+  id           String   @id @default(uuid())
   url          String
   altText      String?
-  isDecorative Boolean              @default(false)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  isDecorative Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   weddingPartyMembers WeddingPartyMember[]
   attractions         Attraction[]
@@ -83,52 +82,51 @@ model Attraction {
 }
 
 model RegistryItem {
-  id                String       @id @default(uuid())
+  id                String        @id @default(uuid())
   name              String
   description       String
   category          String
   price             Float
   imageId           String
-  image             Media        @relation(fields: [imageId], references: [id])
+  image             Media         @relation(fields: [imageId], references: [id])
   vendorUrl         String?
   quantity          Int
-  isGroupGift       Boolean      @default(false)
-  purchased         Boolean      @default(false)
+  isGroupGift       Boolean       @default(false)
+  purchased         Boolean       @default(false)
   purchaserName     String?
-  amountContributed Float        @default(0)
+  amountContributed Float         @default(0)
   contributors      Contributor[]
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 }
 
 model Contributor {
-  id              String       @id @default(uuid())
-  name            String
-  email           String?
-  isPlusOne       Boolean      @default(false)
-  amount          Float        @default(0)
-  date            DateTime     @default(now())
-  registryItem    RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
-  registryItemId  String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id             String        @id @default(uuid())
+  name           String
+  email          String?
+  isPlusOne      Boolean       @default(false)
+  amount         Float         @default(0)
+  date           DateTime      @default(now())
+  registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
+  registryItemId String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 }
 
 model ContentNode {
   id        String   @id @default(uuid())
-  type      String   // e.g., "FAQ", "Logistics", "Photo"
+  type      String // e.g., "FAQ", "Logistics", "Photo"
   tags      String[] // e.g., ["Homepage", "FAQ"]
-  data      Json     // Flexible key-value pairs
+  data      Json // Flexible key-value pairs
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model SnapshotVersion {
-  id          String   @id @default(uuid())
-  entityType  String   // "AppConfig", "ContentNode", "RegistryItem", etc.
-  entityId    String   // The ID of the modified entity
-  data        Json     // Full snapshot of the record at the time of save
-  author      String   @default("Admin")
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  entityType String // "AppConfig", "ContentNode", "RegistryItem", etc.
+  entityId   String // The ID of the modified entity
+  data       Json // Full snapshot of the record at the time of save
+  author     String   @default("Admin")
+  createdAt  DateTime @default(now())
 }
-

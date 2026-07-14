@@ -34,7 +34,6 @@ const fallbackAppConfig: LocalAppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
-  adminPassword: '',
   themePrimary: theme.colors.primary,
   themeSecondary: theme.colors.secondary,
   themeAccent: theme.colors.accent,
@@ -47,11 +46,10 @@ const fallbackAppConfig: LocalAppConfig = {
  * Produce a public-safe view of the application configuration.
  *
  * @param config - The full `AppConfig` object
- * @returns The same configuration with the `adminPassword` field removed
+ * @returns The same configuration
  */
 export function toPublicAppConfig(config: AppConfigDTO): PublicAppConfig {
-  const { adminPassword, ...publicConfig } = config;
-  return publicConfig;
+  return config;
 }
 
 /**

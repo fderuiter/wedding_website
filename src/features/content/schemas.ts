@@ -66,7 +66,6 @@ export const AppConfigSchema = z.object({
   heroSubtitle: z.string(),
   seoTitle: z.string(),
   seoDescription: z.string(),
-  adminPassword: z.string(),
   themePrimary: z.string(),
   themeSecondary: z.string(),
   themeAccent: z.string(),
@@ -89,5 +88,5 @@ export const AppConfigSchema = z.object({
 
 export type AppConfigDTO = z.infer<typeof AppConfigSchema>;
 
-export const PublicAppConfigSchema = AppConfigSchema.omit({ adminPassword: true });
+export const PublicAppConfigSchema = AppConfigSchema;
 export type PublicAppConfigDTO = z.infer<typeof PublicAppConfigSchema>;
