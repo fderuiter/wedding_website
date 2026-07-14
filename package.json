@@ -81,7 +81,6 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.22.5",
     "typescript": "^5",
-    "whatwg-fetch": "^3.6.20",
     "zod-to-json-schema": "^3.25.2"
   }
 }
