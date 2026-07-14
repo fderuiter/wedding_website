@@ -7,13 +7,6 @@ import '@testing-library/jest-dom'
 import { toHaveNoViolations } from 'jest-axe'
 
 expect.extend(toHaveNoViolations)
-import { TextEncoder, TextDecoder } from 'util';
-
-global.TextEncoder = TextEncoder;
-global.TextDecoder = TextDecoder;
-
-import 'whatwg-fetch';
-
 import { server } from './src/mocks/server';
 
 beforeAll(() => server.listen());

@@ -10,7 +10,8 @@ const createJestConfig = nextJest({
 const config = {
   // Add more setup options before each test is run
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-  testEnvironment: 'jest-environment-jsdom',
+  testEnvironment: "./jsdom-env.js",
+  testEnvironmentOptions: { url: "http://localhost/" },
   collectCoverage: true,
   coverageDirectory: 'coverage',
   coverageReporters: ['json', 'lcov', 'text', 'clover', 'html'], // Added 'html' for detailed report
