@@ -74,8 +74,7 @@ jest.mock('@/lib/config', () => ({
     travelAdvice: 'Travel safely...',
   }),
   toPublicAppConfig: jest.fn().mockImplementation((config) => {
-    const { adminPassword, ...publicConfig } = config;
-    return publicConfig;
+    return config;
   })
 }));
 

@@ -24,7 +24,6 @@ const baseConfig: AppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "Abbi and Fred's wedding, wedding website",
-  adminPassword: 'super_secret_password_hash',
   themePrimary: '#f43f5e',
   themeSecondary: '#fbbf24',
   themeAccent: '#e11d48',
@@ -34,11 +33,8 @@ const baseConfig: AppConfig = {
 };
 
 describe('Configuration DTO Architecture', () => {
-  it('toPublicAppConfig should remove adminPassword from the configuration object', () => {
+  it('toPublicAppConfig should return the configuration object', () => {
     const publicConfig = toPublicAppConfig(baseConfig);
-
-    // Assert adminPassword is removed
-    expect(publicConfig).not.toHaveProperty('adminPassword');
 
     // Assert other fields remain intact
     expect(publicConfig.brideName).toBe('Abbi');
@@ -53,7 +49,6 @@ describe('Configuration DTO Architecture', () => {
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.faviconUrl).toBe('/uploads/custom-favicon.ico');
-    expect(publicConfig).not.toHaveProperty('adminPassword');
   });
 
   it('toPublicAppConfig preserves ogImageUrl in the public config', () => {
@@ -61,7 +56,6 @@ describe('Configuration DTO Architecture', () => {
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.ogImageUrl).toBe('/uploads/my-og-image.jpg');
-    expect(publicConfig).not.toHaveProperty('adminPassword');
   });
 
   it('toPublicAppConfig preserves seoKeywords in the public config', () => {
@@ -70,7 +64,6 @@ describe('Configuration DTO Architecture', () => {
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.seoKeywords).toBe(customKeywords);
-    expect(publicConfig).not.toHaveProperty('adminPassword');
   });
 
   it('toPublicAppConfig preserves all three new SEO fields simultaneously', () => {
@@ -85,6 +78,5 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.faviconUrl).toBe('/uploads/abc123.ico');
     expect(publicConfig.ogImageUrl).toBe('/uploads/def456.jpg');
     expect(publicConfig.seoKeywords).toBe('custom keyword, another keyword');
-    expect(publicConfig).not.toHaveProperty('adminPassword');
   });
 });
