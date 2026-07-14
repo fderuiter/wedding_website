@@ -8,7 +8,7 @@ export default function AdminDashboardLayout({
 }) {
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] flex flex-col">
-      <header className="bg-white dark:bg-gray-800 shadow p-4">
+      <header aria-label="Admin Dashboard" className="bg-white dark:bg-gray-800 shadow p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold text-primary">Admin Control Panel</h1>
           <nav aria-label="Admin Navigation">

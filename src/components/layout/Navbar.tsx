@@ -85,7 +85,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
             </Link>
           </div>
           <div className="hidden md:block">
-            <nav className="ml-10 flex items-baseline space-x-4">
+            <nav aria-label="Global Navigation" className="ml-10 flex items-baseline space-x-4">
               {allLinks.map((link) => (
                 <Link
                   key={link.href}
