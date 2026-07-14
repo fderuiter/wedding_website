@@ -125,7 +125,7 @@ export default function RootLayoutClient({
           config={config}
         />
       )}
-      <main id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
+      <main aria-label="Application Content" id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
         {children}
       </main>
       <SpeedInsights />
