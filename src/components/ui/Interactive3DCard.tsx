@@ -58,7 +58,7 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
       onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
       onRight: () => x.set(Math.min(0.5, x.get() + step)),
       onAction: (e: any) => {
-        if (onClick && !isInteractive) {
+        if (onClick) {
           e.preventDefault();
           onClick(e as any);
         }
