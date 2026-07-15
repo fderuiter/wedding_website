@@ -53,7 +53,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-2xl">
-          <span className="bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-xl">
+          <span className="bg-primary bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-xl">
             {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
           </span>
         </div>
