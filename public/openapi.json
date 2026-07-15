@@ -652,8 +652,15 @@
                   "imageUrl": {
                     "anyOf": [
                       {
-                        "type": "string",
-                        "maxLength": 2000
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       {
                         "type": "string",
@@ -870,8 +877,15 @@
                   "imageUrl": {
                     "anyOf": [
                       {
-                        "type": "string",
-                        "maxLength": 2000
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       {
                         "type": "string",
