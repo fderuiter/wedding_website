@@ -49,6 +49,11 @@ export default function AdminDashboardLayout({
                 </Link>
               </li>
               <li>
+                <Link href="/admin/dashboard/history" className="text-gray-700 dark:text-gray-300 hover:text-primary">
+                  History
+                </Link>
+              </li>
+              <li>
                 <Link href="/admin/dashboard/maintenance" className="text-gray-700 dark:text-gray-300 hover:text-primary">
                   Maintenance
                 </Link>

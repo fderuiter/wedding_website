@@ -65,7 +65,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       name: snapshotData.name,
       role: snapshotData.role,
       bio: snapshotData.bio,
-      photo: snapshotData.photo,
+      photoId: snapshotData.photoId,
       link: snapshotData.link,
       order: snapshotData.order || 0,
     };
@@ -78,7 +78,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
     const data = {
       name: snapshotData.name,
       description: snapshotData.description,
-      image: snapshotData.image,
+      imageId: snapshotData.imageId,
       category: snapshotData.category,
       website: snapshotData.website,
       directions: snapshotData.directions,
@@ -97,7 +97,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       description: snapshotData.description,
       category: snapshotData.category,
       price: snapshotData.price,
-      image: snapshotData.image,
+      imageId: snapshotData.imageId,
       vendorUrl: snapshotData.vendorUrl,
       quantity: snapshotData.quantity || 1,
       isGroupGift: snapshotData.isGroupGift || false,

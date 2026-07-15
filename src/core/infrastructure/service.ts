@@ -28,8 +28,8 @@ export class BaseService<T extends { id: string }> {
     });
   }
 
-  async delete(id: string, _author: string = 'Admin'): Promise<T> {
-    const record = await this.repo.delete(id);
+  async delete(id: string, author: string = 'Admin'): Promise<T> {
+    const record = await this.repo.delete(id, author);
     return record;
   }
 

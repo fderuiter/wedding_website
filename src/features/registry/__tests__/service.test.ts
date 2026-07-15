@@ -105,7 +105,7 @@ describe('RegistryService', () => {
       mockRepository.deleteItem.mockResolvedValue(deleted);
 
       await expect(registryService.deleteItem('1')).resolves.toEqual(deleted);
-      expect(mockRepository.deleteItem).toHaveBeenCalledWith('1');
+      expect(mockRepository.deleteItem).toHaveBeenCalledWith('1', 'Admin');
     });
 
     it('throws when delete fails', async () => {

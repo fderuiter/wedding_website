@@ -68,6 +68,8 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_attractions
     node_admin_dashboard_content["content"]
     node_admin_dashboard --> node_admin_dashboard_content
+    node_admin_dashboard_history["history"]
+    node_admin_dashboard --> node_admin_dashboard_history
     node_admin_dashboard_maintenance["maintenance"]
     node_admin_dashboard --> node_admin_dashboard_maintenance
     node_admin_dashboard_media["media"]
