@@ -63,3 +63,4 @@ node_modules/@prisma/client
 .jules/
 .Jules/
 test-results/
+tsconfig.tsbuildinfo
