@@ -1,3 +1,4 @@
+'use client';
 import React, { useState } from 'react';
 import { RegistryItem } from '../types';
 import { Icon } from '@/components/ui/Icon';

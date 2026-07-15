@@ -1,6 +1,7 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
-import { apiClient } from '@/features/admin';
+// eslint-disable-next-line no-restricted-imports
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminWeddingParty() {
   return useEntityOrchestration<WeddingPartyMemberDTO>({

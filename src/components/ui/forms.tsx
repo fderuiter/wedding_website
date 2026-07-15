@@ -1,3 +1,4 @@
+'use client';
 import React, { createContext, useContext, useId } from 'react';
 
 export function cn(...classes: (string | undefined | null | false)[]) {

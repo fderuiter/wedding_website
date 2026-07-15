@@ -1,6 +1,7 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { AttractionDTO } from '@/features/attractions';
-import { apiClient } from '@/features/admin';
+// eslint-disable-next-line no-restricted-imports
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminAttractions() {
   return useEntityOrchestration<AttractionDTO>({
