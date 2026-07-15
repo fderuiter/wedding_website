@@ -1,4 +1,4 @@
-import { useId, useState, useCallback, KeyboardEvent } from 'react';
+import { useId, useState, useCallback, KeyboardEvent, MouseEvent } from 'react';
 
 export type Use3DInteractionOptions = {
   instructions: string;
@@ -13,7 +13,7 @@ export type Use3DInteractionOptions = {
   onDown?: (e: KeyboardEvent<HTMLElement>) => void;
   onLeft?: (e: KeyboardEvent<HTMLElement>) => void;
   onRight?: (e: KeyboardEvent<HTMLElement>) => void;
-  onAction?: (e: KeyboardEvent<HTMLElement>) => void;
+  onAction?: (e: KeyboardEvent<HTMLElement> | MouseEvent<HTMLElement>) => void;
 };
 
 export function use3DInteraction({
@@ -77,12 +77,9 @@ export function use3DInteraction({
         case ' ':
         case 'Enter':
           if (onAction) {
-            // Note: In some cases you might not want to prevent default for Enter/Space
-            // if it's natively handled (like a button click).
-            // But if onAction is provided, we assume custom handling.
+            e.preventDefault();
             onAction(e);
             if (labels.action) announce(labels.action);
-            // We'll let the caller decide if they want to prevent default inside onAction
           }
           break;
       }
@@ -99,6 +96,15 @@ export function use3DInteraction({
 
     return {
       'aria-describedby': mergedDescribedBy,
+      onClick: (e: MouseEvent<any>) => {
+        if (onAction) {
+          onAction(e);
+          if (labels.action) announce(labels.action);
+        }
+        if (originalProps.onClick) {
+          originalProps.onClick(e);
+        }
+      },
       onKeyDown: (e: KeyboardEvent<any>) => {
         handleKeyDown(e);
         if (originalProps.onKeyDown) {
