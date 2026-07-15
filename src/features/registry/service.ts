@@ -53,8 +53,8 @@ export class RegistryService {
    * @param id - The UUID of the item to delete.
    * @returns A promise that resolves when the item has been deleted.
    */
-  async deleteItem(id: string) {
-    return this.repository.deleteItem(id);
+  async deleteItem(id: string, author: string = 'Admin') {
+    return this.repository.deleteItem(id, author);
   }
 
   /**

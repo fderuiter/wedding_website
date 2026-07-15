@@ -37,9 +37,9 @@ export class BaseRepository<T extends { id: string }> {
     return this.model.update({ where: { id }, data });
   }
 
-  async delete(id: string): Promise<T> {
+  async delete(id: string, author: string = 'System'): Promise<T> {
     const record = await this.model.delete({ where: { id } });
-    await createAuditSnapshot(this.modelName, id, { deleted: true, ...record }, 'System', this.client);
+    await createAuditSnapshot(this.modelName, id, { deleted: true, ...record }, author, this.client);
     return record;
   }
 }
