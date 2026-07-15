@@ -1,5 +1,5 @@
 // Centralized status logic for registry items
-import { RegistryItem } from '@/features/registry/types';
+import { RegistryItem } from '../types';
 
 /**
  * @typedef {'available' | 'claimed' | 'fullyFunded'} RegistryItemStatus

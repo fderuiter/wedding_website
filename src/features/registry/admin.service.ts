@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { RegistryItemSchema } from '@/features/registry/schemas';
+import { RegistryItemSchema } from './schemas';
 
 const RegistryItemInputSchema = RegistryItemSchema.omit({ id: true }).partial();
 

@@ -1,2 +1,1 @@
-// Export the contribute functionality from the feature module
-export { POST } from '@/features/registry/api/contribute';
+export { registryContributePOST as POST } from '@/features/registry';

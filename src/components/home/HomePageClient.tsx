@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Icon } from '@/components/ui/Icon';
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { ContentNodeDTO } from '@/features/content';
 import type { PublicAppConfig } from '@/lib/config';
 import Link from 'next/link';
 import BackToTop from '@/components/BackToTop';

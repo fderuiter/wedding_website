@@ -1,6 +1,6 @@
 import { ContentService } from './service';
 import { IContentRepository } from './types';
-import { Attraction, ContentNode } from '@prisma/client';
+import { ContentNode } from '@prisma/client';
 
 class MockContentRepository implements IContentRepository {
   async getFeatures() { return []; }
@@ -10,7 +10,6 @@ class MockContentRepository implements IContentRepository {
   async createNode(_data: any) { return {} as any; }
   async updateNode(_id: string, _data: any) { return {} as any; }
   async deleteNode(_id: string) { return {} as any; }
-  async getAttractions() { return []; }
 }
 
 describe('ContentService', () => {
@@ -62,72 +61,6 @@ describe('ContentService', () => {
       expect(mockRepo.getNodesByType).toHaveBeenCalledWith('Photo');
       
       // Node 2 should be filtered out
-      expect(result).toHaveLength(2);
-
-      // Should be sorted by createdAt descending
-      expect(result[0].id).toBe('3');
-      expect(result[1].id).toBe('1');
-    });
-  });
-
-  describe('getPublicAttractions', () => {
-    it('returns attractions with isVisible=true, sorted by createdAt descending', async () => {
-      const now = new Date();
-      const yesterday = new Date(now.getTime() - 86400000);
-      const tomorrow = new Date(now.getTime() + 86400000);
-
-      const mockAttractions: Attraction[] = [
-        {
-          id: '1',
-          name: 'Old Visible Attraction',
-          description: '',
-          image: null,
-          category: '',
-          website: '',
-          directions: '',
-          latitude: 0,
-          longitude: 0,
-          isVisible: true,
-          createdAt: yesterday,
-          updatedAt: yesterday,
-        },
-        {
-          id: '2',
-          name: 'Hidden Attraction',
-          description: '',
-          image: null,
-          category: '',
-          website: '',
-          directions: '',
-          latitude: 0,
-          longitude: 0,
-          isVisible: false,
-          createdAt: tomorrow,
-          updatedAt: tomorrow,
-        },
-        {
-          id: '3',
-          name: 'New Visible Attraction',
-          description: '',
-          image: null,
-          category: '',
-          website: '',
-          directions: '',
-          latitude: 0,
-          longitude: 0,
-          isVisible: true,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ];
-
-      jest.spyOn(mockRepo, 'getAttractions').mockResolvedValue(mockAttractions);
-
-      const result = await service.getPublicAttractions();
-
-      expect(mockRepo.getAttractions).toHaveBeenCalled();
-      
-      // Item 2 should be filtered out
       expect(result).toHaveLength(2);
 
       // Should be sorted by createdAt descending

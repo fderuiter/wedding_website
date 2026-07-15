@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MediaSchema } from '@/features/media/schemas';
+import { MediaSchema } from '@/features/media';
 import { safeImageUrlSchema, safeUrlSchema } from '@/utils/validation';
 
 export const AttractionSchema = z.object({

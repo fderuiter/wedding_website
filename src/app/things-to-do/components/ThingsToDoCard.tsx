@@ -1,6 +1,6 @@
 import React from 'react';
 import { MediaImage } from '@/components/MediaImage';
-import type { AttractionDTO } from '@/features/attractions/schemas';
+import type { AttractionDTO } from '@/features/attractions';
 import { Icon } from '@/components/ui/Icon';
 
 /**

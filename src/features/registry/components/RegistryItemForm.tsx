@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { RegistryItem } from '@/features/registry/types';
+import { RegistryItem } from '../types';
 import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
-import { RegistryItemBaseSchema } from '@/features/registry/schemas';
+import { RegistryItemBaseSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/components/ui/forms';
 

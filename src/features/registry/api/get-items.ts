@@ -1,5 +1,5 @@
 import { NextResponse,  } from 'next/server';
-import { registryService } from '@/features/registry/service';
+import { registryService } from '../service';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
 export const GET = withApiMiddleware(async () => {

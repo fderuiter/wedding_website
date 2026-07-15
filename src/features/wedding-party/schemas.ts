@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MediaSchema } from '@/features/media/schemas';
+import { MediaSchema } from '@/features/media';
 import { createLaxUrlSchema, safeUrlSchema } from '@/utils/validation';
 
 export const WeddingPartyMemberSchema = z.object({

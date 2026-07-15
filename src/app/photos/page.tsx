@@ -2,8 +2,8 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/Icon';
 import Script from 'next/script';
-import { contentService } from '@/features/content/service';
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import { contentService } from '@/features/content';
+import type { ContentNodeDTO } from '@/features/content';
 
 export const metadata: Metadata = {
   title: 'Photos',

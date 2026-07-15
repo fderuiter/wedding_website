@@ -1,1 +1,1 @@
-export { default } from '@/features/registry/pages/index';
+export { RegistryPage as default } from '@/features/registry';

@@ -1,6 +1,6 @@
 import React from 'react';
 import { MediaImage } from '@/components/MediaImage';
-import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { Icon } from '@/components/ui/Icon';
 
 /**

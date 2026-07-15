@@ -1,6 +1,6 @@
 import React from 'react';
-import { RegistryItem } from '@/features/registry/types';
-import { getRegistryItemStatus } from '@/features/registry/lib/registryStatusUtils';
+import { RegistryItem } from '../types';
+import { getRegistryItemStatus } from '../lib/registryStatusUtils';
 import { MediaImage } from '@/components/MediaImage';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatCurrency } from '@/utils/intl';

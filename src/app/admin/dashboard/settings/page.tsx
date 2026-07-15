@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';

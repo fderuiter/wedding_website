@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { apiClient } from '@/lib/apiClient';
-import { MediaDTO } from '@/features/media/schemas';
+import { MediaDTO } from '@/features/media';
 import { MediaImage } from '@/components/MediaImage';
 
 export default function MediaDashboardPage() {

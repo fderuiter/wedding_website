@@ -5,13 +5,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Overlay } from '@/components/ui/Overlay';
 import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
-import RegistryCard from '@/features/registry/components/RegistryCard';
-import Modal from '@/features/registry/components/Modal';
+import RegistryCard from '../components/RegistryCard';
+import Modal from '../components/Modal';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
-import { PriceRangeFilter } from '@/features/registry/components/PriceRangeFilter';
-import RegistryCardSkeleton from '@/features/registry/components/RegistryCardSkeleton';
+import { PriceRangeFilter } from '../components/PriceRangeFilter';
+import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
-import { useRegistry } from '@/features/registry/hooks/useRegistry';
+import { useRegistry } from '../hooks/useRegistry';
 import { Button } from '@/components/ui/Button';
 
 /**

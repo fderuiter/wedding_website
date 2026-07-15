@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { mediaRepository } from '@/features/media/repository';
+import { mediaRepository } from '@/features/media';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { MediaCreateSchema } from '@/features/media/schemas';
+import { MediaCreateSchema } from '@/features/media';
 
 export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const media = await mediaRepository.getAllMedia();

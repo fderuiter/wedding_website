@@ -1,6 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
-import type { ContentNodeDTO } from '@/features/content/schemas';
-import { apiClient } from '@/features/admin/apiClient';
+import type { ContentNodeDTO } from '@/features/content';
+import { apiClient } from '@/features/admin';
 
 export function useAdminContent() {
   return useEntityOrchestration<ContentNodeDTO>({

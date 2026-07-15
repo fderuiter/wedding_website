@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MediaSchema } from '@/features/media/schemas';
+import { MediaSchema } from '@/features/media';
 import { safeImageUrlSchema, createLaxUrlSchema } from '@/utils/validation';
 
 export const ContributorSchema = z.object({
