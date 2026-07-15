@@ -1,6 +1,9 @@
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import nextTypescript from 'eslint-config-next/typescript';
 import stylistic from '@stylistic/eslint-plugin';
+import unusedImports from 'eslint-plugin-unused-imports';
+
+const isCI = process.env.CI === 'true' || process.env.CI === '1' || process.env.GITHUB_ACTIONS === 'true';
 
 const eslintConfig = [
   ...nextCoreWebVitals,
@@ -8,6 +11,7 @@ const eslintConfig = [
   {
     plugins: {
       '@stylistic': stylistic,
+      'unused-imports': unusedImports,
     },
     rules: {
       '@stylistic/quotes': ['error', 'single', { avoidEscape: true }],
@@ -39,7 +43,16 @@ const eslintConfig = [
       'react-hooks/immutability': 'warn',
       'react-hooks/static-components': 'warn',
       'react-hooks/purity': 'warn',
-      'react-hooks/refs': 'warn'
+      'react-hooks/refs': 'warn',
+
+      ...(!isCI ? {
+        '@typescript-eslint/no-unused-vars': 'off',
+        'unused-imports/no-unused-imports': 'error',
+        'unused-imports/no-unused-vars': [
+          'warn',
+          { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
+        ]
+      } : {})
     }
   }
 ];
