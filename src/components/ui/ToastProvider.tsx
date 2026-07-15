@@ -1,8 +1,8 @@
-"use client";
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { Dialog } from "./Dialog";
+'use client';
+import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { Dialog } from './Dialog';
 
-export type ToastType = "success" | "error" | "info" | "confirm";
+export type ToastType = 'success' | 'error' | 'info' | 'confirm';
 
 export interface Toast {
   id: string;
@@ -28,10 +28,10 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, type: ToastType = "info", onConfirm?: () => void, onCancel?: () => void) => {
+  const addToast = useCallback((message: string, type: ToastType = 'info', onConfirm?: () => void, onCancel?: () => void) => {
     const id = Date.now().toString() + Math.random().toString();
     setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel }]);
-    if (type !== "confirm") {
+    if (type !== 'confirm') {
       setTimeout(() => {
         removeToast(id);
       }, 5000);
@@ -49,7 +49,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         resolve(false);
         removeToast(id);
       };
-      setToasts((prev) => [...prev, { id, message, type: "confirm", onConfirm, onCancel }]);
+      setToasts((prev) => [...prev, { id, message, type: 'confirm', onConfirm, onCancel }]);
     });
   }, [removeToast]);
 
@@ -91,9 +91,9 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
             key={toast.id}
             className={`px-4 py-3 rounded shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto ${
               toast.type === 'success' ? 'bg-green-600 text-white' :
-              toast.type === 'error' ? 'bg-red-600 text-white' :
-              toast.type === 'confirm' ? 'bg-gray-800 text-white' :
-              'bg-blue-600 text-white'
+                toast.type === 'error' ? 'bg-red-600 text-white' :
+                  toast.type === 'confirm' ? 'bg-gray-800 text-white' :
+                    'bg-blue-600 text-white'
             }`}
           >
             <div className="flex justify-between items-center w-full">
@@ -118,7 +118,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
 export const useToast = () => {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error("useToast must be used within a ToastProvider");
+    throw new Error('useToast must be used within a ToastProvider');
   }
   return context;
 };

@@ -1,16 +1,16 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { apiClient } from '@/features/admin/apiClient';
-import { useAdminSettings } from "@/hooks/admin/useAdminSettings";
+import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
 
-import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
-import { FormGroup, Label, Input, Textarea, FormMessage } from "@/components/ui/forms";
-import { Button } from "@/components/ui/Button";
-import { useToast } from "@/components/ui/ToastProvider";
-import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from "@/utils/validation";
+import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
+import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/ToastProvider';
+import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -75,8 +75,8 @@ export default function AdminSettingsPage() {
       previewUrl="/"
       draftType="config"
       draftData={{
-         ...localConfig,
-         weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
+        ...localConfig,
+        weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
       }}
       entityId="global"
       onRestore={() => {
@@ -220,7 +220,7 @@ export default function AdminSettingsPage() {
             <FormGroup>
               <Label>SEO Keywords</Label>
               <Textarea name="seoKeywords" value={localConfig.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{brideName}} and {{groomName}}'s wedding..." />
-              <FormMessage>Comma-separated list. Use templates like {"{{brideName}}"}. Variables: brideName, groomName, venueName, venueCity, venueState.</FormMessage>
+              <FormMessage>Comma-separated list. Use templates like {'{{brideName}}'}. Variables: brideName, groomName, venueName, venueCity, venueState.</FormMessage>
             </FormGroup>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <FormGroup>
@@ -256,7 +256,7 @@ export default function AdminSettingsPage() {
               disabled={saving}
               variant="primary"
             >
-              {saving ? "Saving..." : "Save Settings"}
+              {saving ? 'Saving...' : 'Save Settings'}
             </Button>
           </div>
         </form>

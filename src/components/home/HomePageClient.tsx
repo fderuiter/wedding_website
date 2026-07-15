@@ -1,16 +1,16 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Icon } from '@/components/ui/Icon'
-import type { ContentNodeDTO } from '@/features/content/schemas'
-import type { PublicAppConfig } from '@/lib/config'
-import Link from 'next/link'
-import BackToTop from '@/components/BackToTop'
-import { Interactive3DCard } from '@/components/ui/Interactive3DCard'
-import { formatDate } from '@/utils/intl'
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Icon } from '@/components/ui/Icon';
+import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { PublicAppConfig } from '@/lib/config';
+import Link from 'next/link';
+import BackToTop from '@/components/BackToTop';
+import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
+import { formatDate } from '@/utils/intl';
 
-const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) }
+const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) };
 
 /**
  * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.
@@ -231,5 +231,5 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
         <BackToTop />
       </div>
     </>
-  )
+  );
 }

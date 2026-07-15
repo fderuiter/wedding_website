@@ -33,25 +33,25 @@ const createTestQueryClient = () => new QueryClient({
 });
 
 const wrapper = (client: QueryClient) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-        <QueryClientProvider client={client}>
-            <ToastProvider>
-                {children}
-            </ToastProvider>
-        </QueryClientProvider>
-    );
-    Wrapper.displayName = 'QueryClientWrapper';
-    return Wrapper;
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <ToastProvider>
+        {children}
+      </ToastProvider>
+    </QueryClientProvider>
+  );
+  Wrapper.displayName = 'QueryClientWrapper';
+  return Wrapper;
 };
 
 const mockItems: RegistryItem[] = [
-    { id: '1', name: 'Item 1', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
-    { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', imageUrl: '', description: '' },
-    { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: true, amountContributed: 150, contributors: [], imageUrl: '', description: '' },
+  { id: '1', name: 'Item 1', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
+  { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', imageUrl: '', description: '' },
+  { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: true, amountContributed: 150, contributors: [], imageUrl: '', description: '' },
 ];
 
 describe('useRegistry', () => {
-    let queryClient: QueryClient;
+  let queryClient: QueryClient;
 
   beforeEach(() => {
     mockedCheckAdminClient.mockResolvedValue(false);
@@ -111,13 +111,13 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.handleCardClick(result.current.items[0]);
+      result.current.handleCardClick(result.current.items[0]);
     });
 
     expect(result.current.isModalOpen).toBe(true);
 
     act(() => {
-        result.current.handleCloseModal();
+      result.current.handleCloseModal();
     });
 
     expect(result.current.isModalOpen).toBe(false);
@@ -129,7 +129,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.handleEdit('1');
+      result.current.handleEdit('1');
     });
 
     expect(mockPush).toHaveBeenCalledWith('/registry/edit-item/1');
@@ -149,7 +149,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.handleDelete('1');
+      result.current.handleDelete('1');
     });
 
     const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
@@ -176,7 +176,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-        await result.current.handleContribute('1', 'Jane Doe', 50);
+      await result.current.handleContribute('1', 'Jane Doe', 50);
     });
 
     expect(contributeBody).toEqual({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 });
@@ -188,7 +188,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.setCategoryFilter(['Category B']);
+      result.current.setCategoryFilter(['Category B']);
     });
 
     expect(result.current.filteredItems.length).toBe(1);
@@ -200,7 +200,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.setPriceRange([150, 250]);
+      result.current.setPriceRange([150, 250]);
     });
 
     expect(result.current.filteredItems.length).toBe(1);
@@ -212,7 +212,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.setShowGroupGiftsOnly(true);
+      result.current.setShowGroupGiftsOnly(true);
     });
 
     expect(result.current.filteredItems.length).toBe(1);
@@ -224,7 +224,7 @@ describe('useRegistry', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-        result.current.setShowAvailableOnly(true);
+      result.current.setShowAvailableOnly(true);
     });
 
     expect(result.current.filteredItems.length).toBe(2);

@@ -53,7 +53,7 @@ export default function RegistryPage() {
     handleContribute,
   } = useRegistry();
 
-  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const isLoadingMore = useRef(false);
   const counterRef = useRef<HTMLParagraphElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -66,7 +66,7 @@ export default function RegistryPage() {
     wasButtonFocused.current = document.activeElement === buttonRef.current;
     
     isLoadingMore.current = true;
-    setLiveAnnouncement("Loading more gifts...");
+    setLiveAnnouncement('Loading more gifts...');
     
     setTimeout(() => {
       setVisibleItemsCount(prevCount => prevCount + 8);

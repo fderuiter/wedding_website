@@ -1,4 +1,4 @@
-import { UpdateFeaturesSchema } from "@/utils/validation";
+import { UpdateFeaturesSchema } from '@/utils/validation';
 import { NextResponse, NextRequest } from 'next/server';
 import { contentService } from '@/features/content/service';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';

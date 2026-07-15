@@ -1,4 +1,4 @@
-import { ScrapeUrlSchema } from "@/utils/validation";
+import { ScrapeUrlSchema } from '@/utils/validation';
 import { NextResponse, NextRequest } from 'next/server';
 import { parse } from 'node-html-parser';
 import { isPrivateUrl } from '@/utils/ssrf';

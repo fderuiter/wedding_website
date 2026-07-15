@@ -3,10 +3,10 @@
 
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom'
-import { toHaveNoViolations } from 'jest-axe'
+import '@testing-library/jest-dom';
+import { toHaveNoViolations } from 'jest-axe';
 
-expect.extend(toHaveNoViolations)
+expect.extend(toHaveNoViolations);
 import { server } from './src/mocks/server';
 
 beforeAll(() => server.listen());
@@ -54,7 +54,7 @@ jest.mock('next/server', () => {
               cookieString += `; Expires=${options.expires.toUTCString()}`;
             }
             if (options?.maxAge === 0) {
-              cookieString += `; Max-Age=0`;
+              cookieString += '; Max-Age=0';
             }
             headers.set('set-cookie', cookieString);
           }),
@@ -92,9 +92,9 @@ jest.mock('next/server', () => {
           set: jest.fn(),
         },
         json: () => Promise.resolve(init && init.body ? JSON.parse(init.body) : {}),
-      }
+      };
     }),
-  }
+  };
 });
 
 jest.mock('@prisma/client', () => {

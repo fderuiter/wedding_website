@@ -29,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       siteUrl = config.baseUrl;
     }
   } catch (err) {
-    console.error("Could not load config for sitemap", err);
+    console.error('Could not load config for sitemap', err);
   }
 
   // Static pages

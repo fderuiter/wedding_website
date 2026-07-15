@@ -39,7 +39,7 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 
   return {
-    title: "Home",
+    title: 'Home',
     description,
     alternates: {
       canonical: baseUrl,
@@ -80,7 +80,7 @@ export default async function HomePage() {
   try {
     contentNodes = await logisticsService.getHomepageLogistics();
   } catch (error) {
-    console.warn("Could not fetch content nodes for Homepage");
+    console.warn('Could not fetch content nodes for Homepage');
   }
 
   return <HomePageClient config={publicConfig} contentNodes={contentNodes} />;

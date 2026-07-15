@@ -159,7 +159,7 @@ export async function getAppConfig(): Promise<AppConfigDTO> {
 
     await bootstrapLogisticsNodes();
   } catch (error) {
-    console.warn("Database unreachable, using fallback config.");
+    console.warn('Database unreachable, using fallback config.');
   }
 
   const mergedConfig = dbConfig 

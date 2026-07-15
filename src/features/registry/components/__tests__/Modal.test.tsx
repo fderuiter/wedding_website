@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { Overlay } from "@/components/ui/Overlay";
+import { Overlay } from '@/components/ui/Overlay';
 import Modal from '../Modal'; // Adjust the import path as necessary
 import { RegistryItem } from '@/types/registry';
 
@@ -37,15 +37,15 @@ const mockPurchasedItem: RegistryItem = {
 };
 
 const mockFundedGroupItem: RegistryItem = {
-    ...mockGroupItem,
-    id: 'item-4',
-    name: 'Funded Group Item',
-    purchased: true, // Mark as purchased when fully funded
-    amountContributed: 100,
-    contributors: [
-        { name: 'Contributor 1', amount: 50, date: '2023-11-01' }, 
-        { name: 'Contributor 2', amount: 50, date: '2023-11-02' }
-    ],
+  ...mockGroupItem,
+  id: 'item-4',
+  name: 'Funded Group Item',
+  purchased: true, // Mark as purchased when fully funded
+  amountContributed: 100,
+  contributors: [
+    { name: 'Contributor 1', amount: 50, date: '2023-11-01' }, 
+    { name: 'Contributor 2', amount: 50, date: '2023-11-02' }
+  ],
 };
 
 
@@ -93,7 +93,7 @@ describe('Modal Component', () => {
     expect(progressBar).toHaveAttribute('aria-valuemax', '100');
   });
 
-   it('renders correctly for a purchased single item', () => {
+  it('renders correctly for a purchased single item', () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockPurchasedItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
 
     expect(screen.getByText('Purchased Item')).toBeInTheDocument();
@@ -232,7 +232,7 @@ describe('Modal Component', () => {
     });
   });
 
-   it('handles contribution submission error', async () => {
+  it('handles contribution submission error', async () => {
     const errorMessage = 'Network Error';
     // Suppress console.error for this specific test
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});

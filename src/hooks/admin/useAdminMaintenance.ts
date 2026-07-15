@@ -14,7 +14,7 @@ export function useAdminMaintenance() {
       try {
         payload = JSON.parse(text);
       } catch (err) {
-        throw new Error("File is not valid JSON.");
+        throw new Error('File is not valid JSON.');
       }
 
       const res = await fetch('/api/admin/maintenance/import', {
@@ -27,7 +27,7 @@ export function useAdminMaintenance() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to import data.");
+        throw new Error(data.error || 'Failed to import data.');
       }
       return data;
     },
@@ -36,7 +36,7 @@ export function useAdminMaintenance() {
       queryClient.invalidateQueries();
     },
     meta: {
-      successMessage: "Data imported successfully! The database state has been overwritten."
+      successMessage: 'Data imported successfully! The database state has been overwritten.'
     }
   });
 

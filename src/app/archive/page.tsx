@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 
 export const metadata: Metadata = {
-  title: "Archive",
+  title: 'Archive',
   alternates: {
     canonical: '/archive',
   },
