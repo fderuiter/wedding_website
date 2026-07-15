@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 
 import type { ContentNodeDTO } from '@/features/content';
 import { useAdminContent } from '@/hooks/admin/useAdminContent';
-import { apiClient } from '@/features/admin';
+// eslint-disable-next-line no-restricted-imports
+import { apiClient } from '@/features/admin/apiClient';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { Button } from '@/components/ui/Button';

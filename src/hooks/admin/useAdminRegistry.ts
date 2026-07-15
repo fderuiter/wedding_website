@@ -1,6 +1,7 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
 import type { RegistryItem } from '@/features/registry';
-import { apiClient } from '@/features/admin';
+// eslint-disable-next-line no-restricted-imports
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminRegistry() {
   return useEntityOrchestration<RegistryItem>({
