@@ -204,11 +204,11 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
               {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
             </motion.p>
             <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
-              <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
+              <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
                 Our Story
                 <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
               </a>
-              <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 dark:text-gray-100 shadow-lg transition hover:shadow-xl">
+              <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
                 View Photos
               </Link>
             </motion.div>
@@ -222,7 +222,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             <a href="/project-info" className="text-primary dark:text-primary hover:underline">About this site</a>
             <Link
               href="/heart"
-              className="inline-block rounded-full bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
+              className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
             >
               Play with the Heart
             </Link>

@@ -9,6 +9,11 @@ import { WebVitals } from '@/components/WebVitals';
 import Navbar from './Navbar';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
+import { MotionGlobalConfig } from 'framer-motion';
+
+if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
+  MotionGlobalConfig.skipAnimations = true;
+}
 
 import type { PublicAppConfig } from '@/lib/config';
 
