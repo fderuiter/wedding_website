@@ -28,11 +28,11 @@ export default async function ThingsToDoPage() {
   }
 
   return (
-    <main className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Things to Do in City
       </h1>
       <ThingsToDoList attractions={attractions} />
-    </main>
+    </div>
   );
 }

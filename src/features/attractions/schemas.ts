@@ -1,17 +1,18 @@
 import { z } from 'zod';
 import { MediaSchema } from '@/features/media/schemas';
+import { safeImageUrlSchema, safeUrlSchema } from '@/utils/validation';
 
 export const AttractionSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
   imageId: z.string().nullable().optional(),
-  imageUrl: z.string().optional(),
+  imageUrl: safeImageUrlSchema,
   imageAlt: z.string().optional().nullable(),
   imageDecorative: z.boolean().optional(),
   image: MediaSchema.nullable().optional(),
   category: z.string(),
-  website: z.string(),
+  website: safeUrlSchema,
   directions: z.string(),
   latitude: z.number(),
   longitude: z.number(),

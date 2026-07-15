@@ -9,7 +9,7 @@ test.describe('UI Verification', () => {
     await page.goto('/');
 
     // The main content should be visible
-    const mainContent = page.locator('main#main');
+    const mainContent = page.locator('main#main-content');
     await expect(mainContent).toBeVisible();
 
     // Run accessibility audit

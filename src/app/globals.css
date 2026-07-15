@@ -41,6 +41,11 @@ input:focus, textarea:focus, select:focus {
   color: theme('colors.text-on-secondary') !important;
 }
 
+/* Prevent default visited link colors from ruining contrast */
+a:visited {
+  color: inherit;
+}
+
 /* Smooth scroll behavior with reduced motion respect */
 html:focus-within {
   scroll-behavior: smooth;

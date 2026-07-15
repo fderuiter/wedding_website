@@ -35,7 +35,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
         <p className="text-gray-600 dark:text-gray-400 mb-4 flex-grow">{attraction.description}</p>
         <div className="mt-auto flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
           <a
-            href={attraction.website}
+            href={attraction.website || undefined}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
