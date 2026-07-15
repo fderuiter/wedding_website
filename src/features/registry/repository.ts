@@ -51,22 +51,22 @@ export class RegistryRepository implements IRegistryRepository {
   async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     let mediaId = data.imageId;
     if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
-       const media = await this.client.media.create({
-         data: {
-           url: data.imageUrl || '/images/placeholder.png',
-           altText: data.imageAlt,
-           isDecorative: data.imageDecorative || false,
-         }
-       });
-       mediaId = media.id;
+      const media = await this.client.media.create({
+        data: {
+          url: data.imageUrl || '/images/placeholder.png',
+          altText: data.imageAlt,
+          isDecorative: data.imageDecorative || false,
+        }
+      });
+      mediaId = media.id;
     } else if (!mediaId) {
-       const media = await this.client.media.create({
-         data: {
-           url: '/images/placeholder.png',
-           isDecorative: true
-         }
-       });
-       mediaId = media.id;
+      const media = await this.client.media.create({
+        data: {
+          url: '/images/placeholder.png',
+          isDecorative: true
+        }
+      });
+      mediaId = media.id;
     }
 
     const item = await this.client.registryItem.create({
@@ -101,9 +101,9 @@ export class RegistryRepository implements IRegistryRepository {
         await this.client.media.update({
           where: { id: existing.imageId },
           data: {
-             ...(imageUrl !== undefined && { url: imageUrl }),
-             ...(imageAlt !== undefined && { altText: imageAlt }),
-             ...(imageDecorative !== undefined && { isDecorative: imageDecorative }),
+            ...(imageUrl !== undefined && { url: imageUrl }),
+            ...(imageAlt !== undefined && { altText: imageAlt }),
+            ...(imageDecorative !== undefined && { isDecorative: imageDecorative }),
           }
         });
         updateMediaId = existing.imageId;
@@ -113,8 +113,8 @@ export class RegistryRepository implements IRegistryRepository {
     const item = await this.client.registryItem.update({
       where: { id },
       data: {
-         ...updateData,
-         ...(updateMediaId && { imageId: updateMediaId }),
+        ...updateData,
+        ...(updateMediaId && { imageId: updateMediaId }),
       },
       include: { image: true, 
         contributors: true

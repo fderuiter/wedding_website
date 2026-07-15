@@ -28,7 +28,7 @@ const RegistryItemProgressBar: React.FC<RegistryItemProgressBarProps> = ({ contr
         className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full"
         initial={{ width: 0 }}
         animate={{ width: `${percent}%` }}
-        transition={{ duration: 0.8, ease: "easeInOut" }}
+        transition={{ duration: 0.8, ease: 'easeInOut' }}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { createEvent, EventAttributes } from 'ics'
+import { createEvent, EventAttributes } from 'ics';
 
 /**
  * @interface CalendarEvent
@@ -30,9 +30,9 @@ export interface CalendarEvent {
  * @returns {[number, number, number, number, number]} A tuple representing [year, month, day, hours, minutes].
  */
 function formatDateTuple(date: string, time: string): [number, number, number, number, number] {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hours, minutes] = time.split(':').map(Number)
-  return [year, month, day, hours, minutes]
+  const [year, month, day] = date.split('-').map(Number);
+  const [hours, minutes] = time.split(':').map(Number);
+  return [year, month, day, hours, minutes];
 }
 
 /**
@@ -42,7 +42,7 @@ function formatDateTuple(date: string, time: string): [number, number, number, n
  * @returns {string} The formatted date-time string.
  */
 function formatDateTimeForUrl(date: string, time: string): string {
-  return `${date.replace(/-/g, '')}T${time.replace(/:/g, '')}00`
+  return `${date.replace(/-/g, '')}T${time.replace(/:/g, '')}00`;
 }
 
 /**
@@ -52,11 +52,11 @@ function formatDateTimeForUrl(date: string, time: string): string {
  * @returns {string} The fully constructed URL.
  */
 function buildCalendarUrl(baseUrl: string, params: Record<string, string>): string {
-  const url = new URL(baseUrl)
+  const url = new URL(baseUrl);
   Object.entries(params).forEach(([key, value]) => {
-    url.searchParams.set(key, value)
-  })
-  return url.toString()
+    url.searchParams.set(key, value);
+  });
+  return url.toString();
 }
 
 /**
@@ -65,8 +65,8 @@ function buildCalendarUrl(baseUrl: string, params: Record<string, string>): stri
  * @returns {string} The generated Google Calendar URL.
  */
 export function createGoogleCalendarLink(event: CalendarEvent): string {
-  const start = formatDateTimeForUrl(event.startDate, event.startTime)
-  const end = formatDateTimeForUrl(event.endDate, event.endTime)
+  const start = formatDateTimeForUrl(event.startDate, event.startTime);
+  const end = formatDateTimeForUrl(event.endDate, event.endTime);
 
   return buildCalendarUrl('https://calendar.google.com/calendar/render', {
     action: 'TEMPLATE',
@@ -75,7 +75,7 @@ export function createGoogleCalendarLink(event: CalendarEvent): string {
     ctz: event.timeZone,
     details: event.description,
     location: event.location,
-  })
+  });
 }
 
 /**
@@ -84,8 +84,8 @@ export function createGoogleCalendarLink(event: CalendarEvent): string {
  * @returns {string} The generated Yahoo Calendar URL.
  */
 export function createYahooCalendarLink(event: CalendarEvent): string {
-  const start = formatDateTimeForUrl(event.startDate, event.startTime)
-  const end = formatDateTimeForUrl(event.endDate, event.endTime)
+  const start = formatDateTimeForUrl(event.startDate, event.startTime);
+  const end = formatDateTimeForUrl(event.endDate, event.endTime);
 
   return buildCalendarUrl('https://calendar.yahoo.com/', {
     v: '60',
@@ -96,7 +96,7 @@ export function createYahooCalendarLink(event: CalendarEvent): string {
     et: end,
     desc: event.description,
     in_loc: event.location,
-  })
+  });
 }
 
 /**
@@ -114,14 +114,14 @@ export function createIcsFile(event: CalendarEvent): string {
     end: formatDateTuple(event.endDate, event.endTime),
     startOutputType: 'local',
     endOutputType: 'local',
-  }
+  };
 
-  const { error, value } = createEvent(icsEvent)
+  const { error, value } = createEvent(icsEvent);
 
   if (error) {
-    console.error(error)
-    return ''
+    console.error(error);
+    return '';
   }
 
-  return value || ''
+  return value || '';
 }

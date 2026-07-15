@@ -5,7 +5,7 @@ test.describe('Metadata', () => {
     await page.goto('/');
 
     // Check title
-    await expect(page).toHaveTitle("Home");
+    await expect(page).toHaveTitle('Home');
 
     // Check meta description
     const metaDescription = page.locator('meta[name="description"]');

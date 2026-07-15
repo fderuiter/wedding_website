@@ -64,7 +64,7 @@ describe('isPrivateUrl', () => {
   });
 
   it('should return true for AWS metadata IP', async () => {
-      mockLookup.mockResolvedValue({ address: '169.254.169.254', family: 4 });
-      expect(await isPrivateUrl('http://169.254.169.254')).toBe(true);
+    mockLookup.mockResolvedValue({ address: '169.254.169.254', family: 4 });
+    expect(await isPrivateUrl('http://169.254.169.254')).toBe(true);
   });
 });

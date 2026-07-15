@@ -40,7 +40,7 @@ describe('RegistryCard', () => {
     expect(screen.getByText('Test Item').closest('div[class*="opacity-60"]')).toBeInTheDocument();
   });
 
-   it('renders group gift details when applicable', () => {
+  it('renders group gift details when applicable', () => {
     const groupGiftItem = { ...mockItem, isGroupGift: true, amountContributed: 50 };
     render(<RegistryCard item={groupGiftItem} onClick={() => {}} />);
 
@@ -53,7 +53,7 @@ describe('RegistryCard', () => {
     render(<RegistryCard item={fundedGroupGift} onClick={() => {}} />);
 
     expect(screen.getByText('Fully Funded!')).toBeInTheDocument();
-     // Check for opacity class indicating it's claimed/funded
+    // Check for opacity class indicating it's claimed/funded
     expect(screen.getByText('Test Item').closest('div[class*="opacity-60"]')).toBeInTheDocument();
   });
 

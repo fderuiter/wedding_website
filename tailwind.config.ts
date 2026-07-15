@@ -1,5 +1,5 @@
-import type { Config } from 'tailwindcss'
-import { theme as appTheme } from './src/styles/theme'
+import type { Config } from 'tailwindcss';
+import { theme as appTheme } from './src/styles/theme';
 
 const config: Config = {
   content: [
@@ -41,5 +41,5 @@ const config: Config = {
     },
   },
   plugins: [],
-}
-export default config
+};
+export default config;

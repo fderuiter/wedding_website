@@ -162,7 +162,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     setIsDestroyed(true);
     dragState.current.active = false;
     if (options.physicsBodyRef?.current) {
-        options.physicsBodyRef.current.setBodyType(RigidBodyType.Dynamic, true);
+      options.physicsBodyRef.current.setBodyType(RigidBodyType.Dynamic, true);
     }
     if (options.onDestroy) options.onDestroy();
   }, [isDestroyed, options]);

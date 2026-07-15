@@ -18,16 +18,16 @@ function validateContentNodeUpdate(data: any): string | null {
 }
 
 export class ContentNodeAdminService extends BaseService<any> {
-    static ENTITY_KEY = 'content-nodes';
+  static ENTITY_KEY = 'content-nodes';
     
-    constructor() {
-        super(new BaseRepository('contentNode'), 'ContentNode');
-    }
+  constructor() {
+    super(new BaseRepository('contentNode'), 'ContentNode');
+  }
 
-    async update(id: string, data: any, author?: string): Promise<any> {
-        const error = validateContentNodeUpdate(data);
-        if (error) throw new Error(`Validation Error: ${error}`);
-        return super.update(id, data, author);
-    }
+  async update(id: string, data: any, author?: string): Promise<any> {
+    const error = validateContentNodeUpdate(data);
+    if (error) throw new Error(`Validation Error: ${error}`);
+    return super.update(id, data, author);
+  }
 }
 export default ContentNodeAdminService;

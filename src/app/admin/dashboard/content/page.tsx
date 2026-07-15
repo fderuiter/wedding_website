@@ -1,16 +1,16 @@
-"use client";
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+'use client';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import type { ContentNodeDTO } from '@/features/content/schemas';
 import { useAdminContent } from '@/hooks/admin/useAdminContent';
 import { apiClient } from '@/features/admin/apiClient';
 
-import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
-import { Button } from "@/components/ui/Button";
-import { FormGroup, Label, Input } from "@/components/ui/forms";
-import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
-import { useToast } from "@/components/ui/ToastProvider";
+import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { Button } from '@/components/ui/Button';
+import { FormGroup, Label, Input } from '@/components/ui/forms';
+import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
+import { useToast } from '@/components/ui/ToastProvider';
 
 /**
  * Admin interface for listing, creating, editing, deleting, and previewing content nodes.

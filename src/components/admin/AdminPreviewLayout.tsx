@@ -1,8 +1,8 @@
-"use client";
-import React, { useState, useEffect, useRef } from "react";
+'use client';
+import React, { useState, useEffect, useRef } from 'react';
 
-import { useToast } from "@/components/ui/ToastProvider";
-import { formatDate } from "@/utils/intl";
+import { useToast } from '@/components/ui/ToastProvider';
+import { formatDate } from '@/utils/intl';
 
 interface AdminPreviewLayoutProps {
   children: React.ReactNode;
@@ -65,19 +65,19 @@ export default function AdminPreviewLayout({
   }, [entityId, showVersions, draftType]);
 
   const handleRestore = async (versionId: string) => {
-    if (!(await confirm("Are you sure you want to restore this version? This will instantly replace the Live content."))) return;
+    if (!(await confirm('Are you sure you want to restore this version? This will instantly replace the Live content.'))) return;
     try {
       const res = await fetch(`/api/admin/versions/${versionId}/restore`, { method: 'POST' });
       if (res.ok) {
-        addToast("Restored successfully.", "success");
+        addToast('Restored successfully.', 'success');
         setShowVersions(false);
         if (onRestore) onRestore();
       } else {
-        addToast("Failed to restore.", "error");
+        addToast('Failed to restore.', 'error');
       }
     } catch (e) {
       console.error(e);
-      addToast("Error restoring.", "error");
+      addToast('Error restoring.', 'error');
     }
   };
 
@@ -134,7 +134,7 @@ export default function AdminPreviewLayout({
           </div>
         ) : (
           <div className="h-full">
-             {children}
+            {children}
           </div>
         )}
       </div>
@@ -145,7 +145,7 @@ export default function AdminPreviewLayout({
         <div className="absolute top-4 right-4 z-20">
           <span className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${
             viewState === 'Draft' ? 'bg-secondary' : 
-            viewState === 'Historical' ? 'bg-purple-600' : 'bg-green-600'
+              viewState === 'Historical' ? 'bg-purple-600' : 'bg-green-600'
           }`}>
             {viewState} Preview
           </span>

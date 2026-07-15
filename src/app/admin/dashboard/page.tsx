@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { useToast } from "@/components/ui/ToastProvider";
-import { useAdminRegistry } from "@/hooks/admin/useAdminRegistry";
-import { Button } from "@/components/ui/Button";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
-import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
-import { formatCurrency, formatDate } from "@/utils/intl";
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
+import { Button } from '@/components/ui/Button';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
+import { formatCurrency, formatDate } from '@/utils/intl';
 
 const ContributionsList = ({ contributors }: { contributors?: { name: string; amount: number; date: string }[] }) => {
   if (!contributors || contributors.length === 0) {
@@ -81,7 +81,7 @@ export default function AdminDashboardPage() {
                   <TableRow key={item.id}>
                     <TableCell className="font-semibold">{item.name}</TableCell>
                     <TableCell>{formatCurrency(item.price)}</TableCell>
-                    <TableCell>{item.purchased ? "Yes" : "No"}</TableCell>
+                    <TableCell>{item.purchased ? 'Yes' : 'No'}</TableCell>
                     <TableCell>
                       <ContributionsList contributors={item.contributors} />
                     </TableCell>
@@ -89,7 +89,7 @@ export default function AdminDashboardPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        aria-label={"Edit registry item: " + item.name}
+                        aria-label={'Edit registry item: ' + item.name}
                         onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                       >
                         Edit
@@ -97,7 +97,7 @@ export default function AdminDashboardPage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        aria-label={"Delete registry item: " + item.name}
+                        aria-label={'Delete registry item: ' + item.name}
                         onClick={async (e) => {
                           const row = e.currentTarget.closest('tr');
                           if (!(await confirm('Are you sure you want to delete this item?'))) return;
@@ -146,7 +146,7 @@ export default function AdminDashboardPage() {
                   className="flex-1"
                   variant="secondary"
                   size="sm"
-                  aria-label={"Edit registry item: " + item.name}
+                  aria-label={'Edit registry item: ' + item.name}
                   onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                 >
                   Edit
@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
                   className="flex-1"
                   variant="danger"
                   size="sm"
-                  aria-label={"Delete registry item: " + item.name}
+                  aria-label={'Delete registry item: ' + item.name}
                   onClick={async (e) => {
                     const card = e.currentTarget.closest('.rounded-xl');
                     if (!(await confirm('Are you sure you want to delete this item?'))) return;

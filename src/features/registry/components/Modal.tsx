@@ -29,8 +29,8 @@ export interface ModalProps {
  * @returns {JSX.Element} The rendered Modal component.
  */
 const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
-  const [contributorName, setContributorName] = useState("");
-  const [amount, setAmount] = useState<number | string>("");
+  const [contributorName, setContributorName] = useState('');
+  const [amount, setAmount] = useState<number | string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,9 +64,9 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
       await onContribute(item.id, validData.name, finalAmount);
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setError(err.message || "Failed to process contribution. Please try again.");
+        setError(err.message || 'Failed to process contribution. Please try again.');
       } else {
-        setError("An unknown error occurred during contribution.");
+        setError('An unknown error occurred during contribution.');
       }
     } finally {
       setIsSubmitting(false);
@@ -84,132 +84,132 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
       <Button
         variant="ghost"
         className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center w-8 h-8"
-          onClick={onClose}
-          aria-label="Close modal"
-        >
-          <Icon name="X" className="w-6 h-6" />
-        </Button>
-        <div className="relative w-full h-64 mb-4">
-          <MediaImage
-            media={item.image}
-            fallbackUrl="/images/placeholder.png"
-            className="object-cover rounded bg-gray-100 w-full h-full absolute inset-0"
-            onError={(e: any) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null;
-              target.src = '/images/placeholder.png';
-            }}
-          />
-        </div>
-        <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
-        <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
-        <p className="text-lg font-semibold mb-1 text-secondary">
-          Price: {formatCurrency(item.price)}
-        </p>
-        {item.isGroupGift && (
-          <div className="mb-3">
-            <p className="text-sm text-secondary">
-              Group Gift - {formatCurrency(item.amountContributed)} contributed so far.
+        onClick={onClose}
+        aria-label="Close modal"
+      >
+        <Icon name="X" className="w-6 h-6" />
+      </Button>
+      <div className="relative w-full h-64 mb-4">
+        <MediaImage
+          media={item.image}
+          fallbackUrl="/images/placeholder.png"
+          className="object-cover rounded bg-gray-100 w-full h-full absolute inset-0"
+          onError={(e: any) => {
+            const target = e.target as HTMLImageElement;
+            target.onerror = null;
+            target.src = '/images/placeholder.png';
+          }}
+        />
+      </div>
+      <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
+      <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
+      <p className="text-lg font-semibold mb-1 text-secondary">
+        Price: {formatCurrency(item.price)}
+      </p>
+      {item.isGroupGift && (
+        <div className="mb-3">
+          <p className="text-sm text-secondary">
+            Group Gift - {formatCurrency(item.amountContributed)} contributed so far.
+          </p>
+          {!isFullyFunded && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {formatCurrency(remainingAmount)} still needed.
             </p>
-            {!isFullyFunded && (
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {formatCurrency(remainingAmount)} still needed.
-              </p>
-            )}
-            <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
-          </div>
-        )}
-        {isVendorUrlSafe && (
-          <a
-            href={item.vendorUrl as string}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
-          >
-            View on Vendor Site
-          </a>
-        )}
-        {!item.purchased ? (
-          <form noValidate 
-            className="mt-5 pt-4 border-t border-primary"
-            onSubmit={(e) => { e.preventDefault(); handleContributeClick(); }}
-          >
-            <h3 className="font-semibold text-lg mb-3 text-primary">
-              {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
-            </h3>
+          )}
+          <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
+        </div>
+      )}
+      {isVendorUrlSafe && (
+        <a
+          href={item.vendorUrl as string}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
+        >
+          View on Vendor Site
+        </a>
+      )}
+      {!item.purchased ? (
+        <form noValidate 
+          className="mt-5 pt-4 border-t border-primary"
+          onSubmit={(e) => { e.preventDefault(); handleContributeClick(); }}
+        >
+          <h3 className="font-semibold text-lg mb-3 text-primary">
+            {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
+          </h3>
+          <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+            <Label>
+              Your Name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              type="text"
+              placeholder="Jane Doe"
+              value={contributorName}
+              onChange={(e) => setContributorName(e.target.value)}
+              disabled={isSubmitting}
+            />
+          </FormGroup>
+          {item.isGroupGift && (
             <FormGroup state={error ? 'error' : 'default'} className="mb-3">
               <Label>
-                Your Name <span className="text-red-500">*</span>
+                Contribution Amount <span className="text-red-500">*</span>
               </Label>
               <Input
-                type="text"
-                placeholder="Jane Doe"
-                value={contributorName}
-                onChange={(e) => setContributorName(e.target.value)}
+                type="number"
+                placeholder={`Up to ${formatCurrency(remainingAmount)}`}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                min="0.01"
+                step="0.01"
+                max={remainingAmount}
                 disabled={isSubmitting}
               />
             </FormGroup>
-            {item.isGroupGift && (
-              <FormGroup state={error ? 'error' : 'default'} className="mb-3">
-                <Label>
-                  Contribution Amount <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  type="number"
-                  placeholder={`Up to ${formatCurrency(remainingAmount)}`}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  min="0.01"
-                  step="0.01"
-                  max={remainingAmount}
-                  disabled={isSubmitting}
-                />
-              </FormGroup>
-            )}
-            {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full flex items-center justify-center"
-              disabled={isSubmitting}
-              aria-busy={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Icon name="Loader2" className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
-                  Processing...
-                </>
-              ) : (
-                item.isGroupGift ? 'Submit Contribution' : 'Claim Gift'
-              )}
-            </Button>
-          </form>
-        ) : (
-          <div className="mt-5 pt-4 border-t border-primary text-center">
-            <p className="text-xl font-semibold text-green-600">
-              {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
-            </p>
-            {item.purchaserName && !item.isGroupGift && (
-              <p className="text-sm text-gray-600 dark:text-gray-400">Claimed by: {item.purchaserName}</p>
-            )}
-            {item.isGroupGift && item.contributors.length > 0 && (
+          )}
+          {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
+          <Button
+            type="submit"
+            variant="primary"
+            className="w-full flex items-center justify-center"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+          >
+            {isSubmitting ? (
               <>
-                <div className="mt-2 mb-2">
-                  <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Contributors:</h4>
-                  <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400">
-                    {item.contributors.map((c, idx) => (
-                      <li key={idx}>
-                        <span className="font-medium">{c.name}</span> {c.amount ? `(${formatCurrency(c.amount)})` : ''}
-                        {c.date ? <span className="ml-1 text-gray-400">{formatDate(c.date)}</span> : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <Icon name="Loader2" className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
+                Processing...
               </>
+            ) : (
+              item.isGroupGift ? 'Submit Contribution' : 'Claim Gift'
             )}
-            <p className="mt-2 text-secondary">Thank you for your generosity!</p>
-          </div>
-        )}
+          </Button>
+        </form>
+      ) : (
+        <div className="mt-5 pt-4 border-t border-primary text-center">
+          <p className="text-xl font-semibold text-green-600">
+            {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
+          </p>
+          {item.purchaserName && !item.isGroupGift && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">Claimed by: {item.purchaserName}</p>
+          )}
+          {item.isGroupGift && item.contributors.length > 0 && (
+            <>
+              <div className="mt-2 mb-2">
+                <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Contributors:</h4>
+                <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400">
+                  {item.contributors.map((c, idx) => (
+                    <li key={idx}>
+                      <span className="font-medium">{c.name}</span> {c.amount ? `(${formatCurrency(c.amount)})` : ''}
+                      {c.date ? <span className="ml-1 text-gray-400">{formatDate(c.date)}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+          <p className="mt-2 text-secondary">Thank you for your generosity!</p>
+        </div>
+      )}
     </div>
   );
 };

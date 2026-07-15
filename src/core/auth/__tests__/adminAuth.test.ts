@@ -48,7 +48,7 @@ describe('admin authentication helpers', () => {
     });
 
     it('returns true for request with admin header but without cookie (edge case in logic)', async () => {
-       const req = {
+      const req = {
         cookies: {
           get: () => undefined,
         },

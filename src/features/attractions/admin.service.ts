@@ -30,34 +30,34 @@ async function mapAttractionData(data: any): Promise<any> {
 }
 
 export class AttractionAdminService extends BaseService<any> {
-    static ENTITY_KEY = 'attractions';
+  static ENTITY_KEY = 'attractions';
     
-    constructor() {
-        super(new BaseRepository('attraction'), 'Attraction');
-    }
+  constructor() {
+    super(new BaseRepository('attraction'), 'Attraction');
+  }
 
-    async findMany(args?: any): Promise<any[]> {
-        const customArgs = {
-            ...args,
-            include: { image: true, ...(args?.include || {}) }
-        };
-        return super.findMany(customArgs);
-    }
+  async findMany(args?: any): Promise<any[]> {
+    const customArgs = {
+      ...args,
+      include: { image: true, ...(args?.include || {}) }
+    };
+    return super.findMany(customArgs);
+  }
 
-    async create(data: any, author?: string): Promise<any> {
-        const error = validateCoordinates(data);
-        if (error) throw new Error(`Validation Error: ${error}`);
+  async create(data: any, author?: string): Promise<any> {
+    const error = validateCoordinates(data);
+    if (error) throw new Error(`Validation Error: ${error}`);
         
-        const mappedData = await mapAttractionData(data);
-        return super.create(mappedData, author);
-    }
+    const mappedData = await mapAttractionData(data);
+    return super.create(mappedData, author);
+  }
 
-    async update(id: string, data: any, author?: string): Promise<any> {
-        const error = validateCoordinates(data);
-        if (error) throw new Error(`Validation Error: ${error}`);
+  async update(id: string, data: any, author?: string): Promise<any> {
+    const error = validateCoordinates(data);
+    if (error) throw new Error(`Validation Error: ${error}`);
         
-        const mappedData = await mapAttractionData(data);
-        return super.update(id, mappedData, author);
-    }
+    const mappedData = await mapAttractionData(data);
+    return super.update(id, mappedData, author);
+  }
 }
 export default AttractionAdminService;

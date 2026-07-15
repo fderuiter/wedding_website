@@ -117,8 +117,8 @@ export default function LoginPage() {
                 autoFocus
                 autoComplete="current-password"
                 placeholder="••••••••"
-                aria-invalid={error ? "true" : undefined}
-                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? 'login-error' : undefined}
               />
               <button
                 type="button"

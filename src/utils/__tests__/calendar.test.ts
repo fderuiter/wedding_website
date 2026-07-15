@@ -59,9 +59,9 @@ describe('calendar utils', () => {
     });
 
     it('should return an empty string if there is an error', () => {
-        const invalidEvent = { ...event, startDate: 'invalid-date' };
-        const icsString = createIcsFile(invalidEvent);
-        expect(icsString).toBe('');
-      });
+      const invalidEvent = { ...event, startDate: 'invalid-date' };
+      const icsString = createIcsFile(invalidEvent);
+      expect(icsString).toBe('');
+    });
   });
 });

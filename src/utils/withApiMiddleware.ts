@@ -87,20 +87,20 @@ export function withApiMiddleware(handler: RouteHandler) {
       const setCookieHeaders = allHeaders.filter(([k]) => k.toLowerCase() === 'set-cookie').map(([,v]) => v);
       
       setCookieHeaders.forEach(c => {
-         // Some test environments don't sync headers to .cookies automatically
-         // We do a basic parse of the Set-Cookie string to ensure .cookies is populated
-         const parts = c.split(';');
-         const [nameValue] = parts;
-         if (nameValue) {
-           const eqIndex = nameValue.indexOf('=');
-           if (eqIndex !== -1) {
-             const name = nameValue.substring(0, eqIndex).trim();
-             const value = nameValue.substring(eqIndex + 1);
-             finalResponse.cookies.set(name, value);
-           }
-         }
-         // Also ensure it is in the headers exactly as requested
-         finalResponse.headers.append('set-cookie', c);
+        // Some test environments don't sync headers to .cookies automatically
+        // We do a basic parse of the Set-Cookie string to ensure .cookies is populated
+        const parts = c.split(';');
+        const [nameValue] = parts;
+        if (nameValue) {
+          const eqIndex = nameValue.indexOf('=');
+          if (eqIndex !== -1) {
+            const name = nameValue.substring(0, eqIndex).trim();
+            const value = nameValue.substring(eqIndex + 1);
+            finalResponse.cookies.set(name, value);
+          }
+        }
+        // Also ensure it is in the headers exactly as requested
+        finalResponse.headers.append('set-cookie', c);
       });
       
       // Also copy set-cookie headers manually if they exist and cookies.getAll wasn't sufficient

@@ -1,13 +1,13 @@
-"use client";
-import { useState } from "react";
+'use client';
+import { useState } from 'react';
 
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
-import { Icon } from "@/components/ui/Icon";
-import { useToast } from "@/components/ui/ToastProvider";
-import { Button } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
-import { useAdminFeatures } from "@/hooks/admin/useAdminFeatures";
+import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
+import { Icon } from '@/components/ui/Icon';
+import { useToast } from '@/components/ui/ToastProvider';
+import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
+import { useAdminFeatures } from '@/hooks/admin/useAdminFeatures';
 
 export default function SiteManagerPage() {
   
@@ -15,8 +15,8 @@ export default function SiteManagerPage() {
   const { features, loading, error, saveFeatures } = useAdminFeatures();
   
   const [showCustomModal, setShowCustomModal] = useState(false);
-  const [customTitle, setCustomTitle] = useState("");
-  const [customContent, setCustomContent] = useState("");
+  const [customTitle, setCustomTitle] = useState('');
+  const [customContent, setCustomContent] = useState('');
 
   const toggleVisibility = (id: string) => {
     const updated = features.map(f => f.id === id ? { ...f, visible: !f.visible } : f);
@@ -25,7 +25,7 @@ export default function SiteManagerPage() {
 
   const addCustomSection = () => {
     if (!customTitle.trim() || !customContent.trim()) {
-      addToast("Title and content are required.", 'error');
+      addToast('Title and content are required.', 'error');
       return;
     }
     const newId = 'custom-' + Date.now();
@@ -39,8 +39,8 @@ export default function SiteManagerPage() {
     const updated = [...features, newFeature];
     saveFeatures(updated).then(() => addToast('Section added', 'success'));
     setShowCustomModal(false);
-    setCustomTitle("");
-    setCustomContent("");
+    setCustomTitle('');
+    setCustomContent('');
   };
 
   const onDragEnd = (result: DropResult) => {

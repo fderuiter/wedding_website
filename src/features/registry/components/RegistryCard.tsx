@@ -120,7 +120,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const commonProps = {
     className: `${cardClasses} h-full`,
     style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' },
-    'data-testid': "registry-card",
+    'data-testid': 'registry-card',
     'aria-label': `${item.name}, ${formatCurrency(item.price)}${isClaimed ? ', Claimed' : ''}`,
     tabIndex: 0,
     role: isClickable ? 'button' : undefined,
