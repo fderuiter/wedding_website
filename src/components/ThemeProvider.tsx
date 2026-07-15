@@ -88,7 +88,7 @@ export function getAccessibleVariant(colorHex: string, bgHex: string = '#111827'
   const bgLuminance = getLuminance(bgRgb.r, bgRgb.g, bgRgb.b);
   const isDarkBg = bgLuminance < 0.5;
 
-  let step = isDarkBg ? 0.02 : -0.02;
+  const step = isDarkBg ? 0.02 : -0.02;
   let newL = hsl.l;
 
   while (currentRatio < targetRatio && newL >= 0 && newL <= 1) {
