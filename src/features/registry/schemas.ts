@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MediaSchema } from '@/features/media/schemas';
+import { safeImageUrlSchema, createLaxUrlSchema } from '@/utils/validation';
 
 export const ContributorSchema = z.object({
   name: z.string(),
@@ -20,11 +21,11 @@ export const RegistryItemBaseSchema = z.object({
   category: z.string({ message: 'Category is required and must be under 255 characters.' }).trim().min(1, 'Category is required and must be under 255 characters.').max(255, 'Category is required and must be under 255 characters.'),
   description: z.string().max(2000, 'Description must be under 2000 characters.').optional().or(z.literal('')),
   imageId: z.string().optional(),
-  imageUrl: z.string().max(2000, 'Image URL must be under 2000 characters.').optional().or(z.literal('')),
+  imageUrl: safeImageUrlSchema,
   imageAlt: z.string().optional().nullable(),
   imageDecorative: z.boolean().optional(),
   image: MediaSchema.optional(),
-  vendorUrl: z.string().max(2000, 'Vendor URL must be under 2000 characters.').optional().nullable().or(z.literal('')),
+  vendorUrl: createLaxUrlSchema('Vendor URL'),
   isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
 }, { message: 'Invalid request body.' });
 
