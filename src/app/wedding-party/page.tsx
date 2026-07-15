@@ -28,11 +28,11 @@ export default async function WeddingPartyPage() {
   }
 
   return (
-    <main className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Wedding Party
       </h1>
       <WeddingPartyList members={members} />
-    </main>
+    </div>
   );
 }

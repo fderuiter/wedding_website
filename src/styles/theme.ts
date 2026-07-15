@@ -43,7 +43,7 @@ export type ThemeConfig = z.infer<typeof themeSchema>;
 const rawTheme: ThemeConfig = {
   colors: {
     primary: '#B91C1C', // Aligning with rose-700
-    secondary: '#D97706',
+    secondary: '#B45309', // Aligning with amber-700 for better contrast
     primaryLight: '#FCA5A5',
     secondaryLight: '#FDE68A',
     background: '#FFFFFF',

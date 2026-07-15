@@ -96,7 +96,7 @@ describe('Home Page', () => {
     expect(screen.getByRole('link', { name: 'View Photos' })).toBeInTheDocument();
 
     // Wrapper should not be hidden after intro
-    const wrapper = screen.getByRole('main').parentElement;
+    const wrapper = screen.getByLabelText('Home Page Content').parentElement;
     expect(wrapper).not.toHaveClass('hidden');
   });
 });

@@ -22,7 +22,7 @@ const archivedPages: Array<{ href: string, title: string, description: string, i
  */
 export default function ArchivePage() {
   return (
-    <main className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Website Archive
       </h1>
@@ -42,6 +42,6 @@ export default function ArchivePage() {
           </Link>
         ))}
       </div>
-    </main>
+    </div>
   );
 }
