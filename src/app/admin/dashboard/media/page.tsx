@@ -1,10 +1,10 @@
-"use client";
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/Button";
-import { FormGroup, Label, Input } from "@/components/ui/forms";
-import { apiClient } from "@/lib/apiClient";
-import { MediaDTO } from "@/features/media/schemas";
-import { MediaImage } from "@/components/MediaImage";
+'use client';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/Button';
+import { FormGroup, Label, Input } from '@/components/ui/forms';
+import { apiClient } from '@/lib/apiClient';
+import { MediaDTO } from '@/features/media/schemas';
+import { MediaImage } from '@/components/MediaImage';
 
 export default function MediaDashboardPage() {
   const [media, setMedia] = useState<MediaDTO[]>([]);

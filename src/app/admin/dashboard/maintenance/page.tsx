@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { Button } from "@/components/ui/Button";
-import { useAdminMaintenance } from "@/hooks/admin/useAdminMaintenance";
-import { useToast } from "@/components/ui/ToastProvider";
+import { Button } from '@/components/ui/Button';
+import { useAdminMaintenance } from '@/hooks/admin/useAdminMaintenance';
+import { useToast } from '@/components/ui/ToastProvider';
 
 export default function MaintenanceHubPage() {
   const router = useRouter();
@@ -29,7 +29,7 @@ export default function MaintenanceHubPage() {
     if (!file) {
       return;
     }
-    if (!(await confirm("WARNING: Importing data will completely overwrite the existing database state. Are you sure you want to proceed?"))) {
+    if (!(await confirm('WARNING: Importing data will completely overwrite the existing database state. Are you sure you want to proceed?'))) {
       return;
     }
 
@@ -88,7 +88,7 @@ export default function MaintenanceHubPage() {
                 size="lg"
                 disabled={!file || importing}
               >
-                {importing ? "Importing..." : "Import Data"}
+                {importing ? 'Importing...' : 'Import Data'}
               </Button>
             </form>
           </section>

@@ -4,7 +4,7 @@ import { contentService } from '@/features/content/service';
 import type { AttractionDTO } from '@/features/attractions/schemas';
 
 export const metadata: Metadata = {
-  title: "Things to Do",
+  title: 'Things to Do',
   alternates: {
     canonical: '/things-to-do',
   },
@@ -24,7 +24,7 @@ export default async function ThingsToDoPage() {
   try {
     attractions = await contentService.getPublicAttractions();
   } catch (error) {
-    console.warn("Database unreachable, using empty attractions array.");
+    console.warn('Database unreachable, using empty attractions array.');
   }
 
   return (

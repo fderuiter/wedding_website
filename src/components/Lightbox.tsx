@@ -1,10 +1,10 @@
-'use client'
+'use client';
 
-import React, { useEffect } from 'react'
-import Image from 'next/image'
-import { GalleryImage } from './Gallery'
-import { Icon } from '@/components/ui/Icon'
-import { Overlay } from '@/components/ui/Overlay'
+import React, { useEffect } from 'react';
+import Image from 'next/image';
+import { GalleryImage } from './Gallery';
+import { Icon } from '@/components/ui/Icon';
+import { Overlay } from '@/components/ui/Overlay';
 
 /**
  * @interface LightboxProps
@@ -43,21 +43,21 @@ const Lightbox: React.FC<LightboxProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') {
-        onNext()
+        onNext();
       } else if (e.key === 'ArrowLeft') {
-        onPrev()
+        onPrev();
       }
-    }
+    };
 
-    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [onNext, onPrev, isOpen])
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onNext, onPrev, isOpen]);
 
   if (images.length === 0) return null;
 
-  const image = images[currentIndex] || images[0]
+  const image = images[currentIndex] || images[0];
 
   return (
     <Overlay isOpen={isOpen} onClose={onClose} animationType="scale" layoutClassName="fixed inset-0 z-50 flex items-center justify-center">
@@ -92,7 +92,7 @@ const Lightbox: React.FC<LightboxProps> = ({
         </button>
       </div>
     </Overlay>
-  )
-}
+  );
+};
 
-export default Lightbox
+export default Lightbox;

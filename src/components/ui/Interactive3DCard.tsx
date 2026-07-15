@@ -72,7 +72,7 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
     y.set(-0.15);
     
     if (props.onFocus) {
-        (props.onFocus as any)(e);
+      (props.onFocus as any)(e);
     }
   };
 
@@ -81,11 +81,11 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
     y.set(0);
     
     if (props.onBlur) {
-        (props.onBlur as any)(e);
+      (props.onBlur as any)(e);
     }
   };
 
-useEffect(() => {
+  useEffect(() => {
     if (process.env.NODE_ENV !== 'production' && ref.current && isInteractive) {
       const interactiveChildren = ref.current.querySelectorAll('button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])');
       if (interactiveChildren.length > 0) {

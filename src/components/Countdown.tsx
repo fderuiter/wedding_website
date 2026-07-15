@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { formatDate } from '@/utils/intl';
 
 /**
@@ -21,24 +21,24 @@ type TimeLeft = {
  * @returns {JSX.Element} The rendered Countdown component.
  */
 const Countdown = ({ targetDate }: { targetDate: string }) => {
-  const weddingDate = useMemo(() => new Date(targetDate), [targetDate])
+  const weddingDate = useMemo(() => new Date(targetDate), [targetDate]);
 
   const calculateTimeLeft = useCallback((): TimeLeft => {
     const now = new Date();
     const difference = weddingDate.getTime() - now.getTime();
 
-    let timeLeft: TimeLeft = {}
+    let timeLeft: TimeLeft = {};
 
     if (difference > 0) {
       timeLeft = {
         days: Math.ceil(difference / (1000 * 60 * 60 * 24)),
-      }
+      };
     }
 
-    return timeLeft
+    return timeLeft;
   }, [weddingDate]);
 
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft())
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft());
 
   useEffect(() => {
     const calculateAndSetTimeout = () => {
@@ -60,20 +60,20 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     return () => clearTimeout(timer);
   }, [calculateTimeLeft]);
 
-  const timerComponents: React.ReactNode[] = []
+  const timerComponents: React.ReactNode[] = [];
 
   Object.keys(timeLeft).forEach((interval) => {
-    const value = timeLeft[interval as keyof TimeLeft]
+    const value = timeLeft[interval as keyof TimeLeft];
     if (!value) {
-      return
+      return;
     }
 
     timerComponents.push(
       <span key={interval}>
         {value} {value === 1 ? interval.slice(0, -1) : interval}{' '}
       </span>
-    )
-  })
+    );
+  });
 
   const daysRemaining = timeLeft.days || 0;
   const screenReaderText = `${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} to go!`;
@@ -93,7 +93,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
           The wedding day is here!
         </span>
       )}
-       <span className="sr-only" aria-live="polite">
+      <span className="sr-only" aria-live="polite">
         {screenReaderText}
       </span>
       <noscript>
@@ -102,7 +102,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
         </div>
       </noscript>
     </div>
-  )
-}
+  );
+};
 
 export default Countdown;

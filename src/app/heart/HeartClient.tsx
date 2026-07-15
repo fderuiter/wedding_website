@@ -1,22 +1,22 @@
-'use client'
+'use client';
 
-import { Canvas, useThree } from '@react-three/fiber'
-import { Environment, Html, Text } from '@react-three/drei'
-import { EffectComposer, Bloom } from '@react-three/postprocessing'
-import * as THREE from 'three'
-import { Suspense, useRef, useState, useEffect } from 'react'
-import Link from 'next/link'
-import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier'
-import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat'
+import { Canvas, useThree } from '@react-three/fiber';
+import { Environment, Html, Text } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import * as THREE from 'three';
+import { Suspense, useRef, useState, useEffect } from 'react';
+import Link from 'next/link';
+import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
+import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat';
 
-import { useTheme } from '@/components/ThemeProvider'
-import { useOverlay } from '@/hooks/useOverlay'
-import { useUnified3DInput } from '../../hooks/useUnified3DInput'
-import { Sparkles } from './components/Sparkles'
-import { Heart3D } from './components/Heart3D'
-import { ScreenBounds } from './components/ScreenBounds'
-import { useHeartPhysics } from './hooks/useHeartPhysics'
-import { PHYSICS_CONSTANTS } from './constants'
+import { useTheme } from '@/components/ThemeProvider';
+import { useOverlay } from '@/hooks/useOverlay';
+import { useUnified3DInput } from '../../hooks/useUnified3DInput';
+import { Sparkles } from './components/Sparkles';
+import { Heart3D } from './components/Heart3D';
+import { ScreenBounds } from './components/ScreenBounds';
+import { useHeartPhysics } from './hooks/useHeartPhysics';
+import { PHYSICS_CONSTANTS } from './constants';
 
 /**
  * @function PhysicsHeart
@@ -43,13 +43,13 @@ function PhysicsHeart({
   brideName: string
   groomName: string
 }) {
-  const heartRef = useRef<RapierRigidBody>(null!)
-  const brokenHeartLeftRef = useRef<RapierRigidBody>(null!)
-  const brokenHeartRightRef = useRef<RapierRigidBody>(null!)
-  const groupRef = useRef<THREE.Group>(null!)
-  const [pulseSpeed, setPulseSpeed] = useState(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE)
-  const [showEasterEgg, setShowEasterEgg] = useState(false)
-  const { size, viewport } = useThree()
+  const heartRef = useRef<RapierRigidBody>(null!);
+  const brokenHeartLeftRef = useRef<RapierRigidBody>(null!);
+  const brokenHeartRightRef = useRef<RapierRigidBody>(null!);
+  const groupRef = useRef<THREE.Group>(null!);
+  const [pulseSpeed, setPulseSpeed] = useState(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE);
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const { size, viewport } = useThree();
 
   const { handlers: mainHandlers, getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements, lifecycle: { isDestroyed: isBroken, destroy: breakHeart }, reduceMotion } = useUnified3DInput({
     r3f: { size, viewport },
@@ -91,8 +91,8 @@ function PhysicsHeart({
       }
     },
     onDragStart: () => {
-      if (!interacted) onInteract()
-      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING)
+      if (!interacted) onInteract();
+      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING);
     },
     onDragMove: (norm) => {
       if (heartRef.current) {
@@ -100,20 +100,20 @@ function PhysicsHeart({
           x: norm.x * viewport.width,
           y: -norm.y * viewport.height,
           z: heartRef.current.translation().z,
-        })
+        });
       }
     },
     onDragEnd: ({ vx, vy }) => {
-      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE)
+      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE);
       if (heartRef.current && !reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
         heartRef.current.setLinvel({
           x: vx * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
           y: -vy * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
           z: 0
-        }, true)
+        }, true);
       }
     }
-  })
+  });
 
   const {   getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = useUnified3DInput({
     accessibility: {
@@ -156,7 +156,7 @@ function PhysicsHeart({
     pulseSpeed,
     breakHeart,
     setShowEasterEgg
-  })
+  });
 
   return (
     <>
@@ -168,7 +168,7 @@ function PhysicsHeart({
         {!isBroken && (
           <button
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-            aria-label={`Interactive 3D Heart. Status: Whole.`}
+            aria-label={'Interactive 3D Heart. Status: Whole.'}
             {...getMainInteractiveProps()}
           />
         )}
@@ -203,7 +203,7 @@ function PhysicsHeart({
             {LeftAccessibleElements}
             <button
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={`Broken heart left segment.`}
+              aria-label={'Broken heart left segment.'}
               {...getLeftInteractiveProps()}
             />
           </Html>
@@ -219,7 +219,7 @@ function PhysicsHeart({
             {RightAccessibleElements}
             <button
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={`Broken heart right segment.`}
+              aria-label={'Broken heart right segment.'}
               {...getRightInteractiveProps()}
             />
           </Html>
@@ -233,7 +233,7 @@ function PhysicsHeart({
         </Text>
       )}
     </>
-  )
+  );
 }
 
 /**
@@ -248,28 +248,28 @@ function PhysicsHeart({
  * @returns {JSX.Element} The rendered HeartPage component.
  */
 export default function HeartClient({ brideName, groomName }: { brideName: string, groomName: string }) {
-  const { themePrimary, themeSecondary, themeAccent } = useTheme()
-  const [interacted, setInteracted] = useState(false)
-  const [scale, setScale] = useState(0.6)
-  const [resetKey, setResetKey] = useState(0)
+  const { themePrimary, themeSecondary, themeAccent } = useTheme();
+  const [interacted, setInteracted] = useState(false);
+  const [scale, setScale] = useState(0.6);
+  const [resetKey, setResetKey] = useState(0);
 
-  const { overlayRef } = useOverlay(true, () => {})
+  const { overlayRef } = useOverlay(true, () => {});
 
   const handleReset = () => {
-    setInteracted(false)
-    setResetKey((prevKey) => prevKey + 1)
-  }
+    setInteracted(false);
+    setResetKey((prevKey) => prevKey + 1);
+  };
 
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 768
-      setScale(mobile ? 0.4 : 0.6)
-    }
+      const mobile = window.innerWidth < 768;
+      setScale(mobile ? 0.4 : 0.6);
+    };
 
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
@@ -310,5 +310,5 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
         </Suspense>
       </Canvas>
     </div>
-  )
+  );
 }

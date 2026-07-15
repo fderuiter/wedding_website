@@ -1,7 +1,7 @@
 'use client';
 
-import { Icon } from "../ui/Icon";
-import { Overlay } from "../ui/Overlay";
+import { Icon } from '../ui/Icon';
+import { Overlay } from '../ui/Overlay';
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -77,62 +77,62 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         ref={headerRef}
         className="fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-gray-200 dark:border-gray-700"
       >
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex-shrink-0">
-            <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
-              A & F
-            </Link>
-          </div>
-          <div className="hidden md:block">
-            <nav aria-label="Global Navigation" className="ml-10 flex items-baseline space-x-4">
-              {allLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  aria-current={pathname === link.href ? "page" : undefined}
-                  className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                    pathname === link.href
-                      ? 'text-white bg-primary'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div className="hidden md:block">
-            {isAdmin && (
-              <div className="ml-4 flex items-center md:ml-6">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
-                <button
-                  onClick={handleLogout}
-                  className="ml-4 bg-primary hover:bg-primary text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                >
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="-mr-2 flex md:hidden">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              type="button"
-              aria-expanded={isMenuOpen}
-              aria-controls="mobile-menu"
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 focus-visible:ring-white"
-            >
-              <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
-              {isMenuOpen ? (
-                <Icon name="X" className="h-6 w-6" aria-hidden="true" />
-              ) : (
-                <Icon name="Menu" className="h-6 w-6" aria-hidden="true" />
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex-shrink-0">
+              <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
+                A & F
+              </Link>
+            </div>
+            <div className="hidden md:block">
+              <nav aria-label="Global Navigation" className="ml-10 flex items-baseline space-x-4">
+                {allLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={pathname === link.href ? 'page' : undefined}
+                    className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                      pathname === link.href
+                        ? 'text-white bg-primary'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+            <div className="hidden md:block">
+              {isAdmin && (
+                <div className="ml-4 flex items-center md:ml-6">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
+                  <button
+                    onClick={handleLogout}
+                    className="ml-4 bg-primary hover:bg-primary text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                  >
+                    Logout
+                  </button>
+                </div>
               )}
-            </button>
+            </div>
+            <div className="-mr-2 flex md:hidden">
+              <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                type="button"
+                aria-expanded={isMenuOpen}
+                aria-controls="mobile-menu"
+                className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 focus-visible:ring-white"
+              >
+                <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
+                {isMenuOpen ? (
+                  <Icon name="X" className="h-6 w-6" aria-hidden="true" />
+                ) : (
+                  <Icon name="Menu" className="h-6 w-6" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       </header>
 
       <Overlay 
@@ -143,43 +143,43 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         layoutClassName="fixed top-16 bottom-0 left-0 right-0 z-40 flex flex-col justify-start"
         className="w-full bg-white dark:bg-gray-800 shadow-xl border-b border-gray-200 dark:border-gray-700"
       >
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-            {allLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setIsMenuOpen(false)}
-                aria-current={pathname === link.href ? "page" : undefined}
-                className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                  pathname === link.href
-                    ? 'text-white bg-primary'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-            {isAdmin && (
-              <div className="pt-4 pb-3 border-t border-gray-700">
-                <div className="flex items-center px-5">
-                  <div className="ml-3">
-                    <div className="text-base font-medium leading-none text-gray-800 dark:text-white">Admin Mode</div>
-                  </div>
-                </div>
-                <div className="mt-3 px-2 space-y-1">
-                  <button
-                    onClick={() => {
-                      handleLogout();
-                      setIsMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  >
-                    Logout
-                  </button>
+        <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+          {allLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={() => setIsMenuOpen(false)}
+              aria-current={pathname === link.href ? 'page' : undefined}
+              className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                pathname === link.href
+                  ? 'text-white bg-primary'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              {link.label}
+            </Link>
+          ))}
+          {isAdmin && (
+            <div className="pt-4 pb-3 border-t border-gray-700">
+              <div className="flex items-center px-5">
+                <div className="ml-3">
+                  <div className="text-base font-medium leading-none text-gray-800 dark:text-white">Admin Mode</div>
                 </div>
               </div>
-            )}
-          </div>
+              <div className="mt-3 px-2 space-y-1">
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setIsMenuOpen(false);
+                  }}
+                  className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </Overlay>
     </>
   );

@@ -86,7 +86,7 @@ describe('Gallery Component', () => {
     if (!sliderContainer) throw new Error('Slider container not found');
 
     act(() => {
-        fireEvent.mouseEnter(sliderContainer);
+      fireEvent.mouseEnter(sliderContainer);
     });
 
     // Advance time - should NOT call next
@@ -97,7 +97,7 @@ describe('Gallery Component', () => {
 
     // Mouse Leave - should resume
     act(() => {
-        fireEvent.mouseLeave(sliderContainer);
+      fireEvent.mouseLeave(sliderContainer);
     });
 
     // Advance time - should call next

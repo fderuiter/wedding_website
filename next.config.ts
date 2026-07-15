@@ -1,7 +1,7 @@
 /**
  * @type {import('next').NextConfig}
  */
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 /**
  * @description Configuration object for Next.js.
  *

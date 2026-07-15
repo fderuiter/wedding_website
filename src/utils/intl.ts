@@ -6,12 +6,12 @@
  * @returns Formatted currency string.
  */
 export function formatCurrency(value: number, currency: string = 'USD', locale: string = 'en-US'): string {
-    return new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency: currency,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(value);
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 /**
@@ -22,10 +22,10 @@ export function formatCurrency(value: number, currency: string = 'USD', locale: 
  * @returns Formatted date string.
  */
 export function formatDate(
-    date: Date | string | number,
-    options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' },
-    locale: string = 'en-US'
+  date: Date | string | number,
+  options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' },
+  locale: string = 'en-US'
 ): string {
-    const d = new Date(date);
-    return new Intl.DateTimeFormat(locale, options).format(d);
+  const d = new Date(date);
+  return new Intl.DateTimeFormat(locale, options).format(d);
 }

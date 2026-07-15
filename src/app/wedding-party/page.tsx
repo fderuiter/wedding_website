@@ -4,7 +4,7 @@ import { contentService } from '@/features/content/service';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 
 export const metadata: Metadata = {
-  title: "Wedding Party",
+  title: 'Wedding Party',
   alternates: {
     canonical: '/wedding-party',
   },
@@ -24,7 +24,7 @@ export default async function WeddingPartyPage() {
   try {
     members = await contentService.getPublicWeddingPartyMembers();
   } catch (error) {
-    console.warn("Database unreachable or invalid data, using empty members array.");
+    console.warn('Database unreachable or invalid data, using empty members array.');
   }
 
   return (

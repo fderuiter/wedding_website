@@ -1,8 +1,8 @@
-'use client'
+'use client';
 
-import React, { useState, useRef } from 'react'
-import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar'
-import { useOverlay } from '@/hooks/useOverlay'
+import React, { useState, useRef } from 'react';
+import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
+import { useOverlay } from '@/hooks/useOverlay';
 
 /**
  * @interface AddToCalendarProps
@@ -27,55 +27,55 @@ interface AddToCalendarProps {
  * @returns The component's JSX element
  */
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [isOpen, setIsOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const handleToggle = () => setIsOpen(!isOpen)
+  const handleToggle = () => setIsOpen(!isOpen);
 
   const { overlayRef } = useOverlay(isOpen, () => {
-    setIsOpen(false)
-    triggerRef.current?.focus()
+    setIsOpen(false);
+    triggerRef.current?.focus();
   });
 
   const handleMenuKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault()
-      const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]')
-      if (!buttons) return
-      const index = Array.from(buttons).indexOf(document.activeElement as Element)
-      let nextIndex = 0
+      e.preventDefault();
+      const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]');
+      if (!buttons) return;
+      const index = Array.from(buttons).indexOf(document.activeElement as Element);
+      let nextIndex = 0;
       if (e.key === 'ArrowDown') {
-        nextIndex = index + 1 < buttons.length ? index + 1 : 0
+        nextIndex = index + 1 < buttons.length ? index + 1 : 0;
       } else {
-        nextIndex = index - 1 >= 0 ? index - 1 : buttons.length - 1
+        nextIndex = index - 1 >= 0 ? index - 1 : buttons.length - 1;
       }
-      (buttons[nextIndex] as HTMLElement).focus()
+      (buttons[nextIndex] as HTMLElement).focus();
     }
-  }
+  };
 
-  const calendarOptions = ['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo']
+  const calendarOptions = ['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo'];
 
   const handleCalendarLink = (calendar: string) => {
-    let url = ''
+    let url = '';
     if (calendar === 'Google') {
-      url = createGoogleCalendarLink(event)
-      window.open(url, '_blank')
+      url = createGoogleCalendarLink(event);
+      window.open(url, '_blank');
     } else if (calendar === 'Yahoo') {
-      url = createYahooCalendarLink(event)
-      window.open(url, '_blank')
+      url = createYahooCalendarLink(event);
+      window.open(url, '_blank');
     } else {
-      const icsFile = createIcsFile(event)
-      const blob = new Blob([icsFile], { type: 'text/calendar' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      link.download = `${event.name}.ics`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      const icsFile = createIcsFile(event);
+      const blob = new Blob([icsFile], { type: 'text/calendar' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${event.name}.ics`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
-    setIsOpen(false)
-    triggerRef.current?.focus()
-  }
+    setIsOpen(false);
+    triggerRef.current?.focus();
+  };
 
   return (
     <div className={`relative inline-block text-left ${className}`}>
@@ -115,5 +115,5 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
         </div>
       )}
     </div>
-  )
+  );
 }

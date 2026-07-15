@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/Button";
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/Button';
 
 export default function ErrorBoundary({
   error,
@@ -12,7 +12,7 @@ export default function ErrorBoundary({
 }) {
   useEffect(() => {
     // Log the error to an error reporting service
-    console.error("Root boundary caught an error:", error);
+    console.error('Root boundary caught an error:', error);
   }, [error]);
 
   return (

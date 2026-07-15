@@ -80,7 +80,7 @@ const Gallery: React.FC<GalleryProps> = ({ images, autoplayDelay = 4000 }) => {
 
     // If we can't access 'autoplay', we can replicate the logic:
     if (instanceRef.current) {
-        timer.current = setInterval(() => instanceRef.current?.next(), autoplayDelay);
+      timer.current = setInterval(() => instanceRef.current?.next(), autoplayDelay);
     }
   };
 

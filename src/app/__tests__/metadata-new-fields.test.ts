@@ -136,7 +136,7 @@ describe('generateMetadata - new SEO fields', () => {
 
       expect(ogImages[0].width).toBe(1200);
       expect(ogImages[0].height).toBe(630);
-mockGetLocalImageDimensions.mockReturnValue(null);
+      mockGetLocalImageDimensions.mockReturnValue(null);
     });
 
     it('falls back to default ogImageUrl when config ogImageUrl is empty', async () => {

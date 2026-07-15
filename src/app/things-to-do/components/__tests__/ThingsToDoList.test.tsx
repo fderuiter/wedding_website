@@ -33,9 +33,9 @@ const attractions = [
 ];
 
 jest.mock('../ThingsToDoMap', () => {
-    const MockThingsToDoMap = () => <div data-testid="things-to-do-map" />;
-    MockThingsToDoMap.displayName = 'MockThingsToDoMap';
-    return MockThingsToDoMap;
+  const MockThingsToDoMap = () => <div data-testid="things-to-do-map" />;
+  MockThingsToDoMap.displayName = 'MockThingsToDoMap';
+  return MockThingsToDoMap;
 });
 
 describe('ThingsToDoList', () => {

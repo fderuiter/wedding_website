@@ -1,14 +1,14 @@
-"use client";
-import React, { useState } from "react";
+'use client';
+import React, { useState } from 'react';
 
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
-import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
-import { Button } from "@/components/ui/Button";
-import { FormGroup, Label, Input, Textarea } from "@/components/ui/forms";
-import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
-import { useToast } from "@/components/ui/ToastProvider";
+import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { Button } from '@/components/ui/Button';
+import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
+import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
+import { useToast } from '@/components/ui/ToastProvider';
 
 /**
  * Render the admin CRUD interface and live preview for wedding-party members.

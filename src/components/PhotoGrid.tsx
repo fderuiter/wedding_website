@@ -1,9 +1,9 @@
-'use client'
+'use client';
 
-import React, { useState, useCallback, memo } from 'react'
-import Image from 'next/image'
-import { GalleryImage } from './Gallery'
-import Lightbox from './Lightbox'
+import React, { useState, useCallback, memo } from 'react';
+import Image from 'next/image';
+import { GalleryImage } from './Gallery';
+import Lightbox from './Lightbox';
 
 /**
  * @interface PhotoGridProps
@@ -22,28 +22,28 @@ interface PhotoGridProps {
  * @returns {JSX.Element} The rendered PhotoGrid component.
  */
 const PhotoGrid: React.FC<PhotoGridProps> = ({ images }) => {
-  const [lightboxOpen, setLightboxOpen] = useState(false)
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   // Memoize handlers to prevent unnecessary re-renders of child components
   const openLightbox = useCallback((index: number) => {
-    setCurrentIndex(index)
-    setLightboxOpen(true)
-  }, [])
+    setCurrentIndex(index);
+    setLightboxOpen(true);
+  }, []);
 
   const closeLightbox = useCallback(() => {
-    setLightboxOpen(false)
-  }, [])
+    setLightboxOpen(false);
+  }, []);
 
   const nextImage = useCallback(() => {
-    setCurrentIndex((prevIndex) => (prevIndex + 1) % images.length)
-  }, [images.length])
+    setCurrentIndex((prevIndex) => (prevIndex + 1) % images.length);
+  }, [images.length]);
 
   const prevImage = useCallback(() => {
     setCurrentIndex(
       (prevIndex) => (prevIndex - 1 + images.length) % images.length
-    )
-  }, [images.length])
+    );
+  }, [images.length]);
 
   return (
     <>
@@ -66,8 +66,8 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({ images }) => {
         onPrev={prevImage}
       />
     </>
-  )
-}
+  );
+};
 
 interface GridImageProps {
   image: GalleryImage
@@ -108,9 +108,9 @@ const GridImage = memo<GridImageProps>(({
         className="object-cover hover:scale-105 transition-transform duration-300"
       />
     </div>
-  )
-})
+  );
+});
 
-GridImage.displayName = 'GridImage'
+GridImage.displayName = 'GridImage';
 
-export default PhotoGrid
+export default PhotoGrid;

@@ -7,21 +7,21 @@ import { getAppConfig } from '@/lib/config';
 import { ContactForceEvent } from '@react-three/rapier';
 
 const mockCreateRigidBodyApi = () => ({
-    setBodyType: jest.fn(),
-    setTranslation: jest.fn(),
-    setRotation: jest.fn(),
-    setLinvel: jest.fn(),
-    setAngvel: jest.fn(),
-    applyImpulse: jest.fn(),
-    applyTorqueImpulse: jest.fn(),
-    translation: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
-    rotation: jest.fn(() => ({ x: 0, y: 0, z: 0, w: 1 })),
-    linvel: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
-    angvel: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
-    setNextKinematicTranslation: jest.fn(),
-    addForce: jest.fn(),
-    setEnabled: jest.fn(),
-    __triggerContactForce: null as ((payload: ContactForceEvent) => void) | null,
+  setBodyType: jest.fn(),
+  setTranslation: jest.fn(),
+  setRotation: jest.fn(),
+  setLinvel: jest.fn(),
+  setAngvel: jest.fn(),
+  applyImpulse: jest.fn(),
+  applyTorqueImpulse: jest.fn(),
+  translation: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
+  rotation: jest.fn(() => ({ x: 0, y: 0, z: 0, w: 1 })),
+  linvel: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
+  angvel: jest.fn(() => ({ x: 0, y: 0, z: 0 })),
+  setNextKinematicTranslation: jest.fn(),
+  addForce: jest.fn(),
+  setEnabled: jest.fn(),
+  __triggerContactForce: null as ((payload: ContactForceEvent) => void) | null,
 });
 
 const mockMainBodyApi = mockCreateRigidBodyApi();
@@ -38,15 +38,15 @@ jest.mock('@react-three/fiber', () => ({
 }));
 
 jest.mock('@react-three/drei', () => ({
-    Environment: () => null,
-    Html: ({ children }: { children: React.ReactNode }) => <div data-testid="html">{children}</div>,
-    Text: ({ children }: { children: React.ReactNode }) => <div data-testid="text">{children}</div>,
-    Points: ({ children, positions }: { children: React.ReactNode, positions: Float32Array }) => (
-        <div data-testid="points" data-positions-length={positions ? positions.length : 0}>
-            {children}
-        </div>
-    ),
-    PointMaterial: () => null,
+  Environment: () => null,
+  Html: ({ children }: { children: React.ReactNode }) => <div data-testid="html">{children}</div>,
+  Text: ({ children }: { children: React.ReactNode }) => <div data-testid="text">{children}</div>,
+  Points: ({ children, positions }: { children: React.ReactNode, positions: Float32Array }) => (
+    <div data-testid="points" data-positions-length={positions ? positions.length : 0}>
+      {children}
+    </div>
+  ),
+  PointMaterial: () => null,
 }));
 
 jest.mock('@react-three/postprocessing', () => ({
@@ -55,37 +55,37 @@ jest.mock('@react-three/postprocessing', () => ({
 }));
 
 jest.mock('@react-three/rapier', () => {
-    const RigidBodyMock = React.forwardRef(({ children, onContactForce, userData }: { children: React.ReactNode, onContactForce: (payload: ContactForceEvent) => void, userData?: { id: string } }, ref: React.Ref<unknown>) => {
-        if (ref) {
-            // @ts-expect-error This is a mock implementation
-            if (userData?.id === 'main') ref.current = mockMainBodyApi;
-            // @ts-expect-error This is a mock implementation
-            else if (userData?.id === 'left') ref.current = mockLeftBodyApi;
-            // @ts-expect-error This is a mock implementation
-            else if (userData?.id === 'right') ref.current = mockRightBodyApi;
-        }
-        if (onContactForce && userData?.id === 'main') {
-            mockMainBodyApi.__triggerContactForce = onContactForce;
-        }
-        return <div data-testid="rigidbody">{children}</div>;
-    });
-    RigidBodyMock.displayName = 'RigidBody';
-
-    return {
-        Physics: ({ children }: { children: React.ReactNode }) => <div data-testid="physics">{children}</div>,
-        RigidBody: RigidBodyMock,
-        CuboidCollider: () => <div data-testid="cuboid-collider" />,
-        RapierRigidBody: jest.fn(),
-        CuboidColliderProps: jest.fn(),
-        ActiveCollisionTypes: {
-            CONTACT_FORCE_EVENTS: 0,
-        },
-        RigidBodyType: {
-            Dynamic: 0,
-            Fixed: 1,
-            KinematicPositionBased: 2,
-        }
+  const RigidBodyMock = React.forwardRef(({ children, onContactForce, userData }: { children: React.ReactNode, onContactForce: (payload: ContactForceEvent) => void, userData?: { id: string } }, ref: React.Ref<unknown>) => {
+    if (ref) {
+      // @ts-expect-error This is a mock implementation
+      if (userData?.id === 'main') ref.current = mockMainBodyApi;
+      // @ts-expect-error This is a mock implementation
+      else if (userData?.id === 'left') ref.current = mockLeftBodyApi;
+      // @ts-expect-error This is a mock implementation
+      else if (userData?.id === 'right') ref.current = mockRightBodyApi;
     }
+    if (onContactForce && userData?.id === 'main') {
+      mockMainBodyApi.__triggerContactForce = onContactForce;
+    }
+    return <div data-testid="rigidbody">{children}</div>;
+  });
+  RigidBodyMock.displayName = 'RigidBody';
+
+  return {
+    Physics: ({ children }: { children: React.ReactNode }) => <div data-testid="physics">{children}</div>,
+    RigidBody: RigidBodyMock,
+    CuboidCollider: () => <div data-testid="cuboid-collider" />,
+    RapierRigidBody: jest.fn(),
+    CuboidColliderProps: jest.fn(),
+    ActiveCollisionTypes: {
+      CONTACT_FORCE_EVENTS: 0,
+    },
+    RigidBodyType: {
+      Dynamic: 0,
+      Fixed: 1,
+      KinematicPositionBased: 2,
+    }
+  };
 });
 
 jest.mock('maath/random', () => ({
@@ -94,19 +94,19 @@ jest.mock('maath/random', () => ({
     const count = buffer.length / 3;
     const newBuffer = new Float32Array(count * 3);
     for (let i = 0; i < count * 3; i++) {
-        newBuffer[i] = (Math.random() - 0.5) * 2 * radius;
+      newBuffer[i] = (Math.random() - 0.5) * 2 * radius;
     }
     return newBuffer;
   }),
 }));
 
 jest.mock('next/link', () => {
-    const MockLink = ({ children, href }: { children: React.ReactNode, href: string }) => {
-        return <a href={href}>{children}</a>;
-    };
-    MockLink.displayName = 'MockLink';
-    return MockLink;
-})
+  const MockLink = ({ children, href }: { children: React.ReactNode, href: string }) => {
+    return <a href={href}>{children}</a>;
+  };
+  MockLink.displayName = 'MockLink';
+  return MockLink;
+});
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn(),
@@ -199,9 +199,9 @@ describe('HeartPage', () => {
     expect(mockMainBodyApi.__triggerContactForce).not.toBeNull();
 
     act(() => {
-        if (mockMainBodyApi.__triggerContactForce) {
-            mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as ContactForceEvent);
-        }
+      if (mockMainBodyApi.__triggerContactForce) {
+        mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as ContactForceEvent);
+      }
     });
 
     expect(mockMainBodyApi.setEnabled).toHaveBeenCalledWith(false);
@@ -211,7 +211,7 @@ describe('HeartPage', () => {
     expect(mockRightBodyApi.setBodyType).toHaveBeenCalledWith(RigidBodyType.Dynamic, true);
 
     act(() => {
-        jest.advanceTimersByTime(3000);
+      jest.advanceTimersByTime(3000);
     });
 
     expect(mockLeftBodyApi.setEnabled).toHaveBeenCalledWith(false);

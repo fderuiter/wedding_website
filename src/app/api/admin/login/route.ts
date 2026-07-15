@@ -1,4 +1,4 @@
-import { AdminLoginSchema } from "@/utils/validation";
+import { AdminLoginSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
 import { signAdminToken } from '@/core/auth/auth.server';

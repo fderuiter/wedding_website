@@ -190,13 +190,13 @@ describe('RegistryRepository', () => {
     });
 
     it('should throw an error if item is not found', async () => {
-        const tx = {
-            registryItem: {
-              findUnique: jest.fn().mockResolvedValue(null),
-              update: jest.fn(),
-            },
-          };
-          (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
       const contribution = { name: 'John Doe', amount: 50 };
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
     });

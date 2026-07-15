@@ -1,14 +1,14 @@
-import { Geist } from "next/font/google";
-import RootLayoutClient from "@/components/layout/RootLayoutClient";
+import { Geist } from 'next/font/google';
+import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { generateMetadata } from './metadata';
-import { getAppConfig, toPublicAppConfig } from "@/lib/config";
-import { ThemeProvider } from "@/components/ThemeProvider";
-import SetupWizard from "@/components/setup/SetupWizard";
-import { ToastProvider } from "@/components/ui/ToastProvider";
+import { getAppConfig, toPublicAppConfig } from '@/lib/config';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import SetupWizard from '@/components/setup/SetupWizard';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 const geist = Geist({
-  variable: "--font-geist",
-  subsets: ["latin"],
+  variable: '--font-geist',
+  subsets: ['latin'],
 });
 
 export { generateMetadata };

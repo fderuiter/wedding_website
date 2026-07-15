@@ -1,16 +1,16 @@
-"use client";
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+'use client';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import type { AttractionDTO } from '@/features/attractions/schemas';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 
-import AdminPreviewLayout from "@/components/admin/AdminPreviewLayout";
-import { AdminEditorContainer } from "@/components/admin/AdminEditorContainer";
-import { FormGroup, Label, Input, Textarea, Select, Checkbox } from "@/components/ui/forms";
-import { Button } from "@/components/ui/Button";
-import { useToast } from "@/components/ui/ToastProvider";
-import { useFocusSuccessor } from "@/hooks/useFocusSuccessor";
+import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
+import { FormGroup, Label, Input, Textarea, Select, Checkbox } from '@/components/ui/forms';
+import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 
 /**
  * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
