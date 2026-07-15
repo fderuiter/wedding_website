@@ -122,5 +122,17 @@ jest.mock('@prisma/client', () => {
   };
   return {
     PrismaClient: jest.fn(() => mockPrismaClient),
+    Prisma: {
+      ModelName: {
+        AppConfig: 'AppConfig',
+        Media: 'Media',
+        WeddingPartyMember: 'WeddingPartyMember',
+        Attraction: 'Attraction',
+        RegistryItem: 'RegistryItem',
+        Contributor: 'Contributor',
+        ContentNode: 'ContentNode',
+        SnapshotVersion: 'SnapshotVersion'
+      }
+    }
   };
 });

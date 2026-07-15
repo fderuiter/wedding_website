@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
+import { Prisma } from '@prisma/client';
 
 export async function createAuditSnapshot(
   entityType: string,
@@ -10,10 +11,14 @@ export async function createAuditSnapshot(
 ) {
   const client = txClient || prisma;
   
+  const normalizedType = Object.values(Prisma.ModelName).find(
+    (name) => name.toLowerCase() === entityType.toLowerCase()
+  ) || entityType;
+  
   // Create the snapshot
   await client.snapshotVersion.create({
     data: {
-      entityType,
+      entityType: normalizedType,
       entityId,
       data,
       author,

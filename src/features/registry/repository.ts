@@ -128,11 +128,11 @@ export class RegistryRepository implements IRegistryRepository {
    * Deletes a registry item from the database.
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the deleted item.
    */
-  async deleteItem(id: string) {
+  async deleteItem(id: string, author: string = 'Admin') {
     const item = await this.client.registryItem.delete({
       where: { id }
     });
-    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, 'Guest/User', this.client);
+    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, author, this.client);
     return RegistryItemSchema.parse(item);
   }
 
