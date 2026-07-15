@@ -58,3 +58,14 @@ export const ImportBackupSchema = z.object({
   registryItem: z.array(z.any()).optional(),
   contributor: z.array(z.any()).optional(),
 });
+
+export const createLaxUrlSchema = (fieldName = 'URL') =>
+  z.string()
+    .max(2000, `${fieldName} must be under 2000 characters`)
+    .optional()
+    .nullable()
+    .or(z.literal(''));
+
+export const safeUrlSchema = createLaxUrlSchema('URL');
+export const safeImageUrlSchema = createLaxUrlSchema('Image URL');
+

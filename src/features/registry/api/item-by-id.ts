@@ -27,6 +27,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { 
 
   const updatedItem = await registryService.updateItem(id, {
     ...updatedData,
+    imageUrl: updatedData.imageUrl === null ? undefined : updatedData.imageUrl,
     isGroupGift: !!updatedData.isGroupGift,
   });
 
