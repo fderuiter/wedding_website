@@ -101,7 +101,6 @@ useEffect(() => {
       ref={ref}
       {...(props as any)}
       className={className}
-      onClick={onClick}
       {...mixedHandlers}
       onFocus={handleFocus}
       onBlur={handleBlur}
