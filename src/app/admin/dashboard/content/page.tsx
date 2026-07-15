@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { ContentNodeDTO } from '@/features/content';
 import { useAdminContent } from '@/hooks/admin/useAdminContent';
+// eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+// eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
 

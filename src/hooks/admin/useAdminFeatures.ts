@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+// eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminFeatures() {

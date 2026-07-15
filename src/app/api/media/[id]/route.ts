@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { mediaRepository } from '@/features/media/repository';
+import { mediaRepository } from '@/features/media';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { MediaUpdateSchema } from '@/features/media/schemas';
+import { MediaUpdateSchema } from '@/features/media';
 
 export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;

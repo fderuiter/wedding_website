@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import type { AttractionDTO } from '@/features/attractions/schemas';
+import type { AttractionDTO } from '@/features/attractions';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';

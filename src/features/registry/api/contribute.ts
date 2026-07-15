@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { registryService } from '@/features/registry/service';
-import { ContributionSchema } from '@/features/registry/schemas';
+import { registryService } from '../service';
+import { ContributionSchema } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 

@@ -1,7 +1,7 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { handleMediaFields } from '@/features/admin/utils';
-import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
+import { handleMediaFields } from '@/features/admin';
+import { WeddingPartyMemberSchema } from './schemas';
 
 const WeddingPartyInputSchema = WeddingPartyMemberSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial({ link: true, photo: true });
 

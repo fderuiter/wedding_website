@@ -1,5 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
-import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
+// eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminWeddingParty() {

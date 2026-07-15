@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import type { AttractionDTO } from '@/features/attractions/schemas';
+import type { AttractionDTO } from '@/features/attractions';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';

@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
-import { logisticsService } from '@/features/logistics/service';
+import { logisticsService } from '@/features/logistics';
 
 /**
  * Build homepage metadata and embedded schema.org JSON-LD from application configuration.
@@ -76,7 +76,7 @@ export default async function HomePage() {
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
 
-  let contentNodes: import('@/features/content/schemas').ContentNodeDTO[] = [];
+  let contentNodes: import('@/features/content').ContentNodeDTO[] = [];
   try {
     contentNodes = await logisticsService.getHomepageLogistics();
   } catch (error) {

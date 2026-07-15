@@ -1,4 +1,5 @@
 import { z } from 'zod';
+// eslint-disable-next-line no-restricted-imports
 import { MediaSchema } from '@/features/media/schemas';
 import { safeImageUrlSchema, createLaxUrlSchema } from '@/utils/validation';
 

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
-import type { IRegistryRepository } from '@/features/registry/types';
+import type { IRegistryRepository } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
 /**

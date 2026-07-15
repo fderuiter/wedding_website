@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { coordinateSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AppConfigSchema } from '@/features/content/schemas';
+import { AppConfigSchema } from '@/features/content';
 
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();

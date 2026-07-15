@@ -15,11 +15,11 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-import { POST as addItem } from '@/features/registry/api/add-item';
-import { POST as contribute } from '@/features/registry/api/contribute';
-import { GET as getItems } from '@/features/registry/api/get-items';
-import { GET as getItemByIdRoute, PUT as updateItemRoute, DELETE as deleteItemRoute } from '@/features/registry/api/item-by-id';
-import { registryService } from '@/features/registry/service';
+import { registryAddItemPOST as addItem } from '@/features/registry';
+import { registryContributePOST as contribute } from '@/features/registry';
+import { registryGetItemsGET as getItems } from '@/features/registry';
+import { registryItemByIdGET as getItemByIdRoute, registryItemByIdPUT as updateItemRoute, registryItemByIdDELETE as deleteItemRoute } from '@/features/registry';
+import { registryService } from '@/features/registry';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import type { NextRequest } from 'next/server';
 

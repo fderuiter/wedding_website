@@ -1,12 +1,11 @@
 import { Metadata } from 'next';
 import ThingsToDoList from './components/ThingsToDoList';
-import { contentService } from '@/features/content/service';
-import type { AttractionDTO } from '@/features/attractions/schemas';
+import { attractionsRepository, type AttractionDTO } from '@/features/attractions';
 
 export const metadata: Metadata = {
   title: 'Things to Do',
   alternates: {
-    canonical: '/things-to-do',
+    canonical: '',
   },
 };
 
@@ -22,7 +21,8 @@ export const metadata: Metadata = {
 export default async function ThingsToDoPage() {
   let attractions: AttractionDTO[] = [];
   try {
-    attractions = await contentService.getPublicAttractions();
+    const rawAttractions = await attractionsRepository.getVisibleAttractions();
+    attractions = rawAttractions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   } catch (error) {
     console.warn('Database unreachable, using empty attractions array.');
   }

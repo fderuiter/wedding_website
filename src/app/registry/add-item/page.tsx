@@ -1,1 +1,1 @@
-export { default } from '@/features/registry/pages/add-item';
+export { AddItemPage as default } from '@/features/registry';

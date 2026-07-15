@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import WeddingPartyCard from './WeddingPartyCard';
-import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 
 interface WeddingPartyListProps {
   members: WeddingPartyMemberDTO[];

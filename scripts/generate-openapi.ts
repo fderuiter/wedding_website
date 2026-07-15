@@ -1,7 +1,6 @@
 import { Project, SyntaxKind } from 'ts-morph';
 import path from 'path';
 import fs from 'fs';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { fileURLToPath } from 'url';
 import * as validationUtils from '../src/utils/validation.js';
 import * as registrySchemas from '../src/features/registry/schemas.js';
@@ -74,8 +73,8 @@ async function run() {
     for (const [method, decls] of exportedDecls.entries()) {
       if (['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
         const decl = decls[0];
-        let handlerNode: any = decl;
-        let handlerFile = decl.getSourceFile();
+        const handlerNode: any = decl;
+        const handlerFile = decl.getSourceFile();
 
         const jsDocNodes = handlerNode.getJsDocs ? handlerNode.getJsDocs() : [];
         const description = jsDocNodes.map((doc: any) => doc.getCommentText()).join('\n\n');

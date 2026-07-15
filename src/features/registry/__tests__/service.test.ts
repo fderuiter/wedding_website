@@ -1,5 +1,5 @@
-import type { RegistryItem, IRegistryRepository } from '@/features/registry/types';
-import { RegistryService } from '@/features/registry/service';
+import type { RegistryItem, IRegistryRepository } from '../types';
+import { RegistryService } from '../service';
 
 // Mock the repository interface
 const mockRepository: jest.Mocked<IRegistryRepository> = {

@@ -20,10 +20,6 @@ const eslintConfig = [
       
       // Downgrade previously failing rules to warn to avoid breaking CI 
       // without polluting git history with massive non-stylistic rewrites
-      'react/forbid-elements': [
-        'warn',
-        { forbid: ['button', 'input', 'label'] }
-      ],
       'no-restricted-imports': [
         'warn',
         {

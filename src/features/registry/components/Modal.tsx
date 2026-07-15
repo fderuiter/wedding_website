@@ -1,9 +1,10 @@
+'use client';
 import React, { useState } from 'react';
-import { RegistryItem } from '@/features/registry/types';
+import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
-import { ContributionSchema } from '@/features/registry/schemas';
+import { ContributionSchema } from '../schemas';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';

@@ -5,8 +5,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import RegistryItemForm from '@/features/registry/components/RegistryItemForm';
-import { RegistryItem } from '@/features/registry/types';
+import RegistryItemForm from '../components/RegistryItemForm';
+import { RegistryItem } from '../types';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
 import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
 import { useToast } from '@/components/ui/ToastProvider';

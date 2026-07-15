@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
+// eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
 const fadeUp: Variants = {

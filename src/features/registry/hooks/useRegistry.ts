@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem } from '@/features/registry/types';
+import { RegistryItem } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';

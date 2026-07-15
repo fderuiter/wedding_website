@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { ContentNodeSchema } from '@/features/content/schemas';
+import { ContentNodeSchema } from './schemas';
 import { z } from 'zod';
 
 const ContentNodeInputSchema = z.union([

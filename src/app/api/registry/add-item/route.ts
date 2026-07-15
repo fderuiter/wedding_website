@@ -1,1 +1,1 @@
-export { POST } from '@/features/registry/api/add-item';
+export { registryAddItemPOST as POST } from '@/features/registry';

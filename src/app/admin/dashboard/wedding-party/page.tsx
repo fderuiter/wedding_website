@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 
-import type { WeddingPartyMemberDTO } from '@/features/wedding-party/schemas';
+import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';

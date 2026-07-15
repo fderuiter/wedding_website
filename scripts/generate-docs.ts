@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { z } from 'zod';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,7 +27,7 @@ function generateConfigTable() {
   let markdown = '| Field | Type | Description |\n|---|---|---|\n';
   
   for (const [key, value] of Object.entries(shape)) {
-    let type = getZodType(value);
+    const type = getZodType(value);
     markdown += `| \`${key}\` | \`${type}\` | Configuration field for ${key} |\n`;
   }
   
@@ -37,7 +36,7 @@ function generateConfigTable() {
 
 // 2. Generate Routing Structure
 function getDirectories(srcPath: string, rootPath: string = ''): string[] {
-  let routes: string[] = [];
+  const routes: string[] = [];
   const entries = fs.readdirSync(srcPath, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isDirectory() && !entry.name.includes('__tests__') && !entry.name.includes('components')) {

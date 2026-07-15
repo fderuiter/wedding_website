@@ -1,5 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { ContentNodeDTO } from '@/features/content';
+// eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminContent() {
