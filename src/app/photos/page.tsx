@@ -52,7 +52,7 @@ export default async function PhotosPage() {
   const urls = photoNodes.length > 0 ? photoNodes.map(n => n.data?.url).filter(Boolean) : defaultUrls;
 
   return (
-    <main className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
       <Script src="https://cdn.jsdelivr.net/npm/publicalbum@latest/embed-ui.min.js" async />
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Our Wedding Photos
@@ -75,6 +75,6 @@ export default async function PhotosPage() {
           <Icon name="Camera" className="w-5 h-5" />
         </Link>
       </div>
-    </main>
+    </div>
   );
 }

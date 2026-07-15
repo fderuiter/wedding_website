@@ -195,7 +195,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       <div id="top" />
       <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary"
       >
-        <main aria-label="Home Page Content" id="main">
+        <div aria-label="Home Page Content" id="home-main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               {config.heroTitle || 'We Tied the Knot!'}
@@ -204,11 +204,11 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
               {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
             </motion.p>
             <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
-              <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
+              <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
                 Our Story
                 <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
               </a>
-              <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 dark:text-gray-100 shadow-lg transition hover:shadow-xl">
+              <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
                 View Photos
               </Link>
             </motion.div>
@@ -222,12 +222,12 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             <a href="/project-info" className="text-primary dark:text-primary hover:underline">About this site</a>
             <Link
               href="/heart"
-              className="inline-block rounded-full bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
+              className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
             >
               Play with the Heart
             </Link>
           </footer>
-        </main>
+        </div>
         <BackToTop />
       </div>
     </>

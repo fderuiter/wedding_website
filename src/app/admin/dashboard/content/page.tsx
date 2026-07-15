@@ -121,8 +121,8 @@ export default function ContentDashboardPage() {
     setDynamicData(newData);
   };
 
-  if (isLoading) return <main className="min-h-screen flex items-center justify-center"><p>Loading...</p></main>;
-  if (error) return <main className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></main>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Loading...</p></div>;
+  if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
   const draftDataObj: Record<string, string> = {};
   dynamicData.forEach(item => {

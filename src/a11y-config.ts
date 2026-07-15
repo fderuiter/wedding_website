@@ -1,9 +1,9 @@
 export const a11yConfig = {
   rules: {
-    // Temporarily ignore legacy violations to unblock CI
-    'color-contrast': { enabled: false },
-    'landmark-main-is-top-level': { enabled: false },
-    'landmark-no-duplicate-main': { enabled: false },
+    // All legacy violations must now be resolved
+    'color-contrast': { enabled: true },
+    'landmark-main-is-top-level': { enabled: true },
+    'landmark-no-duplicate-main': { enabled: true },
     'landmark-unique': { enabled: true },
   },
   runOnly: {

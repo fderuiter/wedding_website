@@ -42,7 +42,7 @@ export default function MaintenanceHubPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-2 sm:px-6">
+    <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] py-10 px-2 sm:px-6">
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-primary tracking-tight drop-shadow-lg">Maintenance Hub</h1>
@@ -94,6 +94,6 @@ export default function MaintenanceHubPage() {
           </section>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
