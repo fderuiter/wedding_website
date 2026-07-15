@@ -17,7 +17,7 @@
     "test:a11y": "rm -rf test-results && npm test; npx playwright test; node scripts/a11y-report.mjs",
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
-    "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/migrateToSqlite.ts",
+    "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "scaffold": "node scripts/scaffold-feature.mjs"
   },
