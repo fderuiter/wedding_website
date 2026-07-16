@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "../../node_modules/keen-slider/keen-slider.min.css";
 @config "../../tailwind.config.ts";
 
 :root {
