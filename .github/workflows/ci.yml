@@ -22,6 +22,7 @@ jobs:
       - name: Generate API Docs & Check Schemas
         run: npx tsx scripts/generate-openapi.ts
       - name: Commit API Docs updates
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "docs: auto-update API references"
@@ -38,7 +39,7 @@ jobs:
         if: always()
         run: node scripts/a11y-report.mjs
       - name: Post A11y Report to PR
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
@@ -53,3 +54,9 @@ jobs:
                 body: body
               });
             }
+      - name: Write A11y Report to Job Summary
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          if [ -f "test-results/a11y-summary.md" ]; then
+            cat test-results/a11y-summary.md >> $GITHUB_STEP_SUMMARY
+          fi
