@@ -40,7 +40,6 @@
     "dotenv-cli": "^11.0.0",
     "framer-motion": "^12.34.0",
     "ics": "^3.8.1",
-    "keen-slider": "^6.8.6",
     "leaflet": "^1.9.4",
     "maath": "^0.10.8",
     "next": "^16.2.6",
@@ -48,7 +47,6 @@
     "pg": "^8.18.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-hot-toast": "^2.6.0",
     "react-leaflet": "^5.0.0",
     "three": "^0.182.0",
     "zod": "^4.4.3"
@@ -72,11 +70,8 @@
     "@types/three": "0.170.0",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
- 
     "eslint-plugin-react": "^7.37.5",
- 
     "eslint-plugin-unused-imports": "^4.4.1",
- 
     "jest": "^30.2.0",
     "jest-axe": "^10.0.0",
     "jest-environment-jsdom": "^30.2.0",
