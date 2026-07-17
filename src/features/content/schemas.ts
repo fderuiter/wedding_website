@@ -69,6 +69,8 @@ export const AppConfigSchema = z.object({
   faviconUrl: z.string(),
   ogImageUrl: z.string(),
   seoKeywords: z.string(),
+  showCountdown: z.boolean().default(true),
+  showAddToCalendar: z.boolean().default(true),
   features: z.union([
     z.string().transform((str) => {
       try {

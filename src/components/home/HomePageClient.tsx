@@ -9,6 +9,8 @@ import Link from 'next/link';
 import BackToTop from '@/components/BackToTop';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatDate } from '@/utils/intl';
+import Countdown from '@/components/Countdown';
+import AddToCalendar from '@/components/AddToCalendar';
 
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) };
 
@@ -185,13 +187,20 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     }
   };
 
+  const weddingDateObj = new Date(config.weddingDate);
+  const calendarEvent = {
+    name: config.heroTitle || 'Wedding',
+    startDate: weddingDateObj.toISOString().split('T')[0],
+    startTime: weddingDateObj.toISOString().split('T')[1].substring(0, 5),
+    endDate: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endTime: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[1].substring(0, 5),
+    timeZone: 'UTC',
+    location: `${config.venueName}, ${config.venueCity}, ${config.venueState}`,
+    description: config.heroSubtitle || 'Join us for our wedding!',
+  };
+
   return (
     <>
-      {/*
-        NOTE: AddToCalendar and Countdown are imported but currently unused in the layout.
-        They are preserved here for future use or reference, as requested.
-        To use them: <AddToCalendar event={calendarEvent} /> or <Countdown targetDate="..." />
-      */}
       <div id="top" />
       <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary"
       >
@@ -203,7 +212,12 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
               {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
             </motion.p>
-            <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+            {config.showCountdown && (
+              <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+                <Countdown targetDate={weddingDateObj.toISOString()} />
+              </motion.div>
+            )}
+            <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
               <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
                 Our Story
                 <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
@@ -212,6 +226,11 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                 View Photos
               </Link>
             </motion.div>
+            {config.showAddToCalendar && (
+              <motion.div className="mt-8" variants={fadeUp} initial="hidden" animate="visible" custom={4}>
+                <AddToCalendar event={calendarEvent} />
+              </motion.div>
+            )}
           </section>
 
           {features.map((feature, index) => renderSection(feature, index + 3))}

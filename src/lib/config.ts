@@ -33,6 +33,9 @@ const fallbackAppConfig: LocalAppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
+  // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
+  showCountdown: true, 
+  showAddToCalendar: true,
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),

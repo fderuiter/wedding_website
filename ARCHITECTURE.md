@@ -227,7 +227,7 @@ The database stores all the data for the application, primarily the registry ite
     -   **`RegistryItem`:** Represents a single item in the gift registry.
     -   **`Contributor`:** Represents a contribution made by a guest towards a `RegistryItem`.
 
-The use of Prisma allows for easy schema management through migrations and provides a type-safe client for querying the database from the backend API. The project was originally built with SQLite for local development and has since been migrated to PostgreSQL for production on Vercel.
+The use of Prisma allows for easy schema management through migrations and provides a type-safe client for querying the database from the backend API. The project uses PostgreSQL as the sole active database layer for both local development and production.
 
 ### 4. Feature Organization
 
@@ -278,6 +278,8 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `faviconUrl` | `string` | Configuration field for faviconUrl |
 | `ogImageUrl` | `string` | Configuration field for ogImageUrl |
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
+| `showCountdown` | `default` | Configuration field for showCountdown |
+| `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
 | `features` | `pipe` | Configuration field for features |
 | `createdAt` | `date` | Configuration field for createdAt |
 | `updatedAt` | `date` | Configuration field for updatedAt |

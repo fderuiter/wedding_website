@@ -69,6 +69,8 @@ const updatedConfig = {
   id: 'global',
   ...validConfigData,
   weddingDate: new Date(validConfigData.weddingDate),
+  showCountdown: true,
+  showAddToCalendar: true,
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),

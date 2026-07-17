@@ -2,9 +2,6 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { useReducedMotion } from './useReducedMotion';
 import { use3DInteraction, Use3DInteractionOptions } from './use3DInteraction';
 
-// For physics body toggling
-import { RigidBodyType } from '@dimforge/rapier3d-compat';
-
 export interface UseUnified3DInputOptions {
   // DOM element for bounding box (if DOM-based)
   domRef?: React.RefObject<HTMLElement>;
@@ -13,9 +10,6 @@ export interface UseUnified3DInputOptions {
     size: { width: number; height: number };
     viewport: { width: number; height: number };
   };
-  
-  // Physics body for automatic state toggling
-  physicsBodyRef?: React.RefObject<any>; // RapierRigidBody
   
   // Pointer Callbacks
   onDragStart?: () => void;
@@ -79,10 +73,6 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
       try { target.setPointerCapture(e.pointerId); } catch(err) {}
     }
 
-    if (options.physicsBodyRef?.current) {
-      options.physicsBodyRef.current.setBodyType(RigidBodyType.KinematicPositionBased, true);
-    }
-    
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
@@ -142,10 +132,6 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
       vy = 0;
     }
 
-    if (options.physicsBodyRef?.current) {
-      options.physicsBodyRef.current.setBodyType(RigidBodyType.Dynamic, true);
-    }
-    
     if (options.onDragEnd) {
       options.onDragEnd({ vx, vy });
     }
@@ -161,9 +147,6 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     if (isDestroyed) return;
     setIsDestroyed(true);
     dragState.current.active = false;
-    if (options.physicsBodyRef?.current) {
-      options.physicsBodyRef.current.setBodyType(RigidBodyType.Dynamic, true);
-    }
     if (options.onDestroy) options.onDestroy();
   }, [isDestroyed, options]);
 
