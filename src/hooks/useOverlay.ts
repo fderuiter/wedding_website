@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useId } from 'react';
 
 const overlayStack: string[] = [];
 
@@ -19,7 +19,7 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
-  const idRef = useRef(Math.random().toString(36).substring(2, 9));
+  const id = useId();
 
   useEffect(() => {
     closeRef.current = onClose;
@@ -28,7 +28,6 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
   useEffect(() => {
     if (!isOpen) return;
 
-    const id = idRef.current;
     overlayStack.push(id);
 
     // Save previous focus
@@ -107,7 +106,7 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
         previousFocusRef.current.focus();
       }
     };
-  }, [isOpen]);
+  }, [isOpen, id]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
