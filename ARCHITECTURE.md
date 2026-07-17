@@ -278,6 +278,8 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `faviconUrl` | `string` | Configuration field for faviconUrl |
 | `ogImageUrl` | `string` | Configuration field for ogImageUrl |
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
+| `showCountdown` | `default` | Configuration field for showCountdown |
+| `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
 | `features` | `pipe` | Configuration field for features |
 | `createdAt` | `date` | Configuration field for createdAt |
 | `updatedAt` | `date` | Configuration field for updatedAt |
