@@ -35,42 +35,117 @@ function generateConfigTable() {
 }
 
 // 2. Generate Routing Structure
-function getDirectories(srcPath: string, rootPath: string = ''): string[] {
-  const routes: string[] = [];
+interface RouteNode {
+  name: string;
+  relativePath: string;
+  hasPage: boolean;
+  hasApi: boolean;
+  children: RouteNode[];
+}
+
+function buildRouteTree(srcPath: string, relativePath: string = ''): RouteNode | null {
+  const name = path.basename(srcPath);
   const entries = fs.readdirSync(srcPath, { withFileTypes: true });
+
+  let hasPage = false;
+  let hasApi = false;
+  const children: RouteNode[] = [];
+
   for (const entry of entries) {
-    if (entry.isDirectory() && !entry.name.includes('__tests__') && !entry.name.includes('components')) {
-      const fullPath = path.join(srcPath, entry.name);
-      const relativePath = path.join(rootPath, entry.name);
-      routes.push(relativePath);
-      routes.push(...getDirectories(fullPath, relativePath));
+    if (entry.isFile()) {
+      if (/^page\.(tsx|ts|jsx|js)$/.test(entry.name)) {
+        hasPage = true;
+      }
+      if (/^route\.(ts|js)$/.test(entry.name)) {
+        hasApi = true;
+      }
+    } else if (entry.isDirectory()) {
+      if (entry.name.includes('__tests__') || entry.name.includes('components')) {
+        continue;
+      }
+
+      const childFullPath = path.join(srcPath, entry.name);
+      const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+      const childNode = buildRouteTree(childFullPath, childRelativePath);
+
+      if (childNode !== null) {
+        children.push(childNode);
+      }
     }
   }
-  return routes;
+
+  if (hasPage || hasApi || children.length > 0) {
+    return {
+      name: relativePath ? path.basename(relativePath) : name,
+      relativePath,
+      hasPage,
+      hasApi,
+      children
+    };
+  }
+
+  return null;
 }
 
 function generateRoutesDiagram() {
   const srcAppPath = path.join(__dirname, '../src/app');
-  const dirs = getDirectories(srcAppPath);
+  const tree = buildRouteTree(srcAppPath);
   
   let treeMarkdown = '```mermaid\nflowchart LR\n';
-  treeMarkdown += '    App["src/app"]\n';
+  treeMarkdown += '    classDef page fill:#0284c7,stroke:#0369a1,color:#ffffff,stroke-width:2px;\n';
+  treeMarkdown += '    classDef api fill:#4c1d95,stroke:#3b82f6,color:#ffffff,stroke-width:2px;\n\n';
   
-  for (const dir of dirs) {
-    const parts = dir.split(path.sep);
-    let parent = 'App';
-    for (let i = 0; i < parts.length; i++) {
-      const current = 'node_' + parts.slice(0, i + 1).join('_').replace(/\[|\]|-/g, '');
-      const currentName = parts[i];
-      if (!treeMarkdown.includes(` ${current}["${currentName}"]`)) {
-        treeMarkdown += `    ${current}["${currentName}"]\n`;
-      }
-      if (!treeMarkdown.includes(`${parent} --> ${current}`)) {
-        treeMarkdown += `    ${parent} --> ${current}\n`;
-      }
-      parent = current;
+  if (!tree) {
+    treeMarkdown += '    App["src/app"]\n```\n';
+    return treeMarkdown;
+  }
+  
+  const nodes = new Map<string, { id: string, name: string, type: 'page' | 'api' | 'none' }>();
+  const edges: { from: string, to: string }[] = [];
+  
+  function traverse(node: RouteNode, parentId: string | null) {
+    let id: string;
+    let displayName = node.name;
+    if (node.relativePath === '') {
+      id = 'App';
+      displayName = 'src/app';
+    } else {
+      id = 'node_' + node.relativePath.replace(/\\/g, '/').split('/').join('_').replace(/\[|\]|-/g, '');
+    }
+    
+    let type: 'page' | 'api' | 'none' = 'none';
+    if (node.hasPage) type = 'page';
+    else if (node.hasApi) type = 'api';
+    
+    nodes.set(id, { id, name: displayName, type });
+    
+    if (parentId) {
+      edges.push({ from: parentId, to: id });
+    }
+    
+    for (const child of node.children) {
+      traverse(child, id);
     }
   }
+  
+  traverse(tree, null);
+  
+  for (const [id, info] of nodes.entries()) {
+    treeMarkdown += `    ${id}["${info.name}"]\n`;
+  }
+  
+  for (const edge of edges) {
+    treeMarkdown += `    ${edge.from} --> ${edge.to}\n`;
+  }
+  
+  for (const [id, info] of nodes.entries()) {
+    if (info.type === 'page') {
+      treeMarkdown += `    class ${id} page;\n`;
+    } else if (info.type === 'api') {
+      treeMarkdown += `    class ${id} api;\n`;
+    }
+  }
+  
   treeMarkdown += '```\n';
   return treeMarkdown;
 }
