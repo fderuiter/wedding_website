@@ -37,6 +37,9 @@ const fallbackAppConfig: LocalAppConfig = {
   themePrimary: theme.colors.primary,
   themeSecondary: theme.colors.secondary,
   themeAccent: theme.colors.accent,
+  // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
+  showCountdown: true, 
+  showAddToCalendar: true,
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),
