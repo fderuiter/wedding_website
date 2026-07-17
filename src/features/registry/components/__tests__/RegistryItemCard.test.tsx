@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
-import Modal from '../Modal'; // Adjust the import path as necessary
+import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
 import { RegistryItem } from '@/types/registry';
 
 // Mock item data
@@ -53,14 +53,14 @@ const mockFundedGroupItem: RegistryItem = {
 const mockOnClose = jest.fn();
 const mockOnContribute = jest.fn().mockResolvedValue(undefined); // Mock async function
 
-describe('Modal Component', () => {
+describe('RegistryItemCard Component', () => {
   beforeEach(() => {
     // Reset mocks before each test
     jest.clearAllMocks();
   });
 
   it('renders correctly for a single, available item', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
 
     expect(screen.getByText('Single Item')).toBeInTheDocument();
     expect(screen.getByText('A nice single item.')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('Modal Component', () => {
   });
 
   it('renders correctly for a group gift item', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
 
     expect(screen.getByText('Group Item')).toBeInTheDocument();
     expect(screen.getByText(/Group Gift - \$30.00 contributed so far./)).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe('Modal Component', () => {
   });
 
   it('renders correctly for a purchased single item', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockPurchasedItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockPurchasedItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
 
     expect(screen.getByText('Purchased Item')).toBeInTheDocument();
     expect(screen.getByText('This gift has been claimed!')).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe('Modal Component', () => {
   });
 
   it('renders correctly for a fully funded group item', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockFundedGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockFundedGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
 
     expect(screen.getByText('Funded Group Item')).toBeInTheDocument();
     expect(screen.getByText('This gift is fully funded!')).toBeInTheDocument();
@@ -122,13 +122,13 @@ describe('Modal Component', () => {
 
 
   it('calls onClose when the close button is clicked', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.click(screen.getByLabelText('Close modal'));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('calls onClose when Escape key is pressed', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const closeButton = screen.getByLabelText('Close modal');
     await waitFor(() => expect(closeButton).toHaveFocus());
 
@@ -137,7 +137,7 @@ describe('Modal Component', () => {
   });
 
   it('loops focus from last to first element with Tab', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const closeButton = screen.getByLabelText('Close modal');
     await waitFor(() => expect(closeButton).toHaveFocus());
     const claimButton = screen.getByRole('button', { name: 'Claim Gift' });
@@ -150,7 +150,7 @@ describe('Modal Component', () => {
   });
 
   it('loops focus from first to last element with Shift+Tab', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const closeButton = screen.getByLabelText('Close modal');
     const claimButton = screen.getByRole('button', { name: 'Claim Gift' });
     await waitFor(() => expect(closeButton).toHaveFocus());
@@ -160,14 +160,14 @@ describe('Modal Component', () => {
   });
 
   it('updates contributor name input', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const nameInput = screen.getByLabelText(/Your Name/i);
     fireEvent.change(nameInput, { target: { value: 'Test User' } });
     expect(nameInput).toHaveValue('Test User');
   });
 
   it('updates contribution amount input for group gift', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const amountInput = screen.getByLabelText(/Contribution Amount/i);
     fireEvent.change(amountInput, { target: { value: '25' } });
     expect(amountInput).toHaveValue(25); // Input type=number returns number
@@ -176,7 +176,7 @@ describe('Modal Component', () => {
   // --- Validation and Submission Tests ---
 
   it('shows error if name is missing on contribution/claim', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
     expect(await screen.findByText('Name is required and must be under 100 characters.')).toBeInTheDocument();
@@ -184,7 +184,7 @@ describe('Modal Component', () => {
   });
 
   it('shows error if contribution amount is invalid for group gift', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Test User' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
@@ -193,7 +193,7 @@ describe('Modal Component', () => {
   });
 
   it('shows error if contribution amount exceeds remaining for group gift', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Test User' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '80' } }); // More than remaining 70
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
@@ -202,7 +202,7 @@ describe('Modal Component', () => {
   });
 
   it('calls onContribute with correct details for single item claim', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Claimer' } });
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
@@ -218,7 +218,7 @@ describe('Modal Component', () => {
   });
 
   it('calls onContribute with correct details for group gift contribution', async () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Contributor' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
@@ -238,7 +238,7 @@ describe('Modal Component', () => {
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockOnContribute.mockRejectedValueOnce(new Error(errorMessage)); // Simulate API error
 
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Contributor' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
@@ -252,7 +252,7 @@ describe('Modal Component', () => {
   });
 
   it('displays placeholder image if item image fails to load', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><Modal item={{...mockSingleItem, image: { id: 'm2', url: '/invalid-path.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }}} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={{...mockSingleItem, image: { id: 'm2', url: '/invalid-path.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }}} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const img = screen.getByRole('presentation');
     // Simulate the error event
     fireEvent.error(img);

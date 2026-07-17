@@ -1,5 +1,7 @@
-import React from 'react';
-import { useOverlay } from '../../hooks/useOverlay';
+'use client';
+
+import React, { useId } from 'react';
+import { Overlay } from './Overlay';
 
 export interface DialogProps {
   isOpen: boolean;
@@ -24,34 +26,27 @@ export function Dialog({
   'aria-describedby': ariaDescribedby,
   className = '',
 }: DialogProps) {
-  const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose);
+  const defaultId = useId();
   
-  // Use provided IDs or generate generic ones for this instance
-  const defaultLabelId = `dialog-title-${Math.random().toString(36).substr(2, 9)}`;
-  const defaultDescId = `dialog-desc-${Math.random().toString(36).substr(2, 9)}`;
-  
-  const finalLabelId = ariaLabelledby || (title ? defaultLabelId : undefined);
-  const finalDescId = ariaDescribedby || (description ? defaultDescId : undefined);
-
-  if (!isOpen) return null;
+  const finalLabelId = ariaLabelledby || (title ? `dialog-title-${defaultId}` : undefined);
+  const finalDescId = ariaDescribedby || (description ? `dialog-desc-${defaultId}` : undefined);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
-      onClick={handleBackdropClick}
+    <Overlay
+      isOpen={isOpen}
+      onClose={onClose}
+      className={`bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 ${className}`}
     >
       <div
-        ref={overlayRef}
         role={role}
-        aria-modal="true"
         aria-labelledby={finalLabelId}
         aria-describedby={finalDescId}
-        className={`bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden ${className}`}
+        className="w-full h-full"
       >
         {title && (
-          <div className="px-6 py-4 border-b border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-zinc-800">
             {typeof title === 'string' ? (
-              <h2 id={finalLabelId} className="text-lg font-medium text-gray-900">
+              <h2 id={finalLabelId} className="text-lg font-medium text-gray-900 dark:text-zinc-50">
                 {title}
               </h2>
             ) : (
@@ -60,7 +55,7 @@ export function Dialog({
           </div>
         )}
         {description && (
-          <div className="px-6 pt-4 pb-2 text-sm text-gray-500" id={finalDescId}>
+          <div className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400" id={finalDescId}>
             {description}
           </div>
         )}
@@ -68,6 +63,6 @@ export function Dialog({
           {children}
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

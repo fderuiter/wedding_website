@@ -22,7 +22,8 @@
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
     "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
     "prisma:generate": "prisma generate",
-    "scaffold": "node scripts/scaffold-feature.mjs"
+    "scaffold": "node scripts/scaffold-feature.mjs",
+    "prepare": "husky"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
@@ -72,9 +73,11 @@
     "eslint-config-next": "^16.1.6",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-unused-imports": "^4.4.1",
+    "husky": "^9.1.7",
     "jest": "^30.2.0",
     "jest-axe": "^10.0.0",
     "jest-environment-jsdom": "^30.2.0",
+    "lint-staged": "^17.0.8",
     "msw": "^1.3.3",
     "prisma": "^7.6.0",
     "tailwindcss": "^4.1.18",
