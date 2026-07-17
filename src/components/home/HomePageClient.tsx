@@ -235,10 +235,10 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
 
           {features.map((feature, index) => renderSection(feature, index + 3))}
 
-          <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-500 dark:text-gray-400">
+          <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-400">
             <p>© {new Date().getFullYear()} {config.brideName} & {config.groomName} • Designed with ❤️ in {config.venueState}</p>
             <p>Stay tuned for more updates from our lives together!</p>
-            <a href="/project-info" className="text-primary dark:text-primary hover:underline">About this site</a>
+            <a href="/project-info" className="text-primary-light hover:underline">About this site</a>
             <Link
               href="/heart"
               className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
