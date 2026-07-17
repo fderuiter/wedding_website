@@ -1,9 +1,6 @@
 'use client';
 import React, { createContext, useContext, useId } from 'react';
-
-export function cn(...classes: (string | undefined | null | false)[]) {
-  return classes.filter(Boolean).join(' ');
-}
+import { cn } from '@/utils/cn';
 
 type FormItemContextValue = {
   id: string;
@@ -51,7 +48,7 @@ export const Label = React.forwardRef<
         state === 'error' ? 'text-red-600 dark:text-red-400' : 
           state === 'success' ? 'text-green-600 dark:text-green-400' : 
             state === 'warning' ? 'text-yellow-600 dark:text-yellow-400' : 
-              'text-gray-900 dark:text-gray-100',
+              'text-gray-900 dark:text-zinc-100',
         className
       )}
       {...props}
@@ -67,7 +64,7 @@ export const Input = React.forwardRef<
   const { id, state, messageId } = useFormItem();
 
   const stateStyles = {
-    default: 'border-gray-300 dark:border-gray-600 focus-visible:ring-primary',
+    default: 'border-gray-300 dark:border-zinc-700 focus-visible:ring-primary',
     error: 'border-red-500 focus-visible:ring-red-500 dark:border-red-500 dark:focus-visible:ring-red-500',
     success: 'border-green-500 focus-visible:ring-green-500 dark:border-green-500 dark:focus-visible:ring-green-500',
     warning: 'border-yellow-500 focus-visible:ring-yellow-500 dark:border-yellow-500 dark:focus-visible:ring-yellow-500',
@@ -78,7 +75,7 @@ export const Input = React.forwardRef<
       type={type}
       id={id}
       className={cn(
-        'flex h-10 w-full rounded-md border bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full rounded-md border bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -98,7 +95,7 @@ export const Textarea = React.forwardRef<
   const { id, state, messageId } = useFormItem();
 
   const stateStyles = {
-    default: 'border-gray-300 dark:border-gray-600 focus-visible:ring-primary',
+    default: 'border-gray-300 dark:border-zinc-700 focus-visible:ring-primary',
     error: 'border-red-500 focus-visible:ring-red-500',
     success: 'border-green-500 focus-visible:ring-green-500',
     warning: 'border-yellow-500 focus-visible:ring-yellow-500',
@@ -108,7 +105,7 @@ export const Textarea = React.forwardRef<
     <textarea
       id={id}
       className={cn(
-        'flex min-h-[80px] w-full rounded-md border bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex min-h-[80px] w-full rounded-md border bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -128,7 +125,7 @@ export const Select = React.forwardRef<
   const { id, state, messageId } = useFormItem();
 
   const stateStyles = {
-    default: 'border-gray-300 dark:border-gray-600 focus-visible:ring-primary',
+    default: 'border-gray-300 dark:border-zinc-700 focus-visible:ring-primary',
     error: 'border-red-500 focus-visible:ring-red-500',
     success: 'border-green-500 focus-visible:ring-green-500',
     warning: 'border-yellow-500 focus-visible:ring-yellow-500',
@@ -138,7 +135,7 @@ export const Select = React.forwardRef<
     <select
       id={id}
       className={cn(
-        'flex h-10 w-full rounded-md border bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full rounded-md border bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -158,7 +155,7 @@ export const Checkbox = React.forwardRef<
   const { id, state, messageId } = useFormItem();
 
   const stateStyles = {
-    default: 'border-gray-300 dark:border-gray-600 text-primary focus-visible:ring-primary',
+    default: 'border-gray-300 dark:border-zinc-700 text-primary focus-visible:ring-primary',
     error: 'border-red-500 text-red-500 focus-visible:ring-red-500',
     success: 'border-green-500 text-green-500 focus-visible:ring-green-500',
     warning: 'border-yellow-500 text-yellow-500 focus-visible:ring-yellow-500',
@@ -169,7 +166,7 @@ export const Checkbox = React.forwardRef<
       type="checkbox"
       id={id}
       className={cn(
-        'h-4 w-4 rounded border bg-white dark:bg-gray-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'h-4 w-4 rounded border bg-white dark:bg-zinc-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -193,7 +190,7 @@ export const FormMessage = React.forwardRef<
   }
 
   const stateStyles = {
-    default: 'text-gray-500 dark:text-gray-400',
+    default: 'text-gray-500 dark:text-zinc-400',
     error: 'text-red-500 dark:text-red-400 font-medium',
     success: 'text-green-500 dark:text-green-400 font-medium',
     warning: 'text-yellow-600 dark:text-yellow-500 font-medium',

@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Dialog } from './Dialog';
+import { Button } from './Button';
 
 export type ToastType = 'success' | 'error' | 'info' | 'confirm';
 
@@ -66,18 +67,18 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
           description={toast.message}
         >
           <div className="flex justify-end gap-2 mt-4">
-            <button
+            <Button
+              variant="outline"
               onClick={toast.onCancel}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 font-medium"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="danger"
               onClick={toast.onConfirm}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 font-medium"
             >
               Confirm
-            </button>
+            </Button>
           </div>
         </Dialog>
       ))}
@@ -99,13 +100,15 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
             <div className="flex justify-between items-center w-full">
               <span>{toast.message}</span>
               {toast.type !== 'confirm' && (
-                <button 
+                <Button 
+                  variant="ghost"
+                  size="sm"
                   onClick={() => removeToast(toast.id)} 
-                  className="ml-4 text-white opacity-80 hover:opacity-100 focus:outline-none"
+                  className="ml-4 text-white hover:text-white dark:hover:text-white hover:bg-white/20 dark:hover:bg-white/20"
                   aria-label="Close notification"
                 >
                   &times;
-                </button>
+                </Button>
               )}
             </div>
           </div>

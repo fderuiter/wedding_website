@@ -10,26 +10,26 @@ import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 
 /**
- * @interface ModalProps
- * @description Defines the props for the Modal component.
- * @property {RegistryItem} item - The registry item to be displayed in the modal.
- * @property {() => void} onClose - Callback function to close the modal.
+ * @interface RegistryItemCardProps
+ * @description Defines the props for the RegistryItemCard component.
+ * @property {RegistryItem} item - The registry item to be displayed in the card.
+ * @property {() => void} onClose - Callback function to close the card.
  * @property {(itemId: string, contributorName: string, amount: number) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
  */
-export interface ModalProps {
+export interface RegistryItemCardProps {
   item: RegistryItem;
   onClose: () => void;
   onContribute: (itemId: string, contributorName: string, amount: number) => Promise<void>;
 }
 
 /**
- * @function Modal
- * @description A React component that displays a modal dialog for a registry item.
+ * @function RegistryItemCard
+ * @description A React component that displays a card layout for a registry item inside an overlay.
  * It allows users to view item details and contribute to or claim the item.
- * @param {ModalProps} props - The props for the component.
- * @returns {JSX.Element} The rendered Modal component.
+ * @param {RegistryItemCardProps} props - The props for the component.
+ * @returns {JSX.Element} The rendered RegistryItemCard component.
  */
-const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
+const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute }) => {
   const [contributorName, setContributorName] = useState('');
   const [amount, setAmount] = useState<number | string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -84,11 +84,12 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100" onClick={(e) => e.stopPropagation()}>
       <Button
         variant="ghost"
-        className="absolute top-3 right-3 text-gray-500 hover:text-primary dark:hover:text-primary rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center w-8 h-8"
+        size="sm"
+        className="absolute top-3 right-3"
         onClick={onClose}
         aria-label="Close modal"
       >
-        <Icon name="X" className="w-6 h-6" />
+        <Icon name="X" className="w-5 h-5" />
       </Button>
       <div className="relative w-full h-64 mb-4">
         <MediaImage
@@ -215,4 +216,4 @@ const Modal: React.FC<ModalProps> = ({ item, onClose, onContribute }) => {
   );
 };
 
-export default Modal;
+export default RegistryItemCard;
