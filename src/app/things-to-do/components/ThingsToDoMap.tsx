@@ -12,9 +12,9 @@ import shadow from 'leaflet/dist/images/marker-shadow.png';
 // Fix for default icon issue with webpack
 // We use local imports instead of unpkg URLs to ensure stability and version consistency.
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: iconRetina.src,
-  iconUrl: icon.src,
-  shadowUrl: shadow.src,
+  iconRetinaUrl: typeof iconRetina === 'string' ? iconRetina : iconRetina.src || (iconRetina as any).default,
+  iconUrl: typeof icon === 'string' ? icon : icon.src || (icon as any).default,
+  shadowUrl: typeof shadow === 'string' ? shadow : shadow.src || (shadow as any).default,
 });
 
 /**
