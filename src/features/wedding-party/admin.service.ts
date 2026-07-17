@@ -46,4 +46,3 @@ export class WeddingPartyAdminService extends BaseService<any> {
     return super.update(id, mappedData, author);
   }
 }
-export default WeddingPartyAdminService;

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import type { IContentRepository } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 
-export class ContentRepository implements IContentRepository {
+class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
   withClient(client: any): this {

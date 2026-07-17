@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { WeddingPartyMemberSchema, WeddingPartyMemberDTO } from './schemas';
 
-export class WeddingPartyRepository {
+class WeddingPartyRepository {
   constructor(public client: any = prisma) {}
 
   withClient(client: any): this {

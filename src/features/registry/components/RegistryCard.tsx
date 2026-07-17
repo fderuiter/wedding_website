@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 /**
  * Props for the RegistryCard component.
  */
-export interface RegistryCardProps {
+interface RegistryCardProps {
   /** The registry item data to display. */
   item: RegistryItem;
   /** Function to call when the card is clicked. */
