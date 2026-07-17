@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Suspense, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
-import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat';
+import { ActiveCollisionTypes, RigidBodyType } from '@dimforge/rapier3d-compat';
 
 import { useTheme } from '@/components/ThemeProvider';
 import { useOverlay } from '@/hooks/useOverlay';
@@ -53,7 +53,6 @@ function PhysicsHeart({
 
   const { handlers: mainHandlers, getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements, lifecycle: { isDestroyed: isBroken, destroy: breakHeart }, reduceMotion } = useUnified3DInput({
     r3f: { size, viewport },
-    physicsBodyRef: heartRef,
     reconstructTimeout: 3000,
     accessibility: {
       instructions: 'Use arrow keys to move the heart, Space or Enter to break it.',
@@ -93,6 +92,9 @@ function PhysicsHeart({
     onDragStart: () => {
       if (!interacted) onInteract();
       setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING);
+      if (heartRef.current) {
+        heartRef.current.setBodyType(RigidBodyType.KinematicPositionBased, true);
+      }
     },
     onDragMove: (norm) => {
       if (heartRef.current) {
@@ -105,12 +107,20 @@ function PhysicsHeart({
     },
     onDragEnd: ({ vx, vy }) => {
       setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE);
-      if (heartRef.current && !reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
-        heartRef.current.setLinvel({
-          x: vx * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
-          y: -vy * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
-          z: 0
-        }, true);
+      if (heartRef.current) {
+        heartRef.current.setBodyType(RigidBodyType.Dynamic, true);
+        if (!reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
+          heartRef.current.setLinvel({
+            x: vx * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
+            y: -vy * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
+            z: 0
+          }, true);
+        }
+      }
+    },
+    onDestroy: () => {
+      if (heartRef.current) {
+        heartRef.current.setBodyType(RigidBodyType.Dynamic, true);
       }
     }
   });
