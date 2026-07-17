@@ -8,7 +8,7 @@ import { RegistryItemSchema, RegistryItemDTO } from './schemas';
  * @description Provides data access methods for the `RegistryItem` model using Prisma.
  * This class abstracts the database interactions from the service layer.
  */
-export class RegistryRepository implements IRegistryRepository {
+class RegistryRepository implements IRegistryRepository {
   constructor(public client: any = prisma) {}
 
   withClient(client: any): this {

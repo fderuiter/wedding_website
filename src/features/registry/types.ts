@@ -1,6 +1,5 @@
-import { RegistryItemDTO, ContributorDTO } from './schemas';
+import { RegistryItemDTO } from './schemas';
 
-export type Contributor = ContributorDTO;
 export type RegistryItem = RegistryItemDTO;
 
 export interface IRegistryRepository {

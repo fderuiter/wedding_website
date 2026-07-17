@@ -4,7 +4,7 @@ import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
 import AdminDashboardPage from '../page';
-import type { RegistryItem } from '@/types/registry';
+import type { RegistryItem } from '@/features/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
 
 // Mock next/navigation's useRouter

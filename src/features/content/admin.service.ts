@@ -30,4 +30,3 @@ export class ContentNodeAdminService extends BaseService<any> {
     return super.update(id, data, author);
   }
 }
-export default ContentNodeAdminService;

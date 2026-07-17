@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
-import { RegistryItem } from '@/types/registry';
+import { RegistryItem } from '@/features/registry';
 
 // Mock item data
 const mockSingleItem: RegistryItem = {

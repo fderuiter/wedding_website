@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RegistryCard from '../RegistryCard';
-import { RegistryItem } from '@/types/registry';
+import { RegistryItem } from '@/features/registry';
 
 // Mock data for a registry item
 const mockItem: RegistryItem = {

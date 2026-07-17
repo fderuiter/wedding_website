@@ -46,7 +46,7 @@ export async function signAdminToken(payload: AdminTokenPayload): Promise<string
  * @param token - Signed token in the form `base64url(payload).base64url(hmac)` 
  * @returns The parsed `AdminTokenPayload` if the token is valid and the signature matches, `null` otherwise.
  */
-export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
+async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;

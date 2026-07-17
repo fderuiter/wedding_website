@@ -1,6 +1,5 @@
-import { ApiClient, ApiError } from '@/lib/apiClient';
+import { ApiClient } from '@/lib/apiClient';
 
-export { ApiError };
 
 export const apiClient = new ApiClient({
   onUnauthorized: () => {

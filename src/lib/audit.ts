@@ -34,7 +34,7 @@ export async function createAuditSnapshot(
   void pruneSnapshots(entityType, entityId);
 }
 
-export async function pruneSnapshots(entityType: string, entityId: string) {
+async function pruneSnapshots(entityType: string, entityId: string) {
   try {
     const limit = env.HISTORY_VERSION_LIMIT;
     

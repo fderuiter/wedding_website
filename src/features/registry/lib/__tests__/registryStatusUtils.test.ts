@@ -1,5 +1,5 @@
 import { getRegistryItemStatus } from '../registryStatusUtils';
-import { RegistryItem } from '@/types/registry';
+import { RegistryItem } from '@/features/registry';
 
 describe('getRegistryItemStatus', () => {
   const baseItem: RegistryItem = {

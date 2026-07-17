@@ -87,5 +87,5 @@ export const AppConfigSchema = z.object({
 
 export type AppConfigDTO = z.infer<typeof AppConfigSchema>;
 
-export const PublicAppConfigSchema = AppConfigSchema;
+const PublicAppConfigSchema = AppConfigSchema;
 export type PublicAppConfigDTO = z.infer<typeof PublicAppConfigSchema>;

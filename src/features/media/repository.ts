@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { MediaDTO, MediaSchema } from './schemas';
 
-export class MediaRepository {
+class MediaRepository {
   constructor(public client: any = prisma) {}
 
   withClient(client: any): this {

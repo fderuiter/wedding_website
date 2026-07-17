@@ -39,4 +39,3 @@ export class RegistryItemAdminService extends BaseService<any> {
     return super.update(id, data, author);
   }
 }
-export default RegistryItemAdminService;

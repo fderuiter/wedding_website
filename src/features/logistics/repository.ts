@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import type { ILogisticsRepository } from './types';
 import { ContentNodeSchema, ContentNodeDTO } from '../content/schemas';
 
-export class LogisticsRepository implements ILogisticsRepository {
+class LogisticsRepository implements ILogisticsRepository {
   constructor(public client: any = prisma) {}
 
   withClient(client: any): this {

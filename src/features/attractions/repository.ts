@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { AttractionSchema, AttractionDTO } from './schemas';
 
-export class AttractionsRepository {
+class AttractionsRepository {
   constructor(public client: any = prisma) {}
 
   withClient(client: any): this {
