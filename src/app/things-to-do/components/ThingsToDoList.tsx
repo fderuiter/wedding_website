@@ -11,6 +11,11 @@ interface ThingsToDoListProps {
   attractions: AttractionDTO[];
 }
 
+const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
+  ssr: false,
+  loading: () => <div className="bg-gray-200 dark:bg-gray-800 animate-pulse w-full h-full" />,
+});
+
 const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions }) => {
   const [attractions, setAttractions] = useState(initialAttractions);
 
@@ -32,11 +37,6 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
       return () => window.removeEventListener('message', handleMessage);
     }
   }, []);
-
-  const ThingsToDoMap = useMemo(() => dynamic(() => import('./ThingsToDoMap'), {
-    ssr: false,
-    loading: () => <div className="bg-gray-200 dark:bg-gray-800 animate-pulse w-full h-full" />,
-  }), []);
 
   return (
     <div>

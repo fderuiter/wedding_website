@@ -5,9 +5,9 @@
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev --turbo",
     "prebuild": "node --experimental-strip-types scripts/generate-docs.ts",
-    "build": "npm run lint && prisma generate && next build --webpack",
+    "build": "npm run lint && prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
