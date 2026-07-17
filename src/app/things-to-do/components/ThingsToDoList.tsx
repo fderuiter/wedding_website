@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
 import type { AttractionDTO } from '@/features/attractions';
