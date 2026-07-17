@@ -219,7 +219,9 @@ describe('Registry API routes', () => {
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(400);
         const json = await res.json();
-        expect(json.error).toBe('Price must be a positive number.');
+        console.log('JSON returned:', json);
+        expect(json.error).toBe('Validation Error');
+        expect(JSON.stringify(json.details)).toContain('Price must be a positive number.');
       });
 
       it('updates item when authorized and data valid', async () => {

@@ -3,6 +3,7 @@ import { registryService } from '../service';
 import { RegistryItemBaseSchema } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { createValidatedRoute } from '@/utils/createValidatedRoute';
 
 export const GET = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
@@ -14,24 +15,20 @@ export const GET = withApiMiddleware(async (_request: NextRequest, { params }: {
   return NextResponse.json(item);
 });
 
-export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  const { id } = await params;
-  const body = await request.json();
-  const parseResult = RegistryItemBaseSchema.safeParse(body);
-  
-  if (!parseResult.success) {
-    throw new ApiError(400, parseResult.error.issues[0].message);
+export const PUT = createValidatedRoute({
+  schema: RegistryItemBaseSchema,
+  handler: async (_request: NextRequest, { params, body }: { params: { id: string }, body: any }) => {
+    const { id } = params;
+    const updatedData = body;
+
+    const updatedItem = await registryService.updateItem(id, {
+      ...updatedData,
+      imageUrl: updatedData.imageUrl === null ? undefined : updatedData.imageUrl,
+      isGroupGift: !!updatedData.isGroupGift,
+    });
+
+    return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
   }
-
-  const updatedData = parseResult.data;
-
-  const updatedItem = await registryService.updateItem(id, {
-    ...updatedData,
-    imageUrl: updatedData.imageUrl === null ? undefined : updatedData.imageUrl,
-    isGroupGift: !!updatedData.isGroupGift,
-  });
-
-  return NextResponse.json({ message: 'Item updated successfully', item: updatedItem });
 });
 
 export const DELETE = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {

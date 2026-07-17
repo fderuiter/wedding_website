@@ -60,7 +60,11 @@ export function withApiMiddleware(handler: RouteHandler) {
       let finalResponse: NextResponse;
       if (response.status >= 400) {
         finalResponse = NextResponse.json(
-          { success: false, error: data.error || data.message || 'API Error' },
+          { 
+            success: false, 
+            error: data.error || data.message || 'API Error',
+            ...(data.details ? { details: data.details } : {})
+          },
           { status: response.status, headers: response.headers }
         );
       } else if (data && typeof data === 'object' && 'success' in data) {

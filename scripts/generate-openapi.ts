@@ -29,6 +29,28 @@ function extractSchemaName(node: any): string | null {
   const calls = node.getDescendantsOfKind(SyntaxKind.CallExpression);
   for (const c of calls) {
     const text = c.getExpression().getText();
+    if (text === 'createValidatedRoute') {
+      const args = c.getArguments();
+      if (args.length > 0 && args[0].getKind() === SyntaxKind.ObjectLiteralExpression) {
+        const obj = args[0];
+        const schemaProp = obj.getProperty('schema');
+        if (schemaProp && schemaProp.getKind() === SyntaxKind.PropertyAssignment) {
+          let init = schemaProp.getInitializer();
+          if (init) {
+            if (init.getKind() === SyntaxKind.ArrowFunction || init.getKind() === SyntaxKind.FunctionExpression) {
+              const innerCalls = init.getDescendantsOfKind(SyntaxKind.CallExpression);
+              if (innerCalls.length > 0) {
+                return innerCalls[0].getExpression().getText().replace(/.*\./, '');
+              }
+              const innerIds = init.getDescendantsOfKind(SyntaxKind.Identifier);
+              const returnedSchema = innerIds.find((id: any) => id.getText().includes('Schema'));
+              if (returnedSchema) return returnedSchema.getText().replace(/.*\./, '');
+            }
+            return init.getText().replace(/.*\./, '');
+          }
+        }
+      }
+    }
     if (text.includes('.safeParse') || text.includes('.parse')) {
       return text.split('.')[0];
     }
@@ -40,6 +62,28 @@ function findSchemaInFile(file: any): string | null {
   const calls = file.getDescendantsOfKind(SyntaxKind.CallExpression);
   for (const c of calls) {
     const text = c.getExpression().getText();
+    if (text === 'createValidatedRoute') {
+      const args = c.getArguments();
+      if (args.length > 0 && args[0].getKind() === SyntaxKind.ObjectLiteralExpression) {
+        const obj = args[0];
+        const schemaProp = obj.getProperty('schema');
+        if (schemaProp && schemaProp.getKind() === SyntaxKind.PropertyAssignment) {
+          let init = schemaProp.getInitializer();
+          if (init) {
+            if (init.getKind() === SyntaxKind.ArrowFunction || init.getKind() === SyntaxKind.FunctionExpression) {
+              const innerCalls = init.getDescendantsOfKind(SyntaxKind.CallExpression);
+              if (innerCalls.length > 0) {
+                return innerCalls[0].getExpression().getText().replace(/.*\./, '');
+              }
+              const innerIds = init.getDescendantsOfKind(SyntaxKind.Identifier);
+              const returnedSchema = innerIds.find((id: any) => id.getText().includes('Schema'));
+              if (returnedSchema) return returnedSchema.getText().replace(/.*\./, '');
+            }
+            return init.getText().replace(/.*\./, '');
+          }
+        }
+      }
+    }
     if (text.includes('.safeParse') || text.includes('.parse')) {
       return text.split('.')[0];
     }
