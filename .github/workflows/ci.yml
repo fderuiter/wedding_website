@@ -19,14 +19,73 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      - name: Generate API Docs & Check Schemas
-        run: npx tsx scripts/generate-openapi.ts
-      - name: Commit API Docs updates
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - name: Verify Documentation and Architecture Sync
+        id: verify-docs
+        run: |
+          npx tsx scripts/generate-openapi.ts
+          npx tsx scripts/generate-docs.ts
+          
+          # Capture status before creating any files
+          STATUS=$(git status --porcelain)
+          if [ -n "$STATUS" ]; then
+            echo "$STATUS" > raw_drift.txt
+            awk '{print $2}' raw_drift.txt > drift_files.txt
+            echo "Drift detected in the following files:"
+            cat drift_files.txt
+            exit 1
+          fi
+
+      - name: Report Documentation Drift
+        if: always() && github.event_name == 'pull_request' && steps.verify-docs.outcome != 'skipped'
+        uses: actions/github-script@v7
         with:
-          commit_message: "docs: auto-update API references"
-          file_pattern: "public/openapi.json public/docs.html"
+          script: |
+            const fs = require('fs');
+            const signature = '<!-- doc-drift-comment -->';
+            
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            const existing = comments.data.find(c => c.body.includes(signature));
+            
+            if ('${{ steps.verify-docs.outcome }}' === 'failure') {
+              let commentBody = '';
+              if (fs.existsSync('drift_files.txt')) {
+                const filesList = fs.readFileSync('drift_files.txt', 'utf8').trim().split('\n');
+                const driftedFilesMarkdown = filesList.map(line => `- \`${line}\``).join('\n');
+                const filesForGitAdd = filesList.join(' ');
+                
+                commentBody = `${signature}\n### ⚠️ Documentation Drift Detected\n\nThe committed documentation files do not match the current codebase. The following files are out of sync:\n\n${driftedFilesMarkdown}\n\n**To resolve this locally, run the following commands and commit the changes:**\n\n\`\`\`bash\nnpx tsx scripts/generate-openapi.ts\nnpx tsx scripts/generate-docs.ts\ngit add ${filesForGitAdd}\ngit commit -m "docs: sync documentation with codebase"\n\`\`\`\n`;
+              } else {
+                commentBody = `${signature}\n### ⚠️ Documentation Generation Failed\n\nThe documentation generation scripts failed to execute. Please check the workflow logs for details on missing schemas or syntax errors.\n`;
+              }
+              
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: commentBody
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: commentBody
+                });
+              }
+            } else if ('${{ steps.verify-docs.outcome }}' === 'success' && existing) {
+              const resolveBody = `${signature}\n### ✅ Documentation is now in sync!\n\nAll architecture and API files match the codebase.`;
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: resolveBody
+              });
+            }
       - name: Build project
         run: npm run build
       - name: Install Playwright Browsers
