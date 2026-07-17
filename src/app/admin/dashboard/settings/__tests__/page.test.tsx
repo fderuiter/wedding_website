@@ -61,9 +61,6 @@ const mockConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "Alice and Bob's wedding, wedding website",
-  themePrimary: '#f43f5e',
-  themeSecondary: '#fbbf24',
-  themeAccent: '#e11d48',
   features: [],
 };
 

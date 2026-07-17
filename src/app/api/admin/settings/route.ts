@@ -50,9 +50,6 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       faviconUrl: data.faviconUrl,
       ogImageUrl: data.ogImageUrl,
       seoKeywords: data.seoKeywords,
-      themePrimary: safeColor(data.themePrimary, '#f43f5e'),
-      themeSecondary: safeColor(data.themeSecondary, '#fbbf24'),
-      themeAccent: safeColor(data.themeAccent, '#e11d48'),
     },
   });
 

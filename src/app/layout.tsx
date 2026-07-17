@@ -43,11 +43,7 @@ export default async function RootLayout({
         {isUninitialized ? (
           <SetupWizard />
         ) : (
-          <ThemeProvider
-            themePrimary={config?.themePrimary}
-            themeSecondary={config?.themeSecondary}
-            themeAccent={config?.themeAccent}
-          >
+          <ThemeProvider>
             <ToastProvider>
               <a href="#main-content" className="skip-link">Skip to main content</a>
               <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>

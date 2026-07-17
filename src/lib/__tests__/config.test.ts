@@ -24,9 +24,6 @@ const baseConfig: AppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "Abbi and Fred's wedding, wedding website",
-  themePrimary: '#f43f5e',
-  themeSecondary: '#fbbf24',
-  themeAccent: '#e11d48',
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -39,9 +36,6 @@ describe('Configuration DTO Architecture', () => {
     // Assert other fields remain intact
     expect(publicConfig.brideName).toBe('Abbi');
     expect(publicConfig.groomName).toBe('Fred');
-    expect(publicConfig.themePrimary).toBe('#f43f5e');
-    expect(publicConfig.themeSecondary).toBe('#fbbf24');
-    expect(publicConfig.themeAccent).toBe('#e11d48');
   });
 
   it('toPublicAppConfig preserves faviconUrl in the public config', () => {
