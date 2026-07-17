@@ -1,3 +1,4 @@
+import './globals.css';
 import { Geist } from 'next/font/google';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { generateMetadata } from './metadata';
