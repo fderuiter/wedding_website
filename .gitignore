@@ -9,8 +9,9 @@
 # Testing
 /coverage
 
-# Next.js
+# Next.js & Turbopack
 /.next/
+/.turbo/
 /out/
 
 # Production
@@ -34,8 +35,10 @@ lerna-debug.log*
 .env
 
 # Prisma
-# Ignore the SQLite database file
-prisma/registry.db
+# Ignore generic SQLite database files (in case of accidental local creation)
+*.db
+*.db-journal
+*.sqlite
 # Ignore generated Prisma client
 node_modules/@prisma/client
 
