@@ -1,5 +1,5 @@
 import React from 'react';
-import { cn } from './forms';
+import { cn } from '@/utils/cn';
 
 export const Skeleton = React.forwardRef<
   HTMLDivElement,

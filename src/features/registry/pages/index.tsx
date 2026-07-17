@@ -6,7 +6,7 @@ import { Overlay } from '@/components/ui/Overlay';
 import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
 import RegistryCard from '../components/RegistryCard';
-import Modal from '../components/Modal';
+import RegistryItemCard from '../components/RegistryItemCard';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import { PriceRangeFilter } from '../components/PriceRangeFilter';
 import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
@@ -238,7 +238,7 @@ export default function RegistryPage() {
       )}
       <Overlay isOpen={!!(selectedItem && isModalOpen)} onClose={handleCloseModal} animationType="scale">
         {selectedItem && (
-          <Modal
+          <RegistryItemCard
             item={selectedItem}
             onClose={handleCloseModal}
             onContribute={handleContribute}

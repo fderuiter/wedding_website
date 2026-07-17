@@ -6,7 +6,7 @@ export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
 export { default as EditItemPage } from './pages/edit-item';
 export { default as RegistryCard } from './components/RegistryCard';
-export { default as Modal } from './components/Modal';
+export { default as RegistryItemCard } from './components/RegistryItemCard';
 export { default as RegistryCardSkeleton } from './components/RegistryCardSkeleton';
 export { default as RegistryItemForm } from './components/RegistryItemForm';
 export { PriceRangeFilter } from './components/PriceRangeFilter';
