@@ -64,7 +64,7 @@ function rgbToHex(r: number, g: number, b: number) {
   return '#' + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).padStart(6, '0');
 }
 
-export function getContrastRatio(hex1: string, hex2: string) {
+function getContrastRatio(hex1: string, hex2: string) {
   const rgb1 = hexToRgb(hex1);
   const rgb2 = hexToRgb(hex2);
   if (!rgb1 || !rgb2) return 1;
@@ -75,7 +75,7 @@ export function getContrastRatio(hex1: string, hex2: string) {
   return (lightest + 0.05) / (darkest + 0.05);
 }
 
-export function getAccessibleVariant(colorHex: string, bgHex: string = '#111827', targetRatio = 4.5) {
+function getAccessibleVariant(colorHex: string, bgHex: string = '#111827', targetRatio = 4.5) {
   let currentRatio = getContrastRatio(colorHex, bgHex);
   if (currentRatio >= targetRatio) return colorHex;
 

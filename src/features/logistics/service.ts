@@ -2,7 +2,7 @@ import { ILogisticsRepository } from './types';
 import { logisticsRepository } from './repository';
 import type { ContentNodeDTO } from '../content/schemas';
 
-export class LogisticsService {
+class LogisticsService {
   constructor(private readonly repo: ILogisticsRepository) {}
 
   async getHomepageLogistics(): Promise<ContentNodeDTO[]> {

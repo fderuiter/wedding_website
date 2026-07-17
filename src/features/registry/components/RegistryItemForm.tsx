@@ -10,7 +10,7 @@ import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/comp
 /**
  * Props for the RegistryItemForm component.
  */
-export interface RegistryItemFormProps {
+interface RegistryItemFormProps {
   /** Specifies whether the form is for adding a new item or editing an existing one. */
   mode: 'add' | 'edit';
   /** Initial values to populate the form fields, used in 'edit' mode. */

@@ -6,7 +6,7 @@ import { theme } from '../styles/theme';
 
 export type PublicAppConfig = PublicAppConfigDTO;
 
-export type LocalAppConfig = Omit<AppConfigDTO, 'latitude' | 'longitude'> & {
+type LocalAppConfig = Omit<AppConfigDTO, 'latitude' | 'longitude'> & {
   latitude: string | number;
   longitude: string | number;
 };

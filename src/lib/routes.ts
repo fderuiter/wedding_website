@@ -1,6 +1,6 @@
 export type RouteRole = 'admin' | 'public';
 
-export interface AppRoute {
+interface AppRoute {
   path: string;
   label?: string;
   roles: RouteRole[];
@@ -9,7 +9,7 @@ export interface AppRoute {
   showInNav?: boolean;
 }
 
-export const APP_ROUTES: AppRoute[] = [
+const APP_ROUTES: AppRoute[] = [
   // Navigation Links
   { path: '/', label: 'Home', roles: ['public', 'admin'], showInNav: true, exact: true },
   { path: '/photos', label: 'Photos', roles: ['public', 'admin'], showInNav: true },

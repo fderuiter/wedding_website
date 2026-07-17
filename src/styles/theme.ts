@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/i, 'Invalid hex color');
 
-export const themeSchema = z.object({
+const themeSchema = z.object({
   colors: z.object({
     primary: hexColorSchema,
     secondary: hexColorSchema,
@@ -38,7 +38,7 @@ export const themeSchema = z.object({
   }),
 });
 
-export type ThemeConfig = z.infer<typeof themeSchema>;
+type ThemeConfig = z.infer<typeof themeSchema>;
 
 const rawTheme: ThemeConfig = {
   colors: {
@@ -77,5 +77,4 @@ const rawTheme: ThemeConfig = {
 };
 
 export const theme = themeSchema.parse(rawTheme);
-export type Theme = typeof theme;
-export default theme;
+ 

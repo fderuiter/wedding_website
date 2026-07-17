@@ -60,4 +60,3 @@ export class AttractionAdminService extends BaseService<any> {
     return super.update(id, mappedData, author);
   }
 }
-export default AttractionAdminService;

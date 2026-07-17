@@ -1,4 +1,4 @@
-export class ApiError extends Error {
+class ApiError extends Error {
   public status: number;
   public data: any;
 

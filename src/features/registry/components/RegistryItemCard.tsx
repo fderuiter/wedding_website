@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/Button';
  * @property {() => void} onClose - Callback function to close the card.
  * @property {(itemId: string, contributorName: string, amount: number) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
  */
-export interface RegistryItemCardProps {
+interface RegistryItemCardProps {
   item: RegistryItem;
   onClose: () => void;
   onContribute: (itemId: string, contributorName: string, amount: number) => Promise<void>;

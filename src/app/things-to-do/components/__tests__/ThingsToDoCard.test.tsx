@@ -1,16 +1,21 @@
 import { render, screen } from '@testing-library/react';
 import ThingsToDoCard from '../ThingsToDoCard';
-import { Attraction } from '@/data/things-to-do';
+import { AttractionDTO } from '@/features/attractions';
 
-const mockAttraction: Attraction = {
+const mockAttraction: AttractionDTO = {
+  id: 'test-1',
   name: 'Test Attraction',
   description: 'A great place to visit.',
-  image: '/images/test.jpg',
+  imageUrl: '/images/test.jpg',
+  image: null,
   website: 'https://example.com',
   directions: 'https://maps.google.com',
   category: 'museum',
   latitude: 0.0,
   longitude: -92.4679,
+  isVisible: true,
+  createdAt: new Date(),
+  updatedAt: new Date()
 };
 
 describe('ThingsToDoCard', () => {
@@ -35,7 +40,7 @@ describe('ThingsToDoCard', () => {
   });
 
   it('renders a placeholder image if no image is provided', () => {
-    const attractionWithoutImage = { ...mockAttraction, image: '' };
+    const attractionWithoutImage = { ...mockAttraction, image: null, imageUrl: '' };
     render(<ThingsToDoCard attraction={attractionWithoutImage} />);
     const image = screen.getByAltText('Test Attraction') as HTMLImageElement;
     // The src will be encoded, so we check for the presence of the placeholder filename

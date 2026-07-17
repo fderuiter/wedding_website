@@ -187,11 +187,6 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
 
   return (
     <>
-      {/*
-        NOTE: AddToCalendar and Countdown are imported but currently unused in the layout.
-        They are preserved here for future use or reference, as requested.
-        To use them: <AddToCalendar event={calendarEvent} /> or <Countdown targetDate="..." />
-      */}
       <div id="top" />
       <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary"
       >

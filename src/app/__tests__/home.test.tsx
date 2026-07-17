@@ -51,11 +51,6 @@ jest.mock('framer-motion', () => {
   };
 });
 
-jest.mock('@/components/AddToCalendar', () => ({
-  __esModule: true,
-  default: () => <button>Add to Calendar</button>,
-}));
-
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
     brideName: 'Bride',
