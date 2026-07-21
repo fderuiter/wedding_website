@@ -11,6 +11,11 @@ function interpolateKeywords(templateStr: string, config: any): string[] {
 }
 
 
+/**
+ * Generates site metadata from the application configuration.
+ *
+ * @returns Metadata containing SEO, icon, Open Graph, and Twitter settings.
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   

@@ -120,12 +120,11 @@ async function bootstrapLogisticsNodes() {
 }
 
 /**
- * Load the global application configuration from the database and ensure baseline content nodes exist.
+ * Loads the global application configuration and ensures baseline logistics and FAQ content nodes exist.
  *
- * If the `appConfig` row with id `"global"` does not exist, a new row is created with initial venue and SEO fields.
- * Also ensures default logistics and FAQ content nodes are present.
+ * If the global configuration is unavailable, uses the predefined fallback configuration.
  *
- * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
+ * @returns The validated effective application configuration, with database values taking precedence over fallback defaults.
  */
 export async function getAppConfig(): Promise<AppConfigDTO> {
   let dbConfig: AppConfigDTO | null = null;
