@@ -28,6 +28,3 @@ export async function rateLimit(req: NextRequest, limit: number, windowMs: numbe
   return null;
 }
 
-export function resetRateLimitsForTesting() {
-  rateLimits.clear();
-}
