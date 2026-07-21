@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withApiMiddleware } from './withApiMiddleware';
 
-export interface ValidatedRouteConfig<T extends z.ZodTypeAny = any> {
+interface ValidatedRouteConfig<T extends z.ZodTypeAny = any> {
   schema?: T | ((params: any) => T);
   handler: (
     req: NextRequest,

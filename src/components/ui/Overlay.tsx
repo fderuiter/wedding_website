@@ -4,7 +4,7 @@ import React from 'react';
 import { useOverlay } from '@/hooks/useOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export interface OverlayProps {
+interface OverlayProps {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;

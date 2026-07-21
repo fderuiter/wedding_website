@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-export interface ImageDimensions {
+interface ImageDimensions {
   width: number;
   height: number;
 }

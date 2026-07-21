@@ -9,7 +9,7 @@ import { formatCurrency } from '@/utils/intl';
  * @property {[number, number]} value - The current selected price range [min, max].
  * @property {(value: [number, number]) => void} onChange - Callback function invoked when the price range changes.
  */
-export interface PriceRangeFilterProps {
+interface PriceRangeFilterProps {
   min: number;
   max: number;
   value: [number, number];

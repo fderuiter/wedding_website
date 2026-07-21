@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 
-export interface VisibilitySentinelProps extends React.HTMLAttributes<HTMLDivElement> {
+interface VisibilitySentinelProps extends React.HTMLAttributes<HTMLDivElement> {
   onVisible: () => void;
   rootMargin?: string;
   threshold?: number | number[];

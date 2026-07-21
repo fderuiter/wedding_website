@@ -10,7 +10,7 @@ class ApiError extends Error {
   }
 }
 
-export interface ApiClientConfig {
+interface ApiClientConfig {
   onUnauthorized?: () => void;
 }
 
