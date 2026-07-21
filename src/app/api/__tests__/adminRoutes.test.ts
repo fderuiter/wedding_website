@@ -1,17 +1,21 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
-import { POST as login } from '../admin/login/route';
-import { POST as logout } from '../admin/logout/route';
-import { GET as me } from '../admin/me/route';
 import { signAdminToken } from '@/core/auth/auth.server';
-import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 describe('Admin API routes', () => {
+  let login: typeof import('../admin/login/route').POST;
+  let logout: typeof import('../admin/logout/route').POST;
+  let me: typeof import('../admin/me/route').GET;
+
   beforeEach(() => {
+    jest.resetModules();
+    login = require('../admin/login/route').POST;
+    logout = require('../admin/logout/route').POST;
+    me = require('../admin/me/route').GET;
+
     // Hash for 'secret' generated with native scrypt
     process.env.ADMIN_PASSWORD = 'scrypt:8R6mvU36W2Cqp3C8vq+r1g==:XlhFCFplIJUauzo9FzPUPVgA5458RRwbTpQtFCRWjoLN4AI6VCH76jOksMQdQX/5f45ALowp67Xxo58mFrcb3g==';
-    resetRateLimitsForTesting();
   });
 
   test('login succeeds with correct password', async () => {
