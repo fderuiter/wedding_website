@@ -24,7 +24,7 @@ const baseConfig = {
   baseUrl: 'https://example.com',
   seoTitle: '',
   seoDescription: '',
-  faviconUrl: '/assets/favicon.png',
+  faviconUrl: '/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding",
 };
@@ -51,7 +51,7 @@ describe('generateMetadata - new SEO fields', () => {
       });
     });
 
-    it('falls back to /assets/favicon.png when faviconUrl is empty', async () => {
+    it('falls back to /favicon.png when faviconUrl is empty', async () => {
       mockGetLocalImageDimensions.mockReturnValue({ width: 32, height: 32 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
@@ -61,9 +61,9 @@ describe('generateMetadata - new SEO fields', () => {
       const metadata = await generateMetadata();
 
       expect(metadata.icons).toEqual({
-        icon: '/assets/favicon.png',
-        shortcut: '/assets/favicon.png',
-        apple: '/assets/favicon.png',
+        icon: '/favicon.png',
+        shortcut: '/favicon.png',
+        apple: '/favicon.png',
       });
     });
   });

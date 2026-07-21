@@ -58,7 +58,7 @@ const mockConfig = {
   heroSubtitle: 'Join us',
   seoTitle: 'Alice & Bob Wedding',
   seoDescription: 'Our wedding website',
-  faviconUrl: '/assets/favicon.png',
+  faviconUrl: '/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "Alice and Bob's wedding, wedding website",
   features: [],

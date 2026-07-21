@@ -28,7 +28,7 @@ model AppConfig {
   heroSubtitle     String   @default("")
   seoTitle         String   @default("")
   seoDescription   String   @default("")
-  faviconUrl       String   @default("/assets/favicon.png")
+  faviconUrl       String   @default("/favicon.png")
   ogImageUrl       String   @default("/images/sunset-embrace.jpg")
   seoKeywords      String   @default("{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception")
   features         Json     @default("[]")

@@ -21,7 +21,7 @@ const baseConfig: AppConfig = {
   heroSubtitle: 'Join us',
   seoTitle: 'Wedding',
   seoDescription: 'Wedding site',
-  faviconUrl: '/assets/favicon.png',
+  faviconUrl: '/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "Abbi and Fred's wedding, wedding website",
   features: [],
