@@ -9,8 +9,7 @@
     "src/app/**/route.ts",
     "src/app/**/error.tsx",
     "src/app/**/not-found.tsx",
-    "scripts/*.{ts,mjs}",
-    "src/features/**/admin.service.ts"
+    "scripts/*.{ts,mjs}"
   ],
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": ["tailwindcss"]
