@@ -89,9 +89,13 @@ describe('Home Page', () => {
 
     expect(screen.getByRole('link', { name: 'Our Story' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View Photos' })).toBeInTheDocument();
+    
+    expect(
+      screen.getByRole('navigation', { name: /primary navigation/i })
+    ).toBeInTheDocument();
 
     // Wrapper should not be hidden after intro
-    const wrapper = screen.getByLabelText('Home Page Content').parentElement;
-    expect(wrapper).not.toHaveClass('hidden');
+    const mainWrapper = document.getElementById('home-main');
+    expect(mainWrapper?.parentElement).not.toHaveClass('hidden');
   });
 });

@@ -217,7 +217,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                 <Countdown targetDate={weddingDateObj.toISOString()} />
               </motion.div>
             )}
-            <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
+            <motion.nav aria-label="Primary navigation" role="navigation" className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
               <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
                 Our Story
                 <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
@@ -225,7 +225,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
               <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
                 View Photos
               </Link>
-            </motion.div>
+            </motion.nav>
             {config.showAddToCalendar && (
               <motion.div className="mt-8" variants={fadeUp} initial="hidden" animate="visible" custom={4}>
                 <AddToCalendar event={calendarEvent} />
