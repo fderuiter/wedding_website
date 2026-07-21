@@ -12,7 +12,6 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:unused": "knip",
-    "lint:unused:fix": "eslint . --fix",
     "pretest": "sh ./scripts/pretest.sh",
     "test": "jest",
     "test:watch": "jest --watch",

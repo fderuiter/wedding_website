@@ -35,7 +35,7 @@ function extractSchemaName(node: any): string | null {
         const obj = args[0];
         const schemaProp = obj.getProperty('schema');
         if (schemaProp && schemaProp.getKind() === SyntaxKind.PropertyAssignment) {
-          let init = schemaProp.getInitializer();
+          const init = schemaProp.getInitializer();
           if (init) {
             if (init.getKind() === SyntaxKind.ArrowFunction || init.getKind() === SyntaxKind.FunctionExpression) {
               const innerCalls = init.getDescendantsOfKind(SyntaxKind.CallExpression);
@@ -68,7 +68,7 @@ function findSchemaInFile(file: any): string | null {
         const obj = args[0];
         const schemaProp = obj.getProperty('schema');
         if (schemaProp && schemaProp.getKind() === SyntaxKind.PropertyAssignment) {
-          let init = schemaProp.getInitializer();
+          const init = schemaProp.getInitializer();
           if (init) {
             if (init.getKind() === SyntaxKind.ArrowFunction || init.getKind() === SyntaxKind.FunctionExpression) {
               const innerCalls = init.getDescendantsOfKind(SyntaxKind.CallExpression);
