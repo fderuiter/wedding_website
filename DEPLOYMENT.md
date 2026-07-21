@@ -17,6 +17,18 @@ To ensure the automated workflows succeed, you must add the following **Reposito
 - `DOCKERHUB_USERNAME` (optional): Your container registry username.
 - `DOCKERHUB_TOKEN` (optional): Your container registry password or access token.
 
+## Environment Variables
+
+The application requires the following environment variables to be configured correctly in your deployment environment (e.g., Cloud Run, Docker). These match the runtime validation schema and the `.env.example` template:
+
+- `NODE_ENV`: Defines the environment the application is running in (`development`, `test`, `production`).
+- `DATABASE_URL`: Connection string to your production PostgreSQL database. *Required.*
+- `POSTGRES_URL_NON_POOLING`: Connection string for the shadow database used by Prisma for migrations, without a connection pooler. *Optional.*
+- `ADMIN_PASSWORD`: Cryptographic hash of the administrative password. *Required.*
+  - **Format**: Must be an scrypt hash in the format `scrypt:[saltBase64]:[keyBase64]`.
+  - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
+- `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
+
 ## Connecting to a Hosting Service (e.g., Google Cloud Run)
 
 To deploy your containerized Next.js application to **Google Cloud Run**, follow these steps:

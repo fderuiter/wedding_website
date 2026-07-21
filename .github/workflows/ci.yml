@@ -19,6 +19,9 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Verify Environment Variables Documentation
+        run: npx tsx scripts/verify-env-docs.ts
+
       - name: Verify Documentation and Architecture Sync
         id: verify-docs
         run: |
