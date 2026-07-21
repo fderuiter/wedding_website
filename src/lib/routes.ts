@@ -12,10 +12,10 @@ interface AppRoute {
 const APP_ROUTES: AppRoute[] = [
   // Navigation Links
   { path: '/', label: 'Home', roles: ['public', 'admin'], showInNav: true, exact: true },
-  { path: '/photos', label: 'Photos', roles: ['public', 'admin'], showInNav: true },
-  { path: '/wedding-party', label: 'Wedding Party', roles: ['public', 'admin'], showInNav: true },
-  { path: '/things-to-do', label: 'Things to Do', roles: ['public', 'admin'], showInNav: true },
-  { path: '/weather', label: 'Weather', roles: ['public', 'admin'], showInNav: true },
+  { path: '/photos', label: 'Photos', roles: ['public', 'admin'], showInNav: false },
+  { path: '/wedding-party', label: 'Wedding Party', roles: ['public', 'admin'], showInNav: false },
+  { path: '/things-to-do', label: 'Things to Do', roles: ['public', 'admin'], showInNav: false },
+  { path: '/weather', label: 'Weather', roles: ['public', 'admin'], showInNav: false },
   { path: '/archive', label: 'Archive', roles: ['public', 'admin'], showInNav: true },
   
   // Admin Navigation
@@ -31,7 +31,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/api/admin/me', roles: ['public', 'admin'], exact: true },
   
   // UI Admin Route for login
-  { path: '/admin/login', label: 'Admin', roles: ['public'], showInNav: true, exact: true },
+  { path: '/admin/login', label: 'Admin', roles: ['public'], showInNav: false, exact: true },
 
   // API Registry Routes (Protected)
   { path: '/api/registry/add-item', roles: ['admin'], exact: true },

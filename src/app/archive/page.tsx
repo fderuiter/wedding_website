@@ -1,7 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
-
+import { Icon } from '@/components/ui/Icon';
 
 export const metadata: Metadata = {
   title: 'Archive',
@@ -10,7 +10,26 @@ export const metadata: Metadata = {
   },
 };
 
-const archivedPages: Array<{ href: string, title: string, description: string, icon: React.ReactNode }> = [];
+const archivedPages: Array<{ href: string, title: string, description: string, icon: React.ReactNode }> = [
+  {
+    href: '/weather',
+    title: 'Weather',
+    description: 'Check local weather conditions for the area.',
+    icon: <Icon name="Sun" className="h-8 w-8 text-primary" />,
+  },
+  {
+    href: '/things-to-do',
+    title: 'Things to Do',
+    description: 'Explore local activities and recommended attractions.',
+    icon: <Icon name="Map" className="h-8 w-8 text-primary" />,
+  },
+  {
+    href: '/wedding-party',
+    title: 'Wedding Party',
+    description: 'Meet the members of the wedding party.',
+    icon: <Icon name="Users" className="h-8 w-8 text-primary" />,
+  }
+];
 
 /**
  * @page ArchivePage
