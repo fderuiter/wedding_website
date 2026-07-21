@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   
   const ogImageUrl = config.ogImageUrl || '/images/sunset-embrace.jpg';
-  const faviconUrl = config.faviconUrl || '/assets/favicon.png';
+  const faviconUrl = config.faviconUrl || '/favicon.png';
   const seoKeywords = config.seoKeywords ?? "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception";
 
   const siteConfig = {

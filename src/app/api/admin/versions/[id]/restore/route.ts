@@ -36,7 +36,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       heroSubtitle: snapshotData.heroSubtitle ?? '',
       seoTitle: snapshotData.seoTitle ?? '',
       seoDescription: snapshotData.seoDescription ?? '',
-      faviconUrl: snapshotData.faviconUrl ?? '/assets/favicon.png',
+      faviconUrl: snapshotData.faviconUrl ?? '/favicon.png',
       ogImageUrl: snapshotData.ogImageUrl ?? '/images/sunset-embrace.jpg',
       seoKeywords: snapshotData.seoKeywords ?? '',
       features: snapshotData.features ?? [],
