@@ -9,6 +9,24 @@ class CustomEnvironment extends JSDOMEnvironment {
     await super.setup();
     this.global.TextEncoder = TextEncoder;
     this.global.TextDecoder = TextDecoder;
+    if (typeof TransformStream !== 'undefined') {
+      this.global.TransformStream = TransformStream;
+    }
+    if (typeof ReadableStream !== 'undefined') {
+      this.global.ReadableStream = ReadableStream;
+    }
+    
+    // Add Web Streams API from Node
+    const streamWeb = require('node:stream/web');
+    Object.assign(this.global, streamWeb);
+    
+    this.global.BroadcastChannel = typeof BroadcastChannel !== 'undefined' ? BroadcastChannel : class BroadcastChannel {
+      constructor(name) { this.name = name; }
+      postMessage() {}
+      close() {}
+      addEventListener() {}
+      removeEventListener() {}
+    };
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {
       let resolvedInput = input;
