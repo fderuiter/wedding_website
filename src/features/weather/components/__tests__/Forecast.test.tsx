@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import Forecast from '../Forecast';
 import { server } from '@/mocks/server';
-import { rest } from 'msw';
+import { http, HttpResponse } from 'msw';
 
 describe('Forecast Component', () => {
   afterEach(() => {
@@ -10,8 +10,8 @@ describe('Forecast Component', () => {
 
   it('should display a loading state initially', async () => {
     server.use(
-      rest.get('/api/weather', (_req, res, ctx) => {
-        return res(ctx.json({
+      http.get('/api/weather', () => {
+        return HttpResponse.json({
           daily: {
             time: ['2025-10-10'],
             weathercode: [0],
@@ -21,7 +21,7 @@ describe('Forecast Component', () => {
             precipitation_probability_max: [0],
             wind_speed_10m_max: [5],
           }
-        }));
+        });
       })
     );
 
@@ -41,8 +41,8 @@ describe('Forecast Component', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     server.use(
-      rest.get('/api/weather', (_req, res, ctx) => {
-        return res(ctx.status(500), ctx.json({ error: 'API is down' }));
+      http.get('/api/weather', () => {
+        return HttpResponse.json({ error: 'API is down' }, { status: 500 });
       })
     );
 
@@ -69,8 +69,8 @@ describe('Forecast Component', () => {
     };
 
     server.use(
-      rest.get('/api/weather', (_req, res, ctx) => {
-        return res(ctx.json(mockWeatherData));
+      http.get('/api/weather', () => {
+        return HttpResponse.json(mockWeatherData);
       })
     );
     render(<Forecast />);

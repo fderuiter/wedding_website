@@ -6,7 +6,7 @@ import React from 'react';
 import { RegistryItem } from '../../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 import { server } from '@/mocks/server';
-import { rest } from 'msw';
+import { http, HttpResponse } from 'msw';
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -59,8 +59,8 @@ describe('useRegistry', () => {
     
     // Default success handler for fetching items
     server.use(
-      rest.get('/api/registry/items', (_req, res, ctx) => {
-        return res(ctx.json({ success: true, data: mockItems }));
+      http.get('/api/registry/items', () => {
+        return HttpResponse.json({ success: true, data: mockItems });
       })
     );
   });
@@ -138,9 +138,9 @@ describe('useRegistry', () => {
   it('should handle delete', async () => {
     let deleteCalled = false;
     server.use(
-      rest.delete('/api/registry/items/1', (_req, res, ctx) => {
+      http.delete('/api/registry/items/1', () => {
         deleteCalled = true;
-        return res(ctx.json({ success: true }));
+        return HttpResponse.json({ success: true });
       })
     );
 
@@ -166,9 +166,9 @@ describe('useRegistry', () => {
   it('should handle contribution', async () => {
     let contributeBody = null;
     server.use(
-      rest.post('/api/registry/contribute', async (req, res, ctx) => {
-        contributeBody = await req.json();
-        return res(ctx.json({ success: true }));
+      http.post('/api/registry/contribute', async ({ request }) => {
+        contributeBody = await request.json();
+        return HttpResponse.json({ success: true });
       })
     );
 

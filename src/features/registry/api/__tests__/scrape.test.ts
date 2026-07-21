@@ -3,7 +3,7 @@
 import { POST } from '@/app/api/registry/scrape/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
-import { rest } from 'msw';
+import { http, HttpResponse } from 'msw';
 
 // Mock DNS for SSRF check
 jest.mock('dns', () => ({
@@ -39,11 +39,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.example.com/', (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get('https://www.example.com/', () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' }
+        });
       })
     );
 
@@ -80,11 +79,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.amazon.com/dp/B08C1F553M', (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get('https://www.amazon.com/dp/B08C1F553M', () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' }
+        });
       })
     );
 
@@ -120,11 +118,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.amazon.com/dp/B09XYZ1234', (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get('https://www.amazon.com/dp/B09XYZ1234', () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' }
+        });
       })
     );
 
