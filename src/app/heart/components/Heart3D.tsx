@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Text } from '@react-three/drei';
-import { theme } from '../../../styles/theme';
+import { useTheme } from '../../../components/ThemeProvider';
 
 export function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomName, shardSide }: { scale: number; primaryColor: string; secondaryColor: string; brideName: string; groomName: string; shardSide?: 'left' | 'right' }) {
+  const { themeOutline } = useTheme();
+  
   const geom = useMemo(() => {
     const s = new THREE.Shape();
     s.moveTo(0, -1.4);
@@ -60,7 +62,7 @@ export function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomN
           anchorX="center"
           anchorY="middle"
           outlineWidth={0.015}
-          outlineColor={theme.colors.outline}
+          outlineColor={themeOutline}
         >
           {brideName}
         </Text>
@@ -72,7 +74,7 @@ export function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomN
           anchorX="center"
           anchorY="middle"
           outlineWidth={0.015}
-          outlineColor={theme.colors.outline}
+          outlineColor={themeOutline}
         >
           {groomName}
         </Text>

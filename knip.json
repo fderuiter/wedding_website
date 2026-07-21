@@ -9,5 +9,6 @@
     "scripts/*.{ts,mjs}",
     "src/features/**/admin.service.ts"
   ],
-  "project": ["src/**/*.{ts,tsx}"]
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreDependencies": ["tailwindcss"]
 }

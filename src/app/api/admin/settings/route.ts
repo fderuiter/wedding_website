@@ -22,10 +22,6 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(400, 'Invalid coordinate format. Must be a numeric value or a placeholder.');
   }
 
-  const HEX = /^#([0-9a-fA-F]{6})$/;
-  const safeColor = (v: unknown, fallback: string) =>
-    typeof v === 'string' && HEX.test(v) ? v : fallback;
-
   const updatedConfig = await prisma.appConfig.update({
     where: { id: 'global' },
     data: {
@@ -50,9 +46,6 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       faviconUrl: data.faviconUrl,
       ogImageUrl: data.ogImageUrl,
       seoKeywords: data.seoKeywords,
-      themePrimary: safeColor(data.themePrimary, '#f43f5e'),
-      themeSecondary: safeColor(data.themeSecondary, '#fbbf24'),
-      themeAccent: safeColor(data.themeAccent, '#e11d48'),
     },
   });
 

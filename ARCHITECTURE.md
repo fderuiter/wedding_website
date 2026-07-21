@@ -272,9 +272,6 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `heroSubtitle` | `string` | Configuration field for heroSubtitle |
 | `seoTitle` | `string` | Configuration field for seoTitle |
 | `seoDescription` | `string` | Configuration field for seoDescription |
-| `themePrimary` | `string` | Configuration field for themePrimary |
-| `themeSecondary` | `string` | Configuration field for themeSecondary |
-| `themeAccent` | `string` | Configuration field for themeAccent |
 | `faviconUrl` | `string` | Configuration field for faviconUrl |
 | `ogImageUrl` | `string` | Configuration field for ogImageUrl |
 | `seoKeywords` | `string` | Configuration field for seoKeywords |

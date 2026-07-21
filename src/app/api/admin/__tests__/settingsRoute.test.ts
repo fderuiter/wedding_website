@@ -63,9 +63,6 @@ const validConfigData = {
   faviconUrl: '/custom/favicon.ico',
   ogImageUrl: '/custom/og-image.jpg',
   seoKeywords: '{{brideName}} wedding, {{groomName}} wedding',
-  themePrimary: '#f43f5e',
-  themeSecondary: '#fbbf24',
-  themeAccent: '#e11d48',
 };
 
 const updatedConfig = {
@@ -263,56 +260,6 @@ describe('PUT /api/admin/settings', () => {
     expect(json.error).toMatch(/Invalid coordinate format/);
   });
 
-  it('uses fallback color when invalid hex is provided for themePrimary', async () => {
-    mockIsAdminRequest.mockResolvedValue(true);
-    const req = makeAuthReq({
-      ...validConfigData,
-      themePrimary: 'notacolor',
-    });
-    await PUT(req);
-
-    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          themePrimary: '#f43f5e',
-        }),
-      })
-    );
-  });
-
-  it('uses fallback color when invalid hex is provided for themeSecondary', async () => {
-    mockIsAdminRequest.mockResolvedValue(true);
-    const req = makeAuthReq({
-      ...validConfigData,
-      themeSecondary: 'invalid',
-    });
-    await PUT(req);
-
-    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          themeSecondary: '#fbbf24',
-        }),
-      })
-    );
-  });
-
-  it('uses fallback color when invalid hex is provided for themeAccent', async () => {
-    mockIsAdminRequest.mockResolvedValue(true);
-    const req = makeAuthReq({
-      ...validConfigData,
-      themeAccent: 'bad',
-    });
-    await PUT(req);
-
-    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          themeAccent: '#e11d48',
-        }),
-      })
-    );
-  });
 
   it('does not call revalidatePath when update fails with invalid coordinates', async () => {
     mockIsAdminRequest.mockResolvedValue(true);

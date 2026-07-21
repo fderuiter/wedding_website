@@ -204,7 +204,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       <div id="top" />
       <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary"
       >
-        <div aria-label="Home Page Content" id="home-main">
+        <div id="home-main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
             <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
               {config.heroTitle || 'We Tied the Knot!'}
@@ -217,7 +217,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                 <Countdown targetDate={weddingDateObj.toISOString()} />
               </motion.div>
             )}
-            <motion.div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
+            <motion.nav aria-label="Primary navigation" role="navigation" className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
               <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
                 Our Story
                 <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
@@ -225,7 +225,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
               <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
                 View Photos
               </Link>
-            </motion.div>
+            </motion.nav>
             {config.showAddToCalendar && (
               <motion.div className="mt-8" variants={fadeUp} initial="hidden" animate="visible" custom={4}>
                 <AddToCalendar event={calendarEvent} />
@@ -235,10 +235,10 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
 
           {features.map((feature, index) => renderSection(feature, index + 3))}
 
-          <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-400">
+          <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-600 dark:text-gray-400">
             <p>© {new Date().getFullYear()} {config.brideName} & {config.groomName} • Designed with ❤️ in {config.venueState}</p>
             <p>Stay tuned for more updates from our lives together!</p>
-            <a href="/project-info" className="text-primary-light hover:underline">About this site</a>
+            <a href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</a>
             <Link
               href="/heart"
               className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"

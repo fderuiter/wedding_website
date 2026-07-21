@@ -177,36 +177,6 @@ export default function AdminSettingsPage() {
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
-            <h2 className="text-xl font-semibold mb-4">Branding & Colors</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <FormGroup className="flex flex-col items-center">
-                <Label className="mb-1">Primary Color</Label>
-                <div className="flex items-center gap-2 w-full">
-                  <Input type="color" name="themePrimary" value={localConfig.themePrimary || '#f43f5e'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <Input type="text" name="themePrimary" value={localConfig.themePrimary || '#f43f5e'} onChange={handleChange} className="font-mono text-sm uppercase" />
-                </div>
-              </FormGroup>
-              <FormGroup className="flex flex-col items-center">
-                <Label className="mb-1">Secondary Color</Label>
-                <div className="flex items-center gap-2 w-full">
-                  <Input type="color" name="themeSecondary" value={localConfig.themeSecondary || '#fbbf24'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <Input type="text" name="themeSecondary" value={localConfig.themeSecondary || '#fbbf24'} onChange={handleChange} className="font-mono text-sm uppercase" />
-                </div>
-              </FormGroup>
-              <FormGroup className="flex flex-col items-center">
-                <Label className="mb-1">Accent Color</Label>
-                <div className="flex items-center gap-2 w-full">
-                  <Input type="color" name="themeAccent" value={localConfig.themeAccent || '#e11d48'} onChange={handleChange} className="h-10 w-10 p-0 border-0 rounded cursor-pointer" />
-                  <Input type="text" name="themeAccent" value={localConfig.themeAccent || '#e11d48'} onChange={handleChange} className="font-mono text-sm uppercase" />
-                </div>
-              </FormGroup>
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-              These colors will automatically synchronize across the UI components and 3D scenes.
-            </p>
-          </section>
-
-          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>

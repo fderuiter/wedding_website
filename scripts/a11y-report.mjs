@@ -38,7 +38,9 @@ function generateReport() {
   }
 
   report += `**Total Accessibility Violations:** ${totalViolations}\n`;
-  fs.writeFileSync(path.join(process.cwd(), 'test-results', 'a11y-summary.md'), report);
+  const outputPath = path.join(process.cwd(), 'test-results', 'a11y-summary.md');
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, report);
   console.log('Accessibility summary report generated at test-results/a11y-summary.md');
 }
 

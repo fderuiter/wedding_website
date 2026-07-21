@@ -2,7 +2,6 @@ import { prisma } from './prisma';
 import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
-import { theme } from '../styles/theme';
 
 export type PublicAppConfig = PublicAppConfigDTO;
 
@@ -34,9 +33,6 @@ const fallbackAppConfig: LocalAppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
-  themePrimary: theme.colors.primary,
-  themeSecondary: theme.colors.secondary,
-  themeAccent: theme.colors.accent,
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true, 
   showAddToCalendar: true,
