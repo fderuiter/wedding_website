@@ -1,37 +1,25 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin';
-import { coordinateSchema } from '@/utils/validation';
 import { AttractionSchema, AttractionDTO } from './schemas';
 import { z } from 'zod';
+import { formatZodError } from '@/utils/validation';
 
 const AttractionInputSchema = AttractionSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial();
 export type AttractionInput = z.infer<typeof AttractionInputSchema>;
 
-function validateCoordinates(data: any): string | null {
-  const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
-  const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
-  if (!parsedLat.success && !parsedLon.success) {
-    return 'Invalid coordinate format for latitude and longitude. Must be a numeric value or a placeholder.';
-  }
-  if (!parsedLat.success) {
-    return 'Invalid coordinate format for latitude. Must be a numeric value or a placeholder.';
-  }
-  if (!parsedLon.success) {
-    return 'Invalid coordinate format for longitude. Must be a numeric value or a placeholder.';
+function validateAttraction(data: any): string | null {
+  const result = AttractionInputSchema.safeParse(data);
+  if (!result.success) {
+    return formatZodError(result.error);
   }
   return null;
 }
 
 async function mapAttractionData(data: any, client?: any): Promise<any> {
-  const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
-  const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
+  // Since validation ensures coordinates are numbers, we don't need manual parsing here anymore
   const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', client);
-  return {
-    ...mapped,
-    latitude: parsedLat.success ? parsedLat.data : 0,
-    longitude: parsedLon.success ? parsedLon.data : 0,
-  };
+  return mapped;
 }
 
 export class AttractionAdminService extends BaseService<AttractionDTO> {
@@ -50,7 +38,7 @@ export class AttractionAdminService extends BaseService<AttractionDTO> {
   }
 
   async create(data: AttractionInput, author?: string): Promise<AttractionDTO> {
-    const error = validateCoordinates(data);
+    const error = validateAttraction(data);
     if (error) throw new Error(`Validation Error: ${error}`);
 
     return this.repo.transaction(async (txRepo) => {
@@ -62,7 +50,7 @@ export class AttractionAdminService extends BaseService<AttractionDTO> {
   }
 
   async update(id: string, data: AttractionInput, author?: string): Promise<AttractionDTO> {
-    const error = validateCoordinates(data);
+    const error = validateAttraction(data);
     if (error) throw new Error(`Validation Error: ${error}`);
 
     return this.repo.transaction(async (txRepo) => {

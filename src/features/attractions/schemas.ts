@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports
 import { MediaSchema } from '@/features/media/schemas';
-import { safeImageUrlSchema, safeUrlSchema } from '@/utils/validation';
+import { safeImageUrlSchema, safeUrlSchema, coordinateSchema } from '@/utils/validation';
 
 export const AttractionSchema = z.object({
   id: z.string(),
@@ -15,8 +15,8 @@ export const AttractionSchema = z.object({
   category: z.string(),
   website: safeUrlSchema,
   directions: z.string(),
-  latitude: z.number(),
-  longitude: z.number(),
+  latitude: coordinateSchema,
+  longitude: coordinateSchema,
   isVisible: z.boolean(),
   createdAt: z.date(),
   updatedAt: z.date(),
