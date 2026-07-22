@@ -11,6 +11,10 @@ export async function middleware(request: NextRequest) {
     const isAuth = await isAdminRequest(request);
 
     if (!isAuth) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
       // 303 See Other ensures the unauthorized URL is not kept in browser history in a way 
       // that breaks navigation, serving as a clean redirect.
       const url = new URL('/admin/login', request.url);
