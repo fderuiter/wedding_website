@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { createAuditSnapshot } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 function reviveDates(obj: any): any {
   if (obj === null || obj === undefined) return obj;
@@ -81,7 +82,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         }
       }
     } catch (e) {
-      console.error('Error during bulk import audit snapshot creation:', e);
+      logger.error('Error during bulk import audit snapshot creation:', e);
     }
   })();
 
