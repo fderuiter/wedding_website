@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { formatDate } from '@/utils/intl';
+import { apiClient } from '@/features/admin/apiClient';
 
 export default function HistoryTimelinePage() {
   const [versions, setVersions] = useState<any[]>([]);
@@ -14,9 +15,7 @@ export default function HistoryTimelinePage() {
 
   const fetchVersions = async () => {
     try {
-      const res = await fetch('/api/admin/versions');
-      if (!res.ok) throw new Error('Failed to fetch versions');
-      const data = await res.json();
+      const data = await apiClient.get<any[]>('/api/admin/versions');
       setVersions(data);
     } catch (err: any) {
       setError(err.message);
@@ -30,18 +29,13 @@ export default function HistoryTimelinePage() {
   }, []);
 
   const handleRestore = async (versionId: string) => {
-    if (!(await confirm('Are you sure you want to restore this version?'))) return;
+    if (!(await confirm('Are you sure you want to restore this version? This will instantly replace the Live content.'))) return;
     try {
-      const res = await fetch(`/api/admin/versions/${versionId}/restore`, { method: 'POST' });
-      if (res.ok) {
-        addToast('Restored successfully.', 'success');
-        fetchVersions();
-      } else {
-        addToast('Failed to restore.', 'error');
-      }
-    } catch (e) {
-      console.error(e);
-      addToast('Error restoring.', 'error');
+      await apiClient.post(`/api/admin/versions/${versionId}/restore`);
+      addToast('Restored successfully.', 'success');
+      fetchVersions();
+    } catch (e: any) {
+      addToast(e.message || 'Failed to restore.', 'error');
     }
   };
 

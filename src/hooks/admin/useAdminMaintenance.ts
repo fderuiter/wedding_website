@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/features/admin/apiClient';
 
 export function useAdminMaintenance() {
   const queryClient = useQueryClient();
@@ -17,19 +18,7 @@ export function useAdminMaintenance() {
         throw new Error('File is not valid JSON.');
       }
 
-      const res = await fetch('/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to import data.');
-      }
-      return data;
+      return apiClient.post('/api/admin/maintenance/import', payload);
     },
     onSuccess: () => {
       // Invalidate all queries since we completely overwrote the DB
