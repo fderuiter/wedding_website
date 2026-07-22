@@ -2,6 +2,11 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin';
 import { coordinateSchema } from '@/utils/validation';
+import { AttractionSchema, AttractionDTO } from './schemas';
+import { z } from 'zod';
+
+const AttractionInputSchema = AttractionSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial();
+export type AttractionInput = z.infer<typeof AttractionInputSchema>;
 
 function validateCoordinates(data: any): string | null {
   const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
@@ -18,10 +23,10 @@ function validateCoordinates(data: any): string | null {
   return null;
 }
 
-async function mapAttractionData(data: any): Promise<any> {
+async function mapAttractionData(data: any, client?: any): Promise<any> {
   const parsedLat = coordinateSchema.safeParse(data.latitude || 0);
   const parsedLon = coordinateSchema.safeParse(data.longitude || 0);
-  const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative');
+  const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', client);
   return {
     ...mapped,
     latitude: parsedLat.success ? parsedLat.data : 0,
@@ -29,14 +34,14 @@ async function mapAttractionData(data: any): Promise<any> {
   };
 }
 
-export class AttractionAdminService extends BaseService<any> {
+export class AttractionAdminService extends BaseService<AttractionDTO> {
   static ENTITY_KEY = 'attractions';
     
   constructor() {
-    super(new BaseRepository('attraction'), 'Attraction');
+    super(new BaseRepository<AttractionDTO>('attraction'), 'Attraction');
   }
 
-  async findMany(args?: any): Promise<any[]> {
+  async findMany(args?: any): Promise<AttractionDTO[]> {
     const customArgs = {
       ...args,
       include: { image: true, ...(args?.include || {}) }
@@ -44,19 +49,27 @@ export class AttractionAdminService extends BaseService<any> {
     return super.findMany(customArgs);
   }
 
-  async create(data: any, author?: string): Promise<any> {
+  async create(data: AttractionInput, author?: string): Promise<AttractionDTO> {
     const error = validateCoordinates(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-        
-    const mappedData = await mapAttractionData(data);
-    return super.create(mappedData, author);
+
+    return this.repo.transaction(async (txRepo) => {
+      const mappedData = await mapAttractionData(data, txRepo.client);
+      const record = await txRepo.create(mappedData);
+      await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
+      return record;
+    });
   }
 
-  async update(id: string, data: any, author?: string): Promise<any> {
+  async update(id: string, data: AttractionInput, author?: string): Promise<AttractionDTO> {
     const error = validateCoordinates(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-        
-    const mappedData = await mapAttractionData(data);
-    return super.update(id, mappedData, author);
+
+    return this.repo.transaction(async (txRepo) => {
+      const mappedData = await mapAttractionData(data, txRepo.client);
+      const record = await txRepo.update(id, mappedData);
+      await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
+      return record;
+    });
   }
 }
