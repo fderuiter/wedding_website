@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 import { useToast } from '@/components/ui/ToastProvider';
 import { formatDate } from '@/utils/intl';
+import { apiClient } from '@/features/admin/apiClient';
 
 interface AdminPreviewLayoutProps {
   children: React.ReactNode;
@@ -55,8 +56,7 @@ export default function AdminPreviewLayout({
       if (draftType === 'wedding-party') entityType = 'WeddingPartyMember';
       if (draftType === 'attractions') entityType = 'Attraction';
       
-      fetch(`/api/admin/versions?entityType=${entityType}&entityId=${entityId}`)
-        .then(res => res.json())
+      apiClient.get<any[]>(`/api/admin/versions?entityType=${entityType}&entityId=${entityId}`)
         .then(data => {
           if (Array.isArray(data)) setVersions(data);
         })
@@ -67,17 +67,12 @@ export default function AdminPreviewLayout({
   const handleRestore = async (versionId: string) => {
     if (!(await confirm('Are you sure you want to restore this version? This will instantly replace the Live content.'))) return;
     try {
-      const res = await fetch(`/api/admin/versions/${versionId}/restore`, { method: 'POST' });
-      if (res.ok) {
-        addToast('Restored successfully.', 'success');
-        setShowVersions(false);
-        if (onRestore) onRestore();
-      } else {
-        addToast('Failed to restore.', 'error');
-      }
-    } catch (e) {
-      console.error(e);
-      addToast('Error restoring.', 'error');
+      await apiClient.post(`/api/admin/versions/${versionId}/restore`);
+      addToast('Restored successfully.', 'success');
+      setShowVersions(false);
+      if (onRestore) onRestore();
+    } catch (e: any) {
+      addToast(e.message || 'Failed to restore.', 'error');
     }
   };
 
