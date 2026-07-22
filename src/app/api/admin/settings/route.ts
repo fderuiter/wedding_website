@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { coordinateSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AppConfigSchema } from '@/features/content';
+import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content';
 
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
@@ -15,37 +14,40 @@ export const GET = withApiMiddleware(async () => {
 export const PUT = withApiMiddleware(async (req: NextRequest) => {
   const data = await req.json();
 
-  const parsedLat = coordinateSchema.safeParse(data.latitude);
-  const parsedLon = coordinateSchema.safeParse(data.longitude);
+  const parseResult = UpdateAppConfigSchema.safeParse(data);
 
-  if (!parsedLat.success || !parsedLon.success) {
-    throw new ApiError(400, 'Invalid coordinate format. Must be a numeric value or a placeholder.');
+  if (!parseResult.success) {
+    const issues = parseResult.error?.issues || [];
+    const errorMessages = issues.map(err => `${(err.path || []).join('.') || 'Root'}: ${err.message}`).join(', ');
+    throw new ApiError(400, `Validation Error: ${errorMessages}`);
   }
+
+  const validData = parseResult.data;
 
   const updatedConfig = await prisma.appConfig.update({
     where: { id: 'global' },
     data: {
-      brideName: data.brideName,
-      groomName: data.groomName,
-      weddingDate: new Date(data.weddingDate),
-      baseUrl: data.baseUrl,
-      venueName: data.venueName,
-      venueAddress: data.venueAddress,
-      venueCity: data.venueCity,
-      venueState: data.venueState,
-      venueZip: data.venueZip,
-      latitude: parsedLat.data,
-      longitude: parsedLon.data,
-      storyText: data.storyText,
-      venueDescription: data.venueDescription,
-      travelAdvice: data.travelAdvice,
-      heroTitle: data.heroTitle,
-      heroSubtitle: data.heroSubtitle,
-      seoTitle: data.seoTitle,
-      seoDescription: data.seoDescription,
-      faviconUrl: data.faviconUrl,
-      ogImageUrl: data.ogImageUrl,
-      seoKeywords: data.seoKeywords,
+      brideName: validData.brideName,
+      groomName: validData.groomName,
+      weddingDate: validData.weddingDate,
+      baseUrl: validData.baseUrl,
+      venueName: validData.venueName,
+      venueAddress: validData.venueAddress,
+      venueCity: validData.venueCity,
+      venueState: validData.venueState,
+      venueZip: validData.venueZip,
+      latitude: validData.latitude,
+      longitude: validData.longitude,
+      storyText: validData.storyText,
+      venueDescription: validData.venueDescription,
+      travelAdvice: validData.travelAdvice,
+      heroTitle: validData.heroTitle,
+      heroSubtitle: validData.heroSubtitle,
+      seoTitle: validData.seoTitle,
+      seoDescription: validData.seoDescription,
+      faviconUrl: validData.faviconUrl,
+      ogImageUrl: validData.ogImageUrl,
+      seoKeywords: validData.seoKeywords,
     },
   });
 
