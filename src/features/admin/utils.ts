@@ -1,6 +1,14 @@
 import { prisma } from '@/lib/prisma';
 
-export async function handleMediaFields(data: any, idField: string, urlField: string, altField: string, decField: string) {
+export async function handleMediaFields(
+  data: any,
+  idField: string,
+  urlField: string,
+  altField: string,
+  decField: string,
+  client: any = prisma
+) {
+  const db = client || prisma;
   let mediaId = data[idField];
   const url = data[urlField];
   const alt = data[altField];
@@ -8,7 +16,7 @@ export async function handleMediaFields(data: any, idField: string, urlField: st
   
   if (url || alt !== undefined || dec !== undefined) {
     if (mediaId) {
-      await prisma.media.update({
+      await db.media.update({
         where: { id: mediaId },
         data: {
           ...(url !== undefined && { url }),
@@ -17,7 +25,7 @@ export async function handleMediaFields(data: any, idField: string, urlField: st
         }
       });
     } else {
-      const media = await prisma.media.create({
+      const media = await db.media.create({
         data: {
           url: url || '/images/placeholder.png',
           altText: alt || null,
@@ -27,7 +35,7 @@ export async function handleMediaFields(data: any, idField: string, urlField: st
       mediaId = media.id;
     }
   } else if (!mediaId) {
-    const media = await prisma.media.create({
+    const media = await db.media.create({
       data: {
         url: '/images/placeholder.png',
         isDecorative: true
