@@ -1,3 +1,5 @@
+import { apiClient } from '@/features/admin/apiClient';
+
 /**
  * Checks the admin status by calling the `/api/admin/me` endpoint.
  * This is the secure way to check for admin status on the client-side,
@@ -6,9 +8,7 @@
  */
 export async function checkAdminClient(): Promise<boolean> {
   try {
-    const res = await fetch('/api/admin/me');
-    if (!res.ok) return false;
-    const data = await res.json();
+    const data = await apiClient.get<{ isAdmin: boolean }>('/api/admin/me');
     return !!data.isAdmin;
   } catch {
     return false;
