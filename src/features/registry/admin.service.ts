@@ -1,9 +1,12 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { RegistryItemSchema } from './schemas';
+import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 import { formatZodError } from '@/utils/validation';
+import { handleMediaFields } from '@/features/admin';
+import { z } from 'zod';
 
 const RegistryItemInputSchema = RegistryItemSchema.omit({ id: true }).partial();
+export type RegistryItemInput = z.infer<typeof RegistryItemInputSchema>;
 
 function validateRegistryItem(data: any): string | null {
   const result = RegistryItemInputSchema.safeParse(data);
@@ -13,14 +16,14 @@ function validateRegistryItem(data: any): string | null {
   return null;
 }
 
-export class RegistryItemAdminService extends BaseService<any> {
+export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
   static ENTITY_KEY = 'registry-items';
     
   constructor() {
-    super(new BaseRepository('registryItem'), 'RegistryItem');
+    super(new BaseRepository<RegistryItemDTO>('registryItem'), 'RegistryItem');
   }
 
-  async findMany(args?: any): Promise<any[]> {
+  async findMany(args?: any): Promise<RegistryItemDTO[]> {
     const customArgs = {
       ...args,
       include: { image: true, contributors: true, ...(args?.include || {}) }
@@ -28,15 +31,27 @@ export class RegistryItemAdminService extends BaseService<any> {
     return super.findMany(customArgs);
   }
 
-  async create(data: any, author?: string): Promise<any> {
+  async create(data: RegistryItemInput, author: string = 'Admin'): Promise<RegistryItemDTO> {
     const error = validateRegistryItem(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-    return super.create(data, author);
+
+    return this.repo.transaction(async (txRepo) => {
+      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client);
+      const record = await txRepo.create(mappedData);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
   }
 
-  async update(id: string, data: any, author?: string): Promise<any> {
+  async update(id: string, data: RegistryItemInput, author: string = 'Admin'): Promise<RegistryItemDTO> {
     const error = validateRegistryItem(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-    return super.update(id, data, author);
+
+    return this.repo.transaction(async (txRepo) => {
+      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client);
+      const record = await txRepo.update(id, mappedData);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
   }
 }
