@@ -1,3 +1,6 @@
+/**
+ * @internal
+ */
 class ApiError extends Error {
   public status: number;
   public data: any;
@@ -10,6 +13,9 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * @internal
+ */
 interface ApiClientConfig {
   onUnauthorized?: () => void;
 }
