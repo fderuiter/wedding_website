@@ -1,4 +1,5 @@
 import React from 'react';
+import { FormGroup, Checkbox, Label } from './forms';
 
 /**
  * Props for the CategoryFilter component.
@@ -32,15 +33,15 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ categories, sele
   return (
     <div className="flex flex-wrap gap-2 mb-4">
       {categories.map(category => (
-        <label key={category} className="inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={selected.includes(category)}
-            onChange={() => handleToggle(category)}
-            className="form-checkbox accent-yellow-600 mr-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
-          />
-          <span className="text-sm">{category}</span>
-        </label>
+        <FormGroup key={category} className="inline-flex items-center space-y-0 mr-2">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              checked={selected.includes(category)}
+              onChange={() => handleToggle(category)}
+            />
+            <Label className="font-normal cursor-pointer">{category}</Label>
+          </div>
+        </FormGroup>
       ))}
     </div>
   );

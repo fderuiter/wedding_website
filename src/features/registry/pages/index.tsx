@@ -13,6 +13,7 @@ import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
 import { useRegistry } from '../hooks/useRegistry';
 import { Button } from '@/components/ui/Button';
+import { FormGroup, Checkbox, Label } from '@/components/ui/forms';
 
 /**
  * @page RegistryPage
@@ -135,30 +136,24 @@ export default function RegistryPage() {
           />
         </div>
         <div className="flex flex-wrap justify-center items-center gap-4 mt-4">
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="group-gifts-only"
+          <FormGroup className="flex items-center space-y-0 space-x-2">
+            <Checkbox
               checked={showGroupGiftsOnly}
               onChange={(e) => setShowGroupGiftsOnly(e.target.checked)}
-              className="h-4 w-4 text-primary border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
             />
-            <label htmlFor="group-gifts-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
+            <Label className="font-normal cursor-pointer">
               Show only group gifts
-            </label>
-          </div>
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="available-only"
+            </Label>
+          </FormGroup>
+          <FormGroup className="flex items-center space-y-0 space-x-2">
+            <Checkbox
               checked={showAvailableOnly}
               onChange={(e) => setShowAvailableOnly(e.target.checked)}
-              className="h-4 w-4 text-primary border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
             />
-            <label htmlFor="available-only" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
+            <Label className="font-normal cursor-pointer">
               Show only available gifts
-            </label>
-          </div>
+            </Label>
+          </FormGroup>
         </div>
       </nav>
       <AnimatePresence>

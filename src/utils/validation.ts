@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export function formatZodError(error: z.ZodError): string {
+  return error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+}
+
 export const coordinateSchema = z.union([z.number(), z.string()]).superRefine((val, ctx) => {
   if (typeof val === 'number') return;
   const parsed = parseFloat(val);

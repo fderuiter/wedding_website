@@ -2,6 +2,7 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { ContentNodeSchema } from './schemas';
 import { z } from 'zod';
+import { formatZodError } from '@/utils/validation';
 
 const ContentNodeInputSchema = z.union([
   ContentNodeSchema.options[0].omit({ id: true, createdAt: true, updatedAt: true }),
@@ -12,7 +13,7 @@ const ContentNodeInputSchema = z.union([
 function validateContentNodeUpdate(data: any): string | null {
   const result = ContentNodeInputSchema.safeParse(data);
   if (!result.success) {
-    return result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    return formatZodError(result.error);
   }
   return null;
 }

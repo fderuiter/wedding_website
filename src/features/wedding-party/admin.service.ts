@@ -2,13 +2,14 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin';
 import { WeddingPartyMemberSchema } from './schemas';
+import { formatZodError } from '@/utils/validation';
 
 const WeddingPartyInputSchema = WeddingPartyMemberSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial({ link: true, photo: true });
 
 function validateWeddingParty(data: any): string | null {
   const result = WeddingPartyInputSchema.safeParse(data);
   if (!result.success) {
-    return result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    return formatZodError(result.error);
   }
   return null;
 }

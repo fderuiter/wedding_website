@@ -1,6 +1,7 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
+import { formatZodError } from '@/utils/validation';
 import { handleMediaFields } from '@/features/admin';
 import { z } from 'zod';
 
@@ -10,7 +11,7 @@ export type RegistryItemInput = z.infer<typeof RegistryItemInputSchema>;
 function validateRegistryItem(data: any): string | null {
   const result = RegistryItemInputSchema.safeParse(data);
   if (!result.success) {
-    return result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    return formatZodError(result.error);
   }
   return null;
 }

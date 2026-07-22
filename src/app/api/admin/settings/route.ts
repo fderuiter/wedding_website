@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content';
+import { formatZodError } from '@/utils/validation';
 
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
@@ -17,9 +18,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
   const parseResult = UpdateAppConfigSchema.safeParse(data);
 
   if (!parseResult.success) {
-    const issues = parseResult.error?.issues || [];
-    const errorMessages = issues.map(err => `${(err.path || []).join('.') || 'Root'}: ${err.message}`).join(', ');
-    throw new ApiError(400, `Validation Error: ${errorMessages}`);
+    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
   }
 
   const validData = parseResult.data;
