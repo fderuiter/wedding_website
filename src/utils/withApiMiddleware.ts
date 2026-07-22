@@ -3,6 +3,7 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { rateLimit } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
+import { logger } from '@/lib/logger';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
@@ -124,7 +125,7 @@ export function withApiMiddleware(handler: RouteHandler) {
           { status: error.statusCode }
         );
       }
-      console.error('Unhandled API Error:', error);
+      logger.error('Unhandled API Error:', error);
       
       const errorMessage = error instanceof Error ? error.message : 'Internal Server Error';
       
