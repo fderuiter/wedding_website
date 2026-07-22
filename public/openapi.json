@@ -391,7 +391,100 @@
           "content": {
             "application/json": {
               "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema"
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "brideName": {
+                    "type": "string"
+                  },
+                  "groomName": {
+                    "type": "string"
+                  },
+                  "weddingDate": {},
+                  "baseUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "venueName": {
+                    "type": "string"
+                  },
+                  "venueAddress": {
+                    "type": "string"
+                  },
+                  "venueCity": {
+                    "type": "string"
+                  },
+                  "venueState": {
+                    "type": "string"
+                  },
+                  "venueZip": {
+                    "type": "string"
+                  },
+                  "latitude": {},
+                  "longitude": {},
+                  "storyText": {
+                    "type": "string"
+                  },
+                  "venueDescription": {
+                    "type": "string"
+                  },
+                  "travelAdvice": {
+                    "type": "string"
+                  },
+                  "heroTitle": {
+                    "type": "string"
+                  },
+                  "heroSubtitle": {
+                    "type": "string"
+                  },
+                  "seoTitle": {
+                    "type": "string"
+                  },
+                  "seoDescription": {
+                    "type": "string"
+                  },
+                  "faviconUrl": {
+                    "type": "string"
+                  },
+                  "ogImageUrl": {
+                    "type": "string"
+                  },
+                  "seoKeywords": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "brideName",
+                  "groomName",
+                  "weddingDate",
+                  "baseUrl",
+                  "venueName",
+                  "venueAddress",
+                  "venueCity",
+                  "venueState",
+                  "venueZip",
+                  "latitude",
+                  "longitude",
+                  "storyText",
+                  "venueDescription",
+                  "travelAdvice",
+                  "heroTitle",
+                  "heroSubtitle",
+                  "seoTitle",
+                  "seoDescription",
+                  "faviconUrl",
+                  "ogImageUrl",
+                  "seoKeywords"
+                ],
+                "additionalProperties": {}
               }
             }
           }

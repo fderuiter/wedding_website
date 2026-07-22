@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "dev": "next dev --turbo",
-    "prebuild": "node --experimental-strip-types scripts/generate-docs.ts",
+    "prebuild": "node --experimental-strip-types --import ./scripts/register.mjs scripts/generate-docs.ts",
     "build": "npm run lint && npm run lint:unused && prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
