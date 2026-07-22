@@ -21,18 +21,16 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
   
   let safeOriginalUrl = originalUrl;
   if (safeOriginalUrl) {
-    const lowerUrl = safeOriginalUrl.toLowerCase().trim();
+    const trimmed = safeOriginalUrl.trim();
     
-    let isValid = false;
-    try {
-      const parsed = new URL(lowerUrl);
-      isValid = ['http:', 'https:'].includes(parsed.protocol);
-    } catch {
-      // It's a relative URL or data URI, or invalid
-      isValid = (lowerUrl.startsWith('/') && !lowerUrl.startsWith('//')) || lowerUrl.startsWith('data:image/');
-    }
-
-    if (!isValid) {
+    // Strict allowlist validation for CodeQL
+    const isHttp = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+    const isSafeRelative = trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\');
+    const isDataImage = trimmed.startsWith('data:image/');
+    
+    if (isHttp || isSafeRelative || isDataImage) {
+      safeOriginalUrl = trimmed;
+    } else {
       safeOriginalUrl = undefined;
     }
   }
