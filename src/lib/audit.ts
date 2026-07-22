@@ -31,7 +31,7 @@ export async function createAuditSnapshot(
   // If we run it without await, we save time. Wait, but the PR requirement says: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
   // A standard way to run this in the background is to just not await the pruning promise, or have a separate bulk operation.
   // We can write a prune function here and trigger it via `void pruneSnapshots(...)`
-  void pruneSnapshots(entityType, entityId);
+  void pruneSnapshots(normalizedType, entityId);
 }
 
 async function pruneSnapshots(entityType: string, entityId: string) {

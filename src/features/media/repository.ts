@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { MediaDTO, MediaSchema } from './schemas';
+import { executeInTransaction } from '@/lib/transaction';
+import { createAuditSnapshot } from '@/lib/audit';
 
 class MediaRepository {
   constructor(public client: any = prisma) {}
@@ -20,19 +22,28 @@ class MediaRepository {
     return media ? MediaSchema.parse(media) : null;
   }
 
-  async createMedia(data: Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt'>) {
-    const media = await this.client.media.create({ data });
-    return MediaSchema.parse(media);
+  async createMedia(data: Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt'>, author: string = 'System') {
+    return executeInTransaction(this.client, async (tx) => {
+      const media = await tx.media.create({ data });
+      await createAuditSnapshot('Media', media.id, media, author, tx);
+      return MediaSchema.parse(media);
+    });
   }
 
-  async updateMedia(id: string, data: Partial<Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt'>>) {
-    const media = await this.client.media.update({ where: { id }, data });
-    return MediaSchema.parse(media);
+  async updateMedia(id: string, data: Partial<Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt'>>, author: string = 'System') {
+    return executeInTransaction(this.client, async (tx) => {
+      const media = await tx.media.update({ where: { id }, data });
+      await createAuditSnapshot('Media', id, media, author, tx);
+      return MediaSchema.parse(media);
+    });
   }
 
-  async deleteMedia(id: string) {
-    const media = await this.client.media.delete({ where: { id } });
-    return MediaSchema.parse(media);
+  async deleteMedia(id: string, author: string = 'System') {
+    return executeInTransaction(this.client, async (tx) => {
+      const media = await tx.media.delete({ where: { id } });
+      await createAuditSnapshot('Media', id, { deleted: true, ...media }, author, tx);
+      return MediaSchema.parse(media);
+    });
   }
 }
 
