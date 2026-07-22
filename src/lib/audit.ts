@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { Prisma } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 export async function createAuditSnapshot(
   entityType: string,
@@ -54,6 +55,6 @@ async function pruneSnapshots(entityType: string, entityId: string) {
       });
     }
   } catch (err) {
-    console.error('Error during snapshot pruning:', err);
+    logger.error('Error during snapshot pruning:', err);
   }
 }

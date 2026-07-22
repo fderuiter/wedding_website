@@ -4,6 +4,7 @@ import { parse } from 'node-html-parser';
 import { isPrivateUrl } from '@/utils/ssrf';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { logger } from '@/lib/logger';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const body = await request.json();
@@ -95,7 +96,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
     return NextResponse.json(scrapedData);
   } catch (error) {
-    console.error('Scraping failed:', error);
+    logger.error('Scraping failed:', error);
     if (error instanceof ApiError) {
       throw error;
     }
