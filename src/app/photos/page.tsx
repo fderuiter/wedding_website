@@ -4,6 +4,7 @@ import { Icon } from '@/components/ui/Icon';
 import Script from 'next/script';
 import { contentService } from '@/features/content';
 import type { ContentNodeDTO } from '@/features/content';
+import { withPageQuery } from '@/lib/query-wrapper';
 
 export const metadata: Metadata = {
   title: 'Photos',
@@ -23,13 +24,6 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered photos page.
  */
 export default async function PhotosPage() {
-  let photoNodes: ContentNodeDTO[] = [];
-  try {
-    photoNodes = await contentService.getPublicPhotos();
-  } catch (e) {
-    console.warn('Could not fetch photo nodes');
-  }
-
   const defaultUrls = [
     'https://lh3.googleusercontent.com/pw/AP1GczNPp0Rk6pvvMtymS3RUx7F6cAyOkFaovF20N5_FkaDupk3QkgjNWfTiMxZbgtnyO-Ny0tH3JPkT6Vld35Pg8xFq1AAcZcxnHdTQ3DfHKsNLKpA59mEw=w1920-h1080',
     'https://lh3.googleusercontent.com/pw/AP1GczODgnqdtUHWdCR_PDvAcDDm-RlYv0HE_oJtRCDTKF9nCREFVhZRl_020THVphEdxLAjgYfUdz0KYgCBw1sqmaF1GC7RBh0u3CZmUgBtwD7Z-bEkPm5A=w1920-h1080',
@@ -48,6 +42,11 @@ export default async function PhotosPage() {
     'https://lh3.googleusercontent.com/pw/AP1GczO9WEPEVNJaHIdBRO23QrdPcNiHhxjZQEyFX6BpzjPfC93m4Yo3iH6hDxdCavtGHpJz8AkxHrZi-bhlbmOEpfcbHDPvZBFtF3Magrjjy4VI-H8LGInP=w1920-h1080',
     'https://lh3.googleusercontent.com/pw/AP1GczNRCQSC2TVH8_X2AzVvddlrHTfto9aLCYtVUVT1VpLItwZSRwAsT7bhag2TeCy4RGxRDjQ3SzKfgLuB4NUdDkOcPB5OYrjhaVLAbwzdspw_EoTL5HdO=w1920-h1080'
   ];
+
+  const photoNodes = await withPageQuery(
+    () => contentService.getPublicPhotos(),
+    [] as ContentNodeDTO[]
+  );
 
   const urls = photoNodes.length > 0 ? photoNodes.map(n => n.data?.url).filter(Boolean) : defaultUrls;
 

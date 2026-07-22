@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import ThingsToDoList from './components/ThingsToDoList';
 import { attractionsRepository, type AttractionDTO } from '@/features/attractions';
+import { withPageQuery } from '@/lib/query-wrapper';
 
 export const metadata: Metadata = {
   title: 'Things to Do',
@@ -19,13 +20,13 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered "Things to Do" page.
  */
 export default async function ThingsToDoPage() {
-  let attractions: AttractionDTO[] = [];
-  try {
-    const rawAttractions = await attractionsRepository.getVisibleAttractions();
-    attractions = rawAttractions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  } catch (error) {
-    console.warn('Database unreachable, using empty attractions array.');
-  }
+  const attractions = await withPageQuery(
+    async () => {
+      const rawAttractions = await attractionsRepository.getVisibleAttractions();
+      return rawAttractions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    },
+    [] as AttractionDTO[]
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">

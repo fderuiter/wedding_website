@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import WeddingPartyList from '@/components/WeddingPartyList';
 import { weddingPartyRepository, type WeddingPartyMemberDTO } from '@/features/wedding-party';
+import { withPageQuery } from '@/lib/query-wrapper';
 
 export const metadata: Metadata = {
   title: 'Wedding Party',
@@ -19,12 +20,10 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered wedding party page.
  */
 export default async function WeddingPartyPage() {
-  let members: WeddingPartyMemberDTO[] = [];
-  try {
-    members = await weddingPartyRepository.getMembers();
-  } catch (error) {
-    console.warn('Database unreachable or invalid data, using empty members array.');
-  }
+  const members = await withPageQuery(
+    () => weddingPartyRepository.getMembers(),
+    [] as WeddingPartyMemberDTO[]
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">
