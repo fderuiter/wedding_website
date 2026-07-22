@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 import type { IRegistryRepository } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
@@ -187,10 +188,7 @@ class RegistryRepository implements IRegistryRepository {
       return RegistryItemSchema.parse(updatedItem);
     };
 
-    if ('$transaction' in this.client) {
-      return this.client.$transaction(runTransaction);
-    }
-    return runTransaction(this.client);
+    return executeInTransaction(this.client, runTransaction);
   }
 }
 

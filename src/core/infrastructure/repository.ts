@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 
 export type DbClient = any;
 
@@ -11,10 +12,7 @@ export class BaseRepository<T extends { id: string }> {
   }
 
   async transaction<R>(fn: (txRepo: this) => Promise<R>): Promise<R> {
-    if ('$transaction' in this.client) {
-      return this.client.$transaction((tx: any) => fn(this.withClient(tx)));
-    }
-    return fn(this);
+    return executeInTransaction(this.client, (tx: any) => fn(this.withClient(tx)));
   }
 
   get model() {
