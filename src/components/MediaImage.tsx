@@ -23,19 +23,19 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
   if (originalUrl) {
     const trimmed = originalUrl.trim();
     
-    // Strict allowlist validation
-    const isHttp = trimmed.startsWith('http://') || trimmed.startsWith('https://');
-    const isSafeRelative = trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\');
-    const isDataImage = trimmed.startsWith('data:image/');
-    
-    if (isHttp || isSafeRelative || isDataImage) {
-      // Break static analysis taint tracking (CodeQL false positive on img src)
-      // by reconstructing the string character by character.
-      let untainted = '';
-      for (let i = 0; i < trimmed.length; i++) {
-        untainted += String.fromCharCode(trimmed.charCodeAt(i));
+    // Check for safe relative URLs first
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\')) {
+      safeOriginalUrl = trimmed;
+    } else {
+      // Parse absolute URLs and explicitly check the protocol
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || (parsed.protocol === 'data:' && trimmed.startsWith('data:image/'))) {
+          safeOriginalUrl = trimmed;
+        }
+      } catch (e) {
+        // Invalid URL, do nothing
       }
-      safeOriginalUrl = untainted;
     }
   }
 
