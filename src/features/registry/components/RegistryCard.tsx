@@ -69,14 +69,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         {/* Main Image Layer */}
         <MediaImage
           media={item.image}
-          fallbackUrl="/images/placeholder.png"
           className="object-contain relative z-10 w-full h-full"
           loading="lazy"
-          onError={(e: any) => {
-            const target = e.target as HTMLImageElement;
-            target.onerror = null;
-            target.src = '/images/placeholder.png';
-          }}
         />
       </div>
       <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">

@@ -94,13 +94,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       <div className="relative w-full h-64 mb-4">
         <MediaImage
           media={item.image}
-          fallbackUrl="/images/placeholder.png"
           className="object-cover rounded bg-gray-100 w-full h-full absolute inset-0"
-          onError={(e: any) => {
-            const target = e.target as HTMLImageElement;
-            target.onerror = null;
-            target.src = '/images/placeholder.png';
-          }}
         />
       </div>
       <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
