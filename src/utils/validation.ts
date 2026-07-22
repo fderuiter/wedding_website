@@ -25,7 +25,14 @@ export const AdminLoginSchema = z.object({
   password: z.string({ message: 'Password is required' }).min(1, 'Password cannot be empty')
 });
 
+/**
+ * @internal
+ */
 export const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
+
+/**
+ * @internal
+ */
 export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/x-icon', 'image/vnd.microsoft.icon'];
 
 export const AdminUploadSchema = z.object({
@@ -63,6 +70,9 @@ export const ImportBackupSchema = z.object({
   contributor: z.array(z.any()).optional(),
 });
 
+/**
+ * @internal
+ */
 export const createLaxUrlSchema = (fieldName = 'URL') =>
   z.string()
     .max(2000, `${fieldName} must be under 2000 characters`)

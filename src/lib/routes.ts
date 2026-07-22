@@ -1,5 +1,11 @@
+/**
+ * @internal
+ */
 type RouteRole = 'admin' | 'public';
 
+/**
+ * @internal
+ */
 interface AppRoute {
   path: string;
   label?: string;

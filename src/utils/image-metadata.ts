@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * @internal
+ */
 interface ImageDimensions {
   width: number;
   height: number;
