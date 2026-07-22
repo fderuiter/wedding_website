@@ -1,4 +1,4 @@
-export type RouteRole = 'admin' | 'public';
+type RouteRole = 'admin' | 'public';
 
 interface AppRoute {
   path: string;

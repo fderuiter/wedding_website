@@ -4,7 +4,7 @@ import React, { useRef, useEffect, ElementType, ComponentPropsWithoutRef } from 
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
 
-export type Interactive3DCardProps<T extends ElementType> = {
+type Interactive3DCardProps<T extends ElementType> = {
   as?: T;
   children: React.ReactNode;
   className?: string;

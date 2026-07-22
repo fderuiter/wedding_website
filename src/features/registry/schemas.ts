@@ -39,5 +39,4 @@ export const RegistryItemSchema = RegistryItemBaseSchema.extend({
 });
 
 export type RegistryItemDTO = z.infer<typeof RegistryItemSchema>;
-export type ContributorDTO = z.infer<typeof ContributorSchema>;
 

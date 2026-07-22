@@ -2,7 +2,7 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { useReducedMotion } from './useReducedMotion';
 import { use3DInteraction, Use3DInteractionOptions } from './use3DInteraction';
 
-export interface UseUnified3DInputOptions {
+interface UseUnified3DInputOptions {
   // DOM element for bounding box (if DOM-based)
   domRef?: React.RefObject<HTMLElement>;
   // R3F support
