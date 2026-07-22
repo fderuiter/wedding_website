@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * Props for the CategoryFilter component.
  */
-export interface CategoryFilterProps {
+interface CategoryFilterProps {
   /** A list of all available category strings. */
   categories: string[];
   /** A list of the currently selected category strings. */

@@ -5,7 +5,7 @@ import { RegistryItem } from '../types';
  * @typedef {'available' | 'claimed' | 'fullyFunded'} RegistryItemStatus
  * @description Represents the possible statuses of a registry item.
  */
-export type RegistryItemStatus = 'available' | 'claimed' | 'fullyFunded';
+type RegistryItemStatus = 'available' | 'claimed' | 'fullyFunded';
 
 /**
  * @function getRegistryItemStatus

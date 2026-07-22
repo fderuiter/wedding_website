@@ -3,7 +3,7 @@
 import React, { useId } from 'react';
 import { Overlay } from './Overlay';
 
-export interface DialogProps {
+interface DialogProps {
   isOpen: boolean;
   onClose: () => void;
   title?: React.ReactNode;

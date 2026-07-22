@@ -3,9 +3,9 @@ import { createContext, useContext, useState, useCallback, ReactNode } from 'rea
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 
-export type ToastType = 'success' | 'error' | 'info' | 'confirm';
+type ToastType = 'success' | 'error' | 'info' | 'confirm';
 
-export interface Toast {
+interface Toast {
   id: string;
   message: string;
   type: ToastType;

@@ -28,7 +28,7 @@ export type IconName =
   | 'DragHandle'
   | 'Spinner';
 
-export interface IconProps extends React.SVGProps<SVGSVGElement> {
+interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
   size?: number | string;
 }
