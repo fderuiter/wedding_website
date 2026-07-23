@@ -189,7 +189,14 @@ export default function ContentDashboardPage() {
                     <FormGroup className="w-2/3">
                       <Input type="text" placeholder="Value" value={field.value} onChange={(e) => updateField(idx, 'value', e.target.value)} />
                     </FormGroup>
-                    <Button variant="danger" size="sm" onClick={() => removeField(idx)}>X</Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      aria-label={field.key ? `Delete dynamic field: ${field.key}` : 'Delete dynamic field'}
+                      onClick={() => removeField(idx)}
+                    >
+                      X
+                    </Button>
                   </div>
                 ))}
                 <Button variant="outline" size="sm" onClick={addField} className="mt-2">+ Add Field</Button>
@@ -216,13 +223,27 @@ export default function ContentDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex">
-                <Button variant="secondary" size="sm" onClick={() => { 
-                  setCurrentNode(node); 
-                  const d = node.data as Record<string, string>;
-                  setDynamicData(Object.keys(d).map(k => ({key: k, value: String(d[k])})));
-                  setIsEditing(true); 
-                }}>Edit</Button>
-                <Button variant="danger" size="sm" onClick={(e) => handleDelete(node.id, e)}>Delete</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={node.type ? `Edit content: ${node.type}` : 'Edit unnamed item'}
+                  onClick={() => { 
+                    setCurrentNode(node); 
+                    const d = node.data as Record<string, string>;
+                    setDynamicData(Object.keys(d).map(k => ({key: k, value: String(d[k])})));
+                    setIsEditing(true); 
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={node.type ? `Delete content: ${node.type}` : 'Delete unnamed item'}
+                  onClick={(e) => handleDelete(node.id, e)}
+                >
+                  Delete
+                </Button>
               </div>
             </div>
           ))}
