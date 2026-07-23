@@ -36,16 +36,35 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx prisma migrate deploy
 
+      - name: Verify external registry secrets
+        id: registry_check
+        run: |
+          if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ] || [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "ERROR: Missing external registry credentials (DOCKERHUB_USERNAME and/or DOCKERHUB_TOKEN). Falling back to local-only build with default tag."
+            echo "push=false" >> $GITHUB_OUTPUT
+            echo "tags=my-app:latest" >> $GITHUB_OUTPUT
+          else
+            echo "push=true" >> $GITHUB_OUTPUT
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/my-app:${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      - name: Log in to Docker Hub
+        if: steps.registry_check.outputs.push == 'true'
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build Docker Image
         uses: docker/build-push-action@v4
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: false
-          tags: my-app:latest
+          push: ${{ steps.registry_check.outputs.push == 'true' }}
+          tags: ${{ steps.registry_check.outputs.tags }}
