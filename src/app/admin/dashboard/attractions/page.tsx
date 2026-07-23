@@ -193,11 +193,25 @@ export default function AttractionsDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex flex-col gap-2">
-                <Button variant="secondary" size="sm" onClick={() => { 
-                  setCurrentAttraction(attraction); 
-                  setIsEditing(true); 
-                }}>Edit</Button>
-                <Button variant="danger" size="sm" onClick={(e) => handleDelete(attraction.id, e)}>Delete</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={attraction.name ? `Edit attraction: ${attraction.name}` : 'Edit unnamed item'}
+                  onClick={() => { 
+                    setCurrentAttraction(attraction); 
+                    setIsEditing(true); 
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={attraction.name ? `Delete attraction: ${attraction.name}` : 'Delete unnamed item'}
+                  onClick={(e) => handleDelete(attraction.id, e)}
+                >
+                  Delete
+                </Button>
               </div>
             </div>
           ))}

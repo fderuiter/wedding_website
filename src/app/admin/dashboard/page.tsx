@@ -89,7 +89,7 @@ export default function AdminDashboardPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        aria-label={'Edit registry item: ' + item.name}
+                        aria-label={item.name ? 'Edit registry item: ' + item.name : 'Edit unnamed item'}
                         onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                       >
                         Edit
@@ -97,7 +97,7 @@ export default function AdminDashboardPage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        aria-label={'Delete registry item: ' + item.name}
+                        aria-label={item.name ? 'Delete registry item: ' + item.name : 'Delete unnamed item'}
                         onClick={async (e) => {
                           const row = e.currentTarget.closest('tr');
                           if (!(await confirm('Are you sure you want to delete this item?'))) return;
@@ -146,7 +146,7 @@ export default function AdminDashboardPage() {
                   className="flex-1"
                   variant="secondary"
                   size="sm"
-                  aria-label={'Edit registry item: ' + item.name}
+                  aria-label={item.name ? 'Edit registry item: ' + item.name : 'Edit unnamed item'}
                   onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
                 >
                   Edit
@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
                   className="flex-1"
                   variant="danger"
                   size="sm"
-                  aria-label={'Delete registry item: ' + item.name}
+                  aria-label={item.name ? 'Delete registry item: ' + item.name : 'Delete unnamed item'}
                   onClick={async (e) => {
                     const card = e.currentTarget.closest('.rounded-xl');
                     if (!(await confirm('Are you sure you want to delete this item?'))) return;
