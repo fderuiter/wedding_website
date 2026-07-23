@@ -12,12 +12,12 @@ describe('getLocalImageDimensions', () => {
   });
 
   it('extracts dimensions from an SVG file (viewBox)', () => {
-    const dims = getLocalImageDimensions('/next.svg');
+    const dims = getLocalImageDimensions('src/utils/__tests__/fixtures/next.svg');
     expect(dims).toEqual({ width: 394, height: 80 });
   });
 
   it('extracts dimensions from an SVG file with a different viewBox', () => {
-    const dims = getLocalImageDimensions('/globe.svg');
+    const dims = getLocalImageDimensions('src/utils/__tests__/fixtures/globe.svg');
     expect(dims).toEqual({ width: 16, height: 16 });
   });
 
