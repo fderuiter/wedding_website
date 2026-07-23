@@ -1,7 +1,6 @@
 import { toPublicAppConfig } from '../config';
-import { AppConfig } from '@prisma/client';
 
-const baseConfig: AppConfig = {
+const baseConfig: any = {
   id: 'global',
   brideName: 'Abbi',
   groomName: 'Fred',
@@ -24,6 +23,8 @@ const baseConfig: AppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "Abbi and Fred's wedding, wedding website",
+  colorPrimary: '#B91C1C',
+  colorSecondary: '#B45309',
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -39,14 +40,14 @@ describe('Configuration DTO Architecture', () => {
   });
 
   it('toPublicAppConfig preserves faviconUrl in the public config', () => {
-    const config: AppConfig = { ...baseConfig, faviconUrl: '/uploads/custom-favicon.ico' };
+    const config: any = { ...baseConfig, faviconUrl: '/uploads/custom-favicon.ico' };
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.faviconUrl).toBe('/uploads/custom-favicon.ico');
   });
 
   it('toPublicAppConfig preserves ogImageUrl in the public config', () => {
-    const config: AppConfig = { ...baseConfig, ogImageUrl: '/uploads/my-og-image.jpg' };
+    const config: any = { ...baseConfig, ogImageUrl: '/uploads/my-og-image.jpg' };
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.ogImageUrl).toBe('/uploads/my-og-image.jpg');
@@ -54,14 +55,14 @@ describe('Configuration DTO Architecture', () => {
 
   it('toPublicAppConfig preserves seoKeywords in the public config', () => {
     const customKeywords = '{{brideName}} wedding, {{venueName}} ceremony, wedding website';
-    const config: AppConfig = { ...baseConfig, seoKeywords: customKeywords };
+    const config: any = { ...baseConfig, seoKeywords: customKeywords };
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.seoKeywords).toBe(customKeywords);
   });
 
   it('toPublicAppConfig preserves all three new SEO fields simultaneously', () => {
-    const config: AppConfig = {
+    const config: any = {
       ...baseConfig,
       faviconUrl: '/uploads/abc123.ico',
       ogImageUrl: '/uploads/def456.jpg',

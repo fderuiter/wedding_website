@@ -44,7 +44,7 @@ export default async function RootLayout({
         {isUninitialized ? (
           <SetupWizard />
         ) : (
-          <ThemeProvider>
+          <ThemeProvider config={publicConfig}>
             <ToastProvider>
               <a href="#main-content" className="skip-link">Skip to main content</a>
               <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>

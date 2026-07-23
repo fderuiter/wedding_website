@@ -33,6 +33,8 @@ const fallbackAppConfig: LocalAppConfig = {
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
+  colorPrimary: '#B91C1C',
+  colorSecondary: '#B45309',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true, 
   showAddToCalendar: true,
@@ -150,6 +152,8 @@ export async function getAppConfig(): Promise<AppConfigDTO> {
           faviconUrl: '/assets/favicon.png',
           ogImageUrl: '/images/sunset-embrace.jpg',
           seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
+          colorPrimary: '#B91C1C',
+          colorSecondary: '#B45309',
         },
       }));
     } else {
