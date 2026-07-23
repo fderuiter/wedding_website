@@ -6,7 +6,7 @@ import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, Checkbox } from '@/components/ui/forms';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -136,7 +136,7 @@ export default function WeddingPartyDashboardPage() {
               </FormGroup>
               <FormGroup className="md:col-span-2">
                 <div className="flex items-center">
-                  <input type="checkbox" checked={currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false} onChange={e => setCurrentMember({...currentMember, photoDecorative: e.target.checked})} className="mr-2" />
+                  <Checkbox checked={currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false} onChange={e => setCurrentMember({...currentMember, photoDecorative: e.target.checked})} className="mr-2" />
                   <Label className="mb-0">Decorative (no alt text)</Label>
                 </div>
               </FormGroup>

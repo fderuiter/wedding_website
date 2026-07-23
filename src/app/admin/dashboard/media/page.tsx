@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Label, Input } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
 import { apiClient } from '@/lib/apiClient';
 import type { MediaDTO } from '@/features/media';
 import { MediaImage } from '@/components/MediaImage';
@@ -73,7 +73,7 @@ export default function MediaDashboardPage() {
             </FormGroup>
             <FormGroup className="md:col-span-2">
               <div className="flex items-center">
-                <input type="checkbox" checked={currentMedia.isDecorative || false} onChange={e => setCurrentMedia({...currentMedia, isDecorative: e.target.checked})} className="mr-2" />
+                <Checkbox checked={currentMedia.isDecorative || false} onChange={e => setCurrentMedia({...currentMedia, isDecorative: e.target.checked})} className="mr-2" />
                 <Label className="mb-0">Decorative (no alt text)</Label>
               </div>
             </FormGroup>

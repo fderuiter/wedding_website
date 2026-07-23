@@ -145,7 +145,7 @@ export default function AttractionsDashboardPage() {
               </FormGroup>
               <FormGroup className="md:col-span-2">
                 <div className="flex items-center">
-                  <input type="checkbox" checked={currentAttraction.imageDecorative || (currentAttraction.image as any)?.isDecorative || false} onChange={e => setCurrentAttraction({...currentAttraction, imageDecorative: e.target.checked})} className="mr-2" />
+                  <Checkbox checked={currentAttraction.imageDecorative || (currentAttraction.image as any)?.isDecorative || false} onChange={e => setCurrentAttraction({...currentAttraction, imageDecorative: e.target.checked})} className="mr-2" />
                   <Label className="mb-0">Decorative (no alt text)</Label>
                 </div>
               </FormGroup>
