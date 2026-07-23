@@ -4,6 +4,7 @@ import stylistic from '@stylistic/eslint-plugin';
 import unusedImports from 'eslint-plugin-unused-imports';
 
 const isCI = process.env.CI === 'true' || process.env.CI === '1' || process.env.GITHUB_ACTIONS === 'true';
+const severity = isCI ? 'error' : 'warn';
 
 const eslintConfig = [
   ...nextCoreWebVitals,
@@ -18,10 +19,10 @@ const eslintConfig = [
       '@stylistic/indent': ['error', 2],
       '@stylistic/semi': ['error', 'always'],
       
-      // Downgrade previously failing rules to warn to avoid breaking CI 
-      // without polluting git history with massive non-stylistic rewrites
+      // Downgrade previously failing rules to warn locally to avoid breaking local velocity,
+      // but promote to block-level errors on CI to maintain code quality.
       'no-restricted-imports': [
-        'warn',
+        severity,
         {
           patterns: [
             {
@@ -31,24 +32,22 @@ const eslintConfig = [
           ]
         }
       ],
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-require-imports': 'warn',
-      'prefer-const': 'warn',
-      'react/no-unescaped-entities': 'warn',
-      'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/immutability': 'warn',
-      'react-hooks/static-components': 'warn',
-      'react-hooks/purity': 'warn',
-      'react-hooks/refs': 'warn',
+      '@typescript-eslint/no-explicit-any': severity,
+      '@typescript-eslint/no-require-imports': severity,
+      'prefer-const': severity,
+      'react/no-unescaped-entities': severity,
+      'react-hooks/set-state-in-effect': severity,
+      'react-hooks/immutability': severity,
+      'react-hooks/static-components': severity,
+      'react-hooks/purity': severity,
+      'react-hooks/refs': severity,
 
-      ...(!isCI ? {
-        '@typescript-eslint/no-unused-vars': 'off',
-        'unused-imports/no-unused-imports': 'error',
-        'unused-imports/no-unused-vars': [
-          'warn',
-          { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
-        ]
-      } : {})
+      '@typescript-eslint/no-unused-vars': isCI ? 'error' : 'off',
+      'unused-imports/no-unused-imports': 'error',
+      'unused-imports/no-unused-vars': [
+        isCI ? 'error' : 'warn',
+        { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
+      ]
     }
   }
 ];
