@@ -88,18 +88,6 @@ jest.mock('@react-three/rapier', () => {
   };
 });
 
-jest.mock('maath/random', () => ({
-  inSphere: jest.fn((buffer, { radius }) => {
-    if(!buffer) return new Float32Array(0);
-    const count = buffer.length / 3;
-    const newBuffer = new Float32Array(count * 3);
-    for (let i = 0; i < count * 3; i++) {
-      newBuffer[i] = (Math.random() - 0.5) * 2 * radius;
-    }
-    return newBuffer;
-  }),
-}));
-
 jest.mock('next/link', () => {
   const MockLink = ({ children, href }: { children: React.ReactNode, href: string }) => {
     return <a href={href}>{children}</a>;
