@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Points, PointMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { inSphere } from 'maath/random';
+import { inSphere } from '../../../utils/math';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 
 export function Sparkles({ count = 200, color = '#ffa0e0' }: { count?: number, color?: string }) {
