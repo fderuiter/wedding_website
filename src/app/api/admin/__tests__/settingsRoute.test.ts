@@ -69,6 +69,8 @@ const updatedConfig = {
   id: 'global',
   ...validConfigData,
   weddingDate: new Date(validConfigData.weddingDate),
+  colorPrimary: '#B91C1C',
+  colorSecondary: '#B45309',
   showCountdown: true,
   showAddToCalendar: true,
   features: [],

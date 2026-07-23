@@ -47,6 +47,8 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       faviconUrl: validData.faviconUrl,
       ogImageUrl: validData.ogImageUrl,
       seoKeywords: validData.seoKeywords,
+      colorPrimary: validData.colorPrimary,
+      colorSecondary: validData.colorSecondary,
     },
   });
 

@@ -28,6 +28,8 @@ export const UpdateAppConfigSchema = z.object({
   faviconUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
   ogImageUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
   seoKeywords: z.string(),
+  colorPrimary: z.string().regex(hexColorRegex).optional(),
+  colorSecondary: z.string().regex(hexColorRegex).optional(),
 }).catchall(z.any()).superRefine((val, ctx) => {
   for (const [key, value] of Object.entries(val)) {
     if (typeof key === 'string' && key.toLowerCase().includes('color') && typeof value === 'string' && value !== '') {
@@ -111,6 +113,8 @@ export const AppConfigSchema = z.object({
   faviconUrl: z.string(),
   ogImageUrl: z.string(),
   seoKeywords: z.string(),
+  colorPrimary: z.string().default('#B91C1C'),
+  colorSecondary: z.string().default('#B45309'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
   features: z.union([
