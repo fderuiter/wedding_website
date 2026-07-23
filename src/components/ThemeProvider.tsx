@@ -311,7 +311,7 @@ export function ThemeProvider({
 
   return (
     <ThemeContext.Provider value={theme}>
-      <style id="dynamic-theme-style" dangerouslySetInnerHTML={{ __html: stylesString }} />
+      <style id="dynamic-theme-style">{stylesString}</style>
       {children}
     </ThemeContext.Provider>
   );
