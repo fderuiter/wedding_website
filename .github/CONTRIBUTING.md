@@ -53,6 +53,33 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
 We are actively working to improve the documentation for this project. If you make a change that requires a documentation update, please make the corresponding change to the documentation as part of your pull request.
 
+## Shared Code and Reusability Guidelines
+
+To minimize codebase bloat and prevent technical debt, we enforce a strict manual review process for shared code reusability. Before creating any new UI component or utility function, you must verify if a suitable solution already exists.
+
+### Step-by-Step Verification Process
+
+1. **Search Existing Codebase:**
+   * Run a global search or check the `src/components/ui/` folder for existing visual elements (e.g., buttons, overlays, form inputs).
+   * Run a global search or check the `src/utils/` and `src/lib/` directories for common helper logic (e.g., date helpers, class merging utilities, client wrappers).
+2. **Review Existing Files Directly:**
+   * Browse `src/components/ui/` and `src/utils/` to see if there is an existing component or function that can be extended or configured via props/arguments instead of writing a new one from scratch.
+3. **Ask/Consult:**
+   * For non-trivial logic, consult other contributors or review existing open pull requests to check if someone else is already implementing a similar helper or component.
+4. **Determine Placement:**
+   * If the logic is specific only to one domain or feature (e.g., RSVP list table, weather-specific widget), place it in `src/features/<feature-name>/{components,hooks}/`. Keep it isolated from the generic shared folders.
+   * If the logic is general-purpose, reusable, and domain-agnostic, it should be placed in `src/components/ui/` (for UI primitives) or `src/utils/` (for stateless utilities).
+
+### Standards for Shared Utility Functions
+
+All new utility functions placed in the global `src/utils/` folder must follow these strict style and location standards:
+* **Domain-Agnostic:** They must be generic and completely decoupled from specific business logic, wedding details, or feature schemas. For example, a function to format dates (`formatDate`) is domain-agnostic, while a function to format RSVP-specific registry items belongs in the registry feature folder.
+* **Stateless and Pure:** Utility functions must be pure functions with no side effects. They must not rely on global state, mutable external variables, or perform asynchronous networking. Given the same inputs, they must always return the same outputs.
+* **TypeScript & Quality:** Explicitly define TypeScript argument and return types. Avoid the use of `any`.
+* **Placement:**
+  * Place domain-agnostic, stateless helpers in `/app/src/utils/` (e.g., as standalone utility files or added to an existing domain-agnostic utility file).
+  * Ensure that feature-specific logic is strictly isolated in feature-specific subdirectories under `src/features/`.
+
 ## Code Style
 
 * **TypeScript:** Use it. Try to be explicit with types where it makes sense.

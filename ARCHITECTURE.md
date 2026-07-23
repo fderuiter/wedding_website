@@ -246,6 +246,60 @@ To maintain modularity and prevent logic smear, the codebase adopts a strict lay
 
 New features should be scaffolded using the included CLI utility (`npm run scaffold <feature-name>`) to ensure correct structural boundaries and naming conventions.
 
+### 5. Architectural Boundaries & Shared Components Guidelines
+
+To prevent code duplication, maintain a highly maintainable and clean project structure, developers must respect the strict boundaries between generic (shared) directories and feature-specific directories.
+
+#### Folder Boundaries
+* **Generic Directories (`src/components/`, `src/components/ui/`, `src/utils/`, `src/lib/`):**
+  * These directories must house ONLY domain-agnostic, reusable components, hooks, or helpers.
+  * No feature-specific terminology, business rules, or Prisma/database imports should exist in these files.
+  * For example, a generic `Button` or `Dialog` goes to `src/components/ui/`. A generic `cn` style merger goes to `src/utils/`.
+* **Feature Directories (`src/features/<feature-name>/`):**
+  * Feature directories contain all UI components, hooks, schema definitions, and business logic that belong strictly to that feature domain (e.g., weather, registry).
+  * Feature-specific code must not be exposed globally; other domains can only import via the feature's public API (`src/features/<feature-name>/index.ts`).
+  * If a utility or component in a feature becomes needed across multiple features, it must be refactored into a generic domain-agnostic form and relocated to the appropriate generic directory.
+
+#### Structural Rules for Shared UI Primitives
+Any new shared UI component/primitive added to `src/components/ui/` must adhere to the following rigid design and quality patterns:
+
+1. **React Ref Forwarding:**
+   * Components must allow the consumption of refs by utilizing `React.forwardRef` to pass the ref down to the root DOM node of the primitive.
+   * *Example:*
+     ```tsx
+     import React from 'react';
+     
+     export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+     
+     export const Input = React.forwardRef<HTMLInputElement, InputProps>(
+       ({ className, type, ...props }, ref) => {
+         return (
+           <input
+             type={type}
+             className={cn('border rounded px-3 py-2', className)}
+             ref={ref}
+             {...props}
+           />
+         );
+       }
+     );
+     Input.displayName = 'Input';
+     ```
+
+2. **Style Composition / Class Merging:**
+   * Primitives must be highly configurable from the outside. Default Tailwind styles must be merged with custom styles passed via the `className` prop.
+   * This class merging MUST be done via the `cn(...)` utility (located in `src/utils/cn.ts`) to resolve Tailwind conflicts correctly.
+   * *Example:*
+     ```tsx
+     import { cn } from '@/utils/cn';
+     // Usage inside a component:
+     className={cn('base-classes-here', className)}
+     ```
+
+3. **Unit Tests:**
+   * Every new shared UI primitive must have a matching unit test file inside the respective `__tests__` directory (e.g., `src/components/ui/__tests__/<Component>.test.tsx`).
+   * Unit tests must verify proper rendering, prop-based configuration, custom ref forwarding, and interactive behavior (e.g., fire events).
+
 ## System Configuration
 
 The system uses a centrally defined configuration schema to validate runtime settings.
