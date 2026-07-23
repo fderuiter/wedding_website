@@ -170,11 +170,25 @@ export default function WeddingPartyDashboardPage() {
                 </div>
               </div>
               <div className="space-x-2 flex flex-col gap-2">
-                <Button variant="secondary" size="sm" onClick={() => { 
-                  setCurrentMember(member); 
-                  setIsEditing(true); 
-                }}>Edit</Button>
-                <Button variant="danger" size="sm" onClick={(e) => handleDelete(member.id, e as React.MouseEvent<HTMLButtonElement>)}>Delete</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={member.name ? `Edit wedding party member: ${member.name}` : 'Edit unnamed item'}
+                  onClick={() => { 
+                    setCurrentMember(member); 
+                    setIsEditing(true); 
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={member.name ? `Delete wedding party member: ${member.name}` : 'Delete unnamed item'}
+                  onClick={(e) => handleDelete(member.id, e as React.MouseEvent<HTMLButtonElement>)}
+                >
+                  Delete
+                </Button>
               </div>
             </div>
           ))}

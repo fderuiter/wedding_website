@@ -61,6 +61,7 @@ const config = {
     '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
     '^@/features/(.*)$': '<rootDir>/src/features/$1',
     '^@/core/(.*)$': '<rootDir>/src/core/$1',
+    '^@/hooks/(.*)$': '<rootDir>/src/hooks/$1',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/', '.skip.tsx$'],
 };

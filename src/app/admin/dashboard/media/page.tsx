@@ -95,8 +95,24 @@ export default function MediaDashboardPage() {
               <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
               <div className="text-sm text-gray-500 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
               <div className="mt-auto flex justify-between gap-2">
-                <Button variant="secondary" size="sm" onClick={() => { setCurrentMedia(m); setIsEditing(true); }} className="flex-1">Edit</Button>
-                <Button variant="danger" size="sm" onClick={() => handleDelete(m.id)} className="flex-1">Delete</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={m.altText ? `Edit media: ${m.altText}` : 'Edit unnamed item'}
+                  onClick={() => { setCurrentMedia(m); setIsEditing(true); }}
+                  className="flex-1"
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={m.altText ? `Delete media: ${m.altText}` : 'Delete unnamed item'}
+                  onClick={() => handleDelete(m.id)}
+                  className="flex-1"
+                >
+                  Delete
+                </Button>
               </div>
             </div>
           ))}
