@@ -10,5 +10,15 @@
     "src/features/**/admin.service.ts"
   ],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignoreDependencies": ["tailwindcss"]
+  "ignoreDependencies": ["tailwindcss"],
+  "rules": {
+    "files": "warn",
+    "exports": "warn",
+    "nsExports": "warn",
+    "namespaceMembers": "warn",
+    "enumMembers": "warn",
+    "types": "warn",
+    "nsTypes": "warn"
+  },
+  "treatConfigHintsAsErrors": true
 }
