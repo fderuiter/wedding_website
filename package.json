@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:unused": "knip",
+    "lint:unused:fix": "knip --fix --allow-remove-files",
     "pretest": "sh ./scripts/pretest.sh",
     "test": "jest",
     "test:watch": "jest --watch",
