@@ -30,6 +30,15 @@ interface HSL {
   l: number;
 }
 
+const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
+
+function sanitizeColor(color: string | undefined | null, fallback: string): string {
+  if (color && hexColorRegex.test(color)) {
+    return color;
+  }
+  return fallback;
+}
+
 function hexToRgb(hex: string): RGB {
   const cleanHex = hex.replace(/^#/, '');
   let r = 0, g = 0, b = 0;
@@ -176,15 +185,18 @@ function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5
 }
 
 function generateDynamicStyles(primaryColor: string, secondaryColor: string): string {
-  const primaryTextLight = optimizeContrast(primaryColor, '#FFFFFF', 4.5);
-  const secondaryTextLight = optimizeContrast(secondaryColor, '#FFFFFF', 4.5);
-  const primaryTextDark = optimizeContrast(primaryColor, '#111827', 4.5);
-  const secondaryTextDark = optimizeContrast(secondaryColor, '#111827', 4.5);
+  const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
+  const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
+
+  const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
+  const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
+  const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
+  const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
 
   return `
     :root {
-      --color-primary: ${primaryColor};
-      --color-secondary: ${secondaryColor};
+      --color-primary: ${safePrimary};
+      --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
     }
@@ -215,8 +227,8 @@ function generateDynamicStyles(primaryColor: string, secondaryColor: string): st
     .dark .dark\\:bg-gray-900,
     .dark .dark\\:bg-zinc-900,
     .dark .dark\\:bg-black {
-      --color-primary: ${primaryColor};
-      --color-secondary: ${secondaryColor};
+      --color-primary: ${safePrimary};
+      --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
     }
@@ -235,10 +247,10 @@ export function ThemeProvider({
   children,
   config: propConfig
 }: ThemeProviderProps) {
-  const [config, setConfig] = useState(propConfig || {
-    colorPrimary: '#B91C1C',
-    colorSecondary: '#B45309',
-  });
+  const [config, setConfig] = useState(() => ({
+    colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
+    colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
+  }));
 
   const [theme, setTheme] = useState({
     themePrimary: '#B91C1C',
@@ -249,7 +261,10 @@ export function ThemeProvider({
 
   useEffect(() => {
     if (propConfig) {
-      setConfig(propConfig);
+      setConfig({
+        colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
+        colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
+      });
     }
   }, [propConfig]);
 
@@ -258,7 +273,15 @@ export function ThemeProvider({
     if (typeof window !== 'undefined' && window !== window.parent) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'config') {
-          setConfig((prev: any) => ({ ...prev, ...event.data.draftData }));
+          const draftData = event.data.draftData || {};
+          setConfig((prev: any) => {
+            const next = { ...prev, ...draftData };
+            return {
+              ...next,
+              colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
+              colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
+            };
+          });
         }
       };
       window.addEventListener('message', handleMessage);
@@ -274,16 +297,16 @@ export function ThemeProvider({
     const outline = styles.getPropertyValue('--color-outline').trim() || '#000000';
 
     setTheme({
-      themePrimary: config?.colorPrimary || primary,
-      themeSecondary: config?.colorSecondary || secondary,
-      themeAccent: accent,
-      themeOutline: outline,
+      themePrimary: sanitizeColor(config?.colorPrimary, sanitizeColor(primary, '#B91C1C')),
+      themeSecondary: sanitizeColor(config?.colorSecondary, sanitizeColor(secondary, '#B45309')),
+      themeAccent: sanitizeColor(accent, '#D4AF37'),
+      themeOutline: sanitizeColor(outline, '#000000'),
     });
   }, [config]);
 
   const stylesString = generateDynamicStyles(
-    config?.colorPrimary || '#B91C1C',
-    config?.colorSecondary || '#B45309'
+    sanitizeColor(config?.colorPrimary, '#B91C1C'),
+    sanitizeColor(config?.colorSecondary, '#B45309')
   );
 
   return (
