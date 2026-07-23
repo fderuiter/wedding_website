@@ -329,6 +329,8 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `faviconUrl` | `string` | Configuration field for faviconUrl |
 | `ogImageUrl` | `string` | Configuration field for ogImageUrl |
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
+| `colorPrimary` | `default` | Configuration field for colorPrimary |
+| `colorSecondary` | `default` | Configuration field for colorSecondary |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
 | `features` | `pipe` | Configuration field for features |

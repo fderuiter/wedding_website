@@ -459,6 +459,14 @@
                   },
                   "seoKeywords": {
                     "type": "string"
+                  },
+                  "colorPrimary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "colorSecondary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
                   }
                 },
                 "required": [
