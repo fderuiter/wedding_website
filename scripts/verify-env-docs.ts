@@ -1,5 +1,101 @@
 import fs from 'fs';
 import path from 'path';
+import ts from 'typescript';
+
+export function getKeysFromSource(fileContent: string): string[] {
+  const sourceFile = ts.createSourceFile('env.ts', fileContent, ts.ScriptTarget.Latest, true);
+  const keys: string[] = [];
+
+  function getPropertyNameText(node: ts.PropertyName | ts.Expression): string | null {
+    if (ts.isIdentifier(node)) {
+      return node.text;
+    }
+    if (ts.isStringLiteral(node)) {
+      return node.text;
+    }
+    if (ts.isNoSubstitutionTemplateLiteral(node)) {
+      return node.text;
+    }
+    if (ts.isComputedPropertyName(node)) {
+      return getPropertyNameText(node.expression);
+    }
+    return null;
+  }
+
+  function findZodObjectCall(node: ts.Node | undefined): ts.CallExpression | null {
+    if (!node) return null;
+    if (ts.isCallExpression(node)) {
+      const expr = node.expression;
+      if (ts.isPropertyAccessExpression(expr)) {
+        if (expr.expression.getText() === 'z' && expr.name.text === 'object') {
+          return node;
+        }
+      }
+    }
+    let result: ts.CallExpression | null = null;
+    node.forEachChild(child => {
+      const found = findZodObjectCall(child);
+      if (found) {
+        result = found;
+      }
+    });
+    return result;
+  }
+
+  function visit(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText() === 'envSchema') {
+      const callExpr = findZodObjectCall(node.initializer);
+      if (callExpr && callExpr.arguments.length > 0) {
+        const firstArg = callExpr.arguments[0];
+        if (ts.isObjectLiteralExpression(firstArg)) {
+          for (const property of firstArg.properties) {
+            if (ts.isPropertyAssignment(property)) {
+              const nameText = getPropertyNameText(property.name);
+              if (nameText) {
+                keys.push(nameText);
+              }
+            } else if (ts.isShorthandPropertyAssignment(property)) {
+              keys.push(property.name.text);
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+
+  // If we didn't find keys through variable declaration 'envSchema', search for *any* z.object CallExpression in the file.
+  if (keys.length === 0) {
+    function visitAnyZodObject(node: ts.Node) {
+      if (ts.isCallExpression(node)) {
+        const expr = node.expression;
+        if (ts.isPropertyAccessExpression(expr) && expr.expression.getText() === 'z' && expr.name.text === 'object') {
+          if (node.arguments.length > 0) {
+            const firstArg = node.arguments[0];
+            if (ts.isObjectLiteralExpression(firstArg)) {
+              for (const property of firstArg.properties) {
+                if (ts.isPropertyAssignment(property)) {
+                  const nameText = getPropertyNameText(property.name);
+                  if (nameText) {
+                    keys.push(nameText);
+                  }
+                } else if (ts.isShorthandPropertyAssignment(property)) {
+                  keys.push(property.name.text);
+                }
+              }
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visitAnyZodObject);
+    }
+    visitAnyZodObject(sourceFile);
+  }
+
+  return keys;
+}
 
 function verifyEnvDocs() {
   const envFilePath = path.join(process.cwd(), 'src/env.ts');
@@ -12,25 +108,7 @@ function verifyEnvDocs() {
   }
 
   const envFile = fs.readFileSync(envFilePath, 'utf-8');
-  
-  // Statically parse the Zod schema keys to avoid side effects
-  const objectMatch = envFile.match(/const envSchema = z\.object\(\{([\s\S]*?)\}\);/);
-  if (!objectMatch) {
-    console.error('❌ Could not find envSchema in src/env.ts');
-    process.exit(1);
-  }
-
-  const schemaBody = objectMatch[1];
-  const keys = [];
-  const lines = schemaBody.split('\n');
-  
-  for (const line of lines) {
-    // Match standard zod object keys
-    const keyMatch = line.match(/^\s*([A-Z_]+)\s*:/);
-    if (keyMatch) {
-      keys.push(keyMatch[1]);
-    }
-  }
+  const keys = getKeysFromSource(envFile);
 
   if (keys.length === 0) {
     console.error('❌ No environment variables found in src/env.ts schema');
@@ -63,3 +141,4 @@ function verifyEnvDocs() {
 }
 
 verifyEnvDocs();
+
