@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
+import { fileURLToPath } from 'url';
 
 export function getKeysFromSource(fileContent: string): string[] {
   const sourceFile = ts.createSourceFile('env.ts', fileContent, ts.ScriptTarget.Latest, true);
@@ -97,7 +98,7 @@ export function getKeysFromSource(fileContent: string): string[] {
   return keys;
 }
 
-function verifyEnvDocs() {
+export function verifyEnvDocs() {
   const envFilePath = path.join(process.cwd(), 'src/env.ts');
   const deploymentDocPath = path.join(process.cwd(), 'DEPLOYMENT.md');
   const envExamplePath = path.join(process.cwd(), '.env.example');
@@ -121,11 +122,12 @@ function verifyEnvDocs() {
   let failed = false;
 
   for (const key of keys) {
-    if (!deploymentDoc.includes(key)) {
+    const keyRegex = new RegExp(`\\b${key}\\b`);
+    if (!keyRegex.test(deploymentDoc)) {
       console.error(`❌ Missing variable ${key} in DEPLOYMENT.md`);
       failed = true;
     }
-    if (!envExample.includes(key)) {
+    if (!keyRegex.test(envExample)) {
       console.error(`❌ Missing variable ${key} in .env.example`);
       failed = true;
     }
@@ -140,5 +142,9 @@ function verifyEnvDocs() {
   }
 }
 
-verifyEnvDocs();
+const isMain = typeof process.argv[1] === 'string' &&
+               path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isMain) {
+  verifyEnvDocs();
+}
 

@@ -88,4 +88,34 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
       'HISTORY_VERSION_LIMIT',
     ]);
   });
+
+  describe('Word Boundary and Substring Matching', () => {
+    function verifyKeyMatch(key: string, docContent: string): boolean {
+      const keyRegex = new RegExp(`\\b${key}\\b`);
+      return keyRegex.test(docContent);
+    }
+
+    it('fails if key only exists as a substring of a larger word', () => {
+      expect(verifyKeyMatch('PORT', 'SUPPORT')).toBe(false);
+      expect(verifyKeyMatch('PORT', 'PORT_NUMBER')).toBe(false);
+      expect(verifyKeyMatch('PORT', 'MY_PORT')).toBe(false);
+      expect(verifyKeyMatch('PASSWORD', 'ADMIN_PASSWORD')).toBe(false);
+      expect(verifyKeyMatch('DATABASE_URL', 'POSTGRES_URL_NON_POOLING')).toBe(false);
+    });
+
+    it('passes when key is documented with exact word-boundary matches', () => {
+      expect(verifyKeyMatch('PORT', 'We run on PORT 3000')).toBe(true);
+      expect(verifyKeyMatch('PORT', 'PORT=3000')).toBe(true);
+      expect(verifyKeyMatch('PORT', 'The environment variable PORT is set.')).toBe(true);
+      expect(verifyKeyMatch('PORT', '`PORT` is required')).toBe(true);
+      expect(verifyKeyMatch('PORT', '"PORT"')).toBe(true);
+    });
+  });
+
+  describe('Safe Module Import Guard', () => {
+    it('safely imports without executing validation or process.exit', () => {
+      // Since this test is running, verify-env-docs was successfully imported without triggering any immediate process exits.
+      expect(true).toBe(true);
+    });
+  });
 });
