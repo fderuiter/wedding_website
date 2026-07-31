@@ -3,9 +3,6 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
-import { Analytics } from '@vercel/analytics/next';
-import { SpeedInsights } from '@vercel/speed-insights/next';
-import { WebVitals } from '@/components/WebVitals';
 import Navbar from './Navbar';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -31,9 +28,8 @@ interface RootLayoutClientProps {
 /**
  * @function RootLayoutClient
  * @description A client-side component that wraps the main application layout.
- * It handles the admin login state, provides a query client for React Query,
- * and includes analytics and web vitals reporting. It also dynamically adjusts
- * the main content padding to account for the fixed navbar height.
+ * It handles the admin login state, provides a query client for React Query.
+ * It also dynamically adjusts the main content padding to account for the fixed navbar height.
  * @param {RootLayoutClientProps} props - The component props.
  * @returns {JSX.Element} The rendered RootLayoutClient component.
  */
@@ -133,9 +129,7 @@ export default function RootLayoutClient({
       <main aria-label="Application Content" id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
         {children}
       </main>
-      <SpeedInsights />
-      <Analytics />
-      <WebVitals />
+
     </QueryClientProvider>
   );
 }

@@ -28,10 +28,6 @@ console.error = (...args) => {
   originalConsoleError(...args);
 };
 
-jest.mock('@vercel/analytics', () => ({
-  track: jest.fn(),
-}));
-
 // Mock ResizeObserver
 global.ResizeObserver = jest.fn().mockImplementation(() => ({
   observe: jest.fn(),
