@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { handleMediaFields } from '@/features/admin';
+import { handleMediaFields } from '@/features/admin/utils';
 import { AttractionSchema, AttractionDTO } from './schemas';
 import { z } from 'zod';
 import { formatZodError } from '@/utils/validation';
@@ -16,9 +16,9 @@ function validateAttraction(data: any): string | null {
   return null;
 }
 
-async function mapAttractionData(data: any, client?: any): Promise<any> {
+async function mapAttractionData(data: any, client?: any, author?: string): Promise<any> {
   // Since validation ensures coordinates are numbers, we don't need manual parsing here anymore
-  const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', client);
+  const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', client, author);
   return mapped;
 }
 
@@ -42,7 +42,7 @@ export class AttractionAdminService extends BaseService<AttractionDTO> {
     if (error) throw new Error(`Validation Error: ${error}`);
 
     return this.repo.transaction(async (txRepo) => {
-      const mappedData = await mapAttractionData(data, txRepo.client);
+      const mappedData = await mapAttractionData(data, txRepo.client, author);
       const record = await txRepo.create(mappedData);
       await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
       return record;
@@ -54,7 +54,7 @@ export class AttractionAdminService extends BaseService<AttractionDTO> {
     if (error) throw new Error(`Validation Error: ${error}`);
 
     return this.repo.transaction(async (txRepo) => {
-      const mappedData = await mapAttractionData(data, txRepo.client);
+      const mappedData = await mapAttractionData(data, txRepo.client, author);
       const record = await txRepo.update(id, mappedData);
       await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
       return record;

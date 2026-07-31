@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
+import { MediaSchema } from '@/features/media/schemas';
 
 export async function handleMediaFields(
   data: any,
@@ -6,7 +8,8 @@ export async function handleMediaFields(
   urlField: string,
   altField: string,
   decField: string,
-  client: any = prisma
+  client: any = prisma,
+  author: string = 'Admin'
 ) {
   const db = client || prisma;
   let mediaId = data[idField];
@@ -16,7 +19,7 @@ export async function handleMediaFields(
   
   if (url || alt !== undefined || dec !== undefined) {
     if (mediaId) {
-      await db.media.update({
+      const media = await db.media.update({
         where: { id: mediaId },
         data: {
           ...(url !== undefined && { url }),
@@ -24,6 +27,8 @@ export async function handleMediaFields(
           ...(dec !== undefined && { isDecorative: dec }),
         }
       });
+      MediaSchema.parse(media);
+      await createAuditSnapshot('Media', mediaId, media, author, db);
     } else {
       const media = await db.media.create({
         data: {
@@ -33,6 +38,8 @@ export async function handleMediaFields(
         }
       });
       mediaId = media.id;
+      MediaSchema.parse(media);
+      await createAuditSnapshot('Media', mediaId, media, author, db);
     }
   } else if (!mediaId) {
     const media = await db.media.create({
@@ -42,6 +49,8 @@ export async function handleMediaFields(
       }
     });
     mediaId = media.id;
+    MediaSchema.parse(media);
+    await createAuditSnapshot('Media', mediaId, media, author, db);
   }
   
   const mapped = { ...data, [idField]: mediaId };
