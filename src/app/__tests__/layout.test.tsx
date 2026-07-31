@@ -4,14 +4,6 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 
 const pushMock = jest.fn();
 
-jest.mock('@vercel/analytics/next', () => ({
-  Analytics: () => <div />,
-}));
-
-jest.mock('@vercel/speed-insights/next', () => ({
-  SpeedInsights: () => <div />,
-}));
-
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
   usePathname: () => '/',
