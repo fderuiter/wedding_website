@@ -310,5 +310,132 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(body.success).toBe(false);
       expect(body.error).toBe('Transaction Failed');
     });
+
+    test('handles errors during bulk import audit snapshot creation', async () => {
+      const validBackup = {
+        appConfig: [{ id: 'global', brideName: 'Alice' }],
+        registryItem: [{ id: 'ri1', name: 'Plates' }],
+      };
+
+      const mockTx = {
+        contributor: { deleteMany: jest.fn(), createMany: jest.fn() },
+        registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+        attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
+        weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
+        appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (callback) => {
+        return callback(mockTx);
+      });
+
+      mockCreateAuditSnapshot.mockRejectedValueOnce(new Error('Audit Failed'));
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(validBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ success: true });
+
+      // Wait a tick to let background microtasks/audit logs run and throw/catch error
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      consoleErrorSpy.mockRestore();
+    });
+
+    test('supports optional fields and exercises all reviveDates branches', async () => {
+      const backupWithAllTypes = {
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            nullField: null,
+            undefinedField: undefined,
+            numberField: 42,
+            booleanField: true,
+            arrayField: ['2026-06-20T00:00:00.000Z', { nestedDate: '2026-06-20T00:00:00.000Z' }],
+          },
+        ],
+        registryItem: [{ id: 'ri1', name: 'Plates' }],
+      };
+
+      const mockTx = {
+        contributor: { deleteMany: jest.fn(), createMany: jest.fn() },
+        registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+        attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
+        weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
+        appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (callback) => {
+        return callback(mockTx);
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(backupWithAllTypes),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ success: true });
+
+      expect(mockTx.appConfig.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            nullField: null,
+            undefinedField: undefined,
+            numberField: 42,
+            booleanField: true,
+            arrayField: [new Date('2026-06-20T00:00:00.000Z'), { nestedDate: new Date('2026-06-20T00:00:00.000Z') }],
+          },
+        ],
+      });
+    });
+
+    test('supports empty appConfig and registryItem arrays', async () => {
+      const emptyBackup = {
+        appConfig: [],
+        registryItem: [],
+      };
+
+      const mockTx = {
+        contributor: { deleteMany: jest.fn(), createMany: jest.fn() },
+        registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+        attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
+        weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
+        appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (callback) => {
+        return callback(mockTx);
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(emptyBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ success: true });
+
+      expect(mockTx.appConfig.createMany).not.toHaveBeenCalled();
+      expect(mockTx.registryItem.createMany).not.toHaveBeenCalled();
+    });
   });
 });
