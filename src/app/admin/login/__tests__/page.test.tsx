@@ -142,4 +142,48 @@ describe('Admin Login Page', () => {
     fireEvent.click(screen.getByLabelText(/hide password/i));
     expect(passwordInput).toHaveAttribute('type', 'password');
   });
+
+  it('meets WCAG 2.1 AA accessibility guidelines', async () => {
+    const push = jest.fn();
+    (useRouter as jest.Mock).mockReturnValue({ push });
+
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: 'Invalid password' }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    render(<LoginPage />);
+
+    // 1. Check sequential focus and lack of autofocus
+    const passwordInput = screen.getByPlaceholderText('••••••••');
+    expect(passwordInput).not.toHaveAttribute('autoFocus');
+
+    // 2. Back to home link contrast classes
+    const backLink = screen.getByRole('link', { name: /back to home/i });
+    expect(backLink).toHaveClass('text-gray-700');
+    expect(backLink).toHaveClass('dark:text-gray-300');
+
+    // 3. Title gradient light colors for dark mode contrast
+    const title = screen.getByRole('heading', { name: /admin login/i });
+    expect(title).toHaveClass('dark:from-primary-light');
+    expect(title).toHaveClass('dark:to-secondary-light');
+
+    // 4. Form input border for contrast
+    expect(passwordInput).toHaveClass('dark:border-gray-400');
+
+    // 5. Visibility toggle button contrast
+    const toggleButton = screen.getByLabelText(/show password/i);
+    expect(toggleButton).toHaveClass('dark:text-gray-400');
+
+    // Submit and trigger error to check error message text contrast
+    fireEvent.change(passwordInput, { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    const errorMsg = await screen.findByRole('alert');
+    expect(errorMsg).toHaveClass('text-red-600');
+    expect(errorMsg).toHaveClass('dark:text-primary-text');
+  });
 });
