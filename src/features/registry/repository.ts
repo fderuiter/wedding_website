@@ -12,10 +12,6 @@ import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 class RegistryRepository implements IRegistryRepository {
   constructor(public client: any = prisma) {}
 
-  withClient(client: any): this {
-    return new (this.constructor as any)(client);
-  }
-
   /**
    * Retrieves all registry items from the database, including their contributors.
    * @returns {Promise<RegistryItemDTO[]>} A promise that resolves to an array of all registry items.

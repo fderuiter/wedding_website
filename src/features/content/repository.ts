@@ -7,10 +7,6 @@ import { createAuditSnapshot } from '@/lib/audit';
 class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
-  withClient(client: any): this {
-    return new (this.constructor as any)(client);
-  }
-
   async getFeatures() {
     const config = await this.client.appConfig.findUnique({ where: { id: 'global' } });
     if (!config) return [];
@@ -43,41 +39,6 @@ class ContentRepository implements IContentRepository {
     return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
 
-  async createNode(data: Omit<ContentNodeDTO, 'id' | 'createdAt' | 'updatedAt'>, author: string = 'System'): Promise<ContentNodeDTO> {
-    return executeInTransaction(this.client, async (tx) => {
-      const created = await tx.contentNode.create({
-        data: {
-          type: data.type,
-          tags: data.tags,
-          data: data.data || {}
-        }
-      });
-      await createAuditSnapshot('ContentNode', created.id, created, author, tx);
-      return ContentNodeSchema.parse(created);
-    });
-  }
-
-  async updateNode(id: string, data: Partial<ContentNodeDTO>, author: string = 'System'): Promise<ContentNodeDTO> {
-    return executeInTransaction(this.client, async (tx) => {
-      const updateData = { ...data } as any;
-      const updated = await tx.contentNode.update({
-        where: { id },
-        data: updateData
-      });
-      await createAuditSnapshot('ContentNode', id, updated, author, tx);
-      return ContentNodeSchema.parse(updated);
-    });
-  }
-
-  async deleteNode(id: string, author: string = 'System'): Promise<ContentNodeDTO> {
-    return executeInTransaction(this.client, async (tx) => {
-      const deleted = await tx.contentNode.delete({
-        where: { id }
-      });
-      await createAuditSnapshot('ContentNode', id, { deleted: true, ...deleted }, author, tx);
-      return ContentNodeSchema.parse(deleted);
-    });
-  }
 }
 
 export const contentRepository = new ContentRepository();
