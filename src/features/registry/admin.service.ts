@@ -2,7 +2,7 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 import { formatZodError } from '@/utils/validation';
-import { handleMediaFields } from '@/features/admin';
+import { handleMediaFields } from '@/features/admin/utils';
 import { z } from 'zod';
 
 const RegistryItemInputSchema = RegistryItemSchema.omit({ id: true }).partial();
@@ -36,7 +36,7 @@ export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
     if (error) throw new Error(`Validation Error: ${error}`);
 
     return this.repo.transaction(async (txRepo) => {
-      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client);
+      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client, author);
       const record = await txRepo.create(mappedData);
       await this.createSnapshot(record.id, record, author, txRepo.client);
       return record;
@@ -48,7 +48,7 @@ export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
     if (error) throw new Error(`Validation Error: ${error}`);
 
     return this.repo.transaction(async (txRepo) => {
-      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client);
+      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client, author);
       const record = await txRepo.update(id, mappedData);
       await this.createSnapshot(record.id, record, author, txRepo.client);
       return record;

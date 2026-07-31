@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { handleMediaFields } from '@/features/admin';
+import { handleMediaFields } from '@/features/admin/utils';
 import { WeddingPartyMemberSchema } from './schemas';
 import { formatZodError } from '@/utils/validation';
 
@@ -35,15 +35,23 @@ export class WeddingPartyAdminService extends BaseService<any> {
     const error = validateWeddingParty(data);
     if (error) throw new Error(`Validation Error: ${error}`);
         
-    const mappedData = await handleMediaFields(data, 'photoId', 'photoUrl', 'photoAlt', 'photoDecorative');
-    return super.create(mappedData, author);
+    return this.repo.transaction(async (txRepo) => {
+      const mappedData = await handleMediaFields(data, 'photoId', 'photoUrl', 'photoAlt', 'photoDecorative', txRepo.client, author);
+      const record = await txRepo.create(mappedData);
+      await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
+      return record;
+    });
   }
 
   async update(id: string, data: any, author?: string): Promise<any> {
     const error = validateWeddingParty(data);
     if (error) throw new Error(`Validation Error: ${error}`);
         
-    const mappedData = await handleMediaFields(data, 'photoId', 'photoUrl', 'photoAlt', 'photoDecorative');
-    return super.update(id, mappedData, author);
+    return this.repo.transaction(async (txRepo) => {
+      const mappedData = await handleMediaFields(data, 'photoId', 'photoUrl', 'photoAlt', 'photoDecorative', txRepo.client, author);
+      const record = await txRepo.update(id, mappedData);
+      await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
+      return record;
+    });
   }
 }
