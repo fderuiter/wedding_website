@@ -35,6 +35,7 @@ export async function handleMediaFields(
   } else if (!mediaId) {
     const media = await mediaRepo.createMedia({
       url: '/images/placeholder.png',
+      altText: null,
       isDecorative: true
     }, author);
     mediaId = media.id;
