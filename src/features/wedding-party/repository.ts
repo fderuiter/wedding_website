@@ -4,10 +4,6 @@ import { WeddingPartyMemberSchema, WeddingPartyMemberDTO } from './schemas';
 class WeddingPartyRepository {
   constructor(public client: any = prisma) {}
 
-  withClient(client: any): this {
-    return new (this.constructor as any)(client);
-  }
-
   async getMembers(): Promise<WeddingPartyMemberDTO[]> {
     const members = await this.client.weddingPartyMember.findMany({
       orderBy: { order: 'asc' }, include: { photo: true }
