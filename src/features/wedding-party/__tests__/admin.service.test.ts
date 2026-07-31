@@ -226,4 +226,22 @@ describe('WeddingPartyAdminService - Atomic Transactions & Auditing', () => {
     expect(mockTxMediaCreate).not.toHaveBeenCalled();
     expect(mockTxWeddingPartyMemberCreate).not.toHaveBeenCalled();
   });
+
+  it('should roll back completely when media creation fails', async () => {
+    const input = {
+      name: 'John Doe',
+      role: 'Groomsman',
+      bio: 'Best friend of the groom.',
+      order: 1,
+      photoUrl: 'http://example.com/photo.jpg',
+      photoAlt: 'Some Alt',
+      photoDecorative: false,
+    };
+
+    // Simulate database constraint failure on media creation
+    mockTxMediaCreate.mockRejectedValue(new Error('Media Creation Failed'));
+
+    await expect(service.create(input, 'Coordinator')).rejects.toThrow('Media Creation Failed');
+    expect(mockTxWeddingPartyMemberCreate).not.toHaveBeenCalled();
+  });
 });

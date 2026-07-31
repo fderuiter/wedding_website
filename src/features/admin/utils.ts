@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { createAuditSnapshot } from '@/lib/audit';
-import { MediaSchema } from '@/features/media/schemas';
+import { mediaRepository } from '@/features/media';
 
 export async function handleMediaFields(
   data: any,
@@ -12,6 +11,7 @@ export async function handleMediaFields(
   author: string = 'Admin'
 ) {
   const db = client || prisma;
+  const mediaRepo = mediaRepository.withClient(db);
   let mediaId = data[idField];
   const url = data[urlField];
   const alt = data[altField];
@@ -19,38 +19,25 @@ export async function handleMediaFields(
   
   if (url || alt !== undefined || dec !== undefined) {
     if (mediaId) {
-      const media = await db.media.update({
-        where: { id: mediaId },
-        data: {
-          ...(url !== undefined && { url }),
-          ...(alt !== undefined && { altText: alt }),
-          ...(dec !== undefined && { isDecorative: dec }),
-        }
-      });
-      MediaSchema.parse(media);
-      await createAuditSnapshot('Media', mediaId, media, author, db);
+      await mediaRepo.updateMedia(mediaId, {
+        ...(url !== undefined && { url }),
+        ...(alt !== undefined && { altText: alt }),
+        ...(dec !== undefined && { isDecorative: dec }),
+      }, author);
     } else {
-      const media = await db.media.create({
-        data: {
-          url: url || '/images/placeholder.png',
-          altText: alt || null,
-          isDecorative: dec || false,
-        }
-      });
+      const media = await mediaRepo.createMedia({
+        url: url || '/images/placeholder.png',
+        altText: alt || null,
+        isDecorative: dec || false,
+      }, author);
       mediaId = media.id;
-      MediaSchema.parse(media);
-      await createAuditSnapshot('Media', mediaId, media, author, db);
     }
   } else if (!mediaId) {
-    const media = await db.media.create({
-      data: {
-        url: '/images/placeholder.png',
-        isDecorative: true
-      }
-    });
+    const media = await mediaRepo.createMedia({
+      url: '/images/placeholder.png',
+      isDecorative: true
+    }, author);
     mediaId = media.id;
-    MediaSchema.parse(media);
-    await createAuditSnapshot('Media', mediaId, media, author, db);
   }
   
   const mapped = { ...data, [idField]: mediaId };
