@@ -69,7 +69,7 @@ export default function LoginPage() {
       >
         <Link
           href="/"
-          className="inline-flex items-center text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-primary transition mb-8 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md px-2 py-1"
+          className="inline-flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary transition mb-8 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md px-2 py-1"
         >
           <Icon name="ArrowLeft" size={16} className="mr-2 transition-transform group-hover:-translate-x-1" />
           Back to home
@@ -83,7 +83,7 @@ export default function LoginPage() {
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary to-secondary" />
 
           <div className="text-center space-y-2">
-            <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary tracking-tight py-1">
+            <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary dark:from-primary-light dark:to-secondary-light tracking-tight py-1">
               Admin Login
             </h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
@@ -97,7 +97,7 @@ export default function LoginPage() {
               animate={{ opacity: 1, height: 'auto' }}
               id="login-error"
               role="alert"
-              className="text-red-500 text-sm font-medium bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 p-3 rounded-xl text-center"
+              className="text-red-600 dark:text-primary-text text-sm font-medium bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 p-3 rounded-xl text-center"
             >
               {error}
             </motion.p>
@@ -113,9 +113,8 @@ export default function LoginPage() {
                 id="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="border border-gray-200 dark:border-gray-600 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="border border-gray-200 dark:border-gray-400 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
                 required
-                autoFocus
                 autoComplete="current-password"
                 placeholder="••••••••"
                 aria-invalid={error ? 'true' : undefined}
@@ -124,7 +123,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary dark:text-gray-500 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <Icon name="EyeOff" size={22} /> : <Icon name="Eye" size={22} />}
