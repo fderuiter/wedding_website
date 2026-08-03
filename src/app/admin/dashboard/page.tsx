@@ -90,7 +90,7 @@ export default function AdminDashboardPage() {
                         variant="secondary"
                         size="sm"
                         aria-label={item.name ? 'Edit registry item: ' + item.name : 'Edit unnamed item'}
-                        onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
+                        onClick={() => router.push(`/registry/edit-item/${item.id}`)}
                       >
                         Edit
                       </Button>
@@ -147,7 +147,7 @@ export default function AdminDashboardPage() {
                   variant="secondary"
                   size="sm"
                   aria-label={item.name ? 'Edit registry item: ' + item.name : 'Edit unnamed item'}
-                  onClick={() => router.push(`/admin/dashboard/registry/edit-item/${item.id}`)}
+                  onClick={() => router.push(`/registry/edit-item/${item.id}`)}
                 >
                   Edit
                 </Button>
@@ -181,7 +181,7 @@ export default function AdminDashboardPage() {
         <div className="mt-10 flex justify-center">
           <Button
             size="lg"
-            onClick={() => router.push('/admin/dashboard/registry/add-item')}
+            onClick={() => router.push('/registry/add-item')}
           >
             Add New Item
           </Button>
