@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
+import { generateSecureUUID } from '@/utils/uuid';
 
 type ToastType = 'success' | 'error' | 'info' | 'confirm';
 
@@ -30,7 +31,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addToast = useCallback((message: string, type: ToastType = 'info', onConfirm?: () => void, onCancel?: () => void) => {
-    const id = Date.now().toString() + Math.random().toString();
+    const id = generateSecureUUID();
     setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel }]);
     if (type !== 'confirm') {
       setTimeout(() => {
@@ -41,7 +42,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
 
   const confirm = useCallback((message: string): Promise<boolean> => {
     return new Promise((resolve) => {
-      const id = Date.now().toString() + Math.random().toString();
+      const id = generateSecureUUID();
       const onConfirm = () => {
         resolve(true);
         removeToast(id);

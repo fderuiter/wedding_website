@@ -1,6 +1,25 @@
 // Optional: configure or set up a testing framework before each test
 // if you delete this file, remove `setupFilesAfterEnv` from `jest.config.js`
 
+// Provide standard crypto mock in Jest test environments:
+if (typeof global.crypto === 'undefined') {
+  global.crypto = require('crypto');
+}
+if (typeof window !== 'undefined') {
+  if (!window.crypto) {
+    window.crypto = global.crypto;
+  } else if (!window.crypto.randomUUID) {
+    window.crypto.randomUUID = global.crypto.randomUUID;
+  }
+}
+if (typeof self !== 'undefined') {
+  if (!self.crypto) {
+    self.crypto = global.crypto;
+  } else if (!self.crypto.randomUUID) {
+    self.crypto.randomUUID = global.crypto.randomUUID;
+  }
+}
+
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
