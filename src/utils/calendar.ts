@@ -123,5 +123,12 @@ export function createIcsFile(event: CalendarEvent): string {
     return '';
   }
 
-  return value || '';
+  let icsContent = value || '';
+  if (event.timeZone) {
+    icsContent = icsContent
+      .replace('DTSTART:', `DTSTART;TZID=${event.timeZone}:`)
+      .replace('DTEND:', `DTEND;TZID=${event.timeZone}:`);
+  }
+
+  return icsContent;
 }

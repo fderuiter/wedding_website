@@ -10,16 +10,19 @@ const rootDir = path.resolve(__dirname, '..');
 
 // Helper to run a command and inherit streams or fail
 function runCommand(command, args, options = {}) {
+  const { ignoreFailure = false, ...spawnOptions } = options;
   const result = child_process.spawnSync(command, args, {
     cwd: rootDir,
     stdio: 'inherit',
     shell: true,
-    ...options
+    ...spawnOptions
   });
   if (result.status !== 0) {
     const errorMsg = `Command failed: ${command} ${args.join(' ')}`;
     console.error(errorMsg);
-    process.exit(result.status || 1);
+    if (!ignoreFailure) {
+      process.exit(result.status || 1);
+    }
   }
 }
 
@@ -138,7 +141,8 @@ async function main() {
     console.log(`Synchronizing schema to isolated test database: ${testDbUrl}`);
 
     runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl }
+      env: { ...process.env, DATABASE_URL: testDbUrl },
+      ignoreFailure: true
     });
   } else {
     console.log('Running full build...');

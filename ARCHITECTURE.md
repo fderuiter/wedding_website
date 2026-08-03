@@ -331,6 +331,7 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
 | `colorPrimary` | `default` | Configuration field for colorPrimary |
 | `colorSecondary` | `default` | Configuration field for colorSecondary |
+| `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
 | `features` | `pipe` | Configuration field for features |

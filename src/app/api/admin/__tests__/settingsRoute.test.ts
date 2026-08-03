@@ -71,6 +71,7 @@ const updatedConfig = {
   weddingDate: new Date(validConfigData.weddingDate),
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
+  timezone: 'America/Chicago',
   showCountdown: true,
   showAddToCalendar: true,
   features: [],
@@ -303,5 +304,36 @@ describe('PUT /api/admin/settings', () => {
 
     expect(res.status).toBe(200);
     expect(toPublicAppConfig).toHaveBeenCalledWith(updatedConfig);
+  });
+
+  it('persists a valid timezone to database', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const req = makeAuthReq({
+      ...validConfigData,
+      timezone: 'Europe/Paris',
+    });
+    await PUT(req);
+
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          timezone: 'Europe/Paris',
+        }),
+      })
+    );
+  });
+
+  it('returns 400 and does not save when an invalid timezone is provided', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const req = makeAuthReq({
+      ...validConfigData,
+      timezone: 'Invalid/Timezone_Name',
+    });
+    const res = await PUT(req);
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/Invalid standard IANA timezone identifier/);
+    expect(mockPrisma.appConfig.update).not.toHaveBeenCalled();
   });
 });

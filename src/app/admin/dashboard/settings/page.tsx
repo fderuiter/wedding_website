@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 // eslint-disable-next-line no-restricted-imports
@@ -12,6 +12,94 @@ import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
+
+interface SearchableTimezoneSelectProps {
+  value: string;
+  onChange: (val: string) => void;
+}
+
+function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectProps) {
+  const ianaTimezones = useMemo(() => {
+    try {
+      return Intl.supportedValuesOf('timeZone');
+    } catch (e) {
+      return ['America/Chicago', 'UTC'];
+    }
+  }, []);
+
+  const [search, setSearch] = useState(value || 'America/Chicago');
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (value) {
+      setSearch(value);
+    }
+  }, [value]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        if (ianaTimezones.includes(search)) {
+          onChange(search);
+        } else {
+          setSearch(value || 'America/Chicago');
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [search, value, ianaTimezones, onChange]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return ianaTimezones;
+    return ianaTimezones.filter((tz) => tz.toLowerCase().includes(q));
+  }, [search, ianaTimezones]);
+
+  const handleSelect = (tz: string) => {
+    onChange(tz);
+    setSearch(tz);
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <Input
+        type="text"
+        placeholder="Search and select timezone (e.g. Europe/Paris)..."
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        className="w-full"
+      />
+      {isOpen && (
+        <div className="absolute left-0 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg z-50">
+          {filtered.length > 0 ? (
+            filtered.map((tz) => (
+              <button
+                key={tz}
+                type="button"
+                onClick={() => handleSelect(tz)}
+                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-zinc-700"
+              >
+                {tz}
+              </button>
+            ))
+          ) : (
+            <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+              No matching standard IANA timezones found
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -136,6 +224,13 @@ export default function AdminSettingsPage() {
               <FormGroup>
                 <Label>Zip Code</Label>
                 <Input required type="text" name="venueZip" value={localConfig.venueZip || ''} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Venue Timezone</Label>
+                <SearchableTimezoneSelect
+                  value={localConfig.timezone}
+                  onChange={(val) => setLocalConfig((prev: any) => ({ ...prev, timezone: val }))}
+                />
               </FormGroup>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

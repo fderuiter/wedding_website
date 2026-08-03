@@ -34,6 +34,7 @@ model AppConfig {
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")
   features         Json     @default("[]")
+  timezone         String   @default("America/Chicago")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
