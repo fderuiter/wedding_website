@@ -12,13 +12,13 @@
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": ["tailwindcss"],
   "rules": {
-    "files": "warn",
-    "exports": "warn",
-    "nsExports": "warn",
+    "files": "error",
+    "exports": "error",
+    "nsExports": "error",
     "namespaceMembers": "warn",
     "enumMembers": "warn",
-    "types": "warn",
-    "nsTypes": "warn"
+    "types": "error",
+    "nsTypes": "error"
   },
   "treatConfigHintsAsErrors": true
 }
