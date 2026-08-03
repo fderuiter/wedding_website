@@ -56,11 +56,11 @@ describe('RegistryService', () => {
   describe('createItem', () => {
     it('creates a new registry item', async () => {
       const input = {
-        title: 'Item',
+        name: 'Item',
         price: 100,
-        link: '',
+        vendorUrl: '',
         description: '',
-        image: '',
+        imageUrl: '',
         amountContributed: 0,
       } as unknown as Omit<RegistryItem, 'id' | 'contributors'>;
       const created = { id: '1', ...input, contributors: [] } as unknown as RegistryItem;
@@ -82,13 +82,13 @@ describe('RegistryService', () => {
 
   describe('updateItem', () => {
     it('updates a registry item', async () => {
-      const updated = { id: '1', title: 'New', contributors: [] } as unknown as RegistryItem;
+      const updated = { id: '1', name: 'New', contributors: [] } as unknown as RegistryItem;
       mockRepository.updateItem.mockResolvedValue(updated);
 
       await expect(
-        registryService.updateItem('1', { title: 'New' } as Partial<RegistryItem>)
+        registryService.updateItem('1', { name: 'New' } as Partial<RegistryItem>)
       ).resolves.toEqual(updated);
-      expect(mockRepository.updateItem).toHaveBeenCalledWith('1', { title: 'New' });
+      expect(mockRepository.updateItem).toHaveBeenCalledWith('1', { name: 'New' });
     });
 
     it('throws when update fails', async () => {
