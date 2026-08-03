@@ -126,7 +126,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-md">
             <Heading className="mb-4">Welcome to Your Wedding Site!</Heading>
-            <p className="mb-4 text-gray-600">Please enter the admin password to begin setup (default is <strong>admin</strong>).</p>
+            <p className="mb-4 text-gray-600 dark:text-gray-300">Please enter the admin password to begin setup (default is <strong>admin</strong>).</p>
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
@@ -152,7 +152,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-xl">
             <Heading className="mb-4">Step 1: The Essentials</Heading>
-            <p className="mb-4 text-gray-600">Let's start with your names and when the big day is.</p>
+            <p className="mb-4 text-gray-600 dark:text-gray-300">Let's start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormGroup>
@@ -208,7 +208,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-2xl text-center">
             <Heading className="mb-4">Step 2: Add Content</Heading>
-            <p className="mb-6 text-gray-600">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
+            <p className="mb-6 text-gray-600 dark:text-gray-300">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
             <div className="space-y-4">
               <Button onClick={() => window.open('/admin/dashboard/wedding-party', '_blank')} variant="secondary" className="w-full py-3">
                 Manage Wedding Party (Opens in New Tab)
@@ -217,7 +217,7 @@ export default function SetupWizard() {
                 Manage Attractions (Opens in New Tab)
               </Button>
             </div>
-            <p className="mt-6 mb-4 text-sm text-gray-500">You can also do this later from the Admin Dashboard.</p>
+            <p className="mt-6 mb-4 text-sm text-gray-500 dark:text-gray-400">You can also do this later from the Admin Dashboard.</p>
             <Button onClick={() => {
               window.location.href = '/';
             }} variant="primary" className="w-full py-3">

@@ -86,7 +86,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
         if (!detailsNode) return (
           <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="text-center text-4xl font-bold text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
-            <div className="text-center text-gray-500">Details coming soon...</div>
+            <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
           </motion.section>
         );
         return (
@@ -121,7 +121,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             {accNode?.description ? (
               <p className="mx-auto max-w-xl text-lg">{accNode.description}</p>
             ) : (
-              <div className="text-center text-gray-500">Accommodation details coming soon...</div>
+              <div className="text-center text-gray-500 dark:text-gray-400">Accommodation details coming soon...</div>
             )}
           </motion.section>
         );
@@ -150,7 +150,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                 </Interactive3DCard>
               ))
             ) : (
-              <div className="text-center text-gray-500">Travel details coming soon...</div>
+              <div className="text-center text-gray-500 dark:text-gray-400">Travel details coming soon...</div>
             )}
           </motion.section>
         );
@@ -168,7 +168,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                   </div>
                 ))
               ) : (
-                <div className="text-center text-gray-500">No FAQs available yet.</div>
+                <div className="text-center text-gray-500 dark:text-gray-400">No FAQs available yet.</div>
               )}
             </div>
           </motion.section>

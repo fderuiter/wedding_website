@@ -93,7 +93,7 @@ export default function MediaDashboardPage() {
                 <MediaImage media={m} fallbackUrl="/images/placeholder.png" className="object-cover w-full h-full rounded" />
               </div>
               <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
-              <div className="text-sm text-gray-500 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
               <div className="mt-auto flex justify-between gap-2">
                 <Button
                   variant="secondary"
