@@ -52,7 +52,7 @@ async function main() {
   }
 
   if (needsInstall) {
-    console.log("Local dependencies out of sync or missing. Performing clean installation...");
+    console.log('Local dependencies out of sync or missing. Performing clean installation...');
     // Silent trigger of dependency installation (only output on failure)
     const result = child_process.spawnSync('npm', ['ci'], {
       cwd: rootDir,
@@ -61,7 +61,7 @@ async function main() {
     });
 
     if (result.status !== 0) {
-      console.error("Dependency installation failed!");
+      console.error('Dependency installation failed!');
       if (result.stdout) console.error(result.stdout.toString());
       if (result.stderr) console.error(result.stderr.toString());
       process.exit(result.status || 1);
@@ -74,7 +74,7 @@ async function main() {
       fs.mkdirSync(hashCacheDir, { recursive: true });
       fs.writeFileSync(hashCachePath, currentHash, 'utf8');
     }
-    console.log("Dependency installation completed successfully.");
+    console.log('Dependency installation completed successfully.');
   }
 
   // 2. Selective Execution based on lifecycle event
@@ -82,7 +82,7 @@ async function main() {
   const isUnitTest = lifecycleEvent.includes('test');
 
   if (isUnitTest) {
-    console.log("Unit test phase detected. Skipping full build, running prisma generate...");
+    console.log('Unit test phase detected. Skipping full build, running prisma generate...');
 
     // Run Prisma Client generation
     runCommand('npm', ['run', 'prisma:generate']);
@@ -94,38 +94,46 @@ async function main() {
       if (docInfo.status === 0) {
         dockerRunning = true;
       }
-    } catch (e) {
+    } catch {
       // Docker command not found or not running
     }
 
     if (dockerRunning) {
-      console.log("Ensuring local PostgreSQL database container is running...");
-      runCommand('docker', ['compose', 'up', '-d', 'db']);
+      console.log('Ensuring local PostgreSQL database container is running...');
+      const startResult = child_process.spawnSync('docker', ['compose', 'up', '-d', 'db'], {
+        cwd: rootDir,
+        stdio: 'inherit',
+        shell: true
+      });
 
-      console.log("Waiting for database to be ready...");
-      let ready = false;
-      for (let i = 0; i < 15; i++) {
-        try {
-          const check = child_process.spawnSync('docker', ['compose', 'exec', 'db', 'pg_isready', '-U', 'wedding'], { stdio: 'ignore', shell: true });
-          if (check.status === 0) {
-            ready = true;
-            console.log("Database is ready.");
-            break;
+      if (startResult.status !== 0) {
+        console.warn('Failed to start database container via docker compose. Proceeding assuming database is already running...');
+      } else {
+        console.log('Waiting for database to be ready...');
+        let ready = false;
+        for (let i = 0; i < 15; i++) {
+          try {
+            const check = child_process.spawnSync('docker', ['compose', 'exec', 'db', 'pg_isready', '-U', 'wedding'], { stdio: 'ignore', shell: true });
+            if (check.status === 0) {
+              ready = true;
+              console.log('Database is ready.');
+              break;
+            }
+          } catch {
+            // Ignored
           }
-        } catch (err) {
-          // Ignored
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      if (!ready) {
-        console.log("Database was not ready in time, proceeding anyway...");
+        if (!ready) {
+          console.log('Database was not ready in time, proceeding anyway...');
+        }
       }
     } else {
-      console.log("Docker command not found or daemon not running. Skipping database container auto-start.");
+      console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
     }
 
     // Synchronize schema to isolated test database
-    const testDbUrl = process.env.DATABASE_URL || "postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public";
+    const testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
     process.env.DATABASE_URL = testDbUrl;
     console.log(`Synchronizing schema to isolated test database: ${testDbUrl}`);
 
@@ -133,12 +141,12 @@ async function main() {
       env: { ...process.env, DATABASE_URL: testDbUrl }
     });
   } else {
-    console.log("Running full build...");
+    console.log('Running full build...');
     runCommand('npm', ['run', 'build']);
   }
 }
 
 main().catch(err => {
-  console.error("Pretest preflight script failed with error:", err);
+  console.error('Pretest preflight script failed with error:', err);
   process.exit(1);
 });
