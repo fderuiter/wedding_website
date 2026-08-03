@@ -58,3 +58,62 @@ async function pruneSnapshots(entityType: string, entityId: string) {
     logger.error('Error during snapshot pruning:', err);
   }
 }
+
+export async function pruneSnapshotsBulk(entities: { entityType: string; entityId: string }[]) {
+  try {
+    if (entities.length === 0) return;
+
+    // Get unique pairs and normalize entityType
+    const uniquePairsMap = new Map<string, { entityType: string; entityId: string }>();
+    for (const item of entities) {
+      const normalizedType = Object.values(Prisma.ModelName).find(
+        (name) => name.toLowerCase() === item.entityType.toLowerCase()
+      ) || item.entityType;
+      const key = `${normalizedType}:${item.entityId}`;
+      uniquePairsMap.set(key, { entityType: normalizedType, entityId: item.entityId });
+    }
+    const uniqueEntityPairs = Array.from(uniquePairsMap.values());
+
+    const limit = env.HISTORY_VERSION_LIMIT;
+
+    // Retrieve all snapshots for all unique entities in a single, ordered query
+    const snapshots = await prisma.snapshotVersion.findMany({
+      where: {
+        OR: uniqueEntityPairs.map(p => ({ entityType: p.entityType, entityId: p.entityId }))
+      },
+      orderBy: [
+        { entityType: 'asc' },
+        { entityId: 'asc' },
+        { createdAt: 'desc' }
+      ],
+      select: { id: true, entityType: true, entityId: true }
+    });
+
+    // Group snapshots by (entityType, entityId) in memory to determine which IDs exceed the limit
+    const grouped = new Map<string, string[]>();
+    for (const s of snapshots) {
+      const key = `${s.entityType}:${s.entityId}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(s.id);
+    }
+
+    const idsToDelete: string[] = [];
+    for (const [key, ids] of grouped.entries()) {
+      if (ids.length > limit) {
+        // Since orderBy has createdAt DESC, the first limit items are the newest ones, and we delete the ones beyond the limit
+        const expiredIds = ids.slice(limit);
+        idsToDelete.push(...expiredIds);
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      await prisma.snapshotVersion.deleteMany({
+        where: { id: { in: idsToDelete } }
+      });
+    }
+  } catch (err) {
+    logger.error('Error during bulk snapshot pruning:', err);
+  }
+}
