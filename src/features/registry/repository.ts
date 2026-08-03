@@ -9,7 +9,7 @@ import { RegistryItemSchema, RegistryItemDTO } from './schemas';
  * @description Provides data access methods for the `RegistryItem` model using Prisma.
  * This class abstracts the database interactions from the service layer.
  */
-class RegistryRepository implements IRegistryRepository {
+export class RegistryRepository implements IRegistryRepository {
   constructor(public client: any = prisma) {}
 
   /**
@@ -150,13 +150,28 @@ class RegistryRepository implements IRegistryRepository {
     contribution: { name: string; amount: number }
   ) {
     const runTransaction = async (txClient: any) => {
+      // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
+      if (typeof txClient.$queryRaw === 'function') {
+        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+      }
+
+      // 2. Fetch the absolute latest state of the item inside the transaction context
       const item = await txClient.registryItem.findUnique({
         where: { id: itemId },
       });
 
       if (!item) {
-        // This should ideally not be reached if service layer validation is correct
         throw new Error('Item not found');
+      }
+
+      // 3. Perform validations inside the locked transactional context
+      if (item.purchased) {
+        throw new Error('This item has already been purchased.');
+      }
+
+      const remainingAmount = item.price - item.amountContributed;
+      if (contribution.amount > remainingAmount) {
+        throw new Error('Contribution cannot be greater than the remaining amount.');
       }
 
       const newTotal = item.amountContributed + contribution.amount;
