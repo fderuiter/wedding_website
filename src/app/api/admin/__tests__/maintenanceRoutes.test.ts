@@ -94,7 +94,7 @@ jest.mock('@/lib/prisma', () => ({
     attraction: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     registryItem: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     contributor: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    snapshotVersion: { findMany: jest.fn() },
+    snapshotVersion: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
   },
 }));
 
@@ -104,11 +104,14 @@ jest.mock('@/core/auth/auth.server', () => ({
 
 jest.mock('@/lib/audit', () => ({
   createAuditSnapshot: jest.fn().mockResolvedValue(undefined),
+  pruneSnapshotsBulk: jest.fn().mockResolvedValue(undefined),
 }));
 
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+const mockPrisma = prisma as any;
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockCreateAuditSnapshot = createAuditSnapshot as jest.MockedFunction<typeof createAuditSnapshot>;
+const { pruneSnapshotsBulk } = require('@/lib/audit');
+const mockPruneSnapshotsBulk = pruneSnapshotsBulk as jest.MockedFunction<typeof pruneSnapshotsBulk>;
 
 describe('Maintenance API Routes Integration Tests', () => {
   beforeEach(() => {
@@ -258,37 +261,50 @@ describe('Maintenance API Routes Integration Tests', () => {
       // Wait a tick to let background microtasks/audit logs run
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      // Assert background audit logs are created
-      expect(mockCreateAuditSnapshot).toHaveBeenCalledWith(
-        'AppConfig',
-        'global',
-        { id: 'global', brideName: 'Alice', createdAt: new Date('2026-06-20T00:00:00.000Z') },
-        'Admin/BulkImport'
-      );
-      expect(mockCreateAuditSnapshot).toHaveBeenCalledWith(
-        'ContentNode',
-        'cn1',
-        { id: 'cn1', body: 'Story text' },
-        'Admin/BulkImport'
-      );
-      expect(mockCreateAuditSnapshot).toHaveBeenCalledWith(
-        'WeddingPartyMember',
-        'wp1',
-        { id: 'wp1', name: 'Bob' },
-        'Admin/BulkImport'
-      );
-      expect(mockCreateAuditSnapshot).toHaveBeenCalledWith(
-        'Attraction',
-        'att1',
-        { id: 'att1', name: 'Coaster' },
-        'Admin/BulkImport'
-      );
-      expect(mockCreateAuditSnapshot).toHaveBeenCalledWith(
-        'RegistryItem',
-        'ri1',
-        { id: 'ri1', name: 'Plates' },
-        'Admin/BulkImport'
-      );
+      // Assert background audit logs are created in bulk
+      expect(mockPrisma.snapshotVersion.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            entityType: 'AppConfig',
+            entityId: 'global',
+            data: { id: 'global', brideName: 'Alice', createdAt: new Date('2026-06-20T00:00:00.000Z') },
+            author: 'Admin/BulkImport',
+          },
+          {
+            entityType: 'ContentNode',
+            entityId: 'cn1',
+            data: { id: 'cn1', body: 'Story text' },
+            author: 'Admin/BulkImport',
+          },
+          {
+            entityType: 'WeddingPartyMember',
+            entityId: 'wp1',
+            data: { id: 'wp1', name: 'Bob' },
+            author: 'Admin/BulkImport',
+          },
+          {
+            entityType: 'Attraction',
+            entityId: 'att1',
+            data: { id: 'att1', name: 'Coaster' },
+            author: 'Admin/BulkImport',
+          },
+          {
+            entityType: 'RegistryItem',
+            entityId: 'ri1',
+            data: { id: 'ri1', name: 'Plates' },
+            author: 'Admin/BulkImport',
+          },
+        ]
+      });
+
+      // Assert bulk pruning is triggered
+      expect(mockPruneSnapshotsBulk).toHaveBeenCalledWith([
+        { entityType: 'AppConfig', entityId: 'global' },
+        { entityType: 'ContentNode', entityId: 'cn1' },
+        { entityType: 'WeddingPartyMember', entityId: 'wp1' },
+        { entityType: 'Attraction', entityId: 'att1' },
+        { entityType: 'RegistryItem', entityId: 'ri1' },
+      ]);
     });
 
     test('re-throws transaction execution errors and handles rollbacks', async () => {
@@ -331,6 +347,7 @@ describe('Maintenance API Routes Integration Tests', () => {
       });
 
       mockCreateAuditSnapshot.mockRejectedValueOnce(new Error('Audit Failed'));
+      mockPrisma.snapshotVersion.createMany.mockRejectedValueOnce(new Error('Audit Failed'));
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
