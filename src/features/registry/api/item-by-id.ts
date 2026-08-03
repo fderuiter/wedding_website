@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
-import { RegistryItemBaseSchema } from '../schemas';
+import { RegistryItemBaseSchema, LegacyRegistryItemBaseSchema, translateLegacyToActive } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
@@ -17,6 +17,8 @@ export const GET = withApiMiddleware(async (_request: NextRequest, { params }: {
 
 export const PUT = createValidatedRoute({
   schema: RegistryItemBaseSchema,
+  legacySchema: LegacyRegistryItemBaseSchema,
+  translateLegacy: translateLegacyToActive,
   handler: async (_request: NextRequest, { params, body }: { params: { id: string }, body: any }) => {
     const { id } = params;
     const updatedData = body;
