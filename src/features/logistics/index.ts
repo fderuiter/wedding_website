@@ -1,3 +1,2 @@
-export * from './repository';
-export * from './service';
-export * from './types';
+export { logisticsRepository } from './repository';
+export { logisticsService } from './service';

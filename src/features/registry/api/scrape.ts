@@ -1,7 +1,7 @@
 import { ScrapeUrlSchema } from '@/utils/validation';
 import { NextResponse, NextRequest } from 'next/server';
 import { parse } from 'node-html-parser';
-import { isPrivateUrl } from '@/utils/ssrf';
+import { safeFetch } from '@/utils/safeFetch';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { logger } from '@/lib/logger';
@@ -16,19 +16,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const { url } = parseResult.data;
 
-  /**
-   * SSRF Guard Clause:
-   * Resolves the target hostname to an IP address (IPv4 or IPv6) and validates it
-   * against known private, loopback, and restricted address ranges (e.g., 10.0.0.0/8,
-   * 127.0.0.0/8, 192.168.0.0/16, fc00::/7). This prevents Server-Side Request Forgery
-   * by ensuring the scraper only accesses publicly routable external infrastructure.
-   */
-  if (await isPrivateUrl(url)) {
-    throw new ApiError(400, 'Invalid URL: Private or restricted address');
-  }
-
   try {
-    const response = await fetch(url, {
+    const response = await safeFetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -95,10 +84,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     };
 
     return NextResponse.json(scrapedData);
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Scraping failed:', error);
     if (error instanceof ApiError) {
       throw error;
+    }
+    if (error && error.message && (error.message.startsWith('Blocked:') || error.message === 'Invalid URL')) {
+      throw new ApiError(400, error.message);
     }
     throw new ApiError(500, 'Failed to scrape product info');
   }

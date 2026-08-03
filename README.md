@@ -130,10 +130,23 @@ Run the linter to ensure code quality:
 npm run lint
 ```
 
-Run the test suite:
+#### Running Tests with Isolated Database Setup
+
+This project features an automated, zero-configuration local testing setup. Running the test command automatically:
+1. Starts the local PostgreSQL database container (using Docker Compose) if it is not already running.
+2. Waits for the database to be fully ready and accepting connections.
+3. Automatically provisions and synchronizes the Prisma schema to an isolated, dedicated test database (`wedding_test`). This ensures that executing the test suite will never delete, modify, or insert records into your default development database.
+
+To execute the unit and integration test suite:
 
 ```bash
 npm test
+```
+
+To run tests in watch mode:
+
+```bash
+npm run test:watch
 ```
 
 ### Admin Access

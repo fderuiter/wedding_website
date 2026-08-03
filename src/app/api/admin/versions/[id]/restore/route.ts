@@ -90,14 +90,14 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
     });
   } else if (version.entityType === 'RegistryItem') {
     const data = {
-      name: snapshotData.name,
-      description: snapshotData.description,
-      category: snapshotData.category,
-      price: snapshotData.price,
-      imageId: snapshotData.imageId,
-      vendorUrl: snapshotData.vendorUrl,
-      quantity: snapshotData.quantity || 1,
-      isGroupGift: snapshotData.isGroupGift || false,
+      name: snapshotData.name ?? snapshotData.legacy_name ?? snapshotData.title ?? snapshotData.itemName ?? '',
+      description: snapshotData.description ?? snapshotData.legacy_description ?? snapshotData.details ?? '',
+      category: snapshotData.category ?? snapshotData.legacy_category ?? snapshotData.group ?? 'Uncategorized',
+      price: snapshotData.price ?? snapshotData.legacy_price ?? snapshotData.cost ?? snapshotData.priceAmount ?? 0,
+      imageId: snapshotData.imageId ?? snapshotData.legacy_imageId ?? snapshotData.mediaId ?? '',
+      vendorUrl: snapshotData.vendorUrl ?? snapshotData.legacy_vendorUrl ?? null,
+      quantity: snapshotData.quantity ?? snapshotData.legacy_quantity ?? snapshotData.qty ?? snapshotData.itemCount ?? 1,
+      isGroupGift: snapshotData.isGroupGift ?? snapshotData.legacy_isGroupGift ?? false,
       purchased: snapshotData.purchased || false,
       purchaserName: snapshotData.purchaserName,
       amountContributed: snapshotData.amountContributed || 0,

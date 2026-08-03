@@ -1,2 +1,2 @@
-export * from './repository';
-export * from './schemas';
+export { attractionsRepository } from './repository';
+export type { AttractionDTO } from './schemas';

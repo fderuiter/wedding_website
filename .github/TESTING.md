@@ -18,7 +18,7 @@ npm test
 ```
 
 This command does a few things:
-1.  It first executes the `pretest` script (`scripts/pretest.sh`), which ensures all `npm` dependencies are installed.
+1.  It first executes the `pretest` script (`scripts/pretest.mjs`), which ensures all `npm` dependencies are installed.
 2.  It then runs `jest`, which discovers and runs all test files in the project.
 
 You can also run Jest in watch mode, which is useful during development:

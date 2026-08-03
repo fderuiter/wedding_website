@@ -1,0 +1,106 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`WeddingPartyList matches the grid markup changes using baseline Jest snapshot assertions 1`] = `
+<div>
+  <div
+    class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+  >
+    <div
+      class="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden transform transition-transform hover:scale-105"
+    >
+      <div
+        class="relative h-64 w-full"
+      >
+        <img
+          alt="John smiling"
+          class="rounded-t-lg w-full h-full object-cover"
+          src="https://example.com/john.jpg"
+        />
+      </div>
+      <div
+        class="p-6"
+      >
+        <h3
+          class="text-2xl font-bold text-primary dark:text-primary mb-2"
+        >
+          John Doe
+        </h3>
+        <p
+          class="text-lg font-medium text-gray-600 dark:text-gray-300 mb-4"
+        >
+          Best Man
+        </p>
+        <p
+          class="text-base text-gray-700 dark:text-gray-400 mb-4"
+        >
+          Groom's best friend since high school.
+        </p>
+        <a
+          aria-label="Learn more about John Doe"
+          class="inline-flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          href="https://example.com/john"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Learn more 
+          <svg
+            aria-hidden="true"
+            class="ml-2 h-4 w-4"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M15 3h6v6"
+            />
+            <path
+              d="M10 14 21 3"
+            />
+            <path
+              d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+            />
+          </svg>
+        </a>
+      </div>
+    </div>
+    <div
+      class="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden transform transition-transform hover:scale-105"
+    >
+      <div
+        class="relative h-64 w-full"
+      >
+        <img
+          alt="Photo of Jane Smith"
+          class="rounded-t-lg w-full h-full object-cover"
+          src="/images/placeholder.png"
+        />
+      </div>
+      <div
+        class="p-6"
+      >
+        <h3
+          class="text-2xl font-bold text-primary dark:text-primary mb-2"
+        >
+          Jane Smith
+        </h3>
+        <p
+          class="text-lg font-medium text-gray-600 dark:text-gray-300 mb-4"
+        >
+          Maid of Honor
+        </p>
+        <p
+          class="text-base text-gray-700 dark:text-gray-400 mb-4"
+        >
+          Bride's sister.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+`;

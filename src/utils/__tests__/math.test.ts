@@ -40,7 +40,7 @@ describe('math utility - inSphere', () => {
 
   it('should maintain uniform volume distribution (expected average distance is 0.75 * radius)', () => {
     const radius = 10;
-    const pointCount = 5000;
+    const pointCount = 20000;
     const buffer = new Float32Array(pointCount * 3);
     inSphere(buffer, { radius });
 
