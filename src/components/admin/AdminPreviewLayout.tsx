@@ -93,12 +93,12 @@ export default function AdminPreviewLayout({
           <div className="p-6">
             <h2 className="text-2xl font-bold mb-4">Version History</h2>
             <div className="space-y-4">
-              {versions.length === 0 && <p className="text-gray-500">No versions found.</p>}
+              {versions.length === 0 && <p className="text-gray-500 dark:text-gray-400">No versions found.</p>}
               {versions.map((v) => (
                 <div key={v.id} className="p-4 border rounded bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
                   <div>
                     <p className="font-semibold">{formatDate(v.createdAt, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                    <p className="text-sm text-gray-500">By {v.author}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">By {v.author}</p>
                   </div>
                   <div className="space-x-2">
                     <button 
