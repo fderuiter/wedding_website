@@ -121,4 +121,40 @@ describe('POST /api/registry/scrape', () => {
     expect(json.error).toContain('Failed to scrape product info');
     expect(console.error).toHaveBeenCalledWith('Scraping failed:', error);
   });
+
+  it('returns 400 when URL resolves to a private or restricted IP address', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    const req = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'http://127.0.0.1/sensitive-data' }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('Blocked: URL resolves to a private or restricted IP address');
+  });
+
+  it('returns 400 when safeFetch detects too many redirects', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    // Setup redirect responses
+    for (let i = 1; i <= 6; i++) {
+      fetchMock.mockResolvedValueOnce(new Response('', {
+        status: 302,
+        headers: { location: `https://example.com/redirect${i}` },
+      }));
+    }
+
+    const req = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://example.com/start' }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('Blocked: Too many redirects (maximum of 5 hops allowed)');
+  });
 });
