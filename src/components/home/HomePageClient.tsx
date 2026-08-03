@@ -194,7 +194,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     startTime: weddingDateObj.toISOString().split('T')[1].substring(0, 5),
     endDate: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[0],
     endTime: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[1].substring(0, 5),
-    timeZone: 'UTC',
+    timeZone: config.timezone,
     location: `${config.venueName}, ${config.venueCity}, ${config.venueState}`,
     description: config.heroSubtitle || 'Join us for our wedding!',
   };

@@ -30,6 +30,16 @@ export const UpdateAppConfigSchema = z.object({
   seoKeywords: z.string(),
   colorPrimary: z.string().regex(hexColorRegex).optional(),
   colorSecondary: z.string().regex(hexColorRegex).optional(),
+  timezone: z.string().refine(
+    (val) => {
+      try {
+        return Intl.supportedValuesOf('timeZone').includes(val);
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Invalid standard IANA timezone identifier.' }
+  ).optional(),
 }).catchall(z.any()).superRefine((val, ctx) => {
   for (const [key, value] of Object.entries(val)) {
     if (typeof key === 'string' && key.toLowerCase().includes('color') && typeof value === 'string' && value !== '') {
@@ -115,6 +125,7 @@ export const AppConfigSchema = z.object({
   seoKeywords: z.string(),
   colorPrimary: z.string().default('#B91C1C'),
   colorSecondary: z.string().default('#B45309'),
+  timezone: z.string().default('America/Chicago'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
   features: z.union([

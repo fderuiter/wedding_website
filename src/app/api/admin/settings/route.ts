@@ -49,6 +49,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       seoKeywords: validData.seoKeywords,
       colorPrimary: validData.colorPrimary,
       colorSecondary: validData.colorSecondary,
+      timezone: validData.timezone,
     },
   });
 
