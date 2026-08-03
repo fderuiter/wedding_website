@@ -1,6 +1,6 @@
 'use client';
 
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { Environment, Html, Text } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -246,6 +246,178 @@ function PhysicsHeart({
   );
 }
 
+export type PerformanceTier = 'high' | 'medium' | 'low';
+
+function isWebGLAvailable() {
+  if (typeof window === 'undefined') return true;
+  if (process.env.NODE_ENV === 'test') {
+    if ((window as any).__mockWebGLSupport === false) return false;
+    return true;
+  }
+  try {
+    const canvas = document.createElement('canvas');
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function WebGLFallback({
+  brideName,
+  groomName,
+  primaryColor,
+  secondaryColor,
+  accentColor
+}: {
+  brideName: string;
+  groomName: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+}) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const positionStart = useRef({ x: 0, y: 0 });
+
+  const getEventCoordinates = (e: React.PointerEvent) => {
+    if (typeof e.clientX === 'number' && !isNaN(e.clientX)) {
+      return { x: e.clientX, y: e.clientY };
+    }
+    const native = e.nativeEvent as any;
+    if (native) {
+      if (typeof native.clientX === 'number' && !isNaN(native.clientX)) {
+        return { x: native.clientX, y: native.clientY };
+      }
+    }
+    return { x: 0, y: 0 };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setIsDragging(true);
+    const coords = getEventCoordinates(e);
+    dragStart.current = { x: coords.x, y: coords.y };
+    positionStart.current = { ...position };
+    if (typeof e.currentTarget.setPointerCapture === 'function') {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const coords = getEventCoordinates(e);
+    const dx = coords.x - dragStart.current.x;
+    const dy = coords.y - dragStart.current.y;
+    setPosition({
+      x: positionStart.current.x + dx,
+      y: positionStart.current.y + dy
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    if (typeof e.currentTarget.releasePointerCapture === 'function') {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const step = 20;
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setPosition(prev => ({ ...prev, y: prev.y - step }));
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setPosition(prev => ({ ...prev, y: prev.y + step }));
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setPosition(prev => ({ ...prev, x: prev.x - step }));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setPosition(prev => ({ ...prev, x: prev.x + step }));
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center h-full w-full relative overflow-hidden bg-black text-white">
+      <div
+        data-testid="webgl-fallback-heart"
+        tabIndex={0}
+        aria-label={`Interactive 2D Heart: ${brideName} and ${groomName}. Use arrow keys to move, or drag with mouse/touch.`}
+        className="absolute cursor-grab active:cursor-grabbing focus:outline-none focus:ring-4 focus:ring-white rounded-full p-4 transition-transform duration-75 select-none"
+        style={{
+          transform: `translate(${position.x}px, ${position.y}px)`,
+        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onKeyDown={handleKeyDown}
+      >
+        <svg
+          width="200"
+          height="200"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className="animate-pulse"
+          style={{ filter: `drop-shadow(0 0 10px ${accentColor})` }}
+        >
+          <path
+            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+            fill={primaryColor || '#ffa0e0'}
+            stroke={secondaryColor || '#ffffff'}
+            strokeWidth="1"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none font-bold select-none text-white text-sm">
+          <span>{brideName}</span>
+          <span className="text-xs font-normal opacity-80">&amp;</span>
+          <span>{groomName}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PerformanceTracker({
+  currentTier,
+  onTierChange,
+}: {
+  currentTier: PerformanceTier;
+  onTierChange: (tier: PerformanceTier) => void;
+}) {
+  const lowFpsAccumulatorRef = useRef(0);
+
+  useFrame((_, delta) => {
+    let fps = 1 / delta;
+
+    if (typeof window !== 'undefined' && (window as any).__mockFps !== undefined) {
+      fps = (window as any).__mockFps;
+    }
+
+    if (currentTier === 'low') return;
+
+    if (fps < 30) {
+      lowFpsAccumulatorRef.current += delta;
+      if (lowFpsAccumulatorRef.current >= 3.0) {
+        if (currentTier === 'high') {
+          onTierChange('medium');
+        } else if (currentTier === 'medium') {
+          onTierChange('low');
+        }
+        lowFpsAccumulatorRef.current = 0;
+      }
+    } else {
+      lowFpsAccumulatorRef.current = 0;
+    }
+  });
+
+  return null;
+}
+
 /**
  * @page HeartPage
  * @description An interactive, physics-based 3D heart page using `@react-three/fiber` and `@react-three/rapier`.
@@ -262,13 +434,25 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
   const [interacted, setInteracted] = useState(false);
   const [scale, setScale] = useState(0.6);
   const [resetKey, setResetKey] = useState(0);
+  const [webglSupported, setWebglSupported] = useState(true);
+  const [performanceTier, setPerformanceTier] = useState<PerformanceTier>('high');
 
   const { overlayRef } = useOverlay(true, () => {});
 
   const handleReset = () => {
     setInteracted(false);
+    setPerformanceTier('high');
     setResetKey((prevKey) => prevKey + 1);
   };
+
+  useEffect(() => {
+    const supported = isWebGLAvailable();
+    if (!supported) {
+      setTimeout(() => {
+        setWebglSupported(false);
+      }, 0);
+    }
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -280,6 +464,33 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  if (!webglSupported) {
+    return (
+      <div ref={overlayRef} className="fixed inset-0 bg-black select-none" data-testid="webgl-fallback-container">
+        <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
+          <button
+            onClick={handleReset}
+            className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white"
+            aria-label="Reset heart"
+          >
+            Reset
+          </button>
+          <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
+            Back Home
+          </Link>
+        </div>
+        <WebGLFallback
+          key={resetKey}
+          brideName={brideName}
+          groomName={groomName}
+          primaryColor={themePrimary}
+          secondaryColor={themeSecondary}
+          accentColor={themeAccent}
+        />
+      </div>
+    );
+  }
 
   return (
     <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
@@ -298,10 +509,11 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
       <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 8, 5]} intensity={1.6} />
+        <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
         <Suspense fallback={<Html>Loading…</Html>}>
           <Physics key={resetKey} gravity={[0, 0, 0]}>
-            <Sparkles color={themeAccent} />
-            <Environment preset="sunset" />
+            {performanceTier !== 'low' && <Sparkles color={themeAccent} />}
+            {performanceTier !== 'low' && <Environment preset="sunset" />}
             <PhysicsHeart 
               scale={scale} 
               interacted={interacted} 
@@ -314,9 +526,11 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
             />
             <ScreenBounds />
           </Physics>
-          <EffectComposer>
-            <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
-          </EffectComposer>
+          {performanceTier === 'high' && (
+            <EffectComposer>
+              <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
+            </EffectComposer>
+          )}
         </Suspense>
       </Canvas>
     </div>

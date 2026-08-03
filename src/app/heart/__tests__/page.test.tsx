@@ -129,6 +129,8 @@ const HeartPage = () => <HeartClient brideName="Abbi" groomName="Fred" />;
 describe('HeartPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete (window as any).__mockWebGLSupport;
+    delete (window as any).__mockFps;
     mockMainBodyApi.__triggerContactForce = null;
     const useThree = jest.requireMock('@react-three/fiber').useThree;
     useThree.mockReturnValue({
@@ -237,5 +239,118 @@ describe('HeartPage', () => {
     // Verify sentinel names are rendered (which means they were passed to HeartClient)
     expect(screen.getAllByText('SentinelA').length).toBeGreaterThan(0);
     expect(screen.getAllByText('SentinelB').length).toBeGreaterThan(0);
+  });
+
+  it('renders 2D vector fallback when WebGL support is missing/disabled', async () => {
+    (window as any).__mockWebGLSupport = false;
+
+    render(<HeartPage />);
+
+    expect(await screen.findByTestId('webgl-fallback-container')).toBeInTheDocument();
+    expect(await screen.findByTestId('webgl-fallback-heart')).toBeInTheDocument();
+
+    expect(screen.getByText('Abbi')).toBeInTheDocument();
+    expect(screen.getByText('Fred')).toBeInTheDocument();
+
+    delete (window as any).__mockWebGLSupport;
+  });
+
+  it('supports dragging and keyboard movement in 2D WebGL fallback', async () => {
+    (window as any).__mockWebGLSupport = false;
+    render(<HeartPage />);
+
+    const fallbackHeart = await screen.findByTestId('webgl-fallback-heart');
+    expect(fallbackHeart).toBeInTheDocument();
+
+    const downEvent = new Event('pointerdown', { bubbles: true }) as any;
+    downEvent.clientX = 100;
+    downEvent.clientY = 100;
+    downEvent.pointerId = 1;
+    fireEvent(fallbackHeart, downEvent);
+
+    const moveEvent = new Event('pointermove', { bubbles: true }) as any;
+    moveEvent.clientX = 150;
+    moveEvent.clientY = 120;
+    moveEvent.pointerId = 1;
+    fireEvent(fallbackHeart, moveEvent);
+
+    const upEvent = new Event('pointerup', { bubbles: true }) as any;
+    upEvent.pointerId = 1;
+    fireEvent(fallbackHeart, upEvent);
+
+    expect(fallbackHeart.style.transform).toBe('translate(50px, 20px)');
+
+    fireEvent.keyDown(fallbackHeart, { key: 'ArrowDown' });
+    expect(fallbackHeart.style.transform).toBe('translate(50px, 40px)');
+
+    fireEvent.keyDown(fallbackHeart, { key: 'ArrowRight' });
+    expect(fallbackHeart.style.transform).toBe('translate(70px, 40px)');
+
+    delete (window as any).__mockWebGLSupport;
+  });
+
+  it('degrades visual quality tier when frame rate drops and recovers on reset', () => {
+    let frameCallback: ((state: any, delta: number) => void) | null = null;
+    const useFrameMock = jest.requireMock('@react-three/fiber').useFrame;
+    useFrameMock.mockImplementation((cb: any) => {
+      if (cb && (cb.toString().includes('lowFpsAccumulator') || cb.toString().includes('fps'))) {
+        frameCallback = cb;
+      }
+    });
+
+    render(<HeartPage />);
+
+    expect(frameCallback).not.toBeNull();
+    expect(screen.getByTestId('effect-composer')).toBeInTheDocument();
+    expect(screen.getByTestId('points')).toBeInTheDocument();
+
+    const mockState = {
+      clock: {
+        getElapsedTime: () => 0
+      }
+    };
+
+    act(() => {
+      if (frameCallback) {
+        (window as any).__mockFps = 60;
+        frameCallback(mockState, 0.016);
+      }
+    });
+
+    expect(screen.getByTestId('effect-composer')).toBeInTheDocument();
+    expect(screen.getByTestId('points')).toBeInTheDocument();
+
+    act(() => {
+      if (frameCallback) {
+        (window as any).__mockFps = 20;
+        frameCallback(mockState, 1.0);
+        frameCallback(mockState, 1.0);
+        frameCallback(mockState, 1.1);
+      }
+    });
+
+    expect(screen.queryByTestId('effect-composer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('points')).toBeInTheDocument();
+
+    act(() => {
+      if (frameCallback) {
+        (window as any).__mockFps = 20;
+        frameCallback(mockState, 1.0);
+        frameCallback(mockState, 1.0);
+        frameCallback(mockState, 1.1);
+      }
+    });
+
+    expect(screen.queryByTestId('effect-composer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('points')).not.toBeInTheDocument();
+
+    const resetButton = screen.getByText('Reset');
+    fireEvent.click(resetButton);
+
+    expect(screen.getByTestId('effect-composer')).toBeInTheDocument();
+    expect(screen.getByTestId('points')).toBeInTheDocument();
+
+    delete (window as any).__mockFps;
+    useFrameMock.mockReset();
   });
 });
