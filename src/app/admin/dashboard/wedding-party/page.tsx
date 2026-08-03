@@ -174,6 +174,7 @@ export default function WeddingPartyDashboardPage() {
                   variant="secondary"
                   size="sm"
                   aria-label={member.name ? `Edit wedding party member: ${member.name}` : 'Edit unnamed item'}
+                  disabled={member.id.startsWith('temp-')}
                   onClick={() => { 
                     setCurrentMember(member); 
                     setIsEditing(true); 
@@ -185,6 +186,7 @@ export default function WeddingPartyDashboardPage() {
                   variant="danger"
                   size="sm"
                   aria-label={member.name ? `Delete wedding party member: ${member.name}` : 'Delete unnamed item'}
+                  disabled={member.id.startsWith('temp-')}
                   onClick={(e) => handleDelete(member.id, e as React.MouseEvent<HTMLButtonElement>)}
                 >
                   Delete

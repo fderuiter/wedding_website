@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiClient } from '@/lib/apiClient';
+import { generateSecureUUID } from '@/utils/uuid';
 
 interface UseEntityOrchestrationOptions {
   queryKey: string[];
@@ -32,7 +33,7 @@ export function useEntityOrchestration<T extends { id: string }>({
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
-      const optimisticId = `temp-${Date.now()}-${Math.random()}`;
+      const optimisticId = `temp-${generateSecureUUID()}`;
       if (previousData) {
         const optimisticItem = { id: optimisticId, ...payload } as unknown as T;
         queryClient.setQueryData<T[]>(queryKey, old => [optimisticItem, ...(old || [])]);

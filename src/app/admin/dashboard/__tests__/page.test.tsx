@@ -182,4 +182,32 @@ describe('AdminDashboardPage', () => {
 
     expect(screen.getAllByText('Sample Item').length).toBeGreaterThan(0);
   });
+
+  it('navigates to add registry item page when Add New Item is clicked', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => [mockItem],
+    });
+
+    renderWithProviders(<AdminDashboardPage />);
+
+    const addButton = await screen.findByRole('button', { name: 'Add New Item' });
+    fireEvent.click(addButton);
+
+    expect(mockPush).toHaveBeenCalledWith('/registry/add-item');
+  });
+
+  it('navigates to edit registry item page when Edit is clicked', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => [mockItem],
+    });
+
+    renderWithProviders(<AdminDashboardPage />);
+
+    const editButtons = await screen.findAllByRole('button', { name: 'Edit registry item: Sample Item' });
+    fireEvent.click(editButtons[0]);
+
+    expect(mockPush).toHaveBeenCalledWith('/registry/edit-item/1');
+  });
 });
