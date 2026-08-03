@@ -1,19 +1,48 @@
 'use client';
-import { useState } from 'react';
 
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
+
 import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
-import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { useAdminFeatures } from '@/hooks/admin/useAdminFeatures';
 
+function DragDropSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div
+          key={i}
+          className="p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 animate-pulse"
+        >
+          <div className="flex items-center gap-4 w-full">
+            <div className="h-6 w-6 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="space-y-2 w-1/3">
+              <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
+            </div>
+          </div>
+          <div className="h-10 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const DragDropContainer = dynamic(
+  () => import('./components/DragDropContainer'),
+  {
+    ssr: false,
+    loading: () => <DragDropSkeleton />,
+  }
+);
+
 export default function SiteManagerPage() {
-  
   const { addToast } = useToast();
   const { features, loading, error, saveFeatures } = useAdminFeatures();
-  
+
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customContent, setCustomContent] = useState('');
@@ -43,21 +72,6 @@ export default function SiteManagerPage() {
     setCustomContent('');
   };
 
-  const onDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
-    
-    const dragIndex = result.source.index;
-    const dropIndex = result.destination.index;
-    
-    if (dragIndex === dropIndex) return;
-
-    const newFeatures = Array.from(features);
-    const [draggedItem] = newFeatures.splice(dragIndex, 1);
-    newFeatures.splice(dropIndex, 0, draggedItem);
-    
-    saveFeatures(newFeatures);
-  };
-
   if (loading) return <div className="p-8 text-center text-primary">Loading Site Manager...</div>;
   if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
 
@@ -75,55 +89,11 @@ export default function SiteManagerPage() {
           Drag and drop sections to reorder them on the homepage. Toggle the eye icon to show or hide a section. Use Tab to navigate and Space/Enter to select and move items.
         </p>
 
-        <DragDropContext onDragEnd={onDragEnd}>
-          <Droppable droppableId="features-list">
-            {(provided) => (
-              <div 
-                {...provided.droppableProps} 
-                ref={provided.innerRef}
-                className="space-y-4"
-              >
-                {features.map((feature, index) => (
-                  <Draggable key={feature.id} draggableId={feature.id} index={index}>
-                    {(provided) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 transition ${!feature.visible ? 'opacity-50' : ''}`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="text-gray-500 dark:text-gray-400">
-                            <Icon name="DragHandle" className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-xl text-primary">{feature.title || feature.id}</h3>
-                            <span className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{feature.type}</span>
-                          </div>
-                        </div>
-                        <div>
-                          <Button 
-                            type="button"
-                            onClick={(e) => {
-                              // Stop propagation so it doesn't trigger drag
-                              e.stopPropagation();
-                              toggleVisibility(feature.id);
-                            }} 
-                            variant={feature.visible ? 'outline' : 'ghost'}
-                            className={`px-4 py-2 rounded text-sm font-bold ${feature.visible ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}
-                          >
-                            {feature.visible ? 'Visible' : 'Hidden'}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+        <DragDropContainer
+          features={features}
+          saveFeatures={saveFeatures}
+          toggleVisibility={toggleVisibility}
+        />
 
         <Dialog
           isOpen={showCustomModal}
