@@ -4,6 +4,7 @@ import { rateLimit } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
+import { translateActiveToLegacy } from '@/features/registry/schemas';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
@@ -56,7 +57,19 @@ export function withApiMiddleware(handler: RouteHandler) {
         return response;
       }
 
-      const data = await response.json().catch(() => ({}));
+      let data = await response.json().catch(() => ({}));
+
+      let isLegacy = false;
+      if (req && typeof req.headers?.get === 'function') {
+        const versionHeader = req.headers.get('x-api-version') || req.headers.get('X-API-Version');
+        const url = req.nextUrl || (req.url ? new URL(req.url) : null);
+        const versionParam = url?.searchParams?.get?.('version');
+        isLegacy = (versionHeader === 'v1' || versionParam === 'v1');
+      }
+
+      if (isLegacy) {
+        data = translateActiveToLegacy(data);
+      }
 
       let finalResponse: NextResponse;
       if (response.status >= 400) {
@@ -76,6 +89,12 @@ export function withApiMiddleware(handler: RouteHandler) {
           { success: true, data },
           { status: response.status, headers: response.headers }
         );
+      }
+
+      if (isLegacy) {
+        finalResponse.headers.set('x-api-version', 'v1');
+      } else {
+        finalResponse.headers.set('x-api-version', 'v2');
       }
 
       // Copy cookies from original response if it was a NextResponse
