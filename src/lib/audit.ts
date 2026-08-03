@@ -100,7 +100,7 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
     }
 
     const idsToDelete: string[] = [];
-    for (const [key, ids] of grouped.entries()) {
+    for (const ids of grouped.values()) {
       if (ids.length > limit) {
         // Since orderBy has createdAt DESC, the first limit items are the newest ones, and we delete the ones beyond the limit
         const expiredIds = ids.slice(limit);
