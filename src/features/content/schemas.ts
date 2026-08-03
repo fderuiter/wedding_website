@@ -30,6 +30,9 @@ export const UpdateAppConfigSchema = z.object({
   seoKeywords: z.string(),
   colorPrimary: z.string().regex(hexColorRegex).optional(),
   colorSecondary: z.string().regex(hexColorRegex).optional(),
+  venueTimezone: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
 }).catchall(z.any()).superRefine((val, ctx) => {
   for (const [key, value] of Object.entries(val)) {
     if (typeof key === 'string' && key.toLowerCase().includes('color') && typeof value === 'string' && value !== '') {
@@ -115,6 +118,9 @@ export const AppConfigSchema = z.object({
   seoKeywords: z.string(),
   colorPrimary: z.string().default('#B91C1C'),
   colorSecondary: z.string().default('#B45309'),
+  venueTimezone: z.string().default('America/Chicago'),
+  startTime: z.string().default('16:00'),
+  endTime: z.string().default('22:00'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
   features: z.union([

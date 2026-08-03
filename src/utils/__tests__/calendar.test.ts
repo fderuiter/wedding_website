@@ -52,8 +52,8 @@ describe('calendar utils', () => {
       expect(icsString).toContain(`SUMMARY:${event.name}`);
       expect(icsString).toContain(`DESCRIPTION:${event.description}`);
       expect(icsString).toContain(`LOCATION:${event.location}`);
-      expect(icsString).toContain('DTSTART:20251225T100000');
-      expect(icsString).toContain('DTEND:20251225T110000');
+      expect(icsString).toContain('DTSTART;TZID=America/New_York:20251225T100000');
+      expect(icsString).toContain('DTEND;TZID=America/New_York:20251225T110000');
       expect(icsString).toContain('END:VEVENT');
       expect(icsString).toContain('END:VCALENDAR');
     });

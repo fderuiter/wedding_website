@@ -35,6 +35,9 @@ const fallbackAppConfig: LocalAppConfig = {
   seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
+  venueTimezone: 'America/Chicago',
+  startTime: '16:00',
+  endTime: '22:00',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true, 
   showAddToCalendar: true,
@@ -154,6 +157,9 @@ export async function getAppConfig(): Promise<AppConfigDTO> {
           seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
           colorPrimary: '#B91C1C',
           colorSecondary: '#B45309',
+          venueTimezone: 'America/Chicago',
+          startTime: '16:00',
+          endTime: '22:00',
         },
       }));
     } else {

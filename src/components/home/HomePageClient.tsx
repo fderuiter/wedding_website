@@ -45,7 +45,38 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     }
   }, [config]);
 
-  const formattedDate = formatDate(config.weddingDate);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.venueTimezone || 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(config.weddingDate));
+  const year = parts.find(p => p.type === 'year')?.value || '2026';
+  const month = parts.find(p => p.type === 'month')?.value || '06';
+  const day = parts.find(p => p.type === 'day')?.value || '20';
+  const localWeddingDay = `${year}-${month}-${day}`;
+
+  const formattedDate = formatDate(config.weddingDate, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: config.venueTimezone || 'America/Chicago'
+  });
+
+  const getOffsetParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.venueTimezone || 'America/Chicago',
+    timeZoneName: 'longOffset'
+  }).formatToParts(new Date(config.weddingDate));
+  const offsetStr = getOffsetParts.find(p => p.type === 'timeZoneName')?.value || 'GMT-05:00';
+  let formattedOffset = 'Z';
+  const offsetMatch = offsetStr.match(/GMT([-+]\d{2}):?(\d{2})?/);
+  if (offsetMatch) {
+    const hours = offsetMatch[1];
+    const minutes = offsetMatch[2] || '00';
+    formattedOffset = `${hours}:${minutes}`;
+  }
+  const localDateTimeStr = `${localWeddingDay}T${config.startTime || '16:00'}:00`;
+  const venueUtcWeddingDate = new Date(`${localDateTimeStr}${formattedOffset}`);
 
   const faqs = contentNodes
     .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
@@ -187,14 +218,13 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     }
   };
 
-  const weddingDateObj = new Date(config.weddingDate);
   const calendarEvent = {
     name: config.heroTitle || 'Wedding',
-    startDate: weddingDateObj.toISOString().split('T')[0],
-    startTime: weddingDateObj.toISOString().split('T')[1].substring(0, 5),
-    endDate: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endTime: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[1].substring(0, 5),
-    timeZone: 'UTC',
+    startDate: localWeddingDay,
+    startTime: config.startTime || '16:00',
+    endDate: localWeddingDay,
+    endTime: config.endTime || '22:00',
+    timeZone: config.venueTimezone || 'America/Chicago',
     location: `${config.venueName}, ${config.venueCity}, ${config.venueState}`,
     description: config.heroSubtitle || 'Join us for our wedding!',
   };
@@ -214,7 +244,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             </motion.p>
             {config.showCountdown && (
               <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
-                <Countdown targetDate={weddingDateObj.toISOString()} />
+                <Countdown targetDate={venueUtcWeddingDate.toISOString()} />
               </motion.div>
             )}
             <motion.nav aria-label="Primary navigation" role="navigation" className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>

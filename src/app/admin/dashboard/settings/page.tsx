@@ -8,7 +8,7 @@ import { apiClient } from '@/features/admin/apiClient';
 import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
-import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, FormMessage, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
@@ -62,7 +62,7 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setLocalConfig((prev: any) => ({ ...prev, [name]: value }));
   };
@@ -136,6 +136,31 @@ export default function AdminSettingsPage() {
               <FormGroup>
                 <Label>Zip Code</Label>
                 <Input required type="text" name="venueZip" value={localConfig.venueZip || ''} onChange={handleChange} />
+              </FormGroup>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <FormGroup>
+                <Label>Venue Timezone</Label>
+                <Select required name="venueTimezone" value={localConfig.venueTimezone || 'America/Chicago'} onChange={handleChange}>
+                  <option value="America/New_York">Eastern Time (America/New_York)</option>
+                  <option value="America/Chicago">Central Time (America/Chicago)</option>
+                  <option value="America/Denver">Mountain Time (America/Denver)</option>
+                  <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+                  <option value="America/Anchorage">Alaska Time (America/Anchorage)</option>
+                  <option value="Pacific/Honolulu">Hawaii Time (Pacific/Honolulu)</option>
+                  <option value="Europe/London">London (Europe/London)</option>
+                  <option value="Europe/Paris">Paris (Europe/Paris)</option>
+                  <option value="Asia/Tokyo">Tokyo (Asia/Tokyo)</option>
+                  <option value="Australia/Sydney">Sydney (Australia/Sydney)</option>
+                </Select>
+              </FormGroup>
+              <FormGroup>
+                <Label>Event Start Time</Label>
+                <Input required type="time" name="startTime" value={localConfig.startTime || '16:00'} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Event End Time</Label>
+                <Input required type="time" name="endTime" value={localConfig.endTime || '22:00'} onChange={handleChange} />
               </FormGroup>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
