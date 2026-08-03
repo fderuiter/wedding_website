@@ -227,6 +227,7 @@ export default function ContentDashboardPage() {
                   variant="secondary"
                   size="sm"
                   aria-label={node.type ? `Edit content: ${node.type}` : 'Edit unnamed item'}
+                  disabled={node.id.startsWith('temp-')}
                   onClick={() => { 
                     setCurrentNode(node); 
                     const d = node.data as Record<string, string>;
@@ -240,6 +241,7 @@ export default function ContentDashboardPage() {
                   variant="danger"
                   size="sm"
                   aria-label={node.type ? `Delete content: ${node.type}` : 'Delete unnamed item'}
+                  disabled={node.id.startsWith('temp-')}
                   onClick={(e) => handleDelete(node.id, e)}
                 >
                   Delete

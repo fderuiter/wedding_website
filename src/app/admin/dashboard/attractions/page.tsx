@@ -197,6 +197,7 @@ export default function AttractionsDashboardPage() {
                   variant="secondary"
                   size="sm"
                   aria-label={attraction.name ? `Edit attraction: ${attraction.name}` : 'Edit unnamed item'}
+                  disabled={attraction.id.startsWith('temp-')}
                   onClick={() => { 
                     setCurrentAttraction(attraction); 
                     setIsEditing(true); 
@@ -208,6 +209,7 @@ export default function AttractionsDashboardPage() {
                   variant="danger"
                   size="sm"
                   aria-label={attraction.name ? `Delete attraction: ${attraction.name}` : 'Delete unnamed item'}
+                  disabled={attraction.id.startsWith('temp-')}
                   onClick={(e) => handleDelete(attraction.id, e)}
                 >
                   Delete
