@@ -28,6 +28,13 @@ The application requires the following environment variables to be configured co
   - **Format**: Must be an scrypt hash in the format `scrypt:[saltBase64]:[keyBase64]`.
   - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
+- `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*
+- `S3_REGION`: The region of the S3 bucket (e.g., `us-east-1`, or `auto` for Cloudflare R2). *Optional (required if other S3 variables are specified).*
+- `S3_ACCESS_KEY_ID`: S3/R2 API access key ID. *Optional (required if other S3 variables are specified).*
+- `S3_SECRET_ACCESS_KEY`: S3/R2 API secret access key. *Optional (required if other S3 variables are specified).*
+- `S3_ENDPOINT`: S3-compatible custom endpoint URL (required for Cloudflare R2). *Optional.*
+- `S3_PUBLIC_URL`: Public asset delivery URL or CDN prefix used to serve assets publicly. *Optional.*
+
 
 ## Connecting to a Hosting Service (e.g., Google Cloud Run)
 
