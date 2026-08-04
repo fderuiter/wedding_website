@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AdminUploadSchema } from '@/utils/validation';
-import { writeFile } from 'fs/promises';
-import path from 'path';
-import crypto from 'crypto';
+import { getStorageProvider } from '@/utils/storage';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 
@@ -18,13 +16,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const file = parsed.data.file as File;
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const hash = crypto.randomBytes(8).toString('hex');
-  const ext = file.name.substring(file.name.lastIndexOf('.'));
-  const filename = `${hash}${ext}`;
-  
-  const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
-  await writeFile(filePath, buffer);
+  const result = await getStorageProvider().uploadFile(file);
 
-  return NextResponse.json({ url: `/uploads/${filename}` });
+  return NextResponse.json({ url: result.url });
 });

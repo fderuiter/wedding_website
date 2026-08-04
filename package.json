@@ -26,6 +26,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1102.0",
     "@dimforge/rapier3d-compat": "^0.19.3",
     "@hello-pangea/dnd": "^18.0.1",
     "@prisma/adapter-pg": "^7.3.0",
