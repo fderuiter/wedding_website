@@ -5,7 +5,17 @@
  * @param locale The locale (default: 'en-US' if no global configuration exists).
  * @returns Formatted currency string.
  */
-export function formatCurrency(value: number, currency: string = 'USD', locale: string = 'en-US'): string {
+export function formatCurrency(value: number | string, currency: string = 'USD', locale: string = 'en-US'): string {
+  if (typeof value === 'string') {
+    const num = Number(value);
+    if (isNaN(num)) {
+      return value;
+    }
+    value = num;
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: currency,
@@ -26,6 +36,12 @@ export function formatDate(
   options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' },
   locale: string = 'en-US'
 ): string {
+  if (date === 'Anonymous' || date === 'Masked') {
+    return String(date);
+  }
   const d = new Date(date);
+  if (isNaN(d.getTime())) {
+    return String(date);
+  }
   return new Intl.DateTimeFormat(locale, options).format(d);
 }
