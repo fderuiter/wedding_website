@@ -32,6 +32,41 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     const html = await response.text();
     const root = parse(html);
 
+    // 1. JSON-LD structured data extraction
+    let ldName: string | undefined;
+    let ldDescription: string | undefined;
+    let ldImage: string | undefined;
+    let ldImageAlt: string | undefined;
+
+    const ldScripts = root.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of ldScripts) {
+      try {
+        const text = (script.textContent || script.text || '').trim();
+        if (!text) continue;
+        const json = JSON.parse(text);
+        const product = findProductObject(json);
+        if (product) {
+          if (!ldName && typeof product.name === 'string') {
+            ldName = product.name;
+          }
+          if (!ldDescription && typeof product.description === 'string') {
+            ldDescription = product.description;
+          }
+          if (product.image) {
+            const parsedImg = parseLdImage(product.image);
+            if (!ldImage && parsedImg) {
+              ldImage = parsedImg.url;
+              if (!ldImageAlt && parsedImg.alt) {
+                ldImageAlt = parsedImg.alt;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Gracefully wrap parsing in try/catch block to handle malformed JSON structure without failing.
+      }
+    }
+
     const getMetaContent = (property: string) => {
       return root.querySelector(`meta[property="${property}"]`)?.getAttribute('content') ||
              root.querySelector(`meta[name="${property}"]`)?.getAttribute('content') || '';
@@ -39,12 +74,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
     const ogTitle = getMetaContent('og:title');
     const titleTag = root.querySelector('title')?.textContent || '';
-    const name = ogTitle || titleTag || '';
+    const name = ldName || ogTitle || titleTag || '';
 
-    const description = getMetaContent('og:description');
+    const description = ldDescription || getMetaContent('og:description');
 
-    let image = getMetaContent('og:image');
-    let imageAlt = getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
+    let image = ldImage || getMetaContent('og:image');
+    let imageAlt = ldImageAlt || getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
 
     if (!image) {
       image = getMetaContent('twitter:image');
@@ -95,3 +130,72 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(500, 'Failed to scrape product info');
   }
 });
+
+function findProductObject(obj: any): any | null {
+  if (!obj || typeof obj !== 'object') {
+    return null;
+  }
+  
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = findProductObject(item);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const type = obj['@type'];
+  if (type) {
+    if (typeof type === 'string' && type.toLowerCase() === 'product') {
+      return obj;
+    }
+    if (Array.isArray(type) && type.some(t => typeof t === 'string' && t.toLowerCase() === 'product')) {
+      return obj;
+    }
+  }
+
+  if (obj['@graph'] && Array.isArray(obj['@graph'])) {
+    const found = findProductObject(obj['@graph']);
+    if (found) return found;
+  }
+
+  for (const key of Object.keys(obj)) {
+    if (key !== '@graph') {
+      const found = findProductObject(obj[key]);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function parseLdImage(imageField: any): { url: string; alt?: string } | null {
+  if (!imageField) return null;
+  if (typeof imageField === 'string') {
+    return { url: imageField };
+  }
+  if (Array.isArray(imageField)) {
+    for (const item of imageField) {
+      const parsed = parseLdImage(item);
+      if (parsed) return parsed;
+    }
+  }
+  if (typeof imageField === 'object') {
+    let url: string | undefined;
+    if (typeof imageField.url === 'string') {
+      url = imageField.url;
+    } else if (typeof imageField.contentUrl === 'string') {
+      url = imageField.contentUrl;
+    }
+    if (url) {
+      let alt: string | undefined;
+      if (typeof imageField.caption === 'string') {
+        alt = imageField.caption;
+      } else if (typeof imageField.name === 'string') {
+        alt = imageField.name;
+      }
+      return { url, alt };
+    }
+  }
+  return null;
+}

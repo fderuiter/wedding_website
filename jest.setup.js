@@ -28,9 +28,21 @@ import { toHaveNoViolations } from 'jest-axe';
 expect.extend(toHaveNoViolations);
 import { server } from './src/mocks/server';
 
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
+beforeAll(() => {
+  if (process.env.LIVE_TESTS !== 'true') {
+    server.listen();
+  }
+});
+afterEach(() => {
+  if (process.env.LIVE_TESTS !== 'true') {
+    server.resetHandlers();
+  }
+});
+afterAll(() => {
+  if (process.env.LIVE_TESTS !== 'true') {
+    server.close();
+  }
+});
 
 const originalConsoleError = console.error;
 console.error = (...args) => {
