@@ -1,8 +1,14 @@
-import { NextResponse,  } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { isAdminRequest } from '@/core/auth/auth.server';
+import { maskRegistryItems, sanitizeRegistryItems } from '../lib/masking';
 
-export const GET = withApiMiddleware(async () => {
+export const GET = withApiMiddleware(async (req: NextRequest) => {
   const items = await registryService.getAllItems();
-  return NextResponse.json(items);
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return NextResponse.json(maskRegistryItems(items));
+  }
+  return NextResponse.json(sanitizeRegistryItems(items));
 });

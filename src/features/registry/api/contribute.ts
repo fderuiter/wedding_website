@@ -3,6 +3,8 @@ import { registryService } from '../service';
 import { ContributionSchema } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { isAdminRequest } from '@/core/auth/auth.server';
+import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const data = await request.json();
@@ -19,5 +21,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     amount
   });
 
-  return NextResponse.json(updatedItem);
+  const isAdmin = await isAdminRequest(request);
+  if (!isAdmin) {
+    return NextResponse.json(maskRegistryItem(updatedItem));
+  }
+  return NextResponse.json(sanitizeRegistryItem(updatedItem));
 });
