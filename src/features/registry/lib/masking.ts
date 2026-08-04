@@ -1,4 +1,4 @@
-export function sanitizeContributor(contributor: any) {
+function sanitizeContributor(contributor: any) {
   if (!contributor) return contributor;
   const { email, ...rest } = contributor;
   return rest;
@@ -21,7 +21,7 @@ export function sanitizeRegistryItems(items: any) {
   return sanitizeRegistryItem(items);
 }
 
-export function maskContributor(contributor: any) {
+function maskContributor(contributor: any) {
   if (!contributor) return contributor;
   const { email, ...rest } = contributor;
   return {
