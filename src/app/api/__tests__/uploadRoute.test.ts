@@ -18,6 +18,8 @@ jest.mock('crypto', () => ({
 
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { writeFile } from 'fs/promises';
+import { resetStorageProvider } from '@/utils/storage';
+import { S3Client } from '@aws-sdk/client-s3';
 
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
@@ -59,9 +61,23 @@ function makeRequest(overrides: {
 }
 
 describe('POST /api/admin/upload', () => {
+  const originalEnv = { ...process.env };
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockWriteFile.mockResolvedValue(undefined);
+    resetStorageProvider();
+    process.env = { ...originalEnv };
+    delete process.env.S3_BUCKET;
+    delete process.env.S3_REGION;
+    delete process.env.S3_ACCESS_KEY_ID;
+    delete process.env.S3_SECRET_ACCESS_KEY;
+    delete process.env.S3_ENDPOINT;
+    delete process.env.S3_PUBLIC_URL;
+  });
+
+  afterAll(() => {
+    process.env = { ...originalEnv };
   });
 
   describe('authentication', () => {
@@ -286,6 +302,32 @@ describe('POST /api/admin/upload', () => {
       // In production, two calls would produce different hashes
       expect(json1.data.url).toMatch(/^\/uploads\//);
       expect(json2.data.url).toMatch(/^\/uploads\//);
+    });
+  });
+
+  describe('S3 storage provider integration flow', () => {
+    beforeEach(() => {
+      mockIsAdminRequest.mockResolvedValue(true);
+      process.env.S3_BUCKET = 'wedding-bucket';
+      process.env.S3_REGION = 'us-east-1';
+      process.env.S3_ACCESS_KEY_ID = 'test-key';
+      process.env.S3_SECRET_ACCESS_KEY = 'test-secret';
+      process.env.S3_PUBLIC_URL = 'https://cdn.wedding-assets.com';
+      resetStorageProvider();
+    });
+
+    it('routes uploads to S3 storage and returns a public URL when configured', async () => {
+      const mockSend = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as any);
+
+      const req = makeRequest({});
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.data.url).toMatch(/^https:\/\/cdn\.wedding-assets\.com\/uploads\/[a-f0-9]{16}\.png$/);
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      mockSend.mockRestore();
     });
   });
 
