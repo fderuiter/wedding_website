@@ -1,43 +1,4 @@
 import { z } from 'zod';
-import fs from 'node:fs';
-import path from 'node:path';
-
-// Strict Test Environment Isolation: Ignore parent shell environment variables during test phase
-if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) {
-  const rootDir = process.cwd();
-  const envPath = path.join(rootDir, '.env.test');
-  const envTest = {};
-  if (fs.existsSync(envPath)) {
-    try {
-      const content = fs.readFileSync(envPath, 'utf8');
-      for (const line of content.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const match = trimmed.match(/^([^=]+)=(.*)$/);
-        if (match) {
-          const key = match[1].trim();
-          let val = match[2].trim();
-          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-            val = val.slice(1, -1);
-          }
-          envTest[key] = val;
-        }
-      }
-    } catch {
-      // Ignore reading errors
-    }
-  }
-
-  // Clear parent shell database variables
-  const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE'];
-  for (const v of pgVars) {
-    delete process.env[v];
-  }
-
-  // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-  const testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
-  process.env.DATABASE_URL = testDbUrl;
-}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
