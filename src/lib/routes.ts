@@ -48,6 +48,12 @@ const APP_ROUTES: AppRoute[] = [
 ];
 
 // Utility functions
+export function normalizePath(p: string): string {
+  if (!p) return '';
+  const stripped = p.replace(/\/+$/, '');
+  return stripped === '' ? '/' : stripped;
+}
+
 export function getNavLinks(role: RouteRole) {
   return APP_ROUTES.filter(route => 
     route.showInNav && route.roles.includes(role)
@@ -58,12 +64,15 @@ export function getNavLinks(role: RouteRole) {
 }
 
 export function isProtectedRoute(pathname: string, method: string = 'GET'): boolean {
+  const normalizedPathname = normalizePath(pathname);
+
   // Find the most specific matching route
   const matches = APP_ROUTES.filter(route => {
+    const normalizedRoutePath = normalizePath(route.path);
     // Exact match or prefix match
     const isPathMatch = route.exact 
-      ? pathname === route.path 
-      : pathname.startsWith(route.path);
+      ? normalizedPathname === normalizedRoutePath 
+      : normalizedPathname.startsWith(normalizedRoutePath);
       
     if (!isPathMatch) return false;
     
@@ -78,7 +87,11 @@ export function isProtectedRoute(pathname: string, method: string = 'GET'): bool
   if (matches.length === 0) return false;
 
   // Sort matches by path length descending to get the most specific match
-  matches.sort((a, b) => b.path.length - a.path.length);
+  matches.sort((a, b) => {
+    const lenA = normalizePath(a.path).length;
+    const lenB = normalizePath(b.path).length;
+    return lenB - lenA;
+  });
   
   const bestMatch = matches[0];
   
