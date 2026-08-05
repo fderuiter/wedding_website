@@ -198,12 +198,70 @@ describe('Maintenance API Routes Integration Tests', () => {
 
     test('executes transaction to clear old records and bulk inserts backup successfully', async () => {
       const validBackup = {
-        appConfig: [{ id: 'global', brideName: 'Alice', createdAt: '2026-06-20T00:00:00.000Z' }],
-        contentNode: [{ id: 'cn1', body: 'Story text' }],
-        weddingPartyMember: [{ id: 'wp1', name: 'Bob' }],
-        attraction: [{ id: 'att1', name: 'Coaster' }],
-        registryItem: [{ id: 'ri1', name: 'Plates' }],
-        contributor: [{ id: 'c1', name: 'John' }],
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        contentNode: [
+          {
+            id: 'cn1',
+            type: 'FAQ',
+            tags: ['FAQ'],
+            data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        weddingPartyMember: [
+          {
+            id: 'wp1',
+            name: 'Bob',
+            role: 'Best Man',
+            bio: 'Best Man Bio',
+            photoId: 'photo-id',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        attraction: [
+          {
+            id: 'att1',
+            name: 'Coaster',
+            description: 'Coaster Description',
+            category: 'Fun',
+            website: 'https://coaster.com',
+            directions: 'Ride instructions',
+            latitude: 41.8781,
+            longitude: -87.6298,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: 50,
+            imageId: 'image-id',
+            quantity: 2,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        contributor: [
+          {
+            id: 'c1',
+            name: 'John',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
       };
 
       // Mock database transaction client
@@ -240,22 +298,80 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       // Verify that createMany was called with correctly revived Date objects
       expect(mockTx.appConfig.createMany).toHaveBeenCalledWith({
-        data: [{ id: 'global', brideName: 'Alice', createdAt: new Date('2026-06-20T00:00:00.000Z') }],
+        data: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
       });
       expect(mockTx.contentNode.createMany).toHaveBeenCalledWith({
-        data: [{ id: 'cn1', body: 'Story text' }],
+        data: [
+          {
+            id: 'cn1',
+            type: 'FAQ',
+            tags: ['FAQ'],
+            data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
       });
       expect(mockTx.weddingPartyMember.createMany).toHaveBeenCalledWith({
-        data: [{ id: 'wp1', name: 'Bob' }],
+        data: [
+          {
+            id: 'wp1',
+            name: 'Bob',
+            role: 'Best Man',
+            bio: 'Best Man Bio',
+            photoId: 'photo-id',
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
       });
       expect(mockTx.attraction.createMany).toHaveBeenCalledWith({
-        data: [{ id: 'att1', name: 'Coaster' }],
+        data: [
+          {
+            id: 'att1',
+            name: 'Coaster',
+            description: 'Coaster Description',
+            category: 'Fun',
+            website: 'https://coaster.com',
+            directions: 'Ride instructions',
+            latitude: 41.8781,
+            longitude: -87.6298,
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
       });
       expect(mockTx.registryItem.createMany).toHaveBeenCalledWith({
-        data: [{ id: 'ri1', name: 'Plates' }],
+        data: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: 50,
+            imageId: 'image-id',
+            quantity: 2,
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
       });
       expect(mockTx.contributor.createMany).toHaveBeenCalledWith({
-        data: [{ id: 'c1', name: 'John' }],
+        data: [
+          {
+            id: 'c1',
+            name: 'John',
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
       });
 
       // Wait a tick to let background microtasks/audit logs run
@@ -267,31 +383,72 @@ describe('Maintenance API Routes Integration Tests', () => {
           {
             entityType: 'AppConfig',
             entityId: 'global',
-            data: { id: 'global', brideName: 'Alice', createdAt: new Date('2026-06-20T00:00:00.000Z') },
+            data: {
+              id: 'global',
+              brideName: 'Alice',
+              createdAt: new Date('2026-06-20T00:00:00.000Z'),
+              updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+            },
             author: 'Admin/BulkImport',
           },
           {
             entityType: 'ContentNode',
             entityId: 'cn1',
-            data: { id: 'cn1', body: 'Story text' },
+            data: {
+              id: 'cn1',
+              type: 'FAQ',
+              tags: ['FAQ'],
+              data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+              createdAt: new Date('2026-06-20T00:00:00.000Z'),
+              updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+            },
             author: 'Admin/BulkImport',
           },
           {
             entityType: 'WeddingPartyMember',
             entityId: 'wp1',
-            data: { id: 'wp1', name: 'Bob' },
+            data: {
+              id: 'wp1',
+              name: 'Bob',
+              role: 'Best Man',
+              bio: 'Best Man Bio',
+              photoId: 'photo-id',
+              createdAt: new Date('2026-06-20T00:00:00.000Z'),
+              updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+            },
             author: 'Admin/BulkImport',
           },
           {
             entityType: 'Attraction',
             entityId: 'att1',
-            data: { id: 'att1', name: 'Coaster' },
+            data: {
+              id: 'att1',
+              name: 'Coaster',
+              description: 'Coaster Description',
+              category: 'Fun',
+              website: 'https://coaster.com',
+              directions: 'Ride instructions',
+              latitude: 41.8781,
+              longitude: -87.6298,
+              createdAt: new Date('2026-06-20T00:00:00.000Z'),
+              updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+            },
             author: 'Admin/BulkImport',
           },
           {
             entityType: 'RegistryItem',
             entityId: 'ri1',
-            data: { id: 'ri1', name: 'Plates' },
+            data: {
+              id: 'ri1',
+              name: 'Plates',
+              description: 'Ceramic Plates',
+              category: 'Kitchen',
+              price: 50,
+              imageId: 'image-id',
+              quantity: 2,
+              createdAt: new Date('2026-06-20T00:00:00.000Z'),
+              updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+            },
             author: 'Admin/BulkImport',
           },
         ]
@@ -309,8 +466,27 @@ describe('Maintenance API Routes Integration Tests', () => {
 
     test('re-throws transaction execution errors and handles rollbacks', async () => {
       const validBackup = {
-        appConfig: [{ id: 'global', brideName: 'Alice' }],
-        registryItem: [{ id: 'ri1', name: 'Plates' }],
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: 50,
+            imageId: 'image-id',
+            quantity: 2,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
       };
 
       mockPrisma.$transaction.mockRejectedValue(new Error('Transaction Failed'));
@@ -329,8 +505,27 @@ describe('Maintenance API Routes Integration Tests', () => {
 
     test('handles errors during bulk import audit snapshot creation', async () => {
       const validBackup = {
-        appConfig: [{ id: 'global', brideName: 'Alice' }],
-        registryItem: [{ id: 'ri1', name: 'Plates' }],
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: 50,
+            imageId: 'image-id',
+            quantity: 2,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
       };
 
       const mockTx = {
@@ -373,6 +568,7 @@ describe('Maintenance API Routes Integration Tests', () => {
             id: 'global',
             brideName: 'Alice',
             createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
             nullField: null,
             undefinedField: undefined,
             numberField: 42,
@@ -380,7 +576,19 @@ describe('Maintenance API Routes Integration Tests', () => {
             arrayField: ['2026-06-20T00:00:00.000Z', { nestedDate: '2026-06-20T00:00:00.000Z' }],
           },
         ],
-        registryItem: [{ id: 'ri1', name: 'Plates' }],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: 50,
+            imageId: 'image-id',
+            quantity: 2,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
       };
 
       const mockTx = {
@@ -412,6 +620,7 @@ describe('Maintenance API Routes Integration Tests', () => {
             id: 'global',
             brideName: 'Alice',
             createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
             nullField: null,
             undefinedField: undefined,
             numberField: 42,
@@ -453,6 +662,153 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       expect(mockTx.appConfig.createMany).not.toHaveBeenCalled();
       expect(mockTx.registryItem.createMany).not.toHaveBeenCalled();
+    });
+
+    test('rejects backup with out-of-range numeric fields', async () => {
+      const invalidBackup = {
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: -5.0, // Invalid: negative price
+            imageId: 'image-id',
+            quantity: 2,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(invalidBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Validation Error');
+      expect(body.error).toContain('registryItem.0.price');
+    });
+
+    test('rejects backup with malformed email addresses', async () => {
+      const invalidBackup = {
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [],
+        contributor: [
+          {
+            id: 'c1',
+            name: 'John',
+            email: 'not-an-email', // Invalid email format
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(invalidBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Validation Error');
+      expect(body.error).toContain('contributor.0.email');
+    });
+
+    test('rejects backup with missing database-required columns', async () => {
+      const invalidBackup = {
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [],
+        weddingPartyMember: [
+          {
+            id: 'wp1',
+            // Missing required 'name' field
+            role: 'Best Man',
+            bio: 'Bio text',
+            photoId: 'photo-id',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(invalidBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Validation Error');
+      expect(body.error).toContain('weddingPartyMember.0.name');
+    });
+
+    test('rejection of invalid imports leaves the existing system database untouched', async () => {
+      const invalidBackup = {
+        appConfig: [
+          {
+            id: 'global',
+            brideName: 'Alice',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Plates',
+            description: 'Ceramic Plates',
+            category: 'Kitchen',
+            price: 50,
+            imageId: 'image-id',
+            quantity: -10, // Invalid: negative quantity
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(invalidBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+
+      // Verify transaction was never initialized
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });
