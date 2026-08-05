@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -94,7 +96,79 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
       - name: Run tests
+        id: run_tests
         run: npm test
+      - name: Run Differential Coverage Guard
+        id: diff-coverage
+        if: always() && github.event_name == 'pull_request' && (steps.run_tests.outcome == 'success' || steps.run_tests.outcome == 'failure')
+        run: |
+          if [ -f "coverage/lcov.info" ]; then
+            node scripts/differential-coverage.mjs
+          else
+            echo "coverage/lcov.info not found, skipping coverage analysis."
+            echo "none" > coverage-status.txt
+            cat << 'EOF' > coverage-summary.md
+<!-- diff-coverage-guard-comment -->
+### 🛡️ Differential Code Coverage Guard
+
+⚠️ LCOV coverage report not found. Skipping coverage checks.
+EOF
+          fi
+      - name: Write Coverage Report to Job Summary
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          if [ -f "coverage-summary.md" ]; then
+            cat coverage-summary.md >> $GITHUB_STEP_SUMMARY
+          fi
+      - name: Post Coverage Report to PR Comment
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const signature = '<!-- diff-coverage-guard-comment -->';
+            const reportPath = 'coverage-summary.md';
+            
+            if (fs.existsSync(reportPath)) {
+              const commentBody = fs.readFileSync(reportPath, 'utf8');
+              
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number
+              });
+              const existing = comments.data.find(c => c.body.includes(signature));
+              
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: commentBody
+                });
+                console.log('Successfully updated existing coverage comment.');
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: commentBody
+                });
+                console.log('Successfully created new coverage comment.');
+              }
+            } else {
+              console.log('coverage-summary.md not found, skipping PR comment.');
+            }
+      - name: Enforce Coverage Threshold
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          if [ -f "coverage-status.txt" ]; then
+            STATUS=$(cat coverage-status.txt)
+            if [ "$STATUS" = "fail" ]; then
+              echo "Error: Some modified/added files failed the 80% differential coverage threshold."
+              exit 1
+            fi
+          fi
       - name: Run e2e tests
         run: npx playwright test
       - name: Generate A11y Report
