@@ -1,4 +1,6 @@
 import { ImportBackupSchema } from '@/utils/validation';
+import { DatabaseBackupSchema, formatZodError } from '@/utils/backupValidation';
+import { z } from 'zod';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -55,6 +57,15 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   if (!data.appConfig || !data.registryItem) {
     throw new ApiError(400, 'Invalid backup file structure');
+  }
+
+  try {
+    DatabaseBackupSchema.parse(data);
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      throw new ApiError(400, `Validation Error: ${formatZodError(err)}`);
+    }
+    throw err;
   }
 
   await prisma.$transaction(async (tx) => {
