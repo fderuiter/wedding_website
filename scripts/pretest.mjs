@@ -135,8 +135,38 @@ async function main() {
       console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
     }
 
-    // Synchronize schema to isolated test database
-    const testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+    // Helper to load and parse .env.test
+    const envPath = path.join(rootDir, '.env.test');
+    let envTest = {};
+    if (fs.existsSync(envPath)) {
+      try {
+        const content = fs.readFileSync(envPath, 'utf8');
+        for (const line of content.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const match = trimmed.match(/^([^=]+)=(.*)$/);
+          if (match) {
+            const key = match[1].trim();
+            let val = match[2].trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            envTest[key] = val;
+          }
+        }
+      } catch {
+        // Fallback to empty if error reading file
+      }
+    }
+
+    // Strict Test Environment Isolation: Ignore parent shell database environment variables
+    const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE'];
+    for (const v of pgVars) {
+      delete process.env[v];
+    }
+
+    // Determine the isolated test database URL from dedicated test settings, or use safe fallback
+    const testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
     process.env.DATABASE_URL = testDbUrl;
     console.log(`Synchronizing schema to isolated test database: ${testDbUrl}`);
 
