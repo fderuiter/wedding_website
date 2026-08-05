@@ -1,0 +1,55 @@
+# 1. Dependency directories
+node_modules
+**/node_modules
+
+# 2. Next.js / Turbopack build compilation cache and intermediate output
+.next
+.turbo
+out
+build
+
+# 3. Local environment configurations & sensitive credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.test
+.env.development
+.env.production
+.env*
+*.pem
+*.key
+*.pub
+
+# 4. Host-specific / Developer tool configuration files
+.git
+.gitattributes
+.github
+.gitignore
+.dockerignore
+.husky
+.vscode
+.idea
+.vercel
+.jules
+.Jules
+
+# 5. Local testing logs, directories, and build artifacts
+test-results
+playwright-report
+coverage
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 6. OS-specific files
+.DS_Store
+._*
+
+# 7. TypeScript build caches
+tsconfig.tsbuildinfo
