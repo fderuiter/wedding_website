@@ -137,7 +137,7 @@ async function main() {
 
     // Helper to load and parse .env.test
     const envPath = path.join(rootDir, '.env.test');
-    let envTest = {};
+    const envTest = {};
     if (fs.existsSync(envPath)) {
       try {
         const content = fs.readFileSync(envPath, 'utf8');

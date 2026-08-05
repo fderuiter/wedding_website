@@ -1,6 +1,53 @@
 // Optional: configure or set up a testing framework before each test
 // if you delete this file, remove `setupFilesAfterEnv` from `jest.config.js`
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Strict Test Environment Isolation: Ignore parent shell environment variables during Jest test execution
+(() => {
+  const rootDir = process.cwd();
+  const envPath = path.join(rootDir, '.env.test');
+  const envTest = {};
+
+  if (fs.existsSync(envPath)) {
+    try {
+      const content = fs.readFileSync(envPath, 'utf8');
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const match = trimmed.match(/^([^=]+)=(.*)$/);
+        if (match) {
+          const key = match[1].trim();
+          let val = match[2].trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          envTest[key] = val;
+        }
+      }
+    } catch {
+      // Ignore reading errors
+    }
+  }
+
+  // Clear parent shell database variables
+  const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE'];
+  for (const v of pgVars) {
+    delete process.env[v];
+  }
+
+  // Load other environment variables from .env.test into process.env if they are not already set,
+  // or overwrite them to ensure clean isolation
+  for (const [key, value] of Object.entries(envTest)) {
+    process.env[key] = value;
+  }
+
+  // Determine the isolated test database URL from dedicated test settings, or use safe fallback
+  const testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+  process.env.DATABASE_URL = testDbUrl;
+})();
+
 // Provide standard crypto mock in Jest test environments:
 if (typeof global.crypto === 'undefined') {
   global.crypto = require('crypto');
