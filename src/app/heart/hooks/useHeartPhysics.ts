@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { ContactForcePayload } from '@react-three/rapier';
@@ -35,6 +35,8 @@ export function useHeartPhysics({
   breakHeart,
   setShowEasterEgg
 }: UseHeartPhysicsProps) {
+
+  const wasInSecretSpot = useRef(false);
 
   const handleContactForce = (payload: ContactForcePayload) => {
     if (!isBroken && payload.totalForceMagnitude > PHYSICS_CONSTANTS.BREAK_FORCE_THRESHOLD) {
@@ -131,10 +133,10 @@ export function useHeartPhysics({
         x: viewportWidth / 2 - 2,
         y: viewportHeight / 2 - 2,
       };
-      if (position.x > secretSpot.x && position.y > secretSpot.y) {
-        setShowEasterEgg(true);
-      } else {
-        setShowEasterEgg(false);
+      const isInSecretSpot = position.x > secretSpot.x && position.y > secretSpot.y;
+      if (isInSecretSpot !== wasInSecretSpot.current) {
+        wasInSecretSpot.current = isInSecretSpot;
+        setShowEasterEgg(isInSecretSpot);
       }
 
       if (!interacted) {

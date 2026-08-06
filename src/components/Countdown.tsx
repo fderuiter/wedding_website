@@ -38,26 +38,30 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     return timeLeft;
   }, [weddingDate]);
 
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft());
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft());
 
   useEffect(() => {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
     const calculateAndSetTimeout = () => {
       const now = new Date();
       const midnight = new Date();
       midnight.setHours(24, 0, 0, 0);
       const timeToMidnight = midnight.getTime() - now.getTime();
 
-      const timer = setTimeout(() => {
+      timerId = setTimeout(() => {
         setTimeLeft(calculateTimeLeft());
         calculateAndSetTimeout(); // Recalculate for the next day
       }, timeToMidnight);
-
-      return timer;
     };
 
-    const timer = calculateAndSetTimeout();
+    calculateAndSetTimeout();
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
   }, [calculateTimeLeft]);
 
   const timerComponents: React.ReactNode[] = [];
