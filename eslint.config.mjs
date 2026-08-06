@@ -2,6 +2,8 @@ import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import nextTypescript from 'eslint-config-next/typescript';
 import stylistic from '@stylistic/eslint-plugin';
 import unusedImports from 'eslint-plugin-unused-imports';
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
 import noDeprecatedImports from './eslint-rules/no-deprecated-imports.mjs';
 
 const isCI = process.env.CI === 'true' || process.env.CI === '1' || process.env.GITHUB_ACTIONS === 'true';
@@ -13,6 +15,8 @@ const eslintConfig = [
     plugins: {
       '@stylistic': stylistic,
       'unused-imports': unusedImports,
+      react,
+      'react-hooks': reactHooks,
       'local-rules': {
         rules: {
           'no-deprecated-imports': noDeprecatedImports,
