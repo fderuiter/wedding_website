@@ -4,6 +4,27 @@ import React, { useRef, useEffect, ElementType, ComponentPropsWithoutRef } from 
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
 
+const motionComponentCache = new Map<ElementType, any>();
+
+function getMotionComponent(Component: ElementType) {
+  if (!motionComponentCache.has(Component)) {
+    const MotionComponent = (motion as any).create ? (motion as any).create(Component) : (motion as any)(Component);
+    motionComponentCache.set(Component, MotionComponent);
+  }
+  return motionComponentCache.get(Component);
+}
+
+const MotionComponentWrapper = React.forwardRef<any, { asComponent: ElementType; [key: string]: any }>(
+  (props, ref) => {
+    const { asComponent, children, ...rest } = props;
+    const holder = {
+      C: getMotionComponent(asComponent)
+    };
+    return <holder.C ref={ref} {...rest}>{children}</holder.C>;
+  }
+);
+MotionComponentWrapper.displayName = 'MotionComponentWrapper';
+
 type Interactive3DCardProps<T extends ElementType> = {
   as?: T;
   children: React.ReactNode;
@@ -94,10 +115,9 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
     }
   }, [Component, isInteractive]);
 
-  const MotionComponent = (motion as any).create ? (motion as any).create(Component) : (motion as any)(Component);
-
   return (
-    <MotionComponent
+    <MotionComponentWrapper
+      asComponent={Component}
       ref={ref}
       {...(props as any)}
       className={className}
@@ -115,6 +135,6 @@ export function Interactive3DCard<T extends ElementType = 'div'>({
     >
       {AccessibleElements}
       {children}
-    </MotionComponent>
+    </MotionComponentWrapper>
   );
 }

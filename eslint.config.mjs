@@ -42,11 +42,11 @@ const eslintConfig = [
       '@typescript-eslint/no-require-imports': 'warn',
       'prefer-const': 'warn',
       'react/no-unescaped-entities': 'warn',
-      'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/immutability': 'warn',
-      'react-hooks/static-components': 'warn',
-      'react-hooks/purity': 'warn',
-      'react-hooks/refs': 'warn',
+      'react-hooks/set-state-in-effect': 'error',
+      'react-hooks/immutability': 'error',
+      'react-hooks/static-components': 'error',
+      'react-hooks/purity': 'error',
+      'react-hooks/refs': 'error',
 
       ...(!isCI ? {
         '@typescript-eslint/no-unused-vars': 'off',
@@ -56,6 +56,26 @@ const eslintConfig = [
           { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
         ]
       } : {})
+    }
+  },
+  {
+    files: [
+      '**/src/app/admin/dashboard/history/page.tsx',
+      '**/src/app/admin/dashboard/media/page.tsx',
+      '**/src/app/admin/dashboard/settings/page.tsx',
+      '**/src/app/heart/__tests__/page.test.tsx',
+      '**/src/components/ThemeProvider.tsx',
+      '**/src/components/ui/GlobalRadialGlow.tsx',
+      '**/src/features/registry/hooks/useRegistry.ts',
+      '**/src/features/registry/pages/edit-item.tsx',
+      '**/src/hooks/useUnified3DInput.ts',
+    ],
+    rules: {
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/refs': 'warn',
     }
   }
 ];
