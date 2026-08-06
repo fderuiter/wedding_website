@@ -31,6 +31,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Start local test database and application container
+        timeout-minutes: 2
+        run: |
+          docker compose up --build -d app
+
+      - name: Wait for application to be ready
+        timeout-minutes: 2
+        run: |
+          echo "Waiting for application to boot on port 3000..."
+          timeout 120 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
+          echo "Application is responsive!"
+
+      - name: Seed local database
+        timeout-minutes: 1
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding
+        run: |
+          npm run db:seed
+
+      - name: Install Playwright Browsers
+        timeout-minutes: 2
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright smoke tests against container
+        timeout-minutes: 3
+        env:
+          TEST_CONTAINER: "true"
+        run: npx playwright test
+
+      - name: Print container logs on failure
+        if: failure()
+        run: |
+          echo "=== App Container Logs ==="
+          docker compose logs app || true
+          echo "=== DB Container Logs ==="
+          docker compose logs db || true
+
+      - name: Clean up containers
+        if: always()
+        run: docker compose down -v || true
+
       - name: Run Database Migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

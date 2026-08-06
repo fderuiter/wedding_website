@@ -1,8 +1,10 @@
 import { defineConfig } from '@playwright/test';
 
+const runWebServer = !process.env.TEST_CONTAINER;
+
 export default defineConfig({
   testDir: './e2e',
-  webServer: {
+  webServer: runWebServer ? {
     command: process.env.CI ? 'npm run start' : 'npm run dev',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: !process.env.CI,
@@ -12,7 +14,7 @@ export default defineConfig({
       POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
     },
-  },
+  } : undefined,
   use: {
     baseURL: 'http://127.0.0.1:3000',
   },
