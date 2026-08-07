@@ -207,12 +207,12 @@ const noDeprecatedImportsRule = {
     return {
       ImportDeclaration(node) {
         const importPath = node.source.value;
-        const currentFile = context.filename || context.getFilename();
+        const currentFile = (context.filename || (typeof context.getFilename === 'function' ? context.getFilename() : '')) || '';
 
         // 1. Resolve absolute path of import
         let resolvedPath = null;
         if (importPath.startsWith('@/')) {
-          resolvedPath = path.resolve('/app', 'src', importPath.slice(2));
+          resolvedPath = path.resolve(process.cwd(), 'src', importPath.slice(2));
         } else if (importPath.startsWith('./') || importPath.startsWith('../')) {
           resolvedPath = path.resolve(path.dirname(currentFile), importPath);
         } else {
@@ -221,7 +221,7 @@ const noDeprecatedImportsRule = {
 
         // 2. Only check if target is inside shared folders: components, utils, lib, hooks
         const SHARED_DIRS = ['src/components/', 'src/utils/', 'src/lib/', 'src/hooks/'];
-        const absoluteSharedDirs = SHARED_DIRS.map(dir => path.join('/app', dir));
+        const absoluteSharedDirs = SHARED_DIRS.map(dir => path.join(process.cwd(), dir));
         const isShared = absoluteSharedDirs.some(sharedDir => resolvedPath.startsWith(sharedDir));
         if (!isShared) {
           return;
