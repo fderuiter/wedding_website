@@ -22,10 +22,17 @@ describe('routes', () => {
     });
 
     it('should normalize evaluated request paths with trailing slashes prior to matching', () => {
-      // /api/registry/add-item is exact: true, admin route.
-      // /api/registry/add-item/ with trailing slash should be recognized as protected.
-      expect(isProtectedRoute('/api/registry/add-item/', 'POST')).toBe(true);
-      expect(isProtectedRoute('/api/registry/add-item//', 'POST')).toBe(true);
+      // /api/registry/scrape is exact: true, admin route.
+      // /api/registry/scrape/ with trailing slash should be recognized as protected.
+      expect(isProtectedRoute('/api/registry/scrape/', 'POST')).toBe(true);
+      expect(isProtectedRoute('/api/registry/scrape//', 'POST')).toBe(true);
+    });
+
+    it('should handle registry items route protections by method correctly', () => {
+      expect(isProtectedRoute('/api/registry/items', 'GET')).toBe(false);
+      expect(isProtectedRoute('/api/registry/items', 'POST')).toBe(true);
+      expect(isProtectedRoute('/api/registry/items', 'PUT')).toBe(true);
+      expect(isProtectedRoute('/api/registry/items', 'DELETE')).toBe(true);
     });
 
     it('should correctly handle trailing slashes on prefix-based protected routes', () => {

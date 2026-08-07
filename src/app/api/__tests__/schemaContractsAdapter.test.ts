@@ -26,8 +26,7 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-import { POST as addItemPOST } from '@/app/api/registry/add-item/route';
-import { GET as getItemsGET } from '@/app/api/registry/items/route';
+import { POST as addItemPOST, GET as getItemsGET } from '@/app/api/registry/items/route';
 import { POST as restorePOST } from '@/app/api/admin/versions/[id]/restore/route';
 import { registryService } from '@/features/registry/service';
 import { isAdminRequest } from '@/core/auth/auth.server';
@@ -73,7 +72,7 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         legacy_isGroupGift: true,
       };
 
-      const req = new Request('http://localhost/api/registry/add-item', {
+      const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +121,7 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         legacy_price: 99.99, // missing legacy_name, legacy_quantity, legacy_category
       };
 
-      const req = new Request('http://localhost/api/registry/add-item', {
+      const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

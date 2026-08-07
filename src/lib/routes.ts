@@ -40,9 +40,8 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/admin/login', label: 'Admin', roles: ['public'], showInNav: true, exact: true },
 
   // API Registry Routes (Protected)
-  { path: '/api/registry/add-item', roles: ['admin'], exact: true },
   { path: '/api/registry/scrape', roles: ['admin'], exact: true },
-  { path: '/api/registry/items', roles: ['admin'], methods: ['PUT', 'DELETE'], exact: false },
+  { path: '/api/registry/items', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false },
   { path: '/api/media', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false },
   { path: '/api/admin', roles: ['admin'], exact: false }, // Catch-all for other /api/admin
 ];

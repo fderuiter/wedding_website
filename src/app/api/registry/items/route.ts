@@ -1,1 +1,1 @@
-export { registryGetItemsGET as GET } from '@/features/registry';
+export { registryGetItemsGET as GET, registryAddItemPOST as POST } from '@/features/registry';
