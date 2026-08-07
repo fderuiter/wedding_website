@@ -6,6 +6,7 @@ interface ValidatedRouteConfig<T extends z.ZodTypeAny = any, L extends z.ZodType
   schema?: T | ((params: any) => T);
   legacySchema?: L | ((params: any) => L);
   translateLegacy?: (legacyBody: z.infer<L>) => z.infer<T>;
+  translateActiveToLegacy?: (activeData: any) => any;
   handler: (
     req: NextRequest,
     context: { params: any; body: z.infer<T> }
@@ -93,7 +94,9 @@ export function createValidatedRoute<T extends z.ZodTypeAny, L extends z.ZodType
     return config.handler(req, enhancedContext);
   };
 
-  const wrapped = withApiMiddleware(baseHandler);
+  const wrapped = withApiMiddleware(baseHandler, {
+    translateActiveToLegacy: config.translateActiveToLegacy,
+  });
   
   // Expose configuration metadata programmatically for potential future use or generators
   (wrapped as any).config = config;

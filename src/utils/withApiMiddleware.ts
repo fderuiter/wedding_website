@@ -4,11 +4,14 @@ import { rateLimit } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
-import { translateActiveToLegacy } from '@/features/registry/schemas';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
-export function withApiMiddleware(handler: RouteHandler) {
+export interface ApiMiddlewareOptions {
+  translateActiveToLegacy?: (activeData: any) => any;
+}
+
+export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddlewareOptions) {
   return async (req: NextRequest, context: any) => {
     try {
       let pathname = '/';
@@ -67,8 +70,8 @@ export function withApiMiddleware(handler: RouteHandler) {
         isLegacy = (versionHeader === 'v1' || versionParam === 'v1');
       }
 
-      if (isLegacy) {
-        data = translateActiveToLegacy(data);
+      if (isLegacy && options?.translateActiveToLegacy) {
+        data = options.translateActiveToLegacy(data);
       }
 
       let finalResponse: NextResponse;

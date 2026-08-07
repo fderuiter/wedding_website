@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
-import { RegistryItemBaseSchema, LegacyRegistryItemBaseSchema, translateLegacyToActive } from '../schemas';
+import { RegistryItemBaseSchema, LegacyRegistryItemBaseSchema, translateLegacyToActive, translateActiveToLegacy } from '../schemas';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 
 /**
@@ -30,6 +30,7 @@ export const POST = createValidatedRoute({
   schema: RegistryItemBaseSchema,
   legacySchema: LegacyRegistryItemBaseSchema,
   translateLegacy: translateLegacyToActive,
+  translateActiveToLegacy,
   handler: async (_request: NextRequest, { body }) => {
     const newItemData = body;
 

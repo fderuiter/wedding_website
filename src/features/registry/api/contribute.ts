@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
-import { ContributionSchema } from '../schemas';
+import { ContributionSchema, translateActiveToLegacy } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { isAdminRequest } from '@/core/auth/auth.server';
@@ -26,4 +26,4 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     return NextResponse.json(maskRegistryItem(updatedItem));
   }
   return NextResponse.json(sanitizeRegistryItem(updatedItem));
-});
+}, { translateActiveToLegacy });
