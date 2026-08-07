@@ -36,7 +36,7 @@ describe('Registry API routes', () => {
     jest.clearAllMocks();
   });
 
-  describe('POST /api/registry/add-item', () => {
+  describe('POST /api/registry/items', () => {
     const validItem = {
       name: 'Toaster',
       price: 50,
@@ -46,7 +46,7 @@ describe('Registry API routes', () => {
 
     it('returns 401 when unauthorized', async () => {
       mockIsAdminRequest.mockResolvedValue(false);
-      const req = new Request('http://localhost/api/registry/add-item', {
+      const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         body: JSON.stringify(validItem),
       });
@@ -60,7 +60,7 @@ describe('Registry API routes', () => {
       mockIsAdminRequest.mockResolvedValue(true);
       const created = { id: '1', ...validItem };
       mockCreateItem.mockResolvedValue(created);
-      const req = new Request('http://localhost/api/registry/add-item', {
+      const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         body: JSON.stringify(validItem),
       });
@@ -73,7 +73,7 @@ describe('Registry API routes', () => {
 
     it('returns 400 for invalid input', async () => {
       mockIsAdminRequest.mockResolvedValue(true);
-      const req = new Request('http://localhost/api/registry/add-item', {
+      const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         body: JSON.stringify({ price: -1 }),
       });
@@ -86,7 +86,7 @@ describe('Registry API routes', () => {
     it('returns 500 when service fails', async () => {
       mockIsAdminRequest.mockResolvedValue(true);
       mockCreateItem.mockRejectedValue(new Error('DB down'));
-      const req = new Request('http://localhost/api/registry/add-item', {
+      const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         body: JSON.stringify(validItem),
       });
