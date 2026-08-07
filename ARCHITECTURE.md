@@ -93,7 +93,6 @@ flowchart LR
     node_api_media["media"]
     node_api_media_id["[id]"]
     node_api_registry["registry"]
-    node_api_registry_additem["add-item"]
     node_api_registry_contribute["contribute"]
     node_api_registry_items["items"]
     node_api_registry_items_id["[id]"]
@@ -140,7 +139,6 @@ flowchart LR
     node_api --> node_api_media
     node_api_media --> node_api_media_id
     node_api --> node_api_registry
-    node_api_registry --> node_api_registry_additem
     node_api_registry --> node_api_registry_contribute
     node_api_registry --> node_api_registry_items
     node_api_registry_items --> node_api_registry_items_id
@@ -182,7 +180,6 @@ flowchart LR
     class node_api_admin_versions_id_restore api;
     class node_api_media api;
     class node_api_media_id api;
-    class node_api_registry_additem api;
     class node_api_registry_contribute api;
     class node_api_registry_items api;
     class node_api_registry_items_id api;

@@ -707,159 +707,6 @@
         }
       }
     },
-    "/api/registry/add-item": {
-      "post": {
-        "summary": "POST /api/registry/add-item",
-        "description": "Endpoint for /api/registry/add-item",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
-                  },
-                  "price": {
-                    "type": "number",
-                    "exclusiveMinimum": 0
-                  },
-                  "quantity": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "category": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
-                  },
-                  "description": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 2000
-                      },
-                      {
-                        "type": "string",
-                        "const": ""
-                      }
-                    ]
-                  },
-                  "imageId": {
-                    "type": "string"
-                  },
-                  "imageUrl": {
-                    "anyOf": [
-                      {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "maxLength": 2000
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "const": ""
-                      }
-                    ]
-                  },
-                  "imageAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "imageDecorative": {
-                    "type": "boolean"
-                  },
-                  "image": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "url": {
-                        "type": "string"
-                      },
-                      "altText": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "isDecorative": {
-                        "type": "boolean"
-                      },
-                      "createdAt": {},
-                      "updatedAt": {}
-                    },
-                    "required": [
-                      "id",
-                      "url",
-                      "altText",
-                      "isDecorative",
-                      "createdAt",
-                      "updatedAt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "vendorUrl": {
-                    "anyOf": [
-                      {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "maxLength": 2000
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "const": ""
-                      }
-                    ]
-                  },
-                  "isGroupGift": {}
-                },
-                "required": [
-                  "name",
-                  "price",
-                  "quantity",
-                  "category",
-                  "isGroupGift"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
     "/api/registry/contribute": {
       "post": {
         "summary": "POST /api/registry/contribute",
@@ -1108,6 +955,157 @@
       "get": {
         "summary": "GET /api/registry/items",
         "description": "Endpoint for /api/registry/items",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/registry/items",
+        "description": "Endpoint for /api/registry/items",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "price": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "category": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "imageId": {
+                    "type": "string"
+                  },
+                  "imageUrl": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "imageAlt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "imageDecorative": {
+                    "type": "boolean"
+                  },
+                  "image": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "altText": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "isDecorative": {
+                        "type": "boolean"
+                      },
+                      "createdAt": {},
+                      "updatedAt": {}
+                    },
+                    "required": [
+                      "id",
+                      "url",
+                      "altText",
+                      "isDecorative",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "vendorUrl": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "isGroupGift": {}
+                },
+                "required": [
+                  "name",
+                  "price",
+                  "quantity",
+                  "category",
+                  "isGroupGift"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response"
