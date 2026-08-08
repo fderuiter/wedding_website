@@ -120,8 +120,42 @@ async function run() {
         const handlerNode: any = decl;
         const handlerFile = decl.getSourceFile();
 
-        const jsDocNodes = handlerNode.getJsDocs ? handlerNode.getJsDocs() : [];
+        let jsDocNodes = handlerNode.getJsDocs ? handlerNode.getJsDocs() : [];
+        if (jsDocNodes.length === 0 && handlerNode.getParent) {
+          const parent = handlerNode.getParent();
+          if (parent) {
+            const listParent = parent.getParent();
+            if (listParent && listParent.getJsDocs) {
+              jsDocNodes = listParent.getJsDocs();
+            }
+          }
+        }
+
         const description = jsDocNodes.map((doc: any) => doc.getCommentText()).join('\n\n');
+
+        let isDeprecated = false;
+        let deprecationReason = '';
+
+        for (const doc of jsDocNodes) {
+          const tags = doc.getTags ? doc.getTags() : [];
+          for (const tag of tags) {
+            if (tag.getTagName() === 'deprecated') {
+              isDeprecated = true;
+              const tagComment = tag.getComment();
+              if (tagComment) {
+                if (typeof tagComment === 'string') {
+                  deprecationReason = tagComment.trim();
+                } else if (Array.isArray(tagComment)) {
+                  deprecationReason = tagComment.map((c: any) => typeof c === 'string' ? c : c.getText()).join('').trim();
+                } else if (tagComment.getText) {
+                  deprecationReason = tagComment.getText().trim();
+                } else {
+                  deprecationReason = String(tagComment).trim();
+                }
+              }
+            }
+          }
+        }
 
         let schemaName = extractSchemaName(handlerNode);
         if (!schemaName) {
@@ -132,6 +166,15 @@ async function run() {
           summary: `${method} ${routePath}`,
           description: description || `Endpoint for ${routePath}`
         };
+
+        if (isDeprecated) {
+          operation.deprecated = true;
+          if (deprecationReason) {
+            operation.description = operation.description
+              ? `${operation.description} ${deprecationReason}`
+              : deprecationReason;
+          }
+        }
 
         const pathParams = openapiPath.match(/\{([^\}]+)\}/g);
         if (pathParams) {

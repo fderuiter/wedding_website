@@ -963,7 +963,7 @@
       },
       "post": {
         "summary": "POST /api/registry/items",
-        "description": "Endpoint for /api/registry/items",
+        "description": "Adds a new item to the registry.\n\n**Response:**\n*   **`201 Created`** - Returns the newly created `RegistryItem` object.\n    ```json\n    {\n      \"id\": \"clxfa5z...\",\n      \"name\": \"Stand Mixer\",\n      \"description\": \"A powerful stand mixer for all our baking adventures.\",\n      \"category\": \"Kitchen\",\n      \"price\": 299.99,\n      \"image\": \"/images/mixer.jpg\",\n      \"vendorUrl\": \"https://example.com/mixer\",\n      \"quantity\": 1,\n      \"isGroupGift\": false,\n      \"purchased\": false,\n      \"purchaserName\": null,\n      \"amountContributed\": 0,\n      \"contributors\": []\n    }\n    ```",
         "requestBody": {
           "required": true,
           "content": {
