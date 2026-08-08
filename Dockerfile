@@ -1,15 +1,19 @@
+# syntax=docker/dockerfile:1
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
 
 # Builder stage
 FROM base AS builder
 # Install dependencies needed for prisma
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 COPY . .
 
@@ -17,14 +21,17 @@ COPY . .
 RUN npx prisma generate
 
 # Build Next.js application
-RUN npm run build
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build
 
 # Runner stage
 FROM base AS runner
 ENV NODE_ENV=production
 
 # Install runtime dependencies (OpenSSL required by Prisma)
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

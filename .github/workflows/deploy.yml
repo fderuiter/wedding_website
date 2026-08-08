@@ -109,3 +109,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ steps.registry_check.outputs.push == 'true' }}
           tags: ${{ steps.registry_check.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
