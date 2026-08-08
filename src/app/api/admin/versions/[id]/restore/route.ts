@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { coordinateSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { MediaSchema } from '@/features/media';
 
 export const POST = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
@@ -117,6 +118,27 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       registryItemId: snapshotData.registryItemId,
     };
     await prisma.contributor.upsert({
+      where: { id: version.entityId },
+      update: data,
+      create: { id: version.entityId, ...data }
+    });
+  } else if (version.entityType === 'Media') {
+    const parsedData = MediaSchema.parse({
+      id: version.entityId,
+      url: snapshotData.url ?? '',
+      altText: snapshotData.altText ?? null,
+      isDecorative: snapshotData.isDecorative ?? false,
+      createdAt: snapshotData.createdAt ? new Date(snapshotData.createdAt) : new Date(),
+      updatedAt: snapshotData.updatedAt ? new Date(snapshotData.updatedAt) : new Date(),
+    });
+    const data = {
+      url: parsedData.url,
+      altText: parsedData.altText,
+      isDecorative: parsedData.isDecorative,
+      createdAt: parsedData.createdAt,
+      updatedAt: parsedData.updatedAt,
+    };
+    await prisma.media.upsert({
       where: { id: version.entityId },
       update: data,
       create: { id: version.entityId, ...data }

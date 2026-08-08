@@ -23,6 +23,9 @@ jest.mock('@/lib/prisma', () => ({
     registryItem: {
       upsert: jest.fn(),
     },
+    media: {
+      upsert: jest.fn(),
+    },
   },
 }));
 
@@ -270,6 +273,59 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
           purchased: false,
           purchaserName: undefined,
           amountContributed: 0,
+        },
+      });
+    });
+
+    it('successfully processes and maps Media snapshot objects during rollback', async () => {
+      const mediaSnapshotData = {
+        url: 'https://example.com/photo.jpg',
+        altText: 'A beautiful photo',
+        isDecorative: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockSnapshotVersion = {
+        id: 'snapshot-m1',
+        entityType: 'Media',
+        entityId: 'media-1',
+        data: mediaSnapshotData,
+        createdAt: new Date(),
+      };
+
+      (prisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockSnapshotVersion);
+      (prisma.snapshotVersion.create as jest.Mock).mockResolvedValue({ id: 'new-snapshot' });
+      (prisma.media.upsert as jest.Mock).mockResolvedValue({});
+
+      const req = new Request('http://localhost/api/admin/versions/snapshot-m1/restore', {
+        method: 'POST',
+      }) as unknown as NextRequest;
+
+      const res = await restorePOST(req, { params: Promise.resolve({ id: 'snapshot-m1' }) });
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.restoredTo).toBe('snapshot-m1');
+
+      // Verify that the upsert was called with properties mapped perfectly
+      expect(prisma.media.upsert).toHaveBeenCalledWith({
+        where: { id: 'media-1' },
+        update: {
+          url: 'https://example.com/photo.jpg',
+          altText: 'A beautiful photo',
+          isDecorative: false,
+          createdAt: expect.any(Date),
+          updatedAt: expect.any(Date),
+        },
+        create: {
+          id: 'media-1',
+          url: 'https://example.com/photo.jpg',
+          altText: 'A beautiful photo',
+          isDecorative: false,
+          createdAt: expect.any(Date),
+          updatedAt: expect.any(Date),
         },
       });
     });
