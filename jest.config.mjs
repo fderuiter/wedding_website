@@ -19,7 +19,6 @@ const config = {
     'src/**/*.{ts,tsx}', // Collect coverage from all ts/tsx files in src
     '!src/**/*.d.ts', // Exclude type definition files
     '!src/**/layout.tsx', // Often layout files have minimal logic
-    '!src/**/route.ts', // API routes might need different testing strategies (integration)
     '!src/types/**/*.ts', // Exclude type definitions
     '!src/styles/**/*.ts', // Exclude style definitions
     '!**/node_modules/**',
@@ -35,6 +34,12 @@ const config = {
       functions: 0,
       lines: 0,
       statements: 0,
+    },
+    './src/app/api/admin/': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
     },
     './src/components/ui/': {
       branches: 50,
