@@ -98,7 +98,7 @@ export function getKeysFromSource(fileContent: string): string[] {
   return keys;
 }
 
-export function verifyEnvDocs() {
+function verifyEnvDocs() {
   const envFilePath = path.join(process.cwd(), 'src/env.ts');
   const deploymentDocPath = path.join(process.cwd(), 'DEPLOYMENT.md');
   const envExamplePath = path.join(process.cwd(), '.env.example');
