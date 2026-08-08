@@ -66,6 +66,7 @@
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@types/three": "0.170.0",
+    "@eslint/eslintrc": "^3.3.6",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
     "eslint-plugin-react": "^7.37.5",
