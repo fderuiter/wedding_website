@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+
+import { spawnSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+
+// 1. Identify Staged Files
+let stagedOutput;
+try {
+  stagedOutput = spawnSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], { encoding: 'utf8' });
+} catch (err) {
+  console.error('Failed to run git diff:', err.message);
+  process.exit(1);
+}
+
+if (stagedOutput.status !== 0) {
+  console.error('Git diff command failed:', stagedOutput.stderr);
+  process.exit(1);
+}
+
+const stagedFiles = stagedOutput.stdout
+  .split('\n')
+  .map(f => f.trim())
+  .filter(f => f.length > 0 && /\.(js|jsx|ts|tsx)$/.test(f));
+
+if (stagedFiles.length === 0) {
+  console.log('No staged JS/TS files found. Skipping pre-commit checks.');
+  process.exit(0);
+}
+
+// 2. Identify unstaged changes among the staged files
+let unstagedOutput;
+try {
+  unstagedOutput = spawnSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
+} catch (err) {
+  console.error('Failed to get unstaged files list:', err.message);
+  process.exit(1);
+}
+
+if (unstagedOutput.status !== 0) {
+  console.error('Git diff for unstaged files failed:', unstagedOutput.stderr);
+  process.exit(1);
+}
+
+const unstagedFiles = new Set(
+  unstagedOutput.stdout
+    .split('\n')
+    .map(f => f.trim())
+    .filter(f => f.length > 0)
+);
+
+const hasUnstagedChanges = stagedFiles.some(f => unstagedFiles.has(f));
+
+let stashed = false;
+try {
+  if (hasUnstagedChanges) {
+    console.log('Unstaged changes detected in staged files. Shelving them with git stash...');
+    const stashResult = spawnSync('git', [
+      'stash',
+      'push',
+      '--keep-index',
+      '--include-untracked',
+      '-m',
+      'pre-commit-unstaged-backup'
+    ], { stdio: 'inherit' });
+    
+    if (stashResult.status === 0) {
+      stashed = true;
+    } else {
+      console.warn('Warning: git stash failed. Proceeding anyway, but unstaged changes might be formatted.');
+    }
+  }
+
+  // 3. Run linter/validator: npx eslint --fix <files>
+  console.log(`Running ESLint on ${stagedFiles.length} staged file(s)...`);
+  const eslintResult = spawnSync('npx', ['eslint', '--fix', ...stagedFiles], { stdio: 'inherit', shell: true });
+  
+  if (eslintResult.status !== 0) {
+    throw new Error('ESLint verification failed. Please resolve lint issues before committing.');
+  }
+
+  // 4. Stage any automated fixes
+  console.log('Staging auto-fixes...');
+  const addResult = spawnSync('git', ['add', ...stagedFiles], { stdio: 'inherit' });
+  if (addResult.status !== 0) {
+    throw new Error('Failed to stage linter fixes with git add.');
+  }
+
+} catch (err) {
+  console.error(`\n❌ Pre-commit check failed: ${err.message}`);
+  process.exitCode = 1;
+} finally {
+  if (stashed) {
+    console.log('Restoring shelved unstaged changes...');
+    const popResult = spawnSync('git', ['stash', 'pop'], { stdio: 'inherit' });
+    if (popResult.status !== 0) {
+      console.warn('Warning: git stash pop failed. Your unstaged changes are still safe in git stash.');
+    }
+  }
+}
