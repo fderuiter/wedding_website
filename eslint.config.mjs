@@ -6,8 +6,6 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import noDeprecatedImports from './eslint-rules/no-deprecated-imports.mjs';
 
-const isCI = process.env.CI === 'true' || process.env.CI === '1' || process.env.GITHUB_ACTIONS === 'true';
-
 const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
@@ -52,14 +50,12 @@ const eslintConfig = [
       'react-hooks/purity': 'error',
       'react-hooks/refs': 'error',
 
-      ...(!isCI ? {
-        '@typescript-eslint/no-unused-vars': 'off',
-        'unused-imports/no-unused-imports': 'error',
-        'unused-imports/no-unused-vars': [
-          'warn',
-          { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
-        ]
-      } : {})
+      '@typescript-eslint/no-unused-vars': 'off',
+      'unused-imports/no-unused-imports': 'error',
+      'unused-imports/no-unused-vars': [
+        'warn',
+        { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
+      ]
     }
   },
   {
