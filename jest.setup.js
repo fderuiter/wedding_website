@@ -179,9 +179,31 @@ jest.mock('@prisma/client', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      upsert: jest.fn(),
     },
     contributor: {
-      // Mock contributor methods if needed
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      upsert: jest.fn(),
+    },
+    media: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      upsert: jest.fn(),
+    },
+    snapshotVersion: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      upsert: jest.fn(),
     },
     $transaction: jest.fn().mockImplementation(async (callback) => {
       const mockTx = {
