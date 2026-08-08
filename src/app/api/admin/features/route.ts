@@ -1,4 +1,4 @@
-import { UpdateFeaturesSchema } from '@/utils/validation';
+import { UpdateFeaturesSchema, formatZodError } from '@/utils/validation';
 import { NextResponse, NextRequest } from 'next/server';
 import { contentService } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -11,7 +11,11 @@ export const GET = withApiMiddleware(async () => {
 
 export const PUT = withApiMiddleware(async (request: NextRequest) => {
   const body = await request.json();
-  UpdateFeaturesSchema.parse(body);
+  const parseResult = UpdateFeaturesSchema.safeParse(body);
+  if (!parseResult.success) {
+    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
+  }
+
   if (!body.features) {
     throw new ApiError(400, 'Features required');
   }
