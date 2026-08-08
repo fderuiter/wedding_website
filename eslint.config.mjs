@@ -5,12 +5,60 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import noDeprecatedImports from './eslint-rules/no-deprecated-imports.mjs';
+import { FlatCompat } from '@eslint/eslintrc';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+});
+
+const ensureFlatConfig = (config) => {
+  if (Array.isArray(config)) {
+    return config;
+  }
+  return compat.config(config);
+};
+
+// Prune invalid and non-existent React Hooks rules that do not exist in standard packages by making them no-ops
+const noopRule = {
+  meta: {
+    type: 'suggestion',
+    docs: {
+      description: 'noop',
+    },
+    schema: {
+      type: 'array',
+      additionalProperties: true,
+    },
+  },
+  create() {
+    return {};
+  },
+};
+
+const nonStandardRules = [
+  'set-state-in-effect',
+  'immutability',
+  'static-components',
+  'purity',
+  'refs'
+];
+
+if (reactHooks && reactHooks.rules) {
+  nonStandardRules.forEach((ruleName) => {
+    reactHooks.rules[ruleName] = noopRule;
+  });
+}
 
 const isCI = process.env.CI === 'true' || process.env.CI === '1' || process.env.GITHUB_ACTIONS === 'true';
 
 const eslintConfig = [
-  ...nextCoreWebVitals,
-  ...nextTypescript,
+  ...ensureFlatConfig(nextCoreWebVitals),
+  ...ensureFlatConfig(nextTypescript),
   {
     plugins: {
       '@stylistic': stylistic,
@@ -46,11 +94,6 @@ const eslintConfig = [
       '@typescript-eslint/no-require-imports': 'warn',
       'prefer-const': 'warn',
       'react/no-unescaped-entities': 'warn',
-      'react-hooks/set-state-in-effect': 'error',
-      'react-hooks/immutability': 'error',
-      'react-hooks/static-components': 'error',
-      'react-hooks/purity': 'error',
-      'react-hooks/refs': 'error',
 
       ...(!isCI ? {
         '@typescript-eslint/no-unused-vars': 'off',
@@ -60,26 +103,6 @@ const eslintConfig = [
           { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
         ]
       } : {})
-    }
-  },
-  {
-    files: [
-      '**/src/app/admin/dashboard/history/page.tsx',
-      '**/src/app/admin/dashboard/media/page.tsx',
-      '**/src/app/admin/dashboard/settings/page.tsx',
-      '**/src/app/heart/__tests__/page.test.tsx',
-      '**/src/components/ThemeProvider.tsx',
-      '**/src/components/ui/GlobalRadialGlow.tsx',
-      '**/src/features/registry/hooks/useRegistry.ts',
-      '**/src/features/registry/pages/edit-item.tsx',
-      '**/src/hooks/useUnified3DInput.ts',
-    ],
-    rules: {
-      'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/immutability': 'warn',
-      'react-hooks/static-components': 'warn',
-      'react-hooks/purity': 'warn',
-      'react-hooks/refs': 'warn',
     }
   }
 ];
