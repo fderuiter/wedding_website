@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content';
+import { WeddingPartyMemberSchema } from '@/features/wedding-party';
+import { AttractionSchema } from '@/features/attractions';
+import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry';
 
 // Helper for formatted Zod error output
 export function formatZodError(error: z.ZodError): string {
@@ -13,93 +17,93 @@ const BackupAppConfigSchema = z.object({
   updatedAt: z.date(),
 
   // Non-nullable fields with defaults (Optional but validated if present)
-  brideName: z.string().max(255).optional(),
-  groomName: z.string().max(255).optional(),
-  weddingDate: z.date().optional(),
-  baseUrl: z.string().max(2000).optional(),
-  venueName: z.string().max(255).optional(),
-  venueAddress: z.string().max(255).optional(),
-  venueCity: z.string().max(255).optional(),
-  venueState: z.string().max(255).optional(),
-  venueZip: z.string().max(50).optional(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  storyText: z.string().max(10000).optional(),
-  venueDescription: z.string().max(10000).optional(),
-  travelAdvice: z.string().max(10000).optional(),
-  heroTitle: z.string().max(255).optional(),
-  heroSubtitle: z.string().max(255).optional(),
-  seoTitle: z.string().max(255).optional(),
-  seoDescription: z.string().max(1000).optional(),
-  faviconUrl: z.string().max(2000).optional(),
-  ogImageUrl: z.string().max(2000).optional(),
-  seoKeywords: z.string().max(2000).optional(),
-  colorPrimary: z.string().max(50).optional(),
-  colorSecondary: z.string().max(50).optional(),
-  features: z.any().optional(),
-  timezone: z.string().max(255).optional(),
+  brideName: AppConfigSchema.shape.brideName.optional(),
+  groomName: AppConfigSchema.shape.groomName.optional(),
+  weddingDate: AppConfigSchema.shape.weddingDate.optional(),
+  baseUrl: UpdateAppConfigSchema.shape.baseUrl.optional(),
+  venueName: AppConfigSchema.shape.venueName.optional(),
+  venueAddress: AppConfigSchema.shape.venueAddress.optional(),
+  venueCity: AppConfigSchema.shape.venueCity.optional(),
+  venueState: AppConfigSchema.shape.venueState.optional(),
+  venueZip: AppConfigSchema.shape.venueZip.optional(),
+  latitude: AppConfigSchema.shape.latitude.optional(),
+  longitude: AppConfigSchema.shape.longitude.optional(),
+  storyText: AppConfigSchema.shape.storyText.optional(),
+  venueDescription: AppConfigSchema.shape.venueDescription.optional(),
+  travelAdvice: AppConfigSchema.shape.travelAdvice.optional(),
+  heroTitle: AppConfigSchema.shape.heroTitle.optional(),
+  heroSubtitle: AppConfigSchema.shape.heroSubtitle.optional(),
+  seoTitle: AppConfigSchema.shape.seoTitle.optional(),
+  seoDescription: AppConfigSchema.shape.seoDescription.optional(),
+  faviconUrl: UpdateAppConfigSchema.shape.faviconUrl.optional(),
+  ogImageUrl: UpdateAppConfigSchema.shape.ogImageUrl.optional(),
+  seoKeywords: AppConfigSchema.shape.seoKeywords.optional(),
+  colorPrimary: UpdateAppConfigSchema.shape.colorPrimary.optional(),
+  colorSecondary: UpdateAppConfigSchema.shape.colorSecondary.optional(),
+  features: AppConfigSchema.shape.features.optional(),
+  timezone: UpdateAppConfigSchema.shape.timezone.optional(),
 });
 
 // WeddingPartyMember database-aligned schema
 const BackupWeddingPartyMemberSchema = z.object({
   // System-level metadata fields (Required)
-  id: z.string().min(1).max(255),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+  id: WeddingPartyMemberSchema.shape.id,
+  createdAt: WeddingPartyMemberSchema.shape.createdAt,
+  updatedAt: WeddingPartyMemberSchema.shape.updatedAt,
 
   // Database-required columns (No defaults, not nullable)
-  name: z.string().min(1).max(255),
-  role: z.string().min(1).max(255),
-  bio: z.string().max(5000),
+  name: WeddingPartyMemberSchema.shape.name,
+  role: WeddingPartyMemberSchema.shape.role,
+  bio: WeddingPartyMemberSchema.shape.bio,
   photoId: z.string().min(1).max(255),
 
   // Nullable/Optional fields
-  link: z.string().max(2000).nullable().optional().or(z.literal('')),
-  order: z.number().int().optional(),
+  link: WeddingPartyMemberSchema.shape.link.nullable().optional(),
+  order: WeddingPartyMemberSchema.shape.order.optional(),
 });
 
 // Attraction database-aligned schema
 const BackupAttractionSchema = z.object({
   // System-level metadata fields (Required)
-  id: z.string().min(1).max(255),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+  id: AttractionSchema.shape.id,
+  createdAt: AttractionSchema.shape.createdAt,
+  updatedAt: AttractionSchema.shape.updatedAt,
 
   // Database-required columns (No defaults, not nullable)
-  name: z.string().min(1).max(255),
-  description: z.string().max(5000),
-  category: z.string().min(1).max(255),
-  website: z.string().max(2000).or(z.literal('')),
-  directions: z.string().max(5000),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  name: AttractionSchema.shape.name,
+  description: AttractionSchema.shape.description,
+  category: AttractionSchema.shape.category,
+  website: AttractionSchema.shape.website,
+  directions: AttractionSchema.shape.directions,
+  latitude: AttractionSchema.shape.latitude,
+  longitude: AttractionSchema.shape.longitude,
 
   // Optional/Nullable fields
-  imageId: z.string().max(255).nullable().optional(),
-  isVisible: z.boolean().optional(),
+  imageId: AttractionSchema.shape.imageId,
+  isVisible: AttractionSchema.shape.isVisible.optional(),
 });
 
 // RegistryItem database-aligned schema
 const BackupRegistryItemSchema = z.object({
   // System-level metadata fields (Required)
-  id: z.string().min(1).max(255),
+  id: RegistryItemSchema.shape.id,
   createdAt: z.date(),
   updatedAt: z.date(),
 
   // Database-required columns (No defaults, not nullable)
-  name: z.string().min(1).max(255),
-  description: z.string().max(5000),
-  category: z.string().min(1).max(255),
-  price: z.number().min(0),
+  name: RegistryItemSchema.shape.name,
+  description: RegistryItemBaseSchema.shape.description,
+  category: RegistryItemSchema.shape.category,
+  price: RegistryItemSchema.shape.price,
   imageId: z.string().min(1).max(255),
-  quantity: z.number().int().min(0),
+  quantity: RegistryItemSchema.shape.quantity,
 
   // Optional/Nullable fields
-  vendorUrl: z.string().max(2000).nullable().optional().or(z.literal('')),
-  isGroupGift: z.boolean().optional(),
-  purchased: z.boolean().optional(),
-  purchaserName: z.string().max(255).nullable().optional().or(z.literal('')),
-  amountContributed: z.number().min(0).optional(),
+  vendorUrl: RegistryItemSchema.shape.vendorUrl.nullable().optional(),
+  isGroupGift: RegistryItemSchema.shape.isGroupGift.optional(),
+  purchased: RegistryItemSchema.shape.purchased.optional(),
+  purchaserName: RegistryItemSchema.shape.purchaserName,
+  amountContributed: RegistryItemSchema.shape.amountContributed.optional(),
 });
 
 // Contributor database-aligned schema
@@ -110,7 +114,7 @@ const BackupContributorSchema = z.object({
   updatedAt: z.date(),
 
   // Database-required columns (No defaults, not nullable)
-  name: z.string().min(1).max(255),
+  name: ContributorSchema.shape.name,
 
   // Optional/Nullable fields
   email: z.string().email().max(255).nullable().optional().or(z.literal('')),

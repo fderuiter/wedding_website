@@ -1,5 +1,10 @@
 export { registryService } from './service';
 export type { RegistryItem } from './types';
+export {
+  RegistryItemSchema,
+  RegistryItemBaseSchema,
+  ContributorSchema,
+} from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
 export { default as EditItemPage } from './pages/edit-item';
