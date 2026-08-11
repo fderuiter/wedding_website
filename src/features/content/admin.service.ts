@@ -25,9 +25,8 @@ export class ContentNodeAdminService extends BaseService<any> {
     super(new BaseRepository('contentNode'), 'ContentNode');
   }
 
-  async update(id: string, data: any, author?: string): Promise<any> {
+  protected async validate(data: any, client?: any): Promise<void> {
     const error = validateContentNodeUpdate(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-    return super.update(id, data, author);
   }
 }
