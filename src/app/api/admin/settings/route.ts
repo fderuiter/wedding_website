@@ -50,6 +50,8 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       colorPrimary: validData.colorPrimary,
       colorSecondary: validData.colorSecondary,
       timezone: validData.timezone,
+      showCountdown: validData.showCountdown,
+      showAddToCalendar: validData.showAddToCalendar,
     },
   });
 

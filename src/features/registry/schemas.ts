@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports
-import { MediaSchema } from '@/features/media/schemas';
-import { safeImageUrlSchema, createLaxUrlSchema } from '@/utils/validation';
+import { createMediaAssociationSchema } from '@/features/media/schemas';
+import { createLaxUrlSchema, safeImageUrlSchema } from '@/utils/validation';
 
 export const ContributorSchema = z.object({
   name: z.string(),
@@ -21,14 +21,9 @@ export const RegistryItemBaseSchema = z.object({
   quantity: z.coerce.number({ message: 'Quantity must be a positive integer.' }).int('Quantity must be a positive integer.').positive('Quantity must be a positive integer.'),
   category: z.string({ message: 'Category is required and must be under 255 characters.' }).trim().min(1, 'Category is required and must be under 255 characters.').max(255, 'Category is required and must be under 255 characters.'),
   description: z.string().max(2000, 'Description must be under 2000 characters.').optional().or(z.literal('')),
-  imageId: z.string().optional(),
-  imageUrl: safeImageUrlSchema,
-  imageAlt: z.string().optional().nullable(),
-  imageDecorative: z.boolean().optional(),
-  image: MediaSchema.optional(),
   vendorUrl: createLaxUrlSchema('Vendor URL'),
   isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
-}, { message: 'Invalid request body.' });
+}, { message: 'Invalid request body.' }).merge(createMediaAssociationSchema('image'));
 
 export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   id: z.string(),

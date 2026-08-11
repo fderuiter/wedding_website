@@ -2,9 +2,9 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin/utils';
 import { WeddingPartyMemberSchema } from './schemas';
-import { formatZodError } from '@/utils/validation';
+import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
 
-const WeddingPartyInputSchema = WeddingPartyMemberSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial({ link: true, photo: true });
+const WeddingPartyInputSchema = deriveAdminInputSchema(WeddingPartyMemberSchema, false);
 
 function validateWeddingParty(data: any): string | null {
   const result = WeddingPartyInputSchema.safeParse(data);

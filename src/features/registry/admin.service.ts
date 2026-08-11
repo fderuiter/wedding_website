@@ -1,11 +1,11 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
-import { formatZodError } from '@/utils/validation';
+import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
 import { handleMediaFields } from '@/features/admin/utils';
 import { z } from 'zod';
 
-const RegistryItemInputSchema = RegistryItemSchema.omit({ id: true }).partial();
+const RegistryItemInputSchema = deriveAdminInputSchema(RegistryItemSchema);
 export type RegistryItemInput = z.infer<typeof RegistryItemInputSchema>;
 
 function validateRegistryItem(data: any): string | null {

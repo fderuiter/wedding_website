@@ -18,3 +18,19 @@ export const MediaCreateSchema = z.object({
 });
 
 export const MediaUpdateSchema = MediaCreateSchema.partial();
+
+export const createMediaAssociationSchema = (prefix: 'image' | 'photo') => {
+  const isPhoto = prefix === 'photo';
+  return z.object({
+    [`${prefix}Id`]: z.string().nullable().optional(),
+    [`${prefix}Url`]: z.string()
+      .max(2000, `${isPhoto ? 'Photo URL' : 'Image URL'} must be under 2000 characters`)
+      .optional()
+      .nullable()
+      .or(z.literal('')),
+    [`${prefix}Alt`]: z.string().optional().nullable(),
+    [`${prefix}Decorative`]: z.boolean().optional(),
+    [prefix]: MediaSchema.nullable().optional(),
+  });
+};
+

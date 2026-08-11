@@ -30,6 +30,8 @@ export const UpdateAppConfigSchema = z.object({
   seoKeywords: z.string(),
   colorPrimary: z.string().regex(hexColorRegex).optional(),
   colorSecondary: z.string().regex(hexColorRegex).optional(),
+  showCountdown: z.boolean().optional(),
+  showAddToCalendar: z.boolean().optional(),
   timezone: z.string().refine(
     (val) => {
       try {
