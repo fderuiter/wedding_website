@@ -468,6 +468,12 @@
                     "type": "string",
                     "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
                   },
+                  "showCountdown": {
+                    "type": "boolean"
+                  },
+                  "showAddToCalendar": {
+                    "type": "boolean"
+                  },
                   "timezone": {
                     "type": "string"
                   }
@@ -822,8 +828,35 @@
                       }
                     ]
                   },
+                  "vendorUrl": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "isGroupGift": {},
                   "imageId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "imageUrl": {
                     "anyOf": [
@@ -858,60 +891,47 @@
                     "type": "boolean"
                   },
                   "image": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "url": {
-                        "type": "string"
-                      },
-                      "altText": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "isDecorative": {
-                        "type": "boolean"
-                      },
-                      "createdAt": {},
-                      "updatedAt": {}
-                    },
-                    "required": [
-                      "id",
-                      "url",
-                      "altText",
-                      "isDecorative",
-                      "createdAt",
-                      "updatedAt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "vendorUrl": {
                     "anyOf": [
                       {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "maxLength": 2000
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
                           },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {},
+                          "updatedAt": {}
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
                       },
                       {
-                        "type": "string",
-                        "const": ""
+                        "type": "null"
                       }
                     ]
-                  },
-                  "isGroupGift": {}
+                  }
                 },
                 "required": [
                   "name",
@@ -1003,8 +1023,35 @@
                       }
                     ]
                   },
+                  "vendorUrl": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "isGroupGift": {},
                   "imageId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "imageUrl": {
                     "anyOf": [
@@ -1039,60 +1086,47 @@
                     "type": "boolean"
                   },
                   "image": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "url": {
-                        "type": "string"
-                      },
-                      "altText": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "isDecorative": {
-                        "type": "boolean"
-                      },
-                      "createdAt": {},
-                      "updatedAt": {}
-                    },
-                    "required": [
-                      "id",
-                      "url",
-                      "altText",
-                      "isDecorative",
-                      "createdAt",
-                      "updatedAt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "vendorUrl": {
                     "anyOf": [
                       {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "maxLength": 2000
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
                           },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {},
+                          "updatedAt": {}
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
                       },
                       {
-                        "type": "string",
-                        "const": ""
+                        "type": "null"
                       }
                     ]
-                  },
-                  "isGroupGift": {}
+                  }
                 },
                 "required": [
                   "name",

@@ -3,9 +3,9 @@ import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin/utils';
 import { AttractionSchema, AttractionDTO } from './schemas';
 import { z } from 'zod';
-import { formatZodError } from '@/utils/validation';
+import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
 
-const AttractionInputSchema = AttractionSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial();
+const AttractionInputSchema = deriveAdminInputSchema(AttractionSchema);
 export type AttractionInput = z.infer<typeof AttractionInputSchema>;
 
 function validateAttraction(data: any): string | null {

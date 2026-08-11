@@ -83,3 +83,23 @@ export const createLaxUrlSchema = (fieldName = 'URL') =>
 export const safeUrlSchema = createLaxUrlSchema('URL');
 export const safeImageUrlSchema = createLaxUrlSchema('Image URL');
 
+/**
+ * Programmatically derives an administrative input/edit request validation schema from a base model schema.
+ * Dynamically excludes system-generated metadata and sensitive identifiers (id, createdAt, updatedAt)
+ * and makes remaining fields partial to support flexible creation and update payloads.
+ */
+export function deriveAdminInputSchema<T extends z.ZodRawShape>(
+  baseSchema: z.ZodObject<T>,
+  makePartial: boolean = true
+) {
+  const shape = baseSchema.shape;
+  const omitKeys: any = {};
+  if ('id' in shape) omitKeys.id = true;
+  if ('createdAt' in shape) omitKeys.createdAt = true;
+  if ('updatedAt' in shape) omitKeys.updatedAt = true;
+
+  const omitted = baseSchema.omit(omitKeys);
+  return makePartial ? omitted.partial() : omitted;
+}
+
+

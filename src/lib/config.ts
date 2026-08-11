@@ -156,6 +156,8 @@ export async function getAppConfig(): Promise<AppConfigDTO> {
           colorPrimary: '#B91C1C',
           colorSecondary: '#B45309',
           timezone: 'America/Chicago',
+          showCountdown: true,
+          showAddToCalendar: true,
         },
       }));
     } else {
