@@ -27,7 +27,7 @@ export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
     super(new BaseRepository<RegistryItemDTO>('registryItem'), 'RegistryItem');
   }
 
-  protected async validate(data: any, client?: any): Promise<void> {
+  protected async validate(data: any, _client?: any): Promise<void> {
     const error = validateRegistryItem(data);
     if (error) throw new Error(`Validation Error: ${error}`);
   }
