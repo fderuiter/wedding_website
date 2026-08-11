@@ -26,7 +26,7 @@ export class WeddingPartyAdminService extends BaseService<any> {
     super(new BaseRepository('weddingPartyMember'), 'WeddingPartyMember');
   }
 
-  protected async validate(data: any, client?: any): Promise<void> {
+  protected async validate(data: any, _client?: any): Promise<void> {
     const error = validateWeddingParty(data);
     if (error) throw new Error(`Validation Error: ${error}`);
   }

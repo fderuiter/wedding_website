@@ -33,7 +33,7 @@ export class AttractionAdminService extends BaseService<AttractionDTO> {
     super(new BaseRepository<AttractionDTO>('attraction'), 'Attraction');
   }
 
-  protected async validate(data: any, client?: any): Promise<void> {
+  protected async validate(data: any, _client?: any): Promise<void> {
     const error = validateAttraction(data);
     if (error) throw new Error(`Validation Error: ${error}`);
   }

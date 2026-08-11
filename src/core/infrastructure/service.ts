@@ -44,11 +44,11 @@ export class BaseService<T extends { id: string }> {
     return this.repo.findUnique(id);
   }
 
-  protected async validate(data: any, client?: any): Promise<void> {
+  protected async validate(_data: any, _client?: any): Promise<void> {
     // Default: no-op
   }
 
-  protected async preSave(data: any, client?: any, author?: string): Promise<any> {
+  protected async preSave(data: any, _client?: any, _author?: string): Promise<any> {
     // Default: returns data unchanged
     return data;
   }
