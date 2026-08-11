@@ -18,40 +18,21 @@ function validateRegistryItem(data: any): string | null {
 
 export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
   static ENTITY_KEY = 'registry-items';
+  
+  protected defaultQueryArgs = {
+    include: { image: true, contributors: true }
+  };
     
   constructor() {
     super(new BaseRepository<RegistryItemDTO>('registryItem'), 'RegistryItem');
   }
 
-  async findMany(args?: any): Promise<RegistryItemDTO[]> {
-    const customArgs = {
-      ...args,
-      include: { image: true, contributors: true, ...(args?.include || {}) }
-    };
-    return super.findMany(customArgs);
-  }
-
-  async create(data: RegistryItemInput, author: string = 'Admin'): Promise<RegistryItemDTO> {
+  protected async validate(data: any, client?: any): Promise<void> {
     const error = validateRegistryItem(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-
-    return this.repo.transaction(async (txRepo) => {
-      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client, author);
-      const record = await txRepo.create(mappedData);
-      await this.createSnapshot(record.id, record, author, txRepo.client);
-      return record;
-    });
   }
 
-  async update(id: string, data: RegistryItemInput, author: string = 'Admin'): Promise<RegistryItemDTO> {
-    const error = validateRegistryItem(data);
-    if (error) throw new Error(`Validation Error: ${error}`);
-
-    return this.repo.transaction(async (txRepo) => {
-      const mappedData = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', txRepo.client, author);
-      const record = await txRepo.update(id, mappedData);
-      await this.createSnapshot(record.id, record, author, txRepo.client);
-      return record;
-    });
+  protected async preSave(data: any, client?: any, author?: string): Promise<any> {
+    return await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', client, author);
   }
 }

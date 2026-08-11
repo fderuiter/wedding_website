@@ -24,40 +24,21 @@ async function mapAttractionData(data: any, client?: any, author?: string): Prom
 
 export class AttractionAdminService extends BaseService<AttractionDTO> {
   static ENTITY_KEY = 'attractions';
+  
+  protected defaultQueryArgs = {
+    include: { image: true }
+  };
     
   constructor() {
     super(new BaseRepository<AttractionDTO>('attraction'), 'Attraction');
   }
 
-  async findMany(args?: any): Promise<AttractionDTO[]> {
-    const customArgs = {
-      ...args,
-      include: { image: true, ...(args?.include || {}) }
-    };
-    return super.findMany(customArgs);
-  }
-
-  async create(data: AttractionInput, author?: string): Promise<AttractionDTO> {
+  protected async validate(data: any, client?: any): Promise<void> {
     const error = validateAttraction(data);
     if (error) throw new Error(`Validation Error: ${error}`);
-
-    return this.repo.transaction(async (txRepo) => {
-      const mappedData = await mapAttractionData(data, txRepo.client, author);
-      const record = await txRepo.create(mappedData);
-      await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
-      return record;
-    });
   }
 
-  async update(id: string, data: AttractionInput, author?: string): Promise<AttractionDTO> {
-    const error = validateAttraction(data);
-    if (error) throw new Error(`Validation Error: ${error}`);
-
-    return this.repo.transaction(async (txRepo) => {
-      const mappedData = await mapAttractionData(data, txRepo.client, author);
-      const record = await txRepo.update(id, mappedData);
-      await this.createSnapshot(record.id, record, author || 'Admin', txRepo.client);
-      return record;
-    });
+  protected async preSave(data: any, client?: any, author?: string): Promise<any> {
+    return await mapAttractionData(data, client, author);
   }
 }
