@@ -19,18 +19,33 @@ export const MediaCreateSchema = z.object({
 
 export const MediaUpdateSchema = MediaCreateSchema.partial();
 
-export const createMediaAssociationSchema = (prefix: 'image' | 'photo') => {
-  const isPhoto = prefix === 'photo';
-  return z.object({
-    [`${prefix}Id`]: z.string().nullable().optional(),
-    [`${prefix}Url`]: z.string()
-      .max(2000, `${isPhoto ? 'Photo URL' : 'Image URL'} must be under 2000 characters`)
-      .optional()
-      .nullable()
-      .or(z.literal('')),
-    [`${prefix}Alt`]: z.string().optional().nullable(),
-    [`${prefix}Decorative`]: z.boolean().optional(),
-    [prefix]: MediaSchema.nullable().optional(),
-  });
-};
+export const ImageAssociationSchema = z.object({
+  imageId: z.string().nullable().optional(),
+  imageUrl: z.string()
+    .max(2000, 'Image URL must be under 2000 characters')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
+  imageAlt: z.string().optional().nullable(),
+  imageDecorative: z.boolean().optional(),
+  image: MediaSchema.nullable().optional(),
+});
+
+export const PhotoAssociationSchema = z.object({
+  photoId: z.string().nullable().optional(),
+  photoUrl: z.string()
+    .max(2000, 'Photo URL must be under 2000 characters')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
+  photoAlt: z.string().optional().nullable(),
+  photoDecorative: z.boolean().optional(),
+  photo: MediaSchema.nullable().optional(),
+});
+
+export function createMediaAssociationSchema(prefix: 'image'): typeof ImageAssociationSchema;
+export function createMediaAssociationSchema(prefix: 'photo'): typeof PhotoAssociationSchema;
+export function createMediaAssociationSchema(prefix: 'image' | 'photo') {
+  return prefix === 'image' ? ImageAssociationSchema : PhotoAssociationSchema;
+}
 
