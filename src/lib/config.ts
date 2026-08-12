@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
+import { headers } from 'next/headers';
 
 export type PublicAppConfig = PublicAppConfigDTO;
 
@@ -130,12 +131,70 @@ async function bootstrapLogisticsNodes() {
  *
  * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
  */
-export async function getAppConfig(): Promise<AppConfigDTO> {
+async function getSubdomainFromHeaders(): Promise<string | null> {
+  try {
+    const headersList = await headers();
+    const host = headersList.get('host');
+    if (!host) return null;
+    
+    const cleanHost = host.split(':')[0];
+    if (cleanHost === 'localhost' || cleanHost === '127.0.0.1') {
+      return null;
+    }
+    
+    const parts = cleanHost.split('.');
+    if (cleanHost.endsWith('.localhost')) {
+      return parts[0];
+    }
+    
+    if (parts.length >= 3) {
+      const sub = parts[0];
+      if (sub.toLowerCase() === 'www') return null;
+      return sub;
+    }
+    
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Load the application configuration from the database and ensure baseline content nodes exist.
+ *
+ * If a subdomain is active, attempts to resolve the subdomain's specific configuration.
+ * Gracefully falls back to "global" configuration if none found.
+ * Also ensures default logistics and FAQ content nodes are present.
+ *
+ * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
+ */
+export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
   let dbConfig: AppConfigDTO | null = null;
   try {
-    const rawDbConfig = await prisma.appConfig.findUnique({
-      where: { id: 'global' },
-    });
+    let rawDbConfig = null;
+    if (idOrSubdomain) {
+      rawDbConfig = await prisma.appConfig.findUnique({
+        where: { id: idOrSubdomain },
+      });
+      if (!rawDbConfig) {
+        rawDbConfig = await prisma.appConfig.findFirst({
+          where: { subdomain: idOrSubdomain },
+        });
+      }
+    } else {
+      const subdomain = await getSubdomainFromHeaders();
+      if (subdomain) {
+        rawDbConfig = await prisma.appConfig.findFirst({
+          where: { subdomain },
+        });
+      }
+    }
+
+    if (!rawDbConfig) {
+      rawDbConfig = await prisma.appConfig.findUnique({
+        where: { id: 'global' },
+      });
+    }
 
     if (!rawDbConfig) {
       dbConfig = AppConfigSchema.parse(await prisma.appConfig.create({

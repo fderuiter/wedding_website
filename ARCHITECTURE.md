@@ -305,6 +305,7 @@ The system uses a centrally defined configuration schema to validate runtime set
 | Field | Type | Description |
 |---|---|---|
 | `id` | `string` | Configuration field for id |
+| `subdomain` | `optional` | Configuration field for subdomain |
 | `brideName` | `string` | Configuration field for brideName |
 | `groomName` | `string` | Configuration field for groomName |
 | `weddingDate` | `date` | Configuration field for weddingDate |
