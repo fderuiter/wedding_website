@@ -43,6 +43,9 @@
     "jest.setup.js",
     "scripts",
     "e2e",
-    "src/mocks"
+    "src/mocks",
+    "**/__tests__/**/*",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ]
 }

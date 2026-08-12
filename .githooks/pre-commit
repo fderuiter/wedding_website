@@ -28,33 +28,33 @@ if (stagedFiles.length === 0) {
   process.exit(0);
 }
 
-// 2. Identify unstaged changes among the staged files
-let unstagedOutput;
+// 2. Identify all unstaged or untracked changes in the workspace
+// Because TypeScript type-checking and Knip dead-code analysis run on the entire project,
+// any unstaged changes in the workspace can cause false positives or negatives.
+let hasUnstagedChanges = false;
 try {
-  unstagedOutput = spawnSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
+  const statusOutput = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' });
+  if (statusOutput.status === 0) {
+    const lines = statusOutput.stdout.split('\n');
+    for (const line of lines) {
+      if (line.length >= 2) {
+        const y = line[1];
+        // If there's an unstaged change (Y is not ' ') or untracked change (Y is '?' or starts with '??')
+        if (y !== ' ' || line.startsWith('??')) {
+          hasUnstagedChanges = true;
+          break;
+        }
+      }
+    }
+  }
 } catch (err) {
-  console.error('Failed to get unstaged files list:', err.message);
-  process.exit(1);
+  console.warn('Warning: failed to check for unstaged changes:', err.message);
 }
-
-if (unstagedOutput.status !== 0) {
-  console.error('Git diff for unstaged files failed:', unstagedOutput.stderr);
-  process.exit(1);
-}
-
-const unstagedFiles = new Set(
-  unstagedOutput.stdout
-    .split('\n')
-    .map(f => f.trim())
-    .filter(f => f.length > 0)
-);
-
-const hasUnstagedChanges = stagedFiles.some(f => unstagedFiles.has(f));
 
 let stashed = false;
 try {
   if (hasUnstagedChanges) {
-    console.log('Unstaged changes detected in staged files. Shelving them with git stash...');
+    console.log('Unstaged or untracked changes detected in workspace. Shelving them with git stash...');
     const stashResult = spawnSync('git', [
       'stash',
       'push',
@@ -67,7 +67,7 @@ try {
     if (stashResult.status === 0) {
       stashed = true;
     } else {
-      console.warn('Warning: git stash failed. Proceeding anyway, but unstaged changes might be formatted.');
+      console.warn('Warning: git stash failed. Proceeding anyway, but unstaged changes might affect the validations.');
     }
   }
 
@@ -84,6 +84,20 @@ try {
   const addResult = spawnSync('git', ['add', ...stagedFiles], { stdio: 'inherit' });
   if (addResult.status !== 0) {
     throw new Error('Failed to stage linter fixes with git add.');
+  }
+
+  // 5. Run TypeScript validation check
+  console.log('Running TypeScript type check...');
+  const tscResult = spawnSync('npm', ['run', 'type-check'], { stdio: 'inherit', shell: true });
+  if (tscResult.status !== 0) {
+    throw new Error('TypeScript type check failed. Please resolve compilation/type issues before committing.');
+  }
+
+  // 6. Run Knip dead-code analysis
+  console.log('Running Knip dead-code analysis...');
+  const knipResult = spawnSync('npm', ['run', 'lint:unused'], { stdio: 'inherit', shell: true });
+  if (knipResult.status !== 0) {
+    throw new Error('Knip dead-code analysis failed. Please resolve unused exports or dead dependencies before committing.');
   }
 
 } catch (err) {
