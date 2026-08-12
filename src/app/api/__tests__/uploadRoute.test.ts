@@ -7,9 +7,13 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-jest.mock('fs/promises', () => ({
-  writeFile: jest.fn(),
-}));
+jest.mock('fs/promises', () => {
+  const actual = jest.requireActual('fs/promises');
+  return {
+    ...actual,
+    writeFile: jest.fn(),
+  };
+});
 
 jest.mock('crypto', () => ({
   ...jest.requireActual('crypto'),
