@@ -1,17 +1,6 @@
-/**
- * @internal
- */
-class ApiError extends Error {
-  public status: number;
-  public data: any;
+import { ApiError } from '../utils/ApiError';
 
-  constructor(status: number, message: string, data?: any) {
-    super(message);
-    this.status = status;
-    this.data = data;
-    this.name = 'ApiError';
-  }
-}
+export { ApiError };
 
 /**
  * @internal
