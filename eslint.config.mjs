@@ -5,6 +5,7 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import noDeprecatedImports from './eslint-rules/no-deprecated-imports.mjs';
+import noRestrictedUtilityImports from './eslint-rules/no-restricted-utility-imports.mjs';
 import { FlatCompat } from '@eslint/eslintrc';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -66,10 +67,12 @@ const eslintConfig = [
       'local-rules': {
         rules: {
           'no-deprecated-imports': noDeprecatedImports,
+          'no-restricted-utility-imports': noRestrictedUtilityImports,
         },
       },
     },
     rules: {
+      'local-rules/no-restricted-utility-imports': 'error',
       'local-rules/no-deprecated-imports': 'warn',
       '@stylistic/quotes': ['error', 'single', { avoidEscape: true }],
       '@stylistic/indent': ['error', 2],
