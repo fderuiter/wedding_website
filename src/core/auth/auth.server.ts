@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
-import crypto from 'crypto';
 import { env } from '@/env';
 
 const ADMIN_COOKIE = 'admin_auth';
@@ -21,6 +20,77 @@ interface AdminTokenPayload {
   [key: string]: unknown;
 }
 
+function base64urlEncode(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  return base64urlEncodeBytes(bytes);
+}
+
+function base64urlEncodeBytes(bytes: Uint8Array): string {
+  let binString = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binString += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binString)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+function base64urlDecode(str: string): string {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const binString = atob(base64 + padding);
+  const bytes = new Uint8Array(binString.length);
+  for (let i = 0; i < binString.length; i++) {
+    bytes[i] = binString.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function base64urlDecodeToBytes(str: string): Uint8Array {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const binString = atob(base64 + padding);
+  const bytes = new Uint8Array(binString.length);
+  for (let i = 0; i < binString.length; i++) {
+    bytes[i] = binString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function hmacSha256(secret: string, data: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const messageData = encoder.encode(data);
+  
+  const cryptoKey = await globalThis.crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await globalThis.crypto.subtle.sign(
+    'HMAC',
+    cryptoKey,
+    messageData
+  );
+  
+  return base64urlEncodeBytes(new Uint8Array(signature));
+}
+
+function timingSafeEqualJS(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) {
+    return false;
+  }
+  let result = 0;
+  for (let i = 0; i < a.byteLength; i++) {
+    result |= a[i] ^ b[i];
+  }
+  return result === 0;
+}
+
 /**
  * Signs an admin payload and returns a compact token.
  *
@@ -28,15 +98,12 @@ interface AdminTokenPayload {
  * @returns A signed token string in the format `base64url(payload).base64url(signature)`.
  */
 export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const data = base64urlEncode(JSON.stringify(payload));
   const secret = await getSecret();
   if (!secret) {
     throw new Error('Admin auth secret is not configured');
   }
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
+  const signature = await hmacSha256(secret, data);
   return `${data}.${signature}`;
 }
 
@@ -53,25 +120,18 @@ async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null
 
   const secret = await getSecret();
   if (!secret) return null;
-  const expectedSignature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
+  const expectedSignature = await hmacSha256(secret, data);
 
-  const signatureBuffer = Buffer.from(signature, 'base64url');
-  const expectedSignatureBuffer = Buffer.from(expectedSignature, 'base64url');
+  const signatureBuffer = base64urlDecodeToBytes(signature);
+  const expectedSignatureBuffer = base64urlDecodeToBytes(expectedSignature);
 
-  // Prevent timing attacks using timingSafeEqual
-  if (signatureBuffer.length !== expectedSignatureBuffer.length) {
-    return null;
-  }
-
-  if (!crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)) {
+  // Prevent timing attacks using timingSafeEqualJS
+  if (!timingSafeEqualJS(signatureBuffer, expectedSignatureBuffer)) {
     return null;
   }
 
   try {
-    return JSON.parse(Buffer.from(data, 'base64url').toString('utf-8')) as AdminTokenPayload;
+    return JSON.parse(base64urlDecode(data)) as AdminTokenPayload;
   } catch {
     return null;
   }
