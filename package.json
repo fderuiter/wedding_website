@@ -13,6 +13,8 @@
     "lint:fix": "eslint . --fix",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
+    "type-check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "pretest": "node scripts/pretest.mjs",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
