@@ -16,6 +16,6 @@ export default defineConfig({
     },
   } : undefined,
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: process.env.BASE_URL || process.env.TEST_URL || 'http://127.0.0.1:3000',
   },
 });
