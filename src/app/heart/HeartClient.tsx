@@ -51,7 +51,24 @@ function PhysicsHeart({
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const { size, viewport } = useThree();
 
-  const { handlers: mainHandlers, getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements, lifecycle: { isDestroyed: isBroken, destroy: breakHeart }, reduceMotion } = useUnified3DInput({
+  const wholeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const leftButtonRef = useRef<HTMLButtonElement | null>(null);
+  const rightButtonRef = useRef<HTMLButtonElement | null>(null);
+  const focusedButtonRef = useRef<'none' | 'whole' | 'left' | 'right'>('none');
+
+  const handleFocus = (type: 'whole' | 'left' | 'right') => {
+    focusedButtonRef.current = type;
+  };
+
+  const handleBlur = (type: 'whole' | 'left' | 'right') => {
+    setTimeout(() => {
+      if (focusedButtonRef.current === type) {
+        focusedButtonRef.current = 'none';
+      }
+    }, 50);
+  };
+
+  const { handlers: mainHandlers, getInteractiveProps: getMainInteractiveProps, AccessibleElements: MainAccessibleElements, lifecycle: { isDestroyed: isBroken, destroy: breakHeart, reconstruct: reconstructHeart }, reduceMotion } = useUnified3DInput({
     r3f: { size, viewport },
     reconstructTimeout: 3000,
     accessibility: {
@@ -127,28 +144,22 @@ function PhysicsHeart({
 
   const {   getInteractiveProps: getLeftInteractiveProps, AccessibleElements: LeftAccessibleElements } = useUnified3DInput({
     accessibility: {
-      instructions: 'Press Space or Enter to bump the left segment.',
-      labels: { action: 'Bumped left segment' },
+      instructions: 'Press Space or Enter to reconstruct the heart.',
+      labels: { action: 'Heart reconstructed' },
       onAction: (e: any) => {
-        if (!brokenHeartLeftRef.current) return;
         e.preventDefault();
-        if (!reduceMotion) {
-          brokenHeartLeftRef.current.applyImpulse({ x: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER, y: PHYSICS_CONSTANTS.BUMP_IMPULSE_Y, z: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER }, true);
-        }
+        reconstructHeart();
       }
     }
   });
 
   const {   getInteractiveProps: getRightInteractiveProps, AccessibleElements: RightAccessibleElements } = useUnified3DInput({
     accessibility: {
-      instructions: 'Press Space or Enter to bump the right segment.',
-      labels: { action: 'Bumped right segment' },
+      instructions: 'Press Space or Enter to reconstruct the heart.',
+      labels: { action: 'Heart reconstructed' },
       onAction: (e: any) => {
-        if (!brokenHeartRightRef.current) return;
         e.preventDefault();
-        if (!reduceMotion) {
-          brokenHeartRightRef.current.applyImpulse({ x: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER, y: PHYSICS_CONSTANTS.BUMP_IMPULSE_Y, z: (Math.random() - 0.5) * PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER }, true);
-        }
+        reconstructHeart();
       }
     }
   });
@@ -168,6 +179,42 @@ function PhysicsHeart({
     setShowEasterEgg
   });
 
+  useEffect(() => {
+    if (isBroken) {
+      if (focusedButtonRef.current === 'whole') {
+        const focusLeft = () => {
+          if (leftButtonRef.current) {
+            leftButtonRef.current.focus();
+          } else {
+            const btn = document.querySelector('[aria-label="Broken heart left segment."]') as HTMLElement;
+            if (btn) {
+              btn.focus();
+            } else {
+              requestAnimationFrame(focusLeft);
+            }
+          }
+        };
+        requestAnimationFrame(focusLeft);
+      }
+    } else {
+      if (focusedButtonRef.current === 'left' || focusedButtonRef.current === 'right') {
+        const focusWhole = () => {
+          if (wholeButtonRef.current) {
+            wholeButtonRef.current.focus();
+          } else {
+            const btn = document.querySelector('[aria-label^="Interactive 3D Heart"]') as HTMLElement;
+            if (btn) {
+              btn.focus();
+            } else {
+              requestAnimationFrame(focusWhole);
+            }
+          }
+        };
+        requestAnimationFrame(focusWhole);
+      }
+    }
+  }, [isBroken]);
+
   return (
     <>
       <Html zIndexRange={[100, 0]} prepend center>
@@ -177,6 +224,9 @@ function PhysicsHeart({
         </div>
         {!isBroken && (
           <button
+            ref={wholeButtonRef}
+            onFocus={() => handleFocus('whole')}
+            onBlur={() => handleBlur('whole')}
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
             aria-label={'Interactive 3D Heart. Status: Whole.'}
             {...getMainInteractiveProps()}
@@ -212,6 +262,9 @@ function PhysicsHeart({
           <Html zIndexRange={[100, 0]} prepend center>
             {LeftAccessibleElements}
             <button
+              ref={leftButtonRef}
+              onFocus={() => handleFocus('left')}
+              onBlur={() => handleBlur('left')}
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
               aria-label={'Broken heart left segment.'}
               {...getLeftInteractiveProps()}
@@ -228,6 +281,9 @@ function PhysicsHeart({
           <Html zIndexRange={[100, 0]} prepend center>
             {RightAccessibleElements}
             <button
+              ref={rightButtonRef}
+              onFocus={() => handleFocus('right')}
+              onBlur={() => handleBlur('right')}
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
               aria-label={'Broken heart right segment.'}
               {...getRightInteractiveProps()}
