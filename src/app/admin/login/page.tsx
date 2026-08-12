@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
+import { ApiError } from '@/lib/apiClient';
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 20 },
@@ -49,7 +50,7 @@ export default function LoginPage() {
       window.dispatchEvent(new Event('storage'));
       router.push('/admin/dashboard');
     } catch (err: any) {
-      if (err.name === 'ApiError') {
+      if (err instanceof ApiError) {
         setError(err.message || 'Login failed.');
       } else {
         setError('Network error.');
