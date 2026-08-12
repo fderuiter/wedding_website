@@ -42,6 +42,12 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       ogImageUrl: snapshotData.ogImageUrl ?? '/images/sunset-embrace.jpg',
       seoKeywords: snapshotData.seoKeywords ?? '',
       features: snapshotData.features ?? [],
+      colorPrimary: snapshotData.colorPrimary ?? '#B91C1C',
+      colorSecondary: snapshotData.colorSecondary ?? '#B45309',
+      timezone: snapshotData.timezone ?? 'America/Chicago',
+      showCountdown: snapshotData.showCountdown !== false,
+      showAddToCalendar: snapshotData.showAddToCalendar !== false,
+      subdomain: snapshotData.subdomain ?? null,
     };
     await prisma.appConfig.upsert({
       where: { id: version.entityId },

@@ -7,6 +7,20 @@ jest.mock('@/lib/prisma', () => ({
   prisma: {
     appConfig: {
       update: jest.fn(),
+      findUnique: jest.fn().mockImplementation(({ where }) => {
+        if (where.id) {
+          return Promise.resolve({ id: where.id, subdomain: null });
+        }
+        return Promise.resolve(null);
+      }),
+      findFirst: jest.fn().mockImplementation(({ where }) => {
+        if (where.id) {
+          return Promise.resolve({ id: where.id, subdomain: null });
+        }
+        return Promise.resolve(null);
+      }),
+      findMany: jest.fn(),
+      create: jest.fn(),
     },
     snapshotVersion: {
       create: jest.fn(),
@@ -335,5 +349,106 @@ describe('PUT /api/admin/settings', () => {
     const json = await res.json();
     expect(json.error).toMatch(/Invalid standard IANA timezone identifier/);
     expect(mockPrisma.appConfig.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('Multi-Profile Routing and Settings API', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(true);
+  });
+
+  it('GET with list=true lists all profiles', async () => {
+    const mockConfigs = [
+      { ...updatedConfig, id: 'global', brideName: 'Abby' },
+      { ...updatedConfig, id: 'profile-1', brideName: 'Staging', subdomain: 'staging' }
+    ];
+    // We import POST here dynamically to make sure it's defined
+    const { GET: settingsGET } = require('../settings/route');
+    const mockFindMany = jest.spyOn(prisma.appConfig, 'findMany').mockResolvedValue(mockConfigs as any);
+
+    const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
+      headers: { cookie: 'admin_auth=valid-token' }
+    });
+    const res = await settingsGET(req);
+
+    if (res.status !== 200) {
+      console.log('GET list error:', await res.json());
+    }
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data).toHaveLength(2);
+    expect(json.data[1].subdomain).toBe('staging');
+    mockFindMany.mockRestore();
+  });
+
+  it('GET with id fetches a specific profile', async () => {
+    const { GET: settingsGET } = require('../settings/route');
+    const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
+      headers: { cookie: 'admin_auth=valid-token' }
+    });
+    const res = await settingsGET(req);
+
+    expect(res.status).toBe(200);
+    expect(mockGetAppConfig).toHaveBeenCalledWith('profile-1');
+  });
+
+  it('POST /api/admin/settings creates a new profile', async () => {
+    const { POST: settingsPOST } = require('../settings/route');
+    const mockCreate = jest.spyOn(prisma.appConfig, 'create').mockResolvedValue({
+      ...updatedConfig,
+      id: 'profile-new',
+      brideName: 'StagingBride',
+      groomName: 'StagingGroom',
+      subdomain: 'staging',
+      weddingDate: new Date(),
+      baseUrl: 'https://example.com',
+    } as any);
+
+    const req = new NextRequest('http://localhost/api/admin/settings', {
+      method: 'POST',
+      headers: { cookie: 'admin_auth=valid-token' },
+      body: JSON.stringify({
+        brideName: 'StagingBride',
+        groomName: 'StagingGroom',
+        subdomain: 'staging'
+      })
+    });
+    const res = await settingsPOST(req);
+
+    if (res.status !== 200) {
+      console.log('POST error:', await res.json());
+    }
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.subdomain).toBe('staging');
+    expect(mockCreate).toHaveBeenCalled();
+    mockCreate.mockRestore();
+  });
+
+  it('POST /api/admin/settings fails if subdomain is already in use', async () => {
+    const { POST: settingsPOST } = require('../settings/route');
+    const mockFindUnique = jest.spyOn(prisma.appConfig, 'findUnique').mockResolvedValue({
+      id: 'existing-profile',
+      subdomain: 'staging'
+    } as any);
+
+    const req = new NextRequest('http://localhost/api/admin/settings', {
+      method: 'POST',
+      headers: { cookie: 'admin_auth=valid-token' },
+      body: JSON.stringify({
+        brideName: 'NewBride',
+        groomName: 'NewGroom',
+        subdomain: 'staging'
+      })
+    });
+    const res = await settingsPOST(req);
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/already in use/);
+    mockFindUnique.mockRestore();
   });
 });

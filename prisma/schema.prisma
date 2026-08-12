@@ -10,6 +10,7 @@ datasource db {
 
 model AppConfig {
   id               String   @id @default("global")
+  subdomain        String?  @unique
   brideName        String   @default("")
   groomName        String   @default("")
   weddingDate      DateTime @default(dbgenerated("NOW()"))

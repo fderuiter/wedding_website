@@ -28,6 +28,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (config.baseUrl) {
       siteUrl = config.baseUrl;
     }
+    try {
+      const { headers } = require('next/headers');
+      const headersList = await headers();
+      const host = headersList.get('host');
+      if (host) {
+        const proto = headersList.get('x-forwarded-proto') || 'https';
+        const protocol = host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : proto;
+        siteUrl = `${protocol}://${host}`;
+      }
+    } catch {
+      // Fallback if headers are not available during static generation
+    }
   } catch (err) {
     console.error('Could not load config for sitemap', err);
   }

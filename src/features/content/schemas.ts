@@ -6,6 +6,7 @@ export const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 export const UpdateAppConfigSchema = z.object({
   brideName: z.string(),
   groomName: z.string(),
+  subdomain: z.string().nullable().optional(),
   weddingDate: z.union([z.string(), z.date()]).refine((val) => {
     const d = new Date(val);
     return !isNaN(d.getTime());
@@ -104,6 +105,7 @@ export const FeatureSchema = z.object({
 
 export const AppConfigSchema = z.object({
   id: z.string(),
+  subdomain: z.string().nullable().optional(),
   brideName: z.string(),
   groomName: z.string(),
   weddingDate: z.date(),

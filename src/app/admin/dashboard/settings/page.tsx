@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
+import { Dialog } from '@/components/ui/Dialog';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
@@ -104,23 +105,56 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
 export default function AdminSettingsPage() {
   const router = useRouter();
   const { addToast } = useToast();
-  const { config: initialConfig, loading, saving, saveSettings, fetchAll } = useAdminSettings();
-  
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('global');
+
+  const {
+    config: initialConfig,
+    loading,
+    saving,
+    saveSettings,
+    profiles,
+    loadingList,
+    createProfile,
+    creating,
+    fetchAll,
+  } = useAdminSettings(selectedProfileId);
+
   const [localConfig, setLocalConfig] = useState<any>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newProfileData, setNewProfileData] = useState({ brideName: '', groomName: '', subdomain: '' });
+  const [createError, setCreateError] = useState('');
 
   useEffect(() => {
-    if (initialConfig && !localConfig) {
+    if (initialConfig) {
       setLocalConfig(initialConfig);
     }
-  }, [initialConfig, localConfig]);
+  }, [initialConfig]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!localConfig) return;
     try {
       await saveSettings(localConfig);
-    } catch (err) {
-      // Error is handled by hook
+      addToast('Branding profile saved successfully.', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to save profile', 'error');
+    }
+  };
+
+  const handleCreateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError('');
+    try {
+      const created = await createProfile(newProfileData);
+      addToast('Staging profile created successfully!', 'success');
+      setIsCreateOpen(false);
+      setNewProfileData({ brideName: '', groomName: '', subdomain: '' });
+      if (created && created.id) {
+        setSelectedProfileId(created.id);
+        setLocalConfig(null);
+      }
+    } catch (err: any) {
+      setCreateError(err.message || 'Failed to create profile. Ensure subdomain is unique.');
     }
   };
 
@@ -155,7 +189,7 @@ export default function AdminSettingsPage() {
     setLocalConfig((prev: any) => ({ ...prev, [name]: value }));
   };
 
-  if (loading) return <div className="p-8 text-center">Loading settings...</div>;
+  if (loading || loadingList) return <div className="p-8 text-center">Loading settings...</div>;
 
   if (!localConfig) return <div className="p-8 text-center text-red-500">Failed to load settings.</div>;
 
@@ -167,7 +201,7 @@ export default function AdminSettingsPage() {
         ...localConfig,
         weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
       }}
-      entityId="global"
+      entityId={selectedProfileId}
       onRestore={() => {
         setLocalConfig(initialConfig);
         fetchAll();
@@ -177,6 +211,39 @@ export default function AdminSettingsPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Site Settings</h1>
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
+        </div>
+
+        {/* Profile Switcher & Creator Section */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gray-100 dark:border-zinc-700">
+          <div className="space-y-1">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-zinc-100">Branding & Staging Profiles</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Manage parallel configuration profiles or test changes on staging subdomains.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <select
+              value={selectedProfileId}
+              onChange={(e) => {
+                setSelectedProfileId(e.target.value);
+                setLocalConfig(null);
+              }}
+              className="rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+            >
+              {Array.isArray(profiles) ? (
+                profiles.map((p: any) => (
+                  <option key={p.id} value={p.id}>
+                    {p.id === 'global' ? 'Production (Default)' : `${p.brideName} & ${p.groomName} (subdomain: ${p.subdomain})`}
+                  </option>
+                ))
+              ) : (
+                <option value="global">Production (Default)</option>
+              )}
+            </select>
+            <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
+              New Profile
+            </Button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8 pb-10">
@@ -199,6 +266,23 @@ export default function AdminSettingsPage() {
                 <Label>Base URL</Label>
                 <Input required type="url" name="baseUrl" value={localConfig.baseUrl || ''} onChange={handleChange} />
               </FormGroup>
+              {selectedProfileId !== 'global' && (
+                <FormGroup>
+                  <Label>Subdomain Identifier</Label>
+                  <Input
+                    required
+                    type="text"
+                    name="subdomain"
+                    value={localConfig.subdomain || ''}
+                    onChange={(e) => {
+                      const sanitized = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                      setLocalConfig((prev: any) => ({ ...prev, subdomain: sanitized }));
+                    }}
+                    placeholder="e.g. promptops"
+                  />
+                  <FormMessage>Only lowercase alphanumeric characters and hyphens. Maps to the staging environment.</FormMessage>
+                </FormGroup>
+              )}
             </div>
           </section>
 
@@ -373,6 +457,60 @@ export default function AdminSettingsPage() {
           </div>
         </form>
       </div>
+
+      <Dialog
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        title="Create Staging Profile"
+        description="Create a new staging profile assigned to a unique testing subdomain."
+      >
+        <form onSubmit={handleCreateProfile} className="space-y-4">
+          {createError && (
+            <div className="p-3 text-sm bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-200 rounded">
+              {createError}
+            </div>
+          )}
+          <FormGroup>
+            <Label>Bride Name</Label>
+            <Input
+              required
+              type="text"
+              value={newProfileData.brideName}
+              onChange={(e) => setNewProfileData(prev => ({ ...prev, brideName: e.target.value }))}
+              placeholder="e.g. Abby"
+            />
+          </FormGroup>
+          <FormGroup>
+            <Label>Groom Name</Label>
+            <Input
+              required
+              type="text"
+              value={newProfileData.groomName}
+              onChange={(e) => setNewProfileData(prev => ({ ...prev, groomName: e.target.value }))}
+              placeholder="e.g. Liam"
+            />
+          </FormGroup>
+          <FormGroup>
+            <Label>Testing Subdomain</Label>
+            <Input
+              required
+              type="text"
+              value={newProfileData.subdomain}
+              onChange={(e) => setNewProfileData(prev => ({ ...prev, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+              placeholder="e.g. staging-ops"
+            />
+            <FormMessage>Only lowercase alphanumeric characters and hyphens. Aligned to subdomain routing.</FormMessage>
+          </FormGroup>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={creating}>
+              {creating ? 'Creating...' : 'Create Profile'}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </AdminPreviewLayout>
   );
 }
