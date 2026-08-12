@@ -8,46 +8,25 @@ import path from 'node:path';
 (() => {
   const rootDir = process.cwd();
   const envPath = path.join(rootDir, '.env.test');
-  const envTest = {};
+  const parentDbUrl = process.env.DATABASE_URL;
+  const parentIsSqlite = parentDbUrl && (parentDbUrl.startsWith('file:') || parentDbUrl.startsWith('sqlite:') || parentDbUrl.includes('.db'));
+
+  // Clear parent shell database variables and other isolated test variables to ensure clean isolation
+  const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
+  for (const v of pgVars) {
+    delete process.env[v];
+  }
 
   if (fs.existsSync(envPath)) {
     try {
-      const content = fs.readFileSync(envPath, 'utf8');
-      for (const line of content.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const match = trimmed.match(/^([^=]+)=(.*)$/);
-        if (match) {
-          const key = match[1].trim();
-          let val = match[2].trim();
-          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-            val = val.slice(1, -1);
-          }
-          envTest[key] = val;
-        }
-      }
+      process.loadEnvFile(envPath);
     } catch {
       // Ignore reading errors
     }
   }
 
-  // Clear parent shell database variables
-  const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE'];
-  const parentDbUrl = process.env.DATABASE_URL;
-  const parentIsSqlite = parentDbUrl && (parentDbUrl.startsWith('file:') || parentDbUrl.startsWith('sqlite:') || parentDbUrl.includes('.db'));
-
-  for (const v of pgVars) {
-    delete process.env[v];
-  }
-
-  // Load other environment variables from .env.test into process.env if they are not already set,
-  // or overwrite them to ensure clean isolation
-  for (const [key, value] of Object.entries(envTest)) {
-    process.env[key] = value;
-  }
-
   // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-  let testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+  let testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
   const schemaPath = path.join(rootDir, 'prisma/schema.prisma');
   let isSchemaSqlite = false;
   if (fs.existsSync(schemaPath)) {
@@ -60,6 +39,7 @@ import path from 'node:path';
   } else if (parentIsSqlite) {
     testDbUrl = parentDbUrl;
   }
+
   process.env.DATABASE_URL = testDbUrl;
 })();
 

@@ -133,38 +133,24 @@ async function main() {
       console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
     }
 
-    // Helper to load and parse .env.test
     const envPath = path.join(rootDir, '.env.test');
-    const envTest = {};
-    if (fs.existsSync(envPath)) {
-      try {
-        const content = fs.readFileSync(envPath, 'utf8');
-        for (const line of content.split(/\r?\n/)) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) continue;
-          const match = trimmed.match(/^([^=]+)=(.*)$/);
-          if (match) {
-            const key = match[1].trim();
-            let val = match[2].trim();
-            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-              val = val.slice(1, -1);
-            }
-            envTest[key] = val;
-          }
-        }
-      } catch {
-        // Fallback to empty if error reading file
-      }
-    }
 
-    // Strict Test Environment Isolation: Ignore parent shell database environment variables
-    const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE'];
+    // Strict Test Environment Isolation: Ignore parent shell database environment variables and isolated test variables
+    const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
     for (const v of pgVars) {
       delete process.env[v];
     }
 
+    if (fs.existsSync(envPath)) {
+      try {
+        process.loadEnvFile(envPath);
+      } catch {
+        // Fallback if error reading file
+      }
+    }
+
     // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-    let testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+    let testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
     
     // Check if we should fallback to SQLite if postgres is not accessible
     const isPostgresUrl = testDbUrl.startsWith('postgres://') || testDbUrl.startsWith('postgresql://');
