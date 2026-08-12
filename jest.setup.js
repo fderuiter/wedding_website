@@ -33,6 +33,9 @@ import path from 'node:path';
 
   // Clear parent shell database variables
   const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE'];
+  const parentDbUrl = process.env.DATABASE_URL;
+  const parentIsSqlite = parentDbUrl && (parentDbUrl.startsWith('file:') || parentDbUrl.startsWith('sqlite:') || parentDbUrl.includes('.db'));
+
   for (const v of pgVars) {
     delete process.env[v];
   }
@@ -44,7 +47,19 @@ import path from 'node:path';
   }
 
   // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-  const testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+  let testDbUrl = envTest.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+  const schemaPath = path.join(rootDir, 'prisma/schema.prisma');
+  let isSchemaSqlite = false;
+  if (fs.existsSync(schemaPath)) {
+    const schemaContent = fs.readFileSync(schemaPath, 'utf8');
+    isSchemaSqlite = schemaContent.includes('provider = "sqlite"');
+  }
+
+  if (isSchemaSqlite) {
+    testDbUrl = 'file:./test.db';
+  } else if (parentIsSqlite) {
+    testDbUrl = parentDbUrl;
+  }
   process.env.DATABASE_URL = testDbUrl;
 })();
 
@@ -215,6 +230,8 @@ jest.mock('@prisma/client', () => {
       return await callback(mockTx);
     }),
     $disconnect: jest.fn(),
+    $use: jest.fn(),
+    $extends: jest.fn().mockImplementation(() => mockPrismaClient),
   };
   return {
     PrismaClient: jest.fn(() => mockPrismaClient),
