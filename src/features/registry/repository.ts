@@ -169,18 +169,23 @@ export class RegistryRepository implements IRegistryRepository {
         throw new Error('This item has already been purchased.');
       }
 
-      const remainingAmount = item.price - item.amountContributed;
-      if (contribution.amount > remainingAmount) {
+      const priceCents = Math.round(item.price * 100);
+      const contributedCents = Math.round(item.amountContributed * 100);
+      const remainingCents = priceCents - contributedCents;
+      const contributionCents = Math.round(contribution.amount * 100);
+
+      if (contributionCents > remainingCents) {
         throw new Error('Contribution cannot be greater than the remaining amount.');
       }
 
-      const newTotal = item.amountContributed + contribution.amount;
+      const newTotalCents = contributedCents + contributionCents;
+      const newTotal = newTotalCents / 100;
 
       const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
         data: {
           amountContributed: newTotal,
-          purchased: newTotal >= item.price,
+          purchased: newTotalCents >= priceCents,
           contributors: {
             create: {
               name: contribution.name,

@@ -201,5 +201,68 @@ describe('RegistryRepository', () => {
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Item not found');
     });
 
+    it('should successfully complete a final payment of exactly $0.20 for an item with a $10.30 price and $10.10 in existing contributions', async () => {
+      const targetItem = {
+        ...mockRegistryItem,
+        price: 10.30,
+        amountContributed: 10.10,
+      };
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(targetItem),
+          update: jest.fn().mockResolvedValue({ ...targetItem, amountContributed: 10.30, purchased: true }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'John Doe', amount: 0.20 };
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(10.30);
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 10.30,
+          purchased: true,
+          contributors: {
+            create: {
+              name: contribution.name,
+              amount: contribution.amount,
+              date: expect.any(Date),
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
+    });
+
+    it('should throw an error if a contribution exceeds the exact remaining balance by $0.01', async () => {
+      const targetItem = {
+        ...mockRegistryItem,
+        price: 10.30,
+        amountContributed: 10.10,
+      };
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(targetItem),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'John Doe', amount: 0.21 };
+      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow(
+        'Contribution cannot be greater than the remaining amount.'
+      );
+      expect(tx.registryItem.update).not.toHaveBeenCalled();
+    });
   });
 });
