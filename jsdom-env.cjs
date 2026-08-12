@@ -9,6 +9,7 @@ class CustomEnvironment extends JSDOMEnvironment {
     await super.setup();
     this.global.TextEncoder = TextEncoder;
     this.global.TextDecoder = TextDecoder;
+    this.global.crypto = require('node:crypto').webcrypto;
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {
       let resolvedInput = input;

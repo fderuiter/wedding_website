@@ -49,21 +49,33 @@ import path from 'node:path';
 })();
 
 // Provide standard crypto mock in Jest test environments:
-if (typeof global.crypto === 'undefined') {
-  global.crypto = require('crypto');
+const nodeCrypto = require('node:crypto');
+if (typeof globalThis !== 'undefined') {
+  if (!globalThis.crypto || !globalThis.crypto.subtle) {
+    globalThis.crypto = nodeCrypto.webcrypto;
+  }
+}
+if (typeof global !== 'undefined') {
+  if (!global.crypto || !global.crypto.subtle) {
+    global.crypto = nodeCrypto.webcrypto;
+  }
 }
 if (typeof window !== 'undefined') {
-  if (!window.crypto) {
-    window.crypto = global.crypto;
-  } else if (!window.crypto.randomUUID) {
-    window.crypto.randomUUID = global.crypto.randomUUID;
+  if (!window.crypto || !window.crypto.subtle) {
+    Object.defineProperty(window, 'crypto', {
+      value: nodeCrypto.webcrypto,
+      writable: true,
+      configurable: true,
+    });
   }
 }
 if (typeof self !== 'undefined') {
-  if (!self.crypto) {
-    self.crypto = global.crypto;
-  } else if (!self.crypto.randomUUID) {
-    self.crypto.randomUUID = global.crypto.randomUUID;
+  if (!self.crypto || !self.crypto.subtle) {
+    Object.defineProperty(self, 'crypto', {
+      value: nodeCrypto.webcrypto,
+      writable: true,
+      configurable: true,
+    });
   }
 }
 
