@@ -4,6 +4,7 @@ import { coordinateSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { MediaSchema } from '@/features/media';
+import { translateSnapshotToActive } from '@/features/registry';
 
 export const POST = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
@@ -90,19 +91,10 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       create: { id: version.entityId, ...data }
     });
   } else if (version.entityType === 'RegistryItem') {
-    const data = {
-      name: snapshotData.name ?? snapshotData.legacy_name ?? snapshotData.title ?? snapshotData.itemName ?? '',
-      description: snapshotData.description ?? snapshotData.legacy_description ?? snapshotData.details ?? '',
-      category: snapshotData.category ?? snapshotData.legacy_category ?? snapshotData.group ?? 'Uncategorized',
-      price: snapshotData.price ?? snapshotData.legacy_price ?? snapshotData.cost ?? snapshotData.priceAmount ?? 0,
-      imageId: snapshotData.imageId ?? snapshotData.legacy_imageId ?? snapshotData.mediaId ?? '',
-      vendorUrl: snapshotData.vendorUrl ?? snapshotData.legacy_vendorUrl ?? null,
-      quantity: snapshotData.quantity ?? snapshotData.legacy_quantity ?? snapshotData.qty ?? snapshotData.itemCount ?? 1,
-      isGroupGift: snapshotData.isGroupGift ?? snapshotData.legacy_isGroupGift ?? false,
-      purchased: snapshotData.purchased || false,
-      purchaserName: snapshotData.purchaserName,
-      amountContributed: snapshotData.amountContributed || 0,
-    };
+    const data = translateSnapshotToActive(snapshotData);
+    if (!data) {
+      throw new ApiError(400, 'Invalid snapshot data');
+    }
     await prisma.registryItem.upsert({
       where: { id: version.entityId },
       update: data,

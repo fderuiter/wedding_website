@@ -317,6 +317,110 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     });
   });
 
+  it('restores legacy RegistryItem successfully resolving fallbacks', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const mockLegacyRegistrySnapshot = {
+      legacy_name: 'Legacy Mixer',
+      title: 'Old Title',
+      itemName: 'Old Name',
+      legacy_description: 'Legacy details',
+      details: 'Old Details',
+      legacy_category: 'Legacy Group',
+      group: 'Old Group',
+      legacy_price: 199.99,
+      cost: 150,
+      priceAmount: 160,
+      legacy_imageId: 'legacy-img',
+      mediaId: 'old-media',
+      legacy_vendorUrl: 'https://legacy-vendor.com',
+      legacy_quantity: 2,
+      qty: 3,
+      itemCount: 4,
+      legacy_isGroupGift: true,
+      purchased: true,
+      purchaserName: 'Alice',
+      amountContributed: 40.0,
+    };
+
+    const mockVersion = {
+      id: 'v-legacy-reg',
+      entityType: 'RegistryItem',
+      entityId: 'reg-legacy-mixer',
+      data: mockLegacyRegistrySnapshot,
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.registryItem.upsert as jest.Mock).mockResolvedValue({});
+
+    const req = new NextRequest('http://localhost/api/admin/versions/v-legacy-reg/restore', { method: 'POST' });
+    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-legacy-reg' }) });
+
+    expect(res.status).toBe(200);
+    const expectedTranslatedData = {
+      name: 'Legacy Mixer',
+      description: 'Legacy details',
+      category: 'Legacy Group',
+      price: 199.99,
+      imageId: 'legacy-img',
+      vendorUrl: 'https://legacy-vendor.com',
+      quantity: 2,
+      isGroupGift: true,
+      purchased: true,
+      purchaserName: 'Alice',
+      amountContributed: 40.0,
+    };
+    expect(mockPrisma.registryItem.upsert).toHaveBeenCalledWith({
+      where: { id: 'reg-legacy-mixer' },
+      update: expectedTranslatedData,
+      create: { id: 'reg-legacy-mixer', ...expectedTranslatedData },
+    });
+  });
+
+  it('restores registry items with alternative older custom fields', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const mockOlderSnapshot = {
+      title: 'Old Title',
+      details: 'Old Details',
+      group: 'Old Group',
+      cost: 150,
+      mediaId: 'old-media',
+      qty: 3,
+    };
+
+    const mockVersion = {
+      id: 'v-older-reg',
+      entityType: 'RegistryItem',
+      entityId: 'reg-older-mixer',
+      data: mockOlderSnapshot,
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.registryItem.upsert as jest.Mock).mockResolvedValue({});
+
+    const req = new NextRequest('http://localhost/api/admin/versions/v-older-reg/restore', { method: 'POST' });
+    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-older-reg' }) });
+
+    expect(res.status).toBe(200);
+    const expectedTranslatedData = {
+      name: 'Old Title',
+      description: 'Old Details',
+      category: 'Old Group',
+      price: 150,
+      imageId: 'old-media',
+      vendorUrl: null,
+      quantity: 3,
+      isGroupGift: false,
+      purchased: false,
+      purchaserName: undefined,
+      amountContributed: 0,
+    };
+    expect(mockPrisma.registryItem.upsert).toHaveBeenCalledWith({
+      where: { id: 'reg-older-mixer' },
+      update: expectedTranslatedData,
+      create: { id: 'reg-older-mixer', ...expectedTranslatedData },
+    });
+  });
+
   it('restores Contributor successfully', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const mockContributorSnapshot = {
