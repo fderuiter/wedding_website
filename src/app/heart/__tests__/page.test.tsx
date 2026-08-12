@@ -4,8 +4,6 @@ import HeartClient from '../HeartClient';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 import { getAppConfig } from '@/lib/config';
 
-import { ContactForceEvent } from '@react-three/rapier';
-
 const mockCreateRigidBodyApi = () => ({
   setBodyType: jest.fn(),
   setTranslation: jest.fn(),
@@ -21,7 +19,7 @@ const mockCreateRigidBodyApi = () => ({
   setNextKinematicTranslation: jest.fn(),
   addForce: jest.fn(),
   setEnabled: jest.fn(),
-  __triggerContactForce: null as ((payload: ContactForceEvent) => void) | null,
+  __triggerContactForce: null as ((payload: any) => void) | null,
 });
 
 const mockMainBodyApi = mockCreateRigidBodyApi();
@@ -55,7 +53,7 @@ jest.mock('@react-three/postprocessing', () => ({
 }));
 
 jest.mock('@react-three/rapier', () => {
-  const RigidBodyMock = React.forwardRef(({ children, onContactForce, userData }: { children: React.ReactNode, onContactForce: (payload: ContactForceEvent) => void, userData?: { id: string } }, ref: React.Ref<unknown>) => {
+  const RigidBodyMock = React.forwardRef(({ children, onContactForce, userData }: { children: React.ReactNode, onContactForce: (payload: any) => void, userData?: { id: string } }, ref: React.Ref<unknown>) => {
     if (ref) {
       // @ts-expect-error This is a mock implementation
       if (userData?.id === 'main') ref.current = mockMainBodyApi;
@@ -190,7 +188,7 @@ describe('HeartPage', () => {
 
     act(() => {
       if (mockMainBodyApi.__triggerContactForce) {
-        mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as ContactForceEvent);
+        mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as any);
       }
     });
 
@@ -352,5 +350,91 @@ describe('HeartPage', () => {
 
     delete (window as any).__mockFps;
     useFrameMock.mockReset();
+  });
+
+  describe('Focus Retention', () => {
+    let rafSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      rafSpy = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    });
+
+    afterEach(() => {
+      rafSpy.mockRestore();
+    });
+
+    it('retains focus and shifts to left shard button when whole heart is broken', async () => {
+      render(<HeartPage />);
+      
+      const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart. Status: Whole.');
+      expect(wholeHeartBtn).toBeInTheDocument();
+      
+      // Simulate user focusing the whole heart button
+      act(() => {
+        wholeHeartBtn.focus();
+      });
+      expect(document.activeElement).toBe(wholeHeartBtn);
+      
+      // Trigger shatter
+      act(() => {
+        fireEvent.click(wholeHeartBtn);
+      });
+      
+      // Left shard button should now be focused
+      const leftShardBtn = screen.getByLabelText('Broken heart left segment.');
+      expect(leftShardBtn).toBeInTheDocument();
+      expect(document.activeElement).toBe(leftShardBtn);
+    });
+
+    it('retains focus and shifts back to whole heart when shard button reconstructs the heart', async () => {
+      render(<HeartPage />);
+      
+      // First shatter it to get the shards
+      const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart. Status: Whole.');
+      act(() => {
+        wholeHeartBtn.focus();
+        fireEvent.click(wholeHeartBtn);
+      });
+      
+      const leftShardBtn = screen.getByLabelText('Broken heart left segment.');
+      expect(leftShardBtn).toBeInTheDocument();
+      expect(document.activeElement).toBe(leftShardBtn);
+      
+      // Now activate the shard button to reconstruct
+      act(() => {
+        fireEvent.click(leftShardBtn);
+      });
+      
+      // Whole heart button should now be focused again
+      const reconstructedBtn = screen.getByLabelText('Interactive 3D Heart. Status: Whole.');
+      expect(reconstructedBtn).toBeInTheDocument();
+      expect(document.activeElement).toBe(reconstructedBtn);
+    });
+
+    it('does not hijack focus during automatic/background physics transitions when user is focused elsewhere', async () => {
+      render(<HeartPage />);
+      
+      // Focus on the reset button (some other element on the page)
+      const resetButton = screen.getByText('Reset');
+      act(() => {
+        resetButton.focus();
+      });
+      expect(document.activeElement).toBe(resetButton);
+      
+      // Simulate background collision shatter
+      act(() => {
+        if (mockMainBodyApi.__triggerContactForce) {
+          mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as any);
+        }
+      });
+      
+      // Left shard should be mounted, but activeElement must STILL be the reset button (not hijacked)
+      const leftShardBtn = screen.getByLabelText('Broken heart left segment.');
+      expect(leftShardBtn).toBeInTheDocument();
+      expect(document.activeElement).toBe(resetButton);
+    });
   });
 });
