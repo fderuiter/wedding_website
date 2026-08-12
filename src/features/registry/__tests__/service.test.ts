@@ -208,5 +208,42 @@ describe('RegistryService', () => {
       ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
       expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
     });
+
+    it('successfully processes exactly $0.20 contribution for $10.30 item with $10.10 contributions (floating-point precision scenario)', async () => {
+      const item = {
+        id: '1',
+        amountContributed: 10.10,
+        price: 10.30,
+        contributors: []
+      } as unknown as RegistryItem;
+      const updated = {
+        ...item,
+        amountContributed: 10.30,
+        purchased: true,
+      } as unknown as RegistryItem;
+
+      mockRepository.getItemById.mockResolvedValue(item);
+      mockRepository.contributeToItem.mockResolvedValue(updated);
+
+      const result = await registryService.contributeToItem('1', { name: 'John', amount: 0.20 });
+      expect(result).toEqual(updated);
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 0.20 });
+    });
+
+    it('blocks contribution exceeding remaining balance by as little as $0.01', async () => {
+      const item = {
+        id: '1',
+        amountContributed: 10.10,
+        price: 10.30,
+        contributors: []
+      } as unknown as RegistryItem;
+
+      mockRepository.getItemById.mockResolvedValue(item);
+
+      await expect(
+        registryService.contributeToItem('1', { name: 'John', amount: 0.21 })
+      ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
+      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
+    });
   });
 });

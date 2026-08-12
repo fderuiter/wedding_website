@@ -81,8 +81,12 @@ export class RegistryService {
       throw new Error('This item has already been purchased.');
     }
 
-    const remainingAmount = item.price - item.amountContributed;
-    if (contribution.amount > remainingAmount) {
+    const priceCents = Math.round(item.price * 100);
+    const contributedCents = Math.round(item.amountContributed * 100);
+    const remainingCents = priceCents - contributedCents;
+    const contributionCents = Math.round(contribution.amount * 100);
+
+    if (contributionCents > remainingCents) {
       throw new Error('Contribution cannot be greater than the remaining amount.');
     }
 
