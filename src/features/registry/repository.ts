@@ -152,7 +152,10 @@ export class RegistryRepository implements IRegistryRepository {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
       if (typeof txClient.$queryRaw === 'function') {
-        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+        const isSqlite = process.env.DATABASE_URL?.startsWith('file:') || process.env.DATABASE_URL?.startsWith('sqlite:') || process.env.DATABASE_URL?.includes('.db');
+        if (!isSqlite) {
+          await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+        }
       }
 
       // 2. Fetch the absolute latest state of the item inside the transaction context

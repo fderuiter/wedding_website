@@ -8,8 +8,8 @@ if [ -z "$DATABASE_URL" ]; then
   exit 1
 fi
 
-if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
-  echo "ERROR: Invalid format for DATABASE_URL. Must start with postgres:// or postgresql://"
+if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]] && [[ ! "$DATABASE_URL" =~ ^file: ]] && [[ ! "$DATABASE_URL" =~ \.db ]] && [[ ! "$DATABASE_URL" =~ ^sqlite: ]]; then
+  echo "ERROR: Invalid format for DATABASE_URL. Must start with postgres://, postgresql://, sqlite:, file:, or contain .db"
   exit 1
 fi
 

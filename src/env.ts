@@ -2,8 +2,33 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DATABASE_URL: z.string().url('DATABASE_URL must be a valid URL').min(1, 'DATABASE_URL is required'),
-  POSTGRES_URL_NON_POOLING: z.string().url('POSTGRES_URL_NON_POOLING must be a valid URL').optional(),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
+    if (val.startsWith('file:') || val.startsWith('sqlite:') || val.includes('.db')) {
+      return true;
+    }
+    try {
+      new URL(val);
+      return true;
+    } catch {
+      return false;
+    }
+  }, {
+    message: 'DATABASE_URL must be a valid URL or SQLite path',
+  }),
+  POSTGRES_URL_NON_POOLING: z.string().optional().refine(val => {
+    if (!val) return true;
+    if (val.startsWith('file:') || val.startsWith('sqlite:') || val.includes('.db')) {
+      return true;
+    }
+    try {
+      new URL(val);
+      return true;
+    } catch {
+      return false;
+    }
+  }, {
+    message: 'POSTGRES_URL_NON_POOLING must be a valid URL or SQLite path',
+  }),
   ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required').regex(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'ADMIN_PASSWORD must be in the format scrypt:[saltBase64]:[keyBase64]'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
   S3_BUCKET: z.string().optional(),
