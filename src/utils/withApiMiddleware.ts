@@ -147,7 +147,54 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
           { status: error.statusCode }
         );
       }
-      logger.error('Unhandled API Error:', error);
+
+      let apiVersion = 'v2';
+      let route = 'unknown';
+
+      try {
+        if (req) {
+          // Extract route/pathname
+          let url: any = null;
+          try {
+            url = req.nextUrl || (req.url ? new URL(req.url) : null);
+          } catch {
+            // Safe fallback if URL parsing fails
+          }
+          if (url?.pathname) {
+            route = url.pathname;
+          } else if (req.url && typeof req.url === 'string' && !req.url.startsWith('http')) {
+            route = req.url;
+          }
+
+          // Extract API version from headers or query parameters
+          let versionHeader: string | null = null;
+          if (req.headers && typeof req.headers.get === 'function') {
+            try {
+              versionHeader = req.headers.get('x-api-version') || req.headers.get('X-API-Version');
+            } catch {
+              // Ignore
+            }
+          }
+          
+          let versionParam: string | null = null;
+          if (url && typeof url.searchParams?.get === 'function') {
+            try {
+              versionParam = url.searchParams.get('version');
+            } catch {
+              // Ignore
+            }
+          }
+
+          const extractedVersion = versionHeader || versionParam;
+          if (extractedVersion) {
+            apiVersion = extractedVersion;
+          }
+        }
+      } catch {
+        // Safe fallback to prevent crashing the error-logging block itself
+      }
+
+      logger.error('Unhandled API Error:', error, { apiVersion, route });
       
       const errorMessage = error instanceof Error ? error.message : 'Internal Server Error';
       
