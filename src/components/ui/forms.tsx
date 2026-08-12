@@ -6,6 +6,8 @@ type FormItemContextValue = {
   id: string;
   state: 'error' | 'success' | 'warning' | 'default';
   messageId: string;
+  hasMessage: boolean;
+  registerMessage: (id: string, active: boolean) => void;
 };
 
 const FormItemContext = createContext<FormItemContextValue | null>(null);
@@ -17,8 +19,19 @@ export const FormGroup = React.forwardRef<
   const id = useId();
   const messageId = `${id}-message`;
 
+  const [activeMessages, setActiveMessages] = React.useState<Record<string, boolean>>({});
+
+  const registerMessage = React.useCallback((msgId: string, active: boolean) => {
+    setActiveMessages((prev) => {
+      if (prev[msgId] === active) return prev;
+      return { ...prev, [msgId]: active };
+    });
+  }, []);
+
+  const hasMessage = Object.values(activeMessages).some(Boolean);
+
   return (
-    <FormItemContext.Provider value={{ id, state, messageId }}>
+    <FormItemContext.Provider value={{ id, state, messageId, hasMessage, registerMessage }}>
       <div ref={ref} className={cn('space-y-1', className)} {...props} />
     </FormItemContext.Provider>
   );
@@ -61,7 +74,7 @@ export const Input = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement>
 >(({ className, type = 'text', ...props }, ref) => {
-  const { id, state, messageId } = useFormItem();
+  const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
     default: 'border-gray-300 dark:border-zinc-700 focus-visible:ring-primary',
@@ -81,7 +94,7 @@ export const Input = React.forwardRef<
       )}
       ref={ref}
       aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={messageId}
+      aria-describedby={hasMessage ? messageId : undefined}
       {...props}
     />
   );
@@ -92,7 +105,7 @@ export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.TextareaHTMLAttributes<HTMLTextAreaElement>
 >(({ className, ...props }, ref) => {
-  const { id, state, messageId } = useFormItem();
+  const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
     default: 'border-gray-300 dark:border-zinc-700 focus-visible:ring-primary',
@@ -111,7 +124,7 @@ export const Textarea = React.forwardRef<
       )}
       ref={ref}
       aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={messageId}
+      aria-describedby={hasMessage ? messageId : undefined}
       {...props}
     />
   );
@@ -122,7 +135,7 @@ export const Select = React.forwardRef<
   HTMLSelectElement,
   React.SelectHTMLAttributes<HTMLSelectElement>
 >(({ className, ...props }, ref) => {
-  const { id, state, messageId } = useFormItem();
+  const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
     default: 'border-gray-300 dark:border-zinc-700 focus-visible:ring-primary',
@@ -141,7 +154,7 @@ export const Select = React.forwardRef<
       )}
       ref={ref}
       aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={messageId}
+      aria-describedby={hasMessage ? messageId : undefined}
       {...props}
     />
   );
@@ -152,7 +165,7 @@ export const Checkbox = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement>
 >(({ className, ...props }, ref) => {
-  const { id, state, messageId } = useFormItem();
+  const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
     default: 'border-gray-300 dark:border-zinc-700 text-primary focus-visible:ring-primary',
@@ -172,7 +185,7 @@ export const Checkbox = React.forwardRef<
       )}
       ref={ref}
       aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={messageId}
+      aria-describedby={hasMessage ? messageId : undefined}
       {...props}
     />
   );
@@ -183,7 +196,16 @@ export const FormMessage = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLParagraphElement> & { children?: React.ReactNode }
 >(({ className, children, ...props }, ref) => {
-  const { state, messageId } = useFormItem();
+  const { state, messageId, registerMessage } = useFormItem();
+  const messageUniqueId = React.useId();
+  const hasContent = !!children;
+
+  React.useEffect(() => {
+    registerMessage(messageUniqueId, hasContent);
+    return () => {
+      registerMessage(messageUniqueId, false);
+    };
+  }, [messageUniqueId, hasContent, registerMessage]);
 
   if (!children) {
     return null;
