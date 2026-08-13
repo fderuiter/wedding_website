@@ -94,7 +94,7 @@ export function translateActiveToLegacy(activeData: any): any {
         legacy_quantity: activeData.quantity,
         legacy_category: activeData.category,
         legacy_description: activeData.description || '',
-        legacy_imageUrl: activeData.imageUrl || '',
+        legacy_imageUrl: activeData.imageUrl || activeData.image?.url || '',
         legacy_vendorUrl: activeData.vendorUrl || null,
         legacy_isGroupGift: activeData.isGroupGift,
         purchased: activeData.purchased,
