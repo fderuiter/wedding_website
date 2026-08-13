@@ -61,11 +61,11 @@ export default function EditRegistryItemPage() {
   if (!itemId) {
     return <p className="text-red-500">Error: Item ID is missing.</p>;
   }
-  if (loading || !itemData) {
-    return <p>Loading item data...</p>;
-  }
   if (error) {
     return <p className="text-red-500">Error: {error}</p>;
+  }
+  if (loading || !itemData) {
+    return <p>Loading item data...</p>;
   }
 
   return (
