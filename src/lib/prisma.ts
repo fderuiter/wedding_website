@@ -120,7 +120,7 @@ const createPrismaClient = () => {
         isSchemaSqlite = compiledContent.includes('provider = "sqlite"') || compiledContent.includes('provider="sqlite"');
       }
     }
-  } catch (e) {}
+  } catch {}
 
   let connectionString = env.DATABASE_URL;
   const isSqlite = isSchemaSqlite || connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db');

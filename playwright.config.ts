@@ -19,7 +19,7 @@ try {
       isSqlite = compiledContent.includes('provider = "sqlite"') || compiledContent.includes('provider="sqlite"');
     }
   }
-} catch (e) {}
+} catch {}
 
 const defaultDbUrl = isSqlite
   ? `file:${path.join(process.cwd(), 'test.db')}`
