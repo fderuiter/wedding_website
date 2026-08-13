@@ -17,11 +17,15 @@ export async function createAuditSnapshot(
   ) || entityType;
   
   // Create the snapshot
+  const serializedData = data !== undefined && data !== null
+    ? JSON.parse(JSON.stringify(data))
+    : data;
+
   await client.snapshotVersion.create({
     data: {
       entityType: normalizedType,
       entityId,
-      data,
+      data: serializedData,
       author,
     },
   });
