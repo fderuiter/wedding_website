@@ -44,6 +44,16 @@ const BackupAppConfigSchema = z.object({
   timezone: UpdateAppConfigSchema.shape.timezone.optional(),
 });
 
+// Media database-aligned schema
+const BackupMediaSchema = z.object({
+  id: z.string().min(1).max(255),
+  url: z.string(),
+  altText: z.string().nullable().optional(),
+  isDecorative: z.boolean().optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
 // WeddingPartyMember database-aligned schema
 const BackupWeddingPartyMemberSchema = z.object({
   // System-level metadata fields (Required)
@@ -141,6 +151,7 @@ const BackupContentNodeSchema = z.object({
 export const DatabaseBackupSchema = z.object({
   appConfig: z.array(BackupAppConfigSchema).optional(),
   contentNode: z.array(BackupContentNodeSchema).optional(),
+  media: z.array(BackupMediaSchema).optional(),
   weddingPartyMember: z.array(BackupWeddingPartyMemberSchema).optional(),
   attraction: z.array(BackupAttractionSchema).optional(),
   registryItem: z.array(BackupRegistryItemSchema).optional(),

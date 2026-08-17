@@ -68,6 +68,7 @@ export const UpdateFeaturesSchema = z.object({
 export const ImportBackupSchema = z.object({
   appConfig: z.array(z.any()).optional(),
   contentNode: z.array(z.any()).optional(),
+  media: z.array(z.any()).optional(),
   weddingPartyMember: z.array(z.any()).optional(),
   attraction: z.array(z.any()).optional(),
   registryItem: z.array(z.any()).optional(),
