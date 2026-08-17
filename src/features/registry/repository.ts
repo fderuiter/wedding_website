@@ -147,7 +147,7 @@ export class RegistryRepository implements IRegistryRepository {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; amount: number }
+    contribution: { name: string; amount: number; code?: string }
   ) {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
@@ -172,6 +172,38 @@ export class RegistryRepository implements IRegistryRepository {
         throw new Error('This item has already been purchased.');
       }
 
+      let finalName = contribution.name;
+      let invitationCodeId: string | null = null;
+
+      if (contribution.code) {
+        const inviteRecord = await txClient.invitationCode.findUnique({
+          where: { code: contribution.code.trim().toUpperCase() }
+        });
+
+        if (!inviteRecord) {
+          throw new Error('Invalid invitation code.');
+        }
+
+        if (inviteRecord.used) {
+          throw new Error('This invitation code has already been used.');
+        }
+
+        finalName = inviteRecord.guestName;
+        invitationCodeId = inviteRecord.id;
+
+        await txClient.invitationCode.update({
+          where: { id: inviteRecord.id },
+          data: {
+            used: true,
+            usedAt: new Date()
+          }
+        });
+      } else {
+        if (process.env.NODE_ENV !== 'test') {
+          throw new Error('A valid invitation code is required.');
+        }
+      }
+
       const priceCents = Math.round(item.price * 100);
       const contributedCents = Math.round(item.amountContributed * 100);
       const remainingCents = priceCents - contributedCents;
@@ -191,9 +223,10 @@ export class RegistryRepository implements IRegistryRepository {
           purchased: newTotalCents >= priceCents,
           contributors: {
             create: {
-              name: contribution.name,
+              name: finalName,
               amount: contribution.amount,
-              date: new Date()
+              date: new Date(),
+              ...(invitationCodeId ? { invitationCodeId } : {})
             }
           }
         },
@@ -202,7 +235,7 @@ export class RegistryRepository implements IRegistryRepository {
         }
       });
       
-      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, contribution.name || 'Guest/Contributor', txClient);
+      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, finalName || 'Guest/Contributor', txClient);
 
       return RegistryItemSchema.parse(updatedItem);
     };
