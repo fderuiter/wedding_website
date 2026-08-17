@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 model AppConfig {
@@ -13,7 +13,7 @@ model AppConfig {
   subdomain        String?  @unique
   brideName        String   @default("")
   groomName        String   @default("")
-  weddingDate      DateTime @default(dbgenerated("NOW()"))
+  weddingDate      DateTime @default(now())
   baseUrl          String   @default("")
   venueName        String   @default("")
   venueAddress     String   @default("")
@@ -134,7 +134,7 @@ model InvitationCode {
 model ContentNode {
   id        String   @id @default(uuid())
   type      String // e.g., "FAQ", "Logistics", "Photo"
-  tags      String[] // e.g., ["Homepage", "FAQ"]
+  tags      Json // e.g., ["Homepage", "FAQ"]
   data      Json // Flexible key-value pairs
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
