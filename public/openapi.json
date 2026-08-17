@@ -733,6 +733,38 @@
         }
       }
     },
+    "/api/guest/login": {
+      "post": {
+        "summary": "POST /api/guest/login",
+        "description": "Endpoint for /api/guest/login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "passcode": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "passcode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/media/{id}": {
       "put": {
         "summary": "PUT /api/media/[id]",

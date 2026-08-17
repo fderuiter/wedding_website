@@ -1,11 +1,34 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { isGuestRequest } from '@/core/auth/guest.server';
 import { isProtectedRoute } from '@/lib/routes';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const method = request.method;
+
+  const isExcluded = 
+    pathname === '/guest/login' ||
+    pathname === '/api/guest/login' ||
+    pathname === '/robots.txt' ||
+    pathname === '/favicon.ico' ||
+    pathname.startsWith('/_next/') ||
+    /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(pathname);
+
+  if (!isExcluded) {
+    const isGuest = await isGuestRequest(request);
+    const isAdmin = await isAdminRequest(request);
+
+    if (!isGuest && !isAdmin) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      const loginUrl = new URL('/guest/login', request.url);
+      loginUrl.searchParams.set('callbackUrl', pathname + request.nextUrl.search);
+      return NextResponse.redirect(loginUrl, { status: 303 });
+    }
+  }
 
   if (isProtectedRoute(pathname, method)) {
     const isAuth = await isAdminRequest(request);
