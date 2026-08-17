@@ -6,6 +6,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const [
     appConfig,
     contentNode,
+    media,
     weddingPartyMember,
     attraction,
     registryItem,
@@ -14,6 +15,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
   ] = await Promise.all([
     prisma.appConfig.findMany(),
     prisma.contentNode.findMany(),
+    prisma.media.findMany(),
     prisma.weddingPartyMember.findMany(),
     prisma.attraction.findMany(),
     prisma.registryItem.findMany(),
@@ -24,6 +26,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const data = {
     appConfig,
     contentNode,
+    media,
     weddingPartyMember,
     attraction,
     registryItem,

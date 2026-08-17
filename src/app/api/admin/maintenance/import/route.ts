@@ -73,6 +73,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     await tx.registryItem.deleteMany();
     await tx.attraction.deleteMany();
     await tx.weddingPartyMember.deleteMany();
+    await tx.media.deleteMany();
     await tx.contentNode.deleteMany();
     await tx.appConfig.deleteMany();
     
@@ -81,6 +82,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
     if (data.appConfig?.length) await tx.appConfig.createMany({ data: data.appConfig });
     if (data.contentNode?.length) await tx.contentNode.createMany({ data: data.contentNode });
+    if (data.media?.length) await tx.media.createMany({ data: data.media });
     if (data.weddingPartyMember?.length) await tx.weddingPartyMember.createMany({ data: data.weddingPartyMember });
     if (data.attraction?.length) await tx.attraction.createMany({ data: data.attraction });
     if (data.registryItem?.length) await tx.registryItem.createMany({ data: data.registryItem });
