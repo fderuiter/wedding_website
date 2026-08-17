@@ -3,6 +3,13 @@ import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
 import { RegistryItem } from '@/features/registry';
+import { apiClient } from '@/lib/apiClient';
+
+jest.mock('@/lib/apiClient', () => ({
+  apiClient: {
+    get: jest.fn(),
+  },
+}));
 
 // Mock item data
 const mockSingleItem: RegistryItem = {
@@ -258,6 +265,62 @@ describe('RegistryItemCard Component', () => {
     fireEvent.error(img);
     // Check if the src is updated to the placeholder
     expect(img).toHaveAttribute('src', '/images/placeholder.png');
+  });
+
+  describe('Invitation Code Verification', () => {
+    it('successfully validates invitation code, auto-populates guest name, and locks name input', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        valid: true,
+        guestName: 'Jane Smith',
+        code: 'GOODCODE',
+      });
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const codeInput = screen.getByLabelText(/Invitation Code/i);
+      
+      // 'GOODCODE' is 8 characters, which triggers automatic validation on change
+      fireEvent.change(codeInput, { target: { value: 'GOODCODE' } });
+
+      await waitFor(() => {
+        expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=GOODCODE');
+        expect(screen.getByText('Code verified! Name locked.')).toBeInTheDocument();
+      });
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      expect(nameInput).toHaveValue('Jane Smith');
+      expect(nameInput).toBeDisabled();
+      expect(codeInput).toBeDisabled();
+    });
+
+    it('shows error message if invitation code is invalid', async () => {
+      (apiClient.get as jest.Mock).mockRejectedValue(new Error('Invalid invitation code.'));
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const codeInput = screen.getByLabelText(/Invitation Code/i);
+      fireEvent.change(codeInput, { target: { value: 'BADCODE' } });
+
+      const verifyButton = screen.getByRole('button', { name: 'Verify' });
+      fireEvent.click(verifyButton);
+
+      await waitFor(() => {
+        expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=BADCODE');
+        expect(screen.getByText('Invalid invitation code.')).toBeInTheDocument();
+      });
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      expect(nameInput).not.toBeDisabled();
+      expect(nameInput).toHaveValue('');
+    });
   });
 
 });
