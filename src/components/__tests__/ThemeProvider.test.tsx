@@ -125,3 +125,62 @@ describe('ThemeProvider Sanitization', () => {
     Object.defineProperty(window, 'parent', { writable: true, value: originalParent });
   });
 });
+
+describe('ThemeProvider Fault Tolerance', () => {
+  let originalGetComputedStyle: typeof window.getComputedStyle;
+
+  beforeAll(() => {
+    originalGetComputedStyle = window.getComputedStyle;
+  });
+
+  afterEach(() => {
+    window.getComputedStyle = originalGetComputedStyle;
+  });
+
+  it('handles missing document style capabilities (getComputedStyle returns null)', () => {
+    // Mock getComputedStyle to return null (e.g. inside a hidden iframe display: none)
+    window.getComputedStyle = () => null as any;
+
+    const { getByTestId } = render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-primary')).toHaveTextContent('#B91C1C');
+    expect(getByTestId('theme-secondary')).toHaveTextContent('#B45309');
+  });
+
+  it('handles getComputedStyle throwing an error (non-standard environments)', () => {
+    // Mock getComputedStyle to throw an error
+    window.getComputedStyle = () => {
+      throw new Error('SecurityError: Blocked from accessing styles');
+    };
+
+    const { getByTestId } = render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-primary')).toHaveTextContent('#B91C1C');
+    expect(getByTestId('theme-secondary')).toHaveTextContent('#B45309');
+  });
+
+  it('supplies default theme colors when computed style values are empty strings', () => {
+    // Mock getComputedStyle to return empty values for variables
+    window.getComputedStyle = () => ({
+      getPropertyValue: (prop: string) => ''
+    }) as any;
+
+    const { getByTestId } = render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-primary')).toHaveTextContent('#B91C1C');
+    expect(getByTestId('theme-secondary')).toHaveTextContent('#B45309');
+  });
+});
+
