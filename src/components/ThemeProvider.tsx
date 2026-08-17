@@ -290,11 +290,27 @@ export function ThemeProvider({
   }, []);
 
   useEffect(() => {
-    const styles = getComputedStyle(document.documentElement);
-    const primary = styles.getPropertyValue('--color-primary').trim() || '#B91C1C';
-    const secondary = styles.getPropertyValue('--color-secondary').trim() || '#B45309';
-    const accent = styles.getPropertyValue('--color-accent').trim() || '#D4AF37';
-    const outline = styles.getPropertyValue('--color-outline').trim() || '#000000';
+    let primary = '#B91C1C';
+    let secondary = '#B45309';
+    let accent = '#D4AF37';
+    let outline = '#000000';
+
+    try {
+      if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        const rootElement = typeof document !== 'undefined' ? document.documentElement : null;
+        if (rootElement) {
+          const styles = window.getComputedStyle(rootElement);
+          if (styles && typeof styles.getPropertyValue === 'function') {
+            primary = styles.getPropertyValue('--color-primary').trim() || '#B91C1C';
+            secondary = styles.getPropertyValue('--color-secondary').trim() || '#B45309';
+            accent = styles.getPropertyValue('--color-accent').trim() || '#D4AF37';
+            outline = styles.getPropertyValue('--color-outline').trim() || '#000000';
+          }
+        }
+      }
+    } catch (e) {
+      // Gracefully recover from unreadable styling contexts or missing layout capabilities
+    }
 
     setTheme({
       themePrimary: sanitizeColor(config?.colorPrimary, sanitizeColor(primary, '#B91C1C')),
