@@ -90,6 +90,8 @@ flowchart LR
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
     node_api_admin_versions_id_restore["restore"]
+    node_api_guest["guest"]
+    node_api_guest_login["login"]
     node_api_media["media"]
     node_api_media_id["[id]"]
     node_api_registry["registry"]
@@ -99,6 +101,8 @@ flowchart LR
     node_api_registry_scrape["scrape"]
     node_api_weather["weather"]
     node_archive["archive"]
+    node_guest["guest"]
+    node_guest_login["login"]
     node_heart["heart"]
     node_photos["photos"]
     node_projectinfo["project-info"]
@@ -136,6 +140,8 @@ flowchart LR
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
+    node_api --> node_api_guest
+    node_api_guest --> node_api_guest_login
     node_api --> node_api_media
     node_api_media --> node_api_media_id
     node_api --> node_api_registry
@@ -145,6 +151,8 @@ flowchart LR
     node_api_registry --> node_api_registry_scrape
     node_api --> node_api_weather
     App --> node_archive
+    App --> node_guest
+    node_guest --> node_guest_login
     App --> node_heart
     App --> node_photos
     App --> node_projectinfo
@@ -178,6 +186,7 @@ flowchart LR
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
+    class node_api_guest_login api;
     class node_api_media api;
     class node_api_media_id api;
     class node_api_registry_contribute api;
@@ -186,6 +195,7 @@ flowchart LR
     class node_api_registry_scrape api;
     class node_api_weather api;
     class node_archive page;
+    class node_guest_login page;
     class node_heart page;
     class node_photos page;
     class node_projectinfo page;
