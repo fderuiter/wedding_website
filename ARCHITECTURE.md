@@ -68,6 +68,7 @@ flowchart LR
     node_admin_dashboard_attractions["attractions"]
     node_admin_dashboard_content["content"]
     node_admin_dashboard_history["history"]
+    node_admin_dashboard_invitationcodes["invitation-codes"]
     node_admin_dashboard_maintenance["maintenance"]
     node_admin_dashboard_media["media"]
     node_admin_dashboard_settings["settings"]
@@ -97,6 +98,7 @@ flowchart LR
     node_api_registry_items["items"]
     node_api_registry_items_id["[id]"]
     node_api_registry_scrape["scrape"]
+    node_api_registry_validatecode["validate-code"]
     node_api_weather["weather"]
     node_archive["archive"]
     node_heart["heart"]
@@ -114,6 +116,7 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_attractions
     node_admin_dashboard --> node_admin_dashboard_content
     node_admin_dashboard --> node_admin_dashboard_history
+    node_admin_dashboard --> node_admin_dashboard_invitationcodes
     node_admin_dashboard --> node_admin_dashboard_maintenance
     node_admin_dashboard --> node_admin_dashboard_media
     node_admin_dashboard --> node_admin_dashboard_settings
@@ -143,6 +146,7 @@ flowchart LR
     node_api_registry --> node_api_registry_items
     node_api_registry_items --> node_api_registry_items_id
     node_api_registry --> node_api_registry_scrape
+    node_api_registry --> node_api_registry_validatecode
     node_api --> node_api_weather
     App --> node_archive
     App --> node_heart
@@ -160,6 +164,7 @@ flowchart LR
     class node_admin_dashboard_attractions page;
     class node_admin_dashboard_content page;
     class node_admin_dashboard_history page;
+    class node_admin_dashboard_invitationcodes page;
     class node_admin_dashboard_maintenance page;
     class node_admin_dashboard_media page;
     class node_admin_dashboard_settings page;
@@ -184,6 +189,7 @@ flowchart LR
     class node_api_registry_items api;
     class node_api_registry_items_id api;
     class node_api_registry_scrape api;
+    class node_api_registry_validatecode api;
     class node_api_weather api;
     class node_archive page;
     class node_heart page;
