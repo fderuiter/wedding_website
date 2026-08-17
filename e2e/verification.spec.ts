@@ -3,9 +3,34 @@ import AxeBuilder from '@axe-core/playwright';
 import { a11yConfig } from '../src/a11y-config';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+
+function generateGuestCookieValue() {
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const payload = {
+    guest: true,
+    iat: Date.now(),
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
 
 test.describe('UI Verification', () => {
-  test('should show the main content on visit and be accessible', async ({ page }) => {
+  test('should show the main content on visit and be accessible', async ({ context, page }) => {
+    const guestCookieValue = generateGuestCookieValue();
+    await context.addCookies([
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://127.0.0.1:3000',
+      }
+    ]);
+
     await page.goto('/');
 
     // The main content should be visible
