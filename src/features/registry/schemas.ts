@@ -13,6 +13,7 @@ export const ContributionSchema = z.object({
   itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
   name: z.string({ message: 'Name is required and must be under 100 characters.' }).trim().min(1, 'Name is required and must be under 100 characters.').max(100, 'Name is required and must be under 100 characters.'),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+  code: z.string().trim().optional(),
 }, { message: 'Invalid request body.' });
 
 export const RegistryItemBaseSchema = z.object({
@@ -126,5 +127,18 @@ export function translateSnapshotToActive(snapshotData: any) {
     amountContributed: snapshotData.amountContributed || 0,
   };
 }
+
+export const InvitationCodeSchema = z.object({
+  id: z.string(),
+  code: z.string().trim().min(1, 'Code is required.').max(50, 'Code must be under 50 characters.'),
+  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
+  used: z.boolean().default(false),
+  usedAt: z.union([z.string(), z.date()]).nullable().optional(),
+  createdAt: z.union([z.string(), z.date()]).optional(),
+  updatedAt: z.union([z.string(), z.date()]).optional(),
+});
+
+export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
+
 
 
