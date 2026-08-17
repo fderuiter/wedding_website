@@ -886,6 +886,9 @@
                   "amount": {
                     "type": "number",
                     "exclusiveMinimum": 0
+                  },
+                  "code": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -1322,6 +1325,17 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/registry/validate-code": {
+      "get": {
+        "summary": "GET /api/registry/validate-code",
+        "description": "Endpoint for /api/registry/validate-code",
         "responses": {
           "200": {
             "description": "Successful response"
