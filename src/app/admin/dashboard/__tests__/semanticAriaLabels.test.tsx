@@ -75,13 +75,15 @@ jest.mock('@/lib/apiClient', () => ({
   }
 }));
 
-jest.mock('@/features/admin/apiClient', () => ({
+jest.mock('@/features/admin', () => ({
   apiClient: {
     get: jest.fn(),
     post: jest.fn(),
     put: jest.fn(),
     delete: jest.fn(),
-  }
+  },
+  getEntityService: jest.fn(),
+  handleMediaFields: jest.fn(),
 }));
 
 import AttractionsDashboardPage from '../attractions/page';

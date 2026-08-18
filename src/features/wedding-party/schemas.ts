@@ -1,6 +1,5 @@
 import { z } from 'zod';
-// eslint-disable-next-line no-restricted-imports
-import { createMediaAssociationSchema } from '@/features/media/schemas';
+import { createMediaAssociationSchema } from '@/features/media';
 import { safeUrlSchema } from '@/utils/validation';
 
 export const WeddingPartyMemberSchema = z.object({
