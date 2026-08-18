@@ -89,6 +89,18 @@ jobs:
             echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/my-app:${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest" >> $GITHUB_OUTPUT
           fi
 
+      - name: Build local image for vulnerability scanning
+        run: docker build -t my-app:local .
+
+      - name: Scan container image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'my-app:local'
+          format: 'table'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          severity: 'HIGH,CRITICAL'
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
