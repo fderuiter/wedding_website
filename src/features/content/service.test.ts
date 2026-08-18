@@ -5,7 +5,6 @@ import { ContentNode } from '@prisma/client';
 class MockContentRepository implements IContentRepository {
   async getFeatures() { return []; }
   async updateFeatures(_features: any[]) { return {} as any; }
-  async getAllNodes() { return []; }
   async getNodesByType(_type: string) { return []; }
 }
 

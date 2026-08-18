@@ -35,11 +35,6 @@ class ContentRepository implements IContentRepository {
     });
   }
 
-  async getAllNodes(): Promise<ContentNodeDTO[]> {
-    const nodes = await this.client.contentNode.findMany();
-    return nodes.map((n: any) => ContentNodeSchema.parse(n));
-  }
-
   async getNodesByType(type: string): Promise<ContentNodeDTO[]> {
     const nodes = await this.client.contentNode.findMany({
       where: { type }
