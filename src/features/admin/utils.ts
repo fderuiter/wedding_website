@@ -1,16 +1,32 @@
-import { prisma } from '@/lib/prisma';
-import { MediaRepository } from '@/features/media';
-
 export async function handleMediaFields(
   data: any,
   idField: string,
   urlField: string,
   altField: string,
   decField: string,
-  client: any = prisma,
+  client?: any,
   author: string = 'Admin'
 ) {
-  const db = client || prisma;
+  const getDb = async () => {
+    if (client) return client;
+    if (process.env.JEST_WORKER_ID) {
+      const req = eval('require');
+      return req('@/lib/prisma').prisma;
+    }
+    const { prisma } = await (0, eval)('import("../../lib/prisma")');
+    return prisma;
+  };
+  const getMediaRepoClass = async () => {
+    if (process.env.JEST_WORKER_ID) {
+      const req = eval('require');
+      return req('@/features/media').MediaRepository;
+    }
+    const { MediaRepository } = await (0, eval)('import("../media")');
+    return MediaRepository;
+  };
+
+  const db = await getDb();
+  const MediaRepository = await getMediaRepoClass();
   const mediaRepo = new MediaRepository(db);
   let mediaId = data[idField];
   const url = data[urlField];
