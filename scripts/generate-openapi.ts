@@ -1,3 +1,6 @@
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'file:./test.db';
+process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'build-time-static-pass';
+
 import { Project, SyntaxKind } from 'ts-morph';
 import path from 'path';
 import fs from 'fs';
@@ -8,6 +11,7 @@ import * as attractionSchemas from '../src/features/attractions/schemas.js';
 import * as weddingPartySchemas from '../src/features/wedding-party/schemas.js';
 import * as contentSchemas from '../src/features/content/schemas.js';
 import * as mediaSchemas from '../src/features/media/schemas.js';
+import * as backupValidationSchemas from '../src/utils/backupValidation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,7 +23,8 @@ const ALL_SCHEMAS: Record<string, any> = {
   ...attractionSchemas,
   ...weddingPartySchemas,
   ...contentSchemas,
-  ...mediaSchemas
+  ...mediaSchemas,
+  ...backupValidationSchemas,
 };
 
 const project = new Project({ tsConfigFilePath: path.join(rootPath, 'tsconfig.json') });
@@ -27,39 +32,7 @@ const routeFiles = project.getSourceFiles('src/app/api/**/route.ts');
 
 function extractSchemaName(node: any): string | null {
   const calls = node.getDescendantsOfKind(SyntaxKind.CallExpression);
-  for (const c of calls) {
-    const text = c.getExpression().getText();
-    if (text === 'createValidatedRoute') {
-      const args = c.getArguments();
-      if (args.length > 0 && args[0].getKind() === SyntaxKind.ObjectLiteralExpression) {
-        const obj = args[0];
-        const schemaProp = obj.getProperty('schema');
-        if (schemaProp && schemaProp.getKind() === SyntaxKind.PropertyAssignment) {
-          const init = schemaProp.getInitializer();
-          if (init) {
-            if (init.getKind() === SyntaxKind.ArrowFunction || init.getKind() === SyntaxKind.FunctionExpression) {
-              const innerCalls = init.getDescendantsOfKind(SyntaxKind.CallExpression);
-              if (innerCalls.length > 0) {
-                return innerCalls[0].getExpression().getText().replace(/.*\./, '');
-              }
-              const innerIds = init.getDescendantsOfKind(SyntaxKind.Identifier);
-              const returnedSchema = innerIds.find((id: any) => id.getText().includes('Schema'));
-              if (returnedSchema) return returnedSchema.getText().replace(/.*\./, '');
-            }
-            return init.getText().replace(/.*\./, '');
-          }
-        }
-      }
-    }
-    if (text.includes('.safeParse') || text.includes('.parse')) {
-      return text.split('.')[0];
-    }
-  }
-  return null;
-}
 
-function findSchemaInFile(file: any): string | null {
-  const calls = file.getDescendantsOfKind(SyntaxKind.CallExpression);
   for (const c of calls) {
     const text = c.getExpression().getText();
     if (text === 'createValidatedRoute') {
@@ -84,10 +57,30 @@ function findSchemaInFile(file: any): string | null {
         }
       }
     }
-    if (text.includes('.safeParse') || text.includes('.parse')) {
-      return text.split('.')[0];
+  }
+
+  const candidateSchemas: string[] = [];
+  for (const c of calls) {
+    const exprText = c.getExpression().getText();
+    if (exprText.includes('.safeParse') || exprText.includes('.parse')) {
+      const schemaName = exprText.split('.')[0];
+      const args = c.getArguments();
+      const argText = args.length > 0 ? args[0].getText() : '';
+
+      if (['updatedConfig', 'createdConfig', 'snapshotData', 'c'].includes(argText) || argText.startsWith('snapshotData.')) {
+        continue;
+      }
+
+      if (ALL_SCHEMAS[schemaName]) {
+        candidateSchemas.push(schemaName);
+      }
     }
   }
+
+  if (candidateSchemas.length > 0) {
+    return candidateSchemas[candidateSchemas.length - 1];
+  }
+
   return null;
 }
 
@@ -157,10 +150,7 @@ async function run() {
           }
         }
 
-        let schemaName = extractSchemaName(handlerNode);
-        if (!schemaName) {
-          schemaName = findSchemaInFile(handlerFile);
-        }
+        const schemaName = extractSchemaName(handlerNode);
 
         const operation: any = {
           summary: `${method} ${routePath}`,
@@ -187,31 +177,40 @@ async function run() {
         }
 
         if (['POST', 'PUT', 'PATCH'].includes(method)) {
-          if (!schemaName) {
-            console.error(`ERROR: Route ${method} ${routePath} accepts data but lacks a Zod validation schema!`);
-            missingSchemaCount++;
-            continue;
-          }
-          
-          const schemaObj = ALL_SCHEMAS[schemaName];
-          if (!schemaObj) {
-            console.error(`ERROR: Could not find schema definition for '${schemaName}' in ALL_SCHEMAS`);
-            missingSchemaCount++;
-            continue;
-          }
+          const handlerText = handlerNode.getText();
+          const acceptsBody = handlerText.includes('request.json()') ||
+                              handlerText.includes('req.json()') ||
+                              handlerText.includes('request.formData()') ||
+                              handlerText.includes('req.formData()') ||
+                              handlerText.includes('createValidatedRoute');
 
-          try {
-            const jsonSchema = typeof schemaObj.toJSONSchema === 'function' ? schemaObj.toJSONSchema({ unrepresentable: 'ignore' }) : schemaObj;
-            operation.requestBody = {
-              required: true,
-              content: {
-                'application/json': {
-                  schema: jsonSchema
+          if (acceptsBody) {
+            if (!schemaName) {
+              console.error(`ERROR: Route ${method} ${routePath} accepts data but lacks a Zod validation schema!`);
+              missingSchemaCount++;
+              continue;
+            }
+
+            const schemaObj = ALL_SCHEMAS[schemaName];
+            if (!schemaObj) {
+              console.error(`ERROR: Could not find schema definition for '${schemaName}' in ALL_SCHEMAS`);
+              missingSchemaCount++;
+              continue;
+            }
+
+            try {
+              const jsonSchema = typeof schemaObj.toJSONSchema === 'function' ? schemaObj.toJSONSchema({ unrepresentable: 'ignore' }) : schemaObj;
+              operation.requestBody = {
+                required: true,
+                content: {
+                  'application/json': {
+                    schema: jsonSchema
+                  }
                 }
-              }
-            };
-          } catch (e) {
-            console.error(`ERROR: Failed to parse schema '${schemaName}' for ${method} ${routePath}`, e);
+              };
+            } catch (e) {
+              console.error(`ERROR: Failed to parse schema '${schemaName}' for ${method} ${routePath}`, e);
+            }
           }
         }
         
