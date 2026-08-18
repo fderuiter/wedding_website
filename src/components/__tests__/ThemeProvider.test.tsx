@@ -139,7 +139,7 @@ describe('ThemeProvider Fault Tolerance', () => {
 
   it('handles missing document style capabilities (getComputedStyle returns null)', () => {
     // Mock getComputedStyle to return null (e.g. inside a hidden iframe display: none)
-    window.getComputedStyle = () => null as any;
+    window.getComputedStyle = () => null as unknown as CSSStyleDeclaration;
 
     const { getByTestId } = render(
       <ThemeProvider>
@@ -170,8 +170,8 @@ describe('ThemeProvider Fault Tolerance', () => {
   it('supplies default theme colors when computed style values are empty strings', () => {
     // Mock getComputedStyle to return empty values for variables
     window.getComputedStyle = () => ({
-      getPropertyValue: (prop: string) => ''
-    }) as any;
+      getPropertyValue: (_prop: string) => ''
+    }) as unknown as CSSStyleDeclaration;
 
     const { getByTestId } = render(
       <ThemeProvider>
