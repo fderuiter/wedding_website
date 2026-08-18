@@ -27,7 +27,6 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
-      POSTGRES_URL_NON_POOLING: postgresql://wedding:wedding123@localhost:5432/wedding_test_shadow?schema=public
       ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +44,6 @@ jobs:
             sleep 1
           done
           echo "PostgreSQL database socket is ready!"
-          node -e "const { Client } = require('pg'); const client = new Client({ connectionString: process.env.DATABASE_URL }); client.connect().then(() => client.query('CREATE DATABASE wedding_test_shadow;')).then(() => client.end()).catch(() => client.end());"
       - name: Apply and verify database migrations
         run: |
           npx prisma migrate deploy

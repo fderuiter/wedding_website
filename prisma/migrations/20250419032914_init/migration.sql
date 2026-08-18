@@ -7,7 +7,7 @@ CREATE TABLE "AppConfig" (
     "subdomain" TEXT,
     "brideName" TEXT NOT NULL DEFAULT '',
     "groomName" TEXT NOT NULL DEFAULT '',
-    "weddingDate" TIMESTAMP(3) NOT NULL DEFAULT NOW(),
+    "weddingDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "baseUrl" TEXT NOT NULL DEFAULT '',
     "venueName" TEXT NOT NULL DEFAULT '',
     "venueAddress" TEXT NOT NULL DEFAULT '',
