@@ -27,6 +27,10 @@
     "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "scaffold": "node scripts/scaffold-feature.mjs",
+    "security:secrets": "npx tsx scripts/secret-scan.ts",
+    "security:sast": "npx tsx scripts/sast-scan.ts",
+    "security:audit": "npm audit --audit-level=high",
+    "security:all": "npm run security:secrets && npm run security:sast && npm run security:audit",
     "prepare": "node scripts/install-git-hooks.js"
   },
   "dependencies": {
@@ -51,9 +55,13 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-leaflet": "^5.0.0",
-    "sharp": "0.34.5",
+    "sharp": "^0.35.3",
     "three": "^0.182.0",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "cookie": "^0.7.0",
+    "deepmerge-ts": "^8.0.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

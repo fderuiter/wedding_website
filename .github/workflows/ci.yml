@@ -1,16 +1,69 @@
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
 name: CI
+
 on:
   push:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  secret-scan:
+    name: Secret Scanning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Secret Scan
+        run: npm run security:secrets
+
+  sast:
+    name: Static Application Security Testing (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run SAST Scan
+        run: npm run security:sast
+
+  dependency-audit:
+    name: Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Dependency Audit
+        run: npm run security:audit
+
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,26 +99,34 @@ jobs:
             const fs = require('fs');
             const signature = '<!-- doc-drift-comment -->';
             
-            try {
-              const comments = await github.rest.issues.listComments({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number
-              });
-              const existing = comments.data.find(c => c.body.includes(signature));
-              
-              if ('${{ steps.verify-docs.outcome }}' === 'failure') {
-                let commentBody = '';
-                if (fs.existsSync('drift_files.txt')) {
-                  const filesList = fs.readFileSync('drift_files.txt', 'utf8').trim().split('\n');
-                  const driftedFilesMarkdown = filesList.map(line => `- \`${line}\``).join('\n');
-                  const filesForGitAdd = filesList.join(' ');
-                  
-                  commentBody = `${signature}\n### ⚠️ Documentation Drift Detected\n\nThe committed documentation files do not match the current codebase. The following files are out of sync:\n\n${driftedFilesMarkdown}\n\n**To resolve this locally, run the following commands and commit the changes:**\n\n\`\`\`bash\nnpx tsx scripts/generate-openapi.ts\nnpx tsx scripts/generate-docs.ts\ngit add ${filesForGitAdd}\ngit commit -m "docs: sync documentation with codebase"\n\`\`\`\n`;
-                } else {
-                  commentBody = `${signature}\n### ⚠️ Documentation Generation Failed\n\nThe documentation generation scripts failed to execute. Please check the workflow logs for details on missing schemas or syntax errors.\n`;
-                }
+            let commentBody = '';
+            if ('${{ steps.verify-docs.outcome }}' === 'failure') {
+              if (fs.existsSync('drift_files.txt')) {
+                const filesList = fs.readFileSync('drift_files.txt', 'utf8').trim().split('\n');
+                const driftedFilesMarkdown = filesList.map(line => `- \`${line}\``).join('\n');
+                const filesForGitAdd = filesList.join(' ');
                 
+                commentBody = `${signature}\n### ⚠️ Documentation Drift Detected\n\nThe committed documentation files do not match the current codebase. The following files are out of sync:\n\n${driftedFilesMarkdown}\n\n**To resolve this locally, run the following commands and commit the changes:**\n\n\`\`\`bash\nnpx tsx scripts/generate-openapi.ts\nnpx tsx scripts/generate-docs.ts\ngit add ${filesForGitAdd}\ngit commit -m "docs: sync documentation with codebase"\n\`\`\`\n`;
+              } else {
+                commentBody = `${signature}\n### ⚠️ Documentation Generation Failed\n\nThe documentation generation scripts failed to execute. Please check the workflow logs for details on missing schemas or syntax errors.\n`;
+              }
+            } else if ('${{ steps.verify-docs.outcome }}' === 'success') {
+              commentBody = `${signature}\n### ✅ Documentation is now in sync!\n\nAll architecture and API files match the codebase.`;
+            }
+
+            if (commentBody) {
+              if (process.env.GITHUB_STEP_SUMMARY) {
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, commentBody + '\n');
+              }
+
+              try {
+                const comments = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number
+                });
+                const existing = comments.data.find(c => c.body.includes(signature));
+
                 if (existing) {
                   await github.rest.issues.updateComment({
                     owner: context.repo.owner,
@@ -81,18 +142,11 @@ jobs:
                     body: commentBody
                   });
                 }
-              } else if ('${{ steps.verify-docs.outcome }}' === 'success' && existing) {
-                const resolveBody = `${signature}\n### ✅ Documentation is now in sync!\n\nAll architecture and API files match the codebase.`;
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: existing.id,
-                  body: resolveBody
-                });
+              } catch (err) {
+                console.warn('Failed to report documentation drift via GitHub API (restricted access or fork PR):', err.message);
               }
-            } catch (err) {
-              console.warn('Failed to report documentation drift via GitHub API:', err);
             }
+
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
@@ -101,46 +155,52 @@ jobs:
           key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+
       - name: Build project
         run: npm run build
+
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
+
       - name: Run tests
         run: npm test
+
       - name: Upload Test Coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lcov-report
           path: coverage/
+
       - name: Run e2e tests
         run: npx playwright test
+
       - name: Generate A11y Report
         if: always()
         run: node scripts/a11y-report.mjs
-      - name: Post A11y Report to PR
-        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+
+      - name: Report A11y Findings
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            try {
-              const fs = require('fs');
-              const reportPath = 'test-results/a11y-summary.md';
-              if (fs.existsSync(reportPath)) {
-                const body = fs.readFileSync(reportPath, 'utf8');
+            const fs = require('fs');
+            const reportPath = 'test-results/a11y-summary.md';
+            if (fs.existsSync(reportPath)) {
+              const body = fs.readFileSync(reportPath, 'utf8');
+
+              if (process.env.GITHUB_STEP_SUMMARY) {
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, body + '\n');
+              }
+
+              try {
                 await github.rest.issues.createComment({
                   issue_number: context.issue.number,
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   body: body
                 });
+              } catch (err) {
+                console.warn('Failed to post A11y report via GitHub API (restricted access or fork PR):', err.message);
               }
-            } catch (err) {
-              console.warn('Failed to post A11y report via GitHub API:', err);
             }
-      - name: Write A11y Report to Job Summary
-        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        run: |
-          if [ -f "test-results/a11y-summary.md" ]; then
-            cat test-results/a11y-summary.md >> $GITHUB_STEP_SUMMARY
-          fi
