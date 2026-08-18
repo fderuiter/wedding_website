@@ -12,7 +12,8 @@
     "src/features/**/admin.service.ts",
     "src/features/**/index.ts",
     "scripts/generate-openapi.ts",
-    "scripts/generate-password-hash.mjs"
+    "scripts/generate-password-hash.mjs",
+    "scripts/check-coverage-regression.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx}",

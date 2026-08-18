@@ -16,7 +16,7 @@ const prSummary = JSON.parse(fs.readFileSync(prSummaryPath, 'utf8'));
 
 if (!fs.existsSync(baselineSummaryPath)) {
   console.log(`⚠️ Baseline coverage summary not found at: ${baselineSummaryPath}`);
-  console.log(`Skipping regression comparison (treating build as baseline).`);
+  console.log('Skipping regression comparison (treating build as baseline).');
   process.exit(0);
 }
 
@@ -109,20 +109,20 @@ for (const domain of domainList) {
 }
 
 // Format Markdown report
-let markdown = `## 📊 Test Coverage Comparison Report\n\n`;
-markdown += `| Scope / Domain | Metric | Baseline | PR Build | Diff | Status |\n`;
-markdown += `| --- | --- | --- | --- | --- | --- |\n`;
+let markdown = '## 📊 Test Coverage Comparison Report\n\n';
+markdown += '| Scope / Domain | Metric | Baseline | PR Build | Diff | Status |\n';
+markdown += '| --- | --- | --- | --- | --- | --- |\n';
 
 for (const row of tableRows) {
   markdown += `| \`${row.domain}\` | ${row.metric} | ${row.baseline} | ${row.pr} | ${row.diff} | ${row.status} |\n`;
 }
 
-markdown += `\n`;
+markdown += '\n';
 
 if (hasRegression) {
-  markdown += `❌ **Coverage Regression Detected**: One or more coverage metrics dropped relative to the \`main\` branch baseline.\n`;
+  markdown += '❌ **Coverage Regression Detected**: One or more coverage metrics dropped relative to the `main` branch baseline.\n';
 } else {
-  markdown += `✅ **Coverage Checks Passed**: All coverage metrics met or exceeded the \`main\` branch baseline.\n`;
+  markdown += '✅ **Coverage Checks Passed**: All coverage metrics met or exceeded the `main` branch baseline.\n';
 }
 
 console.log(markdown);
@@ -130,16 +130,16 @@ console.log(markdown);
 if (process.env.GITHUB_STEP_SUMMARY) {
   try {
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, 'utf8');
-    console.log(`Successfully wrote coverage report to $GITHUB_STEP_SUMMARY`);
+    console.log('Successfully wrote coverage report to $GITHUB_STEP_SUMMARY');
   } catch (err) {
-    console.error(`Failed to write to $GITHUB_STEP_SUMMARY:`, err);
+    console.error('Failed to write to $GITHUB_STEP_SUMMARY:', err);
   }
 }
 
 if (hasRegression) {
-  console.error(`❌ Build failed due to test coverage regression.`);
+  console.error('❌ Build failed due to test coverage regression.');
   process.exit(1);
 } else {
-  console.log(`✅ Test coverage regression check passed successfully.`);
+  console.log('✅ Test coverage regression check passed successfully.');
   process.exit(0);
 }
