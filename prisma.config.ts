@@ -4,17 +4,7 @@ const isSqlite = process.env.DATABASE_URL?.startsWith('file:') || process.env.DA
 
 const getShadowUrl = () => {
   if (isSqlite) return undefined;
-  if (process.env.POSTGRES_URL_NON_POOLING) return process.env.POSTGRES_URL_NON_POOLING;
-  if (process.env.DATABASE_URL) {
-    try {
-      const url = new URL(process.env.DATABASE_URL);
-      url.pathname = url.pathname + '_shadow';
-      return url.toString();
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
+  return process.env.SHADOW_DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING;
 };
 
 export default defineConfig({

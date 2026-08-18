@@ -45,6 +45,7 @@ jobs:
             sleep 1
           done
           echo "PostgreSQL database socket is ready!"
+          node -e "const { Client } = require('pg'); const client = new Client({ connectionString: process.env.DATABASE_URL }); client.connect().then(() => client.query('CREATE DATABASE wedding_test_shadow;')).then(() => client.end()).catch(() => client.end());"
       - name: Apply and verify database migrations
         run: |
           npx prisma migrate deploy
