@@ -6,6 +6,7 @@ import { MediaRepository } from '../repository';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { MediaSchema } from '../schemas';
+import { createSqliteAdapter } from '@/lib/prisma';
 
 // Unmock @prisma/client for this test file so we can interact with the real PostgreSQL container
 jest.unmock('@prisma/client');
@@ -21,75 +22,6 @@ let realPrisma: any;
 let pool: any;
 
 if (isSqlite) {
-  const { DatabaseSync } = require('node:sqlite');
-  const createSqliteAdapter = (connStr: string) => {
-    let path = connStr;
-    if (path.startsWith('file:')) path = path.slice(5);
-    if (path.includes('?')) path = path.split('?')[0];
-    const db = new DatabaseSync(path);
-    const mapSqliteType = (sqliteType: string) => {
-      if (!sqliteType) return 7;
-      const type = sqliteType.toUpperCase();
-      if (type.includes('INT') || type.includes('INTEGER')) return 0;
-      if (type.includes('CHAR') || type.includes('TEXT') || type.includes('CLOB')) return 7;
-      if (type.includes('BLOB')) return 13;
-      if (type.includes('REAL') || type.includes('FLOA') || type.includes('DOUB')) return 3;
-      if (type.includes('BOOL')) return 5;
-      if (type.includes('DATE') || type.includes('TIME')) return 10;
-      return 7;
-    };
-    const convertArg = (arg: any): any => {
-      if (arg === undefined || arg === null) return null;
-      if (typeof arg === 'boolean') return arg ? 1 : 0;
-      if (arg instanceof Date) return arg.toISOString();
-      if (arg && typeof arg === 'object') {
-        if (arg instanceof Uint8Array || Buffer.isBuffer(arg)) return arg;
-        return JSON.stringify(arg);
-      }
-      return arg;
-    };
-    const queryRaw = async (query: any) => {
-      const args = query.args.map(convertArg);
-      const stmt = db.prepare(query.sql);
-      stmt.setReturnArrays(true);
-      const cols = stmt.columns();
-      const columnNames = cols.map((c: any) => c.name);
-      const columnTypes = cols.map((c: any) => mapSqliteType(c.type || ''));
-      const rows = stmt.all(...args);
-      return { columnNames, columnTypes, rows };
-    };
-    const executeRaw = async (query: any) => {
-      const args = query.args.map(convertArg);
-      const stmt = db.prepare(query.sql);
-      const result = stmt.run(...args);
-      return result.changes;
-    };
-    const driverAdapter = {
-      provider: 'sqlite',
-      adapterName: 'builtin-sqlite',
-      queryRaw,
-      executeRaw,
-      async executeScript(script: string) { db.exec(script); },
-      async startTransaction() {
-        db.exec('BEGIN');
-        return {
-          provider: 'sqlite',
-          adapterName: 'builtin-sqlite-tx',
-          options: { usePhantomQuery: true },
-          queryRaw,
-          executeRaw,
-          async commit() { db.exec('COMMIT'); },
-          async rollback() { db.exec('ROLLBACK'); }
-        };
-      },
-      async dispose() { db.close(); }
-    };
-    return {
-      provider: 'sqlite',
-      adapterName: 'builtin-sqlite',
-      async connect() { return driverAdapter; }
-    };
-  };
   const adapter = createSqliteAdapter(connectionString);
   realPrisma = new PrismaClient({ adapter });
 } else {
