@@ -185,7 +185,8 @@ async function main() {
     const { adapt } = await import('./adapt-schema.js');
     adapt();
 
-    console.log(`Synchronizing schema to isolated test database: ${testDbUrl}`);
+    const isTestSqlite = testDbUrl.startsWith('file:') || testDbUrl.startsWith('sqlite:') || testDbUrl.includes('.db');
+    console.log(`Synchronizing schema to isolated test database (provider: ${isTestSqlite ? 'sqlite' : 'postgresql'})...`);
 
     runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
       env: { ...process.env, DATABASE_URL: testDbUrl },
