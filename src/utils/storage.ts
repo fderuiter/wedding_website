@@ -2,6 +2,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import { getNormalizedExtension } from './validation';
 
 export interface StorageProvider {
   uploadFile(file: File): Promise<{ url: string }>;
@@ -11,7 +12,7 @@ export class LocalStorageProvider implements StorageProvider {
   async uploadFile(file: File): Promise<{ url: string }> {
     const buffer = Buffer.from(await file.arrayBuffer());
     const hash = crypto.randomBytes(8).toString('hex');
-    const ext = file.name.substring(file.name.lastIndexOf('.'));
+    const ext = getNormalizedExtension(file.type, file.name);
     const filename = `${hash}${ext}`;
 
     const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
@@ -75,7 +76,7 @@ export class S3StorageProvider implements StorageProvider {
   async uploadFile(file: File): Promise<{ url: string }> {
     const buffer = Buffer.from(await file.arrayBuffer());
     const hash = crypto.randomBytes(8).toString('hex');
-    const ext = file.name.substring(file.name.lastIndexOf('.'));
+    const ext = getNormalizedExtension(file.type, file.name);
     const filename = `${hash}${ext}`;
 
     await this.client.send(
