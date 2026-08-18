@@ -333,6 +333,10 @@
                     "type": "array",
                     "items": {}
                   },
+                  "media": {
+                    "type": "array",
+                    "items": {}
+                  },
                   "weddingPartyMember": {
                     "type": "array",
                     "items": {}
