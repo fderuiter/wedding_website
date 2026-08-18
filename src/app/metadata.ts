@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getAppConfig } from '@/lib/config';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
+import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
 
 function interpolateKeywords(templateStr: string, config: any): string[] {
   if (!templateStr) return [];
@@ -18,11 +19,24 @@ export async function generateMetadata(): Promise<Metadata> {
   const faviconUrl = config.faviconUrl || '/assets/favicon.png';
   const seoKeywords = config.seoKeywords ?? "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception";
 
+  let siteUrl = config.baseUrl || 'http://localhost:3000';
+  try {
+    const { headers } = require('next/headers');
+    const headersList = await headers();
+    const host = headersList.get('host');
+    const proto = headersList.get('x-forwarded-proto');
+    if (host) {
+      siteUrl = getValidatedCanonicalUrl(host, proto, siteUrl);
+    }
+  } catch {
+    // Fallback if headers are not available during static generation
+  }
+
   const siteConfig = {
     title: config.seoTitle || `${config.brideName} & ${config.groomName}'s Wedding`,
     description: config.seoDescription || `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
-    url: config.baseUrl || 'http://localhost:3000',
-    ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${config.baseUrl || 'http://localhost:3000'}${ogImageUrl}`,
+    url: siteUrl,
+    ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${siteUrl}${ogImageUrl}`,
     favicon: faviconUrl,
   };
 

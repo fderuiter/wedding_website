@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
+import { isHostAllowed } from '../utils/hostValidation';
 import { headers } from 'next/headers';
 
 export type PublicAppConfig = PublicAppConfigDTO;
@@ -135,7 +136,7 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
   try {
     const headersList = await headers();
     const host = headersList.get('host');
-    if (!host) return null;
+    if (!host || !isHostAllowed(host)) return null;
     
     const cleanHost = host.split(':')[0];
     if (cleanHost === 'localhost' || cleanHost === '127.0.0.1') {
