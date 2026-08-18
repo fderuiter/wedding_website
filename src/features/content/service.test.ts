@@ -18,6 +18,109 @@ describe('ContentService', () => {
     service = new ContentService(mockRepo);
   });
 
+  describe('getFeatures & updateFeatures', () => {
+    it('delegates getFeatures and updateFeatures to repository', async () => {
+      const mockFeatures = [{ id: 'f1', type: 'hero', visible: true }];
+      jest.spyOn(mockRepo, 'getFeatures').mockResolvedValue(mockFeatures);
+      jest.spyOn(mockRepo, 'updateFeatures').mockResolvedValue({ id: 'global', features: mockFeatures } as any);
+
+      const features = await service.getFeatures();
+      expect(features).toEqual(mockFeatures);
+      expect(mockRepo.getFeatures).toHaveBeenCalledTimes(1);
+
+      const updated = await service.updateFeatures(mockFeatures);
+      expect(updated).toEqual({ id: 'global', features: mockFeatures });
+      expect(mockRepo.updateFeatures).toHaveBeenCalledWith(mockFeatures);
+    });
+  });
+
+  describe('reorderFeatures', () => {
+    it('reorders features according to provided ID list and calls repository updateFeatures', async () => {
+      const existingFeatures = [
+        { id: 'feat-1', title: 'Feature 1' },
+        { id: 'feat-2', title: 'Feature 2' },
+        { id: 'feat-3', title: 'Feature 3' },
+      ];
+      jest.spyOn(mockRepo, 'getFeatures').mockResolvedValue(existingFeatures);
+      jest.spyOn(mockRepo, 'updateFeatures').mockImplementation(async (f) => f as any);
+
+      await service.reorderFeatures(['feat-3', 'feat-1', 'feat-2']);
+
+      expect(mockRepo.getFeatures).toHaveBeenCalledTimes(1);
+      expect(mockRepo.updateFeatures).toHaveBeenCalledWith([
+        { id: 'feat-3', title: 'Feature 3' },
+        { id: 'feat-1', title: 'Feature 1' },
+        { id: 'feat-2', title: 'Feature 2' },
+      ]);
+    });
+
+    it('filters out non-existent IDs during reordering', async () => {
+      const existingFeatures = [
+        { id: 'feat-1', title: 'Feature 1' },
+        { id: 'feat-2', title: 'Feature 2' },
+      ];
+      jest.spyOn(mockRepo, 'getFeatures').mockResolvedValue(existingFeatures);
+      jest.spyOn(mockRepo, 'updateFeatures').mockImplementation(async (f) => f as any);
+
+      await service.reorderFeatures(['feat-2', 'missing-id', 'feat-1']);
+
+      expect(mockRepo.updateFeatures).toHaveBeenCalledWith([
+        { id: 'feat-2', title: 'Feature 2' },
+        { id: 'feat-1', title: 'Feature 1' },
+      ]);
+    });
+  });
+
+  describe('toggleFeatureVisibility', () => {
+    it('toggles visibility flag for target feature ID and calls repository updateFeatures', async () => {
+      const existingFeatures = [
+        { id: 'feat-1', visible: true },
+        { id: 'feat-2', visible: true },
+      ];
+      jest.spyOn(mockRepo, 'getFeatures').mockResolvedValue(existingFeatures);
+      jest.spyOn(mockRepo, 'updateFeatures').mockImplementation(async (f) => f as any);
+
+      await service.toggleFeatureVisibility('feat-1', false);
+
+      expect(mockRepo.updateFeatures).toHaveBeenCalledWith([
+        { id: 'feat-1', visible: false },
+        { id: 'feat-2', visible: true },
+      ]);
+    });
+  });
+
+  describe('createCustomSection', () => {
+    it('appends custom section feature and calls repository updateFeatures', async () => {
+      const existingFeatures = [{ id: 'hero-1', type: 'hero', visible: true }];
+      jest.spyOn(mockRepo, 'getFeatures').mockResolvedValue(existingFeatures);
+      jest.spyOn(mockRepo, 'updateFeatures').mockImplementation(async (f) => f as any);
+
+      await service.createCustomSection('Custom Section Title', 'Custom content goes here');
+
+      expect(mockRepo.updateFeatures).toHaveBeenCalledWith([
+        { id: 'hero-1', type: 'hero', visible: true },
+        expect.objectContaining({
+          id: expect.stringMatching(/^custom-/),
+          type: 'custom',
+          title: 'Custom Section Title',
+          content: 'Custom content goes here',
+          visible: true,
+        }),
+      ]);
+    });
+  });
+
+  describe('getAllNodes', () => {
+    it('delegates getAllNodes to repository', async () => {
+      const mockNodes = [{ id: 'n1', type: 'FAQ', tags: [], data: {}, createdAt: new Date(), updatedAt: new Date() }];
+      jest.spyOn(mockRepo, 'getAllNodes').mockResolvedValue(mockNodes);
+
+      const nodes = await service.getAllNodes();
+      expect(nodes).toEqual(mockNodes);
+      expect(mockRepo.getAllNodes).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('getPublicPhotos', () => {
     it('returns nodes of type Photo, sorted by createdAt descending, checking visibility flag in data', async () => {
       const now = new Date();

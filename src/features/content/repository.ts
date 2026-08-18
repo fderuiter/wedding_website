@@ -4,7 +4,7 @@ import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 
-class ContentRepository implements IContentRepository {
+export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
