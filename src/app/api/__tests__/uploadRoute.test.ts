@@ -28,6 +28,9 @@ import { S3Client } from '@aws-sdk/client-s3';
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
 
+const VALID_PNG_BUF = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+const VALID_JPEG_BUF = Buffer.from('/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64');
+
 function makeRequest(overrides: {
   hasAuth?: boolean;
   token?: string;
@@ -45,7 +48,7 @@ function makeRequest(overrides: {
     name: 'test-image.png',
     size: 1024,
     type: 'image/png',
-    arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+    arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
   };
 
   const formData = new Map<string, File | null>();
@@ -143,7 +146,7 @@ describe('POST /api/admin/upload', () => {
         name: 'exact.png',
         size: 5 * 1024 * 1024,
         type: 'image/png',
-        arrayBuffer: async () => new ArrayBuffer(0),
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
       };
       const req = makeRequest({ file: exactLimitFile as any });
       const res = await POST(req);
@@ -182,12 +185,58 @@ describe('POST /api/admin/upload', () => {
       expect(json.error).toBe('Invalid file format. Only JPG, PNG, and ICO are supported');
     });
 
+    it('returns 400 for unapproved file extension (index.html)', async () => {
+      const htmlFile = {
+        name: 'index.html',
+        size: 1024,
+        type: 'image/png',
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
+      };
+      const req = makeRequest({ file: htmlFile as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Invalid file extension. Only JPG, PNG, and ICO are supported');
+    });
+
+    it('returns 400 when file extension does not match MIME type', async () => {
+      const mismatchedFile = {
+        name: 'photo.jpg',
+        size: 1024,
+        type: 'image/png',
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
+      };
+      const req = makeRequest({ file: mismatchedFile as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('File extension does not match the declared MIME type');
+    });
+
+    it('returns 400 and halts upload when image sanitization fails for corrupt file', async () => {
+      const corruptJpeg = {
+        name: 'photo.jpg',
+        size: 1024,
+        type: 'image/jpeg',
+        arrayBuffer: async () => new Uint8Array([255, 216, 255, 224, 0, 0, 0]).buffer,
+      };
+      const req = makeRequest({ file: corruptJpeg as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Image sanitization failed. The file may be corrupt or invalid.');
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
     it('accepts image/jpeg files', async () => {
       const jpegFile = {
         name: 'photo.jpg',
         size: 1024,
         type: 'image/jpeg',
-        arrayBuffer: async () => new Uint8Array([0xff, 0xd8]).buffer,
+        arrayBuffer: async () => VALID_JPEG_BUF.buffer.slice(VALID_JPEG_BUF.byteOffset, VALID_JPEG_BUF.byteOffset + VALID_JPEG_BUF.byteLength),
       };
       const req = makeRequest({ file: jpegFile as any });
       const res = await POST(req);
@@ -200,7 +249,7 @@ describe('POST /api/admin/upload', () => {
         name: 'icon.png',
         size: 1024,
         type: 'image/png',
-        arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
       };
       const req = makeRequest({ file: pngFile as any });
       const res = await POST(req);
@@ -245,7 +294,7 @@ describe('POST /api/admin/upload', () => {
         name: 'my-photo.png',
         size: 1024,
         type: 'image/png',
-        arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
       };
       const req = makeRequest({ file: pngFile as any });
       await POST(req);
@@ -270,7 +319,7 @@ describe('POST /api/admin/upload', () => {
         name: 'photo.jpg',
         size: 500,
         type: 'image/jpeg',
-        arrayBuffer: async () => new Uint8Array([0xff, 0xd8]).buffer,
+        arrayBuffer: async () => VALID_JPEG_BUF.buffer.slice(VALID_JPEG_BUF.byteOffset, VALID_JPEG_BUF.byteOffset + VALID_JPEG_BUF.byteLength),
       };
       const req = makeRequest({ file: jpgFile as any });
       const res = await POST(req);
@@ -284,13 +333,13 @@ describe('POST /api/admin/upload', () => {
         name: 'image.png',
         size: 100,
         type: 'image/png',
-        arrayBuffer: async () => new ArrayBuffer(0),
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
       };
       const file2 = {
         name: 'image.png',
         size: 100,
         type: 'image/png',
-        arrayBuffer: async () => new ArrayBuffer(0),
+        arrayBuffer: async () => VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
       };
 
       const req1 = makeRequest({ file: file1 as any });
