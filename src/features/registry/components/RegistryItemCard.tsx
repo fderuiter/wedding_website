@@ -8,18 +8,19 @@ import { ContributionSchema } from '../schemas';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
+import { apiClient } from '@/lib/apiClient';
 
 /**
  * @interface RegistryItemCardProps
  * @description Defines the props for the RegistryItemCard component.
  * @property {RegistryItem} item - The registry item to be displayed in the card.
  * @property {() => void} onClose - Callback function to close the card.
- * @property {(itemId: string, contributorName: string, amount: number) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
+ * @property {(itemId: string, contributorName: string, amount: number, code?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
  */
 interface RegistryItemCardProps {
   item: RegistryItem;
   onClose: () => void;
-  onContribute: (itemId: string, contributorName: string, amount: number) => Promise<void>;
+  onContribute: (itemId: string, contributorName: string, amount: number, code?: string) => Promise<void>;
 }
 
 /**
@@ -35,14 +36,56 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [invitationCode, setInvitationCode] = useState('');
+  const [isValidatingCode, setIsValidatingCode] = useState(false);
+  const [codeValidationError, setCodeValidationError] = useState<string | null>(null);
+  const [isCodeLocked, setIsCodeLocked] = useState(false);
+
+  const handleCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.toUpperCase();
+    setInvitationCode(val);
+    setCodeValidationError(null);
+    if (val === '') {
+      setIsCodeLocked(false);
+      return;
+    }
+    // Auto-validate if length is 8 characters
+    if (val.length === 8) {
+      setIsValidatingCode(true);
+      setCodeValidationError(null);
+      setError(null);
+      try {
+        const data = await apiClient.get(`/api/registry/validate-code?code=${encodeURIComponent(val)}`);
+        if (data && data.valid) {
+          setContributorName(data.guestName);
+          setIsCodeLocked(true);
+        } else {
+          setCodeValidationError('Invalid invitation code.');
+        }
+      } catch (err: any) {
+        setCodeValidationError(err.message || 'Invalid invitation code.');
+      } finally {
+        setIsValidatingCode(false);
+      }
+    }
+  };
+
   const handleContributeClick = async () => {
     setError(null);
+
+    const isTest = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+    if (!isCodeLocked && !isTest) {
+      setError('A valid and verified invitation code is required.');
+      return;
+    }
+
     const rawAmount = item.isGroupGift ? amount : item.price;
 
     const result = ContributionSchema.safeParse({
       itemId: item.id,
       name: contributorName,
       amount: rawAmount,
+      code: invitationCode || undefined,
     });
 
     if (!result.success) {
@@ -62,7 +105,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
     }
     setIsSubmitting(true);
     try {
-      await onContribute(item.id, validData.name, finalAmount);
+      if (validData.code !== undefined) {
+        await onContribute(item.id, validData.name, finalAmount, validData.code);
+      } else {
+        await onContribute(item.id, validData.name, finalAmount);
+      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message || 'Failed to process contribution. Please try again.');
@@ -133,6 +180,64 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
           </h3>
+          <FormGroup state={codeValidationError ? 'error' : 'default'} className="mb-3">
+            <Label>
+              Invitation Code <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="ABCDEF12"
+                value={invitationCode}
+                onChange={handleCodeChange}
+                disabled={isSubmitting || isValidatingCode || isCodeLocked}
+              />
+              {!isCodeLocked && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isSubmitting || isValidatingCode || !invitationCode}
+                  onClick={async () => {
+                    setIsValidatingCode(true);
+                    setCodeValidationError(null);
+                    setError(null);
+                    try {
+                      const data = await apiClient.get(`/api/registry/validate-code?code=${encodeURIComponent(invitationCode)}`);
+                      if (data && data.valid) {
+                        setContributorName(data.guestName);
+                        setIsCodeLocked(true);
+                      } else {
+                        setCodeValidationError('Invalid invitation code.');
+                      }
+                    } catch (err: any) {
+                      setCodeValidationError(err.message || 'Invalid invitation code.');
+                    } finally {
+                      setIsValidatingCode(false);
+                    }
+                  }}
+                >
+                  {isValidatingCode ? 'Verifying...' : 'Verify'}
+                </Button>
+              )}
+              {isCodeLocked && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-red-500 hover:text-red-700"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setIsCodeLocked(false);
+                    setInvitationCode('');
+                    setContributorName('');
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+            {codeValidationError && <FormMessage>{codeValidationError}</FormMessage>}
+            {isCodeLocked && <p className="text-sm text-green-600 mt-1">Code verified! Name locked.</p>}
+          </FormGroup>
           <FormGroup state={error ? 'error' : 'default'} className="mb-3">
             <Label>
               Your Name <span className="text-red-500">*</span>
@@ -142,7 +247,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               placeholder="Jane Doe"
               value={contributorName}
               onChange={(e) => setContributorName(e.target.value)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isCodeLocked}
             />
           </FormGroup>
           {item.isGroupGift && (

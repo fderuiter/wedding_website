@@ -19,6 +19,11 @@ export default function AdminDashboardLayout({
                 </Link>
               </li>
               <li>
+                <Link href="/admin/dashboard/invitation-codes" className="text-gray-700 dark:text-gray-300 hover:text-primary">
+                  Invitation Codes
+                </Link>
+              </li>
+              <li>
                 <Link href="/admin/dashboard/site-manager" className="text-gray-700 dark:text-gray-300 hover:text-primary">
                   Site Manager
                 </Link>

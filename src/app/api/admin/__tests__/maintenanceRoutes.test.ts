@@ -90,6 +90,7 @@ jest.mock('@/lib/prisma', () => ({
     $transaction: jest.fn(),
     appConfig: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     contentNode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    media: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     weddingPartyMember: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     attraction: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     registryItem: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
@@ -128,9 +129,10 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(res.status).toBe(401);
     });
 
-    test('returns 200 with JSON file attachment containing 7 models', async () => {
+    test('returns 200 with JSON file attachment containing 8 models', async () => {
       const mockAppConfig = [{ id: 'global', brideName: 'Alice' }];
       const mockContentNode = [{ id: 'cn1', body: 'Story' }];
+      const mockMedia = [{ id: 'm1', url: 'https://example.com/photo.jpg', isDecorative: false }];
       const mockWeddingParty = [{ id: 'wp1', name: 'Bob' }];
       const mockAttraction = [{ id: 'att1', name: 'Beach' }];
       const mockRegistry = [{ id: 'ri1', name: 'Kitchenware' }];
@@ -139,6 +141,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       mockPrisma.appConfig.findMany.mockResolvedValue(mockAppConfig as any);
       mockPrisma.contentNode.findMany.mockResolvedValue(mockContentNode as any);
+      mockPrisma.media.findMany.mockResolvedValue(mockMedia as any);
       mockPrisma.weddingPartyMember.findMany.mockResolvedValue(mockWeddingParty as any);
       mockPrisma.attraction.findMany.mockResolvedValue(mockAttraction as any);
       mockPrisma.registryItem.findMany.mockResolvedValue(mockRegistry as any);
@@ -156,6 +159,7 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(data).toEqual({
         appConfig: mockAppConfig,
         contentNode: mockContentNode,
+        media: mockMedia,
         weddingPartyMember: mockWeddingParty,
         attraction: mockAttraction,
         registryItem: mockRegistry,
@@ -216,6 +220,15 @@ describe('Maintenance API Routes Integration Tests', () => {
             updatedAt: '2026-06-20T00:00:00.000Z',
           },
         ],
+        media: [
+          {
+            id: 'm1',
+            url: 'https://example.com/photo.jpg',
+            isDecorative: false,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          }
+        ],
         weddingPartyMember: [
           {
             id: 'wp1',
@@ -270,6 +283,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
         attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
         weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        media: { deleteMany: jest.fn(), createMany: jest.fn() },
         contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
@@ -288,11 +302,12 @@ describe('Maintenance API Routes Integration Tests', () => {
       const body = await res.json();
       expect(body).toEqual({ success: true });
 
-      // Verify that deleteMany was called for all 6 tables in the correct order or transaction scope
+      // Verify that deleteMany was called for all 7 tables in the correct order or transaction scope
       expect(mockTx.contributor.deleteMany).toHaveBeenCalled();
       expect(mockTx.registryItem.deleteMany).toHaveBeenCalled();
       expect(mockTx.attraction.deleteMany).toHaveBeenCalled();
       expect(mockTx.weddingPartyMember.deleteMany).toHaveBeenCalled();
+      expect(mockTx.media.deleteMany).toHaveBeenCalled();
       expect(mockTx.contentNode.deleteMany).toHaveBeenCalled();
       expect(mockTx.appConfig.deleteMany).toHaveBeenCalled();
 
@@ -314,6 +329,17 @@ describe('Maintenance API Routes Integration Tests', () => {
             type: 'FAQ',
             tags: ['FAQ'],
             data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
+      });
+      expect(mockTx.media.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            id: 'm1',
+            url: 'https://example.com/photo.jpg',
+            isDecorative: false,
             createdAt: new Date('2026-06-20T00:00:00.000Z'),
             updatedAt: new Date('2026-06-20T00:00:00.000Z'),
           },
@@ -533,6 +559,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
         attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
         weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        media: { deleteMany: jest.fn(), createMany: jest.fn() },
         contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
@@ -596,6 +623,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
         attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
         weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        media: { deleteMany: jest.fn(), createMany: jest.fn() },
         contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
@@ -642,6 +670,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         registryItem: { deleteMany: jest.fn(), createMany: jest.fn() },
         attraction: { deleteMany: jest.fn(), createMany: jest.fn() },
         weddingPartyMember: { deleteMany: jest.fn(), createMany: jest.fn() },
+        media: { deleteMany: jest.fn(), createMany: jest.fn() },
         contentNode: { deleteMany: jest.fn(), createMany: jest.fn() },
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };

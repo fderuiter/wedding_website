@@ -16,6 +16,21 @@ function generateAdminCookieValue() {
   return `${data}.${signature}`;
 }
 
+function generateGuestCookieValue() {
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const payload = {
+    guest: true,
+    iat: Date.now(),
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
+
 const PUBLIC_UI_ROUTES = [
   '/',
   '/photos',
@@ -36,7 +51,16 @@ const START_ROUTES = [...PUBLIC_UI_ROUTES, ...PROTECTED_UI_ROUTES];
 
 test.describe('Dynamic Route Crawler & Link Audit', () => {
 
-  test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ page }) => {
+  test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ context, page }) => {
+    const guestCookieValue = generateGuestCookieValue();
+    await context.addCookies([
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://127.0.0.1:3000',
+      }
+    ]);
+
     for (const route of PROTECTED_UI_ROUTES) {
       console.log(`[Unauthenticated] Navigating to: ${route}`);
       await page.goto(route, { waitUntil: 'domcontentloaded' });
@@ -46,13 +70,20 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
   });
 
   test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ context, page }) => {
+    test.setTimeout(120000); // 2 minutes to allow crawling all pages when DB is down
     const cookieValue = generateAdminCookieValue();
+    const guestCookieValue = generateGuestCookieValue();
 
     // Inject programmatically signed admin auth cookie
     await context.addCookies([
       {
         name: 'admin_auth',
         value: cookieValue,
+        url: 'http://127.0.0.1:3000',
+      },
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
         url: 'http://127.0.0.1:3000',
       }
     ]);

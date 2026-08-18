@@ -3,6 +3,8 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { env } from '@/env';
 import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Global object extended with the prisma client type to prevent multiple instances
@@ -104,8 +106,29 @@ function createSqliteAdapter(connectionString: string) {
 }
 
 const createPrismaClient = () => {
-  const connectionString = env.DATABASE_URL;
-  const isSqlite = connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db');
+  let isSchemaSqlite = false;
+  try {
+    const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
+    if (fs.existsSync(schemaPath)) {
+      const schemaContent = fs.readFileSync(schemaPath, 'utf8');
+      isSchemaSqlite = schemaContent.includes('provider = "sqlite"') || schemaContent.includes('provider="sqlite"');
+    }
+    if (!isSchemaSqlite) {
+      const compiledSchemaPath = path.join(process.cwd(), 'node_modules', '.prisma', 'client', 'schema.prisma');
+      if (fs.existsSync(compiledSchemaPath)) {
+        const compiledContent = fs.readFileSync(compiledSchemaPath, 'utf8');
+        isSchemaSqlite = compiledContent.includes('provider = "sqlite"') || compiledContent.includes('provider="sqlite"');
+      }
+    }
+  } catch (e) {}
+
+  let connectionString = env.DATABASE_URL;
+  const isSqlite = isSchemaSqlite || connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db');
+
+  if (isSqlite && !(connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db'))) {
+    connectionString = 'file:./test.db';
+  }
+
   console.log('DEBUG [createPrismaClient]:', { connectionString, isSqlite });
 
   let client: PrismaClient;

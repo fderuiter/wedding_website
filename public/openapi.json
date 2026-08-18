@@ -333,6 +333,10 @@
                     "type": "array",
                     "items": {}
                   },
+                  "media": {
+                    "type": "array",
+                    "items": {}
+                  },
                   "weddingPartyMember": {
                     "type": "array",
                     "items": {}
@@ -733,6 +737,38 @@
         }
       }
     },
+    "/api/guest/login": {
+      "post": {
+        "summary": "POST /api/guest/login",
+        "description": "Endpoint for /api/guest/login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "passcode": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "passcode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/media/{id}": {
       "put": {
         "summary": "PUT /api/media/[id]",
@@ -886,6 +922,9 @@
                   "amount": {
                     "type": "number",
                     "exclusiveMinimum": 0
+                  },
+                  "code": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -1322,6 +1361,17 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/registry/validate-code": {
+      "get": {
+        "summary": "GET /api/registry/validate-code",
+        "description": "Endpoint for /api/registry/validate-code",
         "responses": {
           "200": {
             "description": "Successful response"

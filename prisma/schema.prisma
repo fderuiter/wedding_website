@@ -114,6 +114,21 @@ model Contributor {
   registryItemId String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  invitationCodeId String?
+  invitationCode   InvitationCode? @relation(fields: [invitationCodeId], references: [id])
+}
+
+model InvitationCode {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  guestName String
+  used      Boolean  @default(false)
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contributors Contributor[]
 }
 
 model ContentNode {

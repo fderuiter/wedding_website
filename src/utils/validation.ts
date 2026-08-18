@@ -25,6 +25,10 @@ export const AdminLoginSchema = z.object({
   password: z.string({ message: 'Password is required' }).min(1, 'Password cannot be empty')
 });
 
+export const GuestLoginSchema = z.object({
+  passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty')
+});
+
 /**
  * @internal
  */
@@ -64,6 +68,7 @@ export const UpdateFeaturesSchema = z.object({
 export const ImportBackupSchema = z.object({
   appConfig: z.array(z.any()).optional(),
   contentNode: z.array(z.any()).optional(),
+  media: z.array(z.any()).optional(),
   weddingPartyMember: z.array(z.any()).optional(),
   attraction: z.array(z.any()).optional(),
   registryItem: z.array(z.any()).optional(),

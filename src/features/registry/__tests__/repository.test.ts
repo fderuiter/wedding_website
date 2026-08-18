@@ -20,6 +20,10 @@ jest.mock('@/lib/prisma', () => ({
       findMany: jest.fn(),
       deleteMany: jest.fn(),
     },
+    invitationCode: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     $transaction: jest.fn(),
   },
 }));
@@ -263,6 +267,101 @@ describe('RegistryRepository', () => {
         'Contribution cannot be greater than the remaining amount.'
       );
       expect(tx.registryItem.update).not.toHaveBeenCalled();
+    });
+
+    it('should successfully contribute when a valid and unused invitation code is provided', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'invite-good',
+            code: 'GOODCODE',
+            guestName: 'Jane Smith',
+            used: false,
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'invite-good', used: true }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Some Name', amount: 50, code: 'GOODCODE' };
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(50);
+      expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'GOODCODE' },
+      });
+      expect(tx.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'invite-good' },
+        data: {
+          used: true,
+          usedAt: expect.any(Date),
+        },
+      });
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 50,
+          purchased: false,
+          contributors: {
+            create: {
+              name: 'Jane Smith', // Name must be mapped to authorized guest's pre-registered name
+              amount: 50,
+              date: expect.any(Date),
+              invitationCodeId: 'invite-good',
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
+    });
+
+    it('should throw an error if the provided invitation code is invalid', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue(null),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Some Name', amount: 50, code: 'INVALID' };
+      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Invalid invitation code.');
+    });
+
+    it('should throw an error if the provided invitation code has already been used', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'invite-used',
+            code: 'USEDCODE',
+            guestName: 'Jane Smith',
+            used: true,
+          }),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Some Name', amount: 50, code: 'USEDCODE' };
+      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow(
+        'This invitation code has already been used.'
+      );
     });
   });
 });
