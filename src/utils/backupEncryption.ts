@@ -13,7 +13,7 @@ function getBackupEncryptionKey(): Buffer {
     process.env.BACKUP_ENCRYPTION_KEY ||
     process.env.ADMIN_PASSWORD ||
     'wedding-website-backup-secret-key-32-bytes!';
-  return crypto.createHash('sha256').update(secret).digest();
+  return crypto.scryptSync(secret, 'wedding-website-backup-salt', 32);
 }
 
 export function encryptBackupData(dataObj: any): EncryptedBackupPayload {
