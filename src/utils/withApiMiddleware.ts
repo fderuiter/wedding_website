@@ -4,6 +4,7 @@ import { rateLimit } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
+import { generateSecureUUID } from './uuid';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
@@ -76,14 +77,27 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
 
       let finalResponse: NextResponse;
       if (response.status >= 400) {
-        finalResponse = NextResponse.json(
-          { 
-            success: false, 
-            error: data.error || data.message || 'API Error',
-            ...(data.details ? { details: data.details } : {})
-          },
-          { status: response.status, headers: response.headers }
-        );
+        if (response.status >= 500 && process.env.NODE_ENV === 'production') {
+          const referenceId = generateSecureUUID();
+          logger.error('Unhandled API Error:', data.error || data.message || 'API Error', { apiVersion: isLegacy ? 'v1' : 'v2', route: pathname, referenceId });
+          finalResponse = NextResponse.json(
+            { 
+              success: false, 
+              error: 'An unexpected error occurred. Please try again later.',
+              referenceId,
+            },
+            { status: response.status, headers: response.headers }
+          );
+        } else {
+          finalResponse = NextResponse.json(
+            { 
+              success: false, 
+              error: data.error || data.message || 'API Error',
+              ...(data.details ? { details: data.details } : {})
+            },
+            { status: response.status, headers: response.headers }
+          );
+        }
       } else if (data && typeof data === 'object' && 'success' in data) {
         // Already structured similarly to standard format, don't nest it
         finalResponse = NextResponse.json(data, { status: response.status, headers: response.headers });
@@ -141,9 +155,13 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
       return finalResponse;
       
     } catch (error: any) {
-      if (error instanceof ApiError) {
+      if (error instanceof ApiError && error.statusCode < 500) {
         return NextResponse.json(
-          { success: false, error: error.message },
+          { 
+            success: false, 
+            error: error.message,
+            ...(error.data ? { details: error.data } : {})
+          },
           { status: error.statusCode }
         );
       }
@@ -192,6 +210,22 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
         }
       } catch {
         // Safe fallback to prevent crashing the error-logging block itself
+      }
+
+      const isProduction = process.env.NODE_ENV === 'production';
+
+      if (isProduction) {
+        const referenceId = generateSecureUUID();
+        logger.error('Unhandled API Error:', error, { apiVersion, route, referenceId });
+
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'An unexpected error occurred. Please try again later.',
+            referenceId 
+          },
+          { status: 500 }
+        );
       }
 
       logger.error('Unhandled API Error:', error, { apiVersion, route });
