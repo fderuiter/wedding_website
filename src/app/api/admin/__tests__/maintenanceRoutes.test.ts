@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { createAuditSnapshot } from '@/lib/audit';
+import { decryptBackupData } from '@/utils/backupEncryption';
 
 jest.mock('next/server', () => {
   class MockNextResponse {
@@ -156,7 +157,15 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(res.headers.get('Content-Disposition')).toContain('attachment; filename="wedding-backup-');
 
       const data = await res.json();
-      expect(data).toEqual({
+      expect(data.encrypted).toBe(true);
+      expect(data.algorithm).toBe('AES-GCM');
+      expect(typeof data.iv).toBe('string');
+      expect(typeof data.tag).toBe('string');
+      expect(typeof data.data).toBe('string');
+
+      const decrypted = decryptBackupData(data);
+
+      expect(decrypted).toEqual({
         appConfig: mockAppConfig,
         contentNode: mockContentNode,
         media: mockMedia,
@@ -166,6 +175,13 @@ describe('Maintenance API Routes Integration Tests', () => {
         contributor: mockContributor,
         snapshotVersion: mockSnapshot,
       });
+
+      expect(mockCreateAuditSnapshot).toHaveBeenCalledWith(
+        'SystemBackup',
+        expect.stringMatching(/^export-/),
+        expect.objectContaining({ scope: 'full', requestingUser: 'Admin' }),
+        'Admin'
+      );
     });
   });
 

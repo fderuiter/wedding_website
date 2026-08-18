@@ -7,6 +7,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { pruneSnapshotsBulk } from '@/lib/audit';
 import { logger } from '@/lib/logger';
+import { decryptBackupData } from '@/utils/backupEncryption';
 
 export function reviveDates(root: any): any {
   if (root === null || root === undefined) return root;
@@ -52,8 +53,9 @@ export function reviveDates(root: any): any {
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const rawData = await request.json();
-  ImportBackupSchema.parse(rawData);
-  const data = reviveDates(rawData);
+  const decryptedData = decryptBackupData(rawData);
+  ImportBackupSchema.parse(decryptedData);
+  const data = reviveDates(decryptedData);
 
   if (!data.appConfig || !data.registryItem) {
     throw new ApiError(400, 'Invalid backup file structure');

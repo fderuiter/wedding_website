@@ -235,7 +235,7 @@ export class RegistryRepository implements IRegistryRepository {
         }
       });
       
-      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, finalName || 'Guest/Contributor', txClient);
+      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, 'Anonymous', txClient);
 
       return RegistryItemSchema.parse(updatedItem);
     };

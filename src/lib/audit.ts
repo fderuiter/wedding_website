@@ -3,6 +3,69 @@ import { env } from '@/env';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
 
+export function sanitizeSnapshotPayload(data: any): any {
+  if (data === null || data === undefined) return data;
+  if (data instanceof Date) return data;
+  if (typeof data !== 'object') return data;
+
+  if (Array.isArray(data)) {
+    return data.map(sanitizeSnapshotPayload);
+  }
+
+  const result: Record<string, any> = { ...data };
+
+  // Strip email if present
+  if ('email' in result) {
+    delete result.email;
+  }
+
+  // Mask purchaserName if present
+  if ('purchaserName' in result && result.purchaserName) {
+    result.purchaserName = 'Anonymous';
+  }
+
+  // Mask contributors array if present
+  if ('contributors' in result && Array.isArray(result.contributors)) {
+    result.contributors = result.contributors.map((c: any) => {
+      if (typeof c === 'object' && c !== null) {
+        const item = { ...c };
+        delete item.email;
+        return {
+          ...item,
+          name: 'Anonymous',
+        };
+      }
+      return c;
+    });
+  }
+
+  // If object represents a standalone contributor record
+  if ('name' in result && ('amount' in result || 'registryItemId' in result || 'isPlusOne' in result)) {
+    result.name = 'Anonymous';
+  }
+
+  // Recursively sanitize all nested objects
+  for (const key of Object.keys(result)) {
+    if (key !== 'contributors' && typeof result[key] === 'object' && result[key] !== null) {
+      if (!(result[key] instanceof Date)) {
+        result[key] = sanitizeSnapshotPayload(result[key]);
+      }
+    }
+  }
+
+  return result;
+}
+
+export function sanitizeAuthor(author?: string): string {
+  if (!author) return 'System';
+
+  if (author.includes('@') || author === 'Guest' || author === 'Contributor' || author === 'Guest/Contributor' || author === 'Guest/User') {
+    return 'Anonymous';
+  }
+
+  return author;
+}
+
 export async function createAuditSnapshot(
   entityType: string,
   entityId: string,
@@ -15,24 +78,23 @@ export async function createAuditSnapshot(
   const normalizedType = Object.values(Prisma.ModelName).find(
     (name) => name.toLowerCase() === entityType.toLowerCase()
   ) || entityType;
+
+  const sanitizedData = sanitizeSnapshotPayload(data);
+  const sanitizedAuthor = sanitizeAuthor(author);
   
   // Create the snapshot
   await client.snapshotVersion.create({
     data: {
       entityType: normalizedType,
       entityId,
-      data,
-      author,
+      data: sanitizedData,
+      author: sanitizedAuthor,
     },
   });
 
-  // Handle version limit & pruning asynchronously?
-  // The constraints say: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
-  // And "Snapshot creation must not increase API response latency for guest users by more than 50ms."
-  // If we run it without await, we save time. Wait, but the PR requirement says: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
-  // A standard way to run this in the background is to just not await the pruning promise, or have a separate bulk operation.
-  // We can write a prune function here and trigger it via `void pruneSnapshots(...)`
+  // Execute non-blocking retention management routines
   void pruneSnapshots(normalizedType, entityId);
+  void purgeOrphanedContributors();
 }
 
 async function pruneSnapshots(entityType: string, entityId: string) {
@@ -115,5 +177,26 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
     }
   } catch (err) {
     logger.error('Error during bulk snapshot pruning:', err);
+  }
+}
+
+export async function purgeOrphanedContributors() {
+  try {
+    await prisma.contributor.deleteMany({
+      where: {
+        OR: [
+          { registryItemId: null },
+          {
+            registryItem: {
+              is: null,
+            },
+          },
+        ],
+      },
+    });
+  } catch (err: any) {
+    if (!err?.message?.includes('database is locked')) {
+      logger.error('Error during orphaned contributor purging:', err);
+    }
   }
 }
