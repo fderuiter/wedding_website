@@ -14,13 +14,14 @@ const config = {
   testEnvironmentOptions: { url: 'http://localhost/' },
   collectCoverage: true,
   coverageDirectory: 'coverage',
-  coverageReporters: ['json', 'lcov', 'text', 'clover', 'html'], // Added 'html' for detailed report
+  coveragePathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/e2e/'],
+  coverageReporters: ['json', 'lcov', 'text', 'clover', 'html', 'json-summary'], // Added 'json-summary' for CI parsing
   collectCoverageFrom: [
-    'src/**/*.{ts,tsx}', // Collect coverage from all ts/tsx files in src
-    '!src/**/*.d.ts', // Exclude type definition files
-    '!src/**/layout.tsx', // Often layout files have minimal logic
-    '!src/types/**/*.ts', // Exclude type definitions
-    '!src/styles/**/*.ts', // Exclude style definitions
+    '<rootDir>/src/**/*.{ts,tsx}', // Collect coverage from all ts/tsx files in src
+    '!<rootDir>/src/**/*.d.ts', // Exclude type definition files
+    '!<rootDir>/src/**/layout.tsx', // Often layout files have minimal logic
+    '!<rootDir>/src/types/**/*.ts', // Exclude type definitions
+    '!<rootDir>/src/styles/**/*.ts', // Exclude style definitions
     '!**/node_modules/**',
     '!<rootDir>/jest.config.mjs',
     '!<rootDir>/jest.setup.js',
@@ -30,10 +31,28 @@ const config = {
   ],
   coverageThreshold: {
     global: {
-      branches: 0,
-      functions: 0,
-      lines: 0,
-      statements: 0,
+      branches: 45,
+      functions: 45,
+      lines: 55,
+      statements: 55,
+    },
+    './src/': {
+      branches: 60,
+      functions: 60,
+      lines: 72,
+      statements: 72,
+    },
+    './src/core/': {
+      branches: 60,
+      functions: 60,
+      lines: 70,
+      statements: 70,
+    },
+    './src/features/': {
+      branches: 60,
+      functions: 60,
+      lines: 70,
+      statements: 70,
     },
     './src/app/api/admin/': {
       branches: 80,

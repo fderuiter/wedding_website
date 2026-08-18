@@ -113,6 +113,70 @@ jobs:
         with:
           name: lcov-report
           path: coverage/
+      - name: Upload Main Coverage Baseline
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-main
+          path: coverage/coverage-summary.json
+      - name: Download Main Coverage Baseline
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            try {
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                branch: 'main',
+                status: 'success',
+                per_page: 5
+              });
+
+              if (!runs.data.workflow_runs || runs.data.workflow_runs.length === 0) {
+                console.log('No successful workflow runs found on main branch.');
+                return;
+              }
+
+              const latestRun = runs.data.workflow_runs[0];
+              console.log(`Fetching artifacts from main run #${latestRun.run_number} (${latestRun.id})`);
+
+              const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: latestRun.id
+              });
+
+              const coverageArtifact = artifacts.data.artifacts.find(a => a.name === 'coverage-main');
+              if (!coverageArtifact) {
+                console.log('coverage-main artifact not found on latest main run.');
+                return;
+              }
+
+              console.log(`Downloading artifact ${coverageArtifact.id}...`);
+              const download = await github.rest.actions.downloadArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: coverageArtifact.id,
+                archive_format: 'zip'
+              });
+
+              fs.mkdirSync('coverage-main', { recursive: true });
+              fs.writeFileSync('coverage-main.zip', Buffer.from(download.data));
+
+              const exec = require('@actions/exec');
+              await exec.exec('unzip', ['-o', 'coverage-main.zip', '-d', 'coverage-main']);
+              console.log('Successfully extracted main coverage baseline to coverage-main/');
+            } catch (err) {
+              console.warn('Failed to download main coverage baseline:', err);
+            }
+      - name: Check Coverage Regression
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-coverage-regression.mjs
       - name: Run e2e tests
         run: npx playwright test
       - name: Generate A11y Report
