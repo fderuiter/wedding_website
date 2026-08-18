@@ -179,7 +179,7 @@ function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5
     }
     
     return bestHex;
-  } catch (e) {
+  } catch {
     return baseHex;
   }
 }
@@ -274,7 +274,7 @@ export function ThemeProvider({
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'config') {
           const draftData = event.data.draftData || {};
-          setConfig((prev: any) => {
+          setConfig((prev) => {
             const next = { ...prev, ...draftData };
             return {
               ...next,
@@ -308,7 +308,7 @@ export function ThemeProvider({
           }
         }
       }
-    } catch (e) {
+    } catch {
       // Gracefully recover from unreadable styling contexts or missing layout capabilities
     }
 
