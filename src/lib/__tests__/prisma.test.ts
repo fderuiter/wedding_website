@@ -48,4 +48,21 @@ describe('prisma singleton behavior', () => {
     await prisma1.$disconnect();
     await prisma2.$disconnect();
   });
+
+  test('redacts raw connection strings from console output during initialization', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    await loadPrisma();
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const logCalls = consoleSpy.mock.calls;
+    for (const call of logCalls) {
+      const callString = JSON.stringify(call);
+      expect(callString).not.toContain('connectionString');
+      expect(callString).not.toContain('secretpassword');
+      expect(callString).not.toContain('wedding123');
+    }
+
+    consoleSpy.mockRestore();
+  });
 });

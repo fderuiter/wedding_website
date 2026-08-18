@@ -129,7 +129,7 @@ const createPrismaClient = () => {
     connectionString = 'file:./test.db';
   }
 
-  console.log('DEBUG [createPrismaClient]:', { connectionString, isSqlite });
+  console.log('DEBUG [createPrismaClient]:', { provider: isSqlite ? 'sqlite' : 'postgresql', isSqlite });
 
   let client: PrismaClient;
   if (isSqlite) {
