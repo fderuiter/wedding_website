@@ -46,48 +46,52 @@ jobs:
             const fs = require('fs');
             const signature = '<!-- doc-drift-comment -->';
             
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-            const existing = comments.data.find(c => c.body.includes(signature));
-            
-            if ('${{ steps.verify-docs.outcome }}' === 'failure') {
-              let commentBody = '';
-              if (fs.existsSync('drift_files.txt')) {
-                const filesList = fs.readFileSync('drift_files.txt', 'utf8').trim().split('\n');
-                const driftedFilesMarkdown = filesList.map(line => `- \`${line}\``).join('\n');
-                const filesForGitAdd = filesList.join(' ');
-                
-                commentBody = `${signature}\n### ⚠️ Documentation Drift Detected\n\nThe committed documentation files do not match the current codebase. The following files are out of sync:\n\n${driftedFilesMarkdown}\n\n**To resolve this locally, run the following commands and commit the changes:**\n\n\`\`\`bash\nnpx tsx scripts/generate-openapi.ts\nnpx tsx scripts/generate-docs.ts\ngit add ${filesForGitAdd}\ngit commit -m "docs: sync documentation with codebase"\n\`\`\`\n`;
-              } else {
-                commentBody = `${signature}\n### ⚠️ Documentation Generation Failed\n\nThe documentation generation scripts failed to execute. Please check the workflow logs for details on missing schemas or syntax errors.\n`;
-              }
+            try {
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number
+              });
+              const existing = comments.data.find(c => c.body.includes(signature));
               
-              if (existing) {
+              if ('${{ steps.verify-docs.outcome }}' === 'failure') {
+                let commentBody = '';
+                if (fs.existsSync('drift_files.txt')) {
+                  const filesList = fs.readFileSync('drift_files.txt', 'utf8').trim().split('\n');
+                  const driftedFilesMarkdown = filesList.map(line => `- \`${line}\``).join('\n');
+                  const filesForGitAdd = filesList.join(' ');
+                  
+                  commentBody = `${signature}\n### ⚠️ Documentation Drift Detected\n\nThe committed documentation files do not match the current codebase. The following files are out of sync:\n\n${driftedFilesMarkdown}\n\n**To resolve this locally, run the following commands and commit the changes:**\n\n\`\`\`bash\nnpx tsx scripts/generate-openapi.ts\nnpx tsx scripts/generate-docs.ts\ngit add ${filesForGitAdd}\ngit commit -m "docs: sync documentation with codebase"\n\`\`\`\n`;
+                } else {
+                  commentBody = `${signature}\n### ⚠️ Documentation Generation Failed\n\nThe documentation generation scripts failed to execute. Please check the workflow logs for details on missing schemas or syntax errors.\n`;
+                }
+                
+                if (existing) {
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: existing.id,
+                    body: commentBody
+                  });
+                } else {
+                  await github.rest.issues.createComment({
+                    issue_number: context.issue.number,
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    body: commentBody
+                  });
+                }
+              } else if ('${{ steps.verify-docs.outcome }}' === 'success' && existing) {
+                const resolveBody = `${signature}\n### ✅ Documentation is now in sync!\n\nAll architecture and API files match the codebase.`;
                 await github.rest.issues.updateComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   comment_id: existing.id,
-                  body: commentBody
-                });
-              } else {
-                await github.rest.issues.createComment({
-                  issue_number: context.issue.number,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  body: commentBody
+                  body: resolveBody
                 });
               }
-            } else if ('${{ steps.verify-docs.outcome }}' === 'success' && existing) {
-              const resolveBody = `${signature}\n### ✅ Documentation is now in sync!\n\nAll architecture and API files match the codebase.`;
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body: resolveBody
-              });
+            } catch (err) {
+              console.warn('Failed to report documentation drift via GitHub API:', err);
             }
       - name: Cache Next.js build
         uses: actions/cache@v4
@@ -119,16 +123,20 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const reportPath = 'test-results/a11y-summary.md';
-            if (fs.existsSync(reportPath)) {
-              const body = fs.readFileSync(reportPath, 'utf8');
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
+            try {
+              const fs = require('fs');
+              const reportPath = 'test-results/a11y-summary.md';
+              if (fs.existsSync(reportPath)) {
+                const body = fs.readFileSync(reportPath, 'utf8');
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: body
+                });
+              }
+            } catch (err) {
+              console.warn('Failed to post A11y report via GitHub API:', err);
             }
       - name: Write A11y Report to Job Summary
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
