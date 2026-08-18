@@ -74,4 +74,27 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.ogImageUrl).toBe('/uploads/def456.jpg');
     expect(publicConfig.seoKeywords).toBe('custom keyword, another keyword');
   });
+
+  it('toPublicAppConfig strips sensitive setup properties and credentials', () => {
+    const configWithSecrets: any = {
+      ...baseConfig,
+      adminPassword: 'SuperSecretPassword123!',
+      smtpPassword: 'smtp-pass-value',
+      apiSecret: 'sk_live_123456789',
+      stripeSecretKey: 'sk_test_987654321',
+      databaseUrlCredentials: 'postgres://user:pass@host/db',
+      authToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+    };
+
+    const publicConfig: any = toPublicAppConfig(configWithSecrets);
+
+    expect(publicConfig.brideName).toBe('Abbi');
+    expect(publicConfig.seoKeywords).toBe("Abbi and Fred's wedding, wedding website");
+    expect(publicConfig.adminPassword).toBeUndefined();
+    expect(publicConfig.smtpPassword).toBeUndefined();
+    expect(publicConfig.apiSecret).toBeUndefined();
+    expect(publicConfig.stripeSecretKey).toBeUndefined();
+    expect(publicConfig.databaseUrlCredentials).toBeUndefined();
+    expect(publicConfig.authToken).toBeUndefined();
+  });
 });

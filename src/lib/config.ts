@@ -46,13 +46,48 @@ const fallbackAppConfig: LocalAppConfig = {
 };
 
 /**
- * Produce a public-safe view of the application configuration.
+ * Produce a public-safe view of the application configuration by stripping
+ * sensitive setup properties and credentials from the returned configuration payload.
  *
- * @param config - The full `AppConfig` object
- * @returns The same configuration
+ * @param config - The full `AppConfig` object or raw config payload
+ * @returns The sanitized configuration payload
  */
-export function toPublicAppConfig(config: AppConfigDTO): PublicAppConfig {
-  return config;
+export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(config: T): PublicAppConfig {
+  if (!config || typeof config !== 'object') {
+    return config as PublicAppConfig;
+  }
+
+  const sanitized = { ...config };
+
+  const sensitivePatterns = [
+    'password',
+    'secret',
+    'credential',
+    'token',
+    'apikey',
+    'apisecret',
+    'privatekey',
+    'smtppassword',
+    'dbpassword',
+    'adminpassword',
+    'clientsecret',
+    'authsecret',
+    'jwtsecret',
+    'accesskey',
+    'secretkey',
+    'databaseurl',
+  ];
+
+  for (const key of Object.keys(sanitized)) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === 'seokeywords') continue;
+
+    if (sensitivePatterns.some((pattern) => lowerKey.includes(pattern))) {
+      delete (sanitized as any)[key];
+    }
+  }
+
+  return sanitized as PublicAppConfig;
 }
 
 /**
