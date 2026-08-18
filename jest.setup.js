@@ -123,6 +123,18 @@ global.ResizeObserver = jest.fn().mockImplementation(() => ({
 jest.mock('next/server', () => {
   return {
     NextResponse: {
+      next: jest.fn(() => ({
+        status: 200,
+        headers: new Headers(),
+      })),
+      redirect: jest.fn((url, init) => {
+        const headers = new Headers();
+        headers.set('location', url.toString());
+        return {
+          status: init?.status || 307,
+          headers,
+        };
+      }),
       json: jest.fn((body, init) => {
         const responseCookies = new Map();
         const headers = new Headers();
@@ -159,12 +171,21 @@ jest.mock('next/server', () => {
           requestCookies.set(key, { name: key, value });
         });
       }
+      const urlObj = new URL(input);
       return {
         ...init,
         url: input,
+        nextUrl: urlObj,
         headers: {
           get: (key) => {
-            if (key === 'cookie' && init?.headers) return init.headers.cookie;
+            if (!init?.headers) {
+              if (key.toLowerCase() === 'host') return urlObj.host;
+              return null;
+            }
+            const lKey = key.toLowerCase();
+            const foundKey = Object.keys(init.headers).find(k => k.toLowerCase() === lKey);
+            if (foundKey) return init.headers[foundKey];
+            if (lKey === 'host') return urlObj.host;
             return null;
           }
         },

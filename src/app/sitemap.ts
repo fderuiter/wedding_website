@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next';
 import { getAppConfig } from '@/lib/config';
+import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
 
 type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
@@ -32,10 +33,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const { headers } = require('next/headers');
       const headersList = await headers();
       const host = headersList.get('host');
+      const proto = headersList.get('x-forwarded-proto');
       if (host) {
-        const proto = headersList.get('x-forwarded-proto') || 'https';
-        const protocol = host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : proto;
-        siteUrl = `${protocol}://${host}`;
+        siteUrl = getValidatedCanonicalUrl(host, proto, siteUrl);
       }
     } catch {
       // Fallback if headers are not available during static generation
