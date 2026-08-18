@@ -27,6 +27,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+      POSTGRES_URL_NON_POOLING: postgresql://wedding:wedding123@localhost:5432/wedding_test_shadow?schema=public
       ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
     steps:
       - uses: actions/checkout@v4
