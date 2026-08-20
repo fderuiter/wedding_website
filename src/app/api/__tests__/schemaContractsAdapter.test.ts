@@ -31,7 +31,7 @@ jest.mock('@/lib/prisma', () => ({
 
 import { POST as addItemPOST, GET as getItemsGET } from '@/app/api/registry/items/route';
 import { POST as restorePOST } from '@/app/api/admin/versions/[id]/restore/route';
-import { registryService } from '@/features/registry/service';
+import { registryService } from '@/features/registry';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';

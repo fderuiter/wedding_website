@@ -1,12 +1,16 @@
-import { prisma } from '@/lib/prisma';
 import type { ILogisticsRepository } from './types';
 import { ContentNodeSchema, ContentNodeDTO } from '../content/schemas';
 
 class LogisticsRepository implements ILogisticsRepository {
-  constructor(public client: any = prisma) {}
+  constructor(public client?: any) {}
+
+  private async getClient() {
+    return this.client || (await import('@/lib/prisma')).prisma;
+  }
 
   async getLogisticsNodes(): Promise<ContentNodeDTO[]> {
-    const nodes = await this.client.contentNode.findMany({
+    const client = await this.getClient();
+    const nodes = await client.contentNode.findMany({
       where: {
         tags: {
           has: 'Homepage'

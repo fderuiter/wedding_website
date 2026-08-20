@@ -1,8 +1,7 @@
-import { prisma } from '@/lib/prisma';
-import { createAuditSnapshot } from '@/lib/audit';
-import { executeInTransaction } from '@/lib/transaction';
 import type { IRegistryRepository } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
+import { createAuditSnapshot } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 
 /**
  * @class RegistryRepository
@@ -10,14 +9,19 @@ import { RegistryItemSchema, RegistryItemDTO } from './schemas';
  * This class abstracts the database interactions from the service layer.
  */
 export class RegistryRepository implements IRegistryRepository {
-  constructor(public client: any = prisma) {}
+  constructor(public client?: any) {}
+
+  private async getClient() {
+    return this.client || (await import('@/lib/prisma')).prisma;
+  }
 
   /**
    * Retrieves all registry items from the database, including their contributors.
    * @returns {Promise<RegistryItemDTO[]>} A promise that resolves to an array of all registry items.
    */
   async getAllItems() {
-    const items = await this.client.registryItem.findMany({
+    const client = await this.getClient();
+    const items = await client.registryItem.findMany({
       include: { image: true, 
         contributors: true
       }
@@ -31,7 +35,8 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItemDTO | null>} A promise that resolves to the registry item or null if not found.
    */
   async getItemById(id: string) {
-    const item = await this.client.registryItem.findUnique({
+    const client = await this.getClient();
+    const item = await client.registryItem.findUnique({
       where: { id },
       include: { image: true, 
         contributors: true
@@ -46,9 +51,10 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the newly created registry item.
    */
   async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+    const client = await this.getClient();
     let mediaId = data.imageId;
     if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
-      const media = await this.client.media.create({
+      const media = await client.media.create({
         data: {
           url: data.imageUrl || '/images/placeholder.png',
           altText: data.imageAlt,
@@ -57,7 +63,7 @@ export class RegistryRepository implements IRegistryRepository {
       });
       mediaId = media.id;
     } else if (!mediaId) {
-      const media = await this.client.media.create({
+      const media = await client.media.create({
         data: {
           url: '/images/placeholder.png',
           isDecorative: true
@@ -66,7 +72,7 @@ export class RegistryRepository implements IRegistryRepository {
       mediaId = media.id;
     }
 
-    const item = await this.client.registryItem.create({
+    const item = await client.registryItem.create({
       data: {
         name: data.name,
         price: data.price,
@@ -84,18 +90,19 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', this.client);
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', client);
     return RegistryItemSchema.parse(item);
   }
 
   async updateItem(id: string, data: Partial<RegistryItemDTO> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+    const client = await this.getClient();
     const { contributors, image, imageId, imageUrl, imageAlt, imageDecorative, ...updateData } = data;
     
     let updateMediaId = imageId;
     if (imageUrl || imageAlt !== undefined || imageDecorative !== undefined) {
-      const existing = await this.client.registryItem.findUnique({ where: { id }, select: { imageId: true } });
+      const existing = await client.registryItem.findUnique({ where: { id }, select: { imageId: true } });
       if (existing && existing.imageId) {
-        await this.client.media.update({
+        await client.media.update({
           where: { id: existing.imageId },
           data: {
             ...(imageUrl !== undefined && { url: imageUrl }),
@@ -107,7 +114,7 @@ export class RegistryRepository implements IRegistryRepository {
       }
     }
 
-    const item = await this.client.registryItem.update({
+    const item = await client.registryItem.update({
       where: { id },
       data: {
         ...updateData,
@@ -117,7 +124,7 @@ export class RegistryRepository implements IRegistryRepository {
         contributors: true
       }
     });
-    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', this.client);
+    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', client);
     return RegistryItemSchema.parse(item);
   }
 
@@ -126,10 +133,11 @@ export class RegistryRepository implements IRegistryRepository {
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the deleted item.
    */
   async deleteItem(id: string, author: string = 'Admin') {
-    const item = await this.client.registryItem.delete({
+    const client = await this.getClient();
+    const item = await client.registryItem.delete({
       where: { id }
     });
-    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, author, this.client);
+    await createAuditSnapshot('RegistryItem', item.id, { deleted: true, ...item }, author, client);
     return RegistryItemSchema.parse(item);
   }
 
@@ -149,6 +157,7 @@ export class RegistryRepository implements IRegistryRepository {
     itemId: string,
     contribution: { name: string; amount: number; code?: string }
   ) {
+    const client = await this.getClient();
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
       if (typeof txClient.$queryRaw === 'function') {
@@ -240,7 +249,7 @@ export class RegistryRepository implements IRegistryRepository {
       return RegistryItemSchema.parse(updatedItem);
     };
 
-    return executeInTransaction(this.client, runTransaction);
+    return executeInTransaction(client, runTransaction);
   }
 }
 

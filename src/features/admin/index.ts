@@ -1,3 +1,3 @@
-export * from './registry';
-export * from './apiClient';
 export * from './utils';
+export * from './apiClient';
+export * from './registry';

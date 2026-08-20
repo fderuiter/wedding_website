@@ -30,12 +30,12 @@ const envSchema = z.object({
     message: 'POSTGRES_URL_NON_POOLING must be a valid URL or SQLite path',
   }),
   ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required').regex(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'ADMIN_PASSWORD must be in the format scrypt:[saltBase64]:[keyBase64]'),
-  ALLOWED_HOSTS: z.string().min(1, 'ALLOWED_HOSTS is required').refine(val => {
+  ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com').refine(val => {
     if (!val || typeof val !== 'string') return false;
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
     if (hosts.length === 0) return false;
     return hosts.every(h => {
-      return /^((\*|\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
+      return /^((\*\.|\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
     });
   }, {
     message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
@@ -66,9 +66,13 @@ const envSchema = z.object({
 // Conditionally skip validation during build (e.g., for Prisma generation without secrets)
 // Some CI setups might use NEXT_PHASE or just npm_lifecycle_event.
 const isBuildTime = process.env.npm_lifecycle_event === 'build' ||
+                    process.env.npm_lifecycle_event === 'prebuild' ||
+                    process.env.npm_lifecycle_event === 'posttest' ||
+                    process.env.npm_lifecycle_event === 'posttest:cov' ||
                     process.env.npm_lifecycle_event === 'prisma:generate' ||
                     process.env.NODE_ENV === 'test' ||
-                    process.env.JEST_WORKER_ID !== undefined;
+                    process.env.JEST_WORKER_ID !== undefined ||
+                    (typeof process !== 'undefined' && 'argv' in process && Array.isArray((process as any).argv) && (process as any).argv.some((a: string) => typeof a === 'string' && (a.includes('generate-openapi') || a.includes('generate-docs') || a.includes('prisma'))));
 
 // Even during build, fail if incomplete S3 credentials are provided explicitly
 const keys = ['S3_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
@@ -81,23 +85,28 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
 
 let _env: z.infer<typeof envSchema>;
 
-if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS)) {
-  // Use fallbacks for build tasks
-  _env = {
-    NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
-    DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
-    POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
-    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com',
-    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
-    HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
-    S3_BUCKET: process.env.S3_BUCKET || undefined,
-    S3_REGION: process.env.S3_REGION || undefined,
-    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || undefined,
-    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || undefined,
-    S3_ENDPOINT: process.env.S3_ENDPOINT || undefined,
-    S3_PUBLIC_URL: process.env.S3_PUBLIC_URL || undefined,
-  };
+if (isBuildTime) {
+  const parsed = envSchema.safeParse(process.env);
+  if (parsed.success) {
+    _env = parsed.data;
+  } else {
+    // Use fallbacks for build tasks
+    _env = {
+      NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
+      DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
+      POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
+      ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com',
+      GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
+      HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
+      S3_BUCKET: process.env.S3_BUCKET || undefined,
+      S3_REGION: process.env.S3_REGION || undefined,
+      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || undefined,
+      S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || undefined,
+      S3_ENDPOINT: process.env.S3_ENDPOINT || undefined,
+      S3_PUBLIC_URL: process.env.S3_PUBLIC_URL || undefined,
+    };
+  }
 } else {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {

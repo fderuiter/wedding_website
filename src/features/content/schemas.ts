@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { coordinateSchema } from '@/utils/validation';
 
-const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
+export const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 
 export const UpdateAppConfigSchema = z.object({
   brideName: z.string(),
@@ -64,7 +64,7 @@ const BaseContentNode = z.object({
   updatedAt: z.date(),
 });
 
-const FAQNodeSchema = BaseContentNode.extend({
+export const FAQNodeSchema = BaseContentNode.extend({
   type: z.literal('FAQ'),
   data: z.object({
     question: z.string().optional(),
@@ -72,7 +72,7 @@ const FAQNodeSchema = BaseContentNode.extend({
   }),
 });
 
-const LogisticsNodeSchema = BaseContentNode.extend({
+export const LogisticsNodeSchema = BaseContentNode.extend({
   type: z.literal('Logistics'),
   data: z.object({
     title: z.string().optional(),
@@ -86,7 +86,7 @@ const LogisticsNodeSchema = BaseContentNode.extend({
   }).passthrough(),
 });
 
-const GenericNodeSchema = BaseContentNode.extend({
+export const GenericNodeSchema = BaseContentNode.extend({
   type: z.string(),
   data: z.any(),
 });
@@ -95,7 +95,7 @@ export const ContentNodeSchema = z.union([FAQNodeSchema, LogisticsNodeSchema, Ge
 
 export type ContentNodeDTO = z.infer<typeof ContentNodeSchema>;
 
-const FeatureSchema = z.object({
+export const FeatureSchema = z.object({
   id: z.string(),
   type: z.string(),
   title: z.string().optional(),

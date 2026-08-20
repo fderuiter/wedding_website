@@ -1,5 +1,6 @@
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'file:./test.db';
-process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'build-time-static-pass';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy';
+process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
+process.env.ALLOWED_HOSTS = process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1';
 
 import { Project, SyntaxKind } from 'ts-morph';
 import path from 'path';

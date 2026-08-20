@@ -1,16 +1,20 @@
-import { prisma } from '@/lib/prisma';
 import type { IContentRepository } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
-import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 
 export class ContentRepository implements IContentRepository {
-  constructor(public client: any = prisma) {}
+  constructor(public client?: any) {}
+
+  private async getClient() {
+    return this.client || (await import('@/lib/prisma')).prisma;
+  }
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
-    let config = await this.client.appConfig.findUnique({ where: { id: configIdOrSubdomain } });
+    const client = await this.getClient();
+    let config = await client.appConfig.findUnique({ where: { id: configIdOrSubdomain } });
     if (!config) {
-      config = await this.client.appConfig.findUnique({ where: { subdomain: configIdOrSubdomain } });
+      config = await client.appConfig.findUnique({ where: { subdomain: configIdOrSubdomain } });
     }
     if (!config) return [];
     
@@ -19,7 +23,8 @@ export class ContentRepository implements IContentRepository {
   }
 
   async updateFeatures(features: any[], author: string = 'System', configIdOrSubdomain: string = 'global'): Promise<AppConfigDTO> {
-    return executeInTransaction(this.client, async (tx) => {
+    const client = await this.getClient();
+    return executeInTransaction(client, async (tx: any) => {
       let config = await tx.appConfig.findUnique({ where: { id: configIdOrSubdomain } });
       if (!config) {
         config = await tx.appConfig.findUnique({ where: { subdomain: configIdOrSubdomain } });
@@ -35,8 +40,14 @@ export class ContentRepository implements IContentRepository {
     });
   }
 
+  async getAllNodes(): Promise<ContentNodeDTO[]> {
+    const client = await this.getClient();
+    const nodes = await client.contentNode.findMany();
+    return nodes.map((n: any) => ContentNodeSchema.parse(n));
+  }
   async getNodesByType(type: string): Promise<ContentNodeDTO[]> {
-    const nodes = await this.client.contentNode.findMany({
+    const client = await this.getClient();
+    const nodes = await client.contentNode.findMany({
       where: { type }
     });
     return nodes.map((n: any) => ContentNodeSchema.parse(n));

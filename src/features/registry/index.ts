@@ -1,11 +1,15 @@
-export { registryService } from './service';
 export type { RegistryItem } from './types';
 export {
   RegistryItemSchema,
   RegistryItemBaseSchema,
   ContributorSchema,
+  InvitationCodeSchema,
   translateSnapshotToActive,
 } from './schemas';
+export type { InvitationCodeDTO, RegistryItemDTO } from './schemas';
+export { registryService } from './service';
+export { RegistryItemAdminService } from './admin.service';
+export { InvitationCodeAdminService } from './invitation-code.admin.service';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
 export { default as EditItemPage } from './pages/edit-item';

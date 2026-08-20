@@ -1,10 +1,6 @@
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
+import type { DatabaseSync } from 'node:sqlite';
 import { env } from '@/env';
-import { DatabaseSync } from 'node:sqlite';
-import fs from 'node:fs';
-import path from 'node:path';
 
 /**
  * Global object extended with the prisma client type to prevent multiple instances
@@ -13,6 +9,11 @@ import path from 'node:path';
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 export function createSqliteAdapter(connectionString: string) {
+  if (typeof window !== 'undefined') {
+    throw new Error('createSqliteAdapter cannot be used in browser context.');
+  }
+  const { DatabaseSync } = require('node:sqlite');
+
   let dbPath = connectionString;
   if (dbPath.startsWith('file:')) {
     dbPath = dbPath.slice(5);
@@ -208,6 +209,19 @@ export function createSqliteAdapter(connectionString: string) {
 }
 
 const createPrismaClient = () => {
+  if (typeof window !== 'undefined') {
+    return new Proxy({}, {
+      get() {
+        throw new Error('PrismaClient cannot be used in browser context.');
+      }
+    }) as unknown as PrismaClient;
+  }
+
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { Pool } = require('pg');
+  const { PrismaPg } = require('@prisma/adapter-pg');
+
   let isSchemaSqlite = false;
   try {
     const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');

@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content/schemas';
-import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
-import { AttractionSchema } from '@/features/attractions/schemas';
-import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry/schemas';
+import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content';
+import { WeddingPartyMemberSchema } from '@/features/wedding-party';
+import { AttractionSchema } from '@/features/attractions';
+import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry';
 
 // Helper for formatted Zod error output
 export function formatZodError(error: z.ZodError): string {

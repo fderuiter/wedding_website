@@ -1,2 +1,2 @@
 export * from './schemas';
-export * from './repository';
+export { MediaRepository, mediaRepository } from './repository';

@@ -1,4 +1,3 @@
-import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
@@ -10,7 +9,7 @@ export async function createAuditSnapshot(
   author: string = 'System',
   txClient?: any
 ) {
-  const client = txClient || prisma;
+  const client = txClient || (await import('@/lib/prisma')).prisma;
   
   const normalizedType = Object.values(Prisma.ModelName).find(
     (name) => name.toLowerCase() === entityType.toLowerCase()
@@ -26,18 +25,13 @@ export async function createAuditSnapshot(
     },
   });
 
-  // Handle version limit & pruning asynchronously?
-  // The constraints say: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
-  // And "Snapshot creation must not increase API response latency for guest users by more than 50ms."
-  // If we run it without await, we save time. Wait, but the PR requirement says: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
-  // A standard way to run this in the background is to just not await the pruning promise, or have a separate bulk operation.
-  // We can write a prune function here and trigger it via `void pruneSnapshots(...)`
   void pruneSnapshots(normalizedType, entityId);
 }
 
 async function pruneSnapshots(entityType: string, entityId: string) {
   try {
     const limit = env.HISTORY_VERSION_LIMIT;
+    const prisma = (await import('@/lib/prisma')).prisma;
     
     // Find all versions ordered by createdAt DESC
     const snapshots = await prisma.snapshotVersion.findMany({
@@ -75,6 +69,7 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
     const uniqueEntityPairs = Array.from(uniquePairsMap.values());
 
     const limit = env.HISTORY_VERSION_LIMIT;
+    const prisma = (await import('@/lib/prisma')).prisma;
 
     // Retrieve all snapshots for all unique entities in a single, ordered query
     const snapshots = await prisma.snapshotVersion.findMany({

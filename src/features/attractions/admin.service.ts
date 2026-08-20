@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { handleMediaFields } from '@/features/admin/utils';
+import { handleMediaFields } from '@/features/admin';
 import { AttractionSchema, AttractionDTO } from './schemas';
 import { z } from 'zod';
 import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
