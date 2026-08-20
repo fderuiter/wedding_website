@@ -11,6 +11,23 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: wedding
+          POSTGRES_PASSWORD: wedding123
+          POSTGRES_DB: wedding_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wedding -d wedding_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+      ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +36,21 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Wait for PostgreSQL database readiness
+        timeout-minutes: 3
+        run: |
+          until node -e "const net = require('net'); const client = net.connect(5432, 'localhost', () => { client.end(); process.exit(0); }); client.on('error', () => process.exit(1));"; do
+            echo "Waiting for PostgreSQL socket on localhost:5432..."
+            sleep 1
+          done
+          echo "PostgreSQL database socket is ready!"
+      - name: Apply and verify database migrations
+        run: |
+          npx prisma migrate deploy
+          npx prisma migrate status
+          npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+      - name: Seed database and verify initialization
+        run: npm run db:seed
       - name: Verify Environment Variables Documentation
         run: npx tsx scripts/verify-env-docs.ts
 

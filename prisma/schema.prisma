@@ -13,7 +13,7 @@ model AppConfig {
   subdomain        String?  @unique
   brideName        String   @default("")
   groomName        String   @default("")
-  weddingDate      DateTime @default(dbgenerated("NOW()"))
+  weddingDate      DateTime @default(now())
   baseUrl          String   @default("")
   venueName        String   @default("")
   venueAddress     String   @default("")
