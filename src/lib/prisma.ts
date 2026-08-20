@@ -12,15 +12,34 @@ import path from 'node:path';
  */
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
-function createSqliteAdapter(connectionString: string) {
-  let path = connectionString;
-  if (path.startsWith('file:')) {
-    path = path.slice(5);
+export function createSqliteAdapter(connectionString: string) {
+  let dbPath = connectionString;
+  if (dbPath.startsWith('file:')) {
+    dbPath = dbPath.slice(5);
+  } else if (dbPath.startsWith('sqlite:')) {
+    dbPath = dbPath.slice(7);
   }
-  if (path.includes('?')) {
-    path = path.split('?')[0];
+  if (dbPath.includes('?')) {
+    dbPath = dbPath.split('?')[0];
   }
-  const db = new DatabaseSync(path);
+
+  const createConnection = () => {
+    const db = new DatabaseSync(dbPath);
+    if (dbPath !== ':memory:') {
+      try {
+        db.exec('PRAGMA journal_mode = WAL;');
+      } catch (e) {}
+    }
+    try {
+      db.exec('PRAGMA busy_timeout = 5000;');
+    } catch (e) {}
+    try {
+      db.exec('PRAGMA synchronous = NORMAL;');
+    } catch (e) {}
+    return db;
+  };
+
+  const mainDb = createConnection();
 
   const mapSqliteType = (sqliteType: string) => {
     if (!sqliteType) return 7; // Text (default)
@@ -45,54 +64,137 @@ function createSqliteAdapter(connectionString: string) {
     return arg;
   };
 
-  const queryRaw = async (query: { sql: string; args: Array<unknown> }) => {
-    const args = query.args.map(convertArg);
-    const stmt = db.prepare(query.sql);
-    stmt.setReturnArrays(true);
-    const cols = stmt.columns();
-    const columnNames = cols.map(c => c.name);
-    const columnTypes = cols.map(c => mapSqliteType(c.type || ''));
-    const rows = stmt.all(...args);
-    return {
-      columnNames,
-      columnTypes,
-      rows
+  const makeQueryFunctions = (dbInstance: DatabaseSync) => {
+    const queryRaw = async (query: { sql: string; args: Array<unknown> }) => {
+      const args = query.args.map(convertArg);
+      const stmt = dbInstance.prepare(query.sql);
+      stmt.setReturnArrays(true);
+      const cols = stmt.columns();
+      const columnNames = cols.map(c => c.name);
+      const columnTypes = cols.map(c => mapSqliteType(c.type || ''));
+      const rows = stmt.all(...args);
+      return {
+        columnNames,
+        columnTypes,
+        rows
+      };
     };
+
+    const executeRaw = async (query: { sql: string; args: Array<unknown> }) => {
+      const args = query.args.map(convertArg);
+      const stmt = dbInstance.prepare(query.sql);
+      const result = stmt.run(...args);
+      return result.changes;
+    };
+
+    return { queryRaw, executeRaw };
   };
 
-  const executeRaw = async (query: { sql: string; args: Array<unknown> }) => {
-    const args = query.args.map(convertArg);
-    const stmt = db.prepare(query.sql);
-    const result = stmt.run(...args);
-    return result.changes;
+  const mainQuery = makeQueryFunctions(mainDb);
+
+  const pool: DatabaseSync[] = [];
+  const maxPoolSize = 20;
+
+  const getTxConnection = () => {
+    if (pool.length > 0) {
+      return pool.pop()!;
+    }
+    return createConnection();
   };
+
+  const releaseTxConnection = (conn: DatabaseSync) => {
+    if (pool.length < maxPoolSize) {
+      pool.push(conn);
+    } else {
+      try {
+        conn.close();
+      } catch (e) {}
+    }
+  };
+
+  let txQueue = Promise.resolve();
 
   const driverAdapter = {
     provider: 'sqlite',
     adapterName: 'builtin-sqlite',
-    queryRaw,
-    executeRaw,
+    queryRaw: mainQuery.queryRaw,
+    executeRaw: mainQuery.executeRaw,
     async executeScript(script: string) {
-      db.exec(script);
+      mainDb.exec(script);
     },
     async startTransaction() {
-      db.exec('BEGIN');
+      const txDb = getTxConnection();
+
+      let releaseQueueLock!: () => void;
+      const prevQueue = txQueue;
+      txQueue = new Promise<void>(resolve => {
+        releaseQueueLock = resolve;
+      });
+
+      try {
+        await prevQueue;
+        let started = false;
+        let retries = 0;
+        while (!started && retries < 50) {
+          try {
+            txDb.exec('BEGIN IMMEDIATE');
+            started = true;
+          } catch (e: any) {
+            if (e && e.message && (e.message.includes('locked') || e.message.includes('busy'))) {
+              retries++;
+              await new Promise(r => setTimeout(r, 10));
+            } else {
+              throw e;
+            }
+          }
+        }
+        if (!started) {
+          throw new Error('Database busy, failed to acquire transaction lock');
+        }
+      } catch (err) {
+        releaseQueueLock();
+        releaseTxConnection(txDb);
+        throw err;
+      }
+
+      const txQuery = makeQueryFunctions(txDb);
+
       return {
         provider: 'sqlite',
         adapterName: 'builtin-sqlite-tx',
         options: { usePhantomQuery: true },
-        queryRaw,
-        executeRaw,
+        queryRaw: txQuery.queryRaw,
+        executeRaw: txQuery.executeRaw,
         async commit() {
-          db.exec('COMMIT');
+          try {
+            txDb.exec('COMMIT');
+          } finally {
+            releaseQueueLock();
+            releaseTxConnection(txDb);
+          }
         },
         async rollback() {
-          db.exec('ROLLBACK');
+          try {
+            txDb.exec('ROLLBACK');
+          } catch (e) {
+            // ignore
+          } finally {
+            releaseQueueLock();
+            releaseTxConnection(txDb);
+          }
         }
       };
     },
     async dispose() {
-      db.close();
+      for (const conn of pool) {
+        try {
+          conn.close();
+        } catch (e) {}
+      }
+      pool.length = 0;
+      try {
+        mainDb.close();
+      } catch (e) {}
     }
   };
 
@@ -129,7 +231,7 @@ const createPrismaClient = () => {
     connectionString = 'file:./test.db';
   }
 
-  console.log('DEBUG [createPrismaClient]:', { connectionString, isSqlite });
+  console.log('DEBUG [createPrismaClient]:', { provider: isSqlite ? 'sqlite' : 'postgresql', isSqlite });
 
   let client: PrismaClient;
   if (isSqlite) {

@@ -98,6 +98,47 @@ describe('GET /api/admin/versions', () => {
       orderBy: { createdAt: 'desc' },
     });
   });
+
+  it('masks contributor email addresses in Contributor and RegistryItem version history payloads', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const mockVersions = [
+      {
+        id: 'v-contrib',
+        entityType: 'Contributor',
+        entityId: 'c1',
+        data: { name: 'John Doe', email: 'john.doe@example.com', amount: 50 },
+        createdAt: new Date(),
+      },
+      {
+        id: 'v-reg',
+        entityType: 'RegistryItem',
+        entityId: 'r1',
+        data: {
+          name: 'Mixer',
+          contributors: [
+            { name: 'Jane Smith', email: 'jane.smith@example.com', amount: 100 },
+          ],
+        },
+        createdAt: new Date(),
+      },
+    ];
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(mockVersions);
+
+    const req = new NextRequest('http://localhost/api/admin/versions', { method: 'GET' });
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+
+    const contribData = json.data[0].data;
+    expect(contribData.email).not.toBe('john.doe@example.com');
+    expect(contribData.email).toContain('***');
+
+    const regData = json.data[1].data;
+    expect(regData.contributors[0].email).not.toBe('jane.smith@example.com');
+    expect(regData.contributors[0].email).toContain('***');
+  });
 });
 
 describe('POST /api/admin/versions/[id]/restore', () => {

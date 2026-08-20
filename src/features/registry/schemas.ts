@@ -46,14 +46,6 @@ export const LegacyRegistryItemBaseSchema = z.object({
   legacy_isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
 }, { message: 'Invalid legacy request body.' });
 
-export const LegacyRegistryItemSchema = LegacyRegistryItemBaseSchema.extend({
-  id: z.string(),
-  purchased: z.boolean().default(false),
-  purchaserName: z.string().nullable().optional(),
-  amountContributed: z.coerce.number().default(0),
-  contributors: z.array(ContributorSchema).default([]),
-});
-
 export function translateLegacyToActive(legacyData: any) {
   return {
     name: legacyData.legacy_name,

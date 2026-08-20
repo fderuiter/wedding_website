@@ -1,18 +1,19 @@
 import sharp from 'sharp';
 import { logger } from '@/lib/logger';
+import { ApiError } from '@/utils/ApiError';
 
 /**
  * Sanitizes image files by auto-rotating them based on their EXIF orientation tag,
  * stripping all sensitive EXIF metadata (GPS, camera model, timestamps, etc.),
  * and preserving their original format (e.g. JPEG, PNG) and dimensions.
- * Gracefully falls back to the original file if any error occurs or if the file format
- * is not supported (such as ICO, SVG, etc.).
+ * Skips sanitization for non-Sharp image formats (such as ICO).
+ * Throws an error if sanitization fails for supported formats.
  */
 export async function sanitizeImage(file: File): Promise<File> {
   const fileType = file.type;
 
   // Only process standard JPEG and PNG files.
-  // Fall back / ignore unsupported formats like ICO, SVG, or other non-image files.
+  // Skip unsupported formats like ICO.
   if (
     fileType !== 'image/jpeg' &&
     fileType !== 'image/jpg' &&
@@ -36,7 +37,7 @@ export async function sanitizeImage(file: File): Promise<File> {
     logger.info(`Successfully sanitized image of type ${fileType}`);
     return new File([new Uint8Array(sanitizedBuffer)], file.name, { type: fileType });
   } catch (error) {
-    logger.error('Failed to sanitize image, falling back to original file:', error);
-    return file;
+    logger.error('Failed to sanitize image:', error);
+    throw new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.');
   }
 }

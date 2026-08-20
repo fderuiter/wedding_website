@@ -30,6 +30,16 @@ const envSchema = z.object({
     message: 'POSTGRES_URL_NON_POOLING must be a valid URL or SQLite path',
   }),
   ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required').regex(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'ADMIN_PASSWORD must be in the format scrypt:[saltBase64]:[keyBase64]'),
+  ALLOWED_HOSTS: z.string().min(1, 'ALLOWED_HOSTS is required').refine(val => {
+    if (!val || typeof val !== 'string') return false;
+    const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
+    if (hosts.length === 0) return false;
+    return hosts.every(h => {
+      return /^((\*|\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
+    });
+  }, {
+    message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
+  }),
   GUEST_PASSCODE: z.string().default('wedding2026'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
   S3_BUCKET: z.string().optional(),
@@ -71,13 +81,14 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
 
 let _env: z.infer<typeof envSchema>;
 
-if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD)) {
+if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS)) {
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
     POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
+    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com',
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
     S3_BUCKET: process.env.S3_BUCKET || undefined,

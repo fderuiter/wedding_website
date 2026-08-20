@@ -39,11 +39,54 @@ export const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
  */
 export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/x-icon', 'image/vnd.microsoft.icon'];
 
+export const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ico'];
+
+export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/x-icon': ['.ico'],
+  'image/vnd.microsoft.icon': ['.ico'],
+};
+
+export const MIME_TO_NORMALIZED_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/x-icon': '.ico',
+  'image/vnd.microsoft.icon': '.ico',
+};
+
+export function getFileExtension(filename?: string | null): string {
+  if (!filename || typeof filename !== 'string') return '';
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === filename.length - 1) return '';
+  return filename.substring(lastDot).toLowerCase();
+}
+
+export function getNormalizedExtension(mimeType: string, filename?: string | null): string {
+  const allowed = MIME_TO_EXTENSIONS[mimeType];
+  if (filename) {
+    const ext = getFileExtension(filename);
+    if (allowed && allowed.includes(ext)) {
+      return ext;
+    }
+  }
+  return MIME_TO_NORMALIZED_EXT[mimeType] || '.bin';
+}
+
 export const AdminUploadSchema = z.object({
   file: z.any()
     .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
     .refine((file) => file?.size <= MAX_UPLOAD_SIZE, { message: 'File size exceeds 5MB limit' })
     .refine((file) => ACCEPTED_IMAGE_TYPES.includes(file?.type), { message: 'Invalid file format. Only JPG, PNG, and ICO are supported' })
+    .refine((file) => {
+      const ext = getFileExtension(file?.name);
+      return ALLOWED_EXTENSIONS.includes(ext);
+    }, { message: 'Invalid file extension. Only JPG, PNG, and ICO are supported' })
+    .refine((file) => {
+      const ext = getFileExtension(file?.name);
+      const allowedExts = MIME_TO_EXTENSIONS[file?.type] || [];
+      return allowedExts.includes(ext);
+    }, { message: 'File extension does not match the declared MIME type' })
 });
 
 export const AdminLogoutSchema = z.object({});

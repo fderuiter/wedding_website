@@ -3,8 +3,20 @@ import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { isProtectedRoute } from '@/lib/routes';
+import { isHostAllowed } from '@/utils/hostValidation';
 
 export async function middleware(request: NextRequest) {
+  // Validate Host header at perimeter before executing any route logic
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0].trim();
+  const host = forwardedHost || request.headers.get('host') || request.nextUrl?.host;
+
+  if (!isHostAllowed(host)) {
+    return NextResponse.json(
+      { error: 'Invalid Host header' },
+      { status: 400 }
+    );
+  }
+
   const { pathname } = request.nextUrl;
   const method = request.method;
 

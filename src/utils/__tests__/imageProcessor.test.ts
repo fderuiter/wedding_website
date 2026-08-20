@@ -106,16 +106,11 @@ describe('imageProcessor - sanitizeImage', () => {
     expect(bytes).toEqual(dummyIcoBytes);
   });
 
-  it('should fallback gracefully to original file if sharp throws an error', async () => {
+  it('should throw an error if sharp fails to sanitize image', async () => {
     // Passing a corrupt or empty JPEG buffer that would cause sharp to throw an error
     const corruptBytes = new Uint8Array([255, 216, 255, 224, 0, 0, 0]);
     const originalFile = createTestFile(corruptBytes, 'photo.jpg', 'image/jpeg');
 
-    const sanitizedFile = await sanitizeImage(originalFile);
-
-    // It should fallback to the original file
-    expect(sanitizedFile).toBe(originalFile);
-    const bytes = new Uint8Array(await getFileArrayBuffer(sanitizedFile));
-    expect(bytes).toEqual(corruptBytes);
+    await expect(sanitizeImage(originalFile)).rejects.toThrow('Image sanitization failed');
   });
 });

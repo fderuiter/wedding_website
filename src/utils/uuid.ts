@@ -3,6 +3,9 @@
  * Does not import any external dependencies, ensuring a zero-dependency footprint.
  */
 export function generateSecureUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
   if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.randomUUID === 'function') {
     return window.crypto.randomUUID();
   }

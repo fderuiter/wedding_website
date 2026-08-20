@@ -19,7 +19,7 @@ async function getAuditSnapshot() {
   return createAuditSnapshot;
 }
 
-class ContentRepository implements IContentRepository {
+export class ContentRepository implements IContentRepository {
   constructor(public client?: any) {}
 
   private async getClient() {
@@ -70,7 +70,6 @@ class ContentRepository implements IContentRepository {
     const nodes = await client.contentNode.findMany();
     return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
-
   async getNodesByType(type: string): Promise<ContentNodeDTO[]> {
     const client = await this.getClient();
     const nodes = await client.contentNode.findMany({
