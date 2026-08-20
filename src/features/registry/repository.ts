@@ -1,23 +1,7 @@
 import type { IRegistryRepository } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
-
-async function getPrisma() {
-  if (process.env.JEST_WORKER_ID) {
-    const req = eval('require');
-    return req('@/lib/prisma').prisma;
-  }
-  const { prisma } = await (0, eval)('import("../../lib/prisma")');
-  return prisma;
-}
-
-async function getAuditSnapshot() {
-  if (process.env.JEST_WORKER_ID) {
-    const req = eval('require');
-    return req('@/lib/audit').createAuditSnapshot;
-  }
-  const { createAuditSnapshot } = await (0, eval)('import("../../lib/audit")');
-  return createAuditSnapshot;
-}
+import { createAuditSnapshot } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 
 /**
  * @class RegistryRepository
@@ -28,7 +12,7 @@ export class RegistryRepository implements IRegistryRepository {
   constructor(public client?: any) {}
 
   private async getClient() {
-    return this.client || (await getPrisma());
+    return this.client || (await import('@/lib/prisma')).prisma;
   }
 
   /**
@@ -68,7 +52,6 @@ export class RegistryRepository implements IRegistryRepository {
    */
   async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     const client = await this.getClient();
-    const createAuditSnapshot = await getAuditSnapshot();
     let mediaId = data.imageId;
     if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
       const media = await client.media.create({
@@ -113,7 +96,6 @@ export class RegistryRepository implements IRegistryRepository {
 
   async updateItem(id: string, data: Partial<RegistryItemDTO> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     const client = await this.getClient();
-    const createAuditSnapshot = await getAuditSnapshot();
     const { contributors, image, imageId, imageUrl, imageAlt, imageDecorative, ...updateData } = data;
     
     let updateMediaId = imageId;
@@ -152,7 +134,6 @@ export class RegistryRepository implements IRegistryRepository {
    */
   async deleteItem(id: string, author: string = 'Admin') {
     const client = await this.getClient();
-    const createAuditSnapshot = await getAuditSnapshot();
     const item = await client.registryItem.delete({
       where: { id }
     });
@@ -177,8 +158,6 @@ export class RegistryRepository implements IRegistryRepository {
     contribution: { name: string; amount: number; code?: string }
   ) {
     const client = await this.getClient();
-    const createAuditSnapshot = await getAuditSnapshot();
-    const { executeInTransaction } = await import('@/lib/transaction');
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
       if (typeof txClient.$queryRaw === 'function') {

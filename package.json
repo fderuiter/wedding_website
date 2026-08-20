@@ -27,6 +27,7 @@
     "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "scaffold": "node scripts/scaffold-feature.mjs",
+    "postinstall": "prisma generate",
     "prepare": "node scripts/install-git-hooks.js"
   },
   "dependencies": {

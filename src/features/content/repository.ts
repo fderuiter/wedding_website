@@ -1,29 +1,13 @@
 import type { IContentRepository } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
-
-async function getPrisma() {
-  if (process.env.JEST_WORKER_ID) {
-    const req = eval('require');
-    return req('@/lib/prisma').prisma;
-  }
-  const { prisma } = await (0, eval)('import("../../lib/prisma")');
-  return prisma;
-}
-
-async function getAuditSnapshot() {
-  if (process.env.JEST_WORKER_ID) {
-    const req = eval('require');
-    return req('@/lib/audit').createAuditSnapshot;
-  }
-  const { createAuditSnapshot } = await (0, eval)('import("../../lib/audit")');
-  return createAuditSnapshot;
-}
+import { createAuditSnapshot } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 
 export class ContentRepository implements IContentRepository {
   constructor(public client?: any) {}
 
   private async getClient() {
-    return this.client || (await getPrisma());
+    return this.client || (await import('@/lib/prisma')).prisma;
   }
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
@@ -40,15 +24,6 @@ export class ContentRepository implements IContentRepository {
 
   async updateFeatures(features: any[], author: string = 'System', configIdOrSubdomain: string = 'global'): Promise<AppConfigDTO> {
     const client = await this.getClient();
-    const createAuditSnapshot = await getAuditSnapshot();
-    const getTransaction = async () => {
-      if (process.env.JEST_WORKER_ID) {
-        const req = eval('require');
-        return req('@/lib/transaction');
-      }
-      return (0, eval)('import("../../lib/transaction")');
-    };
-    const { executeInTransaction } = await getTransaction();
     return executeInTransaction(client, async (tx: any) => {
       let config = await tx.appConfig.findUnique({ where: { id: configIdOrSubdomain } });
       if (!config) {

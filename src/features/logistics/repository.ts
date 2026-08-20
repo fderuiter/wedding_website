@@ -1,20 +1,11 @@
 import type { ILogisticsRepository } from './types';
 import { ContentNodeSchema, ContentNodeDTO } from '../content/schemas';
 
-async function getPrisma() {
-  if (process.env.JEST_WORKER_ID) {
-    const req = eval('require');
-    return req('@/lib/prisma').prisma;
-  }
-  const { prisma } = await (0, eval)('import("../../lib/prisma")');
-  return prisma;
-}
-
 class LogisticsRepository implements ILogisticsRepository {
   constructor(public client?: any) {}
 
   private async getClient() {
-    return this.client || (await getPrisma());
+    return this.client || (await import('@/lib/prisma')).prisma;
   }
 
   async getLogisticsNodes(): Promise<ContentNodeDTO[]> {
