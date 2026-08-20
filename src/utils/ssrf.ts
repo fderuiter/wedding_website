@@ -1,12 +1,15 @@
-import dns from 'dns';
-
 /**
  * Checks if a URL resolves to a private IP address to prevent SSRF.
  * @param url The URL to check.
  * @returns True if the URL is private/internal, false otherwise.
  */
 export async function isPrivateUrl(url: string): Promise<boolean> {
+  const isBrowser = typeof window !== 'undefined' && (typeof process === 'undefined' || !process.versions?.node);
+  if (isBrowser) {
+    return false;
+  }
   try {
+    const dns = await import('dns');
     const parsedUrl = new URL(url);
     const hostname = parsedUrl.hostname;
 

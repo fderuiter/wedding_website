@@ -30,12 +30,12 @@ const envSchema = z.object({
     message: 'POSTGRES_URL_NON_POOLING must be a valid URL or SQLite path',
   }),
   ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required').regex(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'ADMIN_PASSWORD must be in the format scrypt:[saltBase64]:[keyBase64]'),
-  ALLOWED_HOSTS: z.string().min(1, 'ALLOWED_HOSTS is required').refine(val => {
+  ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com').refine(val => {
     if (!val || typeof val !== 'string') return false;
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
     if (hosts.length === 0) return false;
     return hosts.every(h => {
-      return /^((\*|\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
+      return /^((\*\.|\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
     });
   }, {
     message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
