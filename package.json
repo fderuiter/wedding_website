@@ -51,9 +51,17 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-leaflet": "^5.0.0",
-    "sharp": "0.34.5",
+    "sharp": "^0.35.3",
     "three": "^0.182.0",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "brace-expansion": "^2.0.1",
+    "fast-uri": "^3.0.3",
+    "js-yaml": "^4.1.0",
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.3",
+    "deepmerge-ts": "^8.0.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
