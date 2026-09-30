@@ -296,6 +296,44 @@ describe('RegistryRepository', () => {
       expect(tx.registryItem.update).not.toHaveBeenCalled();
     });
 
+    it('should successfully contribute without an invitation code', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Guest Contributor', amount: 50 };
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(50);
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 50,
+          purchased: false,
+          contributors: {
+            create: {
+              name: 'Guest Contributor',
+              amount: 50,
+              date: expect.any(Date),
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
+    });
+
     it('should successfully contribute when a valid and unused invitation code is provided', async () => {
       const tx = {
         registryItem: {
@@ -319,7 +357,7 @@ describe('RegistryRepository', () => {
       };
       (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
 
-      const contribution = { name: 'Some Name', amount: 50, code: 'GOODCODE' };
+      const contribution = { name: 'Jane Smith', amount: 50, code: 'GOODCODE' };
       const item = await registryRepository.contributeToItem('1', contribution);
 
       expect(item.amountContributed).toBe(50);
@@ -340,7 +378,7 @@ describe('RegistryRepository', () => {
           purchased: false,
           contributors: {
             create: {
-              name: 'Jane Smith', // Name must be mapped to authorized guest's pre-registered name
+              name: 'Jane Smith',
               amount: 50,
               date: expect.any(Date),
               invitationCodeId: 'invite-good',
@@ -392,7 +430,7 @@ describe('RegistryRepository', () => {
       };
       (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
 
-      const contribution = { name: 'Some Name', amount: 50, code: 'USEDCODE' };
+      const contribution = { name: 'Jane Smith', amount: 50, code: 'USEDCODE' };
       const item = await registryRepository.contributeToItem('1', contribution);
 
       expect(item.amountContributed).toBe(50);
