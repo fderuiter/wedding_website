@@ -1,4 +1,4 @@
-name: Deploy Pipeline
+name: Release Pipeline
 
 permissions:
   contents: read
@@ -7,196 +7,28 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  build-and-publish:
-    name: Build and Publish Container Image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    outputs:
-      image_tag: ${{ steps.registry_check.outputs.image_tag }}
-      image_digest: ${{ steps.build_image.outputs.digest }}
-      image_sha: ${{ github.sha }}
-      push: ${{ steps.registry_check.outputs.push }}
-    steps:
-      - uses: actions/checkout@v4
+  publish-artifact:
+    name: Publish Release Artifact
+    uses: ./.github/workflows/publish-artifact.yml
+    secrets: inherit
 
-      - name: Verify external registry secrets
-        id: registry_check
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "ERROR: Missing external registry credentials (DOCKERHUB_USERNAME and/or DOCKERHUB_TOKEN). Falling back to local-only build with default tag."
-            echo "push=false" >> $GITHUB_OUTPUT
-            echo "tags=my-app:${{ github.sha }},my-app:latest" >> $GITHUB_OUTPUT
-            echo "image_tag=my-app:${{ github.sha }}" >> $GITHUB_OUTPUT
-          else
-            echo "push=true" >> $GITHUB_OUTPUT
-            echo "tags=${DOCKERHUB_USERNAME}/my-app:${{ github.sha }},${DOCKERHUB_USERNAME}/my-app:latest" >> $GITHUB_OUTPUT
-            echo "image_tag=${DOCKERHUB_USERNAME}/my-app:${{ github.sha }}" >> $GITHUB_OUTPUT
-          fi
+  database-migration:
+    name: Execute Database Migration
+    needs: publish-artifact
+    uses: ./.github/workflows/db-migrate.yml
+    with:
+      environment: 'production'
+    secrets: inherit
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to Docker Hub
-        if: steps.registry_check.outputs.push == 'true'
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build Docker Image
-        id: build_image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ steps.registry_check.outputs.push == 'true' }}
-          tags: ${{ steps.registry_check.outputs.tags }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Attest Build Provenance
-        if: steps.registry_check.outputs.push == 'true'
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: index.docker.io/${{ secrets.DOCKERHUB_USERNAME }}/my-app
-          subject-digest: ${{ steps.build_image.outputs.digest }}
-          push-to-registry: true
-
-  production-migrate:
-    name: Production Database Migration
-    needs: build-and-publish
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify mandatory secrets
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "ERROR: Missing mandatory configuration secret: DATABASE_URL."
-            exit 1
-          fi
-          if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
-            echo "ERROR: Invalid format for DATABASE_URL. Must start with postgres:// or postgresql://"
-            exit 1
-          fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify Migration Backwards Compatibility
-        run: npm run lint:migrations
-
-      - name: Run Database Migrations
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx prisma migrate deploy
-
-  production-deploy:
-    name: Production Container Deployment
-    needs: [build-and-publish, production-migrate]
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy Container Image
-        env:
-          IMAGE_TAG: ${{ needs.build-and-publish.outputs.image_tag }}
-          IMAGE_DIGEST: ${{ needs.build-and-publish.outputs.image_digest }}
-          IMAGE_SHA: ${{ needs.build-and-publish.outputs.image_sha }}
-        run: |
-          echo "Deploying container image version to production..."
-          echo "Image Tag: ${IMAGE_TAG}"
-          echo "Image Digest: ${IMAGE_DIGEST}"
-          echo "Commit SHA: ${IMAGE_SHA}"
-          echo "Container deployment completed successfully."
-
-  verify-deployment:
-    name: Verify Deployment & Health Check
-    needs: [build-and-publish, production-deploy]
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Start container application for health verification
-        timeout-minutes: 2
-        run: |
-          docker compose up --build -d app
-
-      - name: HTTP Health Check Verification
-        timeout-minutes: 2
-        run: |
-          echo "Executing post-deployment HTTP health check verification against /api/health..."
-          timeout 120 bash -c 'until curl -f -s http://localhost:3000/api/health > /dev/null; do sleep 2; done'
-          echo "Post-deployment health check PASSED! Status 200 OK received from /api/health."
-
-      - name: Clean up test container
-        if: always()
-        run: docker compose down -v || true
-
-      - name: Trigger Automated Rollback on Verification Failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            console.log('Post-deployment health check failed. Triggering automated rollback...');
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'rollback.yml',
-                ref: context.ref,
-                inputs: {
-                  previous_tag: 'latest',
-                  target_environment: 'production',
-                  reason: 'Automated post-deployment verification health check failure'
-                }
-              });
-              console.log('Automated rollback workflow triggered successfully.');
-            } catch (err) {
-              console.warn('Could not dispatch rollback workflow via GitHub API:', err);
-            }
-
-      - name: Automated Rollback Notification
-        if: failure()
-        run: |
-          echo "::error ::Post-deployment verification failed! Automated rollback triggered to restore previous container tag."
+  deploy-provider:
+    name: Deploy to Hosting Provider
+    needs: [publish-artifact, database-migration]
+    uses: ./.github/workflows/deploy-provider.yml
+    with:
+      environment: 'production'
+      image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+      provider: 'google-cloud-run'
+    secrets: inherit

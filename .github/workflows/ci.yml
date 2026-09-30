@@ -2,13 +2,15 @@ permissions:
   contents: read
 
 name: CI
+
 on:
   push:
     branches: [ main ]
   pull_request:
 
 jobs:
-  build-and-test:
+  ci:
+    name: Continuous Integration
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -16,12 +18,21 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
       - name: Verify Environment Variables Documentation
         run: npx tsx scripts/verify-env-docs.ts
 
@@ -99,6 +110,7 @@ jobs:
             } catch (err) {
               console.warn('Failed to report documentation drift via GitHub API:', err);
             }
+
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
@@ -107,27 +119,36 @@ jobs:
           key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
-      - name: Build project
+
+      - name: Build Next.js application
         run: npm run build
+
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
+
       - name: Run OCI Container & Clean Database Smoke Test
         run: npm run test:container
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
-      - name: Run tests
+
+      - name: Run unit & integration tests
         run: npm test
+
       - name: Upload Test Coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lcov-report
           path: coverage/
-      - name: Run e2e tests
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright e2e tests
         run: npx playwright test
+
       - name: Generate A11y Report
         if: always()
         run: node scripts/a11y-report.mjs
+
       - name: Post A11y Report to PR
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
@@ -148,9 +169,47 @@ jobs:
             } catch (err) {
               console.warn('Failed to post A11y report via GitHub API:', err);
             }
+
       - name: Write A11y Report to Job Summary
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
           if [ -f "test-results/a11y-summary.md" ]; then
             cat test-results/a11y-summary.md >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Start local test database and application container
+        timeout-minutes: 5
+        run: |
+          docker compose up --build -d app
+
+      - name: Wait for application container to be ready
+        timeout-minutes: 2
+        run: |
+          echo "Waiting for application container on port 3000..."
+          timeout 120 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
+          echo "Application container is responsive!"
+
+      - name: Seed local test container database
+        timeout-minutes: 1
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding
+        run: |
+          npm run db:seed
+
+      - name: Run Playwright smoke tests against container
+        timeout-minutes: 3
+        env:
+          TEST_CONTAINER: "true"
+        run: npx playwright test
+
+      - name: Print container logs on failure
+        if: failure()
+        run: |
+          echo "=== App Container Logs ==="
+          docker compose logs app || true
+          echo "=== DB Container Logs ==="
+          docker compose logs db || true
+
+      - name: Clean up containers
+        if: always()
+        run: docker compose down -v || true

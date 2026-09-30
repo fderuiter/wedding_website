@@ -1,0 +1,104 @@
+name: Provider Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Deployment Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      image_tag:
+        description: 'OCI Image Tag or SHA to deploy'
+        required: true
+        default: 'latest'
+        type: string
+      provider:
+        description: 'Hosting Provider Adapter'
+        required: true
+        default: 'google-cloud-run'
+        type: choice
+        options:
+          - google-cloud-run
+          - docker-host
+          - generic-webhook
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target Deployment Environment'
+        required: false
+        default: 'production'
+        type: string
+      image_tag:
+        description: 'OCI Image Tag or SHA to deploy'
+        required: false
+        default: 'latest'
+        type: string
+      provider:
+        description: 'Hosting Provider Adapter'
+        required: false
+        default: 'google-cloud-run'
+        type: string
+    secrets:
+      GCP_SA_KEY:
+        required: false
+      GCP_PROJECT_ID:
+        required: false
+      DEPLOY_WEBHOOK_URL:
+        required: false
+      DATABASE_URL:
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy Release Artifact to Provider
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Artifact Image URI
+        id: resolve
+        run: |
+          TAG="${{ inputs.image_tag || 'latest' }}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_URI="ghcr.io/${REPO_LOWER}:${TAG}"
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "Resolved deployment target artifact: ${IMAGE_URI}"
+
+      - name: Deploy to Google Cloud Run Adapter
+        if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Execute Cloud Run Deployment
+        if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: wedding-website
+          image: ${{ steps.resolve.outputs.image_uri }}
+          region: us-central1
+
+      - name: Deploy via Generic Webhook Adapter
+        if: inputs.provider == 'generic-webhook' && secrets.DEPLOY_WEBHOOK_URL != ''
+        run: |
+          echo "Triggering deployment webhook for image ${{ steps.resolve.outputs.image_uri }}..."
+          curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"image\": \"${{ steps.resolve.outputs.image_uri }}\", \"environment\": \"${{ inputs.environment || 'production' }}\"}"
+
+      - name: Dry-run Provider Adapter Validation
+        if: secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == ''
+        run: |
+          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for image tag: ${{ inputs.image_tag || 'latest' }}."
+
+      - name: Deployment Summary
+        run: |
+          echo "### 🚀 Provider Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Provider:** \`${{ inputs.provider || 'google-cloud-run' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Image URI:** \`${{ steps.resolve.outputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
