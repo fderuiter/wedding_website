@@ -19,10 +19,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(404, 'Invalid invitation code.');
   }
 
-  if (invite.used) {
-    throw new ApiError(400, 'This invitation code has already been used.');
-  }
-
   return NextResponse.json({
     valid: true,
     guestName: invite.guestName,

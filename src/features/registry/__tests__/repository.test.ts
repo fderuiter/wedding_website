@@ -342,10 +342,11 @@ describe('RegistryRepository', () => {
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Invalid invitation code.');
     });
 
-    it('should throw an error if the provided invitation code has already been used', async () => {
+    it('should successfully contribute when a previously used invitation code is provided', async () => {
       const tx = {
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
         },
         invitationCode: {
           findUnique: jest.fn().mockResolvedValue({
@@ -354,14 +355,49 @@ describe('RegistryRepository', () => {
             guestName: 'Jane Smith',
             used: true,
           }),
+          update: jest.fn().mockResolvedValue({ id: 'invite-used', used: true }),
         },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
       };
       (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
 
       const contribution = { name: 'Some Name', amount: 50, code: 'USEDCODE' };
-      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow(
-        'This invitation code has already been used.'
-      );
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(50);
+      expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'USEDCODE' },
+      });
+      expect(tx.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'invite-used' },
+        data: {
+          used: true,
+          usedAt: expect.any(Date),
+        },
+      });
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 50,
+          purchased: false,
+          contributors: {
+            create: {
+              name: 'Jane Smith',
+              amount: 50,
+              date: expect.any(Date),
+              invitationCodeId: 'invite-used',
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
     });
   });
 });
