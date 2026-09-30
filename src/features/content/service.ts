@@ -13,39 +13,37 @@ export class ContentService {
   }
 
   async reorderFeatures(orderedIds: string[]) {
-    const existing = await this.repo.getFeatures();
-    const map = new Map(existing.map((f: any) => [f.id, f]));
-    const reordered = orderedIds
-      .map((id) => map.get(id))
-      .filter((f): f is any => Boolean(f));
+    const currentFeatures = await this.repo.getFeatures();
+    const featureMap = new Map(currentFeatures.map((f: any) => [f.id, f]));
+    const reordered: any[] = [];
+    for (const id of orderedIds) {
+      if (featureMap.has(id)) {
+        reordered.push(featureMap.get(id));
+      }
+    }
     return await this.repo.updateFeatures(reordered);
   }
 
-  async toggleFeatureVisibility(featureId: string, visible: boolean) {
-    const existing = await this.repo.getFeatures();
-    const updated = existing.map((f: any) => {
-      if (f.id === featureId) {
-        return { ...f, visible };
-      }
-      return f;
-    });
+  async toggleFeatureVisibility(id: string, visible: boolean) {
+    const currentFeatures = await this.repo.getFeatures();
+    const updated = currentFeatures.map((f: any) => f.id === id ? { ...f, visible } : f);
     return await this.repo.updateFeatures(updated);
   }
 
   async createCustomSection(title: string, content: string) {
-    const existing = await this.repo.getFeatures();
-    const newSection = {
+    const currentFeatures = await this.repo.getFeatures();
+    const newFeature = {
       id: `custom-${Date.now()}`,
       type: 'custom',
       title,
       content,
       visible: true,
     };
-    return await this.repo.updateFeatures([...existing, newSection]);
+    return await this.repo.updateFeatures([...currentFeatures, newFeature]);
   }
 
   async getAllNodes() {
-    if (typeof this.repo.getAllNodes === 'function') {
+    if (this.repo.getAllNodes) {
       return await this.repo.getAllNodes();
     }
     return [];

@@ -80,6 +80,8 @@ flowchart LR
     node_api_admin_entity["[entity]"]
     node_api_admin_entity_id["[id]"]
     node_api_admin_features["features"]
+    node_api_admin_invitationcodes["invitation-codes"]
+    node_api_admin_invitationcodes_batch["batch"]
     node_api_admin_login["login"]
     node_api_admin_logout["logout"]
     node_api_admin_maintenance["maintenance"]
@@ -87,6 +89,7 @@ flowchart LR
     node_api_admin_maintenance_import["import"]
     node_api_admin_me["me"]
     node_api_admin_settings["settings"]
+    node_api_admin_setup["setup"]
     node_api_admin_upload["upload"]
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
@@ -132,6 +135,8 @@ flowchart LR
     node_api_admin --> node_api_admin_entity
     node_api_admin_entity --> node_api_admin_entity_id
     node_api_admin --> node_api_admin_features
+    node_api_admin --> node_api_admin_invitationcodes
+    node_api_admin_invitationcodes --> node_api_admin_invitationcodes_batch
     node_api_admin --> node_api_admin_login
     node_api_admin --> node_api_admin_logout
     node_api_admin --> node_api_admin_maintenance
@@ -139,6 +144,7 @@ flowchart LR
     node_api_admin_maintenance --> node_api_admin_maintenance_import
     node_api_admin --> node_api_admin_me
     node_api_admin --> node_api_admin_settings
+    node_api_admin --> node_api_admin_setup
     node_api_admin --> node_api_admin_upload
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
@@ -182,12 +188,14 @@ flowchart LR
     class node_api_admin_entity api;
     class node_api_admin_entity_id api;
     class node_api_admin_features api;
+    class node_api_admin_invitationcodes_batch api;
     class node_api_admin_login api;
     class node_api_admin_logout api;
     class node_api_admin_maintenance_export api;
     class node_api_admin_maintenance_import api;
     class node_api_admin_me api;
     class node_api_admin_settings api;
+    class node_api_admin_setup api;
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
