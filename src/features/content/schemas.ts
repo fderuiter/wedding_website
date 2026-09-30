@@ -64,7 +64,7 @@ const BaseContentNode = z.object({
   updatedAt: z.date(),
 });
 
-const FAQNodeSchema = BaseContentNode.extend({
+export const FAQNodeSchema = BaseContentNode.extend({
   type: z.literal('FAQ'),
   data: z.object({
     question: z.string().optional(),
@@ -72,7 +72,7 @@ const FAQNodeSchema = BaseContentNode.extend({
   }),
 });
 
-const LogisticsNodeSchema = BaseContentNode.extend({
+export const LogisticsNodeSchema = BaseContentNode.extend({
   type: z.literal('Logistics'),
   data: z.object({
     title: z.string().optional(),
@@ -86,7 +86,7 @@ const LogisticsNodeSchema = BaseContentNode.extend({
   }).passthrough(),
 });
 
-const GenericNodeSchema = BaseContentNode.extend({
+export const GenericNodeSchema = BaseContentNode.extend({
   type: z.string(),
   data: z.any(),
 });
@@ -106,6 +106,7 @@ const FeatureSchema = z.object({
 export const AppConfigSchema = z.object({
   id: z.string(),
   subdomain: z.string().nullable().optional(),
+  multisiteEnabled: z.boolean().optional(),
   brideName: z.string(),
   groomName: z.string(),
   weddingDate: z.date(),
