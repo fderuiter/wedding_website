@@ -70,6 +70,12 @@ const isBuildTime = process.env.npm_lifecycle_event === 'build' ||
                     process.env.NODE_ENV === 'test' ||
                     process.env.JEST_WORKER_ID !== undefined;
 
+// In production runtime, strictly require valid environment variables
+if (process.env.NODE_ENV === 'production' && !isBuildTime && !process.env.ADMIN_PASSWORD) {
+  console.error('❌ Security Error: ADMIN_PASSWORD environment variable is missing in production environment.');
+  throw new Error('ADMIN_PASSWORD environment variable is required in production.');
+}
+
 // Even during build, fail if incomplete S3 credentials are provided explicitly
 const keys = ['S3_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
 const presentKeys = keys.filter(key => !!process.env[key]);

@@ -42,13 +42,14 @@ export default function SetupWizard() {
   const [venueName, setVenueName] = useState('');
   const [venueCity, setVenueCity] = useState('');
   const [venueState, setVenueState] = useState('');
+  const [timezone, setTimezone] = useState('America/Chicago');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/admin/login', {
+      const res = await fetch('/api/admin/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -57,7 +58,8 @@ export default function SetupWizard() {
         setIsAuthenticated(true);
         setStep(2);
       } else {
-        setError("Invalid password. Default is 'admin'.");
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Invalid admin password.');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to log in.');
@@ -84,8 +86,8 @@ export default function SetupWizard() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'PUT',
+      const res = await fetch('/api/admin/setup', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           brideName,
@@ -97,6 +99,7 @@ export default function SetupWizard() {
           venueCity: venueCity || 'TBD',
           venueState: venueState || 'TBD',
           venueZip: 'TBD',
+          timezone: timezone || 'America/Chicago',
           latitude: 0,
           longitude: 0,
           storyText: 'Our story...',
@@ -111,7 +114,8 @@ export default function SetupWizard() {
       if (res.ok) {
         setStep(3);
       } else {
-        setError('Failed to save configuration.');
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to save configuration.');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to save config.');
@@ -126,7 +130,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-md">
             <Heading className="mb-4">Welcome to Your Wedding Site!</Heading>
-            <p className="mb-4 text-gray-600 dark:text-gray-300">Please enter the admin password to begin setup (default is <strong>admin</strong>).</p>
+            <p className="mb-4 text-gray-600 dark:text-gray-300">Please enter the admin password configured in your environment to begin setup.</p>
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
@@ -164,10 +168,16 @@ export default function SetupWizard() {
                   <Input id="partner2" type="text" value={groomName} onChange={(e) => setGroomName(e.target.value)} required />
                 </FormGroup>
               </div>
-              <FormGroup>
-                <Label htmlFor="weddingDate">Wedding Date</Label>
-                <Input id="weddingDate" type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} required />
-              </FormGroup>
+              <div className="grid grid-cols-2 gap-4">
+                <FormGroup>
+                  <Label htmlFor="weddingDate">Wedding Date</Label>
+                  <Input id="weddingDate" type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} required />
+                </FormGroup>
+                <FormGroup>
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <Input id="timezone" type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. America/Chicago" required />
+                </FormGroup>
+              </div>
               <FormGroup state={isDefaultUrl(baseUrl) ? 'error' : 'default'}>
                 <Label htmlFor="siteUrl">Site URL (e.g. https://ourwedding.com)</Label>
                 <Input 

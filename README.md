@@ -149,6 +149,13 @@ To run tests in watch mode:
 npm run test:watch
 ```
 
+### First-Run Setup & Bootstrap
+
+1. **Initial Setup Wizard:** On a fresh installation, visiting the site presents the First-Run Setup Wizard.
+2. **Authentication:** Enter the admin password corresponding to the `ADMIN_PASSWORD` scrypt hash configured in your environment. **No default password exists.**
+3. **Core Site Configuration:** Enter your partner details, wedding date, canonical site URL, venue details, and timezone.
+4. **Replay Protection:** Once setup completes, the setup endpoint (`/api/admin/setup`) is protected against unauthorized replay attacks (`403 Forbidden`). Future configuration changes require an authenticated admin session.
+
 ### Admin Access
 
 1.  Navigate to `/admin/login`.

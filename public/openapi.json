@@ -246,6 +246,73 @@
         }
       }
     },
+    "/api/admin/invitation-codes/batch": {
+      "post": {
+        "summary": "POST /api/admin/invitation-codes/batch",
+        "description": "Endpoint for /api/admin/invitation-codes/batch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "records": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "guestName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "code": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "guestName"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "collisionStrategy": {
+                    "default": "skip",
+                    "type": "string",
+                    "enum": [
+                      "skip",
+                      "update",
+                      "reject"
+                    ]
+                  }
+                },
+                "required": [
+                  "records",
+                  "collisionStrategy"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/login": {
       "post": {
         "summary": "POST /api/admin/login",
@@ -1002,6 +1069,156 @@
       "post": {
         "summary": "POST /api/admin/settings",
         "description": "Endpoint for /api/admin/settings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "brideName": {
+                    "type": "string"
+                  },
+                  "groomName": {
+                    "type": "string"
+                  },
+                  "subdomain": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "weddingDate": {},
+                  "baseUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "venueName": {
+                    "type": "string"
+                  },
+                  "venueAddress": {
+                    "type": "string"
+                  },
+                  "venueCity": {
+                    "type": "string"
+                  },
+                  "venueState": {
+                    "type": "string"
+                  },
+                  "venueZip": {
+                    "type": "string"
+                  },
+                  "latitude": {},
+                  "longitude": {},
+                  "storyText": {
+                    "type": "string"
+                  },
+                  "venueDescription": {
+                    "type": "string"
+                  },
+                  "travelAdvice": {
+                    "type": "string"
+                  },
+                  "heroTitle": {
+                    "type": "string"
+                  },
+                  "heroSubtitle": {
+                    "type": "string"
+                  },
+                  "seoTitle": {
+                    "type": "string"
+                  },
+                  "seoDescription": {
+                    "type": "string"
+                  },
+                  "faviconUrl": {
+                    "type": "string"
+                  },
+                  "ogImageUrl": {
+                    "type": "string"
+                  },
+                  "seoKeywords": {
+                    "type": "string"
+                  },
+                  "colorPrimary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "colorSecondary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "showCountdown": {
+                    "type": "boolean"
+                  },
+                  "showAddToCalendar": {
+                    "type": "boolean"
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "brideName",
+                  "groomName",
+                  "weddingDate",
+                  "baseUrl",
+                  "venueName",
+                  "venueAddress",
+                  "venueCity",
+                  "venueState",
+                  "venueZip",
+                  "latitude",
+                  "longitude",
+                  "storyText",
+                  "venueDescription",
+                  "travelAdvice",
+                  "heroTitle",
+                  "heroSubtitle",
+                  "seoTitle",
+                  "seoDescription",
+                  "faviconUrl",
+                  "ogImageUrl",
+                  "seoKeywords"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/setup": {
+      "get": {
+        "summary": "GET /api/admin/setup",
+        "description": "Endpoint for /api/admin/setup",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/admin/setup",
+        "description": "Endpoint for /api/admin/setup",
         "requestBody": {
           "required": true,
           "content": {

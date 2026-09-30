@@ -22,7 +22,7 @@
     "eslint-rules/**/*.mjs"
   ],
   "github-actions": false,
-  "ignoreDependencies": ["tailwindcss"],
+  "ignoreDependencies": ["tailwindcss", "lint-staged"],
   "rules": {
     "files": "error",
     "exports": "error",
