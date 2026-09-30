@@ -4,7 +4,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[API Documentation](./API_DOCUMENTATION.md)**
+**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
 
 ## Table of Contents
 
