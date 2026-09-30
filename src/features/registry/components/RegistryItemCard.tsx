@@ -73,12 +73,6 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   const handleContributeClick = async () => {
     setError(null);
 
-    const isTest = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
-    if (!isCodeLocked && !isTest) {
-      setError('A valid and verified invitation code is required.');
-      return;
-    }
-
     const rawAmount = item.isGroupGift ? amount : item.price;
 
     const result = ContributionSchema.safeParse({
@@ -182,7 +176,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
           </h3>
           <FormGroup state={codeValidationError ? 'error' : 'default'} className="mb-3">
             <Label>
-              Invitation Code <span className="text-red-500">*</span>
+              Invitation Code (Optional)
             </Label>
             <div className="flex gap-2">
               <Input
@@ -236,7 +230,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               )}
             </div>
             {codeValidationError && <FormMessage>{codeValidationError}</FormMessage>}
-            {isCodeLocked && <p className="text-sm text-green-600 mt-1">Code verified! Name locked.</p>}
+            {isCodeLocked && <p className="text-sm text-green-600 mt-1">Code verified! Name pre-filled.</p>}
           </FormGroup>
           <FormGroup state={error ? 'error' : 'default'} className="mb-3">
             <Label>
@@ -247,7 +241,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               placeholder="Jane Doe"
               value={contributorName}
               onChange={(e) => setContributorName(e.target.value)}
-              disabled={isSubmitting || isCodeLocked}
+              disabled={isSubmitting}
             />
           </FormGroup>
           {item.isGroupGift && (

@@ -201,7 +201,7 @@ export class RegistryRepository implements IRegistryRepository {
       let finalName = contribution.name;
       let invitationCodeId: string | null = null;
 
-      if (contribution.code) {
+      if (contribution.code && contribution.code.trim()) {
         const inviteRecord = await txClient.invitationCode.findUnique({
           where: { code: contribution.code.trim().toUpperCase() }
         });
@@ -210,7 +210,7 @@ export class RegistryRepository implements IRegistryRepository {
           throw new Error('Invalid invitation code.');
         }
 
-        finalName = inviteRecord.guestName;
+        finalName = contribution.name || inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
 
         await txClient.invitationCode.update({
@@ -220,10 +220,6 @@ export class RegistryRepository implements IRegistryRepository {
             usedAt: new Date()
           }
         });
-      } else {
-        if (process.env.NODE_ENV !== 'test') {
-          throw new Error('A valid invitation code is required.');
-        }
       }
 
       const priceCents = Math.round(item.price * 100);

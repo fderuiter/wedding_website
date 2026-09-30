@@ -268,7 +268,47 @@ describe('RegistryItemCard Component', () => {
   });
 
   describe('Invitation Code Verification', () => {
-    it('successfully validates invitation code, auto-populates guest name, and locks name input', async () => {
+    it('allows submission when invitation code field is empty (group gift)', async () => {
+      const groupItem = { ...mockSingleItem, id: 'item-1', isGroupGift: true };
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={groupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      fireEvent.change(nameInput, { target: { value: 'Guest Contributor' } });
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+      fireEvent.change(amountInput, { target: { value: '50' } });
+
+      const submitButton = screen.getByRole('button', { name: 'Submit Contribution' });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Guest Contributor', 50);
+      });
+    });
+
+    it('allows submission when invitation code field is empty (single gift claim)', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      fireEvent.change(nameInput, { target: { value: 'Guest Contributor' } });
+
+      const submitButton = screen.getByRole('button', { name: 'Claim Gift' });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Guest Contributor', 100);
+      });
+    });
+
+    it('successfully validates invitation code, auto-populates guest name, and allows editing name input', async () => {
       (apiClient.get as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
@@ -288,12 +328,12 @@ describe('RegistryItemCard Component', () => {
 
       await waitFor(() => {
         expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=GOODCODE');
-        expect(screen.getByText('Code verified! Name locked.')).toBeInTheDocument();
+        expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
       });
 
       const nameInput = screen.getByLabelText(/Your Name/i);
       expect(nameInput).toHaveValue('Jane Smith');
-      expect(nameInput).toBeDisabled();
+      expect(nameInput).not.toBeDisabled();
       expect(codeInput).toBeDisabled();
     });
 
