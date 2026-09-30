@@ -4,7 +4,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Guide](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
+**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
 
 ## Table of Contents
 
@@ -59,7 +59,7 @@ This project is built with a modern, full-stack TypeScript architecture.
 *   **Physics:** [Rapier](https://rapier.rs/) (via `@react-three/rapier`) for 3D interactions.
 *   **State Management:** [React Query](https://tanstack.com/query/latest) (TanStack Query) for server state.
 *   **Testing:** [Jest](https://jestjs.io/), [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/), and [Playwright](https://playwright.dev/) for end-to-end testing.
-*   **Deployment:** Provider-neutral containerized deployment (Docker, Google Cloud Run, or any Node.js host; optionally [Vercel](https://vercel.com/))
+*   **Deployment:** Multi-cloud options including [Docker / VPS](./docs/deployment/docker-vps.md), [Google Cloud Run](./docs/deployment/gcp-cloud-run.md), [Vercel](./docs/deployment/vercel.md), and [Railway / Render](./docs/deployment/railway-render.md) (See [Deployment Guide](./DEPLOYMENT.md)).
 
 ## Setup & Installation
 

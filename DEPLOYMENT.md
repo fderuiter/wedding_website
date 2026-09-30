@@ -1,6 +1,6 @@
-# Pro-Grade Deployment Pipeline Documentation
+# Pro-Grade Deployment Pipeline & Deployment Recipes
 
-This repository includes a pro-grade deployment pipeline suitable for enterprise cloud migration, multi-cloud hosting, and zero-downtime schema updates.
+This repository includes a enterprise-grade, multi-cloud deployment architecture and multi-platform CI/CD pipeline built around a **shared runtime contract**.
 
 For the authoritative specification of container, database, environment variable, reverse proxy, health check, and lifecycle requirements, refer to the [Application Runtime Contract](./docs/runtime-contract.md). All hosting providers and deployment environments must satisfy this baseline contract.
 
@@ -10,25 +10,54 @@ For the authoritative specification of container, database, environment variable
 - **Disconnected Vercel Connection**: The historical direct Vercel connection is disconnected. Core application code, environment validation, database access, and routing logic do not depend on Vercel-specific runtime environment variables or proprietary APIs.
 - **Optional Vercel Support**: Vercel remains fully supported as an optional deployment target. Couples or developers who wish to deploy on Vercel can import the repository directly into Vercel or use `vercel deploy`, ensuring environment variables (`DATABASE_URL`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`) are provided in Vercel's project settings.
 
-## GitHub Actions Workflows
+---
 
-We provide two pre-configured GitHub Actions workflows:
+## Shared Runtime Contract
 
-1. **CI Pipeline (`ci.yml`)**: Triggers on Pull Requests and pushes to `main`. It builds the application, runs unit tests, and executes end-to-end (e2e) Playwright tests.
-2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It uses a decoupled 4-phase architecture (`build-and-publish`, `production-migrate`, `production-deploy`, `verify-deployment`) with GitHub Actions `production` environment gates. Container images are compiled, tagged with commit SHA/digest, and published to the artifact registry BEFORE any database migrations execute.
-3. **Rollback Pipeline (`rollback.yml`)**: Triggerable via `workflow_dispatch` or automated invocation on post-deployment health check failure. Restores production container deployments to previous validated image tags.
+All hosting platforms consume the same unified application runtime contract, ensuring total portability and avoiding vendor lock-in:
 
-## Setup and Secrets
+1. **Node.js Runtime Specification**: Node.js v22.x LTS, Next.js App Router standalone build (`output: 'standalone'`).
+2. **Database Engine & ORM**: PostgreSQL 15+ accessed via Prisma ORM v7.x (`@prisma/client`).
+3. **Migration Mechanism**: Schema updates are managed via `npx prisma migrate deploy` executed prior to application start.
+4. **Environment Variables**: Validated at startup by `src/env.ts` using Zod schema validation.
+5. **Asset Storage Abstraction**: Local filesystem storage (`/app/public/uploads`) or S3-compatible object storage (Cloudflare R2, AWS S3).
+6. **Health Check Probes**: Universal health probe endpoint at `/api/health` returning HTTP 200 JSON status.
+7. **Host Domain Security**: Host header validation enforced via `ALLOWED_HOSTS`.
 
-To ensure the automated workflows succeed, you must add the following **Repository Secrets** in your GitHub repository (`Settings > Secrets and variables > Actions`):
+---
 
-- `DATABASE_URL`: The connection string to your production PostgreSQL database. *This is a mandatory secret; the deployment workflow will fail gracefully if it is missing.*
-- `DOCKERHUB_USERNAME` (optional): Your container registry username.
-- `DOCKERHUB_TOKEN` (optional): Your container registry password or access token.
+## Support Tier Matrix
 
-## Environment Variables
+To distinguish officially verified deployment targets from community-maintained examples, hosting options are classified into support tiers:
 
-The application requires the following environment variables to be configured correctly in your deployment environment (e.g., Cloud Run, Docker). These match the runtime validation schema and the `.env.example` template:
+| Target Platform | Category | Support Tier | Detailed Guide |
+|---|---|---|---|
+| **Generic Docker / VPS** | Portable Baseline | **Tier 1 — Officially Tested** | [Docker / VPS Guide](./docs/deployment/docker-vps.md) |
+| **Google Cloud Run** | Container / Serverless | **Tier 1 — Officially Tested** | [Cloud Run Guide](./docs/deployment/gcp-cloud-run.md) |
+| **Vercel** | Serverless Node / Edge | **Tier 1 — Officially Tested** | [Vercel Guide](./docs/deployment/vercel.md) |
+| **Railway & Render** | PaaS Target | **Tier 2 — Community Supported** | [Railway & Render Guide](./docs/deployment/railway-render.md) |
+
+---
+
+## Deployment Recipes Summary
+
+### 1. [Generic Docker / VPS Deployment](./docs/deployment/docker-vps.md)
+The canonical portable baseline using the multi-platform `Dockerfile` and `docker-compose.yml`. Includes automated `docker-entrypoint.sh` migration execution, Nginx/Caddy reverse proxy configurations with Let's Encrypt TLS, container health probes via `/api/health`, and zero-downtime container updates.
+
+### 2. [Google Cloud Run Deployment](./docs/deployment/gcp-cloud-run.md)
+Managed serverless container target using Google Artifact Registry, GCP Secret Manager, and Cloud SQL PostgreSQL. Automated via `.github/workflows/deploy.yml` with pre-deployment schema migrations, S3/R2 asset storage, and instant revision traffic splitting for rollbacks.
+
+### 3. [Vercel Deployment](./docs/deployment/vercel.md)
+Optional serverless Node.js deployment target using serverless PostgreSQL connection pooling (Neon, Supabase, RDS Proxy). Supports Vercel automatic custom domain TLS, pre-deploy build migrations (`npx prisma migrate deploy && next build`), and instant deployment rollbacks.
+
+### 4. [Railway & Render PaaS Deployment](./docs/deployment/railway-render.md)
+Low-friction PaaS deployment path with managed PostgreSQL add-ons, pre-deploy release commands, persistent volume mounts or S3 asset storage, and automatic domain SSL provisioning.
+
+---
+
+## Environment Variables Reference
+
+The application requires the following environment variables. These match the runtime validation schema in `src/env.ts` and the `.env.example` template:
 
 - `NODE_ENV`: Defines the environment the application is running in (`development`, `test`, `production`).
 - `DATABASE_URL`: Connection string to your production PostgreSQL database. *Required.*
@@ -42,35 +71,22 @@ The application requires the following environment variables to be configured co
   - **Security Requirement**: Must be explicitly defined in production environment settings. Never rely on default passcodes.
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
 - `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*
-- `S3_REGION`: The region of the S3 bucket (e.g., `us-east-1`, or `auto` for Cloudflare R2). *Optional (required if other S3 variables are specified).*
+- `S3_REGION`: The region of the S3 bucket (`us-east-1` or `auto` for Cloudflare R2). *Optional (required if other S3 variables are specified).*
 - `S3_ACCESS_KEY_ID`: S3/R2 API access key ID. *Optional (required if other S3 variables are specified).*
 - `S3_SECRET_ACCESS_KEY`: S3/R2 API secret access key. *Optional (required if other S3 variables are specified).*
 - `S3_ENDPOINT`: S3-compatible custom endpoint URL (required for Cloudflare R2). *Optional.*
 - `S3_PUBLIC_URL`: Public asset delivery URL or CDN prefix used to serve assets publicly. *Optional.*
 
+---
 
-## Connecting to a Hosting Service (e.g., Google Cloud Run)
+## GitHub Actions Workflows
 
-To deploy your containerized Next.js application to **Google Cloud Run**, follow these steps:
+We provide two pre-configured GitHub Actions workflows in `.github/workflows/`:
 
-1. **Authenticate with Google Cloud**:
-   Add steps to your `deploy.yml` to authenticate using the `google-github-actions/auth` action. Provide your Workload Identity Provider or Service Account Key.
+1. **CI Pipeline (`ci.yml`)**: Triggers on Pull Requests and pushes to `main`. It builds the application, runs documentation drift checks (`verify-env-docs.ts`, `generate-docs.ts`), executes unit tests, and runs end-to-end (e2e) Playwright tests.
+2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It automates database migrations (`npx prisma migrate deploy`) and builds multi-platform Docker container images (`linux/amd64` and `linux/arm64`).
 
-2. **Push to Google Artifact Registry**:
-   Update the `docker/build-push-action` in `deploy.yml` to tag and push the image to `us-central1-docker.pkg.dev/YOUR_PROJECT_ID/YOUR_REPO/my-app:latest`.
-
-3. **Deploy to Cloud Run**:
-   Add a step at the end of the `deploy.yml` workflow:
-   ```yaml
-   - name: Deploy to Cloud Run
-     uses: google-github-actions/deploy-cloudrun@v1
-     with:
-       service: my-app-service
-       image: us-central1-docker.pkg.dev/YOUR_PROJECT_ID/YOUR_REPO/my-app:latest
-       region: us-central1
-       env_vars: |
-         DATABASE_URL=${{ secrets.DATABASE_URL }}
-   ```
+---
 
 ## Database Migrations & Zero-Downtime Releases
 
@@ -107,4 +123,8 @@ The included `Dockerfile` and `deploy.yml` are configured for multi-platform arc
 - **Credential Hashing:** Administrative access relies strictly on scrypt password hashing configured via `ADMIN_PASSWORD`.
 - **First-Run Initialization:** When deployed with an uninitialized database, opening the app triggers the Setup Wizard. Accessing setup requires authenticating with the configured `ADMIN_PASSWORD`.
 - **Replay Protection:** Once initial configuration (partner names, URL, venue, timezone) is persisted, `/api/admin/setup` rejects subsequent setup attempts from unauthenticated users with `403 Forbidden`.
+
+## Health Checks & Liveness Probes
+
+Containers and orchestrators query `/api/health` (returning HTTP 200 OK and database connectivity status) for liveness and readiness monitoring.
 
