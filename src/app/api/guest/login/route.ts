@@ -3,6 +3,14 @@ import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import crypto from 'node:crypto';
+
+function safeComparePasscode(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const body = await req.json();
@@ -16,7 +24,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const expectedPasscode = env.GUEST_PASSCODE;
 
-  if (passcode !== expectedPasscode) {
+  if (!expectedPasscode || !safeComparePasscode(passcode, expectedPasscode)) {
     return NextResponse.json({ success: false, error: 'Incorrect passcode.' }, { status: 401 });
   }
 

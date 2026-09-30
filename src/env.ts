@@ -43,7 +43,7 @@ const envSchema = z.object({
   MULTISITE_ENABLED: z.union([z.boolean(), z.string()])
     .transform(val => val === true || val === 'true' || val === '1')
     .default(false),
-  GUEST_PASSCODE: z.string().default('wedding2026'),
+  GUEST_PASSCODE: z.string().min(1, 'GUEST_PASSCODE is required'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
   S3_BUCKET: z.string().optional(),
   S3_REGION: z.string().optional(),
@@ -90,16 +90,16 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
 
 let _env: z.infer<typeof envSchema>;
 
-if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS)) {
+if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE)) {
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
     POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
-    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,abbifred.com',
+    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
-    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
+    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
     S3_BUCKET: process.env.S3_BUCKET || undefined,
     S3_REGION: process.env.S3_REGION || undefined,
