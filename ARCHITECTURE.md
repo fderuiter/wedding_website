@@ -26,7 +26,7 @@ graph TD
         A[React Frontend]
     end
 
-    subgraph Server (Vercel)
+    subgraph Server (Node.js / Container Runtime)
         B[Next.js Route Handlers]
         C[Prisma Client]
     end
