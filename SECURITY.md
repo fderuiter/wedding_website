@@ -1,36 +1,43 @@
-# Security Policy (Such As It Is)
+# Security Policy
+
+## Threat Model & Architecture
+For a detailed analysis of trust boundaries, asset inventory, threat vectors, and active security controls in this codebase, please review the [Lightweight Threat Model](docs/THREAT_MODEL.md).
 
 ## Supported Versions
 
-Look, this is a wedding website, not Fort Knox. We patch the live version when we notice something's broken or, you know, *really* insecure. We're not exactly rolling out LTS branches here.
+We maintain security updates on the default `main` branch.
 
 | Version          | Supported          | Notes                                      |
 | ---------------- | ------------------ | ------------------------------------------ |
-| Latest Deployed  | :white_check_mark: | The one that's actually running. Hopefully. |
-| Previous Versions| :x:                | They're history. Like that questionable Jell-O mold Aunt Carol brought. |
+| `main` Branch    | :white_check_mark: | Actively supported release branch.          |
+| Older Commits    | :x:                | Upstream fixes should be merged to `main`. |
+
+## Template Deployers & Self-Hosters
+
+If you are deploying this template for your own event, please ensure:
+1. You generate unique credentials for `ADMIN_PASSWORD` (using `scripts/generate-password-hash.mjs`) and a unique `GUEST_PASSCODE`.
+2. You configure `ALLOWED_HOSTS` to match your actual domain name(s).
+3. If hosting publicly, replace the security contact email below with your own contact address in your fork or deployment settings.
 
 ## Reporting a Vulnerability
 
-Found a gaping security hole? First off, thanks for not plastering it all over Twitter or creating a dramatic GitHub issue – my inbox is scary enough already. We genuinely appreciate you trying to tell us quietly.
+Found a security issue or vulnerability? We appreciate responsible disclosure to help keep the project safe.
 
-**How to Report (The Right Way):**
+**How to Report:**
 
-* Please email the gory details to `[fpderuiter@gmail.com]`. **Seriously, no public GitHub issues.** We're trying to keep the panic contained.
-* Tell us what's busted, how *we* can break it ourselves (steps to reproduce are gold), and how bad you think the damage could be.
-* Screenshots or code snippets? Nice touch, if you're feeling fancy.
+* Please email details to `fpderuiter@gmail.com`. **Please do not open public GitHub issues for security vulnerabilities.**
+* Include steps to reproduce, potential impact assessment, and any relevant code snippets or proof of concept.
 
-**What Happens Next (Probably):**
+**What Happens Next:**
 
-* We'll *try* to email you back within 48 hours just to say "Got it!". Don't panic if it takes a bit longer, weddings are distracting.
-* Then we'll poke at it, see if it's a real problem or just, you know, a "feature". We'll figure out how much caffeine is required to fix it.
-* You should hear back within about 7 business days with an update like "Yep, that's bad," "Nah, that's just Tuesday," or "Fix incoming!".
-* If we actually fix it, we'll coordinate with you before bragging... I mean, *disclosing* it publicly, if that's even necessary.
+* We aim to acknowledge reports within 48 hours.
+* We will investigate the issue and communicate target resolution timelines within 7 business days.
+* Once a fix is verified and deployed, security updates will be documented on the main branch.
 
-Thanks for helping keep this digital monument to matrimony slightly less vulnerable! We owe you one (maybe a slice of virtual cake?).
+Thanks for helping keep this project secure!
 
 ## Core Security Controls
 
 - **No Default Passwords:** The system never ships with universal default administrative passwords.
 - **Password Hashing:** Admin passwords use scrypt key derivation function (`scrypt:[saltBase64]:[keyBase64]`).
 - **First-Run Bootstrap Protection:** First-run initialization requires validating against `ADMIN_PASSWORD`. Once initialized, setup endpoints reject unauthorized replay attempts (`403 Forbidden`).
-
