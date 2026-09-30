@@ -6,7 +6,6 @@ import { MediaRepository } from '../repository';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { MediaSchema } from '../schemas';
-import { createSqliteAdapter } from '@/lib/prisma';
 
 // Unmock @prisma/client for this test file so we can interact with the real PostgreSQL container
 jest.unmock('@prisma/client');
@@ -16,19 +15,10 @@ jest.unmock('pg');
 const { PrismaClient } = jest.requireActual('@prisma/client');
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
-const isSqlite = connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db');
 
-let realPrisma: any;
-let pool: any;
-
-if (isSqlite) {
-  const adapter = createSqliteAdapter(connectionString);
-  realPrisma = new PrismaClient({ adapter });
-} else {
-  pool = new Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
-  realPrisma = new PrismaClient({ adapter });
-}
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const realPrisma = new PrismaClient({ adapter });
 
 // Instantiate MediaRepository with the real PrismaClient
 const realRepository = new MediaRepository(realPrisma);
