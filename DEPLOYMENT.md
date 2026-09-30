@@ -68,9 +68,30 @@ To deploy your containerized Next.js application to **Google Cloud Run**, follow
          DATABASE_URL=${{ secrets.DATABASE_URL }}
    ```
 
-## Database Migrations
+## Database Migrations & Zero-Downtime Releases
 
-Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application container image is deployed. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts.
+Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application code goes live. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts. Before migrations are executed, a pre-migration backwards compatibility check (`npm run lint:migrations`) runs to verify zero-downtime safety.
+
+### Expand-and-Contract Migration Strategy
+
+Because schema migrations run before updated application container instances deploy, destructive SQL DDL operations (such as `DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, or `DROP CONSTRAINT`) can break active application containers expecting the previous schema.
+
+To ensure safe, zero-downtime releases, schema modifications must follow the **Expand-and-Contract** pattern across three phases:
+
+1. **Expand Phase**: Add new tables, columns, or optional fields alongside existing ones without modifying or dropping active columns. Application code is deployed to begin writing to both old and new schema locations.
+2. **Transition Phase**: Application code is updated to read from the new location while maintaining dual-writes or graceful fallbacks. Backfill historical data as necessary.
+3. **Contract Phase**: Once all application instances are using the new schema and no active code references old columns or tables, a final contract migration is deployed to clean up unused database structures.
+
+### Migration Backwards Compatibility Linter
+
+Automated linter checks (`npm run lint:migrations`) run during local builds, in PR CI workflows (`ci.yml`), and during deployment (`deploy.yml`). The linter scans SQL migrations in `prisma/migrations/` for destructive DDL operations.
+
+If a destructive migration is intentionally required (e.g., during a contract cleanup phase after code removal), include an inline bypass annotation:
+
+```sql
+-- allow-destructive: Contract phase dropping deprecated legacy_column after code migration
+ALTER TABLE "User" DROP COLUMN "legacy_column";
+```
 
 ## Multi-platform Builds
 
