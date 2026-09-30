@@ -121,7 +121,7 @@ const ProjectInfo = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-primary">Deployment</h2>
           <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
-            <li>Deploy to <a href='https://vercel.com/' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
+            <li>Deploy using Docker, Node.js hosting providers, or platforms like <a href='https://vercel.com/' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
             <li>Run <code>npm install</code> and <code>npm run dev</code> to start locally.</li>
             <li>Configure environment variables via <code>.env.example</code>.</li>
             <li>See <a href='https://github.com/fderuiter/wedding_website#readme' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>README</a> for full setup instructions.</li>

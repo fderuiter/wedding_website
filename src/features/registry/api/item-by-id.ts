@@ -5,19 +5,19 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
+import { sanitizeRegistryItem } from '../lib/masking';
 
 export const GET = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-  const item = await registryService.getItemById(id);
+  const isAdmin = await isAdminRequest(request);
+  const item = await registryService.getItemById(id, { includeContributors: isAdmin });
 
   if (!item) {
     throw new ApiError(404, 'Item not found');
   }
 
-  const isAdmin = await isAdminRequest(request);
   if (!isAdmin) {
-    return NextResponse.json(maskRegistryItem(item));
+    return NextResponse.json(item);
   }
   return NextResponse.json(sanitizeRegistryItem(item));
 }, { translateActiveToLegacy });

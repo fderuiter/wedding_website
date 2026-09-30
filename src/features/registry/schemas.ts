@@ -132,5 +132,17 @@ export const InvitationCodeSchema = z.object({
 
 export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
 
+export const BatchImportInvitationCodeItemSchema = z.object({
+  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(100, 'Guest name must be under 100 characters.'),
+  code: z.string().trim().optional().or(z.literal('')),
+});
+
+export const BatchImportInvitationCodesSchema = z.object({
+  records: z.array(BatchImportInvitationCodeItemSchema).min(1, 'At least one record is required for batch import.'),
+  collisionStrategy: z.enum(['skip', 'update', 'reject']).default('skip'),
+});
+
+export type BatchImportInvitationCodesDTO = z.infer<typeof BatchImportInvitationCodesSchema>;
+
 
 

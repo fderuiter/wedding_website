@@ -25,9 +25,10 @@ export function useFilter<T>(items: T[], categoryExtractor: (item: T) => string)
     if (selectedCategories.length === 0) {
       return items;
     }
+    const selectedSet = new Set(selectedCategories);
     return items.filter(item => {
       const category = categoryExtractor(item);
-      return selectedCategories.includes(category);
+      return category ? selectedSet.has(category) : false;
     });
   }, [items, selectedCategories, categoryExtractor]);
 

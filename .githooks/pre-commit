@@ -1,114 +1,32 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
-import fs from 'fs';
-import path from 'path';
 
-// 1. Identify Staged Files
-let stagedOutput;
-try {
-  stagedOutput = spawnSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], { encoding: 'utf8' });
-} catch (err) {
-  console.error('Failed to run git diff:', err.message);
-  process.exit(1);
+// 1. Run lint-staged to filter staged files and apply ESLint auto-fixes
+console.log('Running lint-staged...');
+const lintStagedResult = spawnSync('npx', ['lint-staged'], { stdio: 'inherit', shell: true });
+
+if (lintStagedResult.status !== 0) {
+  console.error('\n❌ Pre-commit check failed: ESLint / lint-staged validation failed.');
+  process.exit(lintStagedResult.status ?? 1);
 }
 
-if (stagedOutput.status !== 0) {
-  console.error('Git diff command failed:', stagedOutput.stderr);
-  process.exit(1);
+// 2. Run TypeScript type check
+console.log('Running TypeScript type check...');
+const tscResult = spawnSync('npm', ['run', 'type-check'], { stdio: 'inherit', shell: true });
+
+if (tscResult.status !== 0) {
+  console.error('\n❌ Pre-commit check failed: TypeScript type check failed.');
+  process.exit(tscResult.status ?? 1);
 }
 
-const stagedFiles = stagedOutput.stdout
-  .split('\n')
-  .map(f => f.trim())
-  .filter(f => f.length > 0 && /\.(js|jsx|ts|tsx)$/.test(f));
+// 3. Run Knip dead-code analysis
+console.log('Running Knip dead-code analysis...');
+const knipResult = spawnSync('npm', ['run', 'lint:unused'], { stdio: 'inherit', shell: true });
 
-if (stagedFiles.length === 0) {
-  console.log('No staged JS/TS files found. Skipping pre-commit checks.');
-  process.exit(0);
+if (knipResult.status !== 0) {
+  console.error('\n❌ Pre-commit check failed: Knip dead-code analysis failed.');
+  process.exit(knipResult.status ?? 1);
 }
 
-// 2. Identify all unstaged or untracked changes in the workspace
-// Because TypeScript type-checking and Knip dead-code analysis run on the entire project,
-// any unstaged changes in the workspace can cause false positives or negatives.
-let hasUnstagedChanges = false;
-try {
-  const statusOutput = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' });
-  if (statusOutput.status === 0) {
-    const lines = statusOutput.stdout.split('\n');
-    for (const line of lines) {
-      if (line.length >= 2) {
-        const y = line[1];
-        // If there's an unstaged change (Y is not ' ') or untracked change (Y is '?' or starts with '??')
-        if (y !== ' ' || line.startsWith('??')) {
-          hasUnstagedChanges = true;
-          break;
-        }
-      }
-    }
-  }
-} catch (err) {
-  console.warn('Warning: failed to check for unstaged changes:', err.message);
-}
-
-let stashed = false;
-try {
-  if (hasUnstagedChanges) {
-    console.log('Unstaged or untracked changes detected in workspace. Shelving them with git stash...');
-    const stashResult = spawnSync('git', [
-      'stash',
-      'push',
-      '--keep-index',
-      '--include-untracked',
-      '-m',
-      'pre-commit-unstaged-backup'
-    ], { stdio: 'inherit' });
-    
-    if (stashResult.status === 0) {
-      stashed = true;
-    } else {
-      console.warn('Warning: git stash failed. Proceeding anyway, but unstaged changes might affect the validations.');
-    }
-  }
-
-  // 3. Run linter/validator: npx eslint --fix <files>
-  console.log(`Running ESLint on ${stagedFiles.length} staged file(s)...`);
-  const eslintResult = spawnSync('npx', ['eslint', '--fix', ...stagedFiles], { stdio: 'inherit', shell: true });
-  
-  if (eslintResult.status !== 0) {
-    throw new Error('ESLint verification failed. Please resolve lint issues before committing.');
-  }
-
-  // 4. Stage any automated fixes
-  console.log('Staging auto-fixes...');
-  const addResult = spawnSync('git', ['add', ...stagedFiles], { stdio: 'inherit' });
-  if (addResult.status !== 0) {
-    throw new Error('Failed to stage linter fixes with git add.');
-  }
-
-  // 5. Run TypeScript validation check
-  console.log('Running TypeScript type check...');
-  const tscResult = spawnSync('npm', ['run', 'type-check'], { stdio: 'inherit', shell: true });
-  if (tscResult.status !== 0) {
-    throw new Error('TypeScript type check failed. Please resolve compilation/type issues before committing.');
-  }
-
-  // 6. Run Knip dead-code analysis
-  console.log('Running Knip dead-code analysis...');
-  const knipResult = spawnSync('npm', ['run', 'lint:unused'], { stdio: 'inherit', shell: true });
-  if (knipResult.status !== 0) {
-    throw new Error('Knip dead-code analysis failed. Please resolve unused exports or dead dependencies before committing.');
-  }
-
-} catch (err) {
-  console.error(`\n❌ Pre-commit check failed: ${err.message}`);
-  process.exitCode = 1;
-} finally {
-  if (stashed) {
-    console.log('Restoring shelved unstaged changes...');
-    const popResult = spawnSync('git', ['stash', 'pop'], { stdio: 'inherit' });
-    if (popResult.status !== 0) {
-      console.warn('Warning: git stash pop failed. Your unstaged changes are still safe in git stash.');
-    }
-  }
-}
+console.log('✅ All pre-commit checks passed.');
