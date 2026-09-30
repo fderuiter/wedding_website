@@ -6,6 +6,7 @@ class MockContentRepository implements IContentRepository {
   async getFeatures() { return []; }
   async updateFeatures(_features: any[]) { return {} as any; }
   async getNodesByType(_type: string) { return []; }
+  async getAllNodes() { return []; }
 }
 
 describe('ContentService', () => {
