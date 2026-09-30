@@ -67,27 +67,8 @@ export class RegistryService {
     itemId: string,
     contribution: { name: string; amount: number; code?: string }
   ) {
-    if (contribution.amount <= 0) {
+    if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {
       throw new Error('Contribution must be a positive number.');
-    }
-
-    const item = await this.repository.getItemById(itemId);
-
-    if (!item) {
-      throw new Error('Item not found');
-    }
-
-    if(item.purchased) {
-      throw new Error('This item has already been purchased.');
-    }
-
-    const priceCents = Math.round(item.price * 100);
-    const contributedCents = Math.round(item.amountContributed * 100);
-    const remainingCents = priceCents - contributedCents;
-    const contributionCents = Math.round(contribution.amount * 100);
-
-    if (contributionCents > remainingCents) {
-      throw new Error('Contribution cannot be greater than the remaining amount.');
     }
 
     return this.repository.contributeToItem(itemId, contribution);
