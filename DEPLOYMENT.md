@@ -13,7 +13,8 @@ This repository includes a pro-grade deployment pipeline suitable for enterprise
 We provide two pre-configured GitHub Actions workflows:
 
 1. **CI Pipeline (`ci.yml`)**: Triggers on Pull Requests and pushes to `main`. It builds the application, runs unit tests, and executes end-to-end (e2e) Playwright tests.
-2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It automates the database migration and builds a multi-platform Docker container image (`linux/amd64` and `linux/arm64`).
+2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It uses a decoupled 4-phase architecture (`build-and-publish`, `production-migrate`, `production-deploy`, `verify-deployment`) with GitHub Actions `production` environment gates. Container images are compiled, tagged with commit SHA/digest, and published to the artifact registry BEFORE any database migrations execute.
+3. **Rollback Pipeline (`rollback.yml`)**: Triggerable via `workflow_dispatch` or automated invocation on post-deployment health check failure. Restores production container deployments to previous validated image tags.
 
 ## Setup and Secrets
 

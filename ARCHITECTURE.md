@@ -96,6 +96,7 @@ flowchart LR
     node_api_admin_versions_id_restore["restore"]
     node_api_guest["guest"]
     node_api_guest_login["login"]
+    node_api_health["health"]
     node_api_media["media"]
     node_api_media_id["[id]"]
     node_api_registry["registry"]
@@ -151,6 +152,7 @@ flowchart LR
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
     node_api --> node_api_guest
     node_api_guest --> node_api_guest_login
+    node_api --> node_api_health
     node_api --> node_api_media
     node_api_media --> node_api_media_id
     node_api --> node_api_registry
@@ -200,6 +202,7 @@ flowchart LR
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
     class node_api_guest_login api;
+    class node_api_health api;
     class node_api_media api;
     class node_api_media_id api;
     class node_api_registry_contribute api;
