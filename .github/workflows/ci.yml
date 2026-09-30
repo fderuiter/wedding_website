@@ -109,6 +109,10 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
       - name: Build project
         run: npm run build
+      - name: Run Standalone Execution Smoke Test
+        run: npm run test:standalone
+      - name: Run OCI Container & Clean Database Smoke Test
+        run: npm run test:container
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
       - name: Run tests

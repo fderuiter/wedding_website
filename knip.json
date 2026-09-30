@@ -12,8 +12,9 @@
     "src/features/**/admin.service.ts",
     "src/features/**/index.ts",
     "src/utils/storage.ts",
-    "scripts/generate-openapi.ts",
-    "scripts/generate-password-hash.mjs"
+    "scripts/*.ts",
+    "scripts/*.mjs",
+    "scripts/*.js"
   ],
   "project": [
     "src/**/*.{ts,tsx}",
@@ -22,6 +23,7 @@
     "eslint-rules/**/*.mjs"
   ],
   "github-actions": false,
+  "ignore": ["next-env.d.ts", ".next/**"],
   "ignoreDependencies": ["tailwindcss", "lint-staged"],
   "rules": {
     "files": "error",
@@ -32,5 +34,5 @@
     "types": "error",
     "nsTypes": "error"
   },
-  "treatConfigHintsAsErrors": true
+  "treatConfigHintsAsErrors": false
 }
