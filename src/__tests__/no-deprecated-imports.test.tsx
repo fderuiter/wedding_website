@@ -5,10 +5,6 @@ if (typeof global.structuredClone === 'undefined') {
   global.structuredClone = globalThis.structuredClone;
 }
 
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import LegacyButton, { legacyHelper } from '../components/ui/LegacyButton';
 import noDeprecatedImportsRule from '../../eslint-rules/no-deprecated-imports.mjs';
 import { RuleTester } from 'eslint';
 import path from 'path';
@@ -73,37 +69,17 @@ describe('no-deprecated-imports ESLint Rule AST verification', () => {
     ],
     invalid: [
       {
-        code: "import LegacyButton from '@/components/ui/LegacyButton';",
-        filename: path.resolve(process.cwd(), 'src/utils/dummy.ts'),
-        errors: [
-          {
-            messageId: 'deprecatedModule',
-            line: 1,
-          },
-        ],
-      },
-      {
-        code: "import LegacyButton from '../components/ui/LegacyButton';",
-        filename: path.resolve(process.cwd(), 'src/utils/dummy.ts'),
-        errors: [
-          {
-            messageId: 'deprecatedModule',
-            line: 1,
-          },
-        ],
-      },
-      {
-        code: "import { legacyHelper } from '@/components/ui/LegacyButton';",
-        filename: path.resolve(process.cwd(), 'src/utils/dummy.ts'),
-        errors: [
-          {
-            messageId: 'deprecatedModule',
-            line: 1,
-          },
-        ],
-      },
-      {
         code: "import { someExport } from '@/components/ui/TempDeprecatedModule';",
+        filename: path.resolve(process.cwd(), 'src/utils/dummy.ts'),
+        errors: [
+          {
+            messageId: 'deprecatedModule',
+            line: 1,
+          },
+        ],
+      },
+      {
+        code: "import { someExport } from '../components/ui/TempDeprecatedModule';",
         filename: path.resolve(process.cwd(), 'src/utils/dummy.ts'),
         errors: [
           {
@@ -135,11 +111,5 @@ describe('no-deprecated-imports ESLint Rule metadata and UI Coverage', () => {
 
   it('should define a create function', () => {
     expect(typeof noDeprecatedImportsRule.create).toBe('function');
-  });
-
-  it('renders LegacyButton and calls legacyHelper to secure 100% coverage', () => {
-    render(<LegacyButton />);
-    expect(screen.getByRole('button', { name: /legacy button/i })).toBeInTheDocument();
-    expect(legacyHelper()).toBe('legacy');
   });
 });

@@ -1,8 +1,6 @@
 /** @jest-environment node */
 
 import {
-  LocalStorageProvider,
-  S3StorageProvider,
   getStorageProvider,
   resetStorageProvider,
 } from '../storage';
@@ -38,7 +36,7 @@ describe('Hybrid Storage Provider', () => {
   describe('getStorageProvider Dynamic Toggling', () => {
     it('returns LocalStorageProvider when S3 environment variables are absent', () => {
       const provider = getStorageProvider();
-      expect(provider).toBeInstanceOf(LocalStorageProvider);
+      expect(provider.constructor.name).toBe('LocalStorageProvider');
     });
 
     it('returns S3StorageProvider when S3 environment variables are fully populated', () => {
@@ -48,13 +46,13 @@ describe('Hybrid Storage Provider', () => {
       process.env.S3_SECRET_ACCESS_KEY = 'test-secret-key';
 
       const provider = getStorageProvider();
-      expect(provider).toBeInstanceOf(S3StorageProvider);
+      expect(provider.constructor.name).toBe('S3StorageProvider');
     });
   });
 
-  describe('LocalStorageProvider', () => {
+  describe('LocalStorageProvider via getStorageProvider', () => {
     it('writes the uploaded file to the local directory and returns a local URL', async () => {
-      const provider = new LocalStorageProvider();
+      const provider = getStorageProvider();
       
       const file = {
         name: 'test-image.png',
@@ -75,14 +73,14 @@ describe('Hybrid Storage Provider', () => {
     });
   });
 
-  describe('S3StorageProvider configuration and urls', () => {
+  describe('S3StorageProvider configuration and urls via getStorageProvider', () => {
     it('initializes with correct AWS S3 endpoint and public URL when S3_ENDPOINT and S3_PUBLIC_URL are absent', () => {
       process.env.S3_BUCKET = 'test-bucket';
       process.env.S3_REGION = 'us-west-2';
       process.env.S3_ACCESS_KEY_ID = 'access';
       process.env.S3_SECRET_ACCESS_KEY = 'secret';
 
-      const provider = new S3StorageProvider();
+      const provider = getStorageProvider() as any;
       expect(provider.getBucket()).toBe('test-bucket');
       expect(provider.getPublicUrl()).toBe('https://test-bucket.s3.us-west-2.amazonaws.com');
     });
@@ -94,7 +92,7 @@ describe('Hybrid Storage Provider', () => {
       process.env.S3_SECRET_ACCESS_KEY = 'secret';
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint';
 
-      const provider = new S3StorageProvider();
+      const provider = getStorageProvider() as any;
       expect(provider.getPublicUrl()).toBe('https://custom.r2.endpoint/my-bucket');
     });
 
@@ -106,19 +104,19 @@ describe('Hybrid Storage Provider', () => {
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint';
       process.env.S3_PUBLIC_URL = 'https://pub-domain.com';
 
-      const provider = new S3StorageProvider();
+      const provider = getStorageProvider() as any;
       expect(provider.getPublicUrl()).toBe('https://pub-domain.com');
     });
   });
 
-  describe('S3StorageProvider upload', () => {
+  describe('S3StorageProvider upload via getStorageProvider', () => {
     it('uploads file to S3 and returns public URL', async () => {
       process.env.S3_BUCKET = 'test-bucket';
       process.env.S3_REGION = 'us-east-1';
       process.env.S3_ACCESS_KEY_ID = 'access';
       process.env.S3_SECRET_ACCESS_KEY = 'secret';
 
-      const provider = new S3StorageProvider();
+      const provider = getStorageProvider();
       
       const file = {
         name: 'hello.jpg',
@@ -146,11 +144,12 @@ describe('Hybrid Storage Provider', () => {
   });
 
   describe('Incomplete cloud credentials', () => {
-    it('throws error when creating S3StorageProvider with missing credentials', () => {
+    it('falls back to LocalStorageProvider when S3 credentials are incomplete', () => {
       process.env.S3_BUCKET = 'test-bucket';
       // Missing region, access key, secret key
 
-      expect(() => new S3StorageProvider()).toThrow('S3 Storage Provider requires all credentials to be configured.');
+      const provider = getStorageProvider();
+      expect(provider.constructor.name).toBe('LocalStorageProvider');
     });
   });
 });

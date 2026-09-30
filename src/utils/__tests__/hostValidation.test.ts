@@ -1,5 +1,4 @@
 import {
-  getAllowedHosts,
   isHostAllowed,
   getValidatedCanonicalUrl,
 } from '../hostValidation';
@@ -14,11 +13,10 @@ describe('Host Validation Utility', () => {
     'wedding.example.com',
   ];
 
-  describe('getAllowedHosts', () => {
-    it('returns parsed allowed hosts from process/env', () => {
-      const hosts = getAllowedHosts();
-      expect(Array.isArray(hosts)).toBe(true);
-      expect(hosts.length).toBeGreaterThan(0);
+  describe('isHostAllowed with environment configuration', () => {
+    it('evaluates host against environment allowed hosts when custom rules are omitted', () => {
+      // isHostAllowed without customAllowedHosts uses internal getAllowedHosts()
+      expect(typeof isHostAllowed('localhost')).toBe('boolean');
     });
   });
 

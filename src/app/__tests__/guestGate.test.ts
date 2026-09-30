@@ -2,7 +2,7 @@
 
 import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
-import { signGuestToken, verifyGuestToken, isGuestRequest, GUEST_COOKIE } from '@/core/auth/guest.server';
+import { signGuestToken, isGuestRequest, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { env } from '@/env';
 
@@ -112,23 +112,31 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       const token = await signGuestToken({ guest: true, iat, exp });
       expect(token).toBeDefined();
 
-      const payload = await verifyGuestToken(token);
-      expect(payload).not.toBeNull();
-      expect(payload?.guest).toBe(true);
-      expect(payload?.exp).toBe(exp);
+      const verified = await isGuestRequest({
+        cookies: {
+          get: () => ({ value: token }),
+        },
+        headers: new Headers(),
+      } as any);
+      expect(verified).toBe(true);
     });
 
-    it('returns null for tampered/invalid tokens', async () => {
+    it('returns false for tampered/invalid tokens', async () => {
       const iat = Date.now();
       const exp = iat + 1000 * 60 * 60;
       const token = await signGuestToken({ guest: true, iat, exp });
       const tampered = token + 'tamper';
 
-      const payload = await verifyGuestToken(tampered);
-      expect(payload).toBeNull();
+      const verified = await isGuestRequest({
+        cookies: {
+          get: () => ({ value: tampered }),
+        },
+        headers: new Headers(),
+      } as any);
+      expect(verified).toBe(false);
     });
 
-    it('returns null for expired tokens', async () => {
+    it('returns false for expired tokens', async () => {
       const iat = Date.now() - 1000 * 60 * 60 * 2; // 2 hours ago
       const exp = iat + 1000 * 60 * 60; // expired 1 hour ago
       const token = await signGuestToken({ guest: true, iat, exp });
