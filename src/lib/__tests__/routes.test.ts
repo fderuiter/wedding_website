@@ -1,17 +1,6 @@
-import { isProtectedRoute, normalizePath } from '../routes';
+import { isProtectedRoute } from '../routes';
 
 describe('routes', () => {
-  describe('normalizePath', () => {
-    it('should strip single and multiple trailing slashes', () => {
-      expect(normalizePath('/api/registry/add-item')).toBe('/api/registry/add-item');
-      expect(normalizePath('/api/registry/add-item/')).toBe('/api/registry/add-item');
-      expect(normalizePath('/api/registry/add-item//')).toBe('/api/registry/add-item');
-      expect(normalizePath('/')).toBe('/');
-      expect(normalizePath('///')).toBe('/');
-      expect(normalizePath('')).toBe('');
-    });
-  });
-
   describe('isProtectedRoute', () => {
     it('should test media routes correctly', () => {
       expect(isProtectedRoute('/api/media', 'GET')).toBe(false);

@@ -7,6 +7,7 @@ import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
+import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
@@ -19,9 +20,11 @@ export default function InvitationCodesDashboardPage() {
     error,
     create,
     remove,
+    fetchAll,
   } = useAdminInvitationCodes();
 
   const [isCreating, setIsCreating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [newCode, setNewCode] = useState({ guestName: '', code: '' });
 
   const handleSave = async () => {
@@ -67,12 +70,20 @@ export default function InvitationCodesDashboardPage() {
         <h1 className="text-3xl font-extrabold text-primary">Pre-Authorized Guest Invitation Codes</h1>
         <div className="flex gap-4">
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
+          <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button onClick={() => {
             setNewCode({ guestName: '', code: '' });
             setIsCreating(true);
           }}>Generate New Code</Button>
         </div>
       </div>
+
+      <CsvImportWizardModal
+        isOpen={isImporting}
+        onClose={() => setIsImporting(false)}
+        onImportComplete={() => fetchAll()}
+        existingCodes={codes.map((item) => item.code)}
+      />
 
       {isCreating && (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-primary mb-8 max-w-2xl">
