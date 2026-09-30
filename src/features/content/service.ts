@@ -41,7 +41,7 @@ export class ContentService {
   async createCustomSection(title: string, content: string, author?: string) {
     const features = await this.repo.getFeatures();
     const newFeature = {
-      id: `custom-${Date.now()}`,
+      id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       type: 'custom',
       title,
       content,
@@ -53,7 +53,10 @@ export class ContentService {
   }
 
   async getAllNodes() {
-    return await this.repo.getAllNodes();
+    if (typeof this.repo.getAllNodes === 'function') {
+      return await this.repo.getAllNodes();
+    }
+    return [];
   }
 
   async getPublicPhotos() {

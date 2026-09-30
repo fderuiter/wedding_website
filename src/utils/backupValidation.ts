@@ -151,6 +151,9 @@ const BackupContentNodeSchema = z.object({
 
 // Full database backup structure schema
 export const DatabaseBackupSchema = z.object({
+  version: z.string().optional(),
+  schemaVersion: z.string().optional(),
+  exportedAt: z.union([z.string(), z.date()]).optional(),
   appConfig: z.array(BackupAppConfigSchema).optional(),
   contentNode: z.array(BackupContentNodeSchema).optional(),
   media: z.array(BackupMediaSchema).optional(),

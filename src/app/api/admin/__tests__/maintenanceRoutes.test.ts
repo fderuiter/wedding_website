@@ -157,7 +157,10 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const data = await res.json();
       expect(data).toEqual({
-        appConfig: mockAppConfig,
+        version: '1.0',
+        schemaVersion: '1.0',
+        exportedAt: expect.any(String),
+        appConfig: mockAppConfig.map((c) => ({ ...c, multisiteEnabled: false })),
         contentNode: mockContentNode,
         media: mockMedia,
         weddingPartyMember: mockWeddingParty,

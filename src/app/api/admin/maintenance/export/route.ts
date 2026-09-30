@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { toPublicAppConfig } from '@/lib/config';
 
 export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const [
@@ -23,8 +24,13 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
     prisma.snapshotVersion.findMany()
   ]);
 
+  const sanitizedAppConfig = appConfig.map((config) => toPublicAppConfig(config));
+
   const data = {
-    appConfig,
+    version: '1.0',
+    schemaVersion: '1.0',
+    exportedAt: new Date().toISOString(),
+    appConfig: sanitizedAppConfig,
     contentNode,
     media,
     weddingPartyMember,

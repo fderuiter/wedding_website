@@ -1,4 +1,19 @@
-import { toPublicAppConfig, isMultisiteEnabled } from '../config';
+import { toPublicAppConfig, isMultisiteEnabled, APP_DEFAULTS, getEnvConfigOverrides, getAppConfig } from '../config';
+import { prisma } from '../prisma';
+
+jest.mock('../prisma', () => ({
+  prisma: {
+    appConfig: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
+    contentNode: {
+      count: jest.fn().mockResolvedValue(1),
+      create: jest.fn(),
+    },
+  },
+}));
 
 const baseConfig: any = {
   id: 'global',
@@ -86,6 +101,7 @@ describe('Configuration DTO Architecture', () => {
       stripeSecretKey: 'sk_test_987654321',
       databaseUrlCredentials: 'postgres://user:pass@host/db',
       authToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+      guestPasscode: 'wedding2026',
     };
 
     const publicConfig: any = toPublicAppConfig(configWithSecrets);
@@ -98,6 +114,130 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.stripeSecretKey).toBeUndefined();
     expect(publicConfig.databaseUrlCredentials).toBeUndefined();
     expect(publicConfig.authToken).toBeUndefined();
+    expect(publicConfig.guestPasscode).toBeUndefined();
+  });
+});
+
+describe('Configuration System Layers & Precedence', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('APP_DEFAULTS contains generic technical defaults with no personal wedding content', () => {
+    expect(APP_DEFAULTS.brideName).toBe('Partner 1');
+    expect(APP_DEFAULTS.groomName).toBe('Partner 2');
+    expect(APP_DEFAULTS.venueName).toBe('Wedding Venue');
+    expect(APP_DEFAULTS.venueCity).toBe('City');
+    expect(APP_DEFAULTS.venueState).toBe('State');
+    expect(APP_DEFAULTS.brideName).not.toContain('Abbigayle');
+    expect(APP_DEFAULTS.groomName).not.toContain('Frederick');
+    expect(APP_DEFAULTS.venueName).not.toContain('Plummer');
+  });
+
+  it('getEnvConfigOverrides extracts SITE_* environment variable overrides', () => {
+    process.env.SITE_BRIDE_NAME = 'Alice';
+    process.env.SITE_GROOM_NAME = 'Bob';
+    process.env.SITE_VENUE_NAME = 'Sunset Gardens';
+    process.env.SITE_SHOW_COUNTDOWN = 'false';
+
+    const overrides = getEnvConfigOverrides();
+
+    expect(overrides.brideName).toBe('Alice');
+    expect(overrides.groomName).toBe('Bob');
+    expect(overrides.venueName).toBe('Sunset Gardens');
+    expect(overrides.showCountdown).toBe(false);
+  });
+
+  it('getAppConfig applies deterministic precedence (Env Overrides > DB Config > Application Defaults)', async () => {
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      id: 'global',
+      brideName: 'DB Bride',
+      groomName: 'DB Groom',
+      weddingDate: new Date('2026-08-15T00:00:00.000Z'),
+      baseUrl: 'https://db-site.com',
+      venueName: 'DB Venue',
+      venueAddress: '123 DB Way',
+      venueCity: 'DBCity',
+      venueState: 'CA',
+      venueZip: '90001',
+      latitude: 34.0522,
+      longitude: -118.2437,
+      storyText: 'DB Story',
+      venueDescription: 'DB Venue Description',
+      travelAdvice: 'DB Travel',
+      heroTitle: 'DB Hero',
+      heroSubtitle: 'DB Subtitle',
+      seoTitle: 'DB SEO Title',
+      seoDescription: 'DB SEO Desc',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/assets/og-image.jpg',
+      seoKeywords: 'db, keywords',
+      colorPrimary: '#123456',
+      colorSecondary: '#654321',
+      timezone: 'America/Los_Angeles',
+      showCountdown: true,
+      showAddToCalendar: true,
+      features: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      subdomain: null,
+    });
+
+    process.env.SITE_BRIDE_NAME = 'Env Bride Override';
+
+    const effectiveConfig = await getAppConfig('global');
+
+    expect(effectiveConfig.brideName).toBe('Env Bride Override');
+    expect(effectiveConfig.groomName).toBe('DB Groom');
+    expect(effectiveConfig.venueName).toBe('DB Venue');
+  });
+
+  it('fails clearly with descriptive error if invalid config is parsed in production', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SITE_LATITUDE = 'invalid-latitude';
+
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      id: 'global',
+      brideName: 'Test',
+      groomName: 'Test',
+      weddingDate: new Date(),
+      baseUrl: 'http://localhost',
+      venueName: 'Venue',
+      venueAddress: 'Address',
+      venueCity: 'City',
+      venueState: 'State',
+      venueZip: '00000',
+      latitude: 0,
+      longitude: 0,
+      storyText: '',
+      venueDescription: '',
+      travelAdvice: '',
+      heroTitle: '',
+      heroSubtitle: '',
+      seoTitle: '',
+      seoDescription: '',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/assets/og-image.jpg',
+      seoKeywords: '',
+      colorPrimary: '#000000',
+      colorSecondary: '#000000',
+      timezone: 'UTC',
+      showCountdown: true,
+      showAddToCalendar: true,
+      features: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      subdomain: null,
+    });
+
+    await expect(getAppConfig('global')).rejects.toThrow(/Production Configuration Validation Failure/);
   });
 });
 
