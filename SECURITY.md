@@ -27,3 +27,10 @@ Found a gaping security hole? First off, thanks for not plastering it all over T
 * If we actually fix it, we'll coordinate with you before bragging... I mean, *disclosing* it publicly, if that's even necessary.
 
 Thanks for helping keep this digital monument to matrimony slightly less vulnerable! We owe you one (maybe a slice of virtual cake?).
+
+## Core Security Controls
+
+- **No Default Passwords:** The system never ships with universal default administrative passwords.
+- **Password Hashing:** Admin passwords use scrypt key derivation function (`scrypt:[saltBase64]:[keyBase64]`).
+- **First-Run Bootstrap Protection:** First-run initialization requires validating against `ADMIN_PASSWORD`. Once initialized, setup endpoints reject unauthorized replay attempts (`403 Forbidden`).
+

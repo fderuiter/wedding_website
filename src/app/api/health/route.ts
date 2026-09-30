@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
-export async function GET() {
+export const GET = withApiMiddleware(async () => {
   let dbStatus = 'disconnected';
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -18,7 +19,8 @@ export async function GET() {
       status: isHealthy ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       database: dbStatus,
+      ...(isHealthy ? {} : { error: 'Database connection failed' }),
     },
     { status: statusCode }
   );
-}
+});

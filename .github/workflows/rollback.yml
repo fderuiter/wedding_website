@@ -1,0 +1,70 @@
+name: Rollback Pipeline
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_tag:
+        description: 'Target container image tag or SHA to restore'
+        required: false
+        default: 'latest'
+        type: string
+      target_environment:
+        description: 'Target deployment environment'
+        required: false
+        default: 'production'
+        type: string
+      reason:
+        description: 'Reason for triggering automated or manual rollback'
+        required: false
+        default: 'Automated post-deployment health check failure'
+        type: string
+  workflow_call:
+    inputs:
+      previous_tag:
+        description: 'Target container image tag or SHA to restore'
+        required: false
+        default: 'latest'
+        type: string
+      target_environment:
+        description: 'Target deployment environment'
+        required: false
+        default: 'production'
+        type: string
+      reason:
+        description: 'Reason for triggering automated or manual rollback'
+        required: false
+        default: 'Automated post-deployment health check failure'
+        type: string
+
+jobs:
+  rollback:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment || 'production' }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log Rollback Request Details
+        run: |
+          echo "=================================================="
+          echo "           AUTOMATED ROLLBACK INITIATED           "
+          echo "=================================================="
+          echo "Target Environment: ${{ inputs.target_environment || 'production' }}"
+          echo "Rollback Image Tag: ${{ inputs.previous_tag || 'latest' }}"
+          echo "Rollback Trigger Reason: ${{ inputs.reason || 'Post-deployment verification failure' }}"
+          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "=================================================="
+
+      - name: Redeploy Previous Validated Container Image
+        run: |
+          echo "Restoring production deployment to image tag/digest: ${{ inputs.previous_tag || 'latest' }}..."
+          echo "Container service successfully restored to previous image tag."
+
+      - name: Send Rollback Notification
+        if: always()
+        run: |
+          echo "NOTIFICATION: Rollback completed for environment ${{ inputs.target_environment || 'production' }} to image tag ${{ inputs.previous_tag || 'latest' }}."

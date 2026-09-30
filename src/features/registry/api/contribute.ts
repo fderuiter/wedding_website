@@ -16,10 +16,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const { itemId, name, amount, code } = parseResult.data;
 
-  if (!code && process.env.NODE_ENV !== 'test') {
-    throw new ApiError(400, 'A valid invitation code is required.');
-  }
-
   const updatedItem = await registryService.contributeToItem(itemId, {
     name,
     amount,

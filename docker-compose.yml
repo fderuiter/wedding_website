@@ -19,6 +19,16 @@ services:
       timeout: 5s
       retries: 5
 
+  migration:
+    build: .
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   app:
     build: .
     ports:
@@ -30,6 +40,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

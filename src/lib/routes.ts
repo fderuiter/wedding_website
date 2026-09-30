@@ -32,6 +32,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/registry/edit-item', roles: ['admin'], exact: false },
 
   // API Admin Routes (Unprotected)
+  { path: '/api/admin/setup', roles: ['public', 'admin'], exact: true },
   { path: '/api/admin/login', roles: ['public', 'admin'], exact: true },
   { path: '/api/admin/logout', roles: ['public', 'admin'], exact: true },
   { path: '/api/admin/me', roles: ['public', 'admin'], exact: true },

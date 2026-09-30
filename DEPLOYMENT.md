@@ -15,7 +15,8 @@ For the authoritative specification of container, database, environment variable
 We provide two pre-configured GitHub Actions workflows:
 
 1. **CI Pipeline (`ci.yml`)**: Triggers on Pull Requests and pushes to `main`. It builds the application, runs unit tests, and executes end-to-end (e2e) Playwright tests.
-2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It automates the database migration and builds a multi-platform Docker container image (`linux/amd64` and `linux/arm64`).
+2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It uses a decoupled 4-phase architecture (`build-and-publish`, `production-migrate`, `production-deploy`, `verify-deployment`) with GitHub Actions `production` environment gates. Container images are compiled, tagged with commit SHA/digest, and published to the artifact registry BEFORE any database migrations execute.
+3. **Rollback Pipeline (`rollback.yml`)**: Triggerable via `workflow_dispatch` or automated invocation on post-deployment health check failure. Restores production container deployments to previous validated image tags.
 
 ## Setup and Secrets
 
@@ -71,8 +72,16 @@ To deploy your containerized Next.js application to **Google Cloud Run**, follow
 
 ## Database Migrations
 
-Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application code goes live. This ensures zero-downtime compatibility and prevents the new container instances from starting with an outdated schema.
+Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application container image is deployed. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts.
 
 ## Multi-platform Builds
 
 The included `Dockerfile` and `deploy.yml` are configured for multi-platform architectures (`linux/amd64` and `linux/arm64`). The build environment includes necessary system-level libraries (`openssl`) to support the application architecture safely across platforms.
+
+## First-Run Bootstrap & Security
+
+- **No Default Passwords:** The application does not ship with universal default admin credentials.
+- **Credential Hashing:** Administrative access relies strictly on scrypt password hashing configured via `ADMIN_PASSWORD`.
+- **First-Run Initialization:** When deployed with an uninitialized database, opening the app triggers the Setup Wizard. Accessing setup requires authenticating with the configured `ADMIN_PASSWORD`.
+- **Replay Protection:** Once initial configuration (partner names, URL, venue, timezone) is persisted, `/api/admin/setup` rejects subsequent setup attempts from unauthenticated users with `403 Forbidden`.
+

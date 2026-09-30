@@ -11,6 +11,7 @@
     "src/__tests__/**/*.{ts,tsx}",
     "src/features/**/admin.service.ts",
     "src/features/**/index.ts",
+    "src/utils/storage.ts",
     "scripts/generate-openapi.ts",
     "scripts/generate-password-hash.mjs"
   ],

@@ -4,7 +4,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Guide](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)**
+**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Guide](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
 
 ## Table of Contents
 
@@ -150,6 +150,13 @@ To run tests in watch mode:
 ```bash
 npm run test:watch
 ```
+
+### First-Run Setup & Bootstrap
+
+1. **Initial Setup Wizard:** On a fresh installation, visiting the site presents the First-Run Setup Wizard.
+2. **Authentication:** Enter the admin password corresponding to the `ADMIN_PASSWORD` scrypt hash configured in your environment. **No default password exists.**
+3. **Core Site Configuration:** Enter your partner details, wedding date, canonical site URL, venue details, and timezone.
+4. **Replay Protection:** Once setup completes, the setup endpoint (`/api/admin/setup`) is protected against unauthorized replay attacks (`403 Forbidden`). Future configuration changes require an authenticated admin session.
 
 ### Admin Access
 
