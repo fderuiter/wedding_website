@@ -5,7 +5,7 @@ const runWebServer = !process.env.TEST_CONTAINER;
 export default defineConfig({
   testDir: './e2e',
   webServer: runWebServer ? {
-    command: process.env.CI ? 'npm run start' : 'npm run dev',
+    command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
@@ -15,6 +15,7 @@ export default defineConfig({
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
       ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
       GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
+      E2E_TEST: 'true',
     },
   } : undefined,
   use: {
