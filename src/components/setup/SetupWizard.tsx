@@ -135,7 +135,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-md">
             <Heading className="mb-4">Welcome to Your Wedding Site!</Heading>
-            <p className="mb-4 text-gray-600 dark:text-gray-300">Please enter the admin password configured in your environment to begin setup.</p>
+            <p className="mb-4 text-gray-700">Please enter the admin password configured in your environment to begin setup.</p>
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>

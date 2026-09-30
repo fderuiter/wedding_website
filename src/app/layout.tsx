@@ -41,12 +41,12 @@ export default async function RootLayout({
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}
       >
+        <a href="#main-content" className="skip-link">Skip to main content</a>
         {isUninitialized ? (
           <SetupWizard />
         ) : (
           <ThemeProvider config={publicConfig}>
             <ToastProvider>
-              <a href="#main-content" className="skip-link">Skip to main content</a>
               <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
             </ToastProvider>
           </ThemeProvider>
