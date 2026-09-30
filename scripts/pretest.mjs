@@ -189,8 +189,7 @@ async function main() {
     console.log(`Synchronizing schema to isolated test database (provider: ${isTestSqlite ? 'sqlite' : 'postgresql'})...`);
 
     runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl },
-      ignoreFailure: true
+      env: { ...process.env, DATABASE_URL: testDbUrl }
     });
 
     // Run Prisma Client generation after adaptation/push so it is perfectly aligned with the correct schema provider
