@@ -1,3 +1,4 @@
+# Authoritative Runtime Contract: docs/runtime-contract.md
 version: '3.8'
 
 services:
@@ -35,6 +36,7 @@ services:
     environment:
       DATABASE_URL: postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost}
     depends_on:
       db:
         condition: service_healthy

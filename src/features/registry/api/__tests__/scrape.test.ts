@@ -37,7 +37,7 @@ describe('POST /api/registry/scrape', () => {
     mockIsAdminRequest.mockResolvedValue(true);
   });
 
-  runIfMock('should return an empty image string when no image tags exist and the URL is not from Amazon', async () => {
+  runIfMock('should return an empty image string and extract favicon when no image tags exist and the URL is not from Amazon', async () => {
     const testUrl = 'https://www.example.com';
     
     const mockHtml = `
@@ -46,6 +46,7 @@ describe('POST /api/registry/scrape', () => {
         <head>
           <meta property="og:title" content="Example Site" />
           <meta property="og:description" content="An example site." />
+          <link rel="icon" href="/assets/favicon.ico" />
         </head>
         <body></body>
       </html>
@@ -70,6 +71,144 @@ describe('POST /api/registry/scrape', () => {
     expect(response.status).toBe(200);
     expect(body.data.name).toBe('Example Site');
     expect(body.data.imageUrl).toBe(''); // Expect empty image
+    expect(body.data.faviconUrl).toBe('https://www.example.com/assets/favicon.ico');
+  });
+
+  runIfMock('should correctly scrape Target products using Target selectors', async () => {
+    const targetUrl = 'https://www.target.com/p/sample-item/-/A-12345678';
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head></head>
+        <body>
+          <h1 data-test="product-title">Target Stand Mixer</h1>
+          <div data-test="item-details-description">High quality kitchen mixer</div>
+          <div data-test="product-image">
+            <img src="https://target.scene7.com/is/image/Target/GUEST_123" alt="Target Mixer" />
+          </div>
+        </body>
+      </html>
+    `;
+    server.use(
+      rest.get(targetUrl, (_req, res, ctx) => {
+        return res(
+          ctx.set('Content-Type', 'text/html'),
+          ctx.body(mockHtml)
+        );
+      })
+    );
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: targetUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.name).toBe('Target Stand Mixer');
+    expect(body.data.description).toBe('High quality kitchen mixer');
+    expect(body.data.imageUrl).toBe('https://target.scene7.com/is/image/Target/GUEST_123');
+  });
+
+  runIfMock('should correctly scrape Costco products using Costco selectors', async () => {
+    const costcoUrl = 'https://www.costco.com/sample-product.product.100123.html';
+    const mockHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head></head>
+        <body>
+          <h1 data-qa="product-title">Costco Blender Set</h1>
+          <div id="product-description">Multi-speed counter blender</div>
+          <img id="initialLoadedImage" src="https://images.costco-static.com/item123.jpg" alt="Costco Blender" />
+        </body>
+      </html>
+    `;
+    server.use(
+      rest.get(costcoUrl, (_req, res, ctx) => {
+        return res(
+          ctx.set('Content-Type', 'text/html'),
+          ctx.body(mockHtml)
+        );
+      })
+    );
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: costcoUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.name).toBe('Costco Blender Set');
+    expect(body.data.description).toBe('Multi-speed counter blender');
+    expect(body.data.imageUrl).toBe('https://images.costco-static.com/item123.jpg');
+  });
+
+  runIfMock('should classify 403 response into BLOCKED_BY_VENDOR error domain', async () => {
+    const costcoUrl = 'https://www.costco.com/blocked-product';
+    server.use(
+      rest.get(costcoUrl, (_req, res, ctx) => {
+        return res(ctx.status(403));
+      })
+    );
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: costcoUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toContain('BLOCKED_BY_VENDOR');
+    expect(body.details.errorDomain).toBe('BLOCKED_BY_VENDOR');
+  });
+
+  runIfMock('should classify 404 response into URL_NOT_FOUND error domain', async () => {
+    const testUrl = 'https://www.example.com/missing-404';
+    server.use(
+      rest.get(testUrl, (_req, res, ctx) => {
+        return res(ctx.status(404));
+      })
+    );
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: testUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toContain('URL_NOT_FOUND');
+    expect(body.details.errorDomain).toBe('URL_NOT_FOUND');
+  });
+
+  runIfMock('should classify network error into NETWORK_TIMEOUT error domain', async () => {
+    const testUrl = 'https://www.example.com/network-error';
+    server.use(
+      rest.get(testUrl, (_req, res) => {
+        return res.networkError('Failed to connect');
+      })
+    );
+
+    const request = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url: testUrl }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toContain('NETWORK_TIMEOUT');
+    expect(body.details.errorDomain).toBe('NETWORK_TIMEOUT');
   });
 
   runIfMock('should correctly scrape an Amazon image using the simplified fallback selector', async () => {

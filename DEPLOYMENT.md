@@ -2,6 +2,8 @@
 
 This repository includes a pro-grade deployment pipeline suitable for enterprise cloud migration, multi-cloud hosting, and zero-downtime schema updates.
 
+For the authoritative specification of container, database, environment variable, reverse proxy, health check, and lifecycle requirements, refer to the [Application Runtime Contract](./docs/runtime-contract.md). All hosting providers and deployment environments must satisfy this baseline contract.
+
 ## Deployment State & Optional Vercel Target
 
 - **Current Deployment Architecture**: The primary deployment architecture is provider-neutral, utilizing standard containerized builds (`Dockerfile`) running on Node.js / Docker hosts such as Google Cloud Run or AWS.
@@ -34,7 +36,8 @@ The application requires the following environment variables to be configured co
 - `ADMIN_PASSWORD`: Cryptographic hash of the administrative password. *Required.*
   - **Format**: Must be an scrypt hash in the format `scrypt:[saltBase64]:[keyBase64]`.
   - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
-- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcard patterns allowed to access the application. *Required.*
+- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains allowed to access the application (e.g. `localhost,127.0.0.1,abbifred.com`). Wildcard DNS is not required for default single-site deployments. *Required.*
+- `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain-based site routing. Defaults to `false` (1 deployment = 1 wedding site). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website (defaults to `wedding2026`).
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
 - `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*

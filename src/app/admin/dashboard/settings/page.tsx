@@ -193,6 +193,8 @@ export default function AdminSettingsPage() {
 
   if (!localConfig) return <div className="p-8 text-center text-red-500">Failed to load settings.</div>;
 
+  const isMultisite = Boolean(localConfig.multisiteEnabled);
+
   return (
     <AdminPreviewLayout
       previewUrl="/"
@@ -213,38 +215,40 @@ export default function AdminSettingsPage() {
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
         </div>
 
-        {/* Profile Switcher & Creator Section */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gray-100 dark:border-zinc-700">
-          <div className="space-y-1">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-zinc-100">Branding & Staging Profiles</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Manage parallel configuration profiles or test changes on staging subdomains.
-            </p>
+        {/* Profile Switcher & Creator Section (Visible when MULTISITE_ENABLED=true) */}
+        {isMultisite && (
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gray-100 dark:border-zinc-700">
+            <div className="space-y-1">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-zinc-100">Branding & Staging Profiles</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Manage parallel configuration profiles or test changes on staging subdomains.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <select
+                value={selectedProfileId}
+                onChange={(e) => {
+                  setSelectedProfileId(e.target.value);
+                  setLocalConfig(null);
+                }}
+                className="rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+              >
+                {Array.isArray(profiles) ? (
+                  profiles.map((p: any) => (
+                    <option key={p.id} value={p.id}>
+                      {p.id === 'global' ? 'Production (Default)' : `${p.brideName} & ${p.groomName} (subdomain: ${p.subdomain})`}
+                    </option>
+                  ))
+                ) : (
+                  <option value="global">Production (Default)</option>
+                )}
+              </select>
+              <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
+                New Profile
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <select
-              value={selectedProfileId}
-              onChange={(e) => {
-                setSelectedProfileId(e.target.value);
-                setLocalConfig(null);
-              }}
-              className="rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-            >
-              {Array.isArray(profiles) ? (
-                profiles.map((p: any) => (
-                  <option key={p.id} value={p.id}>
-                    {p.id === 'global' ? 'Production (Default)' : `${p.brideName} & ${p.groomName} (subdomain: ${p.subdomain})`}
-                  </option>
-                ))
-              ) : (
-                <option value="global">Production (Default)</option>
-              )}
-            </select>
-            <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
-              New Profile
-            </Button>
-          </div>
-        </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-8 pb-10">
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
@@ -266,7 +270,7 @@ export default function AdminSettingsPage() {
                 <Label>Base URL</Label>
                 <Input required type="url" name="baseUrl" value={localConfig.baseUrl || ''} onChange={handleChange} />
               </FormGroup>
-              {selectedProfileId !== 'global' && (
+              {isMultisite && selectedProfileId !== 'global' && (
                 <FormGroup>
                   <Label>Subdomain Identifier</Label>
                   <Input
