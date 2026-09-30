@@ -48,7 +48,7 @@ const APP_ROUTES: AppRoute[] = [
 ];
 
 // Utility functions
-export function normalizePath(p: string): string {
+function normalizePath(p: string): string {
   if (!p) return '';
   const stripped = p.replace(/\/+$/, '');
   return stripped === '' ? '/' : stripped;

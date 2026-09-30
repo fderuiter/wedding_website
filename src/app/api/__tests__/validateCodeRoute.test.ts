@@ -42,7 +42,7 @@ describe('validate-code Route', () => {
     });
   });
 
-  it('returns 400 if invitation code has already been used', async () => {
+  it('returns 200 with guestName and valid: true for a previously used invitation code', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'USEDCODE',
@@ -53,9 +53,16 @@ describe('validate-code Route', () => {
       method: 'GET',
     });
     const res = await validateCodeRoute(req as any);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.error).toBe('This invitation code has already been used.');
+    expect(json).toEqual({
+      success: true,
+      data: {
+        valid: true,
+        guestName: 'John Doe',
+        code: 'USEDCODE',
+      }
+    });
   });
 
   it('returns 200 with guestName and valid: true for an active, unused code', async () => {

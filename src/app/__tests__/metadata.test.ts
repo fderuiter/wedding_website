@@ -20,6 +20,7 @@ describe('generateMetadata', () => {
     expect(metadata.description).toBe(
       'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.'
     );
+    expect(metadata.publisher).toBe('TestBride & TestGroom');
     expect(metadata.icons).toEqual({
       icon: '/assets/favicon.png',
       shortcut: '/assets/favicon.png',

@@ -59,7 +59,7 @@ This project is built with a modern, full-stack TypeScript architecture.
 *   **Physics:** [Rapier](https://rapier.rs/) (via `@react-three/rapier`) for 3D interactions.
 *   **State Management:** [React Query](https://tanstack.com/query/latest) (TanStack Query) for server state.
 *   **Testing:** [Jest](https://jestjs.io/), [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/), and [Playwright](https://playwright.dev/) for end-to-end testing.
-*   **Deployment:** [Vercel](https://vercel.com/)
+*   **Deployment:** Provider-neutral containerized deployment (Docker, Google Cloud Run, or any Node.js host; optionally [Vercel](https://vercel.com/))
 
 ## Setup & Installation
 
