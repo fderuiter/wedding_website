@@ -5,7 +5,6 @@
 import { RegistryRepository } from '../repository';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { createSqliteAdapter } from '@/lib/prisma';
 
 // Unmock @prisma/client for this test file so we can interact with the real PostgreSQL container
 jest.unmock('@prisma/client');
@@ -15,19 +14,10 @@ jest.unmock('pg');
 const { PrismaClient } = jest.requireActual('@prisma/client');
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
-const isSqlite = connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db');
 
-let realPrisma: any;
-let pool: any;
-
-if (isSqlite) {
-  const adapter = createSqliteAdapter(connectionString);
-  realPrisma = new PrismaClient({ adapter });
-} else {
-  pool = new Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
-  realPrisma = new PrismaClient({ adapter });
-}
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const realPrisma = new PrismaClient({ adapter });
 
 // Instantiate RegistryRepository with the real PrismaClient
 const realRepository = new RegistryRepository(realPrisma);
@@ -38,13 +28,10 @@ describe('Registry Gift Contribution Concurrency & Row-Level Locking', () => {
   beforeAll(async () => {
     // Check database schema readiness and verify migration state
     try {
-      if (isSqlite) {
-        await realPrisma.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
-      }
       await realPrisma.registryItem.findFirst();
     } catch {
       const { execSync } = require('child_process');
-      execSync('npx prisma db push --skip-generate', { stdio: 'pipe' });
+      execSync('npx prisma db push', { stdio: 'pipe' });
     }
   });
 

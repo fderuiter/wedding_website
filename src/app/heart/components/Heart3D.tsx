@@ -3,7 +3,27 @@ import * as THREE from 'three';
 import { Text } from '@react-three/drei';
 import { useTheme } from '../../../components/ThemeProvider';
 
-export function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomName, shardSide }: { scale: number; primaryColor: string; secondaryColor: string; brideName: string; groomName: string; shardSide?: 'left' | 'right' }) {
+export function Heart3D({
+  scale,
+  primaryColor,
+  secondaryColor,
+  partner1Name,
+  partner2Name,
+  brideName,
+  groomName,
+  shardSide
+}: {
+  scale: number;
+  primaryColor: string;
+  secondaryColor: string;
+  partner1Name?: string;
+  partner2Name?: string;
+  brideName?: string;
+  groomName?: string;
+  shardSide?: 'left' | 'right';
+}) {
+  const p1 = partner1Name || brideName || '';
+  const p2 = partner2Name || groomName || '';
   const { themeOutline } = useTheme();
   
   const geom = useMemo(() => {
@@ -64,7 +84,7 @@ export function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomN
           outlineWidth={0.015}
           outlineColor={themeOutline}
         >
-          {brideName}
+          {p1}
         </Text>
       )}
       {(!shardSide || shardSide === 'right') && (
@@ -76,7 +96,7 @@ export function Heart3D({ scale, primaryColor, secondaryColor, brideName, groomN
           outlineWidth={0.015}
           outlineColor={themeOutline}
         >
-          {groomName}
+          {p2}
         </Text>
       )}
     </group>

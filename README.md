@@ -4,7 +4,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
+**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Guide](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
 
 ## Table of Contents
 
@@ -62,6 +62,8 @@ This project is built with a modern, full-stack TypeScript architecture.
 *   **Deployment:** Provider-neutral containerized deployment (Docker, Google Cloud Run, or any Node.js host; optionally [Vercel](https://vercel.com/))
 
 ## Setup & Installation
+
+For production hosting guidelines and minimum runtime requirements across container and cloud environments, see the [Application Runtime Contract](./docs/runtime-contract.md) and [Deployment Documentation](./DEPLOYMENT.md).
 
 ### Prerequisites
 

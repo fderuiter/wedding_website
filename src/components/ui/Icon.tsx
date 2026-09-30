@@ -27,7 +27,9 @@ export type IconName =
   | 'ChevronRight'
   | 'Menu'
   | 'DragHandle'
-  | 'Spinner';
+  | 'Spinner'
+  | 'AlertTriangle'
+  | 'Info';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -254,6 +256,22 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
         <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      );
+    case 'AlertTriangle':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      );
+    case 'Info':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4" />
+          <path d="M12 8h.01" />
         </svg>
       );
     default:

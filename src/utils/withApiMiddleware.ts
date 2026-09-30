@@ -22,7 +22,7 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
         pathname = url.pathname;
         method = req.method;
       }
-      const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/admin/logout' || pathname === '/api/admin/me';
+      const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/admin/logout' || pathname === '/api/admin/me' || pathname === '/api/guest/login';
       
       const isAdminPath = isProtectedRoute(pathname, method);
 

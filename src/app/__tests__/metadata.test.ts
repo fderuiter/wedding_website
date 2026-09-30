@@ -3,6 +3,8 @@ import { generateMetadata } from '../metadata';
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
+    partner1Name: 'TestBride',
+    partner2Name: 'TestGroom',
     brideName: 'TestBride',
     groomName: 'TestGroom',
     venueName: 'Test Venue',

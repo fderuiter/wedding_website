@@ -8,8 +8,6 @@ import path from 'node:path';
 (() => {
   const rootDir = process.cwd();
   const envPath = path.join(rootDir, '.env.test');
-  const parentDbUrl = process.env.DATABASE_URL;
-  const parentIsSqlite = parentDbUrl && (parentDbUrl.startsWith('file:') || parentDbUrl.startsWith('sqlite:') || parentDbUrl.includes('.db'));
 
   // Clear parent shell database variables and other isolated test variables to ensure clean isolation
   const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
@@ -26,19 +24,7 @@ import path from 'node:path';
   }
 
   // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-  let testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
-  const schemaPath = path.join(rootDir, 'prisma/schema.prisma');
-  let isSchemaSqlite = false;
-  if (fs.existsSync(schemaPath)) {
-    const schemaContent = fs.readFileSync(schemaPath, 'utf8');
-    isSchemaSqlite = schemaContent.includes('provider = "sqlite"');
-  }
-
-  if (isSchemaSqlite) {
-    testDbUrl = 'file:./test.db';
-  } else if (parentIsSqlite) {
-    testDbUrl = parentDbUrl;
-  }
+  const testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
 
   process.env.DATABASE_URL = testDbUrl;
 })();

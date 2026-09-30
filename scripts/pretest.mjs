@@ -3,7 +3,6 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import child_process from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import net from 'node:net';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -150,50 +149,18 @@ async function main() {
     }
 
     // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-    let testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+    const testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
     
-    // Check if we should fallback to SQLite if postgres is not accessible
-    const isPostgresUrl = testDbUrl.startsWith('postgres://') || testDbUrl.startsWith('postgresql://');
-    if (isPostgresUrl) {
-      console.log('Checking if PostgreSQL database is reachable on localhost:5432...');
-      const postgresActive = await new Promise((resolve) => {
-        const socket = net.createConnection({ port: 5432, host: 'localhost', timeout: 1000 });
-        socket.on('connect', () => {
-          socket.end();
-          resolve(true);
-        });
-        socket.on('error', () => {
-          resolve(false);
-        });
-        socket.on('timeout', () => {
-          socket.destroy();
-          resolve(false);
-        });
-      });
-
-      if (!postgresActive) {
-        console.warn('PostgreSQL is not reachable. Falling back to zero-config SQLite test database (file:./test.db)...');
-        testDbUrl = 'file:./test.db';
-      } else {
-        console.log('PostgreSQL database is active.');
-      }
-    }
-
     process.env.DATABASE_URL = testDbUrl;
 
-    // Run schema adaptation before doing db push and generate
-    const { adapt } = await import('./adapt-schema.js');
-    adapt();
-
-    const isTestSqlite = testDbUrl.startsWith('file:') || testDbUrl.startsWith('sqlite:') || testDbUrl.includes('.db');
-    console.log(`Synchronizing schema to isolated test database (provider: ${isTestSqlite ? 'sqlite' : 'postgresql'})...`);
+    console.log('Synchronizing schema to isolated test database (provider: postgresql)...');
 
     runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
       env: { ...process.env, DATABASE_URL: testDbUrl }
     });
 
-    // Run Prisma Client generation after adaptation/push so it is perfectly aligned with the correct schema provider
-    console.log('Generating Prisma Client matching the active schema...');
+    // Run Prisma Client generation after db push so it is aligned with the active schema
+    console.log('Generating Prisma Client...');
     runCommand('npm', ['run', 'prisma:generate']);
   } else {
     console.log('Running full build...');

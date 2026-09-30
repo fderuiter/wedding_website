@@ -25,6 +25,9 @@ jobs:
       - name: Verify Environment Variables Documentation
         run: npx tsx scripts/verify-env-docs.ts
 
+      - name: Verify Migration Compatibility
+        run: npm run lint:migrations
+
       - name: Verify Documentation and Architecture Sync
         id: verify-docs
         run: |

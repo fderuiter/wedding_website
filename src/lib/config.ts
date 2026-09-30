@@ -18,6 +18,8 @@ type LocalAppConfig = Omit<AppConfigDTO, 'latitude' | 'longitude'> & {
 
 const fallbackAppConfig: LocalAppConfig = {
   id: 'global',
+  partner1Name: 'Abbigayle',
+  partner2Name: 'Frederick',
   brideName: 'Abbigayle',
   groomName: 'Frederick',
   weddingDate: new Date('2026-06-20T16:00:00.000Z'),
@@ -38,7 +40,7 @@ const fallbackAppConfig: LocalAppConfig = {
   seoDescription: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/sunset-embrace.jpg',
-  seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
+  seoKeywords: "{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception",
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
   timezone: 'America/Chicago',
@@ -55,8 +57,10 @@ const fallbackAppConfig: LocalAppConfig = {
  */
 export function isSiteInitialized(config: AppConfigDTO | null | undefined): boolean {
   if (!config) return false;
-  if (!config.brideName || !config.groomName || !config.baseUrl) return false;
-  if (config.brideName === 'Abbigayle' && config.groomName === 'Frederick') return false;
+  const p1 = config.partner1Name || config.brideName;
+  const p2 = config.partner2Name || config.groomName;
+  if (!p1 || !p2 || !config.baseUrl) return false;
+  if (p1 === 'Abbigayle' && p2 === 'Frederick') return false;
   if (config.baseUrl.includes('abbifred.com')) return false;
   return true;
 }
@@ -259,6 +263,10 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
       dbConfig = AppConfigSchema.parse(await prisma.appConfig.create({
         data: { 
           id: 'global',
+          partner1Name: 'Abbigayle',
+          partner2Name: 'Frederick',
+          brideName: 'Abbigayle',
+          groomName: 'Frederick',
           venueName: 'Plummer House',
           venueAddress: '1091 Plummer Ln SW',
           venueCity: 'Rochester',
@@ -270,7 +278,7 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
           seoDescription: 'Join Abbigayle and Frederick for their wedding celebration at the historic Plummer House in Rochester, MN. Find all the details about the ceremony, reception, registry, and our story.',
           faviconUrl: '/assets/favicon.png',
           ogImageUrl: '/images/sunset-embrace.jpg',
-          seoKeywords: "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception",
+          seoKeywords: "{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception",
           colorPrimary: '#B91C1C',
           colorSecondary: '#B45309',
           timezone: 'America/Chicago',
@@ -291,8 +299,15 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
     ? { ...fallbackAppConfig, ...dbConfig }
     : fallbackAppConfig;
 
+  const partner1Name = mergedConfig.partner1Name || mergedConfig.brideName || 'Abbigayle';
+  const partner2Name = mergedConfig.partner2Name || mergedConfig.groomName || 'Frederick';
+
   return AppConfigSchema.parse({
     ...mergedConfig,
+    partner1Name,
+    partner2Name,
+    brideName: mergedConfig.brideName ?? partner1Name,
+    groomName: mergedConfig.groomName ?? partner2Name,
     latitude: coordinateSchema.parse(mergedConfig.latitude),
     longitude: coordinateSchema.parse(mergedConfig.longitude),
   });

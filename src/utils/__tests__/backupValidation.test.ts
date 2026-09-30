@@ -5,6 +5,8 @@ describe('DatabaseBackupSchema Validation Tests', () => {
     appConfig: [
       {
         id: 'global',
+        partner1Name: 'Alice',
+        partner2Name: 'Bob',
         brideName: 'Alice',
         groomName: 'Bob',
         weddingDate: new Date('2026-06-20T00:00:00.000Z'),

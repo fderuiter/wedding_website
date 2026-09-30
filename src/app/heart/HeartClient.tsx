@@ -31,6 +31,8 @@ function PhysicsHeart({
   primaryColor,
   secondaryColor,
   accentColor,
+  partner1Name,
+  partner2Name,
   brideName,
   groomName
 }: {
@@ -40,9 +42,13 @@ function PhysicsHeart({
   primaryColor: string
   secondaryColor: string
   accentColor: string
-  brideName: string
-  groomName: string
+  partner1Name?: string
+  partner2Name?: string
+  brideName?: string
+  groomName?: string
 }) {
+  const p1 = partner1Name || brideName || '';
+  const p2 = partner2Name || groomName || '';
   const heartRef = useRef<RapierRigidBody>(null!);
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!);
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!);
@@ -249,14 +255,14 @@ function PhysicsHeart({
           {...mainHandlers}
           visible={!isBroken}
         >
-          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} />
+          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} partner1Name={p1} partner2Name={p2} />
         </group>
       </RigidBody>
 
       <RigidBody userData={{ id: 'left' }} ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[-0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
-          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="left" />
+          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} partner1Name={p1} partner2Name={p2} shardSide="left" />
         </group>
         {isBroken && (
           <Html zIndexRange={[100, 0]} prepend center>
@@ -275,7 +281,7 @@ function PhysicsHeart({
       <RigidBody userData={{ id: 'right' }} ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
-          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} brideName={brideName} groomName={groomName} shardSide="right" />
+          <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} partner1Name={p1} partner2Name={p2} shardSide="right" />
         </group>
         {isBroken && (
           <Html zIndexRange={[100, 0]} prepend center>
@@ -322,18 +328,24 @@ function isWebGLAvailable() {
 }
 
 function WebGLFallback({
+  partner1Name,
+  partner2Name,
   brideName,
   groomName,
   primaryColor,
   secondaryColor,
   accentColor
 }: {
-  brideName: string;
-  groomName: string;
+  partner1Name?: string;
+  partner2Name?: string;
+  brideName?: string;
+  groomName?: string;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
 }) {
+  const p1 = partner1Name || brideName || '';
+  const p2 = partner2Name || groomName || '';
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
@@ -402,7 +414,7 @@ function WebGLFallback({
       <div
         data-testid="webgl-fallback-heart"
         tabIndex={0}
-        aria-label={`Interactive 2D Heart: ${brideName} and ${groomName}. Use arrow keys to move, or drag with mouse/touch.`}
+        aria-label={`Interactive 2D Heart: ${p1} and ${p2}. Use arrow keys to move, or drag with mouse/touch.`}
         className="absolute cursor-grab active:cursor-grabbing focus:outline-none focus:ring-4 focus:ring-white rounded-full p-4 transition-transform duration-75 select-none"
         style={{
           transform: `translate(${position.x}px, ${position.y}px)`,
@@ -429,9 +441,9 @@ function WebGLFallback({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none font-bold select-none text-white text-sm">
-          <span>{brideName}</span>
+          <span>{p1}</span>
           <span className="text-xs font-normal opacity-80">&amp;</span>
-          <span>{groomName}</span>
+          <span>{p2}</span>
         </div>
       </div>
     </div>
@@ -485,7 +497,9 @@ function PerformanceTracker({
  *
  * @returns {JSX.Element} The rendered HeartPage component.
  */
-export default function HeartClient({ brideName, groomName }: { brideName: string, groomName: string }) {
+export default function HeartClient({ partner1Name, partner2Name, brideName, groomName }: { partner1Name?: string; partner2Name?: string; brideName?: string; groomName?: string }) {
+  const p1 = partner1Name || brideName || '';
+  const p2 = partner2Name || groomName || '';
   const { themePrimary, themeSecondary, themeAccent } = useTheme();
   const [interacted, setInteracted] = useState(false);
   const [scale, setScale] = useState(0.6);
@@ -538,8 +552,8 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
         </div>
         <WebGLFallback
           key={resetKey}
-          brideName={brideName}
-          groomName={groomName}
+          partner1Name={p1}
+          partner2Name={p2}
           primaryColor={themePrimary}
           secondaryColor={themeSecondary}
           accentColor={themeAccent}
@@ -577,8 +591,8 @@ export default function HeartClient({ brideName, groomName }: { brideName: strin
               primaryColor={themePrimary}
               secondaryColor={themeSecondary}
               accentColor={themeAccent}
-              brideName={brideName}
-              groomName={groomName}
+              partner1Name={p1}
+              partner2Name={p2}
             />
             <ScreenBounds />
           </Physics>

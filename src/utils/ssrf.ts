@@ -10,16 +10,31 @@ export async function isPrivateUrl(url: string): Promise<boolean> {
     const parsedUrl = new URL(url);
     const hostname = parsedUrl.hostname;
 
-    // Resolve hostname to IP
-    const { address, family } = await dns.promises.lookup(hostname);
-
-    if (family === 4) {
-      return isPrivateIPv4(address);
-    } else if (family === 6) {
-      return isPrivateIPv6(address);
+    // Direct IP literal checks in URL before DNS lookup
+    if (isPrivateIPv4(hostname) || isPrivateIPv6(hostname)) {
+      return true;
     }
 
-    return true; // Unknown family, safer to block
+    // Resolve hostname to IP(s) - lookup with all: true returns all A and AAAA records
+    const lookupResult = await dns.promises.lookup(hostname, { all: true } as any);
+    const addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
+
+    if (addresses.length === 0) return true;
+
+    for (const record of addresses) {
+      if (!record) continue;
+      const address = record.address || (typeof record === 'string' ? record : '');
+      const family = record.family || (address.includes(':') ? 6 : 4);
+
+      if (family === 4 && isPrivateIPv4(address)) {
+        return true;
+      }
+      if (family === 6 && isPrivateIPv6(address)) {
+        return true;
+      }
+    }
+
+    return false;
   } catch {
     // If we can't parse or resolve, treat as unsafe
     return true;
@@ -28,9 +43,9 @@ export async function isPrivateUrl(url: string): Promise<boolean> {
 
 function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.').map(Number);
-  if (parts.length !== 4) return false;
+  if (parts.length !== 4 || parts.some(p => isNaN(p))) return false;
 
-  const [a, b] = parts;
+  const [a, b, c] = parts;
 
   // 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8
   if (a === 0 || a === 10 || a === 127) return true;
@@ -46,6 +61,18 @@ function isPrivateIPv4(ip: string): boolean {
 
   // 100.64.0.0/10 (CGNAT)
   if (a === 100 && b >= 64 && b <= 127) return true;
+
+  // 192.0.2.0/24 (TEST-NET-1)
+  if (a === 192 && b === 0 && c === 2) return true;
+
+  // 198.51.100.0/24 (TEST-NET-2)
+  if (a === 198 && b === 51 && c === 100) return true;
+
+  // 203.0.113.0/24 (TEST-NET-3)
+  if (a === 203 && b === 0 && c === 113) return true;
+
+  // Multicast 224.0.0.0/4 & Reserved 240.0.0.0/4
+  if (a >= 224) return true;
 
   // Broadcast
   if (ip === '255.255.255.255') return true;
