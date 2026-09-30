@@ -184,10 +184,6 @@ export class RegistryRepository implements IRegistryRepository {
           throw new Error('Invalid invitation code.');
         }
 
-        if (inviteRecord.used) {
-          throw new Error('This invitation code has already been used.');
-        }
-
         finalName = inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
 
