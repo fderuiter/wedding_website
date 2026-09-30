@@ -50,9 +50,22 @@ describe('RegistryRepository', () => {
   });
 
   describe('getAllItems', () => {
-    it('should return all registry items', async () => {
-      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+    it('should return all registry items without joining contributors by default', async () => {
+      const itemWithoutRel = { ...mockRegistryItem };
+      delete (itemWithoutRel as any).contributors;
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([itemWithoutRel]);
       const items = await registryRepository.getAllItems();
+      expect(items).toEqual([mockRegistryItem]);
+      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+        include: {
+          image: true,
+        },
+      });
+    });
+
+    it('should include contributors when includeContributors option is true', async () => {
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+      const items = await registryRepository.getAllItems({ includeContributors: true });
       expect(items).toEqual([mockRegistryItem]);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
@@ -64,9 +77,23 @@ describe('RegistryRepository', () => {
   });
 
   describe('getItemById', () => {
-    it('should return a single item by id', async () => {
-      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(mockRegistryItem);
+    it('should return a single item by id without joining contributors by default', async () => {
+      const itemWithoutRel = { ...mockRegistryItem };
+      delete (itemWithoutRel as any).contributors;
+      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(itemWithoutRel);
       const item = await registryRepository.getItemById('1');
+      expect(item).toEqual(mockRegistryItem);
+      expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+        include: {
+          image: true,
+        },
+      });
+    });
+
+    it('should include contributors when includeContributors option is true', async () => {
+      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(mockRegistryItem);
+      const item = await registryRepository.getItemById('1', { includeContributors: true });
       expect(item).toEqual(mockRegistryItem);
       expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },

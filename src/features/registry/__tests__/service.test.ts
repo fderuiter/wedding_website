@@ -20,12 +20,12 @@ describe('RegistryService', () => {
   });
 
   describe('getAllItems', () => {
-    it('returns all registry items', async () => {
+    it('returns all registry items and propagates includeContributors flag', async () => {
       const items = [{ id: '1' } as RegistryItem];
       mockRepository.getAllItems.mockResolvedValue(items);
 
-      await expect(registryService.getAllItems()).resolves.toEqual(items);
-      expect(mockRepository.getAllItems).toHaveBeenCalled();
+      await expect(registryService.getAllItems({ includeContributors: true })).resolves.toEqual(items);
+      expect(mockRepository.getAllItems).toHaveBeenCalledWith({ includeContributors: true });
     });
 
     it('throws when repository fails', async () => {
@@ -37,12 +37,12 @@ describe('RegistryService', () => {
   });
 
   describe('getItemById', () => {
-    it('returns a registry item by id', async () => {
+    it('returns a registry item by id and propagates options', async () => {
       const item = { id: '1' } as RegistryItem;
       mockRepository.getItemById.mockResolvedValue(item);
 
-      await expect(registryService.getItemById('1')).resolves.toEqual(item);
-      expect(mockRepository.getItemById).toHaveBeenCalledWith('1');
+      await expect(registryService.getItemById('1', { includeContributors: true })).resolves.toEqual(item);
+      expect(mockRepository.getItemById).toHaveBeenCalledWith('1', { includeContributors: true });
     });
 
     it('throws when item lookup fails', async () => {
