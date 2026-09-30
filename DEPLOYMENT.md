@@ -2,6 +2,12 @@
 
 This repository includes a pro-grade deployment pipeline suitable for enterprise cloud migration, multi-cloud hosting, and zero-downtime schema updates.
 
+## Deployment State & Optional Vercel Target
+
+- **Current Deployment Architecture**: The primary deployment architecture is provider-neutral, utilizing standard containerized builds (`Dockerfile`) running on Node.js / Docker hosts such as Google Cloud Run or AWS.
+- **Disconnected Vercel Connection**: The historical direct Vercel connection is disconnected. Core application code, environment validation, database access, and routing logic do not depend on Vercel-specific runtime environment variables or proprietary APIs.
+- **Optional Vercel Support**: Vercel remains fully supported as an optional deployment target. Couples or developers who wish to deploy on Vercel can import the repository directly into Vercel or use `vercel deploy`, ensuring environment variables (`DATABASE_URL`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`) are provided in Vercel's project settings.
+
 ## GitHub Actions Workflows
 
 We provide two pre-configured GitHub Actions workflows:
