@@ -69,6 +69,7 @@ describe('POST /api/registry/scrape', () => {
       imageAlt: '',
       vendorUrl: 'https://example.com/product',
       quantity: 1,
+      faviconUrl: 'https://example.com/favicon.ico',
     });
   });
 
@@ -85,7 +86,7 @@ describe('POST /api/registry/scrape', () => {
     expect(json.error).toContain('URL is required');
   });
 
-  it('returns 500 when scraping fails (e.g. response not ok)', async () => {
+  it('returns classified URL_NOT_FOUND domain when scraping non-200 (e.g. 404) response', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     
     fetchMock.mockResolvedValue(new Response('Not Found', {
@@ -99,13 +100,14 @@ describe('POST /api/registry/scrape', () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(422);
     const json = await res.json();
-    expect(json.error).toContain('Failed to fetch the provided URL');
+    expect(json.error).toContain('URL_NOT_FOUND');
+    expect(json.details.errorDomain).toBe('URL_NOT_FOUND');
     expect(console.error).toHaveBeenCalledWith('Scraping failed:', expect.any(Error));
   });
 
-  it('returns 500 when an unexpected error occurs (e.g. fetch throws)', async () => {
+  it('returns classified NETWORK_TIMEOUT domain when fetch throws a network error', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const error = new Error('network error');
     fetchMock.mockRejectedValue(error);
@@ -116,10 +118,11 @@ describe('POST /api/registry/scrape', () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(422);
     const json = await res.json();
-    expect(json.error).toContain('Failed to scrape product info');
-    expect(console.error).toHaveBeenCalledWith('Scraping failed:', error);
+    expect(json.error).toContain('NETWORK_TIMEOUT');
+    expect(json.details.errorDomain).toBe('NETWORK_TIMEOUT');
+    expect(console.error).toHaveBeenCalledWith('Scraping failed:', expect.any(Error));
   });
 
   it('returns 400 when URL resolves to a private or restricted IP address', async () => {

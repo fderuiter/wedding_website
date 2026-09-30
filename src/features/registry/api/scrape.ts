@@ -17,16 +17,40 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   const { url } = parseResult.data;
 
   try {
-    const response = await safeFetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+    let response: Response;
+    try {
+      response = await safeFetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr instanceof ApiError) {
+        throw fetchErr;
+      }
+      if (fetchErr && fetchErr.message && (fetchErr.message.startsWith('Blocked:') || fetchErr.message === 'Invalid URL')) {
+        throw new ApiError(400, fetchErr.message);
+      }
+      throw new ApiError(422, 'NETWORK_TIMEOUT: Network request timed out or failed while reaching vendor site.', { errorDomain: 'NETWORK_TIMEOUT' });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
-      throw new ApiError(500, 'Failed to fetch the provided URL');
+      if (response.status === 403 || response.status === 401 || response.status === 429) {
+        throw new ApiError(422, 'BLOCKED_BY_VENDOR: Access to this retailer website was blocked.', { errorDomain: 'BLOCKED_BY_VENDOR' });
+      } else if (response.status === 404 || response.status === 410) {
+        throw new ApiError(422, 'URL_NOT_FOUND: Product URL could not be found.', { errorDomain: 'URL_NOT_FOUND' });
+      } else {
+        throw new ApiError(422, 'NETWORK_TIMEOUT: Retailer server error or timeout occurred.', { errorDomain: 'NETWORK_TIMEOUT' });
+      }
     }
 
     const html = await response.text();
@@ -72,40 +96,89 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
              root.querySelector(`meta[name="${property}"]`)?.getAttribute('content') || '';
     };
 
-    const ogTitle = getMetaContent('og:title');
-    const titleTag = root.querySelector('title')?.textContent || '';
-    const name = ldName || ogTitle || titleTag || '';
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.toLowerCase();
 
-    const description = ldDescription || getMetaContent('og:description');
+    const isAmazonDomain = hostname === 'amazon.com' || hostname.endsWith('.amazon.com');
+    const isTargetDomain = hostname === 'target.com' || hostname.endsWith('.target.com');
+    const isCostcoDomain = hostname === 'costco.com' || hostname.endsWith('.costco.com');
 
-    let image = ldImage || getMetaContent('og:image');
-    let imageAlt = ldImageAlt || getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
-
-    if (!image) {
-      image = getMetaContent('twitter:image');
+    // Vendor specific title heuristics
+    let vendorTitle: string | undefined;
+    if (isAmazonDomain) {
+      vendorTitle = root.querySelector('#productTitle, #title')?.textContent?.trim();
+    } else if (isTargetDomain) {
+      vendorTitle = root.querySelector('h1[data-test="product-title"], h1.pdp-title')?.textContent?.trim();
+    } else if (isCostcoDomain) {
+      vendorTitle = root.querySelector('h1[data-qa="product-title"], .product-h1, h1.product-title')?.textContent?.trim();
     }
 
-    const parsedUrl = new URL(url);
-    const hostname = parsedUrl.hostname;
-    const isAmazonDomain = (
-      hostname === 'amazon.com' ||
-      (hostname.endsWith('.amazon.com'))
-    );
-    
-    /**
-     * Vendor-Specific Logic: Amazon Fallback
-     * Amazon product pages often lack standard Open Graph image tags or load primary images dynamically.
-     * This fallback targets the specific DOM selector `#imgTagWrapperId img`, which wraps the primary
-     * product image on most standard Amazon item pages, extracting its `src` attribute.
-     */
-    if (!image && isAmazonDomain) {
-      const imageElement = root.querySelector('#imgTagWrapperId img');
-      if (imageElement) {
-        const imageSrc = imageElement.getAttribute('src');
-        if (imageSrc) {
-          image = imageSrc;
-          imageAlt = imageAlt || imageElement.getAttribute('alt') || '';
+    // Vendor specific description heuristics
+    let vendorDescription: string | undefined;
+    if (isAmazonDomain) {
+      vendorDescription = root.querySelector('#feature-bullets, #productDescription')?.textContent?.trim();
+    } else if (isTargetDomain) {
+      vendorDescription = root.querySelector('div[data-test="item-details-description"], #pdp-tab-description')?.textContent?.trim();
+    } else if (isCostcoDomain) {
+      vendorDescription = root.querySelector('#product-description, .product-info-description')?.textContent?.trim();
+    }
+
+    // Vendor specific image heuristics
+    let vendorImage: string | undefined;
+    let imageAlt = ldImageAlt || getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
+
+    if (isAmazonDomain) {
+      const imgEl = root.querySelector('#imgTagWrapperId img, #landingImage, #main-image, img#landingImage');
+      if (imgEl) {
+        vendorImage = imgEl.getAttribute('src');
+        if (!imageAlt && imgEl.getAttribute('alt')) {
+          imageAlt = imgEl.getAttribute('alt') || '';
         }
+      }
+    } else if (isTargetDomain) {
+      const imgEl = root.querySelector('div[data-test="product-image"] img, img[data-test="current-image"], picture img');
+      if (imgEl) {
+        vendorImage = imgEl.getAttribute('src');
+        if (!imageAlt && imgEl.getAttribute('alt')) {
+          imageAlt = imgEl.getAttribute('alt') || '';
+        }
+      }
+    } else if (isCostcoDomain) {
+      const imgEl = root.querySelector('#initialLoadedImage, .product-image-canvas img, img[data-qa="product-image"]');
+      if (imgEl) {
+        vendorImage = imgEl.getAttribute('src');
+        if (!imageAlt && imgEl.getAttribute('alt')) {
+          imageAlt = imgEl.getAttribute('alt') || '';
+        }
+      }
+    }
+
+    const ogTitle = getMetaContent('og:title');
+    const titleTag = root.querySelector('title')?.textContent?.trim() || '';
+    const name = ldName || ogTitle || vendorTitle || titleTag || '';
+
+    const description = ldDescription || getMetaContent('og:description') || vendorDescription || '';
+
+    const image = ldImage || getMetaContent('og:image') || getMetaContent('twitter:image') || vendorImage || '';
+
+    // Extract site favicon candidate as fallback
+    let faviconUrl = '';
+    const faviconLink = root.querySelector('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
+    if (faviconLink) {
+      const href = faviconLink.getAttribute('href');
+      if (href) {
+        try {
+          faviconUrl = new URL(href, url).toString();
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (!faviconUrl) {
+      try {
+        faviconUrl = new URL('/favicon.ico', url).toString();
+      } catch {
+        faviconUrl = `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
       }
     }
 
@@ -116,6 +189,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       imageAlt: imageAlt,
       vendorUrl: url,
       quantity: 1,
+      faviconUrl: faviconUrl,
     };
 
     return NextResponse.json(scrapedData);
@@ -127,7 +201,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     if (error && error.message && (error.message.startsWith('Blocked:') || error.message === 'Invalid URL')) {
       throw new ApiError(400, error.message);
     }
-    throw new ApiError(500, 'Failed to scrape product info');
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT' || error?.code === 'ECONNREFUSED' || error?.message?.includes('fetch failed')) {
+      throw new ApiError(422, 'NETWORK_TIMEOUT: Network request timed out while fetching product info.', { errorDomain: 'NETWORK_TIMEOUT' });
+    }
+    throw new ApiError(422, 'NETWORK_TIMEOUT: Failed to scrape product info due to network error.', { errorDomain: 'NETWORK_TIMEOUT' });
   }
 });
 
