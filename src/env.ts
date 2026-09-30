@@ -3,31 +3,25 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
-    if (val.startsWith('file:') || val.startsWith('sqlite:') || val.includes('.db')) {
-      return true;
-    }
     try {
       new URL(val);
-      return true;
+      return val.startsWith('postgres://') || val.startsWith('postgresql://');
     } catch {
       return false;
     }
   }, {
-    message: 'DATABASE_URL must be a valid URL or SQLite path',
+    message: 'DATABASE_URL must be a valid PostgreSQL URL',
   }),
   POSTGRES_URL_NON_POOLING: z.string().optional().refine(val => {
     if (!val) return true;
-    if (val.startsWith('file:') || val.startsWith('sqlite:') || val.includes('.db')) {
-      return true;
-    }
     try {
       new URL(val);
-      return true;
+      return val.startsWith('postgres://') || val.startsWith('postgresql://');
     } catch {
       return false;
     }
   }, {
-    message: 'POSTGRES_URL_NON_POOLING must be a valid URL or SQLite path',
+    message: 'POSTGRES_URL_NON_POOLING must be a valid PostgreSQL URL',
   }),
   ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required').regex(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'ADMIN_PASSWORD must be in the format scrypt:[saltBase64]:[keyBase64]'),
   ALLOWED_HOSTS: z.string().min(1, 'ALLOWED_HOSTS is required').refine(val => {

@@ -13,115 +13,12 @@ jest.unmock('pg');
 
 const { PrismaClient } = jest.requireActual('@prisma/client');
 
-import fs from 'fs';
-import path from 'path';
-
-let connectionString =
+const connectionString =
   process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
-let isSqlite =
-  connectionString.startsWith('file:') || connectionString.startsWith('sqlite:') || connectionString.includes('.db');
 
-try {
-  const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
-  if (fs.existsSync(schemaPath)) {
-    const content = fs.readFileSync(schemaPath, 'utf8');
-    if (content.includes('provider = "sqlite"') || content.includes('provider="sqlite"')) {
-      isSqlite = true;
-      connectionString = 'file:./test.db';
-    }
-  }
-} catch (e) {}
-
-let realPrisma: any;
-let pool: any;
-
-if (isSqlite) {
-  const { DatabaseSync } = require('node:sqlite');
-  const createSqliteAdapter = (connStr: string) => {
-    let path = connStr;
-    if (path.startsWith('file:')) path = path.slice(5);
-    if (path.includes('?')) path = path.split('?')[0];
-    const db = new DatabaseSync(path);
-    const mapSqliteType = (sqliteType: string) => {
-      if (!sqliteType) return 7;
-      const type = sqliteType.toUpperCase();
-      if (type.includes('INT') || type.includes('INTEGER')) return 0;
-      if (type.includes('CHAR') || type.includes('TEXT') || type.includes('CLOB')) return 7;
-      if (type.includes('BLOB')) return 13;
-      if (type.includes('REAL') || type.includes('FLOA') || type.includes('DOUB')) return 3;
-      if (type.includes('BOOL')) return 5;
-      if (type.includes('DATE') || type.includes('TIME')) return 10;
-      return 7;
-    };
-    const convertArg = (arg: any): any => {
-      if (arg === undefined || arg === null) return null;
-      if (typeof arg === 'boolean') return arg ? 1 : 0;
-      if (arg instanceof Date) return arg.toISOString();
-      if (arg && typeof arg === 'object') {
-        if (arg instanceof Uint8Array || Buffer.isBuffer(arg)) return arg;
-        return JSON.stringify(arg);
-      }
-      return arg;
-    };
-    const queryRaw = async (query: any) => {
-      const args = query.args.map(convertArg);
-      const stmt = db.prepare(query.sql);
-      stmt.setReturnArrays(true);
-      const cols = stmt.columns();
-      const columnNames = cols.map((c: any) => c.name);
-      const columnTypes = cols.map((c: any) => mapSqliteType(c.type || ''));
-      const rows = stmt.all(...args);
-      return { columnNames, columnTypes, rows };
-    };
-    const executeRaw = async (query: any) => {
-      const args = query.args.map(convertArg);
-      const stmt = db.prepare(query.sql);
-      const result = stmt.run(...args);
-      return result.changes;
-    };
-    const driverAdapter = {
-      provider: 'sqlite',
-      adapterName: 'builtin-sqlite',
-      queryRaw,
-      executeRaw,
-      async executeScript(script: string) {
-        db.exec(script);
-      },
-      async startTransaction() {
-        db.exec('BEGIN');
-        return {
-          provider: 'sqlite',
-          adapterName: 'builtin-sqlite-tx',
-          options: { usePhantomQuery: true },
-          queryRaw,
-          executeRaw,
-          async commit() {
-            db.exec('COMMIT');
-          },
-          async rollback() {
-            db.exec('ROLLBACK');
-          },
-        };
-      },
-      async dispose() {
-        db.close();
-      },
-    };
-    return {
-      provider: 'sqlite',
-      adapterName: 'builtin-sqlite',
-      async connect() {
-        return driverAdapter;
-      },
-    };
-  };
-  const adapter = createSqliteAdapter(connectionString);
-  realPrisma = new PrismaClient({ adapter });
-} else {
-  pool = new Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
-  realPrisma = new PrismaClient({ adapter });
-}
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const realPrisma = new PrismaClient({ adapter });
 
 const contentRepo = new ContentRepository(realPrisma);
 
