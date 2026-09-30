@@ -20,12 +20,12 @@ describe('RegistryService', () => {
   });
 
   describe('getAllItems', () => {
-    it('returns all registry items', async () => {
+    it('returns all registry items and propagates includeContributors flag', async () => {
       const items = [{ id: '1' } as RegistryItem];
       mockRepository.getAllItems.mockResolvedValue(items);
 
-      await expect(registryService.getAllItems()).resolves.toEqual(items);
-      expect(mockRepository.getAllItems).toHaveBeenCalled();
+      await expect(registryService.getAllItems({ includeContributors: true })).resolves.toEqual(items);
+      expect(mockRepository.getAllItems).toHaveBeenCalledWith({ includeContributors: true });
     });
 
     it('throws when repository fails', async () => {
@@ -37,12 +37,12 @@ describe('RegistryService', () => {
   });
 
   describe('getItemById', () => {
-    it('returns a registry item by id', async () => {
+    it('returns a registry item by id and propagates options', async () => {
       const item = { id: '1' } as RegistryItem;
       mockRepository.getItemById.mockResolvedValue(item);
 
-      await expect(registryService.getItemById('1')).resolves.toEqual(item);
-      expect(mockRepository.getItemById).toHaveBeenCalledWith('1');
+      await expect(registryService.getItemById('1', { includeContributors: true })).resolves.toEqual(item);
+      expect(mockRepository.getItemById).toHaveBeenCalledWith('1', { includeContributors: true });
     });
 
     it('throws when item lookup fails', async () => {
@@ -126,12 +126,11 @@ describe('RegistryService', () => {
         purchased: false,
       } as unknown as RegistryItem;
 
-      mockRepository.getItemById.mockResolvedValue(item);
       mockRepository.contributeToItem.mockResolvedValue(updated);
 
       const result = await registryService.contributeToItem('1', { name: 'John', amount: 50 });
       expect(result).toEqual(updated);
-      expect(mockRepository.getItemById).toHaveBeenCalledWith('1');
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
       expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
@@ -149,64 +148,44 @@ describe('RegistryService', () => {
     });
 
     it('throws when item not found', async () => {
-      mockRepository.getItemById.mockResolvedValue(null);
+      mockRepository.contributeToItem.mockRejectedValue(new Error('Item not found'));
 
       await expect(
         registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('Item not found');
-      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
     it('throws when item has already been purchased', async () => {
-      const item = {
-        id: '1',
-        amountContributed: 100,
-        price: 100,
-        contributors: [],
-        purchased: true
-      } as unknown as RegistryItem;
-
-      mockRepository.getItemById.mockResolvedValue(item);
+      mockRepository.contributeToItem.mockRejectedValue(new Error('This item has already been purchased.'));
 
       await expect(
         registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('This item has already been purchased.');
-      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
     it('propagates update failures', async () => {
-      const item = {
-        id: '1',
-        amountContributed: 0,
-        price: 100,
-        contributors: []
-      } as unknown as RegistryItem;
       const error = new Error('Update failed');
-
-      mockRepository.getItemById.mockResolvedValue(item);
       mockRepository.contributeToItem.mockRejectedValue(error);
 
       await expect(
         registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow(error);
-      expect(mockRepository.getItemById).toHaveBeenCalledTimes(1);
-      expect(mockRepository.contributeToItem).toHaveBeenCalledTimes(1);
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
     it('throws when contribution is greater than remaining amount', async () => {
-      const item = {
-        id: '1',
-        amountContributed: 80,
-        price: 100,
-        contributors: []
-      } as unknown as RegistryItem;
-
-      mockRepository.getItemById.mockResolvedValue(item);
+      mockRepository.contributeToItem.mockRejectedValue(new Error('Contribution cannot be greater than the remaining amount.'));
 
       await expect(
         registryService.contributeToItem('1', { name: 'John', amount: 50 })
       ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
-      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 50 });
     });
 
     it('successfully processes exactly $0.20 contribution for $10.30 item with $10.10 contributions (floating-point precision scenario)', async () => {
@@ -222,28 +201,22 @@ describe('RegistryService', () => {
         purchased: true,
       } as unknown as RegistryItem;
 
-      mockRepository.getItemById.mockResolvedValue(item);
       mockRepository.contributeToItem.mockResolvedValue(updated);
 
       const result = await registryService.contributeToItem('1', { name: 'John', amount: 0.20 });
       expect(result).toEqual(updated);
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
       expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 0.20 });
     });
 
     it('blocks contribution exceeding remaining balance by as little as $0.01', async () => {
-      const item = {
-        id: '1',
-        amountContributed: 10.10,
-        price: 10.30,
-        contributors: []
-      } as unknown as RegistryItem;
-
-      mockRepository.getItemById.mockResolvedValue(item);
+      mockRepository.contributeToItem.mockRejectedValue(new Error('Contribution cannot be greater than the remaining amount.'));
 
       await expect(
         registryService.contributeToItem('1', { name: 'John', amount: 0.21 })
       ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
-      expect(mockRepository.contributeToItem).not.toHaveBeenCalled();
+      expect(mockRepository.getItemById).not.toHaveBeenCalled();
+      expect(mockRepository.contributeToItem).toHaveBeenCalledWith('1', { name: 'John', amount: 0.21 });
     });
   });
 });

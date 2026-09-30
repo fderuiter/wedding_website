@@ -1,6 +1,7 @@
 /** @jest-environment node */
 
 import { POST } from '@/app/api/registry/scrape/route';
+import { parsePrice } from '../scrape';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
 import { rest } from 'msw';
@@ -342,6 +343,353 @@ describe('POST /api/registry/scrape', () => {
     expect(body.data.name).toBe('Fallback Metadata Product');
     expect(body.data.description).toBe('Fallback description');
     expect(body.data.imageUrl).toBe('https://example.com/fallback.jpg');
+  });
+
+  describe('parsePrice helper unit tests', () => {
+    it('should sanitize currency strings with symbols and commas', () => {
+      expect(parsePrice('$1,299.99')).toBe(1299.99);
+      expect(parsePrice('29.99 USD')).toBe(29.99);
+      expect(parsePrice('£15.50')).toBe(15.5);
+      expect(parsePrice(' 49.99 ')).toBe(49.99);
+      expect(parsePrice('$0.99')).toBe(0.99);
+    });
+
+    it('should handle numeric input', () => {
+      expect(parsePrice(19.99)).toBe(19.99);
+      expect(parsePrice(100)).toBe(100);
+    });
+
+    it('should ignore malformed, zero, negative, or empty input', () => {
+      expect(parsePrice('0')).toBeUndefined();
+      expect(parsePrice(0)).toBeUndefined();
+      expect(parsePrice('$0.00')).toBeUndefined();
+      expect(parsePrice('-10.50')).toBeUndefined();
+      expect(parsePrice('Free')).toBeUndefined();
+      expect(parsePrice('N/A')).toBeUndefined();
+      expect(parsePrice('')).toBeUndefined();
+      expect(parsePrice(null)).toBeUndefined();
+      expect(parsePrice(undefined)).toBeUndefined();
+      expect(parsePrice(NaN)).toBeUndefined();
+    });
+  });
+
+  describe('Multi-tier price extraction in scrape API', () => {
+    runIfMock('should extract price from JSON-LD offers object with price string', async () => {
+      const testUrl = 'https://www.example.com/jsonld-price';
+      const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        'name': 'JSON-LD Price Item',
+        'offers': {
+          '@type': 'Offer',
+          'price': '$89.99',
+          'priceCurrency': 'USD'
+        }
+      };
+
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <script type="application/ld+json">
+              ${JSON.stringify(jsonLd)}
+            </script>
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(89.99);
+    });
+
+    runIfMock('should extract price from JSON-LD AggregateOffer lowPrice', async () => {
+      const testUrl = 'https://www.example.com/jsonld-lowprice';
+      const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        'name': 'Aggregate Item',
+        'offers': {
+          '@type': 'AggregateOffer',
+          'lowPrice': '19.99',
+          'highPrice': '49.99'
+        }
+      };
+
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <script type="application/ld+json">
+              ${JSON.stringify(jsonLd)}
+            </script>
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(19.99);
+    });
+
+    runIfMock('should extract price from JSON-LD priceSpecification.price', async () => {
+      const testUrl = 'https://www.example.com/jsonld-pricespec';
+      const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        'name': 'Price Spec Item',
+        'offers': {
+          '@type': 'Offer',
+          'priceSpecification': {
+            '@type': 'UnitPriceSpecification',
+            'price': '45.00'
+          }
+        }
+      };
+
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <script type="application/ld+json">
+              ${JSON.stringify(jsonLd)}
+            </script>
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(45);
+    });
+
+    runIfMock('should extract price from OpenGraph og:price:amount when JSON-LD is absent', async () => {
+      const testUrl = 'https://www.example.com/og-price';
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta property="og:title" content="OG Price Product" />
+            <meta property="og:price:amount" content="34.50" />
+            <meta property="og:price:currency" content="USD" />
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(34.5);
+    });
+
+    runIfMock('should extract price from product:price:amount as fallback', async () => {
+      const testUrl = 'https://www.example.com/product-price';
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta property="og:title" content="Product Tag Price Item" />
+            <meta property="product:price:amount" content="55.00" />
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(55);
+    });
+
+    runIfMock('should extract price from twitter:data1 when twitter:label1 is price', async () => {
+      const testUrl = 'https://www.example.com/twitter-price';
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta property="og:title" content="Twitter Price Item" />
+            <meta name="twitter:label1" content="Price" />
+            <meta name="twitter:data1" content="$25.99" />
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(25.99);
+    });
+
+    runIfMock('should extract price from Amazon DOM element .a-price .a-offscreen', async () => {
+      const testUrl = 'https://www.amazon.com/dp/B08C1F553M-PRICE';
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta property="og:title" content="Amazon Price Item" />
+          </head>
+          <body>
+            <span class="a-price"><span class="a-offscreen">$149.99</span></span>
+          </body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(149.99);
+    });
+
+    runIfMock('should respect multi-tier priority (JSON-LD > og:price:amount > product:price:amount)', async () => {
+      const testUrl = 'https://www.example.com/multi-tier-priority';
+      const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        'name': 'Multi-Tier Item',
+        'offers': {
+          '@type': 'Offer',
+          'price': '99.00'
+        }
+      };
+
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <script type="application/ld+json">
+              ${JSON.stringify(jsonLd)}
+            </script>
+            <meta property="og:price:amount" content="88.00" />
+            <meta property="product:price:amount" content="77.00" />
+          </head>
+          <body>
+            <span class="a-price"><span class="a-offscreen">$66.00</span></span>
+          </body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBe(99.00);
+    });
+
+    runIfMock('should omit price property when price metadata is absent or invalid', async () => {
+      const testUrl = 'https://www.example.com/no-price';
+      const mockHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta property="og:title" content="Priceless Item" />
+            <meta property="og:price:amount" content="$0.00" />
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      server.use(
+        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+      );
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: testUrl }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.price).toBeUndefined();
+    });
   });
 
   it('should block private/loopback addresses under SSRF protection even if in live test mode', async () => {

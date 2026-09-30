@@ -4,7 +4,7 @@ import { env } from '@/env';
  * Retrieves the parsed list of allowed host rules from environment settings.
  * Rules are normalized to lowercase.
  */
-export function getAllowedHosts(): string[] {
+function getAllowedHosts(): string[] {
   let allowedEnv: string | undefined;
   try {
     allowedEnv = env.ALLOWED_HOSTS;

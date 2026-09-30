@@ -112,4 +112,50 @@ describe('SiteManagerPage and DragDropContainer', () => {
       { id: 'story', type: 'story', title: 'Our Story', visible: true },
     ]);
   });
+
+  it('disables Move Up on the first item and Move Down on the last item', () => {
+    render(<SiteManagerPage />);
+
+    const moveUpStoryBtn = screen.getByRole('button', { name: 'Move Our Story up' });
+    const moveDownStoryBtn = screen.getByRole('button', { name: 'Move Our Story down' });
+
+    const moveUpDetailsBtn = screen.getByRole('button', { name: 'Move Wedding Day Details up' });
+    const moveDownDetailsBtn = screen.getByRole('button', { name: 'Move Wedding Day Details down' });
+
+    expect(moveUpStoryBtn).toBeDisabled();
+    expect(moveDownStoryBtn).not.toBeDisabled();
+
+    expect(moveUpDetailsBtn).not.toBeDisabled();
+    expect(moveDownDetailsBtn).toBeDisabled();
+  });
+
+  it('reorders features and announces position updates via ARIA live region when Move Down is clicked', () => {
+    render(<SiteManagerPage />);
+
+    const moveDownStoryBtn = screen.getByRole('button', { name: 'Move Our Story down' });
+    fireEvent.click(moveDownStoryBtn);
+
+    expect(mockSaveFeatures).toHaveBeenCalledWith([
+      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: false },
+      { id: 'story', type: 'story', title: 'Our Story', visible: true },
+    ]);
+
+    const liveRegion = screen.getByRole('status');
+    expect(liveRegion).toHaveTextContent('Moved Our Story down to position 2 of 2');
+  });
+
+  it('reorders features and announces position updates via ARIA live region when Move Up is clicked', () => {
+    render(<SiteManagerPage />);
+
+    const moveUpDetailsBtn = screen.getByRole('button', { name: 'Move Wedding Day Details up' });
+    fireEvent.click(moveUpDetailsBtn);
+
+    expect(mockSaveFeatures).toHaveBeenCalledWith([
+      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: false },
+      { id: 'story', type: 'story', title: 'Our Story', visible: true },
+    ]);
+
+    const liveRegion = screen.getByRole('status');
+    expect(liveRegion).toHaveTextContent('Moved Wedding Day Details up to position 1 of 2');
+  });
 });
