@@ -2,6 +2,8 @@
 
 This repository includes a pro-grade deployment pipeline suitable for enterprise cloud migration, multi-cloud hosting, and zero-downtime schema updates.
 
+For the authoritative specification of container, database, environment variable, reverse proxy, health check, and lifecycle requirements, refer to the [Application Runtime Contract](./docs/runtime-contract.md). All hosting providers and deployment environments must satisfy this baseline contract.
+
 ## GitHub Actions Workflows
 
 We provide two pre-configured GitHub Actions workflows:

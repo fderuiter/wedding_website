@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# Authoritative Runtime Contract: docs/runtime-contract.md
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
 
