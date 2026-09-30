@@ -17,9 +17,9 @@ describe('Perimeter Host Header Filtering Middleware', () => {
   });
 
   it('allows whitelisted tenant subdomains to proceed', async () => {
-    const req = new NextRequest('http://tenant1.abbifred.com/guest/login', {
+    const req = new NextRequest('http://tenant1.wedding.example/guest/login', {
       headers: {
-        host: 'tenant1.abbifred.com',
+        host: 'tenant1.wedding.example',
       },
     });
 

@@ -2,10 +2,10 @@ import { toPublicAppConfig, isMultisiteEnabled } from '../config';
 
 const baseConfig: any = {
   id: 'global',
-  partner1Name: 'Abbi',
-  partner2Name: 'Fred',
-  brideName: 'Abbi',
-  groomName: 'Fred',
+  partner1Name: 'Jane',
+  partner2Name: 'John',
+  brideName: 'Jane',
+  groomName: 'John',
   weddingDate: new Date('2025-10-10'),
   baseUrl: 'http://localhost:3000',
   venueName: 'The Venue',
@@ -23,8 +23,8 @@ const baseConfig: any = {
   seoTitle: 'Wedding',
   seoDescription: 'Wedding site',
   faviconUrl: '/assets/favicon.png',
-  ogImageUrl: '/images/sunset-embrace.jpg',
-  seoKeywords: "Abbi and Fred's wedding, wedding website",
+  ogImageUrl: '/images/placeholder.png',
+  seoKeywords: "Jane and John's wedding, wedding website",
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
   features: [],
@@ -37,8 +37,8 @@ describe('Configuration DTO Architecture', () => {
     const publicConfig = toPublicAppConfig(baseConfig);
 
     // Assert other fields remain intact
-    expect(publicConfig.brideName).toBe('Abbi');
-    expect(publicConfig.groomName).toBe('Fred');
+    expect(publicConfig.brideName).toBe('Jane');
+    expect(publicConfig.groomName).toBe('John');
   });
 
   it('toPublicAppConfig preserves faviconUrl in the public config', () => {
@@ -90,8 +90,8 @@ describe('Configuration DTO Architecture', () => {
 
     const publicConfig: any = toPublicAppConfig(configWithSecrets);
 
-    expect(publicConfig.brideName).toBe('Abbi');
-    expect(publicConfig.seoKeywords).toBe("Abbi and Fred's wedding, wedding website");
+    expect(publicConfig.brideName).toBe('Jane');
+    expect(publicConfig.seoKeywords).toBe("Jane and John's wedding, wedding website");
     expect(publicConfig.adminPassword).toBeUndefined();
     expect(publicConfig.smtpPassword).toBeUndefined();
     expect(publicConfig.apiSecret).toBeUndefined();

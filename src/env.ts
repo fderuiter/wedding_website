@@ -29,7 +29,7 @@ const envSchema = z.object({
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
     if (hosts.length === 0) return false;
     return hosts.every(h => {
-      return /^((\*|\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
+      return /^((\*\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
     });
   }, {
     message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
@@ -91,7 +91,7 @@ if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || 
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
     POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
-    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,abbifred.com,*.abbifred.com',
+    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,

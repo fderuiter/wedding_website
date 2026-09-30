@@ -18,7 +18,12 @@ import { Button } from '@/components/ui/Button';
 function isDefaultUrl(url: string): boolean {
   try {
     const urlObj = new URL(url.includes('://') ? url : `https://${url}`);
-    return urlObj.hostname === 'abbifred.com' || urlObj.hostname.endsWith('.abbifred.com');
+    const host = urlObj.hostname.toLowerCase();
+    return (
+      host === 'abbifred.com' || host.endsWith('.abbifred.com') ||
+      host === 'wedding.example' || host.endsWith('.wedding.example') ||
+      host === 'example.com' || host.endsWith('.example.com')
+    );
   } catch {
     return false;
   }
@@ -71,9 +76,9 @@ export default function SetupWizard() {
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const urlObj = new URL(baseUrl);
-      if (urlObj.hostname === 'abbifred.com' || urlObj.hostname.endsWith('.abbifred.com')) {
-        setError('Please use your own URL, not the default abbifred.com');
+      new URL(baseUrl);
+      if (isDefaultUrl(baseUrl)) {
+        setError('Please use your own URL, not a sample or default domain.');
         return;
       }
     } catch (err) {
@@ -125,7 +130,7 @@ export default function SetupWizard() {
   };
 
   return (
-    <>
+    <main id="main-content" tabIndex={-1} className="min-h-screen py-12 flex flex-col justify-center items-center">
       <AccessibleStep isActive={!isAuthenticated || step === 1}>
         <Container>
           <Card className="max-w-md">
@@ -156,7 +161,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-xl">
             <Heading className="mb-4">Step 1: The Essentials</Heading>
-            <p className="mb-4 text-gray-600 dark:text-gray-300">Let's start with your names and when the big day is.</p>
+            <p className="mb-4 text-gray-700">Let's start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormGroup>
@@ -218,7 +223,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-2xl text-center">
             <Heading className="mb-4">Step 2: Add Content</Heading>
-            <p className="mb-6 text-gray-600 dark:text-gray-300">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
+            <p className="mb-6 text-gray-700">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
             <div className="space-y-4">
               <Button onClick={() => window.open('/admin/dashboard/wedding-party', '_blank')} variant="secondary" className="w-full py-3">
                 Manage Wedding Party (Opens in New Tab)
@@ -227,7 +232,7 @@ export default function SetupWizard() {
                 Manage Attractions (Opens in New Tab)
               </Button>
             </div>
-            <p className="mt-6 mb-4 text-sm text-gray-500 dark:text-gray-400">You can also do this later from the Admin Dashboard.</p>
+            <p className="mt-6 mb-4 text-sm text-gray-600">You can also do this later from the Admin Dashboard.</p>
             <Button onClick={() => {
               window.location.href = '/';
             }} variant="primary" className="w-full py-3">
@@ -236,6 +241,6 @@ export default function SetupWizard() {
           </Card>
         </Container>
       </AccessibleStep>
-    </>
+    </main>
   );
 }

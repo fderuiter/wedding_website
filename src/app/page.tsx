@@ -11,11 +11,17 @@ import { withPageQuery } from '@/lib/query-wrapper';
  */
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
-  const title = `${config.brideName} & ${config.groomName}'s Wedding`;
-  const description =
-    `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`;
-  const baseUrl = config.baseUrl || 'https://abbifred.com';
-  const imageUrl = `${baseUrl}/images/sunset-embrace.jpg`;
+  const title = config.brideName && config.groomName
+    ? `${config.brideName} & ${config.groomName}'s Wedding`
+    : 'Wedding Website';
+  const description = config.seoDescription || (
+    config.brideName && config.groomName
+      ? `Join ${config.brideName} and ${config.groomName} for their wedding celebration${config.venueName ? ` at ${config.venueName}` : ''}.`
+      : 'Welcome to our wedding website.'
+  );
+  const baseUrl = config.baseUrl || 'http://localhost:3000';
+  const ogImageUrl = config.ogImageUrl || '/images/placeholder.png';
+  const imageUrl = ogImageUrl.startsWith('http') ? ogImageUrl : `${baseUrl}${ogImageUrl}`;
 
   const jsonLd = {
     '@context': 'https://schema.org',
