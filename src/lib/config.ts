@@ -47,6 +47,17 @@ const fallbackAppConfig: LocalAppConfig = {
 };
 
 /**
+ * Determine if the application configuration has been initialized with custom details.
+ */
+export function isSiteInitialized(config: AppConfigDTO | null | undefined): boolean {
+  if (!config) return false;
+  if (!config.brideName || !config.groomName || !config.baseUrl) return false;
+  if (config.brideName === 'Abbigayle' && config.groomName === 'Frederick') return false;
+  if (config.baseUrl.includes('abbifred.com')) return false;
+  return true;
+}
+
+/**
  * Produce a public-safe view of the application configuration by stripping
  * sensitive setup properties and credentials from the returned configuration payload.
  *

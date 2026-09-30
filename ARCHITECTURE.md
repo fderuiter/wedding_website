@@ -89,6 +89,7 @@ flowchart LR
     node_api_admin_maintenance_import["import"]
     node_api_admin_me["me"]
     node_api_admin_settings["settings"]
+    node_api_admin_setup["setup"]
     node_api_admin_upload["upload"]
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
@@ -143,6 +144,7 @@ flowchart LR
     node_api_admin_maintenance --> node_api_admin_maintenance_import
     node_api_admin --> node_api_admin_me
     node_api_admin --> node_api_admin_settings
+    node_api_admin --> node_api_admin_setup
     node_api_admin --> node_api_admin_upload
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
@@ -193,6 +195,7 @@ flowchart LR
     class node_api_admin_maintenance_import api;
     class node_api_admin_me api;
     class node_api_admin_settings api;
+    class node_api_admin_setup api;
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;

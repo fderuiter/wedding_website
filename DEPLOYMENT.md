@@ -74,3 +74,11 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
 ## Multi-platform Builds
 
 The included `Dockerfile` and `deploy.yml` are configured for multi-platform architectures (`linux/amd64` and `linux/arm64`). The build environment includes necessary system-level libraries (`openssl`) to support the application architecture safely across platforms.
+
+## First-Run Bootstrap & Security
+
+- **No Default Passwords:** The application does not ship with universal default admin credentials.
+- **Credential Hashing:** Administrative access relies strictly on scrypt password hashing configured via `ADMIN_PASSWORD`.
+- **First-Run Initialization:** When deployed with an uninitialized database, opening the app triggers the Setup Wizard. Accessing setup requires authenticating with the configured `ADMIN_PASSWORD`.
+- **Replay Protection:** Once initial configuration (partner names, URL, venue, timezone) is persisted, `/api/admin/setup` rejects subsequent setup attempts from unauthenticated users with `403 Forbidden`.
+

@@ -2,7 +2,7 @@ import './globals.css';
 import { Geist } from 'next/font/google';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { generateMetadata } from './metadata';
-import { getAppConfig, toPublicAppConfig } from '@/lib/config';
+import { getAppConfig, toPublicAppConfig, isSiteInitialized } from '@/lib/config';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import SetupWizard from '@/components/setup/SetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -34,7 +34,7 @@ export default async function RootLayout({
 }>) {
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
-  const isUninitialized = !config.brideName || !config.groomName || !config.baseUrl;
+  const isUninitialized = !isSiteInitialized(config);
 
   return (
     <html lang="en" className={`dark ${geist.variable}`}>
