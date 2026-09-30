@@ -79,15 +79,6 @@ The application requires the following environment variables. These match the ru
 
 ---
 
-## GitHub Actions Workflows
-
-We provide two pre-configured GitHub Actions workflows in `.github/workflows/`:
-
-1. **CI Pipeline (`ci.yml`)**: Triggers on Pull Requests and pushes to `main`. It builds the application, runs documentation drift checks (`verify-env-docs.ts`, `generate-docs.ts`), executes unit tests, and runs end-to-end (e2e) Playwright tests.
-2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It automates database migrations (`npx prisma migrate deploy`) and builds multi-platform Docker container images (`linux/amd64` and `linux/arm64`).
-
----
-=======
 ## 🏗️ Architecture & Responsibilities
 
 The automated release architecture consists of four distinct, modular workflows:
@@ -185,21 +176,46 @@ To ensure zero downtime and prevent application outages:
 3. **Container Entrypoint**:
    - Application containers default to skipping automatic migrations (`RUN_MIGRATIONS=false`).
    - Migrations are managed explicitly via `db-migrate.yml` or dedicated release jobs to prevent concurrent migration race conditions across multi-replica deployments.
->>>>>>> 060efbe (ci: refactor deployment pipeline into explicit decoupled workflows)
 
-## Database Migrations & Zero-Downtime Releases
+## Database Migrations & Portable PostgreSQL Contract
+
+The application defines a strict **PostgreSQL Database Contract**. It depends solely on standard PostgreSQL capabilities and is completely portable across database providers and self-hosted environments.
 
 Database migrations are run automatically using `npx prisma migrate deploy` in the `db-migrate.yml` workflow *before* the new application code goes live. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts. Before migrations are executed, a pre-migration backwards compatibility check (`npm run lint:migrations`) runs to verify zero-downtime safety.
 
-### Expand-and-Contract Migration Strategy
+### Minimum Supported Database Specification
+- **Supported Database**: PostgreSQL 14 or higher (the CI test suite and standard container setup use `postgres:15-alpine`).
+- **ORM / Client**: Prisma ORM with `@prisma/adapter-pg` driver adapter and `pg` pool.
 
-Because schema migrations run before updated application container instances deploy, destructive SQL DDL operations (such as `DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, or `DROP CONSTRAINT`) can break active application containers expecting the previous schema.
+### Connection String Expectations
+- **`DATABASE_URL`** (Required): The primary connection string used by the Next.js runtime application to connect to PostgreSQL.
+  - **Standard URI Format**: `postgresql://[user]:[password]@[host]:[port]/[database]?sslmode=[mode]`
+  - **Example (Local PostgreSQL)**: `postgresql://wedding:wedding123@localhost:5432/wedding`
+  - **Example (Cloud Host with SSL)**: `postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/wedding?sslmode=require`
+- **`POSTGRES_URL_NON_POOLING`** (Optional / Migration Shadow DB): The direct, unpooled connection string used for shadow database creation or direct schema migrations when a connection pooler is placed in front of `DATABASE_URL`.
+  - **Example**: `postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding_shadow?sslmode=require`
 
-To ensure safe, zero-downtime releases, schema modifications must follow the **Expand-and-Contract** pattern across three phases:
+### SSL/TLS Configuration Behavior
+- **Default Behavior**: Standard `pg.Pool` automatically interprets SSL parameters passed in the `DATABASE_URL` query string.
+- **`sslmode` Options**:
+  - `sslmode=require`: Mandatory for cloud-hosted database providers (e.g., AWS RDS, GCP Cloud SQL, Supabase, Neon, Railway, Azure DB for PostgreSQL).
+  - `sslmode=prefer` / `sslmode=disable`: Typical for local Docker or development environments.
+  - Custom TLS Certificates: If your host requires custom CA certificates, configure `NODE_EXTRA_CA_CERTS` or pass formatted SSL parameters according to node-postgres specifications.
 
-1. **Expand Phase**: Add new tables, columns, or optional fields alongside existing ones without modifying or dropping active columns. Application code is deployed to begin writing to both old and new schema locations.
-2. **Transition Phase**: Application code is updated to read from the new location while maintaining dual-writes or graceful fallbacks. Backfill historical data as necessary.
-3. **Contract Phase**: Once all application instances are using the new schema and no active code references old columns or tables, a final contract migration is deployed to clean up unused database structures.
+### Connection Pooling vs. Direct Migration Connections
+- **Application Runtime (`DATABASE_URL`)**:
+  - Can connect through transaction-level or session-level connection poolers (e.g., PgBouncer, RDS Proxy, Supabase Pooler, Neon Connection Pooler).
+  - Uses connection pooling managed by `pg.Pool` with `@prisma/adapter-pg` to minimize connection overhead during serverless / containerized scaling.
+- **Prisma Migrations (`npx prisma migrate deploy` / `dev`)**:
+  - **Requirement**: Schema migration commands require **advisory locks** and session-level state that transaction-mode connection poolers (like PgBouncer in transaction mode) do not support.
+  - Always point migration runners or `POSTGRES_URL_NON_POOLING` directly to a direct/unpooled PostgreSQL endpoint or session-mode pooler port.
+
+### Prisma Migration Lifecycle
+1. **Local Development**:
+   - Run `npm run migrate:dev` (`prisma migrate dev`) to generate new SQL migration files in `prisma/migrations/` and synchronize your development schema.
+2. **Production Pipeline**:
+   - Migrations are automatically run in CI/CD (`deploy.yml` or container entrypoint) via `npx prisma migrate deploy` *before* new application code goes live.
+   - `prisma migrate deploy` checks applied migrations in the `_prisma_migrations` table and applies any pending migrations in sequential order.
 
 ### Migration Backwards Compatibility Linter
 
@@ -211,6 +227,45 @@ If a destructive migration is intentionally required (e.g., during a contract cl
 -- allow-destructive: Contract phase dropping deprecated legacy_column after code migration
 ALTER TABLE "User" DROP COLUMN "legacy_column";
 ```
+
+### Backup & Restore Guidelines
+Before applying schema migrations to production, always perform a database snapshot or logical backup:
+- **Logical Dump (`pg_dump`)**:
+  ```bash
+  pg_dump -h [host] -U [user] -d [dbname] -F c -b -v -f backup_$(date +%Y%m%d_%H%M%S).dump
+  ```
+- **Logical Restore (`pg_restore`)**:
+  ```bash
+  pg_restore -h [host] -U [user] -d [dbname] -v -c backup_YYYYMMDD_HHMMSS.dump
+  ```
+
+### Rollback Limitations & Compensating Migrations
+- **Forward-Only Migration Policy**: Prisma Migrate does not generate automatic `down` migrations or support automated rollbacks for applied migration files.
+- **Handling Failed Migrations**:
+  1. Do NOT manually edit or remove migration files that have already been executed in production.
+  2. Create a compensating forward migration using `prisma migrate diff` or manual SQL to reverse desired changes safely.
+  3. Mark failed migration states resolved if needed using `npx prisma migrate resolve --rolled-back [migration_name]`.
+
+### Zero-Downtime Schema Expansion Guidance (Expand-Migrate-Contract)
+For non-breaking production schema updates without service interruption, follow the **Expand-Migrate-Contract** pattern:
+1. **Expand**:
+   - Add new tables, nullable columns, or optional fields in a Prisma migration.
+   - Do NOT drop columns, rename existing columns, or add non-null constraints without defaults in this phase.
+2. **Migrate**:
+   - Deploy application code that reads from/writes to both old and new schema fields (dual-writing).
+   - Execute a data backfill script (`npm run db:seed` or custom backfill) to populate historic data into new fields.
+3. **Contract**:
+   - Once all running instances consume the new fields, deploy a subsequent migration that safely removes deprecated columns/tables.
+
+### Portable Provider Examples
+The application works with any standard PostgreSQL server. Examples of compatible managed providers and hosting options include (labeled as examples):
+- **Local PostgreSQL**: Docker container (`postgres:15-alpine`), native installation.
+- **Neon**: Serverless PostgreSQL with pooling and direct connection strings.
+- **Supabase**: Managed PostgreSQL with direct port 5432 and pooled port 6543 endpoints.
+- **Railway**: Containerized PostgreSQL service.
+- **Amazon RDS / Aurora PostgreSQL**: Enterprise managed database.
+- **Google Cloud SQL for PostgreSQL**: Managed Cloud Run compatible database.
+- **Azure Database for PostgreSQL**: Flexible server deployment.
 
 ---
 

@@ -19,7 +19,7 @@ const techStack = [
   { name: 'React Three Fiber, Drei', type: '3D Library' },
   { name: 'Fuse.js', type: 'Search Library' },
   { name: 'Node.js API Routes', type: 'Backend' },
-  { name: 'Prisma & PostgreSQL (Neon)', type: 'Data Layer' },
+  { name: 'Prisma & PostgreSQL', type: 'Data Layer' },
 ];
 
 const sectionVariants = {
@@ -109,7 +109,7 @@ const ProjectInfo = () => {
             <li><strong>Landing Page:</strong> A responsive landing page featuring a 3D heart animation.</li>
             <li><strong>Registry Page:</strong> Users can browse, search, and filter gifts with an accompanying administrative interface.</li>
             <li><strong>API Endpoints:</strong> Serverless routes that interact with the database and include a basic web scraper.</li>
-            <li><strong>Data Layer:</strong> Powered by Prisma with a PostgreSQL database hosted on Neon.</li>
+            <li><strong>Data Layer:</strong> Powered by Prisma with portable PostgreSQL database support (compatible with local PostgreSQL, Neon, Supabase, RDS, etc.).</li>
             <li><strong>Styling:</strong> Styled using Tailwind CSS.</li>
             <li><strong>Open Source:</strong> Distributed under the GNU AGPLv3 license.</li>
           </ul>
