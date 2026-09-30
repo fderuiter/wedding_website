@@ -58,7 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
     keywords: dynamicKeywords,
     authors: [{ name: config.groomName, url: config.baseUrl }],
     creator: config.groomName,
-    publisher: 'Vercel',
+    publisher: config.brideName && config.groomName ? `${config.brideName} & ${config.groomName}` : (config.groomName || config.brideName),
     icons: {
       icon: siteConfig.favicon,
       shortcut: siteConfig.favicon,

@@ -61,6 +61,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     let ldDescription: string | undefined;
     let ldImage: string | undefined;
     let ldImageAlt: string | undefined;
+    let ldPrice: number | undefined;
 
     const ldScripts = root.querySelectorAll('script[type="application/ld+json"]');
     for (const script of ldScripts) {
@@ -84,6 +85,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
                 ldImageAlt = parsedImg.alt;
               }
             }
+          }
+          if (ldPrice === undefined) {
+            ldPrice = extractLdPrice(product);
           }
         }
       } catch (err) {
@@ -111,6 +115,38 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       vendorTitle = root.querySelector('h1[data-test="product-title"], h1.pdp-title')?.textContent?.trim();
     } else if (isCostcoDomain) {
       vendorTitle = root.querySelector('h1[data-qa="product-title"], .product-h1, h1.product-title')?.textContent?.trim();
+    }
+
+    // Multi-tier price extraction strategy
+    let price: number | undefined = ldPrice;
+
+    if (price === undefined) {
+      const ogPrice = getMetaContent('og:price:amount');
+      price = parsePrice(ogPrice);
+    }
+
+    if (price === undefined) {
+      const productPrice = getMetaContent('product:price:amount');
+      price = parsePrice(productPrice);
+    }
+
+    if (price === undefined) {
+      const twitterLabel1 = getMetaContent('twitter:label1');
+      if (twitterLabel1 && twitterLabel1.toLowerCase().includes('price')) {
+        const twitterData1 = getMetaContent('twitter:data1');
+        price = parsePrice(twitterData1);
+      }
+    }
+
+    if (price === undefined) {
+      const amazonPriceElements = root.querySelectorAll('.a-price .a-offscreen');
+      for (const el of amazonPriceElements) {
+        const parsed = parsePrice(el.textContent);
+        if (parsed !== undefined) {
+          price = parsed;
+          break;
+        }
+      }
     }
 
     // Vendor specific description heuristics
@@ -185,6 +221,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     const scrapedData = {
       name: name,
       description: description,
+      ...(price !== undefined ? { price } : {}),
       imageUrl: image,
       imageAlt: imageAlt,
       vendorUrl: url,
@@ -276,3 +313,67 @@ function parseLdImage(imageField: any): { url: string; alt?: string } | null {
   }
   return null;
 }
+
+export function parsePrice(value: string | number | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined;
+
+  let num: number;
+  if (typeof value === 'number') {
+    num = value;
+  } else if (typeof value === 'string') {
+    const cleaned = value.replace(/,/g, '');
+    const match = cleaned.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return undefined;
+    num = parseFloat(match[0]);
+  } else {
+    return undefined;
+  }
+
+  if (isNaN(num) || !isFinite(num) || num <= 0) {
+    return undefined;
+  }
+
+  return Math.round(num * 100) / 100;
+}
+
+function extractPriceFromOffer(offer: any): number | undefined {
+  if (!offer || typeof offer !== 'object') return undefined;
+
+  let price = parsePrice(offer.price);
+  if (price !== undefined) return price;
+
+  price = parsePrice(offer.lowPrice);
+  if (price !== undefined) return price;
+
+  if (offer.priceSpecification) {
+    const specs = Array.isArray(offer.priceSpecification)
+      ? offer.priceSpecification
+      : [offer.priceSpecification];
+    for (const spec of specs) {
+      if (spec && typeof spec === 'object') {
+        price = parsePrice(spec.price);
+        if (price !== undefined) return price;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function extractLdPrice(product: any): number | undefined {
+  if (!product || typeof product !== 'object') return undefined;
+
+  if (product.offers) {
+    const offers = Array.isArray(product.offers) ? product.offers : [product.offers];
+    for (const offer of offers) {
+      const price = extractPriceFromOffer(offer);
+      if (price !== undefined) return price;
+    }
+  }
+
+  const directPrice = parsePrice(product.price) ?? parsePrice(product.lowPrice);
+  if (directPrice !== undefined) return directPrice;
+
+  return undefined;
+}
+

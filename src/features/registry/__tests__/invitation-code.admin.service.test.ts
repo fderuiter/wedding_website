@@ -8,6 +8,7 @@ describe('InvitationCodeAdminService', () => {
     mockPrismaClient = {
       invitationCode: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
@@ -88,6 +89,87 @@ describe('InvitationCodeAdminService', () => {
       await expect(
         (service as any).preSave(data, mockPrismaClient)
       ).rejects.toThrow('Failed to generate a unique invitation code.');
+    });
+  });
+
+  describe('importBatch', () => {
+    beforeEach(() => {
+      mockPrismaClient.snapshotVersion = {
+        create: jest.fn().mockResolvedValue({ id: 'snap-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      };
+    });
+
+    it('imports batch of valid guest records successfully', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
+      mockPrismaClient.invitationCode.create.mockImplementation((args: any) =>
+        Promise.resolve({ id: 'new-id', ...args.data })
+      );
+
+      const records = [
+        { guestName: 'John Doe', code: 'JOHN100' },
+        { guestName: 'Jane Smith', code: '' },
+      ];
+
+      const result = await service.importBatch(records, 'skip');
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
+      expect(result.imported).toBe(2);
+      expect(result.skipped).toBe(0);
+      expect(mockPrismaClient.invitationCode.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips duplicate codes when collisionStrategy is skip', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
+      ]);
+
+      const records = [
+        { guestName: 'New Guest 1', code: 'EXISTING1' },
+        { guestName: 'New Guest 2', code: 'NEWCODE1' },
+      ];
+
+      const result = await service.importBatch(records, 'skip');
+
+      expect(result.imported).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(mockPrismaClient.invitationCode.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('updates existing record when collisionStrategy is update', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
+      ]);
+      mockPrismaClient.invitationCode.update.mockResolvedValue({ id: '1', guestName: 'Updated Name' });
+
+      const records = [
+        { guestName: 'Updated Name', code: 'EXISTING1' },
+      ];
+
+      const result = await service.importBatch(records, 'update');
+
+      expect(result.updated).toBe(1);
+      expect(result.imported).toBe(0);
+      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: { guestName: 'Updated Name' },
+      });
+    });
+
+    it('throws error when collisionStrategy is reject and duplicate code is detected', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
+      ]);
+
+      const records = [
+        { guestName: 'Conflict Guest', code: 'EXISTING1' },
+      ];
+
+      await expect(service.importBatch(records, 'reject')).rejects.toThrow(
+        'Duplicate invitation code found: EXISTING1'
+      );
     });
   });
 });

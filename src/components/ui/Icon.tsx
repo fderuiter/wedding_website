@@ -14,6 +14,7 @@ export type IconName =
   | 'ArrowLeft'
   | 'ExternalLink'
   | 'ArrowUp'
+  | 'ArrowDown'
   | 'ChevronDown'
   | 'SearchX'
   | 'Sun'
@@ -146,6 +147,13 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
         <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
           <path d="m5 12 7-7 7 7" />
           <path d="M12 19V5" />
+        </svg>
+      );
+    case 'ArrowDown':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M12 5v14" />
+          <path d="m19 12-7 7-7-7" />
         </svg>
       );
     case 'ChevronDown':

@@ -155,11 +155,24 @@ describe('Registry API routes', () => {
   });
 
   describe('GET /api/registry/items', () => {
-    it('returns items on success', async () => {
-      const items = [{ id: '1', name: 'Item' }];
+    it('returns items without contributors for public guest requests', async () => {
+      mockIsAdminRequest.mockResolvedValue(false);
+      const items = [{ id: '1', name: 'Item', contributors: [] }];
       mockGetAllItems.mockResolvedValue(items);
       const res = await getItems();
       expect(res.status).toBe(200);
+      expect(mockGetAllItems).toHaveBeenCalledWith({ includeContributors: false });
+      const json = await res.json();
+      expect(json.data).toEqual(items);
+    });
+
+    it('requests contributors for administrative requests', async () => {
+      mockIsAdminRequest.mockResolvedValue(true);
+      const items = [{ id: '1', name: 'Item', contributors: [{ name: 'John', amount: 50, date: '2026-01-01' }] }];
+      mockGetAllItems.mockResolvedValue(items);
+      const res = await getItems();
+      expect(res.status).toBe(200);
+      expect(mockGetAllItems).toHaveBeenCalledWith({ includeContributors: true });
       const json = await res.json();
       expect(json.data).toEqual(items);
     });
@@ -179,12 +192,26 @@ describe('Registry API routes', () => {
     const mockParams = Promise.resolve({ id: itemId });
 
     describe('GET', () => {
-      it('returns item when found', async () => {
-        const item = { id: itemId, name: 'Lamp' };
+      it('returns item when found for guest request', async () => {
+        mockIsAdminRequest.mockResolvedValue(false);
+        const item = { id: itemId, name: 'Lamp', contributors: [] };
         mockGetItemById.mockResolvedValue(item);
         const req = new Request(baseUrl);
         const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
+        expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: false });
+        const json = await res.json();
+        expect(json.data).toEqual(item);
+      });
+
+      it('returns item with contributors when found for admin request', async () => {
+        mockIsAdminRequest.mockResolvedValue(true);
+        const item = { id: itemId, name: 'Lamp', contributors: [{ name: 'Jane', amount: 100, date: '2026-01-01' }] };
+        mockGetItemById.mockResolvedValue(item);
+        const req = new Request(baseUrl);
+        const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
+        expect(res.status).toBe(200);
+        expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: true });
         const json = await res.json();
         expect(json.data).toEqual(item);
       });
