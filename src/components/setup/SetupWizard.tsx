@@ -20,7 +20,6 @@ function isDefaultUrl(url: string): boolean {
     const urlObj = new URL(url.includes('://') ? url : `https://${url}`);
     const host = urlObj.hostname.toLowerCase();
     return (
-      host === 'abbifred.com' || host.endsWith('.abbifred.com') ||
       host === 'wedding.example' || host.endsWith('.wedding.example') ||
       host === 'example.com' || host.endsWith('.example.com')
     );

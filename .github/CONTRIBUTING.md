@@ -28,7 +28,25 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     ```
 
 5. **Make Your Changes:** Write your code, fix the bug, improve the docs. Try to stick to the existing code style (TypeScript, React, Tailwind utility classes). Run `npm run lint` if you want to check for basic style issues (though it's not super strict right now).
-6. **Test Your Changes:** If you added a feature or fixed a bug, make sure it works! Manual testing is fine. If you're feeling *really* ambitious, you could even add a test (see the `*.test.tsx` files for examples), but no pressure.
+6. **Test Your Changes & Run Quality Gates:** Before submitting your PR, ensure all quality gates pass locally. You can run all checks at once or individual commands:
+
+   - **Run All Quality Checks:**
+     ```bash
+     npm run quality
+     # or: npm run check:all
+     ```
+
+   - **Individual Quality Checks:**
+     - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
+     - `npm run check:links` - Validate relative documentation links across Markdown files.
+     - `npm run check:prisma` - Validate Prisma schema structure.
+     - `npm run check:standalone` - Verify Next.js standalone build & container portability.
+     - `npm run check:env-docs` - Ensure environment variables match `.env.example` documentation.
+     - `npm run typecheck` - Check TypeScript types across the project.
+     - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
+     - `npm test` - Run Jest unit and integration tests.
+     - `npx playwright test` - Run Playwright E2E and smoke tests.
+     - `npm run test:a11y` - Run accessibility checks and generate summary reports.
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash

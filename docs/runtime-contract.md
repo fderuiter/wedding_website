@@ -44,7 +44,7 @@ All runtime configuration is supplied via environment variables. The runtime val
 |---|---|---|
 | `DATABASE_URL` | Primary PostgreSQL connection URL | Must be a valid `postgresql://` or `postgres://` connection string. |
 | `ADMIN_PASSWORD` | Scrypt hash for admin authentication | Must match format `scrypt:[saltBase64]:[keyBase64]` (generated via `scripts/generate-password-hash.mjs`). Plaintext passwords are rejected. |
-| `ALLOWED_HOSTS` | Whitelisted host domains for request header validation | Comma-separated list of valid domain names or wildcard patterns (e.g. `localhost,127.0.0.1,abbifred.com,*.abbifred.com`). |
+| `ALLOWED_HOSTS` | Whitelisted host domains for request header validation | Comma-separated list of valid domain names or wildcard patterns (e.g. `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 
 ### Optional Infrastructure & Feature Variables
 | Variable | Default Value | Description |
