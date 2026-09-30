@@ -1,5 +1,8 @@
 name: Deploy Pipeline
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -8,16 +11,22 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Verify mandatory secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+          if [ -z "$DATABASE_URL" ]; then
             echo "ERROR: Missing mandatory configuration secret: DATABASE_URL."
             exit 1
           fi
-          if [[ ! "${{ secrets.DATABASE_URL }}" =~ ^postgres(ql)?:// ]]; then
+          if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
             echo "ERROR: Invalid format for DATABASE_URL. Must start with postgres:// or postgresql://"
             exit 1
           fi
@@ -79,14 +88,17 @@ jobs:
 
       - name: Verify external registry secrets
         id: registry_check
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ] || [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
             echo "ERROR: Missing external registry credentials (DOCKERHUB_USERNAME and/or DOCKERHUB_TOKEN). Falling back to local-only build with default tag."
             echo "push=false" >> $GITHUB_OUTPUT
             echo "tags=my-app:latest" >> $GITHUB_OUTPUT
           else
             echo "push=true" >> $GITHUB_OUTPUT
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/my-app:${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest" >> $GITHUB_OUTPUT
+            echo "tags=${DOCKERHUB_USERNAME}/my-app:${{ github.sha }},${DOCKERHUB_USERNAME}/my-app:latest" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up QEMU
@@ -103,11 +115,22 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker Image
-        uses: docker/build-push-action@v4
+        id: build_image
+        uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: ${{ steps.registry_check.outputs.push == 'true' }}
           tags: ${{ steps.registry_check.outputs.tags }}
+          provenance: true
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Attest Build Provenance
+        if: steps.registry_check.outputs.push == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: index.docker.io/${{ secrets.DOCKERHUB_USERNAME }}/my-app
+          subject-digest: ${{ steps.build_image.outputs.digest }}
+          push-to-registry: true
