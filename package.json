@@ -29,7 +29,8 @@
     "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "scaffold": "node scripts/scaffold-feature.mjs",
-    "prepare": "node scripts/install-git-hooks.js"
+    "prepare": "node scripts/install-git-hooks.js",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1102.0",
