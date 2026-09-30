@@ -3,14 +3,16 @@ import type { IContentRepository } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
+import { isMultisiteEnabled } from '@/lib/config';
 
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
-    let config = await this.client.appConfig.findUnique({ where: { id: configIdOrSubdomain } });
-    if (!config) {
-      config = await this.client.appConfig.findUnique({ where: { subdomain: configIdOrSubdomain } });
+    const target = isMultisiteEnabled() ? configIdOrSubdomain : 'global';
+    let config = await this.client.appConfig.findUnique({ where: { id: target } });
+    if (!config && isMultisiteEnabled()) {
+      config = await this.client.appConfig.findUnique({ where: { subdomain: target } });
     }
     if (!config) return [];
     
@@ -19,10 +21,11 @@ export class ContentRepository implements IContentRepository {
   }
 
   async updateFeatures(features: any[], author: string = 'System', configIdOrSubdomain: string = 'global'): Promise<AppConfigDTO> {
+    const targetKey = isMultisiteEnabled() ? configIdOrSubdomain : 'global';
     return executeInTransaction(this.client, async (tx) => {
-      let config = await tx.appConfig.findUnique({ where: { id: configIdOrSubdomain } });
-      if (!config) {
-        config = await tx.appConfig.findUnique({ where: { subdomain: configIdOrSubdomain } });
+      let config = await tx.appConfig.findUnique({ where: { id: targetKey } });
+      if (!config && isMultisiteEnabled()) {
+        config = await tx.appConfig.findUnique({ where: { subdomain: targetKey } });
       }
       const targetId = config ? config.id : 'global';
       const previous = await tx.appConfig.findUnique({ where: { id: targetId } });

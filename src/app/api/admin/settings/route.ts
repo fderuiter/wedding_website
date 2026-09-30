@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAppConfig, toPublicAppConfig } from '@/lib/config';
+import { getAppConfig, toPublicAppConfig, isMultisiteEnabled } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -14,20 +14,28 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const subdomain = url.searchParams.get('subdomain');
 
   if (list === 'true') {
+    if (!isMultisiteEnabled()) {
+      const globalConfig = await getAppConfig('global');
+      return NextResponse.json([toPublicAppConfig(globalConfig)]);
+    }
     const allConfigs = await prisma.appConfig.findMany({
       orderBy: { createdAt: 'desc' }
     });
     return NextResponse.json(allConfigs.map(c => toPublicAppConfig(AppConfigSchema.parse(c))));
   }
 
-  const target = id || subdomain || undefined;
+  const target = isMultisiteEnabled() ? (id || subdomain || undefined) : 'global';
   const config = await getAppConfig(target);
   return NextResponse.json(toPublicAppConfig(config));
 });
 
 export const PUT = withApiMiddleware(async (req: NextRequest) => {
   const url = new URL(req.url);
-  const targetId = url.searchParams.get('id') || 'global';
+  const requestedId = url.searchParams.get('id') || 'global';
+  if (!isMultisiteEnabled() && requestedId !== 'global') {
+    throw new ApiError(400, 'Multi-site features are disabled. Set MULTISITE_ENABLED=true to enable profile management.');
+  }
+  const targetId = isMultisiteEnabled() ? requestedId : 'global';
   const data = await req.json();
 
   const parseResult = UpdateAppConfigSchema.safeParse(data);
@@ -114,6 +122,10 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
 });
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
+  if (!isMultisiteEnabled()) {
+    throw new ApiError(400, 'Multi-site features are disabled. Set MULTISITE_ENABLED=true to enable profile management.');
+  }
+
   const data = await req.json();
 
   if (data.subdomain) {

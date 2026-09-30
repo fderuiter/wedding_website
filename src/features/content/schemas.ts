@@ -106,6 +106,7 @@ const FeatureSchema = z.object({
 export const AppConfigSchema = z.object({
   id: z.string(),
   subdomain: z.string().nullable().optional(),
+  multisiteEnabled: z.boolean().optional(),
   brideName: z.string(),
   groomName: z.string(),
   weddingDate: z.date(),
