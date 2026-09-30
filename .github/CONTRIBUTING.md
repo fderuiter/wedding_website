@@ -49,9 +49,14 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
 10. **Wait Patiently:** I'll review the PR as soon as I can. I might ask for changes or clarification. Once it's approved, I'll merge it in. You're a contributor!
 
-## A Note on Documentation
+## A Note on Documentation & Upstream Compatibility
 
-We are actively working to improve the documentation for this project. If you make a change that requires a documentation update, please make the corresponding change to the documentation as part of your pull request.
+We treat upstream compatibility as a core feature of this template. If your pull request introduces changes that affect downstream adopters (such as database migrations, configuration schema changes, environment variables, or breaking changes):
+
+1. **Categorize Changes**: Check the appropriate categories in the PR template (🚀 Application, 🗄️ Schema, ⚙️ Configuration, 🐳 Deployment, ⚠️ Breaking Change).
+2. **Flag Adopter Action**: Explicitly flag whether the change requires downstream adopter action (`Adopter Action Required: Yes | No`).
+3. **Migration Instructions**: Include clear, step-by-step migration instructions in the PR description if database migrations, environment variable additions, or breaking changes are involved.
+4. **Docs Sync**: Keep documentation in sync. For details on versioning guidelines and release categorization, refer to [docs/versioning.md](../docs/versioning.md) and [docs/upgrading.md](../docs/upgrading.md).
 
 ## Shared Code and Reusability Guidelines
 

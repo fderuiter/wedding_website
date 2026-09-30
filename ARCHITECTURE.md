@@ -334,6 +334,16 @@ Any new shared UI component/primitive added to `src/components/ui/` must adhere 
    * Every new shared UI primitive must have a matching unit test file inside the respective `__tests__` directory (e.g., `src/components/ui/__tests__/<Component>.test.tsx`).
    * Unit tests must verify proper rendering, prop-based configuration, custom ref forwarding, and interactive behavior (e.g., fire events).
 
+## Upstream Compatibility & Downstream Upgrade Architecture
+
+To treat upstream compatibility as a product feature for downstream template adopters, the architecture enforces strict separation between application code, personal content, and deployment configuration:
+
+- **Personal Content Isolation**: Couple details, venue information, story text, wedding party members, registry items, and photos reside in PostgreSQL database models (`AppConfig`, `Media`, `RegistryItem`, `WeddingPartyMember`, `ContentNode`). Avoid hardcoding personal details into React page components (`src/app/` or `src/features/`).
+- **Deployment Isolation**: Provider configurations and secret credentials are injected via environment variables (`DATABASE_URL`, `ADMIN_PASSWORD`, etc.) using a provider-neutral container setup.
+- **Database Schema Evolution**: Schema updates are managed via immutable Prisma migration scripts (`prisma/migrations/`). Downstream adopters apply updates via `npm run migrate:deploy` (`prisma migrate deploy`), preserving custom database records.
+- **Configuration Schema Versioning**: `AppConfig` schema changes utilize Zod default value fallbacks (`src/features/content/schemas.ts`) to ensure non-destructive upgrades for existing database instances.
+- **Detailed Documentation**: See [docs/upgrading.md](./docs/upgrading.md) for the downstream workflow and [docs/versioning.md](./docs/versioning.md) for semantic versioning policies.
+
 ## System Configuration
 
 The system uses a centrally defined configuration schema to validate runtime settings.
