@@ -10,6 +10,14 @@ The application is composed of three main parts:
 2.  **Backend:** Serverless Route Handlers built with Next.js App Router.
 3.  **Database:** A PostgreSQL database managed with Prisma ORM.
 
+## Deployment Architecture & Single-Site Default
+
+The default supported architecture is **one deployment = one wedding site**:
+- **Single Canonical Config**: Every deployment loads a single canonical configuration (`id: "global"`).
+- **Simplified Setup**: No wildcard DNS, tenant concepts, or subdomain routing are required for standard setups.
+- **Provider-Neutral Host Filtering**: Strict host and `X-Forwarded-Host` validation prevents host header injection and HTTP host spoofing without binding site data to incoming Host headers.
+- **Optional Multi-Site Module**: Multi-profile management and subdomain-based routing can be explicitly enabled via `MULTISITE_ENABLED=true` for advanced setups.
+
 ## Environment Specifications
 
 For detailed runtime requirements, host configuration, environment variable specifications, and lifecycle expectations, see the authoritative [Application Runtime Contract](./docs/runtime-contract.md).
@@ -335,6 +343,7 @@ The system uses a centrally defined configuration schema to validate runtime set
 |---|---|---|
 | `id` | `string` | Configuration field for id |
 | `subdomain` | `optional` | Configuration field for subdomain |
+| `multisiteEnabled` | `optional` | Configuration field for multisiteEnabled |
 | `brideName` | `string` | Configuration field for brideName |
 | `groomName` | `string` | Configuration field for groomName |
 | `weddingDate` | `date` | Configuration field for weddingDate |

@@ -1,4 +1,4 @@
-import { toPublicAppConfig } from '../config';
+import { toPublicAppConfig, isMultisiteEnabled } from '../config';
 
 const baseConfig: any = {
   id: 'global',
@@ -96,5 +96,29 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.stripeSecretKey).toBeUndefined();
     expect(publicConfig.databaseUrlCredentials).toBeUndefined();
     expect(publicConfig.authToken).toBeUndefined();
+  });
+});
+
+describe('Single-Site vs Multi-Site Config Resolution', () => {
+  const originalEnv = process.env.MULTISITE_ENABLED;
+
+  afterEach(() => {
+    process.env.MULTISITE_ENABLED = originalEnv;
+  });
+
+  it('isMultisiteEnabled returns false by default', () => {
+    delete process.env.MULTISITE_ENABLED;
+    expect(isMultisiteEnabled()).toBe(false);
+  });
+
+  it('isMultisiteEnabled returns true when MULTISITE_ENABLED=true', () => {
+    process.env.MULTISITE_ENABLED = 'true';
+    expect(isMultisiteEnabled()).toBe(true);
+  });
+
+  it('toPublicAppConfig includes multisiteEnabled flag', () => {
+    process.env.MULTISITE_ENABLED = 'false';
+    const publicConfig = toPublicAppConfig(baseConfig);
+    expect(publicConfig.multisiteEnabled).toBe(false);
   });
 });
