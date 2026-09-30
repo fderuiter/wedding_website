@@ -69,7 +69,7 @@ To deploy your containerized Next.js application to **Google Cloud Run**, follow
 
 ## Database Migrations
 
-Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application code goes live. This ensures zero-downtime compatibility and prevents the new container instances from starting with an outdated schema.
+Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application container image is deployed. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts.
 
 ## Multi-platform Builds
 
