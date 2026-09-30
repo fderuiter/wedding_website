@@ -122,7 +122,7 @@ jest.mock('three', () => {
   };
 });
 
-const HeartPage = () => <HeartClient brideName="Abbi" groomName="Fred" />;
+const HeartPage = () => <HeartClient partner1Name="Abbi" partner2Name="Fred" brideName="Abbi" groomName="Fred" />;
 
 describe('HeartPage', () => {
   beforeEach(() => {
@@ -222,6 +222,8 @@ describe('HeartPage', () => {
   it('should pass config names from getAppConfig to HeartClient', async () => {
     // Mock getAppConfig to return sentinel values
     const mockConfig = {
+      partner1Name: 'SentinelA',
+      partner2Name: 'SentinelB',
       brideName: 'SentinelA',
       groomName: 'SentinelB',
     };

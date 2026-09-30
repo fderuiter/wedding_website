@@ -20,8 +20,10 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
 
   if (version.entityType === 'AppConfig') {
     const data = {
-      brideName: snapshotData.brideName ?? '',
-      groomName: snapshotData.groomName ?? '',
+      partner1Name: snapshotData.partner1Name ?? snapshotData.brideName ?? '',
+      partner2Name: snapshotData.partner2Name ?? snapshotData.groomName ?? '',
+      brideName: snapshotData.brideName ?? snapshotData.partner1Name ?? '',
+      groomName: snapshotData.groomName ?? snapshotData.partner2Name ?? '',
       weddingDate: snapshotData.weddingDate ? new Date(snapshotData.weddingDate) : new Date(),
       baseUrl: snapshotData.baseUrl ?? '',
       venueName: snapshotData.venueName ?? '',

@@ -65,6 +65,8 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
   const updatedConfig = await prisma.appConfig.update({
     where: { id: targetId },
     data: {
+      partner1Name: validData.partner1Name,
+      partner2Name: validData.partner2Name,
       brideName: validData.brideName,
       groomName: validData.groomName,
       subdomain: validData.subdomain || null,
@@ -140,8 +142,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const newId = data.id || `profile-${Math.random().toString(36).substr(2, 9)}`;
 
   const parseResult = UpdateAppConfigSchema.safeParse({
-    brideName: data.brideName ?? 'Bride',
-    groomName: data.groomName ?? 'Groom',
+    partner1Name: data.partner1Name ?? data.brideName ?? 'Partner 1',
+    partner2Name: data.partner2Name ?? data.groomName ?? 'Partner 2',
+    brideName: data.brideName ?? data.partner1Name ?? 'Partner 1',
+    groomName: data.groomName ?? data.partner2Name ?? 'Partner 2',
     weddingDate: data.weddingDate ?? new Date().toISOString(),
     baseUrl: data.baseUrl ?? '',
     venueName: data.venueName ?? 'TBD Venue',
@@ -178,6 +182,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const createdConfig = await prisma.appConfig.create({
     data: {
       id: newId,
+      partner1Name: validData.partner1Name,
+      partner2Name: validData.partner2Name,
       brideName: validData.brideName,
       groomName: validData.groomName,
       subdomain: validData.subdomain || null,

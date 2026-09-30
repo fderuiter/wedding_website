@@ -3,9 +3,11 @@ import { coordinateSchema } from '@/utils/validation';
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 
-export const UpdateAppConfigSchema = z.object({
-  brideName: z.string(),
-  groomName: z.string(),
+export const RawUpdateAppConfigSchema = z.object({
+  partner1Name: z.string().optional(),
+  partner2Name: z.string().optional(),
+  brideName: z.string().optional(),
+  groomName: z.string().optional(),
   subdomain: z.string().nullable().optional(),
   weddingDate: z.union([z.string(), z.date()]).refine((val) => {
     const d = new Date(val);
@@ -55,6 +57,18 @@ export const UpdateAppConfigSchema = z.object({
       }
     }
   }
+});
+
+export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) => {
+  const partner1Name = data.partner1Name ?? data.brideName ?? '';
+  const partner2Name = data.partner2Name ?? data.groomName ?? '';
+  return {
+    ...data,
+    partner1Name,
+    partner2Name,
+    brideName: data.brideName ?? partner1Name,
+    groomName: data.groomName ?? partner2Name,
+  };
 });
 
 const BaseContentNode = z.object({
@@ -107,8 +121,10 @@ export const AppConfigSchema = z.object({
   id: z.string(),
   subdomain: z.string().nullable().optional(),
   multisiteEnabled: z.boolean().optional(),
-  brideName: z.string(),
-  groomName: z.string(),
+  partner1Name: z.string().default(''),
+  partner2Name: z.string().default(''),
+  brideName: z.string().nullable().optional(),
+  groomName: z.string().nullable().optional(),
   weddingDate: z.date(),
   baseUrl: z.string(),
   venueName: z.string(),

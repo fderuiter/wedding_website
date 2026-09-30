@@ -11,8 +11,10 @@ datasource db {
 model AppConfig {
   id               String   @id @default("global")
   subdomain        String?  @unique
-  brideName        String   @default("")
-  groomName        String   @default("")
+  partner1Name     String   @default("")
+  partner2Name     String   @default("")
+  brideName        String?  @default("")
+  groomName        String?  @default("")
   weddingDate      DateTime @default(dbgenerated("NOW()"))
   baseUrl          String   @default("")
   venueName        String   @default("")
@@ -31,7 +33,7 @@ model AppConfig {
   seoDescription   String   @default("")
   faviconUrl       String   @default("/assets/favicon.png")
   ogImageUrl       String   @default("/images/sunset-embrace.jpg")
-  seoKeywords      String   @default("{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception")
+  seoKeywords      String   @default("{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception")
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")
   features         Json     @default("[]")

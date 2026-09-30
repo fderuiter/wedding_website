@@ -6,7 +6,10 @@ import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
 function interpolateKeywords(templateStr: string, config: any): string[] {
   if (!templateStr) return [];
   const interpolated = templateStr.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    return config[key] !== undefined ? config[key] : match;
+    if (config[key] !== undefined && config[key] !== null) return config[key];
+    if (key === 'partner1Name' || key === 'brideName') return config.partner1Name ?? config.brideName ?? match;
+    if (key === 'partner2Name' || key === 'groomName') return config.partner2Name ?? config.groomName ?? match;
+    return match;
   });
   return interpolated.split(',').map(s => s.trim()).filter(Boolean);
 }
@@ -15,9 +18,13 @@ function interpolateKeywords(templateStr: string, config: any): string[] {
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   
+  const partner1 = config.partner1Name || config.brideName || '';
+  const partner2 = config.partner2Name || config.groomName || '';
+  const couplesNames = `${partner1} & ${partner2}`;
+
   const ogImageUrl = config.ogImageUrl || '/images/sunset-embrace.jpg';
   const faviconUrl = config.faviconUrl || '/assets/favicon.png';
-  const seoKeywords = config.seoKeywords ?? "{{brideName}} and {{groomName}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{brideName}} and {{groomName}} registry, wedding details, wedding ceremony, wedding reception";
+  const seoKeywords = config.seoKeywords ?? "{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception";
 
   let siteUrl = config.baseUrl || 'http://localhost:3000';
   try {
@@ -33,8 +40,8 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 
   const siteConfig = {
-    title: config.seoTitle || `${config.brideName} & ${config.groomName}'s Wedding`,
-    description: config.seoDescription || `Join ${config.brideName} and ${config.groomName} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
+    title: config.seoTitle || `${couplesNames}'s Wedding`,
+    description: config.seoDescription || `Join ${partner1} and ${partner2} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
     url: siteUrl,
     ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${siteUrl}${ogImageUrl}`,
     favicon: faviconUrl,
@@ -46,7 +53,7 @@ export async function generateMetadata(): Promise<Metadata> {
     url: siteConfig.ogImage,
     width: dims?.width || 1200,
     height: dims?.height || 630,
-    alt: `A photo of ${config.brideName} and ${config.groomName} embracing.`,
+    alt: `A photo of ${partner1} and ${partner2} embracing.`,
   };
 
   return {
@@ -56,9 +63,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: siteConfig.description,
     keywords: dynamicKeywords,
-    authors: [{ name: config.groomName, url: config.baseUrl }],
-    creator: config.groomName,
-    publisher: config.brideName && config.groomName ? `${config.brideName} & ${config.groomName}` : (config.groomName || config.brideName),
+    authors: [{ name: couplesNames, url: config.baseUrl }],
+    creator: couplesNames,
+    publisher: couplesNames,
     icons: {
       icon: siteConfig.favicon,
       shortcut: siteConfig.favicon,
