@@ -1,6 +1,9 @@
 import { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { Forecast } from '@/features/weather';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 
 export const metadata: Metadata = {
   title: 'Weather Forecast',
@@ -13,7 +16,12 @@ export const metadata: Metadata = {
  *
  * @returns {JSX.Element} The rendered WeatherPage component.
  */
-export default function WeatherPage() {
+export default async function WeatherPage() {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('weather', config.modules)) {
+    notFound();
+  }
+
   return (
     <div className="container mx-auto px-4 py-12 sm:py-16 md:py-20">
       <h1 className="text-4xl sm:text-5xl font-extrabold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">

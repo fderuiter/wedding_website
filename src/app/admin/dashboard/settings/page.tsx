@@ -13,6 +13,7 @@ import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
+import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 
 interface SearchableTimezoneSelectProps {
   value: string;
@@ -402,6 +403,82 @@ export default function AdminSettingsPage() {
                   />
                 </div>
               </FormGroup>
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-2">Feature & Module Management</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Enable or disable optional site capabilities. Disabling a feature removes its navigation links, protects page routes, disables backend API endpoints, and handles dependencies automatically.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(FEATURE_METADATA).map(([id, meta]) => {
+                const featureId = id as FeatureId;
+                const currentModules = resolveModuleConfig(localConfig.modules);
+                const isChecked = currentModules[featureId];
+                const isRegistryDisabled = !currentModules.registry;
+                const isDependencyBlocked = meta.dependencies?.includes('registry') && isRegistryDisabled;
+
+                return (
+                  <div
+                    key={featureId}
+                    className={`p-4 rounded-lg border transition-colors ${
+                      isChecked
+                        ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/30 dark:bg-rose-950/20'
+                        : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 opacity-80'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <label htmlFor={`feature-${featureId}`} className="font-semibold text-gray-900 dark:text-gray-100 cursor-pointer flex items-center gap-2">
+                          {meta.title}
+                          {isDependencyBlocked && (
+                            <span className="text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-normal">
+                              Requires Registry
+                            </span>
+                          )}
+                        </label>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {meta.description}
+                        </p>
+                      </div>
+                      <input
+                        id={`feature-${featureId}`}
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={isDependencyBlocked}
+                        onChange={(e) => {
+                          const newChecked = e.target.checked;
+                          const updatedModules = { ...currentModules, [featureId]: newChecked };
+                          if (featureId === 'registry' && !newChecked) {
+                            updatedModules.groupGifting = false;
+                          }
+                          if (featureId === 'countdown') {
+                            setLocalConfig((prev: any) => ({
+                              ...prev,
+                              showCountdown: newChecked,
+                              modules: updatedModules,
+                            }));
+                          } else if (featureId === 'addToCalendar') {
+                            setLocalConfig((prev: any) => ({
+                              ...prev,
+                              showAddToCalendar: newChecked,
+                              modules: updatedModules,
+                            }));
+                          } else {
+                            setLocalConfig((prev: any) => ({
+                              ...prev,
+                              modules: updatedModules,
+                            }));
+                          }
+                        }}
+                        className="h-5 w-5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer mt-1"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
 

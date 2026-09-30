@@ -382,6 +382,7 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
+| `modules` | `default` | Configuration field for modules |
 | `features` | `pipe` | Configuration field for features |
 | `createdAt` | `date` | Configuration field for createdAt |
 | `updatedAt` | `date` | Configuration field for updatedAt |
