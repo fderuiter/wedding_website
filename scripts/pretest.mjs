@@ -156,8 +156,7 @@ async function main() {
     console.log('Synchronizing schema to isolated test database (provider: postgresql)...');
 
     runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl },
-      ignoreFailure: true
+      env: { ...process.env, DATABASE_URL: testDbUrl }
     });
 
     // Run Prisma Client generation after db push so it is aligned with the active schema

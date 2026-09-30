@@ -42,10 +42,7 @@ export class ContentService {
   }
 
   async getAllNodes() {
-    if (this.repo.getAllNodes) {
-      return await this.repo.getAllNodes();
-    }
-    return [];
+    return await this.repo.getAllNodes();
   }
 
   async getPublicPhotos() {
