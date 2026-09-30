@@ -23,9 +23,9 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
-# Build Next.js application
+# Build Next.js application if build artifact does not already exist
 RUN --mount=type=cache,target=/app/.next/cache \
-    npm run build
+    if [ ! -f ".next/BUILD_ID" ]; then npm run build; else echo "Reusing pre-built Next.js build artifact"; fi
 
 # Runner stage
 FROM base AS runner

@@ -9,8 +9,7 @@ on:
   pull_request:
 
 jobs:
-  ci:
-    name: Continuous Integration
+  verify:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -126,6 +125,40 @@ jobs:
               console.warn('Failed to report documentation drift via GitHub API:', err);
             }
 
+  unit-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Upload Test Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-report
+          path: coverage/
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
@@ -138,11 +171,13 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Copy standalone static assets
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
-
-      - name: Run OCI Container & Clean Database Smoke Test
-        run: npm run test:container
 
       - name: Verify Standalone Output Portability
         run: npm run check:standalone
@@ -150,20 +185,43 @@ jobs:
       - name: Security Dependency Audit
         run: npm run check:audit || echo "::warning::High or critical vulnerabilities detected by npm audit"
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+      - name: Run OCI Container & Clean Database Smoke Test
+        run: npm run test:container
 
-      - name: Run unit & integration tests
-        run: npm test
-
-      - name: Upload Test Coverage
-        if: always()
+      - name: Upload Next.js Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lcov-report
-          path: coverage/
+          name: next-build-artifact
+          retention-days: 7
+          path: |
+            .next/
+            public/
+            prisma/
+            node_modules/.prisma
+            node_modules/@prisma
 
-      - name: Run Playwright e2e tests
+  e2e-test:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Download Next.js Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build-artifact
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      - name: Run e2e tests
         run: npx playwright test
 
       - name: Generate A11y Report
