@@ -5,6 +5,10 @@ import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
 import { headers } from 'next/headers';
 
+export function isMultisiteEnabled(): boolean {
+  return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
+}
+
 export type PublicAppConfig = PublicAppConfigDTO;
 
 type LocalAppConfig = Omit<AppConfigDTO, 'latitude' | 'longitude'> & {
@@ -69,7 +73,10 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
     return config as PublicAppConfig;
   }
 
-  const sanitized = { ...config };
+  const sanitized = {
+    ...config,
+    multisiteEnabled: isMultisiteEnabled(),
+  };
 
   const sensitivePatterns = [
     'password',
@@ -179,6 +186,9 @@ async function bootstrapLogisticsNodes() {
  * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
  */
 async function getSubdomainFromHeaders(): Promise<string | null> {
+  if (!isMultisiteEnabled()) {
+    return null;
+  }
   try {
     const headersList = await headers();
     const host = headersList.get('host');
@@ -217,9 +227,11 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
  */
 export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
   let dbConfig: AppConfigDTO | null = null;
+  const multisite = isMultisiteEnabled();
+
   try {
     let rawDbConfig = null;
-    if (idOrSubdomain) {
+    if (multisite && idOrSubdomain && idOrSubdomain !== 'global') {
       rawDbConfig = await prisma.appConfig.findUnique({
         where: { id: idOrSubdomain },
       });
@@ -228,7 +240,7 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
           where: { subdomain: idOrSubdomain },
         });
       }
-    } else {
+    } else if (multisite) {
       const subdomain = await getSubdomainFromHeaders();
       if (subdomain) {
         rawDbConfig = await prisma.appConfig.findFirst({

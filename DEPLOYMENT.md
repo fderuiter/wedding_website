@@ -13,7 +13,8 @@ This repository includes a pro-grade deployment pipeline suitable for enterprise
 We provide two pre-configured GitHub Actions workflows:
 
 1. **CI Pipeline (`ci.yml`)**: Triggers on Pull Requests and pushes to `main`. It builds the application, runs unit tests, and executes end-to-end (e2e) Playwright tests.
-2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It automates the database migration and builds a multi-platform Docker container image (`linux/amd64` and `linux/arm64`).
+2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It uses a decoupled 4-phase architecture (`build-and-publish`, `production-migrate`, `production-deploy`, `verify-deployment`) with GitHub Actions `production` environment gates. Container images are compiled, tagged with commit SHA/digest, and published to the artifact registry BEFORE any database migrations execute.
+3. **Rollback Pipeline (`rollback.yml`)**: Triggerable via `workflow_dispatch` or automated invocation on post-deployment health check failure. Restores production container deployments to previous validated image tags.
 
 ## Setup and Secrets
 
@@ -33,7 +34,8 @@ The application requires the following environment variables to be configured co
 - `ADMIN_PASSWORD`: Cryptographic hash of the administrative password. *Required.*
   - **Format**: Must be an scrypt hash in the format `scrypt:[saltBase64]:[keyBase64]`.
   - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
-- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcard patterns allowed to access the application. *Required.*
+- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains allowed to access the application (e.g. `localhost,127.0.0.1,abbifred.com`). Wildcard DNS is not required for default single-site deployments. *Required.*
+- `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain-based site routing. Defaults to `false` (1 deployment = 1 wedding site). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website (defaults to `wedding2026`).
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
 - `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*

@@ -1449,6 +1449,17 @@
         }
       }
     },
+    "/api/health": {
+      "get": {
+        "summary": "GET /api/health",
+        "description": "Endpoint for /api/health",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/media/{id}": {
       "put": {
         "summary": "PUT /api/media/[id]",

@@ -35,6 +35,7 @@ jest.mock('@/lib/config', () => ({
   toPublicAppConfig: jest.fn((config) => {
     return config;
   }),
+  isMultisiteEnabled: jest.fn(() => process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1'),
 }));
 
 jest.mock('@/core/auth/auth.server', () => ({
@@ -352,10 +353,65 @@ describe('PUT /api/admin/settings', () => {
   });
 });
 
-describe('Multi-Profile Routing and Settings API', () => {
+describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsAdminRequest.mockResolvedValue(true);
+    process.env.MULTISITE_ENABLED = 'false';
+  });
+
+  it('GET with list=true returns only canonical global profile in single-site mode', async () => {
+    const { GET: settingsGET } = require('../settings/route');
+    const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
+      headers: { cookie: 'admin_auth=valid-token' }
+    });
+    const res = await settingsGET(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data).toHaveLength(1);
+    expect(mockGetAppConfig).toHaveBeenCalledWith('global');
+  });
+
+  it('GET with id passes global to getAppConfig in single-site mode', async () => {
+    const { GET: settingsGET } = require('../settings/route');
+    const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
+      headers: { cookie: 'admin_auth=valid-token' }
+    });
+    const res = await settingsGET(req);
+    expect(res.status).toBe(200);
+    expect(mockGetAppConfig).toHaveBeenCalledWith('global');
+  });
+
+  it('POST /api/admin/settings rejects profile creation when multisite is disabled', async () => {
+    const { POST: settingsPOST } = require('../settings/route');
+    const req = new NextRequest('http://localhost/api/admin/settings', {
+      method: 'POST',
+      headers: { cookie: 'admin_auth=valid-token' },
+      body: JSON.stringify({
+        brideName: 'StagingBride',
+        groomName: 'StagingGroom',
+        subdomain: 'staging'
+      })
+    });
+    const res = await settingsPOST(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/Multi-site features are disabled/);
+  });
+});
+
+describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () => {
+  let originalMultisite: string | undefined;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(true);
+    originalMultisite = process.env.MULTISITE_ENABLED;
+    process.env.MULTISITE_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    process.env.MULTISITE_ENABLED = originalMultisite;
   });
 
   it('GET with list=true lists all profiles', async () => {
