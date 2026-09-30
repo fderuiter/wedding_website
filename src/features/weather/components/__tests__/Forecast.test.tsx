@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import Forecast from '../Forecast';
 import { server } from '@/mocks/server';
 import { rest } from 'msw';
@@ -8,7 +8,7 @@ describe('Forecast Component', () => {
     jest.restoreAllMocks();
   });
 
-  it('should display a loading state initially', async () => {
+  it('should display a loading state initially with card skeleton', async () => {
     server.use(
       rest.get('/api/weather', (_req, res, ctx) => {
         return res(ctx.json({
@@ -27,8 +27,9 @@ describe('Forecast Component', () => {
 
     render(<Forecast />);
 
-    // Assert loading state is present immediately
+    // Assert loading state and skeleton are present immediately
     expect(screen.getByText('Loading forecast...')).toBeInTheDocument();
+    expect(screen.getByTestId('forecast-skeleton')).toBeInTheDocument();
 
     // Wait for the component to finish updating to prevent "act" warnings
     await waitFor(() => {
@@ -36,8 +37,7 @@ describe('Forecast Component', () => {
     });
   });
 
-  it('should display an error message if the fetch fails', async () => {
-    // Suppress console.error for this test as we expect an error
+  it('should display an error message and retry button if the fetch fails', async () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     server.use(
@@ -50,6 +50,47 @@ describe('Forecast Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed to load forecast. Please try again later.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    });
+
+    consoleSpy.mockRestore();
+  });
+
+  it('should re-fetch forecast data when tapping the retry button', async () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let attempt = 0;
+
+    server.use(
+      rest.get('/api/weather', (_req, res, ctx) => {
+        attempt++;
+        if (attempt === 1) {
+          return res(ctx.status(500), ctx.json({ error: 'API failure' }));
+        }
+        return res(ctx.json({
+          daily: {
+            time: ['2025-10-10'],
+            weathercode: [0],
+            temperature_2m_max: [75],
+            temperature_2m_min: [55],
+            apparent_temperature_max: [70],
+            precipitation_probability_max: [0],
+            wind_speed_10m_max: [8],
+          }
+        }));
+      })
+    );
+
+    render(<Forecast />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load forecast. Please try again later.')).toBeInTheDocument();
+    });
+
+    const retryButton = screen.getByRole('button', { name: /retry/i });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Clear sky')).toBeInTheDocument();
     });
 
     consoleSpy.mockRestore();

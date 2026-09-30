@@ -33,6 +33,7 @@ export function useRegistry() {
     data: items = [],
     isLoading,
     error,
+    fetchAll: refetch,
     remove: deleteItem,
   } = useEntityOrchestration<RegistryItem>({
     queryKey: ['registry-items'],
@@ -165,6 +166,7 @@ export function useRegistry() {
     items,
     isLoading,
     error,
+    refetch,
     selectedItem,
     isModalOpen,
     visibleItemsCount,
