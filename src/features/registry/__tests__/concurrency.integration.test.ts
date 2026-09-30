@@ -35,6 +35,19 @@ const realRepository = new RegistryRepository(realPrisma);
 describe('Registry Gift Contribution Concurrency & Row-Level Locking', () => {
   let testItem: any;
 
+  beforeAll(async () => {
+    // Check database schema readiness and verify migration state
+    try {
+      if (isSqlite) {
+        await realPrisma.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
+      }
+      await realPrisma.registryItem.findFirst();
+    } catch {
+      const { execSync } = require('child_process');
+      execSync('npx prisma db push --skip-generate', { stdio: 'pipe' });
+    }
+  });
+
   beforeEach(async () => {
     // Clean up registry items and media before each test
     await realPrisma.contributor.deleteMany();

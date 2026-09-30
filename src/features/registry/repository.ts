@@ -150,10 +150,26 @@ export class RegistryRepository implements IRegistryRepository {
     contribution: { name: string; amount: number; code?: string }
   ) {
     const runTransaction = async (txClient: any) => {
-      // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
-      if (typeof txClient.$queryRaw === 'function') {
-        const isSqlite = process.env.DATABASE_URL?.startsWith('file:') || process.env.DATABASE_URL?.startsWith('sqlite:') || process.env.DATABASE_URL?.includes('.db');
-        if (!isSqlite) {
+      // 1. Acquire row-level lock on the targeted registry item row across database engines
+      const dbUrl = process.env.DATABASE_URL || '';
+      const isSqlite = dbUrl.startsWith('file:') || dbUrl.startsWith('sqlite:') || dbUrl.includes('.db');
+
+      if (isSqlite) {
+        if (typeof txClient.$executeRawUnsafe === 'function') {
+          try {
+            await txClient.$executeRawUnsafe('BEGIN IMMEDIATE');
+          } catch {
+            // Ignore if SQLite is already in IMMEDIATE transaction mode
+          }
+        } else if (typeof txClient.$queryRaw === 'function') {
+          try {
+            await txClient.$queryRaw`BEGIN IMMEDIATE`;
+          } catch {
+            // Ignore if SQLite is already in IMMEDIATE transaction mode
+          }
+        }
+      } else {
+        if (typeof txClient.$queryRaw === 'function') {
           await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
         }
       }
