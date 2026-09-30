@@ -8,7 +8,7 @@ Honestly, I started this because [theknot.com](https://theknot.com) felt kinda l
 
 I ended up just vibe-coding my way through this and built a whole registry system instead, which turned out pretty slick. It even has a web scraper to help add items quickly from other sites.
 
-**Tech Journey:** Started with storing registry data in a simple JSON file, then migrated to using Prisma with a SQLite database for local development. For deployment on Vercel, the database was migrated again to PostgreSQL, hosted on [Neon](https://neon.tech/), to leverage their serverless capabilities. Enjoy the claimed costco energy drink item test data that might still be in the history somewhere.
+**Tech Journey:** Started with storing registry data in a simple JSON file, then migrated to using Prisma with a SQLite database for local development. For initial cloud deployment on Vercel, the database was migrated again to PostgreSQL, hosted on [Neon](https://neon.tech/), to leverage serverless capabilities. Subsequently, the architecture was updated to be fully provider-neutral and containerized (via Docker), disconnecting direct Vercel dependence while maintaining Vercel as an optional deployment option. Enjoy the claimed costco energy drink item test data that might still be in the history somewhere.
 
 ## Next steps
 
