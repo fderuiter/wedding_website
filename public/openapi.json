@@ -246,6 +246,73 @@
         }
       }
     },
+    "/api/admin/invitation-codes/batch": {
+      "post": {
+        "summary": "POST /api/admin/invitation-codes/batch",
+        "description": "Endpoint for /api/admin/invitation-codes/batch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "records": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "guestName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "code": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "guestName"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "collisionStrategy": {
+                    "default": "skip",
+                    "type": "string",
+                    "enum": [
+                      "skip",
+                      "update",
+                      "reject"
+                    ]
+                  }
+                },
+                "required": [
+                  "records",
+                  "collisionStrategy"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/login": {
       "post": {
         "summary": "POST /api/admin/login",
