@@ -121,7 +121,7 @@ export default function AdminSettingsPage() {
 
   const [localConfig, setLocalConfig] = useState<any>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newProfileData, setNewProfileData] = useState({ brideName: '', groomName: '', subdomain: '' });
+  const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
   const [createError, setCreateError] = useState('');
 
   useEffect(() => {
@@ -148,7 +148,7 @@ export default function AdminSettingsPage() {
       const created = await createProfile(newProfileData);
       addToast('Staging profile created successfully!', 'success');
       setIsCreateOpen(false);
-      setNewProfileData({ brideName: '', groomName: '', subdomain: '' });
+      setNewProfileData({ partner1Name: '', partner2Name: '', subdomain: '' });
       if (created && created.id) {
         setSelectedProfileId(created.id);
         setLocalConfig(null);
@@ -255,12 +255,12 @@ export default function AdminSettingsPage() {
             <h2 className="text-xl font-semibold mb-4">Core Identity</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>
-                <Label>Bride Name</Label>
-                <Input required type="text" name="brideName" value={localConfig.brideName || ''} onChange={handleChange} />
+                <Label>Partner 1 Name</Label>
+                <Input required type="text" name="partner1Name" value={localConfig.partner1Name || localConfig.brideName || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
-                <Label>Groom Name</Label>
-                <Input required type="text" name="groomName" value={localConfig.groomName || ''} onChange={handleChange} />
+                <Label>Partner 2 Name</Label>
+                <Input required type="text" name="partner2Name" value={localConfig.partner2Name || localConfig.groomName || ''} onChange={handleChange} />
               </FormGroup>
               <FormGroup>
                 <Label>Wedding Date</Label>
@@ -419,8 +419,8 @@ export default function AdminSettingsPage() {
             </div>
             <FormGroup>
               <Label>SEO Keywords</Label>
-              <Textarea name="seoKeywords" value={localConfig.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{brideName}} and {{groomName}}'s wedding..." />
-              <FormMessage>Comma-separated list. Use templates like {'{{brideName}}'}. Variables: brideName, groomName, venueName, venueCity, venueState.</FormMessage>
+              <Textarea name="seoKeywords" value={localConfig.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{partner1Name}} and {{partner2Name}}'s wedding..." />
+              <FormMessage>Comma-separated list. Use templates like {'{{partner1Name}}'}. Variables: partner1Name, partner2Name, brideName, groomName, venueName, venueCity, venueState.</FormMessage>
             </FormGroup>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <FormGroup>
@@ -475,22 +475,22 @@ export default function AdminSettingsPage() {
             </div>
           )}
           <FormGroup>
-            <Label>Bride Name</Label>
+            <Label>Partner 1 Name</Label>
             <Input
               required
               type="text"
-              value={newProfileData.brideName}
-              onChange={(e) => setNewProfileData(prev => ({ ...prev, brideName: e.target.value }))}
+              value={newProfileData.partner1Name}
+              onChange={(e) => setNewProfileData(prev => ({ ...prev, partner1Name: e.target.value }))}
               placeholder="e.g. Abby"
             />
           </FormGroup>
           <FormGroup>
-            <Label>Groom Name</Label>
+            <Label>Partner 2 Name</Label>
             <Input
               required
               type="text"
-              value={newProfileData.groomName}
-              onChange={(e) => setNewProfileData(prev => ({ ...prev, groomName: e.target.value }))}
+              value={newProfileData.partner2Name}
+              onChange={(e) => setNewProfileData(prev => ({ ...prev, partner2Name: e.target.value }))}
               placeholder="e.g. Liam"
             />
           </FormGroup>

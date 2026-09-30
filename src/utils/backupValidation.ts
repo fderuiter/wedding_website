@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content/schemas';
+import { AppConfigSchema, RawUpdateAppConfigSchema } from '@/features/content/schemas';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
 import { AttractionSchema } from '@/features/attractions/schemas';
 import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry/schemas';
@@ -17,10 +17,12 @@ const BackupAppConfigSchema = z.object({
   updatedAt: z.date(),
 
   // Non-nullable fields with defaults (Optional but validated if present)
-  brideName: AppConfigSchema.shape.brideName.optional(),
-  groomName: AppConfigSchema.shape.groomName.optional(),
+  partner1Name: AppConfigSchema.shape.partner1Name.optional(),
+  partner2Name: AppConfigSchema.shape.partner2Name.optional(),
+  brideName: z.string().nullable().optional(),
+  groomName: z.string().nullable().optional(),
   weddingDate: AppConfigSchema.shape.weddingDate.optional(),
-  baseUrl: UpdateAppConfigSchema.shape.baseUrl.optional(),
+  baseUrl: RawUpdateAppConfigSchema.shape.baseUrl.optional(),
   venueName: AppConfigSchema.shape.venueName.optional(),
   venueAddress: AppConfigSchema.shape.venueAddress.optional(),
   venueCity: AppConfigSchema.shape.venueCity.optional(),
@@ -35,13 +37,13 @@ const BackupAppConfigSchema = z.object({
   heroSubtitle: AppConfigSchema.shape.heroSubtitle.optional(),
   seoTitle: AppConfigSchema.shape.seoTitle.optional(),
   seoDescription: AppConfigSchema.shape.seoDescription.optional(),
-  faviconUrl: UpdateAppConfigSchema.shape.faviconUrl.optional(),
-  ogImageUrl: UpdateAppConfigSchema.shape.ogImageUrl.optional(),
+  faviconUrl: RawUpdateAppConfigSchema.shape.faviconUrl.optional(),
+  ogImageUrl: RawUpdateAppConfigSchema.shape.ogImageUrl.optional(),
   seoKeywords: AppConfigSchema.shape.seoKeywords.optional(),
-  colorPrimary: UpdateAppConfigSchema.shape.colorPrimary.optional(),
-  colorSecondary: UpdateAppConfigSchema.shape.colorSecondary.optional(),
+  colorPrimary: RawUpdateAppConfigSchema.shape.colorPrimary.optional(),
+  colorSecondary: RawUpdateAppConfigSchema.shape.colorSecondary.optional(),
   features: AppConfigSchema.shape.features.optional(),
-  timezone: UpdateAppConfigSchema.shape.timezone.optional(),
+  timezone: RawUpdateAppConfigSchema.shape.timezone.optional(),
 });
 
 // Media database-aligned schema

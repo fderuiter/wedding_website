@@ -8,6 +8,8 @@ async function main() {
     update: {},
     create: {
       id: 'global',
+      partner1Name: 'Jane',
+      partner2Name: 'John',
       brideName: 'Jane',
       groomName: 'John',
       weddingDate: new Date('2026-10-10T15:00:00Z'),

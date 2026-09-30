@@ -11,8 +11,8 @@ export default async function HeartPage() {
   
   return (
     <HeartClient 
-      brideName={config.brideName} 
-      groomName={config.groomName} 
+      partner1Name={config.partner1Name || config.brideName || ''} 
+      partner2Name={config.partner2Name || config.groomName || ''} 
     />
   );
 }

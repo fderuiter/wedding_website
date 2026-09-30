@@ -57,6 +57,8 @@ const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminR
 const mockRevalidatePath = revalidatePath as jest.MockedFunction<typeof revalidatePath>;
 
 const validConfigData = {
+  partner1Name: 'TestBride',
+  partner2Name: 'TestGroom',
   brideName: 'TestBride',
   groomName: 'TestGroom',
   weddingDate: '2026-06-20T00:00:00.000Z',
@@ -416,8 +418,8 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
 
   it('GET with list=true lists all profiles', async () => {
     const mockConfigs = [
-      { ...updatedConfig, id: 'global', brideName: 'Abby' },
-      { ...updatedConfig, id: 'profile-1', brideName: 'Staging', subdomain: 'staging' }
+      { ...updatedConfig, id: 'global', partner1Name: 'Abby', partner2Name: 'Fred', brideName: 'Abby' },
+      { ...updatedConfig, id: 'profile-1', partner1Name: 'Staging', partner2Name: 'Test', brideName: 'Staging', subdomain: 'staging' }
     ];
     // We import POST here dynamically to make sure it's defined
     const { GET: settingsGET } = require('../settings/route');
@@ -455,6 +457,8 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
     const mockCreate = jest.spyOn(prisma.appConfig, 'create').mockResolvedValue({
       ...updatedConfig,
       id: 'profile-new',
+      partner1Name: 'StagingBride',
+      partner2Name: 'StagingGroom',
       brideName: 'StagingBride',
       groomName: 'StagingGroom',
       subdomain: 'staging',
@@ -466,8 +470,8 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
       method: 'POST',
       headers: { cookie: 'admin_auth=valid-token' },
       body: JSON.stringify({
-        brideName: 'StagingBride',
-        groomName: 'StagingGroom',
+        partner1Name: 'StagingBride',
+        partner2Name: 'StagingGroom',
         subdomain: 'staging'
       })
     });

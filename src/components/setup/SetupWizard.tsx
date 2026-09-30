@@ -35,8 +35,8 @@ export default function SetupWizard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   // Config state
-  const [brideName, setBrideName] = useState('');
-  const [groomName, setGroomName] = useState('');
+  const [partner1Name, setPartner1Name] = useState('');
+  const [partner2Name, setPartner2Name] = useState('');
   const [weddingDate, setWeddingDate] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [venueName, setVenueName] = useState('');
@@ -90,8 +90,8 @@ export default function SetupWizard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brideName,
-          groomName,
+          partner1Name,
+          partner2Name,
           weddingDate,
           baseUrl,
           venueName: venueName || 'TBD',
@@ -107,8 +107,8 @@ export default function SetupWizard() {
           travelAdvice: 'Travel advice...',
           heroTitle: 'We Tied the Knot!',
           heroSubtitle: 'Thank you for celebrating with us!',
-          seoTitle: `${brideName} & ${groomName}'s Wedding`,
-          seoDescription: `Join ${brideName} and ${groomName} for their wedding celebration.`,
+          seoTitle: `${partner1Name} & ${partner2Name}'s Wedding`,
+          seoDescription: `Join ${partner1Name} and ${partner2Name} for their wedding celebration.`,
         }),
       });
       if (res.ok) {
@@ -161,11 +161,11 @@ export default function SetupWizard() {
               <div className="grid grid-cols-2 gap-4">
                 <FormGroup>
                   <Label htmlFor="partner1">Partner 1</Label>
-                  <Input id="partner1" type="text" value={brideName} onChange={(e) => setBrideName(e.target.value)} required />
+                  <Input id="partner1" type="text" value={partner1Name} onChange={(e) => setPartner1Name(e.target.value)} required />
                 </FormGroup>
                 <FormGroup>
                   <Label htmlFor="partner2">Partner 2</Label>
-                  <Input id="partner2" type="text" value={groomName} onChange={(e) => setGroomName(e.target.value)} required />
+                  <Input id="partner2" type="text" value={partner2Name} onChange={(e) => setPartner2Name(e.target.value)} required />
                 </FormGroup>
               </div>
               <div className="grid grid-cols-2 gap-4">

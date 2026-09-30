@@ -2,6 +2,8 @@ import { toPublicAppConfig, isMultisiteEnabled } from '../config';
 
 const baseConfig: any = {
   id: 'global',
+  partner1Name: 'Abbi',
+  partner2Name: 'Fred',
   brideName: 'Abbi',
   groomName: 'Fred',
   weddingDate: new Date('2025-10-10'),

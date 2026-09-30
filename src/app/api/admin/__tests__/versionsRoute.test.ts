@@ -71,7 +71,7 @@ describe('GET /api/admin/versions', () => {
         id: 'v1',
         entityType: 'AppConfig',
         entityId: 'global',
-        data: { brideName: 'Alice', groomName: 'Bob' },
+        data: { partner1Name: 'Alice', partner2Name: 'Bob', brideName: 'Alice', groomName: 'Bob' },
         createdAt: new Date(),
       },
       {
@@ -170,6 +170,8 @@ describe('POST /api/admin/versions/[id]/restore', () => {
   it('restores AppConfig and creates a rollback snapshot', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const mockAppConfigSnapshot = {
+      partner1Name: 'Alice',
+      partner2Name: 'Bob',
       brideName: 'Alice',
       groomName: 'Bob',
       weddingDate: '2026-06-20T00:00:00.000Z',
@@ -203,6 +205,8 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
       where: { id: 'global' },
       update: expect.objectContaining({
+        partner1Name: 'Alice',
+        partner2Name: 'Bob',
         brideName: 'Alice',
         groomName: 'Bob',
         latitude: 45.0,
@@ -210,6 +214,8 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       }),
       create: expect.objectContaining({
         id: 'global',
+        partner1Name: 'Alice',
+        partner2Name: 'Bob',
         brideName: 'Alice',
         groomName: 'Bob',
       }),

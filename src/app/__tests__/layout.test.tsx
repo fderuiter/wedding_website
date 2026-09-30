@@ -20,7 +20,7 @@ describe('RootLayoutClient', () => {
 
     render(
       <ToastProvider>
-        <RootLayoutClient config={{ brideName: 'Alice', groomName: 'Bob', weddingDate: '2026-06-20', baseUrl: 'http://localhost' } as any}>
+        <RootLayoutClient config={{ partner1Name: 'Alice', partner2Name: 'Bob', brideName: 'Alice', groomName: 'Bob', weddingDate: '2026-06-20', baseUrl: 'http://localhost' } as any}>
           <div>Child content</div>
         </RootLayoutClient>
       </ToastProvider>
