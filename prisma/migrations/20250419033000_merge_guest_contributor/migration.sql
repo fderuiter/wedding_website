@@ -1,3 +1,4 @@
+-- allow-destructive: Historical merge of Guest into Contributor
 -- AlterTable
 ALTER TABLE "Contributor" ADD COLUMN "email" TEXT,
 ADD COLUMN "isPlusOne" BOOLEAN NOT NULL DEFAULT false,
