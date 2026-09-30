@@ -50,9 +50,22 @@ describe('RegistryRepository', () => {
   });
 
   describe('getAllItems', () => {
-    it('should return all registry items', async () => {
-      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+    it('should return all registry items without joining contributors by default', async () => {
+      const itemWithoutRel = { ...mockRegistryItem };
+      delete (itemWithoutRel as any).contributors;
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([itemWithoutRel]);
       const items = await registryRepository.getAllItems();
+      expect(items).toEqual([mockRegistryItem]);
+      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+        include: {
+          image: true,
+        },
+      });
+    });
+
+    it('should include contributors when includeContributors option is true', async () => {
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+      const items = await registryRepository.getAllItems({ includeContributors: true });
       expect(items).toEqual([mockRegistryItem]);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
@@ -64,9 +77,23 @@ describe('RegistryRepository', () => {
   });
 
   describe('getItemById', () => {
-    it('should return a single item by id', async () => {
-      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(mockRegistryItem);
+    it('should return a single item by id without joining contributors by default', async () => {
+      const itemWithoutRel = { ...mockRegistryItem };
+      delete (itemWithoutRel as any).contributors;
+      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(itemWithoutRel);
       const item = await registryRepository.getItemById('1');
+      expect(item).toEqual(mockRegistryItem);
+      expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+        include: {
+          image: true,
+        },
+      });
+    });
+
+    it('should include contributors when includeContributors option is true', async () => {
+      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValue(mockRegistryItem);
+      const item = await registryRepository.getItemById('1', { includeContributors: true });
       expect(item).toEqual(mockRegistryItem);
       expect(prisma.registryItem.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
@@ -342,10 +369,11 @@ describe('RegistryRepository', () => {
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Invalid invitation code.');
     });
 
-    it('should throw an error if the provided invitation code has already been used', async () => {
+    it('should successfully contribute when a previously used invitation code is provided', async () => {
       const tx = {
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
         },
         invitationCode: {
           findUnique: jest.fn().mockResolvedValue({
@@ -354,14 +382,49 @@ describe('RegistryRepository', () => {
             guestName: 'Jane Smith',
             used: true,
           }),
+          update: jest.fn().mockResolvedValue({ id: 'invite-used', used: true }),
         },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
       };
       (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
 
       const contribution = { name: 'Some Name', amount: 50, code: 'USEDCODE' };
-      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow(
-        'This invitation code has already been used.'
-      );
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(50);
+      expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'USEDCODE' },
+      });
+      expect(tx.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'invite-used' },
+        data: {
+          used: true,
+          usedAt: expect.any(Date),
+        },
+      });
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 50,
+          purchased: false,
+          contributors: {
+            create: {
+              name: 'Jane Smith',
+              amount: 50,
+              date: expect.any(Date),
+              invitationCodeId: 'invite-used',
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
     });
   });
 });
