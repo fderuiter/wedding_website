@@ -106,7 +106,6 @@ a.skip-link:focus {
 .animate-pulse-scale {
   animation: pulse-scale 14s infinite ease-in-out;
 }
-
 @layer components {
   .btn-primary {
     @apply inline-flex justify-center items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
@@ -120,4 +119,22 @@ a.skip-link:focus {
   .btn-secondary:hover {
     background-color: color-mix(in srgb, var(--color-primary) 10%, transparent) !important;
   }
+}
+
+/* Skip to content link */
+a.skip-link, .skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus-visible {
+  left: 0 !important;
+  z-index: 50 !important;
+  padding: .5rem .75rem !important;
+  border-radius: .375rem !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15) !important;
+  outline-style: solid !important;
+  outline-width: 2px !important;
+  outline-color: #B91C1C !important;
+  outline-offset: 2px !important;
 }

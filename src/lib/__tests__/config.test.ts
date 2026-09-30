@@ -131,11 +131,11 @@ describe('Configuration System Layers & Precedence', () => {
   });
 
   it('APP_DEFAULTS contains generic technical defaults with no personal wedding content', () => {
-    expect(APP_DEFAULTS.brideName).toBe('Partner 1');
-    expect(APP_DEFAULTS.groomName).toBe('Partner 2');
-    expect(APP_DEFAULTS.venueName).toBe('Wedding Venue');
-    expect(APP_DEFAULTS.venueCity).toBe('City');
-    expect(APP_DEFAULTS.venueState).toBe('State');
+    expect(APP_DEFAULTS.brideName).toBe('');
+    expect(APP_DEFAULTS.groomName).toBe('');
+    expect(APP_DEFAULTS.venueName).toBe('');
+    expect(APP_DEFAULTS.venueCity).toBe('');
+    expect(APP_DEFAULTS.venueState).toBe('');
     expect(APP_DEFAULTS.brideName).not.toContain('Abbigayle');
     expect(APP_DEFAULTS.groomName).not.toContain('Frederick');
     expect(APP_DEFAULTS.venueName).not.toContain('Plummer');

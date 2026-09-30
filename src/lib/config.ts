@@ -67,10 +67,8 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
   if (!config) return false;
   const p1 = config.partner1Name || config.brideName;
   const p2 = config.partner2Name || config.groomName;
-  if (!p1 || !p2 || !config.baseUrl) return false;
-  if (p1 === 'Abbigayle' && p2 === 'Frederick') return false;
+  if (!p1 || !p2) return false;
   if (p1 === 'Partner 1' && p2 === 'Partner 2') return false;
-  if (config.baseUrl.includes('abbifred.com')) return false;
   return true;
 }
 
@@ -80,8 +78,16 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
 export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   const overrides: Partial<LocalAppConfig> = {};
 
-  if (process.env.SITE_BRIDE_NAME) overrides.brideName = process.env.SITE_BRIDE_NAME;
-  if (process.env.SITE_GROOM_NAME) overrides.groomName = process.env.SITE_GROOM_NAME;
+  if (process.env.SITE_PARTNER1_NAME) overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
+  if (process.env.SITE_PARTNER2_NAME) overrides.partner2Name = process.env.SITE_PARTNER2_NAME;
+  if (process.env.SITE_BRIDE_NAME) {
+    overrides.brideName = process.env.SITE_BRIDE_NAME;
+    overrides.partner1Name = process.env.SITE_BRIDE_NAME;
+  }
+  if (process.env.SITE_GROOM_NAME) {
+    overrides.groomName = process.env.SITE_GROOM_NAME;
+    overrides.partner2Name = process.env.SITE_GROOM_NAME;
+  }
   if (process.env.SITE_WEDDING_DATE !== undefined) {
     overrides.weddingDate = new Date(process.env.SITE_WEDDING_DATE);
   }
