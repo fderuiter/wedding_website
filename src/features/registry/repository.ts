@@ -13,29 +13,39 @@ export class RegistryRepository implements IRegistryRepository {
   constructor(public client: any = prisma) {}
 
   /**
-   * Retrieves all registry items from the database, including their contributors.
+   * Retrieves all registry items from the database.
+   * @param {object} [options] - Options for relation loading.
+   * @param {boolean} [options.includeContributors=false] - Whether to include relational contributor records.
    * @returns {Promise<RegistryItemDTO[]>} A promise that resolves to an array of all registry items.
    */
-  async getAllItems() {
+  async getAllItems(options: { includeContributors?: boolean } = {}) {
+    const { includeContributors = false } = options;
+    const include: { image: boolean; contributors?: boolean } = { image: true };
+    if (includeContributors) {
+      include.contributors = true;
+    }
     const items = await this.client.registryItem.findMany({
-      include: { image: true, 
-        contributors: true
-      }
+      include,
     });
     return items.map((item: any) => RegistryItemSchema.parse(item));
   }
 
   /**
-   * Retrieves a single registry item by its ID, including its contributors.
+   * Retrieves a single registry item by its ID.
    * @param {string} id - The unique identifier of the item.
+   * @param {object} [options] - Options for relation loading.
+   * @param {boolean} [options.includeContributors=false] - Whether to include relational contributor records.
    * @returns {Promise<RegistryItemDTO | null>} A promise that resolves to the registry item or null if not found.
    */
-  async getItemById(id: string) {
+  async getItemById(id: string, options: { includeContributors?: boolean } = {}) {
+    const { includeContributors = false } = options;
+    const include: { image: boolean; contributors?: boolean } = { image: true };
+    if (includeContributors) {
+      include.contributors = true;
+    }
     const item = await this.client.registryItem.findUnique({
       where: { id },
-      include: { image: true, 
-        contributors: true
-      }
+      include,
     });
     return item ? RegistryItemSchema.parse(item) : null;
   }
@@ -179,10 +189,6 @@ export class RegistryRepository implements IRegistryRepository {
 
         if (!inviteRecord) {
           throw new Error('Invalid invitation code.');
-        }
-
-        if (inviteRecord.used) {
-          throw new Error('This invitation code has already been used.');
         }
 
         finalName = inviteRecord.guestName;

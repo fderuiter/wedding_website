@@ -8,7 +8,7 @@ export interface StorageProvider {
   uploadFile(file: File): Promise<{ url: string }>;
 }
 
-export class LocalStorageProvider implements StorageProvider {
+class LocalStorageProvider implements StorageProvider {
   async uploadFile(file: File): Promise<{ url: string }> {
     const buffer = Buffer.from(await file.arrayBuffer());
     const hash = crypto.randomBytes(8).toString('hex');
@@ -22,7 +22,7 @@ export class LocalStorageProvider implements StorageProvider {
   }
 }
 
-export class S3StorageProvider implements StorageProvider {
+class S3StorageProvider implements StorageProvider {
   private client: S3Client;
   private bucket: string;
   private publicUrl: string;

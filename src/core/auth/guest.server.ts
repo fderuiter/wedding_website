@@ -95,7 +95,7 @@ export async function signGuestToken(payload: GuestTokenPayload): Promise<string
   return `${data}.${signature}`;
 }
 
-export async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
+async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
   try {
     if (!token || typeof token !== 'string') return null;
     const [data, signature] = token.split('.');
