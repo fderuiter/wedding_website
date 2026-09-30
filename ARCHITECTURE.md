@@ -41,7 +41,7 @@ graph TD
         C[Prisma Client]
     end
 
-    subgraph Database (Neon)
+    subgraph Database [PostgreSQL Database]
         D[PostgreSQL]
     end
 
@@ -269,7 +269,7 @@ The database stores all the data for the application, primarily the registry ite
 
 -   **Location:** The schema is defined in `prisma/schema.prisma`.
 -   **Key Technologies:**
-    -   **PostgreSQL:** The relational database used for production (hosted on [Neon](https://neon.tech/)).
+    -   **PostgreSQL:** Relational database implementing the project's standard database contract (compatible with local PostgreSQL, Neon, Supabase, Railway, AWS RDS, GCP Cloud SQL, etc. as labeled host examples).
     -   **Prisma:** The ORM used to define the schema and interact with the database in a type-safe way.
 -   **Data Models:**
     -   **`RegistryItem`:** Represents a single item in the gift registry.
