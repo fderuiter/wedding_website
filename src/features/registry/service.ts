@@ -14,19 +14,21 @@ export class RegistryService {
 
   /**
    * Retrieves all registry items.
+   * @param options - Optional query parameters, e.g. includeContributors.
    * @returns A promise that resolves to an array of all registry items.
    */
-  async getAllItems() {
-    return this.repository.getAllItems();
+  async getAllItems(options?: { includeContributors?: boolean }) {
+    return this.repository.getAllItems(options);
   }
 
   /**
    * Retrieves a single registry item by its unique ID.
    * @param id - The UUID of the item to retrieve.
+   * @param options - Optional query parameters, e.g. includeContributors.
    * @returns A promise that resolves to the registry item object or null if not found.
    */
-  async getItemById(id: string) {
-    return this.repository.getItemById(id);
+  async getItemById(id: string, options?: { includeContributors?: boolean }) {
+    return this.repository.getItemById(id, options);
   }
 
   /**
