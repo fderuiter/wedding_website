@@ -37,6 +37,7 @@ export const RawUpdateAppConfigSchema = z.object({
   showAddToCalendar: z.boolean().optional(),
   timezone: z.string().refine(
     (val) => {
+      if (val === 'UTC' || val === 'GMT') return true;
       try {
         return Intl.supportedValuesOf('timeZone').includes(val);
       } catch {

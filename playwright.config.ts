@@ -13,7 +13,8 @@ export default defineConfig({
       DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
       POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
-      ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,abbifred.com',
+      ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
+      GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
     },
   } : undefined,
   use: {

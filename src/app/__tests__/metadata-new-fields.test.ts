@@ -149,8 +149,8 @@ describe('generateMetadata - new SEO fields', () => {
       const metadata = await generateMetadata();
       const ogImages = (metadata.openGraph as any)?.images as any[];
 
-      // Falls back to '/images/sunset-embrace.jpg'
-      expect(ogImages[0].url).toBe('https://example.com/images/sunset-embrace.jpg');
+      // Falls back to '/images/placeholder.png'
+      expect(ogImages[0].url).toBe('https://example.com/images/placeholder.png');
     });
 
     it('includes og image alt text with bride and groom names', async () => {
@@ -164,7 +164,7 @@ describe('generateMetadata - new SEO fields', () => {
       const metadata = await generateMetadata();
       const ogImages = (metadata.openGraph as any)?.images as any[];
 
-      expect(ogImages[0].alt).toBe('A photo of Emma and James embracing.');
+      expect(ogImages[0].alt).toBe("A photo for Emma and James's wedding.");
     });
   });
 
@@ -238,7 +238,7 @@ describe('generateMetadata - new SEO fields', () => {
       expect(metadata.keywords).toEqual(['keyword one', 'keyword two', 'keyword three']);
     });
 
-    it('uses default seoKeywords template when seoKeywords is not in config', async () => {
+    it('handles empty seoKeywords when seoKeywords is not in config', async () => {
       mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
       const configWithoutKeywords = { ...baseConfig } as any;
       delete configWithoutKeywords.seoKeywords;
@@ -250,10 +250,8 @@ describe('generateMetadata - new SEO fields', () => {
 
       const metadata = await generateMetadata();
 
-      // Default template should still interpolate brideName and groomName
       expect(Array.isArray(metadata.keywords)).toBe(true);
-      expect((metadata.keywords as string[]).some(k => k.includes('Alice'))).toBe(true);
-      expect((metadata.keywords as string[]).some(k => k.includes('Bob'))).toBe(true);
+      expect(metadata.keywords).toEqual([]);
     });
   });
 

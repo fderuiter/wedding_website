@@ -12,33 +12,44 @@ export class ContentService {
     return await this.repo.updateFeatures(features);
   }
 
-  async reorderFeatures(orderedIds: string[]) {
-    const currentFeatures = await this.repo.getFeatures();
-    const featureMap = new Map(currentFeatures.map((f: any) => [f.id, f]));
-    const reordered = orderedIds
-      .map((id) => featureMap.get(id))
-      .filter(Boolean);
-    return await this.repo.updateFeatures(reordered);
+  async reorderFeatures(orderedIds: string[], author?: string) {
+    const features = await this.repo.getFeatures();
+    const featureMap = new Map(features.map((f: any) => [f.id, f]));
+    const reordered: any[] = [];
+    for (const id of orderedIds) {
+      if (featureMap.has(id)) {
+        reordered.push(featureMap.get(id));
+        featureMap.delete(id);
+      }
+    }
+    for (const remaining of featureMap.values()) {
+      reordered.push(remaining);
+    }
+    return author !== undefined
+      ? await this.repo.updateFeatures(reordered, author)
+      : await this.repo.updateFeatures(reordered);
   }
 
-  async toggleFeatureVisibility(featureId: string, visible: boolean) {
-    const currentFeatures = await this.repo.getFeatures();
-    const updated = currentFeatures.map((f: any) =>
-      f.id === featureId ? { ...f, visible } : f
-    );
-    return await this.repo.updateFeatures(updated);
+  async toggleFeatureVisibility(featureId: string, visible: boolean, author?: string) {
+    const features = await this.repo.getFeatures();
+    const updated = features.map((f: any) => (f.id === featureId ? { ...f, visible } : f));
+    return author !== undefined
+      ? await this.repo.updateFeatures(updated, author)
+      : await this.repo.updateFeatures(updated);
   }
 
-  async createCustomSection(title: string, content: string) {
-    const currentFeatures = await this.repo.getFeatures();
-    const newSection = {
-      id: `custom-${Math.random().toString(36).substr(2, 9)}`,
+  async createCustomSection(title: string, content: string, author?: string) {
+    const features = await this.repo.getFeatures();
+    const newFeature = {
+      id: `custom-${Date.now()}`,
       type: 'custom',
       title,
       content,
       visible: true,
     };
-    return await this.repo.updateFeatures([...currentFeatures, newSection]);
+    return author !== undefined
+      ? await this.repo.updateFeatures([...features, newFeature], author)
+      : await this.repo.updateFeatures([...features, newFeature]);
   }
 
   async getAllNodes() {

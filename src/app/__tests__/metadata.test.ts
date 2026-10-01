@@ -20,7 +20,7 @@ describe('generateMetadata', () => {
     const title = typeof metadata.title === 'object' && metadata.title !== null ? metadata.title.default : metadata.title;
     expect(title).toBe("TestBride & TestGroom's Wedding");
     expect(metadata.description).toBe(
-      'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.'
+      'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.'
     );
     expect(metadata.publisher).toBe('TestBride & TestGroom');
     expect(metadata.icons).toEqual({
@@ -32,13 +32,13 @@ describe('generateMetadata', () => {
       type: 'website',
       url: 'https://testsite.com',
       title: "TestBride & TestGroom's Wedding",
-      description: 'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.',
+      description: 'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.',
       images: [
         {
-          url: 'https://testsite.com/images/sunset-embrace.jpg',
+          url: 'https://testsite.com/images/placeholder.png',
           width: 1024,
           height: 1024,
-          alt: 'A photo of TestBride and TestGroom embracing.',
+          alt: "A photo for TestBride and TestGroom's wedding.",
         },
       ],
       locale: 'en_US',
@@ -47,8 +47,8 @@ describe('generateMetadata', () => {
     expect(metadata.twitter).toEqual({
       card: 'summary_large_image',
       title: "TestBride & TestGroom's Wedding",
-      description: 'Join TestBride and TestGroom for their wedding celebration at the historic Test Venue in TestCity, TS. Find all the details about the ceremony, reception, registry, and our story.',
-      images: ['https://testsite.com/images/sunset-embrace.jpg'],
+      description: 'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.',
+      images: ['https://testsite.com/images/placeholder.png'],
     });
     expect(metadata.metadataBase?.href).toBe('https://testsite.com/');
   });

@@ -20,11 +20,11 @@ export async function generateMetadata(): Promise<Metadata> {
   
   const partner1 = config.partner1Name || config.brideName || '';
   const partner2 = config.partner2Name || config.groomName || '';
-  const couplesNames = `${partner1} & ${partner2}`;
+  const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : '';
 
-  const ogImageUrl = config.ogImageUrl || '/images/sunset-embrace.jpg';
+  const ogImageUrl = config.ogImageUrl || '/images/placeholder.png';
   const faviconUrl = config.faviconUrl || '/assets/favicon.png';
-  const seoKeywords = config.seoKeywords ?? "{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception";
+  const seoKeywords = config.seoKeywords || '';
 
   let siteUrl = config.baseUrl || 'http://localhost:3000';
   try {
@@ -39,9 +39,28 @@ export async function generateMetadata(): Promise<Metadata> {
     // Fallback if headers are not available during static generation
   }
 
+  let venueLoc = '';
+  if (config.venueName) {
+    venueLoc = ` at ${config.venueName}`;
+    if (config.venueCity) {
+      venueLoc += ` in ${config.venueCity}`;
+      if (config.venueState) {
+        venueLoc += `, ${config.venueState}`;
+      }
+    }
+  }
+
+  const defaultTitle = partner1 && partner2
+    ? `${partner1} & ${partner2}'s Wedding`
+    : 'Wedding Website';
+
+  const defaultDescription = partner1 && partner2
+    ? `Join ${partner1} and ${partner2} for their wedding celebration${venueLoc}.`
+    : 'Welcome to our wedding website.';
+
   const siteConfig = {
-    title: config.seoTitle || `${couplesNames}'s Wedding`,
-    description: config.seoDescription || `Join ${partner1} and ${partner2} for their wedding celebration at the historic ${config.venueName} in ${config.venueCity}, ${config.venueState}. Find all the details about the ceremony, reception, registry, and our story.`,
+    title: config.seoTitle || defaultTitle,
+    description: config.seoDescription || defaultDescription,
     url: siteUrl,
     ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${siteUrl}${ogImageUrl}`,
     favicon: faviconUrl,
@@ -53,7 +72,9 @@ export async function generateMetadata(): Promise<Metadata> {
     url: siteConfig.ogImage,
     width: dims?.width || 1200,
     height: dims?.height || 630,
-    alt: `A photo of ${partner1} and ${partner2} embracing.`,
+    alt: partner1 && partner2
+      ? `A photo for ${partner1} and ${partner2}'s wedding.`
+      : 'Wedding website cover photo.',
   };
 
   return {
