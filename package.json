@@ -37,7 +37,8 @@
     "quality": "npx tsx scripts/check-quality.ts",
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
-    "prepare": "node scripts/install-git-hooks.js"
+    "prepare": "node scripts/install-git-hooks.js",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1102.0",

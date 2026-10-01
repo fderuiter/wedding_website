@@ -1,11 +1,13 @@
 import { execSync } from 'child_process';
 
 function main() {
-  console.log('🔍 Validating Prisma schema...');
+  console.log('🔍 Validating Prisma schema and generating Prisma Client...');
   try {
-    const output = execSync('npx prisma validate', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    console.log(output.trim());
-    console.log('✅ Prisma schema validation passed!');
+    const validateOutput = execSync('npx prisma validate', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log(validateOutput.trim());
+    const generateOutput = execSync('npx prisma generate', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log(generateOutput.trim());
+    console.log('✅ Prisma schema validation and client generation passed!');
     process.exit(0);
   } catch (error: any) {
     console.error('\n❌ Prisma schema validation failed:\n');
