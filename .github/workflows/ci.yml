@@ -175,7 +175,6 @@ jobs:
         run: |
           cp -r .next/static .next/standalone/.next/static
           cp -r public .next/standalone/public
-
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
 
