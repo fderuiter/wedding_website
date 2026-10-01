@@ -7,24 +7,36 @@ assignees: ''
 
 ---
 
-**What kind of change does this PR introduce?** (check at least one)
+**What kind of change does this PR introduce?** (check all that apply)
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation (change to documentation pages)
-- [ ] Other (please describe):
+- [ ] 🚀 **Application:** Bug fix, UI change, or feature addition (non-breaking)
+- [ ] 🗄️ **Schema:** Database schema change (`prisma/schema.prisma` / `prisma/migrations/`)
+- [ ] ⚙️ **Configuration:** `AppConfig` schema or environment variable (`src/env.ts`, `.env.example`) change
+- [ ] 🐳 **Deployment:** Docker, CI/CD, Node runtime, or infrastructure setup change
+- [ ] ⚠️ **Breaking Change:** Fix or feature causing non-backwards-compatible changes
+- [ ] 📚 **Documentation:** Changes or additions to documentation pages
+
+**Does this PR require downstream adopter action upon upgrading?**
+
+- [ ] **Yes** (Requires running `npm run migrate:deploy`, updating `.env`, or following migration instructions below)
+- [ ] **No** (Transparent upgrade)
 
 **What is the current behavior?** (You can also link to an open issue here)
 
 **What is the new behavior?**
 
-**Does this PR introduce a breaking change?**
+**Does this PR introduce a breaking change or require adopter migration steps?**
 
 - [ ] Yes
 - [ ] No
 
-(If this PR contains a breaking change, please describe the impact and migration path for existing applications below.)
+*(If Yes, provide step-by-step migration instructions below for downstream adopters.)*
+
+### Migration Instructions / Adopter Action Steps (if applicable)
+
+```markdown
+<!-- Describe exact actions required by adopters (e.g. database migrations, env var additions) -->
+```
 
 ### Reusability Assessment
 

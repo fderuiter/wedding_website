@@ -4,6 +4,7 @@ const runWebServer = !process.env.TEST_CONTAINER;
 
 export default defineConfig({
   testDir: './e2e',
+  workers: process.env.CI ? 1 : undefined,
   webServer: runWebServer ? {
     command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
     url: 'http://127.0.0.1:3000',

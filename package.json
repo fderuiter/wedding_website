@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "next dev --turbo",
     "prebuild": "node --experimental-strip-types --import ./scripts/register.mjs scripts/generate-docs.ts",
-    "build": "npm run lint && npm run lint:migrations && npm run lint:unused && prisma generate && next build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
-    "start": "next start",
+    "build": "npm run lint && npm run lint:migrations && npm run lint:unused && prisma generate && next build",
+    "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
+    "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:migrations": "tsx scripts/verify-migration-compatibility.ts",
