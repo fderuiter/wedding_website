@@ -26,6 +26,8 @@ describe('AST Method Scope Disambiguation and Expanded Registry in OpenAPI Gener
     expect(schema.properties.appConfig).toBeDefined();
     expect(schema.properties.appConfig.items).toBeDefined();
     expect(schema.properties.appConfig.items.properties).toBeDefined();
+    expect(schema.properties.appConfig.items.properties.partner1Name).toBeDefined();
+    expect(schema.properties.appConfig.items.properties.partner2Name).toBeDefined();
     expect(schema.properties.appConfig.items.properties.brideName).toBeDefined();
     expect(schema.properties.appConfig.items.properties.groomName).toBeDefined();
 

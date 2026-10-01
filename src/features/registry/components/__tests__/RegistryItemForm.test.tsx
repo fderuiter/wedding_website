@@ -117,4 +117,79 @@ describe('RegistryItemForm', () => {
 
     expect(await screen.findByText('Scrape failed')).toBeInTheDocument();
   });
+
+  it('displays contextual site advice when scraper encounters BLOCKED_BY_VENDOR error for Costco and focuses Item Name', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: () => Promise.resolve({
+          error: 'BLOCKED_BY_VENDOR: Access to this retailer website was blocked.',
+          details: { errorDomain: 'BLOCKED_BY_VENDOR' }
+        }),
+      } as Response) as jest.Mock;
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Import from Product URL/i), { target: { value: 'https://www.costco.com/sample-item' } });
+    fireEvent.click(screen.getByRole('button', { name: /import/i }));
+
+    expect(await screen.findByText('Costco blocks automated product imports. Please enter item details manually below.')).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Item Name/i)).toHaveFocus();
+    });
+  });
+
+  it('notifies about missing image and allows applying default placeholder image or site favicon', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          name: 'Item without image',
+          imageUrl: '',
+          faviconUrl: 'https://www.example.com/favicon.ico',
+        }),
+      } as Response) as jest.Mock;
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Import from Product URL/i), { target: { value: 'https://www.example.com/no-image' } });
+    fireEvent.click(screen.getByRole('button', { name: /import/i }));
+
+    await waitFor(() => expect(screen.getByLabelText(/Item Name/i)).toHaveValue('Item without image'));
+    expect(screen.getByTestId('scrape-warning-banner')).toBeInTheDocument();
+
+    // Click Use Default Image button in warning banner
+    fireEvent.click(screen.getByTestId('btn-apply-placeholder-image'));
+    expect(screen.getByLabelText(/Image URL/i)).toHaveValue('/images/placeholder.png');
+  });
+
+  it('allows applying site favicon image fallback', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          name: 'Item with Favicon',
+          imageUrl: '',
+          faviconUrl: 'https://www.example.com/favicon.ico',
+        }),
+      } as Response) as jest.Mock;
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Import from Product URL/i), { target: { value: 'https://www.example.com/no-image' } });
+    fireEvent.click(screen.getByRole('button', { name: /import/i }));
+
+    await waitFor(() => expect(screen.getByTestId('btn-apply-favicon-image')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('btn-apply-favicon-image'));
+    expect(screen.getByLabelText(/Image URL/i)).toHaveValue('https://www.example.com/favicon.ico');
+  });
 });
