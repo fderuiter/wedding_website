@@ -6,7 +6,7 @@ import path from 'path';
 import crypto from 'crypto';
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode';
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
   const payload = {
     guest: true,
     iat: Date.now(),
