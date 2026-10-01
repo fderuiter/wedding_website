@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { Forecast } from '@/features/weather';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 export const metadata: Metadata = {
   title: 'Weather Forecast',
@@ -21,7 +22,9 @@ export default function WeatherPage() {
       <p className="text-center text-lg sm:text-xl text-gray-400 mb-10">
         October 10, 2025
       </p>
-      <Forecast />
+      <ErrorBoundary title="Weather Forecast Error" message="An error occurred while loading the weather forecast widget.">
+        <Forecast />
+      </ErrorBoundary>
     </div>
   );
 }

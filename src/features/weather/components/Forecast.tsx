@@ -1,22 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Icon, IconName } from '@/components/ui/Icon';
 import { apiClient } from '@/lib/apiClient';
+import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
 
-/**
- * @interface WeatherData
- * @description Defines the structure of the weather data received from the API.
- * @property {object} daily - Object containing arrays of daily weather data.
- * @property {string[]} daily.time - Array of dates.
- * @property {number[]} daily.weathercode - Array of WMO weather codes.
- * @property {number[]} daily.temperature_2m_max - Array of maximum daily temperatures.
- * @property {number[]} daily.temperature_2m_min - Array of minimum daily temperatures.
- * @property {number[]} daily.apparent_temperature_max - Array of maximum apparent temperatures.
- * @property {number[]} daily.precipitation_probability_max - Array of maximum precipitation probabilities.
- * @property {number[]} daily.wind_speed_10m_max - Array of maximum wind speeds.
- */
 interface WeatherData {
   daily: {
     time: string[];
@@ -29,11 +19,6 @@ interface WeatherData {
   };
 }
 
-/**
- * Helper function to map WMO weather codes to human-readable descriptions.
- * @param {number} code - The WMO weather code.
- * @returns {string} A descriptive string for the weather condition.
- */
 const getWeatherDescription = (code: number): string => {
   const descriptions: { [key: number]: string } = {
     0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Depositing rime fog',
@@ -46,11 +31,6 @@ const getWeatherDescription = (code: number): string => {
   return descriptions[code] || 'Unknown';
 };
 
-/**
- * Helper function to select an appropriate icon based on the WMO weather code.
- * @param {number} code - The WMO weather code.
- * @returns {{ name: IconName, color: string }} An object with registry identifier and color for the weather icon.
- */
 const getWeatherIcon = (code: number): { name: IconName, color: string } => {
   if (code <= 1) return { name: 'Sun', color: 'text-secondary' };
   if (code <= 3) return { name: 'Cloud', color: 'text-gray-400' };
@@ -62,34 +42,74 @@ const getWeatherIcon = (code: number): { name: IconName, color: string } => {
 /**
  * @function Forecast
  * @description A React component that fetches and displays the current weather forecast.
- * It shows the current temperature (high/low), feels like temperature, precipitation probability,
- * wind speed, and a weather icon/description.
+ * Shows a styled card skeleton during fetch and a localized error card with a working retry button on failure.
  * @returns {JSX.Element} The rendered Forecast component.
  */
 const Forecast: React.FC = () => {
   const [weather, setWeather] = useState<WeatherData['daily'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchWeather = async () => {
-      try {
-        const data = await apiClient.get<WeatherData>('/api/weather');
-        setWeather(data.daily);
-      } catch (error) {
-        console.error('Error fetching weather:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchWeather();
+  const fetchWeather = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient.get<WeatherData>('/api/weather');
+      setWeather(data.daily);
+    } catch (err) {
+      console.error('Error fetching weather:', err);
+      setError('Failed to load forecast. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    fetchWeather();
+  }, [fetchWeather]);
+
   if (isLoading) {
-    return <div className="text-center p-10">Loading forecast...</div>;
+    return (
+      <div
+        className="bg-white/25 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto min-h-[320px] flex flex-col justify-between"
+        data-testid="forecast-skeleton"
+      >
+        <span className="sr-only">Loading forecast...</span>
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-col items-center md:items-start gap-2">
+            <Skeleton className="w-16 h-16 rounded-full bg-white/30" />
+            <Skeleton className="w-32 h-6 rounded bg-white/30" />
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <Skeleton className="w-48 h-16 rounded bg-white/30" />
+            <Skeleton className="w-24 h-4 rounded bg-white/30" />
+          </div>
+        </div>
+        <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+          <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
+          <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
+          <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
+        </div>
+      </div>
+    );
   }
 
-  if (!weather) {
-    return <div className="text-center text-red-500 p-10">Failed to load forecast. Please try again later.</div>;
+  if (error || !weather) {
+    return (
+      <div
+        className="bg-white/25 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
+        role="alert"
+      >
+        <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
+        <h3 className="text-xl font-bold">Unable to Load Weather</h3>
+        <p className="text-base text-red-500 font-medium">
+          Failed to load forecast. Please try again later.
+        </p>
+        <Button onClick={fetchWeather} variant="primary" size="md">
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   const today = {

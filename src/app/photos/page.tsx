@@ -5,6 +5,7 @@ import Script from 'next/script';
 import { contentService } from '@/features/content';
 import type { ContentNodeDTO } from '@/features/content';
 import { withPageQuery } from '@/lib/query-wrapper';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 export const metadata: Metadata = {
   title: 'Photos',
@@ -20,6 +21,8 @@ export const metadata: Metadata = {
  * This component embeds a Google Photos album using the `publicalbum` script.
  * It also provides a direct link to the full Google Photos album.
  * The embedded gallery is initially hidden and populated with specific photo URLs.
+ * If live content nodes fail, it falls back to curated default photo assets and shows
+ * an explicit state indicator.
  *
  * @returns {JSX.Element} The rendered photos page.
  */
@@ -48,7 +51,8 @@ export default async function PhotosPage() {
     [] as ContentNodeDTO[]
   );
 
-  const urls = photoNodes.length > 0 ? photoNodes.map(n => n.data?.url).filter(Boolean) : defaultUrls;
+  const isUsingFallback = photoNodes.length === 0;
+  const urls = !isUsingFallback ? photoNodes.map(n => n.data?.url).filter(Boolean) : defaultUrls;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -56,17 +60,35 @@ export default async function PhotosPage() {
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Our Wedding Photos
       </h1>
-      <p className="text-center text-lg mb-12">
+      <p className="text-center text-lg mb-8">
         Here is a small selection of photos from our special day. You can view the full album on Google Photos.
       </p>
-      <div className="pa-gallery-player-widget" style={{width: '100%', height: '480px', display: 'none'}}
-        data-link="https://photos.google.com/share/AF1QipMnse1_Xznr2_loPvSR-McR3niH6WtH8lURPwInB0bvBUzrEcZj2kyhtq4ptCArwg?key=MHdQcFk2aUpwYXJnNHNnTllPRmZ1c0JxbEVHQWpn"
-        data-title="Wedding Pics (Good ones) · Friday, Oct 10 📸"
-        data-description="Shared album · Tap to view!">
-        {urls.map((url, i) => (
-          <object key={i} data={url}></object>
-        ))}
-      </div>
+
+      {isUsingFallback && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="max-w-2xl mx-auto mb-8 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-center flex items-center justify-center gap-2 shadow-sm"
+          data-testid="photos-fallback-indicator"
+        >
+          <Icon name="Info" className="w-5 h-5 text-amber-500 shrink-0" />
+          <span className="text-sm font-medium">
+            Displaying curated photo gallery (live album feeds currently unavailable).
+          </span>
+        </div>
+      )}
+
+      <ErrorBoundary title="Gallery Error" message="Could not render photo gallery widget.">
+        <div className="pa-gallery-player-widget" style={{width: '100%', height: '480px', display: 'none'}}
+          data-link="https://photos.google.com/share/AF1QipMnse1_Xznr2_loPvSR-McR3niH6WtH8lURPwInB0bvBUzrEcZj2kyhtq4ptCArwg?key=MHdQcFk2aUpwYXJnNHNnTllPRmZ1c0JxbEVHQWpn"
+          data-title="Wedding Pics (Good ones) · Friday, Oct 10 📸"
+          data-description="Shared album · Tap to view!">
+          {urls.map((url, i) => (
+            <object key={i} data={url}></object>
+          ))}
+        </div>
+      </ErrorBoundary>
+
       <div className="flex justify-center mt-12">
         <Link href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
           target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
