@@ -4,7 +4,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Guide](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)**
+**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Guide](./DEPLOYMENT.md)** | **[API Documentation](./API_DOCUMENTATION.md)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
 
 ## Table of Contents
 
@@ -169,6 +169,13 @@ npm run test:watch
 *   **Adding Items:** From the dashboard, click "Add New Item". You can paste a product URL to auto-fill details or enter them manually.
 *   **Group Gifts:** Toggle the "Allow Group Gifting?" checkbox to let multiple guests contribute to a single item.
 *   **Managing Contributions:** The dashboard shows the funded status of each item. You can edit items to update quantities or fix typos.
+
+### Upgrading & Upstream Maintenance
+
+If you cloned or forked this template to host your own wedding website, you can pull upstream fixes and new features using Git:
+
+*   See **[docs/upgrading.md](./docs/upgrading.md)** for step-by-step instructions on adding upstream remotes, resolving conflicts, running database migrations (`npm run migrate:deploy`), and post-upgrade testing.
+*   See **[docs/versioning.md](./docs/versioning.md)** for our Semantic Versioning policy, release note categorization, and breaking change protocols.
 
 ## Project Structure
 
