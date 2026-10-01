@@ -130,6 +130,8 @@ a.skip-link, .skip-link {
 a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus-visible {
   left: 0 !important;
   z-index: 50 !important;
+  color: #111827 !important;
+  background-color: #ffffff !important;
   padding: .5rem .75rem !important;
   border-radius: .375rem !important;
   box-shadow: 0 2px 6px rgba(0,0,0,.15) !important;
