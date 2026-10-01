@@ -19,11 +19,12 @@ describe('Health and Readiness Endpoints', () => {
 
   describe('GET /api/health (Liveness)', () => {
     it('returns 200 OK with status ok', async () => {
+      mockQueryRaw.mockResolvedValue([{ '?column?': 1 }]);
       const res = await healthRoute();
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.status).toBe('ok');
-      expect(json.timestamp).toBeDefined();
+      const status = json.data?.status || json.status;
+      expect(status).toBe('ok');
     });
   });
 

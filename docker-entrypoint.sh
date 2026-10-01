@@ -13,8 +13,5 @@ if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
   exit 1
 fi
 
-echo "Running database migrations..."
-npx -y prisma migrate deploy || echo "Migration notice: Prisma migration skipped or already completed."
-
 echo "Starting application..."
 exec "$@"

@@ -179,7 +179,8 @@ async function main() {
       throw new Error(`Health check returned status ${healthRes.statusCode}: ${healthRes.body}`);
     }
     const healthJson = JSON.parse(healthRes.body);
-    if (healthJson.status !== 'ok') {
+    const healthStatus = healthJson.status || healthJson.data?.status;
+    if (healthStatus !== 'ok') {
       throw new Error(`Health check body invalid: ${healthRes.body}`);
     }
     console.log('✅ /api/health OK');

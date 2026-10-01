@@ -29,7 +29,7 @@ const envSchema = z.object({
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
     if (hosts.length === 0) return false;
     return hosts.every(h => {
-      return /^((\*|\.)?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*|localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:[0-9]+)?$/.test(h);
+      return /^((\*\.|\.)?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*|localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:[0-9]+)?$/.test(h);
     });
   }, {
     message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
