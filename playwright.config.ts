@@ -11,18 +11,18 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
-      DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
-      POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
+      E2E_TEST: 'true',
+      DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public',
+      POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public',
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
       ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,example.com,*.example.com',
-      GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
-      E2E_TEST: 'true',
+      GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
     },
   } : undefined,
   use: {
     baseURL: 'http://127.0.0.1:3000',
     launchOptions: {
-      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer'],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer'],
     },
   },
 });

@@ -177,8 +177,10 @@ jobs:
         with:
           name: lcov-report
           path: coverage/
-
-      - name: Run Playwright e2e tests
+      - name: Run e2e tests
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+          GUEST_PASSCODE: wedding2026
         run: npx playwright test
 
       - name: Generate A11y Report
