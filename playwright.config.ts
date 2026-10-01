@@ -21,5 +21,8 @@ export default defineConfig({
   } : undefined,
   use: {
     baseURL: 'http://127.0.0.1:3000',
+    launchOptions: {
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer'],
+    },
   },
 });

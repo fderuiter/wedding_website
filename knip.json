@@ -25,6 +25,7 @@
   "github-actions": false,
   "ignore": ["next-env.d.ts", ".next/**"],
   "ignoreDependencies": ["tailwindcss", "lint-staged"],
+  "ignoreUnresolved": ["./.next/dev/types/routes.d.ts", ".next/dev/types/routes.d.ts"],
   "rules": {
     "files": "error",
     "exports": "error",

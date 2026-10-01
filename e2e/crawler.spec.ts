@@ -63,7 +63,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
     for (const route of PROTECTED_UI_ROUTES) {
       console.log(`[Unauthenticated] Navigating to: ${route}`);
-      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 30000 });
       const url = new URL(page.url());
       expect(url.pathname).toBe('/admin/login');
     }
