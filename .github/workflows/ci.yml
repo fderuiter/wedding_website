@@ -206,6 +206,7 @@ jobs:
       - name: Upload Next.js Build Artifact
         uses: actions/upload-artifact@v4
         with:
+<<<<<<< HEAD
           name: next-build-artifact
           retention-days: 7
           path: |
@@ -237,6 +238,9 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
       - name: Run e2e tests
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+          GUEST_PASSCODE: wedding2026
         run: npx playwright test
 
       - name: Generate A11y Report
