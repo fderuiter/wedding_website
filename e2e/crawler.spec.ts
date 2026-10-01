@@ -51,7 +51,7 @@ const START_ROUTES = [...PUBLIC_UI_ROUTES, ...PROTECTED_UI_ROUTES];
 
 test.describe('Dynamic Route Crawler & Link Audit', () => {
 
-  test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ context, page }) => {
+  test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ context }) => {
     const guestCookieValue = generateGuestCookieValue();
     await context.addCookies([
       {
@@ -63,13 +63,18 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
     for (const route of PROTECTED_UI_ROUTES) {
       console.log(`[Unauthenticated] Navigating to: ${route}`);
-      await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      const url = new URL(page.url());
-      expect(url.pathname).toBe('/admin/login');
+      const page = await context.newPage();
+      try {
+        await page.goto(route, { waitUntil: 'domcontentloaded' });
+        const url = new URL(page.url());
+        expect(url.pathname).toBe('/admin/login');
+      } finally {
+        await page.close();
+      }
     }
   });
 
-  test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ context, page }) => {
+  test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ context }) => {
     test.setTimeout(120000); // 2 minutes to allow crawling all pages when DB is down
     const cookieValue = generateAdminCookieValue();
     const guestCookieValue = generateGuestCookieValue();
@@ -97,30 +102,40 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       if (visitedUrls.has(targetUrl)) continue;
 
       console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-      // Navigate to the target route and wait for DOM content loaded (much faster and avoids hanging)
-      const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-      expect(response).not.toBeNull();
-      expect(response!.status()).toBe(200);
+      const page = await context.newPage();
+      const anchors: Array<{ href: string | null }> = [];
+      try {
+        // Navigate to the target route and wait for DOM content loaded (much faster and avoids hanging)
+        const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        expect(response).not.toBeNull();
+        expect(response!.status()).toBe(200);
 
-      // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-      if (route !== '/admin/login') {
-        const currentUrl = new URL(page.url());
-        expect(currentUrl.pathname).not.toBe('/admin/login');
+        // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
+        if (route !== '/admin/login') {
+          const currentUrl = new URL(page.url());
+          expect(currentUrl.pathname).not.toBe('/admin/login');
+        }
+
+        // Check for generic application server or DB errors in page content
+        const content = await page.content();
+        expect(content).not.toContain('Internal Server Error');
+        expect(content).not.toContain('500 Error');
+        expect(content).not.toContain('An unhandled error occurred');
+
+        visitedUrls.add(targetUrl);
+
+        // Parse and extract all anchor links from the navigated page
+        const anchorElements = await page.locator('a').all();
+        console.log(`Found ${anchorElements.length} anchor elements on ${route}`);
+        for (const anchor of anchorElements) {
+          const href = await anchor.getAttribute('href');
+          anchors.push({ href });
+        }
+      } finally {
+        await page.close();
       }
 
-      // Check for generic application server or DB errors in page content
-      const content = await page.content();
-      expect(content).not.toContain('Internal Server Error');
-      expect(content).not.toContain('500 Error');
-      expect(content).not.toContain('An unhandled error occurred');
-
-      visitedUrls.add(targetUrl);
-
-      // Parse and extract all anchor links from the navigated page
-      const anchors = await page.locator('a').all();
-      console.log(`Found ${anchors.length} anchor elements on ${route}`);
-      for (const anchor of anchors) {
-        const href = await anchor.getAttribute('href');
+      for (const { href } of anchors) {
         if (!href) continue;
 
         // Skip non-navigational links or fragments
@@ -167,9 +182,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
         checkedLinks.add(absoluteCheckUrl);
 
-        // Fetch internal link and assert it does not return an error status code (4xx, 5xx)
+        // Fetch internal link via APIRequestContext and assert it does not return an error status code (4xx, 5xx)
         console.log(`Checking link: ${absoluteCheckUrl}`);
-        const linkResponse = await page.request.get(absoluteCheckUrl);
+        const linkResponse = await context.request.get(absoluteCheckUrl);
         const status = linkResponse.status();
         expect(status, `Expected link "${href}" (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
