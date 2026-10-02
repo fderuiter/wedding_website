@@ -84,6 +84,22 @@ function extractSchemaName(node: any): string | null {
   return null;
 }
 
+function getTargetSchema(schemaObj: any): any {
+  let target = schemaObj;
+  while (target && target._def) {
+    if (target._def.schema) {
+      target = target._def.schema;
+    } else if (target._def.in) {
+      target = target._def.in;
+    } else if (target._def.innerType) {
+      target = target._def.innerType;
+    } else {
+      break;
+    }
+  }
+  return target;
+}
+
 async function run() {
   const openapi: any = {
     openapi: '3.0.3',
@@ -199,7 +215,8 @@ async function run() {
             }
 
             try {
-              const jsonSchema = typeof schemaObj.toJSONSchema === 'function' ? schemaObj.toJSONSchema({ unrepresentable: 'ignore' }) : schemaObj;
+              const targetSchema = getTargetSchema(schemaObj);
+              const jsonSchema = typeof targetSchema.toJSONSchema === 'function' ? targetSchema.toJSONSchema({ unrepresentable: 'ignore' }) : targetSchema;
               operation.requestBody = {
                 required: true,
                 content: {
