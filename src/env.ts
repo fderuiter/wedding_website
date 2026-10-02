@@ -29,7 +29,7 @@ const envSchema = z.object({
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
     if (hosts.length === 0) return false;
     return hosts.every(h => {
-      return /^((\*\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*|localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$/.test(h);
+      return /^((\*\.|\.)?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*|localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:[0-9]+)?$/.test(h);
     });
   }, {
     message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
@@ -106,8 +106,9 @@ if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || 
 } else {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
-    console.error('❌ Invalid environment variables:', JSON.stringify(parsed.error.flatten().fieldErrors, null, 2));
-    throw new Error('Invalid environment variables');
+    const errorDetails = JSON.stringify(parsed.error.flatten().fieldErrors, null, 2);
+    console.error('❌ Invalid environment variables:', errorDetails);
+    throw new Error(`Invalid environment variables: ${errorDetails}`);
   }
   _env = parsed.data;
 }

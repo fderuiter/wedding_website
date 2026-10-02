@@ -61,7 +61,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
 
   const role = isAdmin ? 'admin' : 'public';
-  const baseLinks = getNavLinks(role);
+  const baseLinks = getNavLinks(role, (config as any)?.modules);
 
   const adminLinks = baseLinks.filter(l => l.href.startsWith('/admin'));
   const regularLinks = baseLinks.filter(l => !l.href.startsWith('/admin'));

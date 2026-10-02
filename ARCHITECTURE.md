@@ -109,6 +109,7 @@ flowchart LR
     node_api_health["health"]
     node_api_media["media"]
     node_api_media_id["[id]"]
+    node_api_ready["ready"]
     node_api_registry["registry"]
     node_api_registry_contribute["contribute"]
     node_api_registry_items["items"]
@@ -165,6 +166,7 @@ flowchart LR
     node_api --> node_api_health
     node_api --> node_api_media
     node_api_media --> node_api_media_id
+    node_api --> node_api_ready
     node_api --> node_api_registry
     node_api_registry --> node_api_registry_contribute
     node_api_registry --> node_api_registry_items
@@ -215,6 +217,7 @@ flowchart LR
     class node_api_health api;
     class node_api_media api;
     class node_api_media_id api;
+    class node_api_ready api;
     class node_api_registry_contribute api;
     class node_api_registry_items api;
     class node_api_registry_items_id api;
@@ -382,6 +385,7 @@ The system uses a centrally defined configuration schema to validate runtime set
 | `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
+| `modules` | `default` | Configuration field for modules |
 | `features` | `pipe` | Configuration field for features |
 | `createdAt` | `date` | Configuration field for createdAt |
 | `updatedAt` | `date` | Configuration field for updatedAt |

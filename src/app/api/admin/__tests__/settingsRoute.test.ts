@@ -82,6 +82,8 @@ const validConfigData = {
   seoKeywords: '{{brideName}} wedding, {{groomName}} wedding',
 };
 
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
+
 const updatedConfig = {
   id: 'global',
   ...validConfigData,
@@ -91,6 +93,7 @@ const updatedConfig = {
   timezone: 'America/Chicago',
   showCountdown: true,
   showAddToCalendar: true,
+  modules: DEFAULT_MODULE_CONFIG,
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),

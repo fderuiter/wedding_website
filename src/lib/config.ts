@@ -5,6 +5,8 @@ import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
 import { headers } from 'next/headers';
 
+import { DEFAULT_MODULE_CONFIG } from './modules';
+
 export function isMultisiteEnabled(): boolean {
   return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
 }
@@ -47,6 +49,7 @@ const fallbackAppConfig: LocalAppConfig = {
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true, 
   showAddToCalendar: true,
+  modules: DEFAULT_MODULE_CONFIG,
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),

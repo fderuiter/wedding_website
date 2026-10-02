@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useRef, useEffect, ElementType, ComponentPropsWithoutRef } from 'react';
+import React, { useRef, useEffect, useCallback, ElementType, ComponentPropsWithoutRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
+import { cn } from '@/utils/cn';
 
 const motionComponentCache = new Map<ElementType, any>();
 
@@ -25,116 +26,140 @@ const MotionComponentWrapper = React.forwardRef<any, { asComponent: ElementType;
 );
 MotionComponentWrapper.displayName = 'MotionComponentWrapper';
 
-type Interactive3DCardProps<T extends ElementType> = {
+type Interactive3DCardProps<T extends ElementType = 'div'> = {
   as?: T;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
   onClick?: (e: React.MouseEvent<any>) => void;
 } & Omit<ComponentPropsWithoutRef<T>, 'as' | 'children' | 'className' | 'onClick'>;
 
-export function Interactive3DCard<T extends ElementType = 'div'>({
-  as,
-  children,
-  className = '',
-  onClick,
-  ...props
-}: Interactive3DCardProps<T>) {
-  const ref = useRef<HTMLElement>(null);
+type Interactive3DCardComponent = <T extends ElementType = 'div'>(
+  props: Interactive3DCardProps<T> & { ref?: React.Ref<any> }
+) => React.ReactNode;
 
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
+export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
+  function Interactive3DCard(
+    {
+      as,
+      children,
+      className,
+      onClick,
+      ...props
+    }: Interactive3DCardProps<any>,
+    forwardedRef: React.Ref<any>
+  ) {
+    const internalRef = useRef<HTMLElement>(null);
 
-  // Smooth the motion values using springs
-  const mouseXSpring = useSpring(x, { stiffness: 300, damping: 20 });
-  const mouseYSpring = useSpring(y, { stiffness: 300, damping: 20 });
-
-  // Transform mouse position to rotation
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['10deg', '-10deg']);
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-10deg', '10deg']);
-
-  const Component = as || 'div';
-  const isInteractive = Component === 'button' || Component === 'a';
-
-  const step = 0.25;
-  const { mixedHandlers, AccessibleElements, reduceMotion } = useUnified3DInput({
-    domRef: ref as any,
-    onDragMove: (norm) => {
-      x.set(norm.x);
-      y.set(norm.y);
-    },
-    onDragEnd: () => {
-      x.set(0);
-      y.set(0);
-    },
-    accessibility: {
-      instructions: 'Use arrow keys to tilt the card.',
-      labels: {
-        up: 'Tilted up',
-        down: 'Tilted down',
-        left: 'Tilted left',
-        right: 'Tilted right',
-      },
-      onUp: () => y.set(Math.max(-0.5, y.get() - step)),
-      onDown: () => y.set(Math.min(0.5, y.get() + step)),
-      onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
-      onRight: () => x.set(Math.min(0.5, x.get() + step)),
-      onAction: (e: any) => {
-        if (onClick) {
-          e.preventDefault();
-          onClick(e as any);
+    const setRef = useCallback(
+      (node: HTMLElement | null) => {
+        (internalRef as React.MutableRefObject<HTMLElement | null>).current = node;
+        if (typeof forwardedRef === 'function') {
+          forwardedRef(node);
+        } else if (forwardedRef) {
+          (forwardedRef as React.MutableRefObject<HTMLElement | null>).current = node;
         }
       },
-    }
-  });
+      [forwardedRef]
+    );
 
-  const handleFocus = (e: React.FocusEvent<HTMLElement>) => {
-    // Reset or give a slight tilt when focused to show activity
-    x.set(0.15);
-    y.set(-0.15);
-    
-    if (props.onFocus) {
-      (props.onFocus as any)(e);
-    }
-  };
+    const x = useMotionValue(0);
+    const y = useMotionValue(0);
 
-  const handleBlur = (e: React.FocusEvent<HTMLElement>) => {
-    x.set(0);
-    y.set(0);
-    
-    if (props.onBlur) {
-      (props.onBlur as any)(e);
-    }
-  };
+    // Smooth the motion values using springs
+    const mouseXSpring = useSpring(x, { stiffness: 300, damping: 20 });
+    const mouseYSpring = useSpring(y, { stiffness: 300, damping: 20 });
 
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'production' && ref.current && isInteractive) {
-      const interactiveChildren = ref.current.querySelectorAll('button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (interactiveChildren.length > 0) {
-        console.warn(`Interactive3DCard warning: The card is rendered as an interactive element ('${Component}'), but contains nested interactive elements. This creates invalid HTML and breaks screen readers. Please review your usage.`);
+    // Transform mouse position to rotation
+    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['10deg', '-10deg']);
+    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-10deg', '10deg']);
+
+    const Component = as || 'div';
+    const isInteractive = Component === 'button' || Component === 'a';
+
+    const step = 0.25;
+    const { mixedHandlers, AccessibleElements, reduceMotion } = useUnified3DInput({
+      domRef: internalRef as any,
+      onDragMove: (norm) => {
+        x.set(norm.x);
+        y.set(norm.y);
+      },
+      onDragEnd: () => {
+        x.set(0);
+        y.set(0);
+      },
+      accessibility: {
+        instructions: 'Use arrow keys to tilt the card.',
+        labels: {
+          up: 'Tilted up',
+          down: 'Tilted down',
+          left: 'Tilted left',
+          right: 'Tilted right',
+        },
+        onUp: () => y.set(Math.max(-0.5, y.get() - step)),
+        onDown: () => y.set(Math.min(0.5, y.get() + step)),
+        onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
+        onRight: () => x.set(Math.min(0.5, x.get() + step)),
+        onAction: (e: any) => {
+          if (onClick) {
+            e.preventDefault();
+            onClick(e as any);
+          }
+        },
       }
-    }
-  }, [Component, isInteractive]);
+    });
 
-  return (
-    <MotionComponentWrapper
-      asComponent={Component}
-      ref={ref}
-      {...(props as any)}
-      className={className}
-      {...mixedHandlers}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      style={{
-        transformPerspective: 1000,
-        rotateX: reduceMotion ? '0deg' : rotateX,
-        rotateY: reduceMotion ? '0deg' : rotateY,
-        transformStyle: 'preserve-3d',
-        willChange: 'transform',
-        ...((props as any).style || {})
-      }}
-    >
-      {AccessibleElements}
-      {children}
-    </MotionComponentWrapper>
-  );
-}
+    const handleFocus = (e: React.FocusEvent<HTMLElement>) => {
+      // Reset or give a slight tilt when focused to show activity
+      x.set(0.15);
+      y.set(-0.15);
+      
+      if (props.onFocus) {
+        (props.onFocus as any)(e);
+      }
+    };
+
+    const handleBlur = (e: React.FocusEvent<HTMLElement>) => {
+      x.set(0);
+      y.set(0);
+      
+      if (props.onBlur) {
+        (props.onBlur as any)(e);
+      }
+    };
+
+    useEffect(() => {
+      if (process.env.NODE_ENV !== 'production' && internalRef.current && isInteractive) {
+        const interactiveChildren = internalRef.current.querySelectorAll('button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (interactiveChildren.length > 0) {
+          console.warn(`Interactive3DCard warning: The card is rendered as an interactive element ('${Component}'), but contains nested interactive elements. This creates invalid HTML and breaks screen readers. Please review your usage.`);
+        }
+      }
+    }, [Component, isInteractive]);
+
+    return (
+      <MotionComponentWrapper
+        asComponent={Component}
+        ref={setRef}
+        {...(props as any)}
+        className={cn(className)}
+        {...mixedHandlers}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        style={{
+          transformPerspective: 1000,
+          rotateX: reduceMotion ? '0deg' : rotateX,
+          rotateY: reduceMotion ? '0deg' : rotateY,
+          transformStyle: 'preserve-3d',
+          willChange: 'transform',
+          ...((props as any).style || {})
+        }}
+      >
+        {AccessibleElements}
+        {children}
+      </MotionComponentWrapper>
+    );
+  }
+) as unknown as Interactive3DCardComponent;
+
+(Interactive3DCard as any).displayName = 'Interactive3DCard';
+

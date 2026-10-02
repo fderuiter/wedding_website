@@ -1,4 +1,5 @@
 import React from 'react';
+import { cn } from '@/utils/cn';
 
 export type IconName =
   | 'X'
@@ -36,7 +37,7 @@ interface IconProps extends React.SVGProps<SVGSVGElement> {
   size?: number | string;
 }
 
-export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, width, height, className = '', ...props }, ref) => {
+export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, width, height, className, ...props }, ref) => {
   const commonProps = {
     ref,
     xmlns: 'http://www.w3.org/2000/svg',
@@ -48,7 +49,7 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
     strokeWidth: '2',
     strokeLinecap: 'round',
     strokeLinejoin: 'round',
-    className,
+    className: cn(className),
     ...props
   };
 

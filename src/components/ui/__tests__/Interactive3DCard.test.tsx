@@ -1,3 +1,4 @@
+import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Interactive3DCard } from '../Interactive3DCard';
@@ -6,7 +7,20 @@ test('Interactive3DCard renders without crashing', () => {
   render(<Interactive3DCard>Content</Interactive3DCard>);
 });
 
+test('Interactive3DCard forwards DOM ref and merges custom className via cn()', () => {
+  const ref = React.createRef<HTMLDivElement>();
+  const { container } = render(
+    <Interactive3DCard ref={ref} className="custom-card-class">
+      Content
+    </Interactive3DCard>
+  );
+
+  expect(ref.current).toBeInstanceOf(HTMLElement);
+  expect(container.firstChild).toHaveClass('custom-card-class');
+});
+
 test('Interactive3DCard preserves DOM tree continuity and does not unmount/remount on re-render', () => {
+
   const { container, rerender } = render(
     <Interactive3DCard className="test-card">
       <input defaultValue="initial-value" data-testid="test-input" />
