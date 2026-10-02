@@ -77,7 +77,7 @@ export default function AdminDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody ref={desktopContainerRef}>
-                {items.map((item) => (
+                {(Array.isArray(items) ? items : []).map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-semibold">{item.name}</TableCell>
                     <TableCell>{formatCurrency(item.price)}</TableCell>
@@ -126,7 +126,7 @@ export default function AdminDashboardPage() {
         
         {/* Card Layout for Mobile */}
         <div className="md:hidden space-y-6" ref={mobileContainerRef}>
-          {items.map((item) => (
+          {(Array.isArray(items) ? items : []).map((item) => (
             <div key={item.id} className="rounded-xl shadow-lg bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 border border-primary dark:border-gray-700">
               <div className="flex justify-between items-center mb-2">
                 <span className="font-bold text-lg text-primary">{item.name}</span>

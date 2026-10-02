@@ -4,6 +4,7 @@ const runWebServer = !process.env.TEST_CONTAINER;
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: '**/*.spec.ts',
   workers: process.env.CI ? 1 : undefined,
   webServer: runWebServer ? {
     command: process.env.CI ? 'npm run start' : 'npm run dev',
@@ -34,6 +35,8 @@ export default defineConfig({
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-zygote',
+        '--disable-gl-drawing-for-tests',
+        '--disable-software-rasterizer',
       ],
     },
   },
