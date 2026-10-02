@@ -18,7 +18,11 @@ type LocalAppConfig = Omit<AppConfigDTO, 'latitude' | 'longitude'> & {
   longitude: string | number;
 };
 
-const fallbackAppConfig: LocalAppConfig = {
+/**
+ * Generic application defaults (Layer 4).
+ * Generic technical defaults only; no personal wedding content.
+ */
+export const APP_DEFAULTS: LocalAppConfig = {
   id: 'global',
   partner1Name: '',
   partner2Name: '',
@@ -47,7 +51,7 @@ const fallbackAppConfig: LocalAppConfig = {
   colorSecondary: '#B45309',
   timezone: 'UTC',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
-  showCountdown: true, 
+  showCountdown: true,
   showAddToCalendar: true,
   modules: DEFAULT_MODULE_CONFIG,
   features: [],
@@ -64,9 +68,57 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
   const p1 = config.partner1Name || config.brideName;
   const p2 = config.partner2Name || config.groomName;
   if (!p1 || !p2 || !config.baseUrl) return false;
-  if (p1 === 'Abbigayle' && p2 === 'Frederick') return false;
+  if ((p1 === 'Partner 1' && p2 === 'Partner 2') || (p1 === 'Abbigayle' && p2 === 'Frederick')) return false;
   if (config.baseUrl.includes('wedding.example')) return false;
   return true;
+}
+
+/**
+ * Extract site configuration overrides specified via environment variables (Layer 1 override).
+ */
+export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
+  const overrides: Partial<LocalAppConfig> = {};
+
+  if (process.env.SITE_PARTNER1_NAME) overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
+  if (process.env.SITE_PARTNER2_NAME) overrides.partner2Name = process.env.SITE_PARTNER2_NAME;
+  if (process.env.SITE_BRIDE_NAME) {
+    overrides.brideName = process.env.SITE_BRIDE_NAME;
+    overrides.partner1Name = process.env.SITE_BRIDE_NAME;
+  }
+  if (process.env.SITE_GROOM_NAME) {
+    overrides.groomName = process.env.SITE_GROOM_NAME;
+    overrides.partner2Name = process.env.SITE_GROOM_NAME;
+  }
+  if (process.env.SITE_WEDDING_DATE !== undefined) {
+    overrides.weddingDate = new Date(process.env.SITE_WEDDING_DATE);
+  }
+  if (process.env.SITE_BASE_URL !== undefined) overrides.baseUrl = process.env.SITE_BASE_URL;
+  if (process.env.SITE_VENUE_NAME) overrides.venueName = process.env.SITE_VENUE_NAME;
+  if (process.env.SITE_VENUE_ADDRESS !== undefined) overrides.venueAddress = process.env.SITE_VENUE_ADDRESS;
+  if (process.env.SITE_VENUE_CITY !== undefined) overrides.venueCity = process.env.SITE_VENUE_CITY;
+  if (process.env.SITE_VENUE_STATE !== undefined) overrides.venueState = process.env.SITE_VENUE_STATE;
+  if (process.env.SITE_VENUE_ZIP !== undefined) overrides.venueZip = process.env.SITE_VENUE_ZIP;
+  if (process.env.SITE_LATITUDE !== undefined) {
+    const parsed = parseFloat(process.env.SITE_LATITUDE);
+    overrides.latitude = isNaN(parsed) ? (process.env.SITE_LATITUDE as any) : parsed;
+  }
+  if (process.env.SITE_LONGITUDE !== undefined) {
+    const parsed = parseFloat(process.env.SITE_LONGITUDE);
+    overrides.longitude = isNaN(parsed) ? (process.env.SITE_LONGITUDE as any) : parsed;
+  }
+  if (process.env.SITE_TIMEZONE) overrides.timezone = process.env.SITE_TIMEZONE;
+  if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
+  if (process.env.SITE_COLOR_SECONDARY) overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
+  if (process.env.SITE_SHOW_COUNTDOWN !== undefined) {
+    overrides.showCountdown = process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
+  }
+  if (process.env.SITE_SHOW_ADD_TO_CALENDAR !== undefined) {
+    overrides.showAddToCalendar = process.env.SITE_SHOW_ADD_TO_CALENDAR.toLowerCase() === 'true';
+  }
+  if (process.env.SITE_SEO_TITLE !== undefined) overrides.seoTitle = process.env.SITE_SEO_TITLE;
+  if (process.env.SITE_SEO_DESCRIPTION !== undefined) overrides.seoDescription = process.env.SITE_SEO_DESCRIPTION;
+
+  return overrides;
 }
 
 /**
@@ -103,6 +155,7 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
     'accesskey',
     'secretkey',
     'databaseurl',
+    'guestpasscode',
   ];
 
   for (const key of Object.keys(sanitized)) {
@@ -125,14 +178,6 @@ async function bootstrapLogisticsNodes() {
   // Unconfigured template start: no automatic personal defaults created.
 }
 
-/**
- * Load the global application configuration from the database and ensure baseline content nodes exist.
- *
- * If the `appConfig` row with id `"global"` does not exist, a new row is created with initial venue and SEO fields.
- * Also ensures default logistics and FAQ content nodes are present.
- *
- * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
- */
 async function getSubdomainFromHeaders(): Promise<string | null> {
   if (!isMultisiteEnabled()) {
     return null;
@@ -165,13 +210,13 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
 }
 
 /**
- * Load the application configuration from the database and ensure baseline content nodes exist.
+ * Load the application configuration following deterministic precedence:
+ * Level 1: Environment Variable Overrides (`SITE_*` env vars)
+ * Level 2: Database Configuration (`AppConfig` row from DB)
+ * Level 3: Application Generic Defaults (`APP_DEFAULTS`)
  *
- * If a subdomain is active, attempts to resolve the subdomain's specific configuration.
- * Gracefully falls back to "global" configuration if none found.
- * Also ensures default logistics and FAQ content nodes are present.
- *
- * @returns The effective `AppConfig` object where values from the database override the fallback defaults; if the database is unreachable, returns the predefined fallback configuration.
+ * @param idOrSubdomain - Profile ID or Subdomain identifier
+ * @returns The resolved and validated AppConfigDTO
  */
 export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
   let dbConfig: AppConfigDTO | null = null;
@@ -237,23 +282,40 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
 
     await bootstrapLogisticsNodes();
   } catch (error) {
-    console.warn('Database unreachable, using fallback config.');
+    if (process.env.NODE_ENV === 'production') {
+      console.error('Database connection failed during configuration load:', error);
+    } else {
+      console.warn('Database unreachable, using fallback config.');
+    }
   }
 
-  const mergedConfig = dbConfig 
-    ? { ...fallbackAppConfig, ...dbConfig }
-    : fallbackAppConfig;
+  const envOverrides = getEnvConfigOverrides();
+
+  // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
+  const mergedConfig = {
+    ...APP_DEFAULTS,
+    ...(dbConfig || {}),
+    ...envOverrides,
+  };
 
   const partner1Name = mergedConfig.partner1Name || mergedConfig.brideName || '';
   const partner2Name = mergedConfig.partner2Name || mergedConfig.groomName || '';
 
-  return AppConfigSchema.parse({
-    ...mergedConfig,
-    partner1Name,
-    partner2Name,
-    brideName: mergedConfig.brideName ?? partner1Name,
-    groomName: mergedConfig.groomName ?? partner2Name,
-    latitude: coordinateSchema.parse(mergedConfig.latitude),
-    longitude: coordinateSchema.parse(mergedConfig.longitude),
-  });
+  try {
+    return AppConfigSchema.parse({
+      ...mergedConfig,
+      partner1Name,
+      partner2Name,
+      brideName: mergedConfig.brideName ?? partner1Name,
+      groomName: mergedConfig.groomName ?? partner2Name,
+      latitude: coordinateSchema.parse(mergedConfig.latitude),
+      longitude: coordinateSchema.parse(mergedConfig.longitude),
+    });
+  } catch (err: any) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('❌ Production Configuration Schema Validation Failed:', err);
+      throw new Error(`Production Configuration Validation Failure: ${err.message || String(err)}`);
+    }
+    throw err;
+  }
 }

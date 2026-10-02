@@ -109,6 +109,9 @@ export const UpdateFeaturesSchema = z.object({
 });
 
 export const ImportBackupSchema = z.object({
+  version: z.string().optional(),
+  schemaVersion: z.string().optional(),
+  exportedAt: z.string().optional(),
   appConfig: z.array(z.any()).optional(),
   contentNode: z.array(z.any()).optional(),
   media: z.array(z.any()).optional(),

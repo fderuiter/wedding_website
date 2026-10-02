@@ -7,6 +7,8 @@ import { ThemeProvider } from '@/components/ThemeProvider';
 import SetupWizard from '@/components/setup/SetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 
+export const dynamic = 'force-dynamic';
+
 const geist = Geist({
   variable: '--font-geist',
   subsets: ['latin'],
