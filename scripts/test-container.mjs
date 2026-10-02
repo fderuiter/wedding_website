@@ -53,19 +53,41 @@ function printLogs() {
   child_process.spawnSync('docker', ['compose', 'logs', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir });
 }
 
+async function getAvailableDbPort() {
+  if (process.env.DB_PORT) {
+    return parseInt(process.env.DB_PORT, 10);
+  }
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => {
+      resolve(5433);
+    });
+    server.once('listening', () => {
+      server.close(() => resolve(5432));
+    });
+    server.listen(5432, '127.0.0.1');
+  });
+}
+
 async function main() {
   console.log('=== OCI Container & Clean Database Smoke Test ===');
 
   let passed = false;
 
   try {
+    const dbPort = await getAvailableDbPort();
+    process.env.DB_PORT = dbPort.toString();
+    console.log(`Using host database port ${dbPort} for container smoke test...`);
+
     // 1. Clean up any leftover containers
     console.log('Cleaning up any existing containers...');
     child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
 
     // 2. Start PostgreSQL from scratch
     console.log('Starting clean PostgreSQL database container...');
-    runCommand('docker', ['compose', 'up', '-d', 'db']);
+    runCommand('docker', ['compose', 'up', '-d', 'db'], {
+      env: { ...process.env, DB_PORT: dbPort.toString() }
+    });
 
     // 3. Wait for PostgreSQL container health check & port opening
     console.log('Waiting for PostgreSQL container to become ready...');
@@ -83,12 +105,12 @@ async function main() {
       throw new Error('PostgreSQL container failed to become ready within 30 seconds.');
     }
 
-    // Ensure TCP port 5432 is accepting connections from host
+    // Ensure TCP port is accepting connections from host
     let portReady = false;
     for (let i = 0; i < 30; i++) {
       try {
         await new Promise((resolve, reject) => {
-          const socket = net.createConnection({ port: 5432, host: '127.0.0.1', timeout: 1000 });
+          const socket = net.createConnection({ port: dbPort, host: '127.0.0.1', timeout: 1000 });
           socket.on('connect', () => { socket.end(); resolve(); });
           socket.on('error', reject);
           socket.on('timeout', () => { socket.destroy(); reject(new Error('Timeout')); });
@@ -101,22 +123,24 @@ async function main() {
     }
 
     if (!portReady) {
-      throw new Error('PostgreSQL port 5432 not reachable on localhost within 30 seconds.');
+      throw new Error(`PostgreSQL port ${dbPort} not reachable on localhost within 30 seconds.`);
     }
 
     console.log('✅ PostgreSQL container is ready!');
 
     // 4. Test clean-database migration path
     console.log('Testing clean-database Prisma migration deploy path...');
-    const testDbUrl = 'postgresql://wedding:wedding123@localhost:5432/wedding';
+    const testDbUrl = `postgresql://wedding:wedding123@localhost:${dbPort}/wedding`;
     runCommand('npx', ['prisma', 'migrate', 'deploy'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl }
+      env: { ...process.env, DATABASE_URL: testDbUrl, DB_PORT: dbPort.toString() }
     });
     console.log('✅ Clean-database migrations applied successfully!');
 
     // 5. Build OCI image & start app container
     console.log('Building OCI image and starting app container via Docker Compose...');
-    runCommand('docker', ['compose', 'up', '--build', '-d', 'app']);
+    runCommand('docker', ['compose', 'up', '--build', '-d', 'app'], {
+      env: { ...process.env, DB_PORT: dbPort.toString() }
+    });
 
     // 6. Poll app container health/readiness
     console.log('Waiting for application container to respond on http://127.0.0.1:3000...');
