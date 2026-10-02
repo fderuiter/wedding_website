@@ -1,6 +1,7 @@
+import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { CategoryFilter } from '../ui/CategoryFilter';
+import { CategoryFilter } from '../CategoryFilter';
 
 describe('CategoryFilter', () => {
   it('renders a checkbox for each category', () => {
@@ -55,4 +56,22 @@ describe('CategoryFilter', () => {
     fireEvent.click(screen.getByLabelText('Kitchen'));
     expect(handleChange).toHaveBeenLastCalledWith(['Bedroom']);
   });
+
+  it('forwards DOM ref and merges custom className via cn()', () => {
+    const ref = React.createRef<HTMLDivElement>();
+    const { container } = render(
+      <CategoryFilter
+        ref={ref}
+        categories={['Kitchen']}
+        selected={[]}
+        onChange={() => {}}
+        className="custom-category-filter-class"
+      />
+    );
+
+    expect(ref.current).toBeInstanceOf(HTMLDivElement);
+    expect(container.firstChild).toHaveClass('custom-category-filter-class');
+    expect(container.firstChild).toHaveClass('flex');
+  });
 });
+
