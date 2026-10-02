@@ -52,30 +52,31 @@ const START_ROUTES = [...PUBLIC_UI_ROUTES, ...PROTECTED_UI_ROUTES];
 test.describe('Dynamic Route Crawler & Link Audit', () => {
 
   test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ context }) => {
+    test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
-    await context.addCookies([
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://127.0.0.1:3000',
-      }
-    ]);
+    const page = await context.newPage();
 
-    for (const route of PROTECTED_UI_ROUTES) {
-      console.log(`[Unauthenticated] Navigating to: ${route}`);
-      const page = await context.newPage();
-      try {
+    try {
+      for (const route of PROTECTED_UI_ROUTES) {
+        await context.addCookies([
+          {
+            name: 'guest_auth',
+            value: guestCookieValue,
+            url: 'http://127.0.0.1:3000',
+          }
+        ]);
+        console.log(`[Unauthenticated] Navigating to: ${route}`);
         await page.goto(route, { waitUntil: 'domcontentloaded' });
         const url = new URL(page.url());
         expect(url.pathname).toBe('/admin/login');
-      } finally {
-        await page.close();
       }
+    } finally {
+      await page.close();
     }
   });
 
   test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ context }) => {
-    test.setTimeout(120000); // 2 minutes to allow crawling all pages when DB is down
+    test.setTimeout(120000);
     const cookieValue = generateAdminCookieValue();
     const guestCookieValue = generateGuestCookieValue();
 
@@ -93,6 +94,29 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       }
     ]);
 
+    // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
+    await context.route(/cdn\.jsdelivr\.net/, route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    await context.route(/googleusercontent\.com/, route => route.fulfill({ status: 200, contentType: 'image/jpeg', body: '' }));
+
+    // Mock weather API endpoint to avoid external network dependency in e2e tests
+    await context.route('**/api/weather', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          daily: {
+            time: ['2025-10-10'],
+            weathercode: [0],
+            temperature_2m_max: [75],
+            temperature_2m_min: [55],
+            apparent_temperature_max: [75],
+            precipitation_probability_max: [0],
+            wind_speed_10m_max: [5],
+          },
+        }),
+      });
+    });
+
     const visitedUrls = new Set<string>();
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
@@ -103,9 +127,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
       console.log(`[Authenticated] Navigating to: ${targetUrl}`);
       const page = await context.newPage();
-      const anchors: Array<{ href: string | null }> = [];
+
       try {
-        // Navigate to the target route and wait for DOM content loaded (much faster and avoids hanging)
         const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
         expect(response).not.toBeNull();
         expect(response!.status()).toBe(200);
@@ -124,69 +147,62 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
         visitedUrls.add(targetUrl);
 
-        // Parse and extract all anchor links from the navigated page
-        const anchorElements = await page.locator('a').all();
-        console.log(`Found ${anchorElements.length} anchor elements on ${route}`);
-        for (const anchor of anchorElements) {
-          const href = await anchor.getAttribute('href');
-          anchors.push({ href });
+        // Parse and extract all anchor links from the navigated page in a single CDP call
+        const hrefs = await page.evaluate(() => 
+          Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+        );
+        console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+
+        for (const href of hrefs) {
+          if (!href) continue;
+
+          // Skip non-navigational links or fragments
+          if (
+            href.startsWith('#') ||
+            href.startsWith('mailto:') ||
+            href.startsWith('tel:') ||
+            href.startsWith('javascript:') ||
+            href.startsWith('data:') ||
+            href.startsWith('vbscript:')
+          ) {
+            continue;
+          }
+
+          let resolvedUrl: URL;
+          try {
+            resolvedUrl = new URL(href, targetUrl);
+          } catch {
+            continue;
+          }
+
+          if (resolvedUrl.origin !== new URL(baseURL).origin) {
+            continue;
+          }
+
+          if (resolvedUrl.pathname.includes('/_next/')) {
+            continue;
+          }
+
+          let normalizedPath = resolvedUrl.pathname;
+          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+            normalizedPath = normalizedPath.slice(0, -1);
+          }
+
+          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+
+          if (checkedLinks.has(absoluteCheckUrl)) {
+            continue;
+          }
+
+          checkedLinks.add(absoluteCheckUrl);
+
+          console.log(`Checking link: ${absoluteCheckUrl}`);
+          const linkResponse = await context.request.get(absoluteCheckUrl);
+          const status = linkResponse.status();
+          expect(status, `Expected link "${href}" (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
         }
       } finally {
         await page.close();
-      }
-
-      for (const { href } of anchors) {
-        if (!href) continue;
-
-        // Skip non-navigational links or fragments
-        if (
-          href.startsWith('#') ||
-          href.startsWith('mailto:') ||
-          href.startsWith('tel:') ||
-          href.startsWith('javascript:') ||
-          href.startsWith('data:') ||
-          href.startsWith('vbscript:')
-        ) {
-          continue;
-        }
-
-        let resolvedUrl: URL;
-        try {
-          resolvedUrl = new URL(href, targetUrl);
-        } catch {
-          // Invalid URL pattern, skip
-          continue;
-        }
-
-        // Only check local internal links (no external path hits)
-        if (resolvedUrl.origin !== new URL(baseURL).origin) {
-          continue;
-        }
-
-        // Skip internal next-dev hot reload or webpack endpoints
-        if (resolvedUrl.pathname.includes('/_next/')) {
-          continue;
-        }
-
-        // Normalize url by stripping hash and trailing slash to avoid duplicate checks
-        let normalizedPath = resolvedUrl.pathname;
-        if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-          normalizedPath = normalizedPath.slice(0, -1);
-        }
-
-        const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-
-        if (checkedLinks.has(absoluteCheckUrl)) {
-          continue;
-        }
-
-        checkedLinks.add(absoluteCheckUrl);
-
-        // Fetch internal link via APIRequestContext and assert it does not return an error status code (4xx, 5xx)
-        console.log(`Checking link: ${absoluteCheckUrl}`);
-        const linkResponse = await context.request.get(absoluteCheckUrl);
-        const status = linkResponse.status();
-        expect(status, `Expected link "${href}" (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
     }
   });

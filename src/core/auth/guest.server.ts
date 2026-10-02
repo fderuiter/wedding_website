@@ -122,8 +122,13 @@ export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
   let cookieValue: string | undefined;
 
   if (req) {
-    cookieValue = req.cookies?.get?.(GUEST_COOKIE)?.value ||
-                  req.headers.get('cookie')?.split(';').find(c => c.trim().startsWith(`${GUEST_COOKIE}=`))?.split('=')[1];
+    const rawCookie = req.cookies?.get?.(GUEST_COOKIE)?.value;
+    if (rawCookie) {
+      cookieValue = rawCookie;
+    } else {
+      const match = req.headers.get('cookie')?.split(';').find(c => c.trim().startsWith(`${GUEST_COOKIE}=`));
+      cookieValue = match ? match.trim().slice(GUEST_COOKIE.length + 1) : undefined;
+    }
   } else {
     const cookieStore = await cookies();
     cookieValue = cookieStore.get(GUEST_COOKIE)?.value;

@@ -27,7 +27,9 @@ test.describe('Skip Link Accessibility', () => {
       }
     ]);
 
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('a.skip-link');
+    await page.focus('body');
     await page.keyboard.press('Tab');
 
     const skipLink = page.locator('a.skip-link');
