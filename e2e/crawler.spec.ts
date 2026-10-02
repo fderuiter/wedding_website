@@ -54,10 +54,10 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
   test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ browser }) => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
-    const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
 
-    try {
-      for (const route of PROTECTED_UI_ROUTES) {
+    for (const route of PROTECTED_UI_ROUTES) {
+      const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+      try {
         await testContext.addCookies([
           {
             name: 'guest_auth',
@@ -74,9 +74,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         } finally {
           await page.close();
         }
+      } finally {
+        await testContext.close();
       }
-    } finally {
-      await testContext.close();
     }
   });
 
@@ -118,7 +118,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
       // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
       await routeContext.route(/cdn\.jsdelivr\.net/, route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await routeContext.route(/googleusercontent\.com/, route => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
+      await routeContext.route(/googleusercontent\.com/, route => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
       await routeContext.route(/openstreetmap\.org/, route => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
 
       // Mock weather API endpoint to avoid external network dependency in e2e tests
@@ -225,8 +225,12 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         checkedLinks.add(absoluteCheckUrl);
 
         console.log(`Checking link: ${absoluteCheckUrl}`);
-        const linkResponse = await routeContext.request.get(absoluteCheckUrl);
-        const status = linkResponse.status();
+        const linkResponse = await fetch(absoluteCheckUrl, {
+          headers: {
+            Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+          },
+        });
+        const status = linkResponse.status;
         expect(status, `Expected link "${href}" (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
 
