@@ -22,8 +22,27 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+
       - name: Verify Environment Variables Documentation
-        run: npx tsx scripts/verify-env-docs.ts
+        run: npm run check:env-docs
+
+      - name: Check Personal/Template Identifier Isolation
+        run: npm run check:identifiers
+
+      - name: Check Documentation Relative Links
+        run: npm run check:links
+
+      - name: Validate Prisma Schema
+        run: npm run check:prisma
+
+      - name: TypeScript Typecheck
+        run: npm run typecheck
+
+      - name: ESLint Code Linting
+        run: npm run lint
+
+      - name: Knip Unused Export Analysis
+        run: npm run lint:unused
 
       - name: Verify Migration Compatibility
         run: npm run lint:migrations
@@ -99,6 +118,7 @@ jobs:
             } catch (err) {
               console.warn('Failed to report documentation drift via GitHub API:', err);
             }
+
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
@@ -107,27 +127,40 @@ jobs:
           key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+
       - name: Build project
         run: npm run build
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
+
       - name: Run OCI Container & Clean Database Smoke Test
         run: npm run test:container
+
+      - name: Verify Standalone Output Portability
+        run: npm run check:standalone
+
+      - name: Security Dependency Audit
+        run: npm run check:audit || echo "::warning::High or critical vulnerabilities detected by npm audit"
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
-      - name: Run tests
+
+      - name: Run unit & integration tests
         run: npm test
+
       - name: Upload Test Coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lcov-report
           path: coverage/
+
       - name: Run e2e tests
         run: npx playwright test
+
       - name: Generate A11y Report
         if: always()
         run: node scripts/a11y-report.mjs
+
       - name: Post A11y Report to PR
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
@@ -148,6 +181,7 @@ jobs:
             } catch (err) {
               console.warn('Failed to post A11y report via GitHub API:', err);
             }
+
       - name: Write A11y Report to Job Summary
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
