@@ -13,5 +13,11 @@ if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
   exit 1
 fi
 
+if [ "$RUN_MIGRATIONS" = "true" ]; then
+  echo "Running database migrations (RUN_MIGRATIONS=true)..."
+  npx -y prisma migrate deploy
+else
+  echo "Skipping automatic container database migration (decoupled to explicit CI/CD migration step)."
+fi
 echo "Starting application..."
 exec "$@"

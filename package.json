@@ -37,7 +37,7 @@
     "quality": "npx tsx scripts/check-quality.ts",
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
-    "prepare": "node scripts/install-git-hooks.js",
+    "prepare": "node -e 'import(\"fs\").then(f => f.existsSync(\"./scripts/install-git-hooks.js\") && import(\"./scripts/install-git-hooks.js\"))'",
     "postinstall": "prisma generate"
   },
   "dependencies": {

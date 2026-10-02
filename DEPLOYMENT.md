@@ -1,6 +1,6 @@
 # Pro-Grade Deployment Pipeline & Deployment Recipes
 
-This repository includes a enterprise-grade, multi-cloud deployment architecture and multi-platform CI/CD pipeline built around a **shared runtime contract**.
+This repository implements a modular, enterprise-grade continuous integration and delivery architecture built around a **shared runtime contract**. Core CI, immutable release artifact publication, database schema migration, and provider-specific hosting deployment are separated into explicit responsibilities.
 
 For the authoritative specification of container, database, environment variable, reverse proxy, health check, and lifecycle requirements, refer to the [Application Runtime Contract](./docs/runtime-contract.md). All hosting providers and deployment environments must satisfy this baseline contract.
 
@@ -87,10 +87,109 @@ We provide two pre-configured GitHub Actions workflows in `.github/workflows/`:
 2. **Deploy Pipeline (`deploy.yml`)**: Triggers on pushes to `main`. It automates database migrations (`npx prisma migrate deploy`) and builds multi-platform Docker container images (`linux/amd64` and `linux/arm64`).
 
 ---
+=======
+## 🏗️ Architecture & Responsibilities
+
+The automated release architecture consists of four distinct, modular workflows:
+
+```
+┌───────────────────────────────────────────────────────────┐
+│ 1. Continuous Integration (ci.yml)                         │
+│    • Install deps, lint, typecheck                        │
+│    • Unit & integration tests                             │
+│    • Production build & Playwright E2E                    │
+│    • Container build & container smoke test (No Secrets)  │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│ 2. Artifact Publication (publish-artifact.yml)            │
+│    • Multi-arch OCI Docker build                          │
+│    • Tagged by immutable commit SHA & version             │
+│    • Published to GHCR (default) & Docker Hub (optional) │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│ 3. Database Migration (db-migrate.yml)                    │
+│    • Explicit release/deployment execution                │
+│    • Pre-migration status check & validation              │
+│    • Safe failure signaling & rollback guidance           │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│ 4. Provider Deployment (deploy-provider.yml)              │
+│    • Consumes published release artifact (by SHA/tag)     │
+│    • Isolated provider credentials (e.g. Cloud Run)       │
+│    • Independent deployment evolution                     │
+└───────────────────────────────────────────────────────────┘
+```
+
+The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2, 3, and 4 in safe sequence for releases.
+
+---
+
+## 📄 Workflows Overview
+
+### 1. Continuous Integration (`ci.yml`)
+- **Triggers**: Pull requests, pushes to `main`.
+- **Secrets required**: *None* (runs entirely on isolated local containers).
+- **Actions**:
+  - Type checking (`npm run typecheck`) and linting (`npm run lint`).
+  - Documentation and OpenAPI drift verification.
+  - Unit and integration tests (`npm test`).
+  - Production build (`npm run build`).
+  - Playwright E2E and A11y tests.
+  - Local container build and container Playwright smoke test using `docker compose up --build -d app`.
+
+### 2. Artifact Publication (`publish-artifact.yml`)
+- **Triggers**: Release pipeline, pushes to `main` or `v*` tags, manual `workflow_dispatch`.
+- **Permissions**: `packages: write` (for GitHub Container Registry).
+- **Outputs**:
+  - `image_uri`: Immutable URI (`ghcr.io/<owner>/<repo>:<sha>`).
+  - `image_tag`: Immutable commit SHA or custom release tag.
+  - `image_digest`: OCI image digest.
+
+### 3. Database Migration (`db-migrate.yml`)
+- **Triggers**: Release pipeline, manual `workflow_dispatch` with target environment (`production`, `staging`, `development`).
+- **Secrets required**: `DATABASE_URL`.
+- **Actions**:
+  - Validates `DATABASE_URL` format and connectivity.
+  - Executes `prisma migrate status` to audit pending migrations.
+  - Executes `prisma migrate deploy` explicitly against target database.
+  - Emits step summaries and diagnostic error signaling if migration fails.
+
+### 4. Provider Deployment Adapter (`deploy-provider.yml`)
+- **Triggers**: Release pipeline, manual `workflow_dispatch` with `image_tag` parameter.
+- **Secrets required**: Provider credentials (e.g. `GCP_SA_KEY`, `DEPLOY_WEBHOOK_URL`).
+- **Actions**:
+  - Consumes a pre-built, tested release artifact tag.
+  - Deploys the container to hosting provider (e.g. Google Cloud Run).
+
+---
+
+## 🚀 Rollout Sequence & Zero-Downtime Migration Expectations
+
+To ensure zero downtime and prevent application outages:
+
+1. **Schema Changes Must Be Backward-Compatible**:
+   - Use the **expand-contract** migration pattern.
+   - Adding new columns/tables: Must be nullable or have default values.
+   - Deleting or renaming columns/tables: Must be performed in a subsequent release after application code no longer queries old schema elements.
+2. **Execution Order**:
+   - Step 1: CI verifies codebase integrity and container runtime.
+   - Step 2: Artifact Publication builds and pushes immutable image tagged by SHA.
+   - Step 3: Database Migration applies non-breaking migrations to production database.
+   - Step 4: Provider Deployment updates container instances to the new image SHA.
+3. **Container Entrypoint**:
+   - Application containers default to skipping automatic migrations (`RUN_MIGRATIONS=false`).
+   - Migrations are managed explicitly via `db-migrate.yml` or dedicated release jobs to prevent concurrent migration race conditions across multi-replica deployments.
+>>>>>>> 060efbe (ci: refactor deployment pipeline into explicit decoupled workflows)
 
 ## Database Migrations & Zero-Downtime Releases
 
-Database migrations are run automatically using `npx prisma migrate deploy` in the `deploy.yml` workflow *before* the new application code goes live. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts. Before migrations are executed, a pre-migration backwards compatibility check (`npm run lint:migrations`) runs to verify zero-downtime safety.
+Database migrations are run automatically using `npx prisma migrate deploy` in the `db-migrate.yml` workflow *before* the new application code goes live. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts. Before migrations are executed, a pre-migration backwards compatibility check (`npm run lint:migrations`) runs to verify zero-downtime safety.
 
 ### Expand-and-Contract Migration Strategy
 
@@ -104,7 +203,7 @@ To ensure safe, zero-downtime releases, schema modifications must follow the **E
 
 ### Migration Backwards Compatibility Linter
 
-Automated linter checks (`npm run lint:migrations`) run during local builds, in PR CI workflows (`ci.yml`), and during deployment (`deploy.yml`). The linter scans SQL migrations in `prisma/migrations/` for destructive DDL operations.
+Automated linter checks (`npm run lint:migrations`) run during local builds, in PR CI workflows (`ci.yml`), and during deployment (`db-migrate.yml`). The linter scans SQL migrations in `prisma/migrations/` for destructive DDL operations.
 
 If a destructive migration is intentionally required (e.g., during a contract cleanup phase after code removal), include an inline bypass annotation:
 
@@ -113,18 +212,62 @@ If a destructive migration is intentionally required (e.g., during a contract cl
 ALTER TABLE "User" DROP COLUMN "legacy_column";
 ```
 
-## Multi-platform Builds
+---
 
-The included `Dockerfile` and `deploy.yml` are configured for multi-platform architectures (`linux/amd64` and `linux/arm64`). The build environment includes necessary system-level libraries (`openssl`) to support the application architecture safely across platforms.
+## ⚠️ Safe Failure Semantics & Rollback Guidance
 
-## First-Run Bootstrap & Security
+If a database migration fails during release execution:
 
-- **No Default Passwords:** The application does not ship with universal default admin credentials.
-- **Credential Hashing:** Administrative access relies strictly on scrypt password hashing configured via `ADMIN_PASSWORD`.
-- **First-Run Initialization:** When deployed with an uninitialized database, opening the app triggers the Setup Wizard. Accessing setup requires authenticating with the configured `ADMIN_PASSWORD`.
-- **Replay Protection:** Once initial configuration (partner names, URL, venue, timezone) is persisted, `/api/admin/setup` rejects subsequent setup attempts from unauthenticated users with `403 Forbidden`.
+1. **Pipeline Halts**: The `Release Pipeline` immediately aborts before reaching `Provider Deployment`. The existing live production container instances remain untouched and functional on the current schema.
+2. **Diagnostic Signaling**: Review workflow output logs and `$GITHUB_STEP_SUMMARY` for Prisma SQL error codes or locked table status.
+3. **Remediation & Rollback Commands**:
+   - If a migration was partially applied or marked failed in `_prisma_migrations`, inspect the database state and use Prisma resolution CLI:
+     ```bash
+     # Mark a failed migration as rolled back in the database:
+     npx prisma migrate resolve --rolled-back "<migration_name>"
+
+     # OR mark a migration as applied if manually executed and verified:
+     npx prisma migrate resolve --applied "<migration_name>"
+     ```
+4. **Re-triggering**: Re-run the `Database Migration` workflow after resolving schema or database lock issues.
+
+---
 
 ## Health Checks & Liveness Probes
 
 Containers and orchestrators query `/api/health` (returning HTTP 200 OK and database connectivity status) for liveness and readiness monitoring.
 
+---
+
+## 🔑 Setup and Secrets
+
+Configure the following secrets in GitHub Repository Settings (`Settings > Secrets and variables > Actions`):
+
+| Secret | Description | Required By |
+|---|---|---|
+| `DATABASE_URL` | Production PostgreSQL connection string | `db-migrate.yml` |
+| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (optional for Cloud Run) | `deploy-provider.yml` |
+| `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (optional for custom hosts) | `deploy-provider.yml` |
+| `DOCKERHUB_USERNAME` | Docker Hub username (optional secondary registry) | `publish-artifact.yml` |
+| `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |
+
+---
+
+## ⚙️ Environment Variables
+
+The application requires the following environment variables in deployment environments (matching runtime validation in `src/env.ts` and `.env.example`):
+
+- `NODE_ENV`: Application mode (`development`, `test`, `production`).
+- `DATABASE_URL`: Connection string to production PostgreSQL database. *Required.*
+- `POSTGRES_URL_NON_POOLING`: Connection string for shadow database without connection pooler. *Optional.*
+- `ADMIN_PASSWORD`: Scrypt hash of admin password (`scrypt:[saltBase64]:[keyBase64]`). *Required.*
+- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcards. *Required.*
+- `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
+- `GUEST_PASSCODE`: Global passcode required for guest access (default: `wedding2026`).
+- `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
+- `S3_BUCKET`: Asset storage bucket name. *Optional.*
+- `S3_REGION`: Bucket region. *Optional.*
+- `S3_ACCESS_KEY_ID`: Bucket access key. *Optional.*
+- `S3_SECRET_ACCESS_KEY`: Bucket secret key. *Optional.*
+- `S3_ENDPOINT`: Custom S3/R2 endpoint. *Optional.*
+- `S3_PUBLIC_URL`: CDN or public asset prefix. *Optional.*

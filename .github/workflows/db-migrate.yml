@@ -1,0 +1,112 @@
+name: Database Migration
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+      confirm:
+        description: 'Confirm database migration execution'
+        required: true
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: false
+        default: 'production'
+        type: string
+    secrets:
+      DATABASE_URL:
+        required: true
+
+jobs:
+  migrate:
+    name: Execute Database Migrations
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify DATABASE_URL secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Missing mandatory DATABASE_URL secret for environment '${{ inputs.environment || 'production' }}'."
+            exit 1
+          fi
+          if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
+            echo "::error::Invalid format for DATABASE_URL. Must start with postgres:// or postgresql://"
+            exit 1
+          fi
+
+      - name: Check pending migrations
+        id: status_check
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Checking Prisma migration status..."
+          npx prisma migrate status || echo "prisma_status_failed=true" >> $GITHUB_OUTPUT
+
+      - name: Run Prisma Migrate Deploy
+        id: migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Executing database migrations..."
+          npx prisma migrate deploy
+
+      - name: Handle Migration Failure
+        if: failure() && steps.migrate.outcome == 'failure'
+        run: |
+          echo "::error::Database migration failed during execution!"
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          ## ❌ Database Migration Failure Signaling & Rollback Guidance
+
+          The database migration step failed. To prevent schema instability and partial deployments:
+
+          ### Diagnostic Steps
+          1. Review the workflow run logs above for Prisma SQL error codes or locked table errors.
+          2. Check database connectivity and permissions for `DATABASE_URL`.
+
+          ### Rollback & Remediation Procedure
+          If the schema was partially applied or marked failed in `_prisma_migrations`:
+          1. Inspect `_prisma_migrations` table in your target database.
+          2. If a migration needs to be rolled back or marked resolved, execute the Prisma resolution command locally or via administrative CLI:
+             ```bash
+             # Mark a failed migration as rolled back:
+             npx prisma migrate resolve --rolled-back "<failed_migration_name>"
+
+             # OR mark a migration as applied if changes were manually verified:
+             npx prisma migrate resolve --applied "<failed_migration_name>"
+             ```
+          3. Re-run `Database Migration` workflow only after confirming database state is healthy.
+          4. Do **NOT** proceed with application deployment until migration issues are resolved.
+          EOF
+          exit 1
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### ✅ Database Migrations Successfully Applied" >> $GITHUB_STEP_SUMMARY
+          echo "Target Environment: \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
