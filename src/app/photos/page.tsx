@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/Icon';
 import Script from 'next/script';
@@ -6,6 +7,8 @@ import { contentService } from '@/features/content';
 import type { ContentNodeDTO } from '@/features/content';
 import { withPageQuery } from '@/lib/query-wrapper';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 
 export const metadata: Metadata = {
   title: 'Photos',
@@ -27,6 +30,10 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered photos page.
  */
 export default async function PhotosPage() {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('gallery', config.modules)) {
+    notFound();
+  }
   const defaultUrls = [
     'https://lh3.googleusercontent.com/pw/AP1GczNPp0Rk6pvvMtymS3RUx7F6cAyOkFaovF20N5_FkaDupk3QkgjNWfTiMxZbgtnyO-Ny0tH3JPkT6Vld35Pg8xFq1AAcZcxnHdTQ3DfHKsNLKpA59mEw=w1920-h1080',
     'https://lh3.googleusercontent.com/pw/AP1GczODgnqdtUHWdCR_PDvAcDDm-RlYv0HE_oJtRCDTKF9nCREFVhZRl_020THVphEdxLAjgYfUdz0KYgCBw1sqmaF1GC7RBh0u3CZmUgBtwD7Z-bEkPm5A=w1920-h1080',

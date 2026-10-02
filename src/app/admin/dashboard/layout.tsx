@@ -1,11 +1,45 @@
 import React from 'react';
 import Link from 'next/link';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled, FeatureId } from '@/lib/modules';
 
-export default function AdminDashboardLayout({
+interface AdminNavItem {
+  href: string;
+  label: string;
+  featureId?: FeatureId;
+}
+
+const ADMIN_NAV_ITEMS: AdminNavItem[] = [
+  { href: '/admin/dashboard', label: 'Registry', featureId: 'registry' },
+  { href: '/admin/dashboard/invitation-codes', label: 'Invitation Codes', featureId: 'registry' },
+  { href: '/admin/dashboard/site-manager', label: 'Site Manager' },
+  { href: '/admin/dashboard/wedding-party', label: 'Wedding Party', featureId: 'weddingParty' },
+  { href: '/admin/dashboard/media', label: 'Media', featureId: 'gallery' },
+  { href: '/admin/dashboard/attractions', label: 'Attractions', featureId: 'attractions' },
+  { href: '/admin/dashboard/content', label: 'Content' },
+  { href: '/admin/dashboard/settings', label: 'Settings' },
+  { href: '/admin/dashboard/history', label: 'History' },
+  { href: '/admin/dashboard/maintenance', label: 'Maintenance' },
+];
+
+export default async function AdminDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  let moduleConfig: unknown;
+  try {
+    const config = await getAppConfig();
+    moduleConfig = config.modules;
+  } catch (e) {
+    // Fallback if unreachable
+  }
+
+  const visibleNavItems = ADMIN_NAV_ITEMS.filter((item) => {
+    if (!item.featureId) return true;
+    return isFeatureEnabled(item.featureId, moduleConfig);
+  });
+
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] flex flex-col">
       <header aria-label="Admin Dashboard" className="bg-white dark:bg-gray-800 shadow p-4">
@@ -13,56 +47,13 @@ export default function AdminDashboardLayout({
           <h1 className="text-xl font-bold text-primary">Admin Control Panel</h1>
           <nav aria-label="Admin Navigation">
             <ul className="flex flex-wrap space-x-4">
-              <li>
-                <Link href="/admin/dashboard" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Registry
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/invitation-codes" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Invitation Codes
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/site-manager" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Site Manager
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/wedding-party" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Wedding Party
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/media" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Media
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/attractions" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Attractions
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/content" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Content
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/settings" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Settings
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/history" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  History
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/dashboard/maintenance" className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                  Maintenance
-                </Link>
-              </li>
+              {visibleNavItems.map((item) => (
+                <li key={item.href}>
+                  <Link href={item.href} className="text-gray-700 dark:text-gray-300 hover:text-primary">
+                    {item.label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </nav>
         </div>

@@ -1,4 +1,6 @@
 import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
+import { notFound } from 'next/navigation';
 import HeartClient from './HeartClient';
 
 export const metadata = {
@@ -8,6 +10,9 @@ export const metadata = {
 
 export default async function HeartPage() {
   const config = await getAppConfig();
+  if (!isFeatureEnabled('interactive3D', config.modules)) {
+    notFound();
+  }
   
   return (
     <HeartClient 

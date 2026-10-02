@@ -12,6 +12,8 @@ import { formatDate } from '@/utils/intl';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 
+import { isFeatureEnabled } from '@/lib/modules';
+
 const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) };
 
 /**
@@ -212,7 +214,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
               {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
             </motion.p>
-            {config.showCountdown && (
+            {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
               <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
                 <Countdown targetDate={weddingDateObj.toISOString()} />
               </motion.div>
@@ -222,11 +224,13 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                 Our Story
                 <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
               </a>
-              <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
-                View Photos
-              </Link>
+              {isFeatureEnabled('gallery', config.modules) && (
+                <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
+                  View Photos
+                </Link>
+              )}
             </motion.nav>
-            {config.showAddToCalendar && (
+            {config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules) && (
               <motion.div className="mt-8" variants={fadeUp} initial="hidden" animate="visible" custom={4}>
                 <AddToCalendar event={calendarEvent} />
               </motion.div>
@@ -239,12 +243,14 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             <p>© {new Date().getFullYear()} {config.partner1Name || config.brideName} & {config.partner2Name || config.groomName} • Designed with ❤️ in {config.venueState}</p>
             <p>Stay tuned for more updates from our lives together!</p>
             <a href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</a>
-            <Link
-              href="/heart"
-              className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
-            >
-              Play with the Heart
-            </Link>
+            {isFeatureEnabled('interactive3D', config.modules) && (
+              <Link
+                href="/heart"
+                className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
+              >
+                Play with the Heart
+              </Link>
+            )}
           </footer>
         </div>
         <BackToTop />

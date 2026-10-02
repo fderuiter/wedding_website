@@ -1,7 +1,10 @@
 import { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import WeddingPartyList from '@/components/WeddingPartyList';
 import { weddingPartyRepository, type WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { withPageQuery } from '@/lib/query-wrapper';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 
 export const metadata: Metadata = {
   title: 'Wedding Party',
@@ -20,6 +23,11 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered wedding party page.
  */
 export default async function WeddingPartyPage() {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('weddingParty', config.modules)) {
+    notFound();
+  }
+
   const members = await withPageQuery(
     () => weddingPartyRepository.getMembers(),
     [] as WeddingPartyMemberDTO[]

@@ -1,7 +1,10 @@
 import { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import ThingsToDoList from './components/ThingsToDoList';
 import { attractionsRepository, type AttractionDTO } from '@/features/attractions';
 import { withPageQuery } from '@/lib/query-wrapper';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 
 export const metadata: Metadata = {
   title: 'Things to Do',
@@ -20,6 +23,11 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered "Things to Do" page.
  */
 export default async function ThingsToDoPage() {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('attractions', config.modules)) {
+    notFound();
+  }
+
   const attractions = await withPageQuery(
     async () => {
       const rawAttractions = await attractionsRepository.getVisibleAttractions();

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { coordinateSchema } from '@/utils/validation';
+import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 
@@ -35,6 +36,7 @@ export const RawUpdateAppConfigSchema = z.object({
   colorSecondary: z.string().regex(hexColorRegex).optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  modules: ModuleConfigSchema.partial().optional(),
   timezone: z.string().refine(
     (val) => {
       if (val === 'UTC' || val === 'GMT') return true;
@@ -150,6 +152,7 @@ export const AppConfigSchema = z.object({
   timezone: z.string().default('America/Chicago'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
+  modules: z.any().optional().transform((val) => resolveModuleConfig(val)).default(DEFAULT_MODULE_CONFIG),
   features: z.union([
     z.string().transform((str) => {
       try {

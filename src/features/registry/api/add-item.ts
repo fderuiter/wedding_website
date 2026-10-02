@@ -2,6 +2,9 @@ import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { RegistryItemBaseSchema, LegacyRegistryItemBaseSchema, translateLegacyToActive, translateActiveToLegacy } from '../schemas';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
+import { ApiError } from '@/utils/ApiError';
 
 /**
  * Adds a new item to the registry.
@@ -32,6 +35,10 @@ export const POST = createValidatedRoute({
   translateLegacy: translateLegacyToActive,
   translateActiveToLegacy,
   handler: async (_request: NextRequest, { body }) => {
+    const config = await getAppConfig();
+    if (!isFeatureEnabled('registry', config.modules)) {
+      throw new ApiError(404, "Feature 'registry' is disabled");
+    }
     const newItemData = body;
 
     const newItem = await registryService.createItem({
