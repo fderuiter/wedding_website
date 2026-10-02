@@ -1251,6 +1251,17 @@
         }
       }
     },
+    "/api/ready": {
+      "get": {
+        "summary": "GET /api/ready",
+        "description": "Endpoint for /api/ready",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/contribute": {
       "post": {
         "summary": "POST /api/registry/contribute",

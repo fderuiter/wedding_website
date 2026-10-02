@@ -22,6 +22,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",
     "test:a11y": "rm -rf test-results && npm test; npx playwright test; node scripts/a11y-report.mjs",
+    "test:standalone": "node scripts/test-standalone.mjs",
+    "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
     "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
