@@ -146,11 +146,13 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
         onFocus={handleFocus}
         onBlur={handleBlur}
         style={{
-          transformPerspective: 1000,
-          rotateX: reduceMotion ? '0deg' : rotateX,
-          rotateY: reduceMotion ? '0deg' : rotateY,
-          transformStyle: 'preserve-3d',
-          willChange: 'transform',
+          ...(reduceMotion ? {} : {
+            transformPerspective: 1000,
+            rotateX,
+            rotateY,
+            transformStyle: 'preserve-3d',
+            willChange: 'transform',
+          }),
           ...((props as any).style || {})
         }}
       >

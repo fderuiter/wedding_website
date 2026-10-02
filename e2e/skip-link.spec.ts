@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode';
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
   const payload = {
     guest: true,
     iat: Date.now(),
@@ -27,7 +27,9 @@ test.describe('Skip Link Accessibility', () => {
       }
     ]);
 
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('a.skip-link');
+    await page.focus('body');
     await page.keyboard.press('Tab');
 
     const skipLink = page.locator('a.skip-link');

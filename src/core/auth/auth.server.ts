@@ -148,8 +148,13 @@ export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
 
   if (req) {
     // API Route (Edge or Node)
-    cookieValue = req.cookies?.get?.(ADMIN_COOKIE)?.value ||
-                  req.headers.get('cookie')?.split(';').find(c => c.trim().startsWith(`${ADMIN_COOKIE}=`))?.split('=')[1];
+    const rawCookie = req.cookies?.get?.(ADMIN_COOKIE)?.value;
+    if (rawCookie) {
+      cookieValue = rawCookie;
+    } else {
+      const match = req.headers.get('cookie')?.split(';').find(c => c.trim().startsWith(`${ADMIN_COOKIE}=`));
+      cookieValue = match ? match.trim().slice(ADMIN_COOKIE.length + 1) : undefined;
+    }
   } else {
     // Server Component (App Router)
     const cookieStore = await cookies();
