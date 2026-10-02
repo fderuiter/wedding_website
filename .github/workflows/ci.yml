@@ -30,14 +30,26 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Typecheck
+      - name: Verify Environment Variables Documentation
+        run: npm run check:env-docs
+
+      - name: Check Personal/Template Identifier Isolation
+        run: npm run check:identifiers
+
+      - name: Check Documentation Relative Links
+        run: npm run check:links
+
+      - name: Validate Prisma Schema
+        run: npm run check:prisma
+
+      - name: TypeScript Typecheck
         run: npm run typecheck
 
-      - name: Lint
+      - name: ESLint Code Linting
         run: npm run lint
 
-      - name: Verify Environment Variables Documentation
-        run: npx tsx scripts/verify-env-docs.ts
+      - name: Knip Unused Export Analysis
+        run: npm run lint:unused
 
       - name: Verify Migration Compatibility
         run: npm run lint:migrations
@@ -123,7 +135,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
-      - name: Build Next.js application
+      - name: Build project
         run: npm run build
 
       - name: Run Standalone Execution Smoke Test
@@ -131,6 +143,15 @@ jobs:
 
       - name: Run OCI Container & Clean Database Smoke Test
         run: npm run test:container
+
+      - name: Verify Standalone Output Portability
+        run: npm run check:standalone
+
+      - name: Security Dependency Audit
+        run: npm run check:audit || echo "::warning::High or critical vulnerabilities detected by npm audit"
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
 
       - name: Run unit & integration tests
         run: npm test
@@ -141,9 +162,6 @@ jobs:
         with:
           name: lcov-report
           path: coverage/
-
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
 
       - name: Run Playwright e2e tests
         run: npx playwright test
