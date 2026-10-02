@@ -67,8 +67,9 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
   if (!config) return false;
   const p1 = config.partner1Name || config.brideName;
   const p2 = config.partner2Name || config.groomName;
-  if (!p1 || !p2) return false;
-  if (p1 === 'Partner 1' && p2 === 'Partner 2') return false;
+  if (!p1 || !p2 || !config.baseUrl) return false;
+  if ((p1 === 'Partner 1' && p2 === 'Partner 2') || (p1 === 'Abbigayle' && p2 === 'Frederick')) return false;
+  if (config.baseUrl.includes('wedding.example')) return false;
   return true;
 }
 
