@@ -51,12 +51,12 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
       const now = new Date();
       const midnight = new Date();
       midnight.setHours(24, 0, 0, 0);
-      const timeToMidnight = midnight.getTime() - now.getTime();
+      const delay = Math.max(1000, midnight.getTime() - now.getTime());
 
       timerId = setTimeout(() => {
         setTimeLeft(calculateTimeLeft());
         calculateAndSetTimeout(); // Recalculate for the next day
-      }, timeToMidnight);
+      }, delay);
     };
 
     calculateAndSetTimeout();
