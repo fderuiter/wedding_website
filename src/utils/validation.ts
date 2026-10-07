@@ -123,7 +123,7 @@ export const ImportBackupSchema = z.object({
 
 /**
  * Sanitizes a URL string for safe usage in HTML anchor href attributes.
- * Allows valid http://, https://, mailto:, and tel: URLs, as well as relative paths and path strings.
+ * Allows valid http://, https://, mailto:, and tel: URLs, safe relative paths, and non-URI strings.
  * Rejects dangerous URI schemes (javascript:, data:, vbscript:, etc.) and protocol-relative URLs (//)
  * to prevent XSS and unvalidated redirects.
  */
@@ -137,17 +137,38 @@ export function sanitizeUrl(url?: string | null): string | undefined {
     return undefined;
   }
 
-  // Check for scheme (e.g. "javascript:", "https:", "data:")
-  const schemeMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
-  if (schemeMatch) {
-    const scheme = schemeMatch[1].toLowerCase();
-    const allowedSchemes = ['http', 'https', 'mailto', 'tel'];
-    if (!allowedSchemes.includes(scheme)) {
-      return undefined;
-    }
+  const lower = trimmed.toLowerCase();
+  // Block dangerous schemes explicitly
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:')
+  ) {
+    return undefined;
   }
 
-  return trimmed;
+  // Allow safe relative paths starting with /
+  if (trimmed.startsWith('/')) {
+    return trimmed;
+  }
+
+  // Explicit check for allowed protocols
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('mailto:') ||
+    lower.startsWith('tel:')
+  ) {
+    return trimmed;
+  }
+
+  // If string contains no colon scheme separator, it's a relative path/query string
+  if (!trimmed.includes(':')) {
+    return trimmed;
+  }
+
+  // String contains a colon scheme separator that is not in the allowed protocols list
+  return undefined;
 }
 
 /**

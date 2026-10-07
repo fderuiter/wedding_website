@@ -3,6 +3,7 @@
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import type { AttractionDTO } from '@/features/attractions';
+import { sanitizeUrl } from '@/utils/validation';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -44,17 +45,34 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions }) => {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       />
-      {attractions.map((attraction) => (
-        <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]}>
-          <Popup>
-            <b>{attraction.name}</b>
-            <br />
-            <a href={attraction.directions} target="_blank" rel="noopener noreferrer">
-              Directions
-            </a>
-          </Popup>
-        </Marker>
-      ))}
+      {attractions.map((attraction) => {
+        const safeDirections = sanitizeUrl(attraction.directions);
+        const isDirectionsSafe =
+          Boolean(safeDirections) &&
+          Boolean(
+            safeDirections?.startsWith('http://') ||
+            safeDirections?.startsWith('https://') ||
+            safeDirections?.startsWith('mailto:') ||
+            safeDirections?.startsWith('tel:') ||
+            (safeDirections?.startsWith('/') && !safeDirections?.startsWith('//'))
+          );
+
+        return (
+          <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]}>
+            <Popup>
+              <b>{attraction.name}</b>
+              {isDirectionsSafe && safeDirections && (
+                <>
+                  <br />
+                  <a href={safeDirections} target="_blank" rel="noopener noreferrer">
+                    Directions
+                  </a>
+                </>
+              )}
+            </Popup>
+          </Marker>
+        );
+      })}
     </MapContainer>
   );
 };

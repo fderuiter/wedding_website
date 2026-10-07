@@ -40,11 +40,36 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   const safeWebsiteUrl = sanitizeUrl(attraction.website);
   const safeDirectionsUrl = sanitizeUrl(attraction.directions);
 
+  const isSafeUrl = (url?: string): url is string => {
+    if (!url) return false;
+    if (url.startsWith('//')) return false;
+    const lower = url.toLowerCase();
+    if (
+      lower.startsWith('javascript:') ||
+      lower.startsWith('data:') ||
+      lower.startsWith('vbscript:')
+    ) {
+      return false;
+    }
+    return (
+      lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('mailto:') ||
+      lower.startsWith('tel:') ||
+      !lower.includes(':') ||
+      (lower.startsWith('/') && !lower.startsWith('//'))
+    );
+  };
+
+  const isBookingUrlSafe = safeBookingUrl && isSafeUrl(safeBookingUrl);
+  const isWebsiteUrlSafe = safeWebsiteUrl && isSafeUrl(safeWebsiteUrl);
+  const isDirectionsUrlSafe = safeDirectionsUrl && isSafeUrl(safeDirectionsUrl);
+
   const hasHotelBlock = Boolean(
     attraction.promoCode ||
     attraction.roomRate ||
     attraction.cutoffDate ||
-    safeBookingUrl ||
+    isBookingUrlSafe ||
     attraction.shuttleInfo ||
     attraction.category === 'hotel'
   );
@@ -105,7 +130,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
               </div>
             )}
 
-            {safeBookingUrl && (
+            {isBookingUrlSafe && safeBookingUrl && (
               <div className="pt-1">
                 <a
                   href={safeBookingUrl}
@@ -123,7 +148,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
         )}
 
         <div className="mt-auto flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
-          {safeWebsiteUrl ? (
+          {isWebsiteUrlSafe && safeWebsiteUrl ? (
             <a
               href={safeWebsiteUrl}
               target="_blank"
@@ -135,7 +160,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : <div />}
-          {safeDirectionsUrl ? (
+          {isDirectionsUrlSafe && safeDirectionsUrl ? (
             <a
               href={safeDirectionsUrl}
               target="_blank"
