@@ -3,9 +3,10 @@ import { Geist } from 'next/font/google';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { generateMetadata } from './metadata';
 import { getAppConfig, toPublicAppConfig, isSiteInitialized } from '@/lib/config';
-import { ThemeProvider } from '@/components/ThemeProvider';
+import { ThemeProvider, ThemeMode } from '@/components/ThemeProvider';
 import SetupWizard from '@/components/setup/SetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,8 +39,18 @@ export default async function RootLayout({
   const publicConfig = toPublicAppConfig(config);
   const isUninitialized = !isSiteInitialized(config);
 
+  const cookieStore = await cookies();
+  const rawThemeMode = cookieStore.get('theme_mode')?.value;
+
+  let initialThemeMode: ThemeMode = 'system';
+  if (rawThemeMode === 'light' || rawThemeMode === 'dark' || rawThemeMode === 'system') {
+    initialThemeMode = rawThemeMode as ThemeMode;
+  }
+
+  const initialHtmlClass = initialThemeMode === 'light' ? 'light' : 'dark';
+
   return (
-    <html lang="en" className={`dark ${geist.variable}`}>
+    <html lang="en" className={`${initialHtmlClass} ${geist.variable}`}>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}
       >
@@ -47,7 +58,7 @@ export default async function RootLayout({
         {isUninitialized ? (
           <SetupWizard />
         ) : (
-          <ThemeProvider config={publicConfig}>
+          <ThemeProvider config={publicConfig} initialThemeMode={initialThemeMode}>
             <ToastProvider>
               <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
             </ToastProvider>

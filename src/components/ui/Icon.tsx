@@ -19,6 +19,8 @@ export type IconName =
   | 'ChevronDown'
   | 'SearchX'
   | 'Sun'
+  | 'Moon'
+  | 'Monitor'
   | 'CloudRain'
   | 'CloudSnow'
   | 'Wind'
@@ -187,6 +189,20 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
           <path d="M20 12h2" />
           <path d="m6.34 17.66-1.41 1.41" />
           <path d="m19.07 4.93-1.41 1.41" />
+        </svg>
+      );
+    case 'Moon':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </svg>
+      );
+    case 'Monitor':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <rect width="20" height="14" x="2" y="3" rx="2" />
+          <line x1="8" x2="16" y1="21" y2="21" />
+          <line x1="12" x2="12" y1="17" y2="21" />
         </svg>
       );
     case 'CloudRain':
