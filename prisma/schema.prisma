@@ -122,15 +122,34 @@ model Contributor {
 }
 
 model InvitationCode {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  guestName String
-  used      Boolean  @default(false)
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String        @id @default(uuid())
+  code       String        @unique
+  guestName  String
+  used       Boolean       @default(false)
+  usedAt     DateTime?
+  tableId    String?
+  table      SeatingTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  seatNumber Int?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
   contributors Contributor[]
+}
+
+model SeatingTable {
+  id              String           @id @default(uuid())
+  name            String
+  shape           String           @default("round")
+  capacity        Int              @default(8)
+  x               Float            @default(0.0)
+  y               Float            @default(0.0)
+  width           Float            @default(120.0)
+  height          Float            @default(120.0)
+  rotation        Float            @default(0.0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  invitationCodes InvitationCode[]
 }
 
 model ContentNode {

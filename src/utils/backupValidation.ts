@@ -149,6 +149,20 @@ const BackupContentNodeSchema = z.object({
   data: z.any(),
 });
 
+const BackupSeatingTableSchema = z.object({
+  id: z.string().min(1).max(255),
+  name: z.string().min(1).max(255),
+  shape: z.string().optional(),
+  capacity: z.number().int().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  rotation: z.number().optional(),
+  createdAt: z.union([z.string(), z.date()]).optional(),
+  updatedAt: z.union([z.string(), z.date()]).optional(),
+});
+
 // Full database backup structure schema
 export const DatabaseBackupSchema = z.object({
   version: z.string().optional(),
@@ -161,4 +175,5 @@ export const DatabaseBackupSchema = z.object({
   attraction: z.array(BackupAttractionSchema).optional(),
   registryItem: z.array(BackupRegistryItemSchema).optional(),
   contributor: z.array(BackupContributorSchema).optional(),
+  seatingTable: z.array(BackupSeatingTableSchema).optional(),
 });

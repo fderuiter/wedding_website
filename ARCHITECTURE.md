@@ -81,6 +81,7 @@ flowchart LR
     node_admin_dashboard_invitationcodes["invitation-codes"]
     node_admin_dashboard_maintenance["maintenance"]
     node_admin_dashboard_media["media"]
+    node_admin_dashboard_seatingchart["seating-chart"]
     node_admin_dashboard_settings["settings"]
     node_admin_dashboard_sitemanager["site-manager"]
     node_admin_dashboard_weddingparty["wedding-party"]
@@ -98,6 +99,9 @@ flowchart LR
     node_api_admin_maintenance_export["export"]
     node_api_admin_maintenance_import["import"]
     node_api_admin_me["me"]
+    node_api_admin_seating["seating"]
+    node_api_admin_seating_assign["assign"]
+    node_api_admin_seating_export["export"]
     node_api_admin_settings["settings"]
     node_api_admin_setup["setup"]
     node_api_admin_upload["upload"]
@@ -138,6 +142,7 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_invitationcodes
     node_admin_dashboard --> node_admin_dashboard_maintenance
     node_admin_dashboard --> node_admin_dashboard_media
+    node_admin_dashboard --> node_admin_dashboard_seatingchart
     node_admin_dashboard --> node_admin_dashboard_settings
     node_admin_dashboard --> node_admin_dashboard_sitemanager
     node_admin_dashboard --> node_admin_dashboard_weddingparty
@@ -155,6 +160,9 @@ flowchart LR
     node_api_admin_maintenance --> node_api_admin_maintenance_export
     node_api_admin_maintenance --> node_api_admin_maintenance_import
     node_api_admin --> node_api_admin_me
+    node_api_admin --> node_api_admin_seating
+    node_api_admin_seating --> node_api_admin_seating_assign
+    node_api_admin_seating --> node_api_admin_seating_export
     node_api_admin --> node_api_admin_settings
     node_api_admin --> node_api_admin_setup
     node_api_admin --> node_api_admin_upload
@@ -195,6 +203,7 @@ flowchart LR
     class node_admin_dashboard_invitationcodes page;
     class node_admin_dashboard_maintenance page;
     class node_admin_dashboard_media page;
+    class node_admin_dashboard_seatingchart page;
     class node_admin_dashboard_settings page;
     class node_admin_dashboard_sitemanager page;
     class node_admin_dashboard_weddingparty page;
@@ -208,6 +217,8 @@ flowchart LR
     class node_api_admin_maintenance_export api;
     class node_api_admin_maintenance_import api;
     class node_api_admin_me api;
+    class node_api_admin_seating_assign api;
+    class node_api_admin_seating_export api;
     class node_api_admin_settings api;
     class node_api_admin_setup api;
     class node_api_admin_upload api;

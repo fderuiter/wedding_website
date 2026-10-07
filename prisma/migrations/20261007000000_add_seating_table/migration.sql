@@ -1,0 +1,23 @@
+-- CreateTable
+CREATE TABLE "SeatingTable" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "shape" TEXT NOT NULL DEFAULT 'round',
+    "capacity" INTEGER NOT NULL DEFAULT 8,
+    "x" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "y" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "width" DOUBLE PRECISION NOT NULL DEFAULT 120.0,
+    "height" DOUBLE PRECISION NOT NULL DEFAULT 120.0,
+    "rotation" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "SeatingTable_pkey" PRIMARY KEY ("id")
+);
+
+-- AlterTable
+ALTER TABLE "InvitationCode" ADD COLUMN "tableId" TEXT,
+ADD COLUMN "seatNumber" INTEGER;
+
+-- AddForeignKey
+ALTER TABLE "InvitationCode" ADD CONSTRAINT "InvitationCode_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "SeatingTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;

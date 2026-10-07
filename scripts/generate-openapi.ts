@@ -11,6 +11,7 @@ import * as attractionSchemas from '../src/features/attractions/schemas.js';
 import * as weddingPartySchemas from '../src/features/wedding-party/schemas.js';
 import * as contentSchemas from '../src/features/content/schemas.js';
 import * as mediaSchemas from '../src/features/media/schemas.js';
+import * as seatingSchemas from '../src/features/seating/schemas.js';
 import * as backupValidationSchemas from '../src/utils/backupValidation.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,6 +25,7 @@ const ALL_SCHEMAS: Record<string, any> = {
   ...weddingPartySchemas,
   ...contentSchemas,
   ...mediaSchemas,
+  ...seatingSchemas,
   ...backupValidationSchemas,
 };
 
