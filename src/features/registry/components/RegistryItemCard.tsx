@@ -9,6 +9,15 @@ import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { apiClient } from '@/lib/apiClient';
+import { useToast } from '@/components/ui/ToastProvider';
+
+const useOptionalToast = () => {
+  try {
+    return useToast();
+  } catch {
+    return null;
+  }
+};
 
 /**
  * @interface RegistryItemCardProps
@@ -40,6 +49,64 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   const [isValidatingCode, setIsValidatingCode] = useState(false);
   const [codeValidationError, setCodeValidationError] = useState<string | null>(null);
   const [isCodeLocked, setIsCodeLocked] = useState(false);
+
+  const [copied, setCopied] = useState(false);
+  const toastContext = useOptionalToast();
+
+  const handleShare = async () => {
+    const permalink = typeof window !== 'undefined'
+      ? `${window.location.origin}${window.location.pathname}?item=${encodeURIComponent(item.id)}`
+      : `?item=${encodeURIComponent(item.id)}`;
+
+    let success = false;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: item.name,
+          text: `Check out ${item.name} on our wedding registry!`,
+          url: permalink,
+        });
+        success = true;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    if (!success && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(permalink);
+        success = true;
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (!success && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = permalink;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        success = true;
+      } catch {
+        // Fallback failed
+      }
+    }
+
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toastContext?.addToast('Link copied to clipboard!', 'success');
+    } else if (toastContext) {
+      toastContext.addToast('Failed to copy link', 'error');
+    }
+  };
 
   const handleCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.toUpperCase();
@@ -156,16 +223,29 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
           <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
         </div>
       )}
-      {isVendorUrlSafe && (
-        <a
-          href={item.vendorUrl as string}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline mb-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        {isVendorUrlSafe ? (
+          <a
+            href={item.vendorUrl as string}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
+          >
+            View on Vendor Site
+          </a>
+        ) : <div />}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleShare}
+          className="inline-flex items-center gap-1.5 text-sm"
+          aria-label={`Share ${item.name}`}
         >
-          View on Vendor Site
-        </a>
-      )}
+          <Icon name={copied ? 'Check' : 'Share2'} className="w-4 h-4" />
+          {copied ? 'Link Copied!' : 'Share Gift'}
+        </Button>
+      </div>
       {!item.purchased ? (
         <form noValidate 
           className="mt-5 pt-4 border-t border-primary"

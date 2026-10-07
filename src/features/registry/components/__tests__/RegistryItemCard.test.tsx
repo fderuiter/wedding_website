@@ -4,6 +4,7 @@ import { Overlay } from '@/components/ui/Overlay';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
 import { RegistryItem } from '@/features/registry';
 import { apiClient } from '@/lib/apiClient';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
@@ -360,6 +361,48 @@ describe('RegistryItemCard Component', () => {
       const nameInput = screen.getByLabelText(/Your Name/i);
       expect(nameInput).not.toBeDisabled();
       expect(nameInput).toHaveValue('');
+    });
+  });
+
+  describe('Share Toolbar', () => {
+    let originalClipboard: any;
+
+    beforeEach(() => {
+      originalClipboard = navigator.clipboard;
+    });
+
+    afterEach(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: originalClipboard, writable: true, configurable: true });
+    });
+
+    it('renders share gift button and copies permalink on click', async () => {
+      const mockWriteText = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: mockWriteText },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <ToastProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          </Overlay>
+        </ToastProvider>
+      );
+
+      const shareButton = screen.getByRole('button', { name: `Share ${mockSingleItem.name}` });
+      expect(shareButton).toBeInTheDocument();
+
+      fireEvent.click(shareButton);
+
+      await waitFor(() => {
+        expect(mockWriteText).toHaveBeenCalledWith(
+          expect.stringContaining(`?item=${mockSingleItem.id}`)
+        );
+      });
+      expect(screen.getByText('Link Copied!')).toBeInTheDocument();
+      expect(await screen.findByText('Link copied to clipboard!')).toBeInTheDocument();
     });
   });
 
