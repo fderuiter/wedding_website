@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { prisma } from './prisma';
 import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
@@ -224,7 +225,7 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
  * @param idOrSubdomain - Profile ID or Subdomain identifier
  * @returns The resolved and validated AppConfigDTO
  */
-export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
+export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
   let dbConfig: AppConfigDTO | null = null;
   const multisite = isMultisiteEnabled();
 
@@ -325,4 +326,4 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
     }
     throw err;
   }
-}
+});
