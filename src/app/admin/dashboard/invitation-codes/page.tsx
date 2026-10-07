@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
+import { generateCsvContent } from '@/utils/csv';
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
@@ -87,6 +88,34 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
+  const handleExportCsv = () => {
+    if (codes.length === 0) {
+      addToast('No invitation codes to export.', 'info');
+      return;
+    }
+
+    const exportRecords = codes.map((item) => ({
+      'Guest Name': item.guestName || '',
+      'Invitation Code': item.code || '',
+      Email: item.email || '',
+      'Dietary Notes': item.dietaryNotes || '',
+      'Plus Ones': item.plusOneAllocations ?? 0,
+      Status: item.used ? 'Redeemed' : 'Unused',
+    }));
+
+    const csvText = generateCsvContent(exportRecords);
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `invitation-codes-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast('Invitation codes exported successfully.', 'success');
+  };
+
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Loading...</p></div>;
   if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
@@ -97,6 +126,7 @@ export default function InvitationCodesDashboardPage() {
         <div className="flex gap-4">
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
+          <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
           <Button onClick={() => {
             setNewCode({ guestName: '', code: '' });
             setIsCreating(true);

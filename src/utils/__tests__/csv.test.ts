@@ -2,6 +2,8 @@ import {
   parseCsvContent,
   parseCsvLines,
   validateCsvRows,
+  generateCsvContent,
+  escapeCsvCell,
 } from '../csv';
 
 describe('CSV Parser Utility', () => {
@@ -105,4 +107,83 @@ describe('CSV Parser Utility', () => {
     expect(validated[1].plusOneAllocations).toBe(2);
     expect(validated[1].extraFields).toEqual({ 'Custom Field': 'Table 5' });
   });
+
+  describe('generateCsvContent', () => {
+    it('escapes individual CSV cells properly', () => {
+      expect(escapeCsvCell('simple')).toBe('simple');
+      expect(escapeCsvCell('with, comma')).toBe('"with, comma"');
+      expect(escapeCsvCell('with "quotes"')).toBe('"with ""quotes"""');
+      expect(escapeCsvCell(null)).toBe('');
+    });
+
+    it('formats an array of objects into standard CSV text', () => {
+      const records = [
+        { 'Guest Name': 'Alice Smith', Code: 'ALICE123', Status: 'Unused' },
+        { 'Guest Name': 'Bob Jones', Code: 'BOB456', Status: 'Redeemed' },
+      ];
+      const csv = generateCsvContent(records);
+      expect(csv).toBe('Guest Name,Code,Status\nAlice Smith,ALICE123,Unused\nBob Jones,BOB456,Redeemed');
+    });
+
+    it('escapes quotes, commas, and newlines correctly', () => {
+      const records = [
+        {
+          'Guest Name': 'Doe, "Johnny" John',
+          Notes: 'Line 1\nLine 2',
+          Code: 'CODE1,CODE2',
+        },
+      ];
+      const csv = generateCsvContent(records);
+      expect(csv).toBe(
+        'Guest Name,Notes,Code\n"Doe, ""Johnny"" John","Line 1\nLine 2","CODE1,CODE2"'
+      );
+    });
+
+    it('respects explicit headers parameter if provided', () => {
+      const records = [
+        { name: 'Charlie', code: 'C123', extra: 'ignored' },
+      ];
+      const csv = generateCsvContent(records, ['name', 'code']);
+      expect(csv).toBe('name,code\nCharlie,C123');
+    });
+
+    it('handles empty records array gracefully', () => {
+      expect(generateCsvContent([])).toBe('');
+      expect(generateCsvContent([], ['Guest Name', 'Code'])).toBe('Guest Name,Code\n');
+    });
+
+    it('handles null, undefined, or missing values safely', () => {
+      const records = [
+        { 'Guest Name': 'David', Code: null, Email: undefined },
+      ];
+      const csv = generateCsvContent(records);
+      expect(csv).toBe('Guest Name,Code,Email\nDavid,,');
+    });
+
+    it('round-trips safely with parseCsvContent', () => {
+      const records = [
+        {
+          'Guest Name': 'Smith, Jane "Janey"',
+          'Invitation Code': 'JANEY100',
+          Email: 'jane@example.com',
+          'Dietary Notes': 'Gluten Free, Nut Allergy',
+          'Plus Ones': 2,
+        },
+      ];
+      const csvString = generateCsvContent(records);
+      const parsed = parseCsvContent(csvString);
+
+      expect(parsed.headers).toEqual([
+        'Guest Name',
+        'Invitation Code',
+        'Email',
+        'Dietary Notes',
+        'Plus Ones',
+      ]);
+      expect(parsed.rows[0]['Guest Name']).toBe('Smith, Jane "Janey"');
+      expect(parsed.rows[0]['Invitation Code']).toBe('JANEY100');
+      expect(parsed.rows[0]['Dietary Notes']).toBe('Gluten Free, Nut Allergy');
+    });
+  });
 });
+
