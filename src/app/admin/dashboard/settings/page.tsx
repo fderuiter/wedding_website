@@ -31,7 +31,9 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
 
   const [search, setSearch] = useState(value || 'America/Chicago');
   const [isOpen, setIsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const containerRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     if (value) {
@@ -43,6 +45,7 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setHighlightedIndex(-1);
         if (ianaTimezones.includes(search)) {
           onChange(search);
         } else {
@@ -64,7 +67,62 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
     onChange(tz);
     setSearch(tz);
     setIsOpen(false);
+    setHighlightedIndex(-1);
   };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value);
+    setIsOpen(true);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      }
+      if (filtered.length > 0) {
+        setHighlightedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      }
+      if (filtered.length > 0) {
+        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
+      }
+    } else if (e.key === 'Enter') {
+      if (isOpen && highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+        e.preventDefault();
+        handleSelect(filtered[highlightedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      if (isOpen) {
+        e.preventDefault();
+        setIsOpen(false);
+        setHighlightedIndex(-1);
+        setSearch(value || 'America/Chicago');
+      }
+    } else if (e.key === 'Home') {
+      if (isOpen && filtered.length > 0) {
+        e.preventDefault();
+        setHighlightedIndex(0);
+      }
+    } else if (e.key === 'End') {
+      if (isOpen && filtered.length > 0) {
+        e.preventDefault();
+        setHighlightedIndex(filtered.length - 1);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (highlightedIndex >= 0 && optionRefs.current[highlightedIndex]) {
+      optionRefs.current[highlightedIndex]?.scrollIntoView?.({ block: 'nearest' });
+    }
+  }, [highlightedIndex]);
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -72,26 +130,53 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
         type="text"
         placeholder="Search and select timezone (e.g. Europe/Paris)..."
         value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setIsOpen(true);
-        }}
+        onChange={handleInputChange}
         onFocus={() => setIsOpen(true)}
+        onKeyDown={handleKeyDown}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-controls="timezone-listbox"
+        aria-autocomplete="list"
+        aria-activedescendant={
+          isOpen && highlightedIndex >= 0 && filtered[highlightedIndex]
+            ? `timezone-option-${highlightedIndex}`
+            : undefined
+        }
         className="w-full"
       />
       {isOpen && (
-        <div className="absolute left-0 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg z-50">
+        <div
+          id="timezone-listbox"
+          role="listbox"
+          aria-label="Timezone options"
+          className="absolute left-0 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg z-50"
+        >
           {filtered.length > 0 ? (
-            filtered.map((tz) => (
-              <button
-                key={tz}
-                type="button"
-                onClick={() => handleSelect(tz)}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-zinc-700"
-              >
-                {tz}
-              </button>
-            ))
+            filtered.map((tz, index) => {
+              const isHighlighted = index === highlightedIndex;
+              return (
+                <button
+                  key={tz}
+                  ref={(el) => {
+                    optionRefs.current[index] = el;
+                  }}
+                  id={`timezone-option-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={isHighlighted}
+                  onClick={() => handleSelect(tz)}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  className={`block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-zinc-200 focus:outline-none ${
+                    isHighlighted
+                      ? 'bg-gray-100 dark:bg-zinc-700'
+                      : 'hover:bg-gray-100 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {tz}
+                </button>
+              );
+            })
           ) : (
             <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
               No matching standard IANA timezones found
