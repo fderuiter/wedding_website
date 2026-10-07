@@ -131,12 +131,50 @@ export function useRegistry() {
     if (item.purchased) return;
     setSelectedItem(item);
     setIsModalOpen(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('item', item.id);
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.pushState({}, '', newUrl);
+    }
   }, []);
 
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
     setSelectedItem(null);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('item')) {
+        params.delete('item');
+        const queryString = params.toString();
+        const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+        window.history.pushState({}, '', newUrl);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || items.length === 0) return;
+
+    const syncModalWithUrl = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const targetId = searchParams.get('item');
+      if (targetId) {
+        const match = items.find(i => i.id === targetId);
+        if (match) {
+          setSelectedItem(match);
+          setIsModalOpen(true);
+        }
+      }
+    };
+
+    syncModalWithUrl();
+
+    window.addEventListener('popstate', syncModalWithUrl);
+    return () => {
+      window.removeEventListener('popstate', syncModalWithUrl);
+    };
+  }, [items]);
 
   const handleEdit = useCallback((id: string) => {
     router.push(`/registry/edit-item/${id}`);
