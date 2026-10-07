@@ -10,6 +10,7 @@ export interface OverlayProps {
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   id?: string;
   animationType?: 'scale' | 'slide-down' | 'fade';
   layoutClassName?: string;
@@ -22,6 +23,7 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
       onClose,
       children,
       className,
+      style,
       id,
       animationType = 'scale',
       layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
@@ -72,6 +74,7 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
           <motion.div
             id={id}
             className={cn(layoutClassName, 'bg-black/60 backdrop-blur-sm')}
+            style={{ backgroundColor: 'var(--dialog-backdrop, rgba(0, 0, 0, 0.6))' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -84,6 +87,7 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
             <motion.div
               ref={setOverlayRef}
               className={cn(className)}
+              style={style}
               onClick={(e) => e.stopPropagation()}
               {...anim}
             >

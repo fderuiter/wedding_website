@@ -14,6 +14,7 @@ export interface DialogProps {
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
@@ -28,6 +29,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       'aria-labelledby': ariaLabelledby,
       'aria-describedby': ariaDescribedby,
       className,
+      style,
     },
     ref
   ) => {
@@ -42,9 +44,16 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         isOpen={isOpen}
         onClose={onClose}
         className={cn(
-          'bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50',
+          'bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
           className
         )}
+        style={{
+          backgroundColor: 'var(--dialog-bg, #ffffff)',
+          borderRadius: 'var(--dialog-border-radius, 0.5rem)',
+          boxShadow: 'var(--dialog-shadow, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1))',
+          borderColor: 'var(--dialog-border-color, #e5e7eb)',
+          ...style,
+        }}
       >
         <div
           role={role}
@@ -53,9 +62,12 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
           className="w-full h-full"
         >
           {title && (
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-zinc-800">
+            <div
+              className="px-6 py-4 border-b border-[var(--dialog-border-color,#e5e7eb)] dark:border-zinc-800"
+              style={{ color: 'var(--dialog-title-color, inherit)' }}
+            >
               {typeof title === 'string' ? (
-                <h2 id={finalLabelId} className="text-lg font-medium text-gray-900 dark:text-zinc-50">
+                <h2 id={finalLabelId} className="text-lg font-medium">
                   {title}
                 </h2>
               ) : (
@@ -64,7 +76,11 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
             </div>
           )}
           {description && (
-            <div className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400" id={finalDescId}>
+            <div
+              className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
+              id={finalDescId}
+              style={{ color: 'var(--dialog-desc-color, #6b7280)' }}
+            >
               {description}
             </div>
           )}
@@ -76,4 +92,3 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
 );
 
 Dialog.displayName = 'Dialog';
-

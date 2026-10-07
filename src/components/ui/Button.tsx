@@ -1,22 +1,27 @@
 import React from 'react';
 import { cn } from '@/utils/cn';
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size = 'md', ...props }, ref) => {
+  ({ className, variant = 'primary', size = 'md', style, ...props }, ref) => {
     const baseStyles =
-      'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+      'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
 
     const variants = {
-      primary: 'bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary',
-      secondary: 'bg-secondary text-white hover:bg-secondary/90 focus-visible:ring-secondary',
-      danger: 'bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-700',
-      ghost: 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300',
-      outline: 'border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300',
+      primary:
+        'bg-[var(--btn-primary-bg,var(--color-primary,#B91C1C))] text-[var(--btn-primary-text,#ffffff)] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary,#B91C1C))] border border-[var(--btn-primary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-primary,#B91C1C))]',
+      secondary:
+        'bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-secondary,#B45309))]',
+      danger:
+        'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] focus-visible:ring-[var(--btn-danger-bg,#b91c1c)]',
+      ghost:
+        'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,inherit)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]',
+      outline:
+        'bg-[var(--btn-outline-bg,transparent)] text-[var(--btn-outline-text,inherit)] border border-[var(--btn-outline-border,#d1d5db)] hover:bg-[var(--btn-outline-hover-bg,rgba(0,0,0,0.05))]',
     };
 
     const sizes = {
@@ -28,6 +33,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
+        style={{
+          borderRadius: 'var(--btn-radius, 0.375rem)',
+          fontWeight: 'var(--btn-font-weight, 500)',
+          ...style,
+        }}
         className={cn(baseStyles, variants[variant], sizes[size], className)}
         {...props}
       />
