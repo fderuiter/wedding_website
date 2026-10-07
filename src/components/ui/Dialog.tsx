@@ -57,6 +57,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       >
         <div
           role={role}
+          aria-modal="true"
           aria-labelledby={finalLabelId}
           aria-describedby={finalDescId}
           className="w-full h-full"
