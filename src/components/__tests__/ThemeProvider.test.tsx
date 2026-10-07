@@ -11,6 +11,10 @@ function TestComponent() {
       <span data-testid="theme-primary">{theme.themePrimary}</span>
       <span data-testid="theme-secondary">{theme.themeSecondary}</span>
       <span data-testid="theme-preset">{theme.themePreset}</span>
+      <span data-testid="layout-container-max-w">{theme.layoutContainerMaxWidth}</span>
+      <span data-testid="layout-grid-gap">{theme.layoutGridGap}</span>
+      <span data-testid="layout-card-padding">{theme.layoutCardPadding}</span>
+      <span data-testid="layout-border-radius">{theme.layoutBorderRadius}</span>
     </div>
   );
 }
@@ -25,6 +29,17 @@ describe('ThemeProvider Sanitization', () => {
 
     expect(getByTestId('theme-primary')).toHaveTextContent('#B91C1C');
     expect(getByTestId('theme-secondary')).toHaveTextContent('#B45309');
+    expect(getByTestId('layout-container-max-w')).toHaveTextContent('64rem');
+    expect(getByTestId('layout-grid-gap')).toHaveTextContent('1.5rem');
+    expect(getByTestId('layout-card-padding')).toHaveTextContent('2rem');
+    expect(getByTestId('layout-border-radius')).toHaveTextContent('1rem');
+
+    const styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl).not.toBeNull();
+    expect(styleEl?.textContent).toContain('--container-max-w: 64rem;');
+    expect(styleEl?.textContent).toContain('--grid-gap: 1.5rem;');
+    expect(styleEl?.textContent).toContain('--card-padding: 2rem;');
+    expect(styleEl?.textContent).toContain('--radius-card: 1rem;');
   });
 
   it('sanitizes malicious colors passed as prop config', () => {
@@ -58,6 +73,58 @@ describe('ThemeProvider Sanitization', () => {
 
     expect(getByTestId('theme-primary')).toHaveTextContent('#123456');
     expect(getByTestId('theme-secondary')).toHaveTextContent('#abcdef');
+  });
+
+  it('accepts valid layout token overrides passed as prop config and injects CSS variables', () => {
+    const layoutConfig = {
+      layoutContainerMaxWidth: '80rem',
+      layoutGridGap: '2rem',
+      layoutCardPadding: '2.5rem',
+      layoutBorderRadius: '0.5rem',
+    };
+
+    const { getByTestId } = render(
+      <ThemeProvider config={layoutConfig}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('layout-container-max-w')).toHaveTextContent('80rem');
+    expect(getByTestId('layout-grid-gap')).toHaveTextContent('2rem');
+    expect(getByTestId('layout-card-padding')).toHaveTextContent('2.5rem');
+    expect(getByTestId('layout-border-radius')).toHaveTextContent('0.5rem');
+
+    const styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl?.textContent).toContain('--container-max-w: 80rem;');
+    expect(styleEl?.textContent).toContain('--grid-gap: 2rem;');
+    expect(styleEl?.textContent).toContain('--card-padding: 2.5rem;');
+    expect(styleEl?.textContent).toContain('--radius-card: 0.5rem;');
+  });
+
+  it('sanitizes invalid or malicious layout tokens and falls back to default values', () => {
+    const maliciousLayoutConfig = {
+      layoutContainerMaxWidth: '100px; body { display: none; }',
+      layoutGridGap: '</style><script>alert(1)</script>',
+      layoutCardPadding: 'invalid-unit',
+      layoutBorderRadius: '20',
+    };
+
+    const { getByTestId } = render(
+      <ThemeProvider config={maliciousLayoutConfig}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('layout-container-max-w')).toHaveTextContent('64rem');
+    expect(getByTestId('layout-grid-gap')).toHaveTextContent('1.5rem');
+    expect(getByTestId('layout-card-padding')).toHaveTextContent('2rem');
+    expect(getByTestId('layout-border-radius')).toHaveTextContent('1rem');
+
+    const styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl?.textContent).toContain('--container-max-w: 64rem;');
+    expect(styleEl?.textContent).toContain('--grid-gap: 1.5rem;');
+    expect(styleEl?.textContent).toContain('--card-padding: 2rem;');
+    expect(styleEl?.textContent).toContain('--radius-card: 1rem;');
   });
 
   it('sanitizes malicious colors received via window message', () => {
@@ -95,7 +162,7 @@ describe('ThemeProvider Sanitization', () => {
     Object.defineProperty(window, 'parent', { writable: true, value: originalParent });
   });
 
-  it('accepts valid hex colors received via window message', () => {
+  it('accepts valid hex colors and layout tokens received via window message', () => {
     const originalParent = window.parent;
     Object.defineProperty(window, 'parent', { writable: true, value: {} });
 
@@ -114,6 +181,10 @@ describe('ThemeProvider Sanitization', () => {
             draftData: {
               colorPrimary: '#333333',
               colorSecondary: '#666666',
+              layoutContainerMaxWidth: '75rem',
+              layoutGridGap: '1rem',
+              layoutCardPadding: '1.75rem',
+              layoutBorderRadius: '0.75rem',
             },
           },
         })
@@ -122,6 +193,14 @@ describe('ThemeProvider Sanitization', () => {
 
     expect(getByTestId('theme-primary')).toHaveTextContent('#333333');
     expect(getByTestId('theme-secondary')).toHaveTextContent('#666666');
+    expect(getByTestId('layout-container-max-w')).toHaveTextContent('75rem');
+    expect(getByTestId('layout-grid-gap')).toHaveTextContent('1rem');
+    expect(getByTestId('layout-card-padding')).toHaveTextContent('1.75rem');
+    expect(getByTestId('layout-border-radius')).toHaveTextContent('0.75rem');
+
+    const styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl?.textContent).toContain('--container-max-w: 75rem;');
+    expect(styleEl?.textContent).toContain('--grid-gap: 1rem;');
 
     Object.defineProperty(window, 'parent', { writable: true, value: originalParent });
   });
@@ -369,4 +448,3 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
   });
 });
-

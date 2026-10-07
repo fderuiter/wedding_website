@@ -50,6 +50,10 @@ export const APP_DEFAULTS: LocalAppConfig = {
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
   themePreset: 'classic',
+  layoutContainerMaxWidth: '64rem',
+  layoutGridGap: '1.5rem',
+  layoutCardPadding: '2rem',
+  layoutBorderRadius: '1rem',
   timezone: 'UTC',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true,
