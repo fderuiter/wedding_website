@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RegistryCard from '../RegistryCard';
 import { RegistryItem } from '@/features/registry';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 // Mock data for a registry item
 const mockItem: RegistryItem = {
@@ -41,11 +42,41 @@ describe('RegistryCard', () => {
   });
 
   it('renders group gift details when applicable', () => {
-    const groupGiftItem = { ...mockItem, isGroupGift: true, amountContributed: 50 };
+    const groupGiftItem = { ...mockItem, price: 100, isGroupGift: true, amountContributed: 50 };
     render(<RegistryCard item={groupGiftItem} onClick={() => {}} />);
 
     expect(screen.getByText(/Group Gift:/)).toBeInTheDocument();
     expect(screen.getByText(/Group Gift:/)).toHaveTextContent('$50.00');
+    expect(screen.getByText('50%')).toBeInTheDocument();
+
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toBeInTheDocument();
+    expect(progressBar).toHaveAttribute('aria-valuenow', '50');
+
+    const card = screen.getByTestId('registry-card');
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('50% funded'));
+  });
+
+  it('handles zero price and zero contribution edge cases safely', () => {
+    const zeroPriceItem = { ...mockItem, price: 0, isGroupGift: true, amountContributed: 0 };
+    render(<RegistryCard item={zeroPriceItem} onClick={() => {}} />);
+
+    expect(screen.getByText('0%')).toBeInTheDocument();
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toHaveAttribute('aria-valuenow', '0');
+    const card = screen.getByTestId('registry-card');
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('0% funded'));
+  });
+
+  it('caps percentage display at 100% when contributions exceed total price', () => {
+    const overFundedItem = { ...mockItem, price: 100, isGroupGift: true, amountContributed: 150 };
+    render(<RegistryCard item={overFundedItem} onClick={() => {}} />);
+
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toHaveAttribute('aria-valuenow', '100');
+    const card = screen.getByTestId('registry-card');
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('100% funded'));
   });
 
   it('renders fully funded status for purchased group gift', () => {
@@ -171,5 +202,75 @@ describe('RegistryCard', () => {
     expect(overlay).toHaveClass('absolute');
   });
 
-  // Add more tests for click handlers, image errors, etc.
+  describe('Share functionality', () => {
+    let originalShare: any;
+    let originalClipboard: any;
+
+    beforeEach(() => {
+      originalShare = navigator.share;
+      originalClipboard = navigator.clipboard;
+    });
+
+    afterEach(() => {
+      Object.defineProperty(navigator, 'share', { value: originalShare, writable: true, configurable: true });
+      Object.defineProperty(navigator, 'clipboard', { value: originalClipboard, writable: true, configurable: true });
+    });
+
+    it('renders share button and copies permalink without triggering card onClick', async () => {
+      const mockOnClick = jest.fn();
+      const mockWriteText = jest.fn().mockResolvedValue(undefined);
+
+      Object.defineProperty(navigator, 'share', { value: undefined, writable: true, configurable: true });
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: mockWriteText },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <ToastProvider>
+          <RegistryCard item={mockItem} onClick={mockOnClick} />
+        </ToastProvider>
+      );
+
+      const shareButton = screen.getByRole('button', { name: `Share ${mockItem.name}` });
+      expect(shareButton).toBeInTheDocument();
+
+      fireEvent.click(shareButton);
+
+      await waitFor(() => {
+        expect(mockWriteText).toHaveBeenCalledWith(
+          expect.stringContaining(`?item=${mockItem.id}`)
+        );
+      });
+      expect(mockOnClick).not.toHaveBeenCalled();
+      expect(await screen.findByText('Link copied to clipboard!')).toBeInTheDocument();
+    });
+
+    it('uses navigator.share when available', async () => {
+      const mockOnClick = jest.fn();
+      const mockShare = jest.fn().mockResolvedValue(undefined);
+
+      Object.defineProperty(navigator, 'share', { value: mockShare, writable: true, configurable: true });
+
+      render(
+        <ToastProvider>
+          <RegistryCard item={mockItem} onClick={mockOnClick} />
+        </ToastProvider>
+      );
+
+      const shareButton = screen.getByRole('button', { name: `Share ${mockItem.name}` });
+      fireEvent.click(shareButton);
+
+      await waitFor(() => {
+        expect(mockShare).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: mockItem.name,
+            url: expect.stringContaining(`?item=${mockItem.id}`),
+          })
+        );
+      });
+      expect(mockOnClick).not.toHaveBeenCalled();
+    });
+  });
 });

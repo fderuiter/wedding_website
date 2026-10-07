@@ -22,7 +22,12 @@ describe('InvitationCodeAdminService', () => {
   describe('validate', () => {
     it('passes for valid invitation code data', async () => {
       await expect(
-        (service as any).validate({ guestName: 'Alice Smith', code: 'ALICE123' })
+        (service as any).validate({
+          guestName: 'Alice Smith',
+          code: 'ALICE123',
+          email: 'alice@example.com',
+          plusOneAllocations: 2,
+        })
       ).resolves.not.toThrow();
     });
 
@@ -40,6 +45,18 @@ describe('InvitationCodeAdminService', () => {
       await expect(
         (service as any).validate({ guestName: 'Alice Smith', code: '' })
       ).rejects.toThrow('Validation Error: Code cannot be empty.');
+    });
+
+    it('throws error for invalid email format', async () => {
+      await expect(
+        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', email: 'not-an-email' })
+      ).rejects.toThrow('Validation Error: Invalid email format.');
+    });
+
+    it('throws error for negative plus-one allocation', async () => {
+      await expect(
+        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneAllocations: -1 })
+      ).rejects.toThrow('Validation Error: Plus-one allocation must be a non-negative integer.');
     });
   });
 
@@ -101,14 +118,21 @@ describe('InvitationCodeAdminService', () => {
       };
     });
 
-    it('imports batch of valid guest records successfully', async () => {
+    it('imports batch of valid guest records successfully including extra fields', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
       mockPrismaClient.invitationCode.create.mockImplementation((args: any) =>
         Promise.resolve({ id: 'new-id', ...args.data })
       );
 
       const records = [
-        { guestName: 'John Doe', code: 'JOHN100' },
+        {
+          guestName: 'John Doe',
+          code: 'JOHN100',
+          email: 'john@example.com',
+          dietaryNotes: 'Gluten Free',
+          plusOneAllocations: 1,
+          extraFields: { Table: '5' },
+        },
         { guestName: 'Jane Smith', code: '' },
       ];
 
@@ -119,6 +143,17 @@ describe('InvitationCodeAdminService', () => {
       expect(result.imported).toBe(2);
       expect(result.skipped).toBe(0);
       expect(mockPrismaClient.invitationCode.create).toHaveBeenCalledTimes(2);
+      expect(mockPrismaClient.invitationCode.create).toHaveBeenNthCalledWith(1, {
+        data: {
+          guestName: 'John Doe',
+          code: 'JOHN100',
+          email: 'john@example.com',
+          dietaryNotes: 'Gluten Free',
+          plusOneAllocations: 1,
+          extraFields: { Table: '5' },
+          used: false,
+        },
+      });
     });
 
     it('skips duplicate codes when collisionStrategy is skip', async () => {
@@ -138,14 +173,21 @@ describe('InvitationCodeAdminService', () => {
       expect(mockPrismaClient.invitationCode.create).toHaveBeenCalledTimes(1);
     });
 
-    it('updates existing record when collisionStrategy is update', async () => {
+    it('updates existing record including extra fields when collisionStrategy is update', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([
         { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
       ]);
       mockPrismaClient.invitationCode.update.mockResolvedValue({ id: '1', guestName: 'Updated Name' });
 
       const records = [
-        { guestName: 'Updated Name', code: 'EXISTING1' },
+        {
+          guestName: 'Updated Name',
+          code: 'EXISTING1',
+          email: 'updated@example.com',
+          dietaryNotes: 'Vegan',
+          plusOneAllocations: 2,
+          extraFields: { Group: 'VIP' },
+        },
       ];
 
       const result = await service.importBatch(records, 'update');
@@ -154,7 +196,13 @@ describe('InvitationCodeAdminService', () => {
       expect(result.imported).toBe(0);
       expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith({
         where: { id: '1' },
-        data: { guestName: 'Updated Name' },
+        data: {
+          guestName: 'Updated Name',
+          email: 'updated@example.com',
+          dietaryNotes: 'Vegan',
+          plusOneAllocations: 2,
+          extraFields: { Group: 'VIP' },
+        },
       });
     });
 
@@ -169,6 +217,18 @@ describe('InvitationCodeAdminService', () => {
 
       await expect(service.importBatch(records, 'reject')).rejects.toThrow(
         'Duplicate invitation code found: EXISTING1'
+      );
+    });
+
+    it('throws error if row contains invalid email in importBatch', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
+
+      const records = [
+        { guestName: 'Bad Email Guest', code: 'CODE1', email: 'invalid-email' },
+      ];
+
+      await expect(service.importBatch(records, 'skip')).rejects.toThrow(
+        'Validation Error: Row 1 has an invalid email format.'
       );
     });
   });

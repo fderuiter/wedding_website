@@ -60,6 +60,53 @@ if (typeof self !== 'undefined') {
   }
 }
 
+jest.mock('msw', () => {
+  const actual = jest.requireActual('msw');
+  const createCtx = () => ({
+    status: (code) => ({ type: 'status', value: code }),
+    json: (body) => ({ type: 'json', value: body }),
+    body: (text) => ({ type: 'body', value: text }),
+    set: (name, val) => ({ type: 'header', name, value: val }),
+  });
+  const buildRes = (...args) => {
+    let status = 200;
+    let body = null;
+    const headers = new Headers();
+    for (const arg of args) {
+      if (!arg) continue;
+      if (arg.type === 'status') status = arg.value;
+      else if (arg.type === 'json') {
+        body = JSON.stringify(arg.value);
+        headers.set('Content-Type', 'application/json');
+      } else if (arg.type === 'body') {
+        body = arg.value;
+      } else if (arg.type === 'header') {
+        headers.set(arg.name, arg.value);
+      }
+    }
+    return new actual.HttpResponse(body, { status, headers });
+  };
+  buildRes.networkError = () => actual.HttpResponse.error();
+
+  const makeHandler = (method) => (url, resolver) => {
+    return actual.http[method](url, async (info) => {
+      const ctx = createCtx();
+      return resolver(info.request, buildRes, ctx);
+    });
+  };
+
+  return {
+    ...actual,
+    rest: {
+      get: makeHandler('get'),
+      post: makeHandler('post'),
+      put: makeHandler('put'),
+      delete: makeHandler('delete'),
+      patch: makeHandler('patch'),
+    },
+  };
+});
+
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';

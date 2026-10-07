@@ -124,8 +124,14 @@ export const InvitationCodeSchema = z.object({
   id: z.string(),
   code: z.string().trim().min(1, 'Code is required.').max(50, 'Code must be under 50 characters.'),
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
+  email: z.string().trim().email('Invalid email address.').nullable().optional().or(z.literal('')),
+  dietaryNotes: z.string().trim().nullable().optional(),
+  plusOneAllocations: z.coerce.number().int().nonnegative().optional().default(0),
+  extraFields: z.record(z.string(), z.any()).nullable().optional(),
   used: z.boolean().default(false),
   usedAt: z.union([z.string(), z.date()]).nullable().optional(),
+  tableId: z.string().nullable().optional(),
+  seatNumber: z.number().int().positive().nullable().optional(),
   createdAt: z.union([z.string(), z.date()]).optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
 });
@@ -135,6 +141,15 @@ export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
 export const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(100, 'Guest name must be under 100 characters.'),
   code: z.string().trim().optional().or(z.literal('')),
+  email: z.union([
+    z.string().trim().email('Invalid email address.'),
+    z.literal(''),
+    z.null(),
+    z.undefined()
+  ]).optional(),
+  dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),
+  plusOneAllocations: z.coerce.number().int('Plus-one allocation must be an integer.').nonnegative('Plus-one allocation must be non-negative.').optional(),
+  extraFields: z.record(z.string(), z.any()).optional().nullable(),
 });
 
 export const BatchImportInvitationCodesSchema = z.object({

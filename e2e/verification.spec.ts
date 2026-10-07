@@ -6,7 +6,7 @@ import path from 'path';
 import crypto from 'crypto';
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode';
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
   const payload = {
     guest: true,
     iat: Date.now(),
@@ -31,7 +31,7 @@ test.describe('UI Verification', () => {
       }
     ]);
 
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // The main content should be visible
     const mainContent = page.locator('main#main-content');

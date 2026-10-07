@@ -1,4 +1,6 @@
 const JSDOMEnvironment = require('jest-environment-jsdom').default;
+const { TransformStream, ReadableStream, WritableStream } = require('node:stream/web');
+const { BroadcastChannel } = require('node:worker_threads');
 
 class CustomEnvironment extends JSDOMEnvironment {
   constructor(config, context) {
@@ -9,6 +11,10 @@ class CustomEnvironment extends JSDOMEnvironment {
     await super.setup();
     this.global.TextEncoder = TextEncoder;
     this.global.TextDecoder = TextDecoder;
+    this.global.TransformStream = TransformStream;
+    this.global.ReadableStream = ReadableStream;
+    this.global.WritableStream = WritableStream;
+    this.global.BroadcastChannel = BroadcastChannel;
     this.global.crypto = require('node:crypto').webcrypto;
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {

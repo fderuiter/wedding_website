@@ -27,6 +27,17 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (data.code !== undefined && data.code !== null && (typeof data.code !== 'string' || data.code.trim() === '')) {
       throw new Error('Validation Error: Code cannot be empty.');
     }
+    if (data.email && typeof data.email === 'string' && data.email.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(data.email.trim())) {
+        throw new Error('Validation Error: Invalid email format.');
+      }
+    }
+    if (data.plusOneAllocations !== undefined && data.plusOneAllocations !== null) {
+      if (!Number.isInteger(data.plusOneAllocations) || data.plusOneAllocations < 0) {
+        throw new Error('Validation Error: Plus-one allocation must be a non-negative integer.');
+      }
+    }
   }
 
   protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
@@ -65,7 +76,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
   }
 
   async importBatch(
-    records: { guestName: string; code?: string }[],
+    records: {
+      guestName: string;
+      code?: string;
+      email?: string | null;
+      dietaryNotes?: string | null;
+      plusOneAllocations?: number;
+      extraFields?: Record<string, any> | null;
+    }[],
     collisionStrategy: 'skip' | 'update' | 'reject' = 'skip',
     author: string = 'Admin'
   ) {
@@ -78,6 +96,17 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         const item = records[i];
         if (!item.guestName || typeof item.guestName !== 'string' || item.guestName.trim() === '') {
           throw new Error(`Validation Error: Row ${i + 1} has an empty guest name.`);
+        }
+        if (item.email && typeof item.email === 'string' && item.email.trim() !== '') {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(item.email.trim())) {
+            throw new Error(`Validation Error: Row ${i + 1} has an invalid email format.`);
+          }
+        }
+        if (item.plusOneAllocations !== undefined && item.plusOneAllocations !== null) {
+          if (!Number.isInteger(item.plusOneAllocations) || item.plusOneAllocations < 0) {
+            throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one count.`);
+          }
         }
       }
 
@@ -125,6 +154,11 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           throw new Error(`Duplicate invitation code found: ${code}`);
         }
 
+        const rowEmail = row.email && typeof row.email === 'string' && row.email.trim() ? row.email.trim() : null;
+        const rowDietaryNotes = row.dietaryNotes && typeof row.dietaryNotes === 'string' && row.dietaryNotes.trim() ? row.dietaryNotes.trim() : null;
+        const rowPlusOne = typeof row.plusOneAllocations === 'number' ? row.plusOneAllocations : 0;
+        const rowExtraFields = row.extraFields && typeof row.extraFields === 'object' && Object.keys(row.extraFields).length > 0 ? row.extraFields : null;
+
         if (existsInBatch) {
           if (collisionStrategy === 'skip') {
             skipped++;
@@ -132,9 +166,15 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           } else if (collisionStrategy === 'update') {
             if (existsInDb) {
               const existingRecord = dbCodeMap.get(code)!;
+              const updateData: any = { guestName };
+              if (row.email !== undefined) updateData.email = rowEmail;
+              if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
+              if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
+              if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
+
               await tx.invitationCode.update({
                 where: { id: existingRecord.id },
-                data: { guestName }
+                data: updateData
               });
               updated++;
             }
@@ -150,9 +190,15 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             skipped++;
           } else if (collisionStrategy === 'update') {
             const existingRecord = dbCodeMap.get(code)!;
+            const updateData: any = { guestName };
+            if (row.email !== undefined) updateData.email = rowEmail;
+            if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
+            if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
+            if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
+
             await tx.invitationCode.update({
               where: { id: existingRecord.id },
-              data: { guestName }
+              data: updateData
             });
             updated++;
           }
@@ -161,6 +207,10 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             data: {
               guestName,
               code,
+              email: rowEmail,
+              dietaryNotes: rowDietaryNotes,
+              plusOneAllocations: rowPlusOne,
+              extraFields: rowExtraFields ?? undefined,
               used: false
             }
           });

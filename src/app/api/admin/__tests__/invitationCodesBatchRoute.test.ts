@@ -56,7 +56,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     expect(body.error).toContain('At least one record is required');
   });
 
-  test('successfully executes batch import and returns 201', async () => {
+  test('successfully executes multi-column batch import and returns 201', async () => {
     const mockResult = {
       success: true,
       count: 2,
@@ -68,7 +68,14 @@ describe('POST /api/admin/invitation-codes/batch', () => {
 
     const payload = {
       records: [
-        { guestName: 'Alice', code: 'ALICE100' },
+        {
+          guestName: 'Alice',
+          code: 'ALICE100',
+          email: 'alice@example.com',
+          dietaryNotes: 'Gluten Free',
+          plusOneAllocations: 1,
+          extraFields: { Table: 'VIP' },
+        },
         { guestName: 'Bob', code: '' },
       ],
       collisionStrategy: 'skip' as const,

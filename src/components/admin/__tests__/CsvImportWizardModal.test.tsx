@@ -45,14 +45,17 @@ describe('CsvImportWizardModal Component', () => {
     expect(screen.queryByText('Import Guest Invitation Codes')).not.toBeInTheDocument();
   });
 
-  test('full multi-step wizard workflow with CSV upload and batch commit', async () => {
+  test('full multi-column wizard workflow with CSV upload, mapping, editing, and batch commit', async () => {
     renderModal(true);
 
     expect(screen.getByText('Import Guest Invitation Codes')).toBeInTheDocument();
     expect(screen.getByText('1. Upload File')).toBeInTheDocument();
 
-    // Step 1: Upload CSV
-    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100\nBob Johnson,BOB200';
+    // Step 1: Upload CSV with multi-column standard and custom metadata
+    const csvContent =
+      'Guest Name,Invitation Code,Email,Dietary Allergies,Plus Ones,Custom Group\n' +
+      'Alice Smith,ALICE100,alice@example.com,Gluten Free,1,VIP Table\n' +
+      'Bob Johnson,BOB200,bob@example.com,Vegan,2,Family';
     const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
     (file as any)._content = csvContent;
 
@@ -64,6 +67,9 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByText(/2. Map Columns/i)).toBeInTheDocument();
       expect(screen.getByDisplayValue('Guest Name')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Invitation Code')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Email')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Dietary Allergies')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Plus Ones')).toBeInTheDocument();
     });
 
     const continueBtn = screen.getByText(/Continue to Review/i);
@@ -76,8 +82,8 @@ describe('CsvImportWizardModal Component', () => {
 
     expect(screen.getByDisplayValue('Alice Smith')).toBeInTheDocument();
     expect(screen.getByDisplayValue('ALICE100')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Bob Johnson')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('BOB200')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('alice@example.com')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Gluten Free')).toBeInTheDocument();
 
     // Mock API response
     (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -100,5 +106,34 @@ describe('CsvImportWizardModal Component', () => {
     });
 
     expect(mockOnImportComplete).toHaveBeenCalled();
+
+    // Verify fetch call payload
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/invitation-codes/batch',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          records: [
+            {
+              guestName: 'Alice Smith',
+              code: 'ALICE100',
+              email: 'alice@example.com',
+              dietaryNotes: 'Gluten Free',
+              plusOneAllocations: 1,
+              extraFields: { 'Custom Group': 'VIP Table' },
+            },
+            {
+              guestName: 'Bob Johnson',
+              code: 'BOB200',
+              email: 'bob@example.com',
+              dietaryNotes: 'Vegan',
+              plusOneAllocations: 2,
+              extraFields: { 'Custom Group': 'Family' },
+            },
+          ],
+          collisionStrategy: 'skip',
+        }),
+      })
+    );
   });
 });

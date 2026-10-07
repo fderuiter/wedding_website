@@ -1,6 +1,12 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  ThemePreset,
+  getPresetTokens,
+  isThemePreset,
+  DEFAULT_THEME_PRESET,
+} from '@/lib/theme/presets';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
@@ -10,6 +16,7 @@ type ThemeContextType = {
   themeSecondary: string;
   themeAccent: string;
   themeOutline: string;
+  themePreset: ThemePreset;
   themeMode: ThemeMode;
   mode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
@@ -21,6 +28,7 @@ const ThemeContext = createContext<ThemeContextType>({
   themeSecondary: '#B45309',
   themeAccent: '#D4AF37',
   themeOutline: '#000000',
+  themePreset: DEFAULT_THEME_PRESET,
   themeMode: 'system',
   mode: 'system',
   setThemeMode: () => {},
@@ -46,6 +54,13 @@ const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 function sanitizeColor(color: string | undefined | null, fallback: string): string {
   if (color && hexColorRegex.test(color)) {
     return color;
+  }
+  return fallback;
+}
+
+function sanitizePreset(preset: string | undefined | null, fallback: ThemePreset = DEFAULT_THEME_PRESET): ThemePreset {
+  if (preset && isThemePreset(preset)) {
+    return preset;
   }
   return fallback;
 }
@@ -195,14 +210,20 @@ function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5
   }
 }
 
-function generateDynamicStyles(primaryColor: string, secondaryColor: string): string {
+function generateDynamicStyles(primaryColor: string, secondaryColor: string, themePreset?: string): string {
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
+  const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
+  const presetTokens = getPresetTokens(preset);
 
   const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
   const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
+
+  const presetCssRules = Object.entries(presetTokens)
+    .map(([key, value]) => `      ${key}: ${value};`)
+    .join('\n');
 
   return `
     :root {
@@ -210,6 +231,7 @@ function generateDynamicStyles(primaryColor: string, secondaryColor: string): st
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
+${presetCssRules}
     }
 
     /* Light mode document */
@@ -270,6 +292,7 @@ type ThemeProviderProps = {
   config?: {
     colorPrimary?: string;
     colorSecondary?: string;
+    themePreset?: ThemePreset | string;
   };
   initialThemeMode?: ThemeMode;
 };
@@ -282,6 +305,7 @@ export function ThemeProvider({
   const [config, setConfig] = useState(() => ({
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
+    themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
   }));
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(initialThemeMode);
@@ -297,6 +321,7 @@ export function ThemeProvider({
     themeSecondary: '#B45309',
     themeAccent: '#D4AF37',
     themeOutline: '#000000',
+    themePreset: DEFAULT_THEME_PRESET,
   });
 
   // Client hydration check & sync with localStorage if no explicit initialThemeMode was supplied
@@ -381,6 +406,7 @@ export function ThemeProvider({
       setConfig({
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
+        themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
       });
     }
   }, [propConfig]);
@@ -397,6 +423,7 @@ export function ThemeProvider({
               ...next,
               colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
               colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
+              themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
             };
           });
         }
@@ -434,12 +461,14 @@ export function ThemeProvider({
       themeSecondary: sanitizeColor(config?.colorSecondary, sanitizeColor(secondary, '#B45309')),
       themeAccent: sanitizeColor(accent, '#D4AF37'),
       themeOutline: sanitizeColor(outline, '#000000'),
+      themePreset: config.themePreset,
     });
   }, [config]);
 
   const stylesString = generateDynamicStyles(
     sanitizeColor(config?.colorPrimary, '#B91C1C'),
-    sanitizeColor(config?.colorSecondary, '#B45309')
+    sanitizeColor(config?.colorSecondary, '#B45309'),
+    config?.themePreset
   );
 
   const contextValue: ThemeContextType = {

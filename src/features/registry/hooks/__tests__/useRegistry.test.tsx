@@ -54,6 +54,9 @@ describe('useRegistry', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/');
+    }
     mockedCheckAdminClient.mockResolvedValue(false);
     queryClient = createTestQueryClient();
     
@@ -229,5 +232,40 @@ describe('useRegistry', () => {
 
     expect(result.current.filteredItems.length).toBe(2);
     expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '3']);
+  });
+
+  describe('URL query param synchronization', () => {
+    it('should auto-open target item modal when ?item=<itemId> is present in URL', async () => {
+      window.history.replaceState({}, '', '/?item=3');
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      await waitFor(() => {
+        expect(result.current.isModalOpen).toBe(true);
+        expect(result.current.selectedItem?.id).toBe('3');
+      });
+    });
+
+    it('should update URL when card is clicked and clear URL when modal is closed', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.handleCardClick(mockItems[0]);
+      });
+
+      expect(window.location.search).toContain('item=1');
+      expect(result.current.isModalOpen).toBe(true);
+
+      act(() => {
+        result.current.handleCloseModal();
+      });
+
+      expect(window.location.search).not.toContain('item=1');
+      expect(result.current.isModalOpen).toBe(false);
+    });
   });
 });

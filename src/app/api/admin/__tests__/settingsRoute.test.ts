@@ -90,6 +90,7 @@ const updatedConfig = {
   weddingDate: new Date(validConfigData.weddingDate),
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
+  themePreset: 'classic',
   timezone: 'America/Chicago',
   showCountdown: true,
   showAddToCalendar: true,

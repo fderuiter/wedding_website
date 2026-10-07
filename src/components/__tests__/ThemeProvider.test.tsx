@@ -10,6 +10,7 @@ function TestComponent() {
     <div>
       <span data-testid="theme-primary">{theme.themePrimary}</span>
       <span data-testid="theme-secondary">{theme.themeSecondary}</span>
+      <span data-testid="theme-preset">{theme.themePreset}</span>
     </div>
   );
 }
@@ -292,6 +293,80 @@ describe('ThemeProvider Theme Mode Hydration & Synchronization', () => {
       expect(getByTestId('resolved-theme')).toHaveTextContent('dark');
       expect(document.documentElement.classList.contains('dark')).toBe(true);
     }
+  });
+});
+
+describe('ThemeProvider Theme Presets', () => {
+  it('injects default classic theme preset tokens into dynamic style block', () => {
+    const { getByTestId, container } = render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('classic');
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem).not.toBeNull();
+    expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
+    expect(styleElem?.textContent).toContain('--dialog-border-radius: 0.5rem;');
+  });
+
+  it('injects romantic theme preset tokens when themePreset prop is romantic', () => {
+    const { getByTestId, container } = render(
+      <ThemeProvider config={{ themePreset: 'romantic' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('romantic');
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem?.textContent).toContain('--btn-radius: 9999px;');
+    expect(styleElem?.textContent).toContain('--dialog-border-radius: 1.25rem;');
+  });
+
+  it('updates themePreset dynamically via DRAFT_UPDATE window message', () => {
+    const originalParent = window.parent;
+    Object.defineProperty(window, 'parent', { writable: true, value: {} });
+
+    const { getByTestId, container } = render(
+      <ThemeProvider config={{ themePreset: 'classic' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('classic');
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'DRAFT_UPDATE',
+            draftType: 'config',
+            draftData: {
+              themePreset: 'editorial',
+            },
+          },
+        })
+      );
+    });
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('editorial');
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem?.textContent).toContain('--btn-radius: 0.125rem;');
+
+    Object.defineProperty(window, 'parent', { writable: true, value: originalParent });
+  });
+
+  it('falls back to classic when invalid themePreset string is supplied', () => {
+    const { getByTestId, container } = render(
+      <ThemeProvider config={{ themePreset: 'invalid-preset-name' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('classic');
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
   });
 });
 

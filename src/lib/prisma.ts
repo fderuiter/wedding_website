@@ -12,7 +12,10 @@ const globalForPrisma = global as unknown as { prisma: PrismaClient };
 const createPrismaClient = () => {
   console.log('DEBUG [createPrismaClient]: Initializing PostgreSQL database client');
   const connectionString = env.DATABASE_URL;
-  const pool = new Pool({ connectionString });
+  const pool = new Pool({ 
+    connectionString,
+    connectionTimeoutMillis: 3000,
+  });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 };

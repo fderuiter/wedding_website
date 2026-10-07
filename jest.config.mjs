@@ -77,7 +77,7 @@ export default (async () => {
   return {
     ...jestConfig,
     transformIgnorePatterns: [
-      '/node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|ics|nanoid|node-html-parser|entities)/.*)',
+      '/node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|ics|nanoid|node-html-parser|entities|msw|@msw|@mswjs|@open-draft|cookie|until-promise|until-async|rettime|strict-event-emitter|outvariant)/.*)',
     ],
   };
 })();

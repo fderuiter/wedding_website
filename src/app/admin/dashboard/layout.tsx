@@ -1,17 +1,12 @@
 import React from 'react';
-import Link from 'next/link';
 import { getAppConfig } from '@/lib/config';
-import { isFeatureEnabled, FeatureId } from '@/lib/modules';
-
-interface AdminNavItem {
-  href: string;
-  label: string;
-  featureId?: FeatureId;
-}
+import { isFeatureEnabled } from '@/lib/modules';
+import { AdminNav, AdminNavItem } from './AdminNav';
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/dashboard', label: 'Registry', featureId: 'registry' },
   { href: '/admin/dashboard/invitation-codes', label: 'Invitation Codes', featureId: 'registry' },
+  { href: '/admin/dashboard/seating-chart', label: 'Seating Chart' },
   { href: '/admin/dashboard/site-manager', label: 'Site Manager' },
   { href: '/admin/dashboard/wedding-party', label: 'Wedding Party', featureId: 'weddingParty' },
   { href: '/admin/dashboard/media', label: 'Media', featureId: 'gallery' },
@@ -45,22 +40,12 @@ export default async function AdminDashboardLayout({
       <header aria-label="Admin Dashboard" className="bg-white dark:bg-gray-800 shadow p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold text-primary">Admin Control Panel</h1>
-          <nav aria-label="Admin Navigation">
-            <ul className="flex flex-wrap space-x-4">
-              {visibleNavItems.map((item) => (
-                <li key={item.href}>
-                  <Link href={item.href} className="text-gray-700 dark:text-gray-300 hover:text-primary">
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <AdminNav items={visibleNavItems} />
         </div>
       </header>
-      <div className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6">
         {children}
-      </div>
+      </main>
     </div>
   );
 }
