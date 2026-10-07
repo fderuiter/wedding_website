@@ -93,6 +93,11 @@ const BackupAttractionSchema = z.object({
   // Optional/Nullable fields
   imageId: AttractionSchema.shape.imageId,
   isVisible: AttractionSchema.shape.isVisible.optional(),
+  promoCode: AttractionSchema.shape.promoCode,
+  bookingUrl: AttractionSchema.shape.bookingUrl,
+  roomRate: AttractionSchema.shape.roomRate,
+  cutoffDate: AttractionSchema.shape.cutoffDate,
+  shuttleInfo: AttractionSchema.shape.shuttleInfo,
 });
 
 // RegistryItem database-aligned schema
