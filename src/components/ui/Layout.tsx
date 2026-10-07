@@ -6,7 +6,7 @@ export const Container = React.forwardRef<HTMLDivElement, React.HTMLAttributes<H
     return (
       <div
         ref={ref}
-        className={cn('min-h-screen flex items-center justify-center bg-rose-50 text-gray-900 p-4', className)}
+        className={cn('min-h-screen flex items-center justify-center bg-rose-50 text-gray-900 p-[var(--card-padding)] max-w-[var(--container-max-w)] w-full mx-auto', className)}
         {...props}
       />
     );
@@ -19,7 +19,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
     return (
       <div
         ref={ref}
-        className={cn('w-full bg-white p-8 rounded-xl shadow-lg', className)}
+        className={cn('w-full bg-white p-[var(--card-padding)] rounded-[var(--radius-card)] shadow-lg', className)}
         {...props}
       />
     );
