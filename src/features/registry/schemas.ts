@@ -126,6 +126,8 @@ export const InvitationCodeSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
   used: z.boolean().default(false),
   usedAt: z.union([z.string(), z.date()]).nullable().optional(),
+  tableId: z.string().nullable().optional(),
+  seatNumber: z.number().int().positive().nullable().optional(),
   createdAt: z.union([z.string(), z.date()]).optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
 });
