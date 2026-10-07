@@ -42,11 +42,41 @@ describe('RegistryCard', () => {
   });
 
   it('renders group gift details when applicable', () => {
-    const groupGiftItem = { ...mockItem, isGroupGift: true, amountContributed: 50 };
+    const groupGiftItem = { ...mockItem, price: 100, isGroupGift: true, amountContributed: 50 };
     render(<RegistryCard item={groupGiftItem} onClick={() => {}} />);
 
     expect(screen.getByText(/Group Gift:/)).toBeInTheDocument();
     expect(screen.getByText(/Group Gift:/)).toHaveTextContent('$50.00');
+    expect(screen.getByText('50%')).toBeInTheDocument();
+
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toBeInTheDocument();
+    expect(progressBar).toHaveAttribute('aria-valuenow', '50');
+
+    const card = screen.getByTestId('registry-card');
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('50% funded'));
+  });
+
+  it('handles zero price and zero contribution edge cases safely', () => {
+    const zeroPriceItem = { ...mockItem, price: 0, isGroupGift: true, amountContributed: 0 };
+    render(<RegistryCard item={zeroPriceItem} onClick={() => {}} />);
+
+    expect(screen.getByText('0%')).toBeInTheDocument();
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toHaveAttribute('aria-valuenow', '0');
+    const card = screen.getByTestId('registry-card');
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('0% funded'));
+  });
+
+  it('caps percentage display at 100% when contributions exceed total price', () => {
+    const overFundedItem = { ...mockItem, price: 100, isGroupGift: true, amountContributed: 150 };
+    render(<RegistryCard item={overFundedItem} onClick={() => {}} />);
+
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toHaveAttribute('aria-valuenow', '100');
+    const card = screen.getByTestId('registry-card');
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('100% funded'));
   });
 
   it('renders fully funded status for purchased group gift', () => {
