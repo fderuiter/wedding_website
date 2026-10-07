@@ -410,6 +410,7 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
 | `colorPrimary` | `default` | Configuration field for colorPrimary |
 | `colorSecondary` | `default` | Configuration field for colorSecondary |
+| `themePreset` | `default` | Configuration field for themePreset |
 | `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |

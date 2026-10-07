@@ -36,6 +36,7 @@ model AppConfig {
   seoKeywords      String   @default("{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception")
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")
+  themePreset      String   @default("classic")
   features         Json     @default("[]")
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
