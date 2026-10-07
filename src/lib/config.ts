@@ -49,6 +49,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   seoKeywords: '',
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
+  themePreset: 'classic',
   timezone: 'UTC',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true,
@@ -109,6 +110,7 @@ export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_TIMEZONE) overrides.timezone = process.env.SITE_TIMEZONE;
   if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
   if (process.env.SITE_COLOR_SECONDARY) overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
+  if (process.env.SITE_THEME_PRESET) overrides.themePreset = process.env.SITE_THEME_PRESET as any;
   if (process.env.SITE_SHOW_COUNTDOWN !== undefined) {
     overrides.showCountdown = process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
   }
@@ -271,6 +273,7 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
           seoKeywords: '',
           colorPrimary: '#B91C1C',
           colorSecondary: '#B45309',
+          themePreset: 'classic',
           timezone: 'UTC',
           showCountdown: true,
           showAddToCalendar: true,
