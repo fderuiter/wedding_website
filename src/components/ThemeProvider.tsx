@@ -2,11 +2,18 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+export type ResolvedTheme = 'light' | 'dark';
+
 type ThemeContextType = {
   themePrimary: string;
   themeSecondary: string;
   themeAccent: string;
   themeOutline: string;
+  themeMode: ThemeMode;
+  mode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  resolvedTheme: ResolvedTheme;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -14,6 +21,10 @@ const ThemeContext = createContext<ThemeContextType>({
   themeSecondary: '#B45309',
   themeAccent: '#D4AF37',
   themeOutline: '#000000',
+  themeMode: 'system',
+  mode: 'system',
+  setThemeMode: () => {},
+  resolvedTheme: 'dark',
 });
 
 export const useTheme = () => useContext(ThemeContext);
@@ -235,22 +246,51 @@ function generateDynamicStyles(primaryColor: string, secondaryColor: string): st
   `;
 }
 
+function getSystemTheme(): ResolvedTheme {
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'dark';
+}
+
+function applyResolvedTheme(resolved: ResolvedTheme) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  if (resolved === 'dark') {
+    root.classList.add('dark');
+    root.classList.remove('light');
+  } else {
+    root.classList.add('light');
+    root.classList.remove('dark');
+  }
+}
+
 type ThemeProviderProps = {
   children: React.ReactNode;
   config?: {
     colorPrimary?: string;
     colorSecondary?: string;
   };
+  initialThemeMode?: ThemeMode;
 };
 
 export function ThemeProvider({ 
   children,
-  config: propConfig
+  config: propConfig,
+  initialThemeMode = 'system'
 }: ThemeProviderProps) {
   const [config, setConfig] = useState(() => ({
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
   }));
+
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(initialThemeMode);
+
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
+    if (initialThemeMode === 'light') return 'light';
+    if (initialThemeMode === 'dark') return 'dark';
+    return 'dark';
+  });
 
   const [theme, setTheme] = useState({
     themePrimary: '#B91C1C',
@@ -258,6 +298,83 @@ export function ThemeProvider({
     themeAccent: '#D4AF37',
     themeOutline: '#000000',
   });
+
+  // Client hydration check & sync with localStorage if no explicit initialThemeMode was supplied
+  useEffect(() => {
+    let currentMode = themeMode;
+    try {
+      const saved = localStorage.getItem('theme_mode');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') {
+        if (!initialThemeMode || initialThemeMode === 'system') {
+          currentMode = saved as ThemeMode;
+          setThemeModeState(currentMode);
+        }
+      }
+    } catch {}
+
+    let resolved: ResolvedTheme = 'dark';
+    if (currentMode === 'light') {
+      resolved = 'light';
+    } else if (currentMode === 'dark') {
+      resolved = 'dark';
+    } else {
+      resolved = getSystemTheme();
+    }
+
+    setResolvedTheme(resolved);
+    applyResolvedTheme(resolved);
+  }, [initialThemeMode]);
+
+  // System preference change listener when mode is 'system'
+  useEffect(() => {
+    if (themeMode !== 'system') return;
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      const newResolved: ResolvedTheme = e.matches ? 'dark' : 'light';
+      setResolvedTheme(newResolved);
+      applyResolvedTheme(newResolved);
+    };
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleChange);
+    } else if (mediaQuery.addListener) {
+      mediaQuery.addListener(handleChange);
+    }
+
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', handleChange);
+      } else if (mediaQuery.removeListener) {
+        mediaQuery.removeListener(handleChange);
+      }
+    };
+  }, [themeMode]);
+
+  const setThemeMode = (newMode: ThemeMode) => {
+    setThemeModeState(newMode);
+
+    try {
+      localStorage.setItem('theme_mode', newMode);
+    } catch {}
+
+    try {
+      document.cookie = `theme_mode=${newMode}; path=/; max-age=31536000; SameSite=Lax`;
+    } catch {}
+
+    let resolved: ResolvedTheme = 'dark';
+    if (newMode === 'light') {
+      resolved = 'light';
+    } else if (newMode === 'dark') {
+      resolved = 'dark';
+    } else {
+      resolved = getSystemTheme();
+    }
+
+    setResolvedTheme(resolved);
+    applyResolvedTheme(resolved);
+  };
 
   useEffect(() => {
     if (propConfig) {
@@ -325,8 +442,16 @@ export function ThemeProvider({
     sanitizeColor(config?.colorSecondary, '#B45309')
   );
 
+  const contextValue: ThemeContextType = {
+    ...theme,
+    themeMode,
+    mode: themeMode,
+    setThemeMode,
+    resolvedTheme,
+  };
+
   return (
-    <ThemeContext.Provider value={theme}>
+    <ThemeContext.Provider value={contextValue}>
       <style id="dynamic-theme-style">{stylesString}</style>
       {children}
     </ThemeContext.Provider>

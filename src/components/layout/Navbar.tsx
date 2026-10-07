@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
+import { ThemeSelector } from '../ui/ThemeSelector';
 
 /**
  * @interface NavbarProps
@@ -102,9 +103,10 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                 ))}
               </nav>
             </div>
-            <div className="hidden md:block">
+            <div className="hidden md:flex md:items-center md:gap-4">
+              <ThemeSelector />
               {isAdmin && (
-                <div className="ml-4 flex items-center md:ml-6">
+                <div className="flex items-center">
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
                   <button
                     onClick={handleLogout}
@@ -159,6 +161,10 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               {link.label}
             </Link>
           ))}
+          <div className="pt-3 pb-2 px-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</span>
+            <ThemeSelector />
+          </div>
           {isAdmin && (
             <div className="pt-4 pb-3 border-t border-gray-700">
               <div className="flex items-center px-5">

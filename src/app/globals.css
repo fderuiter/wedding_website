@@ -8,14 +8,6 @@
   --color-secondary: #B45309;
   --color-primary-light: #FCA5A5;
   --color-secondary-light: #FDE68A;
-  --color-background: #111827;
-  --color-foreground: #F9FAFB;
-  --color-text-on-primary: #FFFFFF;
-  --color-text-on-secondary: #171717;
-  --color-border: #4B5563;
-
-  --color-primary-text: #FCA5A5; /* Accessible variant against dark background */
-  --color-secondary-text: #FDE68A; /* Accessible variant against dark background */
 
   --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
@@ -24,10 +16,31 @@
 }
 
 :root {
+  --color-background: #FFFFFF;
+  --color-foreground: #111827;
+  --color-border: #E5E7EB;
+  --color-text-on-primary: #FFFFFF;
+  --color-text-on-secondary: #171717;
+  --color-primary-text: #B91C1C;
+  --color-secondary-text: #B45309;
+
   --background: var(--color-background);
   --foreground: var(--color-foreground);
   --header-h: var(--spacing-header); /* Height of sticky header */
   --scale-factor: 1; /* Fluid scaling multiplier */
+}
+
+.dark {
+  --color-background: #111827;
+  --color-foreground: #F9FAFB;
+  --color-border: #4B5563;
+  --color-text-on-primary: #FFFFFF;
+  --color-text-on-secondary: #171717;
+  --color-primary-text: #FCA5A5;
+  --color-secondary-text: #FDE68A;
+
+  --background: var(--color-background);
+  --foreground: var(--color-foreground);
 }
 
 body {
