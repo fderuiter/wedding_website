@@ -90,4 +90,15 @@ describe('ThingsToDoCard', () => {
     expect(writeTextMock).toHaveBeenCalledWith('WEDDING2026');
     expect(await screen.findByText('Copied!')).toBeInTheDocument();
   });
+
+  it('omits booking link when bookingUrl contains an unsafe protocol', () => {
+    const maliciousAttraction: AttractionDTO = {
+      ...mockHotelAttraction,
+      bookingUrl: 'javascript:alert("xss")',
+    };
+
+    render(<ThingsToDoCard attraction={maliciousAttraction} />);
+
+    expect(screen.queryByText('Book Hotel Block')).not.toBeInTheDocument();
+  });
 });

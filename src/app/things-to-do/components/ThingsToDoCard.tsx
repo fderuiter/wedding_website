@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { MediaImage } from '@/components/MediaImage';
 import type { AttractionDTO } from '@/features/attractions';
 import { Icon } from '@/components/ui/Icon';
+import { sanitizeUrl } from '@/utils/validation';
 
 /**
  * @interface ThingsToDoCardProps
@@ -35,11 +36,15 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
     }
   };
 
+  const safeBookingUrl = sanitizeUrl(attraction.bookingUrl);
+  const safeWebsiteUrl = sanitizeUrl(attraction.website);
+  const safeDirectionsUrl = sanitizeUrl(attraction.directions);
+
   const hasHotelBlock = Boolean(
     attraction.promoCode ||
     attraction.roomRate ||
     attraction.cutoffDate ||
-    attraction.bookingUrl ||
+    safeBookingUrl ||
     attraction.shuttleInfo ||
     attraction.category === 'hotel'
   );
@@ -100,10 +105,10 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
               </div>
             )}
 
-            {attraction.bookingUrl && (
+            {safeBookingUrl && (
               <div className="pt-1">
                 <a
-                  href={attraction.bookingUrl}
+                  href={safeBookingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full inline-flex items-center justify-center px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors"
@@ -118,26 +123,30 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
         )}
 
         <div className="mt-auto flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
-          <a
-            href={attraction.website || undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
-          >
-            <Icon name="Globe" size={18} className="mr-2" />
-            Website
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
-          <a
-            href={attraction.directions}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
-          >
-            <Icon name="MapPin" size={18} className="mr-2" />
-            Directions
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
+          {safeWebsiteUrl ? (
+            <a
+              href={safeWebsiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
+            >
+              <Icon name="Globe" size={18} className="mr-2" />
+              Website
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ) : <div />}
+          {safeDirectionsUrl ? (
+            <a
+              href={safeDirectionsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
+            >
+              <Icon name="MapPin" size={18} className="mr-2" />
+              Directions
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ) : null}
         </div>
       </div>
     </div>

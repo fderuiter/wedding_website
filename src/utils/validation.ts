@@ -122,11 +122,47 @@ export const ImportBackupSchema = z.object({
 });
 
 /**
+ * Sanitizes a URL string for safe usage in HTML anchor href attributes.
+ * Allows valid http://, https://, mailto:, and tel: URLs, as well as relative paths and path strings.
+ * Rejects dangerous URI schemes (javascript:, data:, vbscript:, etc.) and protocol-relative URLs (//)
+ * to prevent XSS and unvalidated redirects.
+ */
+export function sanitizeUrl(url?: string | null): string | undefined {
+  if (!url || typeof url !== 'string') return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+
+  // Block protocol-relative URLs
+  if (trimmed.startsWith('//')) {
+    return undefined;
+  }
+
+  // Check for scheme (e.g. "javascript:", "https:", "data:")
+  const schemeMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1].toLowerCase();
+    const allowedSchemes = ['http', 'https', 'mailto', 'tel'];
+    if (!allowedSchemes.includes(scheme)) {
+      return undefined;
+    }
+  }
+
+  return trimmed;
+}
+
+/**
  * @internal
  */
 export const createLaxUrlSchema = (fieldName = 'URL') =>
   z.string()
     .max(2000, `${fieldName} must be under 2000 characters`)
+    .refine(
+      (val) => {
+        if (!val) return true;
+        return sanitizeUrl(val) !== undefined;
+      },
+      { message: `${fieldName} must be a valid http, https, or relative URL` }
+    )
     .optional()
     .nullable()
     .or(z.literal(''));
