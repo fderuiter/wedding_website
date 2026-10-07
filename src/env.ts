@@ -87,7 +87,7 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
 
 let _env: z.infer<typeof envSchema>;
 
-if (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE)) {
+if (process.env.NEXT_RUNTIME === 'edge' || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE))) {
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',

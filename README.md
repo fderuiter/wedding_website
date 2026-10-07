@@ -54,7 +54,7 @@ This project is built with a modern, full-stack TypeScript architecture.
 *   **Language:** [TypeScript](https://www.typescriptlang.org/)
 *   **Styling:** [Tailwind CSS](https://tailwindcss.com/)
 *   **Database ORM:** [Prisma](https://www.prisma.io/)
-*   **Database:** [PostgreSQL](https://www.postgresql.org/) (hosted on [Neon](https://neon.tech/))
+*   **Database:** [PostgreSQL](https://www.postgresql.org/) (portable contract; compatible with local PostgreSQL, Neon, Supabase, Railway, AWS RDS, GCP Cloud SQL, etc.)
 *   **3D & Animation:** [React Three Fiber](https://docs.pmnd.rs/react-three-fiber/getting-started/introduction), [Drei](https://github.com/pmndrs/drei), & [Framer Motion](https://www.framer.com/motion/)
 *   **Physics:** [Rapier](https://rapier.rs/) (via `@react-three/rapier`) for 3D interactions.
 *   **State Management:** [React Query](https://tanstack.com/query/latest) (TanStack Query) for server state.
@@ -69,7 +69,7 @@ For production hosting guidelines and minimum runtime requirements across contai
 
 *   **Node.js**: LTS version recommended (v22+).
 *   **Git**: For version control.
-*   **PostgreSQL Database**: You can use a local Postgres instance or a cloud provider like Neon or Supabase.
+*   **PostgreSQL Database**: Compatible with local PostgreSQL or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
 
 ### Installation Steps
 

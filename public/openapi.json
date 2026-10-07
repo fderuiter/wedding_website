@@ -1153,7 +1153,189 @@
           "content": {
             "application/json": {
               "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema"
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "partner1Name": {
+                    "type": "string"
+                  },
+                  "partner2Name": {
+                    "type": "string"
+                  },
+                  "brideName": {
+                    "type": "string"
+                  },
+                  "groomName": {
+                    "type": "string"
+                  },
+                  "subdomain": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "weddingDate": {},
+                  "baseUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "venueName": {
+                    "type": "string"
+                  },
+                  "venueAddress": {
+                    "type": "string"
+                  },
+                  "venueCity": {
+                    "type": "string"
+                  },
+                  "venueState": {
+                    "type": "string"
+                  },
+                  "venueZip": {
+                    "type": "string"
+                  },
+                  "latitude": {},
+                  "longitude": {},
+                  "storyText": {
+                    "type": "string"
+                  },
+                  "venueDescription": {
+                    "type": "string"
+                  },
+                  "travelAdvice": {
+                    "type": "string"
+                  },
+                  "heroTitle": {
+                    "type": "string"
+                  },
+                  "heroSubtitle": {
+                    "type": "string"
+                  },
+                  "seoTitle": {
+                    "type": "string"
+                  },
+                  "seoDescription": {
+                    "type": "string"
+                  },
+                  "faviconUrl": {
+                    "type": "string"
+                  },
+                  "ogImageUrl": {
+                    "type": "string"
+                  },
+                  "seoKeywords": {
+                    "type": "string"
+                  },
+                  "colorPrimary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "colorSecondary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "themePreset": {
+                    "default": "classic",
+                    "type": "string",
+                    "enum": [
+                      "classic",
+                      "modern",
+                      "romantic",
+                      "minimal",
+                      "editorial"
+                    ]
+                  },
+                  "showCountdown": {
+                    "type": "boolean"
+                  },
+                  "showAddToCalendar": {
+                    "type": "boolean"
+                  },
+                  "modules": {
+                    "type": "object",
+                    "properties": {
+                      "registry": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "groupGifting": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "guestPasscode": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weather": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weddingParty": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "attractions": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "gallery": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "countdown": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "addToCalendar": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "interactive3D": {
+                        "default": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "weddingDate",
+                  "baseUrl",
+                  "venueName",
+                  "venueAddress",
+                  "venueCity",
+                  "venueState",
+                  "venueZip",
+                  "latitude",
+                  "longitude",
+                  "storyText",
+                  "venueDescription",
+                  "travelAdvice",
+                  "heroTitle",
+                  "heroSubtitle",
+                  "seoTitle",
+                  "seoDescription",
+                  "faviconUrl",
+                  "ogImageUrl",
+                  "seoKeywords",
+                  "themePreset"
+                ],
+                "additionalProperties": {}
               }
             }
           }
@@ -1172,7 +1354,189 @@
           "content": {
             "application/json": {
               "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema"
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "partner1Name": {
+                    "type": "string"
+                  },
+                  "partner2Name": {
+                    "type": "string"
+                  },
+                  "brideName": {
+                    "type": "string"
+                  },
+                  "groomName": {
+                    "type": "string"
+                  },
+                  "subdomain": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "weddingDate": {},
+                  "baseUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "venueName": {
+                    "type": "string"
+                  },
+                  "venueAddress": {
+                    "type": "string"
+                  },
+                  "venueCity": {
+                    "type": "string"
+                  },
+                  "venueState": {
+                    "type": "string"
+                  },
+                  "venueZip": {
+                    "type": "string"
+                  },
+                  "latitude": {},
+                  "longitude": {},
+                  "storyText": {
+                    "type": "string"
+                  },
+                  "venueDescription": {
+                    "type": "string"
+                  },
+                  "travelAdvice": {
+                    "type": "string"
+                  },
+                  "heroTitle": {
+                    "type": "string"
+                  },
+                  "heroSubtitle": {
+                    "type": "string"
+                  },
+                  "seoTitle": {
+                    "type": "string"
+                  },
+                  "seoDescription": {
+                    "type": "string"
+                  },
+                  "faviconUrl": {
+                    "type": "string"
+                  },
+                  "ogImageUrl": {
+                    "type": "string"
+                  },
+                  "seoKeywords": {
+                    "type": "string"
+                  },
+                  "colorPrimary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "colorSecondary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "themePreset": {
+                    "default": "classic",
+                    "type": "string",
+                    "enum": [
+                      "classic",
+                      "modern",
+                      "romantic",
+                      "minimal",
+                      "editorial"
+                    ]
+                  },
+                  "showCountdown": {
+                    "type": "boolean"
+                  },
+                  "showAddToCalendar": {
+                    "type": "boolean"
+                  },
+                  "modules": {
+                    "type": "object",
+                    "properties": {
+                      "registry": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "groupGifting": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "guestPasscode": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weather": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weddingParty": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "attractions": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "gallery": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "countdown": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "addToCalendar": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "interactive3D": {
+                        "default": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "weddingDate",
+                  "baseUrl",
+                  "venueName",
+                  "venueAddress",
+                  "venueCity",
+                  "venueState",
+                  "venueZip",
+                  "latitude",
+                  "longitude",
+                  "storyText",
+                  "venueDescription",
+                  "travelAdvice",
+                  "heroTitle",
+                  "heroSubtitle",
+                  "seoTitle",
+                  "seoDescription",
+                  "faviconUrl",
+                  "ogImageUrl",
+                  "seoKeywords",
+                  "themePreset"
+                ],
+                "additionalProperties": {}
               }
             }
           }
@@ -1202,7 +1566,189 @@
           "content": {
             "application/json": {
               "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema"
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "partner1Name": {
+                    "type": "string"
+                  },
+                  "partner2Name": {
+                    "type": "string"
+                  },
+                  "brideName": {
+                    "type": "string"
+                  },
+                  "groomName": {
+                    "type": "string"
+                  },
+                  "subdomain": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "weddingDate": {},
+                  "baseUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "venueName": {
+                    "type": "string"
+                  },
+                  "venueAddress": {
+                    "type": "string"
+                  },
+                  "venueCity": {
+                    "type": "string"
+                  },
+                  "venueState": {
+                    "type": "string"
+                  },
+                  "venueZip": {
+                    "type": "string"
+                  },
+                  "latitude": {},
+                  "longitude": {},
+                  "storyText": {
+                    "type": "string"
+                  },
+                  "venueDescription": {
+                    "type": "string"
+                  },
+                  "travelAdvice": {
+                    "type": "string"
+                  },
+                  "heroTitle": {
+                    "type": "string"
+                  },
+                  "heroSubtitle": {
+                    "type": "string"
+                  },
+                  "seoTitle": {
+                    "type": "string"
+                  },
+                  "seoDescription": {
+                    "type": "string"
+                  },
+                  "faviconUrl": {
+                    "type": "string"
+                  },
+                  "ogImageUrl": {
+                    "type": "string"
+                  },
+                  "seoKeywords": {
+                    "type": "string"
+                  },
+                  "colorPrimary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "colorSecondary": {
+                    "type": "string",
+                    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "themePreset": {
+                    "default": "classic",
+                    "type": "string",
+                    "enum": [
+                      "classic",
+                      "modern",
+                      "romantic",
+                      "minimal",
+                      "editorial"
+                    ]
+                  },
+                  "showCountdown": {
+                    "type": "boolean"
+                  },
+                  "showAddToCalendar": {
+                    "type": "boolean"
+                  },
+                  "modules": {
+                    "type": "object",
+                    "properties": {
+                      "registry": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "groupGifting": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "guestPasscode": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weather": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weddingParty": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "attractions": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "gallery": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "countdown": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "addToCalendar": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "interactive3D": {
+                        "default": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "weddingDate",
+                  "baseUrl",
+                  "venueName",
+                  "venueAddress",
+                  "venueCity",
+                  "venueState",
+                  "venueZip",
+                  "latitude",
+                  "longitude",
+                  "storyText",
+                  "venueDescription",
+                  "travelAdvice",
+                  "heroTitle",
+                  "heroSubtitle",
+                  "seoTitle",
+                  "seoDescription",
+                  "faviconUrl",
+                  "ogImageUrl",
+                  "seoKeywords",
+                  "themePreset"
+                ],
+                "additionalProperties": {}
               }
             }
           }

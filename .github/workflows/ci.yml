@@ -129,6 +129,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    services:
+      db:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: wedding
+          POSTGRES_PASSWORD: wedding123
+          POSTGRES_DB: wedding_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -137,7 +151,9 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      - name: Run tests
+      - name: Run unit & integration tests
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
         run: npm test
       - name: Upload Test Coverage
         if: always()
@@ -190,6 +206,7 @@ jobs:
       - name: Upload Next.js Build Artifact
         uses: actions/upload-artifact@v4
         with:
+<<<<<<< HEAD
           name: next-build-artifact
           retention-days: 7
           path: |
@@ -221,6 +238,9 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
       - name: Run e2e tests
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+          GUEST_PASSCODE: wedding2026
         run: npx playwright test
 
       - name: Generate A11y Report
