@@ -167,7 +167,7 @@ describe('useRegistry', () => {
   });
 
   it('should handle contribution', async () => {
-    let contributeBody = null;
+    let contributeBody: unknown = null;
     server.use(
       http.post('/api/registry/contribute', async ({ request }) => {
         contributeBody = await request.json();

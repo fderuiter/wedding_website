@@ -6,6 +6,9 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 
+const mockHtmlRoute = (url: string, html: string) =>
+  http.get(url, () => new HttpResponse(html, { headers: { 'Content-Type': 'text/html' } }));
+
 // Mock DNS for SSRF check
 jest.mock('dns', () => {
   const originalDns = jest.requireActual('dns');
@@ -52,11 +55,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      http.get('https://www.example.com/', () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute('https://www.example.com/', mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -89,11 +88,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      http.get(targetUrl, () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute(targetUrl, mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -124,11 +119,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      http.get(costcoUrl, () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute(costcoUrl, mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -148,9 +139,7 @@ describe('POST /api/registry/scrape', () => {
   runIfMock('should classify 403 response into BLOCKED_BY_VENDOR error domain', async () => {
     const costcoUrl = 'https://www.costco.com/blocked-product';
     server.use(
-      http.get(costcoUrl, () => {
-        return new HttpResponse(null, { status: 403 });
-      })
+      http.get(costcoUrl, () => new HttpResponse(null, { status: 403 }))
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -169,9 +158,7 @@ describe('POST /api/registry/scrape', () => {
   runIfMock('should classify 404 response into URL_NOT_FOUND error domain', async () => {
     const testUrl = 'https://www.example.com/missing-404';
     server.use(
-      http.get(testUrl, () => {
-        return new HttpResponse(null, { status: 404 });
-      })
+      http.get(testUrl, () => new HttpResponse(null, { status: 404 }))
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -190,9 +177,7 @@ describe('POST /api/registry/scrape', () => {
   runIfMock('should classify network error into NETWORK_TIMEOUT error domain', async () => {
     const testUrl = 'https://www.example.com/network-error';
     server.use(
-      http.get(testUrl, () => {
-        return HttpResponse.error();
-      })
+      http.get(testUrl, () => HttpResponse.error())
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -228,11 +213,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      http.get('https://www.amazon.com/dp/B08C1F553M', () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute('https://www.amazon.com/dp/B08C1F553M', mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -267,11 +248,7 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      http.get('https://www.amazon.com/dp/B09XYZ1234', () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute('https://www.amazon.com/dp/B09XYZ1234', mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -311,11 +288,7 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      http.get(testUrl, () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute(testUrl, mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -367,11 +340,7 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      http.get(testUrl, () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute(testUrl, mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -415,11 +384,7 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      http.get(testUrl, () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute(testUrl, mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -454,11 +419,7 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      http.get(testUrl, () => {
-        return new HttpResponse(mockHtml, {
-          headers: { 'Content-Type': 'text/html' },
-        });
-      })
+      mockHtmlRoute(testUrl, mockHtml)
     );
 
     const request = new Request('http://localhost/api/registry/scrape', {
@@ -530,7 +491,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -571,7 +532,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -614,7 +575,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -644,7 +605,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -673,7 +634,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -703,7 +664,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -733,7 +694,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -777,7 +738,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -806,7 +767,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
+        mockHtmlRoute(testUrl, mockHtml)
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
