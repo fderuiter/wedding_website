@@ -37,13 +37,14 @@ interface MatchResult {
   lineContent: string;
 }
 
-function isAllowlisted(relPath: string): boolean {
+function isAllowlisted(relPath: string, isDir = false): boolean {
   const normalized = relPath.replace(/\\/g, '/');
+  const pathToCheck = isDir && !normalized.endsWith('/') ? `${normalized}/` : normalized;
   if (ALLOWLIST_PATHS.has(normalized)) {
     return true;
   }
   for (const prefix of ALLOWLIST_PREFIXES) {
-    if (normalized.startsWith(prefix)) {
+    if (pathToCheck.startsWith(prefix) || prefix.startsWith(pathToCheck)) {
       return true;
     }
   }
@@ -56,12 +57,13 @@ function scanDirectory(dirPath: string, matches: MatchResult[]) {
   for (const entry of entries) {
     const fullPath = path.join(dirPath, entry.name);
     const relPath = path.relative(ROOT_DIR, fullPath).replace(/\\/g, '/');
+    const isDir = entry.isDirectory();
 
-    if (isAllowlisted(relPath)) {
+    if (isAllowlisted(relPath, isDir)) {
       continue;
     }
 
-    if (entry.isDirectory()) {
+    if (isDir) {
       scanDirectory(fullPath, matches);
     } else if (entry.isFile()) {
       scanFile(fullPath, relPath, matches);
