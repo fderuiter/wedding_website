@@ -4,6 +4,7 @@ node_modules
 
 # 2. Next.js / Turbopack build compilation cache and intermediate output
 .turbo
+.next
 out
 build
 
