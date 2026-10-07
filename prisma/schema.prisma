@@ -58,17 +58,24 @@ model Media {
   registryItems       RegistryItem[]
 }
 
+enum WeddingPartySide {
+  BRIDE
+  GROOM
+  JOINT
+}
+
 model WeddingPartyMember {
-  id        String   @id @default(uuid())
+  id        String            @id @default(uuid())
   name      String
   role      String
   bio       String
+  side      WeddingPartySide?
   photoId   String?
-  photo     Media?   @relation(fields: [photoId], references: [id])
+  photo     Media?            @relation(fields: [photoId], references: [id])
   link      String?
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  order     Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 }
 
 model Attraction {

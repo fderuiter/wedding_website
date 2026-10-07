@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe } from 'jest-axe';
 import WeddingPartyList from '../WeddingPartyList';
@@ -12,6 +12,7 @@ describe('WeddingPartyList', () => {
       name: 'John Doe',
       role: 'Best Man',
       bio: 'Groom\'s best friend since high school.',
+      side: 'GROOM',
       photoId: 'media-1',
       photoUrl: 'https://example.com/john.jpg',
       photoAlt: 'John smiling',
@@ -32,6 +33,7 @@ describe('WeddingPartyList', () => {
       name: 'Jane Smith',
       role: 'Maid of Honor',
       bio: 'Bride\'s sister.',
+      side: 'BRIDE',
       photoId: undefined,
       photoUrl: '',
       photoAlt: null,
@@ -39,6 +41,38 @@ describe('WeddingPartyList', () => {
       photo: undefined,
       link: '',
       order: 2,
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+    },
+    {
+      id: 'member-3',
+      name: 'Sam Wilson',
+      role: 'Officiant',
+      bio: 'Mutual friend.',
+      side: 'JOINT',
+      photoId: undefined,
+      photoUrl: '',
+      photoAlt: null,
+      photoDecorative: false,
+      photo: undefined,
+      link: '',
+      order: 3,
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+    },
+    {
+      id: 'member-4',
+      name: 'Alex Taylor',
+      role: 'Usher',
+      bio: 'Family friend.',
+      side: null,
+      photoId: undefined,
+      photoUrl: '',
+      photoAlt: null,
+      photoDecorative: false,
+      photo: undefined,
+      link: '',
+      order: 4,
       createdAt: new Date('2025-01-01T00:00:00.000Z'),
       updatedAt: new Date('2025-01-01T00:00:00.000Z'),
     },
@@ -63,13 +97,47 @@ describe('WeddingPartyList', () => {
     });
   });
 
-  it('renders all member cards inside a grid layout correctly', () => {
+  it('renders all member cards inside a grid layout correctly under default "All" tab', () => {
     render(<WeddingPartyList members={mockMembers} />);
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.getByText('Best Man')).toBeInTheDocument();
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
     expect(screen.getByText('Maid of Honor')).toBeInTheDocument();
+    expect(screen.getByText('Sam Wilson')).toBeInTheDocument();
+    expect(screen.getByText('Alex Taylor')).toBeInTheDocument();
+  });
+
+  it('filters wedding party members interactively when clicking side tabs', () => {
+    render(<WeddingPartyList members={mockMembers} />);
+
+    // Click "Bride's Side" tab
+    fireEvent.click(screen.getByRole('tab', { name: "Bride's Side" }));
+    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sam Wilson')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alex Taylor')).not.toBeInTheDocument();
+
+    // Click "Groom's Side" tab
+    fireEvent.click(screen.getByRole('tab', { name: "Groom's Side" }));
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    expect(screen.queryByText('Jane Smith')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sam Wilson')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alex Taylor')).not.toBeInTheDocument();
+
+    // Click "Joint" tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Joint' }));
+    expect(screen.getByText('Sam Wilson')).toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+    expect(screen.queryByText('Jane Smith')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alex Taylor')).not.toBeInTheDocument();
+
+    // Switch back to "All" tab - all members including null side should be displayed
+    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expect(screen.getByText('Sam Wilson')).toBeInTheDocument();
+    expect(screen.getByText('Alex Taylor')).toBeInTheDocument();
   });
 
   it('matches the grid markup changes using baseline Jest snapshot assertions', () => {
