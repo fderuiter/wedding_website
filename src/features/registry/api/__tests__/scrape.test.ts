@@ -4,7 +4,7 @@ import { POST } from '@/app/api/registry/scrape/route';
 import { parsePrice } from '../scrape';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
-import { rest } from 'msw';
+import { http, HttpResponse } from 'msw';
 
 // Mock DNS for SSRF check
 jest.mock('dns', () => {
@@ -52,11 +52,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.example.com/', (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get('https://www.example.com/', () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -90,11 +89,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get(targetUrl, (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get(targetUrl, () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -126,11 +124,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get(costcoUrl, (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get(costcoUrl, () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -151,8 +148,8 @@ describe('POST /api/registry/scrape', () => {
   runIfMock('should classify 403 response into BLOCKED_BY_VENDOR error domain', async () => {
     const costcoUrl = 'https://www.costco.com/blocked-product';
     server.use(
-      rest.get(costcoUrl, (_req, res, ctx) => {
-        return res(ctx.status(403));
+      http.get(costcoUrl, () => {
+        return new HttpResponse(null, { status: 403 });
       })
     );
 
@@ -172,8 +169,8 @@ describe('POST /api/registry/scrape', () => {
   runIfMock('should classify 404 response into URL_NOT_FOUND error domain', async () => {
     const testUrl = 'https://www.example.com/missing-404';
     server.use(
-      rest.get(testUrl, (_req, res, ctx) => {
-        return res(ctx.status(404));
+      http.get(testUrl, () => {
+        return new HttpResponse(null, { status: 404 });
       })
     );
 
@@ -193,8 +190,8 @@ describe('POST /api/registry/scrape', () => {
   runIfMock('should classify network error into NETWORK_TIMEOUT error domain', async () => {
     const testUrl = 'https://www.example.com/network-error';
     server.use(
-      rest.get(testUrl, (_req, res) => {
-        return res.networkError('Failed to connect');
+      http.get(testUrl, () => {
+        return HttpResponse.error();
       })
     );
 
@@ -231,11 +228,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.amazon.com/dp/B08C1F553M', (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get('https://www.amazon.com/dp/B08C1F553M', () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -271,11 +267,10 @@ describe('POST /api/registry/scrape', () => {
       </html>
     `;
     server.use(
-      rest.get('https://www.amazon.com/dp/B09XYZ1234', (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get('https://www.amazon.com/dp/B09XYZ1234', () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -316,11 +311,10 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      rest.get(testUrl, (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get(testUrl, () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -373,11 +367,10 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      rest.get(testUrl, (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get(testUrl, () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -422,11 +415,10 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      rest.get(testUrl, (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get(testUrl, () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -462,11 +454,10 @@ describe('POST /api/registry/scrape', () => {
     `;
 
     server.use(
-      rest.get(testUrl, (_req, res, ctx) => {
-        return res(
-          ctx.set('Content-Type', 'text/html'),
-          ctx.body(mockHtml)
-        );
+      http.get(testUrl, () => {
+        return new HttpResponse(mockHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
       })
     );
 
@@ -539,7 +530,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -580,7 +571,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -623,7 +614,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -653,7 +644,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -682,7 +673,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -712,7 +703,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -742,7 +733,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -786,7 +777,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {
@@ -815,7 +806,7 @@ describe('POST /api/registry/scrape', () => {
       `;
 
       server.use(
-        rest.get(testUrl, (_req, res, ctx) => res(ctx.set('Content-Type', 'text/html'), ctx.body(mockHtml)))
+        http.get(testUrl, () => new HttpResponse(mockHtml, { headers: { 'Content-Type': 'text/html' } }))
       );
 
       const request = new Request('http://localhost/api/registry/scrape', {

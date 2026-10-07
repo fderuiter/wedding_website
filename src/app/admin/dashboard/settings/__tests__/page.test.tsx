@@ -350,6 +350,17 @@ describe('AdminSettingsPage - SEO keywords field', () => {
     return render(ui);
   };
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/admin/settings') {
+        return Promise.resolve({ ok: true, json: async () => mockConfig });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+  });
+
   it('renders the SEO keywords textarea', async () => {
     renderWithProviders(<AdminSettingsPage />);
 
