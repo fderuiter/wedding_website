@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ThingsToDoCard from '../ThingsToDoCard';
 import { AttractionDTO } from '@/features/attractions';
 
@@ -16,6 +16,18 @@ const mockAttraction: AttractionDTO = {
   isVisible: true,
   createdAt: new Date(),
   updatedAt: new Date()
+};
+
+const mockHotelAttraction: AttractionDTO = {
+  ...mockAttraction,
+  id: 'hotel-1',
+  name: 'Grand Hyatt Hotel',
+  category: 'hotel',
+  promoCode: 'WEDDING2026',
+  roomRate: '$149/night',
+  cutoffDate: 'October 15, 2026',
+  bookingUrl: 'https://hyatt.example.com/booking',
+  shuttleInfo: 'Shuttle leaves every 30 minutes',
 };
 
 describe('ThingsToDoCard', () => {
@@ -43,7 +55,39 @@ describe('ThingsToDoCard', () => {
     const attractionWithoutImage = { ...mockAttraction, image: null, imageUrl: '' };
     render(<ThingsToDoCard attraction={attractionWithoutImage} />);
     const image = screen.getByAltText('Test Attraction') as HTMLImageElement;
-    // The src will be encoded, so we check for the presence of the placeholder filename
     expect(image.src).toContain('/images/placeholder.png');
+  });
+
+  it('renders hotel block metadata when present', () => {
+    render(<ThingsToDoCard attraction={mockHotelAttraction} />);
+
+    expect(screen.getByText('Grand Hyatt Hotel')).toBeInTheDocument();
+    expect(screen.getByText('$149/night')).toBeInTheDocument();
+    expect(screen.getByText('WEDDING2026')).toBeInTheDocument();
+    expect(screen.getByText('October 15, 2026')).toBeInTheDocument();
+    expect(screen.getByText('Shuttle leaves every 30 minutes')).toBeInTheDocument();
+
+    const bookBtn = screen.getByText('Book Hotel Block').closest('a');
+    expect(bookBtn).toHaveAttribute('href', 'https://hyatt.example.com/booking');
+    expect(bookBtn).toHaveAttribute('target', '_blank');
+  });
+
+  it('handles promo code copy interaction', async () => {
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(<ThingsToDoCard attraction={mockHotelAttraction} />);
+
+    const copyBtn = screen.getByRole('button', { name: /Copy promo code WEDDING2026/i });
+    expect(copyBtn).toBeInTheDocument();
+
+    fireEvent.click(copyBtn);
+
+    expect(writeTextMock).toHaveBeenCalledWith('WEDDING2026');
+    expect(await screen.findByText('Copied!')).toBeInTheDocument();
   });
 });

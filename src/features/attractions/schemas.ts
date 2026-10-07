@@ -13,6 +13,11 @@ export const AttractionSchema = z.object({
   latitude: coordinateSchema,
   longitude: coordinateSchema,
   isVisible: z.boolean(),
+  promoCode: z.string().nullable().optional(),
+  bookingUrl: safeUrlSchema,
+  roomRate: z.string().nullable().optional(),
+  cutoffDate: z.string().nullable().optional(),
+  shuttleInfo: z.string().nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 }).merge(createMediaAssociationSchema('image'));

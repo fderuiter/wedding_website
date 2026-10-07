@@ -83,6 +83,11 @@ export default function AttractionsDashboardPage() {
     latitude: currentAttraction.latitude || 0,
     longitude: currentAttraction.longitude || 0,
     isVisible: currentAttraction.isVisible !== false,
+    promoCode: currentAttraction.promoCode || null,
+    bookingUrl: currentAttraction.bookingUrl || null,
+    roomRate: currentAttraction.roomRate || null,
+    cutoffDate: currentAttraction.cutoffDate || null,
+    shuttleInfo: currentAttraction.shuttleInfo || null,
   };
 
   const currentAttractionsWithDraft = attractions.map(a => a.id === currentAttraction.id ? draftAttraction : a);
@@ -107,7 +112,7 @@ export default function AttractionsDashboardPage() {
           <div className="flex gap-4">
             <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
             <Button onClick={() => { 
-              setCurrentAttraction({ name: '', description: '', imageUrl: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true }); 
+              setCurrentAttraction({ name: '', description: '', imageUrl: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true, promoCode: '', bookingUrl: '', roomRate: '', cutoffDate: '', shuttleInfo: '' }); 
               setIsEditing(true); 
             }}>Add New Attraction</Button>
           </div>
@@ -171,6 +176,56 @@ export default function AttractionsDashboardPage() {
                 <Label>Longitude</Label>
                 <Input type="number" step="any" value={currentAttraction.longitude || 0} onChange={e => setCurrentAttraction({...currentAttraction, longitude: parseFloat(e.target.value)})} />
               </FormGroup>
+
+              {currentAttraction.category === 'hotel' && (
+                <div className="md:col-span-2 border-t border-gray-200 dark:border-gray-700 pt-4 mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <h3 className="md:col-span-2 text-lg font-bold text-gray-900 dark:text-gray-100">Hotel Block Details</h3>
+                  <FormGroup>
+                    <Label>Promo / Group Discount Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. WEDDING2026"
+                      value={currentAttraction.promoCode || ''}
+                      onChange={e => setCurrentAttraction({...currentAttraction, promoCode: e.target.value})}
+                    />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Room Rate</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. $149/night"
+                      value={currentAttraction.roomRate || ''}
+                      onChange={e => setCurrentAttraction({...currentAttraction, roomRate: e.target.value})}
+                    />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Cutoff Date / Reservation Deadline</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. October 15, 2026"
+                      value={currentAttraction.cutoffDate || ''}
+                      onChange={e => setCurrentAttraction({...currentAttraction, cutoffDate: e.target.value})}
+                    />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Direct Booking Link</Label>
+                    <Input
+                      type="text"
+                      placeholder="https://..."
+                      value={currentAttraction.bookingUrl || ''}
+                      onChange={e => setCurrentAttraction({...currentAttraction, bookingUrl: e.target.value})}
+                    />
+                  </FormGroup>
+                  <FormGroup className="md:col-span-2">
+                    <Label>Shuttle Details / Notes</Label>
+                    <Textarea
+                      placeholder="e.g. Free shuttle running to/from reception every 30 minutes"
+                      value={currentAttraction.shuttleInfo || ''}
+                      onChange={e => setCurrentAttraction({...currentAttraction, shuttleInfo: e.target.value})}
+                    />
+                  </FormGroup>
+                </div>
+              )}
             </div>
             <div className="flex gap-4 mt-6">
               <Button onClick={handleSave} variant="primary">Save</Button>
