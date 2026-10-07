@@ -117,11 +117,18 @@ if (process.env.NEXT_RUNTIME === 'edge' || (isBuildTime && (!process.env.DATABAS
 
 export const env = new Proxy(_env, {
   get(target, prop) {
-    if (typeof prop === 'string' && process.env.JEST_WORKER_ID !== undefined) {
-      if (prop === 'MULTISITE_ENABLED') {
-        return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
+    if (typeof prop === 'string') {
+      const val = process.env[prop];
+      if (val !== undefined && val !== '') {
+        if (prop === 'MULTISITE_ENABLED') {
+          return val === 'true' || val === '1';
+        }
+        if (prop === 'HISTORY_VERSION_LIMIT') {
+          const num = parseInt(val, 10);
+          return isNaN(num) ? target.HISTORY_VERSION_LIMIT : num;
+        }
+        return val;
       }
-      return process.env[prop] ?? target[prop as keyof typeof target];
     }
     return target[prop as keyof typeof target];
   }
