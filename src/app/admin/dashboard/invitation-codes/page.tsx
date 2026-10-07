@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
@@ -26,6 +26,32 @@ export default function InvitationCodesDashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [newCode, setNewCode] = useState({ guestName: '', code: '' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
+
+  const counts = useMemo(() => {
+    return {
+      all: codes.length,
+      redeemed: codes.filter((c) => c.used).length,
+      unused: codes.filter((c) => !c.used).length,
+    };
+  }, [codes]);
+
+  const filteredCodes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return codes.filter((item) => {
+      if (statusFilter === 'redeemed' && !item.used) return false;
+      if (statusFilter === 'unused' && item.used) return false;
+
+      if (!query) return true;
+
+      const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
+      const matchesCode = item.code ? item.code.toLowerCase().includes(query) : false;
+      const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
+
+      return matchesName || matchesCode || matchesEmail;
+    });
+  }, [codes, searchQuery, statusFilter]);
 
   const handleSave = async () => {
     if (!newCode.guestName.trim()) {
@@ -115,8 +141,56 @@ export default function InvitationCodesDashboardPage() {
         </div>
       )}
 
+      <div className="flex flex-col sm:flex-row gap-4 mb-6 items-stretch sm:items-center justify-between">
+        <FormGroup className="relative flex-1 max-w-md space-y-0">
+          <Input
+            type="text"
+            placeholder="Search by name, code, or email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search invitation codes"
+            className="w-full"
+          />
+        </FormGroup>
+        <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              statusFilter === 'all'
+                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            All ({counts.all})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('redeemed')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              statusFilter === 'redeemed'
+                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            Redeemed ({counts.redeemed})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('unused')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              statusFilter === 'unused'
+                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            Unused ({counts.unused})
+          </button>
+        </div>
+      </div>
+
       <div className="grid gap-4 pb-10" ref={containerRef}>
-        {codes.map(item => (
+        {filteredCodes.map(item => (
           <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
             <div>
               <div className="font-bold text-lg">{item.guestName}</div>
@@ -140,7 +214,11 @@ export default function InvitationCodesDashboardPage() {
           </div>
         ))}
         {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
+        {codes.length > 0 && filteredCodes.length === 0 && (
+          <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
+        )}
       </div>
     </div>
   );
 }
+
