@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, GenericNodeSchema, ContentNodeSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -227,6 +227,98 @@ describe('Content Node Schema Validation', () => {
       };
 
       await expect(adminService['validate'](invalidInput)).rejects.toThrow(/Validation Error/);
+    });
+  });
+
+  describe('Layout Token & AppConfig Schema Validation', () => {
+    it('validates valid CSS length units in layoutTokenSchema', () => {
+      expect(layoutTokenSchema.safeParse('64rem').success).toBe(true);
+      expect(layoutTokenSchema.safeParse('1.5rem').success).toBe(true);
+      expect(layoutTokenSchema.safeParse('20px').success).toBe(true);
+      expect(layoutTokenSchema.safeParse('100%').success).toBe(true);
+      expect(layoutTokenSchema.safeParse('2.5em').success).toBe(true);
+      expect(layoutTokenSchema.safeParse('80ch').success).toBe(true);
+      expect(layoutTokenSchema.safeParse('0.5rem').success).toBe(true);
+    });
+
+    it('rejects invalid CSS length units or malicious values in layoutTokenSchema', () => {
+      expect(layoutTokenSchema.safeParse('invalid').success).toBe(false);
+      expect(layoutTokenSchema.safeParse('20').success).toBe(false);
+      expect(layoutTokenSchema.safeParse('100vh').success).toBe(false);
+      expect(layoutTokenSchema.safeParse('10px; color: red;').success).toBe(false);
+      expect(layoutTokenSchema.safeParse('</style>').success).toBe(false);
+    });
+
+    it('accepts optional layout scale properties in RawUpdateAppConfigSchema', () => {
+      const basePayload = {
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        baseUrl: 'https://example.com',
+        weddingDate: '2026-12-31',
+      };
+
+      const result = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        layoutContainerMaxWidth: '80rem',
+        layoutGridGap: '2rem',
+        layoutCardPadding: '2.5rem',
+        layoutBorderRadius: '0.75rem',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('populates default layout scale properties in AppConfigSchema', () => {
+      const minimalAppConfig = {
+        id: 'cfg-1',
+        weddingDate: new Date(),
+        baseUrl: 'https://example.com',
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        features: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = AppConfigSchema.safeParse(minimalAppConfig);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.layoutContainerMaxWidth).toBe('64rem');
+        expect(result.data.layoutGridGap).toBe('1.5rem');
+        expect(result.data.layoutCardPadding).toBe('2.2rem' ? result.data.layoutCardPadding : '2rem');
+        expect(result.data.layoutCardPadding).toBe('2rem');
+        expect(result.data.layoutBorderRadius).toBe('1rem');
+      }
     });
   });
 });

@@ -71,11 +71,11 @@ const Forecast: React.FC = () => {
   if (isLoading) {
     return (
       <div
-        className="bg-white/25 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto min-h-[320px] flex flex-col justify-between"
+        className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto min-h-[320px] flex flex-col justify-between"
         data-testid="forecast-skeleton"
       >
         <span className="sr-only">Loading forecast...</span>
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-[var(--grid-gap)]">
           <div className="flex flex-col items-center md:items-start gap-2">
             <Skeleton className="w-16 h-16 rounded-full bg-white/30" />
             <Skeleton className="w-32 h-6 rounded bg-white/30" />
@@ -85,7 +85,7 @@ const Forecast: React.FC = () => {
             <Skeleton className="w-24 h-4 rounded bg-white/30" />
           </div>
         </div>
-        <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+        <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
           <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
           <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
           <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
@@ -97,7 +97,7 @@ const Forecast: React.FC = () => {
   if (error || !weather) {
     return (
       <div
-        className="bg-white/25 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
+        className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
         role="alert"
       >
         <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
@@ -127,9 +127,9 @@ const Forecast: React.FC = () => {
       initial={{ opacity: 0, y: 'calc(20px * var(--scale-factor))' }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8 }}
-      className="bg-white/25 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20 max-w-2xl mx-auto"
+      className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
     >
-      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-[var(--grid-gap)]">
         <div className="text-center md:text-left">
           <Icon name={today.icon.name} className={today.icon.color} style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />
           <p className="text-2xl font-bold mt-2">{today.description}</p>
@@ -144,7 +144,7 @@ const Forecast: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+      <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
         <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
           <Icon name="Droplets" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
           <p className="font-bold mt-1">Precipitation</p>

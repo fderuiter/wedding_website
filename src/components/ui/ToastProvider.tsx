@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useRef, useEffect } from 'react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { generateSecureUUID } from '@/utils/uuid';
@@ -25,8 +25,14 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const removeToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -34,9 +40,11 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     const id = generateSecureUUID();
     setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel }]);
     if (type !== 'confirm') {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        timersRef.current.delete(id);
         removeToast(id);
       }, 5000);
+      timersRef.current.set(id, timer);
     }
   }, [removeToast]);
 
@@ -54,6 +62,14 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
       setToasts((prev) => [...prev, { id, message, type: 'confirm', onConfirm, onCancel }]);
     });
   }, [removeToast]);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast, confirm }}>
@@ -91,6 +107,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         {toasts.filter(t => t.type !== 'confirm').map((toast) => (
           <div
             key={toast.id}
+            role={toast.type === 'error' ? 'alert' : 'status'}
             className={`px-4 py-3 rounded shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto ${
               toast.type === 'success' ? 'bg-green-600 text-white' :
                 toast.type === 'error' ? 'bg-red-600 text-white' :
@@ -126,3 +143,4 @@ export const useToast = () => {
   }
   return context;
 };
+

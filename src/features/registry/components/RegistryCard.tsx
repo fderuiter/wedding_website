@@ -47,7 +47,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   const isClickable = !isClaimed && !isAdmin;
-  const cardClasses = `border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
+  const cardClasses = `border border-primary dark:border-gray-700 rounded-[var(--radius-card)] overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
   const [copied, setCopied] = useState(false);
   const toastContext = useOptionalToast();
 
@@ -127,14 +127,14 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     <>
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-2xl">
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-[var(--radius-card)]">
           <span className="bg-primary bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-xl">
             {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
           </span>
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-2xl">
+      <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-[var(--radius-card)]">
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
@@ -158,7 +158,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           <Icon name={copied ? 'Check' : 'Share2'} className="w-5 h-5" />
         </Button>
       </div>
-      <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
+      <div className="p-[var(--card-padding)] pb-16 relative z-20 flex flex-col gap-2">
         <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
         <p className="text-base text-gray-600 dark:text-gray-300 mb-1 font-medium">{item.category}</p>
         <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">{formatCurrency(item.price)}</p>

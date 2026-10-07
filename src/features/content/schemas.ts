@@ -3,6 +3,8 @@ import { coordinateSchema } from '@/utils/validation';
 import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
+const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
+export const layoutTokenSchema = z.string().regex(layoutTokenRegex, 'Invalid CSS length unit format.');
 
 export const RawUpdateAppConfigSchema = z.object({
   partner1Name: z.string().optional(),
@@ -35,6 +37,10 @@ export const RawUpdateAppConfigSchema = z.object({
   colorPrimary: z.string().regex(hexColorRegex).optional(),
   colorSecondary: z.string().regex(hexColorRegex).optional(),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic'),
+  layoutContainerMaxWidth: layoutTokenSchema.optional(),
+  layoutGridGap: layoutTokenSchema.optional(),
+  layoutCardPadding: layoutTokenSchema.optional(),
+  layoutBorderRadius: layoutTokenSchema.optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
   modules: ModuleConfigSchema.partial().optional(),
@@ -151,6 +157,10 @@ export const AppConfigSchema = z.object({
   colorPrimary: z.string().default('#B91C1C'),
   colorSecondary: z.string().default('#B45309'),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic'),
+  layoutContainerMaxWidth: layoutTokenSchema.optional().default('64rem'),
+  layoutGridGap: layoutTokenSchema.optional().default('1.5rem'),
+  layoutCardPadding: layoutTokenSchema.optional().default('2rem'),
+  layoutBorderRadius: layoutTokenSchema.optional().default('1rem'),
   timezone: z.string().default('America/Chicago'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
