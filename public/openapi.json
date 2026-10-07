@@ -797,6 +797,65 @@
                         },
                         "isVisible": {
                           "type": "boolean"
+                        },
+                        "promoCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "bookingUrl": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "roomRate": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "cutoffDate": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "shuttleInfo": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -1257,6 +1316,22 @@
                       "editorial"
                     ]
                   },
+                  "layoutContainerMaxWidth": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutGridGap": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutCardPadding": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutBorderRadius": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
                   "showCountdown": {
                     "type": "boolean"
                   },
@@ -1457,6 +1532,22 @@
                       "minimal",
                       "editorial"
                     ]
+                  },
+                  "layoutContainerMaxWidth": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutGridGap": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutCardPadding": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutBorderRadius": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1669,6 +1760,22 @@
                       "minimal",
                       "editorial"
                     ]
+                  },
+                  "layoutContainerMaxWidth": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutGridGap": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutCardPadding": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutBorderRadius": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
                   },
                   "showCountdown": {
                     "type": "boolean"

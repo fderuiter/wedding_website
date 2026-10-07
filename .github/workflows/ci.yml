@@ -206,7 +206,6 @@ jobs:
       - name: Upload Next.js Build Artifact
         uses: actions/upload-artifact@v4
         with:
-<<<<<<< HEAD
           name: next-build-artifact
           retention-days: 7
           path: |

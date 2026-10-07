@@ -35,7 +35,11 @@ export type IconName =
   | 'Info'
   | 'Share2'
   | 'Copy'
-  | 'Check';
+  | 'Check'
+  | 'Tag'
+  | 'Gift'
+  | 'Calendar'
+  | 'Truck';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -315,6 +319,41 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
       return (
         <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
           <polyline points="20 6 9 17 4 12" />
+        </svg>
+      );
+    case 'Tag':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M12 2H2v10l11.29 11.29a1 1 0 0 0 1.41 0l7.59-7.59a1 1 0 0 0 0-1.41z" />
+          <path d="M7 7h.01" />
+        </svg>
+      );
+    case 'Gift':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <rect x="3" y="8" width="18" height="4" rx="1" />
+          <path d="M12 8v13" />
+          <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
+          <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 4.8 0 0 1 12 8a4.8 4.8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
+        </svg>
+      );
+    case 'Calendar':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <rect width="18" height="18" x="3" y="4" rx="2" />
+          <path d="M16 2v4" />
+          <path d="M8 2v4" />
+          <path d="M3 10h18" />
+        </svg>
+      );
+    case 'Truck':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+          <path d="M15 18H9" />
+          <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
+          <circle cx="7" cy="18" r="2" />
+          <circle cx="17" cy="18" r="2" />
         </svg>
       );
     default:
