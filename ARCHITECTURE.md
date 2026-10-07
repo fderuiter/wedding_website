@@ -119,6 +119,7 @@ flowchart LR
     node_api_registry_items["items"]
     node_api_registry_items_id["[id]"]
     node_api_registry_scrape["scrape"]
+    node_api_registry_session["session"]
     node_api_registry_validatecode["validate-code"]
     node_api_weather["weather"]
     node_archive["archive"]
@@ -180,6 +181,7 @@ flowchart LR
     node_api_registry --> node_api_registry_items
     node_api_registry_items --> node_api_registry_items_id
     node_api_registry --> node_api_registry_scrape
+    node_api_registry --> node_api_registry_session
     node_api_registry --> node_api_registry_validatecode
     node_api --> node_api_weather
     App --> node_archive
@@ -233,6 +235,7 @@ flowchart LR
     class node_api_registry_items api;
     class node_api_registry_items_id api;
     class node_api_registry_scrape api;
+    class node_api_registry_session api;
     class node_api_registry_validatecode api;
     class node_api_weather api;
     class node_archive page;

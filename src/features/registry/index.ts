@@ -14,3 +14,5 @@ export { POST as registryContributePOST } from './api/contribute';
 export { GET as registryGetItemsGET } from './api/get-items';
 export { GET as registryItemByIdGET, PUT as registryItemByIdPUT, DELETE as registryItemByIdDELETE } from './api/item-by-id';
 export { POST as registryScrapePOST } from './api/scrape';
+export { GuestSessionProvider, GuestSessionContext, useGuestSession } from './context/GuestSessionContext';
+export type { GuestSessionState, GuestSessionContextType } from './context/GuestSessionContext';

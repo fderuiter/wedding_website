@@ -17,6 +17,8 @@ import { FormGroup, Checkbox, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
+import { GuestSessionProvider } from '../context/GuestSessionContext';
+
 /**
  * @page RegistryPage
  * @description The main page component for the wedding registry.
@@ -29,6 +31,14 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
  * @returns {JSX.Element} The rendered registry page.
  */
 export default function RegistryPage() {
+  return (
+    <GuestSessionProvider>
+      <RegistryPageContent />
+    </GuestSessionProvider>
+  );
+}
+
+function RegistryPageContent() {
   const {
     items,
     isLoading,

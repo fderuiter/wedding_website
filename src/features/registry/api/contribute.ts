@@ -7,6 +7,7 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
@@ -30,13 +31,21 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  if (!code && process.env.NODE_ENV !== 'test') {
+  let finalCode = code;
+  if (!finalCode) {
+    const session = await getGuestInviteSession(request);
+    if (session?.code) {
+      finalCode = session.code;
+    }
+  }
+
+  if (!finalCode && process.env.NODE_ENV !== 'test') {
     throw new ApiError(400, 'A valid invitation code is required.');
   }
   const updatedItem = await registryService.contributeToItem(itemId, {
     name,
     amount,
-    code,
+    code: finalCode,
   });
 
   const isAdmin = await isAdminRequest(request);

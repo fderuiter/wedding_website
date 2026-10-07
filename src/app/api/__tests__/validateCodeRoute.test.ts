@@ -65,7 +65,7 @@ describe('validate-code Route', () => {
     });
   });
 
-  it('returns 200 with guestName and valid: true for an active, unused code', async () => {
+  it('returns 200 with guestName and valid: true for an active, unused code and sets guest_invite_session cookie', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'GOODCODE',
@@ -86,5 +86,8 @@ describe('validate-code Route', () => {
         code: 'GOODCODE',
       }
     });
+
+    const setCookieHeader = res.headers.get('set-cookie') || '';
+    expect(setCookieHeader).toContain('guest_invite_session=');
   });
 });

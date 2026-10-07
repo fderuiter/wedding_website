@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -10,6 +10,7 @@ import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { apiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useGuestSession } from '../context/GuestSessionContext';
 
 const useOptionalToast = () => {
   try {
@@ -40,6 +41,14 @@ interface RegistryItemCardProps {
  * @returns {JSX.Element} The rendered RegistryItemCard component.
  */
 const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute }) => {
+  const {
+    invitationCode: sessionCode,
+    guestName: sessionGuestName,
+    isVerified: isSessionVerified,
+    setSession,
+    clearSession,
+  } = useGuestSession();
+
   const [contributorName, setContributorName] = useState('');
   const [amount, setAmount] = useState<number | string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +61,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
 
   const [copied, setCopied] = useState(false);
   const toastContext = useOptionalToast();
+
+  useEffect(() => {
+    if (isSessionVerified && sessionCode) {
+      setInvitationCode(sessionCode);
+      setContributorName(sessionGuestName || '');
+      setIsCodeLocked(true);
+    }
+  }, [isSessionVerified, sessionCode, sessionGuestName]);
 
   const handleShare = async () => {
     const permalink = typeof window !== 'undefined'
@@ -126,6 +143,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
         if (data && data.valid) {
           setContributorName(data.guestName);
           setIsCodeLocked(true);
+          setSession({
+            invitationCode: data.code || val,
+            guestName: data.guestName,
+            isVerified: true,
+          });
         } else {
           setCodeValidationError('Invalid invitation code.');
         }
@@ -280,6 +302,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                       if (data && data.valid) {
                         setContributorName(data.guestName);
                         setIsCodeLocked(true);
+                        setSession({
+                          invitationCode: data.code || invitationCode,
+                          guestName: data.guestName,
+                          isVerified: true,
+                        });
                       } else {
                         setCodeValidationError('Invalid invitation code.');
                       }
@@ -299,10 +326,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                   variant="ghost"
                   className="text-red-500 hover:text-red-700"
                   disabled={isSubmitting}
-                  onClick={() => {
+                  onClick={async () => {
+                    await clearSession();
                     setIsCodeLocked(false);
                     setInvitationCode('');
                     setContributorName('');
+                    setCodeValidationError(null);
                   }}
                 >
                   Clear

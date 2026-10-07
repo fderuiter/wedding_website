@@ -2,15 +2,22 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
-import { RegistryItem } from '@/features/registry';
+import { RegistryItem, GuestSessionProvider } from '@/features/registry';
 import { apiClient } from '@/lib/apiClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 
-jest.mock('@/lib/apiClient', () => ({
-  apiClient: {
-    get: jest.fn(),
-  },
-}));
+jest.mock('@/lib/apiClient', () => {
+  const actual = jest.requireActual('@/lib/apiClient');
+  return {
+    ...actual,
+    apiClient: {
+      get: jest.fn(),
+      delete: jest.fn(),
+      post: jest.fn(),
+      put: jest.fn(),
+    },
+  };
+});
 
 // Mock item data
 const mockSingleItem: RegistryItem = {
@@ -362,6 +369,63 @@ describe('RegistryItemCard Component', () => {
       expect(nameInput).not.toBeDisabled();
       expect(nameInput).toHaveValue('');
     });
+
+    it('auto-prefills and locks code when GuestSessionContext has an active verified session', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        isVerified: true,
+        invitationCode: 'SESSION2026',
+        guestName: 'Session Guest',
+      });
+
+      render(
+        <GuestSessionProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          </Overlay>
+        </GuestSessionProvider>
+      );
+
+      await waitFor(() => {
+        const codeInput = screen.getByLabelText(/Invitation Code/i);
+        const nameInput = screen.getByLabelText(/Your Name/i);
+        expect(codeInput).toHaveValue('SESSION2026');
+        expect(nameInput).toHaveValue('Session Guest');
+        expect(codeInput).toBeDisabled();
+        expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
+      });
+    });
+
+    it('clears context session and unlocks code field when clicking Clear', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        isVerified: true,
+        invitationCode: 'SESSION2026',
+        guestName: 'Session Guest',
+      });
+      (apiClient.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      render(
+        <GuestSessionProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          </Overlay>
+        </GuestSessionProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Invitation Code/i)).toHaveValue('SESSION2026');
+      });
+
+      const clearButton = screen.getByRole('button', { name: 'Clear' });
+      fireEvent.click(clearButton);
+
+      await waitFor(() => {
+        expect(apiClient.delete).toHaveBeenCalledWith('/api/registry/session');
+        const codeInput = screen.getByLabelText(/Invitation Code/i);
+        expect(codeInput).not.toBeDisabled();
+        expect(codeInput).toHaveValue('');
+        expect(screen.getByLabelText(/Your Name/i)).toHaveValue('');
+      });
+    });
   });
 
   describe('Share Toolbar', () => {
@@ -401,7 +465,7 @@ describe('RegistryItemCard Component', () => {
           expect.stringContaining(`?item=${mockSingleItem.id}`)
         );
       });
-      expect(screen.getByText('Link Copied!')).toBeInTheDocument();
+      expect(await screen.findByText('Link Copied!')).toBeInTheDocument();
       expect(await screen.findByText('Link copied to clipboard!')).toBeInTheDocument();
     });
   });

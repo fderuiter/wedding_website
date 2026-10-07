@@ -2581,6 +2581,26 @@
         }
       }
     },
+    "/api/registry/session": {
+      "get": {
+        "summary": "GET /api/registry/session",
+        "description": "Endpoint for /api/registry/session",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/registry/session",
+        "description": "Endpoint for /api/registry/session",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/validate-code": {
       "get": {
         "summary": "GET /api/registry/validate-code",
