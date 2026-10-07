@@ -35,31 +35,36 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
     onChange([minValue, newMax]);
   };
 
+  const priceDisplay =
+    minValue === maxValue
+      ? formatCurrency(minValue)
+      : `${formatCurrency(minValue)} – ${formatCurrency(maxValue)}`;
+
   return (
-    <div className="flex items-center gap-2 mb-4">
-      <span className="text-sm">{formatCurrency(min)}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={minValue}
-        onChange={handleMinChange}
-        className="accent-yellow-600 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
-        aria-label="Minimum price"
-      />
-      <span className="text-sm">{formatCurrency(minValue)}</span>
-      <span className="mx-1">-</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={maxValue}
-        onChange={handleMaxChange}
-        className="accent-yellow-600 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
-        aria-label="Maximum price"
-      />
-      <span className="text-sm">{formatCurrency(maxValue)}</span>
-      <span className="text-sm">/ {formatCurrency(max)}</span>
+    <div className="flex flex-col gap-1.5 mb-4">
+      <span className="text-sm font-medium text-foreground">
+        {priceDisplay}
+      </span>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          value={minValue}
+          onChange={handleMinChange}
+          className="accent-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
+          aria-label="Minimum price"
+        />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          value={maxValue}
+          onChange={handleMaxChange}
+          className="accent-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
+          aria-label="Maximum price"
+        />
+      </div>
     </div>
   );
 };

@@ -14,36 +14,41 @@ const Wrapper = ({ min, max, initial, onChange }: { min: number; max: number; in
 };
 
 describe('PriceRangeFilter', () => {
-  it('updates displayed values within bounds and calls onChange', () => {
+  it('applies accent-primary styling to range inputs', () => {
+    render(<PriceRangeFilter min={0} max={100} value={[10, 90]} onChange={jest.fn()} />);
+    const minSlider = screen.getByLabelText('Minimum price');
+    const maxSlider = screen.getByLabelText('Maximum price');
+    expect(minSlider).toHaveClass('accent-primary');
+    expect(maxSlider).toHaveClass('accent-primary');
+  });
+
+  it('updates consolidated price range display within bounds and calls onChange', () => {
     const handleChange = jest.fn();
     render(<Wrapper min={0} max={100} initial={[10, 90]} onChange={handleChange} />);
 
     const minSlider = screen.getByLabelText('Minimum price');
     const maxSlider = screen.getByLabelText('Maximum price');
-    const getMinDisplay = () => screen.getAllByText(/\$\d+/)[1];
-    const getMaxDisplay = () => screen.getAllByText(/\$\d+/)[2];
+
+    expect(screen.getByText('$10.00 – $90.00')).toBeInTheDocument();
 
     // Adjust min within bounds
     fireEvent.change(minSlider, { target: { value: '20' } });
-    expect(getMinDisplay()).toHaveTextContent('$20');
-    expect(getMaxDisplay()).toHaveTextContent('$90');
+    expect(screen.getByText('$20.00 – $90.00')).toBeInTheDocument();
     expect(handleChange).toHaveBeenNthCalledWith(1, [20, 90]);
 
     // Adjust max within bounds
     fireEvent.change(maxSlider, { target: { value: '80' } });
-    expect(getMaxDisplay()).toHaveTextContent('$80');
+    expect(screen.getByText('$20.00 – $80.00')).toBeInTheDocument();
     expect(handleChange).toHaveBeenNthCalledWith(2, [20, 80]);
 
-    // Attempt to set min above current max - should clamp
+    // Attempt to set min above current max - should clamp and show single price
     fireEvent.change(minSlider, { target: { value: '95' } });
-    expect(getMinDisplay()).toHaveTextContent('$80');
-    expect(getMaxDisplay()).toHaveTextContent('$80');
+    expect(screen.getByText('$80.00')).toBeInTheDocument();
     expect(handleChange).toHaveBeenNthCalledWith(3, [80, 80]);
 
-    // Attempt to set max below min - should clamp
+    // Attempt to set max below min - should clamp and show single price
     fireEvent.change(maxSlider, { target: { value: '60' } });
-    expect(getMinDisplay()).toHaveTextContent('$80');
-    expect(getMaxDisplay()).toHaveTextContent('$80');
+    expect(screen.getByText('$80.00')).toBeInTheDocument();
     expect(handleChange).toHaveBeenNthCalledWith(4, [80, 80]);
   });
 });
