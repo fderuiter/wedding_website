@@ -395,3 +395,180 @@ describe('AdminSettingsPage - SEO keywords field', () => {
     expect(textarea).toHaveValue('new keyword one, new keyword two');
   });
 });
+
+describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard navigation', () => {
+  const renderWithProviders = (ui: React.ReactElement) => {
+    return render(ui);
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/admin/settings') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ...mockConfig, timezone: 'America/Chicago' }),
+        });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+  });
+
+  it('renders timezone input with standard ARIA combobox attributes', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox');
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    expect(input).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(input).toHaveAttribute('aria-controls', 'timezone-listbox');
+    expect(input).toHaveAttribute('aria-autocomplete', 'list');
+  });
+
+  it('opens dropdown listbox on focus and renders option roles', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox');
+    fireEvent.focus(input);
+
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    const listbox = screen.getByRole('listbox');
+    expect(listbox).toHaveAttribute('id', 'timezone-listbox');
+
+    const options = screen.getAllByRole('option');
+    expect(options.length).toBeGreaterThan(0);
+    expect(options[0]).toHaveAttribute('id', 'timezone-option-0');
+  });
+
+  it('navigates through options with ArrowDown and ArrowUp, updating aria-selected and aria-activedescendant', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox');
+    fireEvent.focus(input);
+    // Clear search so all timezones or multiple timezones are filtered
+    fireEvent.change(input, { target: { value: 'America/' } });
+
+    // Press ArrowDown to highlight first option
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-0');
+
+    // Press ArrowDown again to highlight second option
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-1');
+
+    // Press ArrowUp to move back to first option
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-0');
+  });
+
+  it('jumps to first option with Home and last option with End', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'America/' } });
+
+    const initialOptions = screen.getAllByRole('option');
+    const lastIndex = initialOptions.length - 1;
+
+    // End key
+    fireEvent.keyDown(input, { key: 'End' });
+    expect(screen.getAllByRole('option')[lastIndex]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', `timezone-option-${lastIndex}`);
+
+    // Home key
+    fireEvent.keyDown(input, { key: 'Home' });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-0');
+  });
+
+  it('selects highlighted option on Enter key press', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    fireEvent.focus(input);
+
+    // Filter down to a specific timezone
+    fireEvent.change(input, { target: { value: 'Europe/Paris' } });
+
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toHaveTextContent('Europe/Paris');
+
+    // Press ArrowDown to highlight Europe/Paris and Enter to select
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(input.value).toBe('Europe/Paris');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('closes dropdown without changing timezone on Escape key press', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    fireEvent.focus(input);
+
+    // Type partial search
+    fireEvent.change(input, { target: { value: 'Asia/' } });
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    // Press Escape
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(input.value).toBe('America/Chicago');
+  });
+
+  it('handles arrow key navigation safely when search results are empty', async () => {
+    renderWithProviders(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const input = screen.getByRole('combobox');
+    fireEvent.focus(input);
+
+    // Search for nonexistent timezone
+    fireEvent.change(input, { target: { value: 'NonExistent/Timezone_123' } });
+    expect(screen.getByText('No matching standard IANA timezones found')).toBeInTheDocument();
+
+    // Arrow keys should not throw error
+    expect(() => {
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'ArrowUp' });
+      fireEvent.keyDown(input, { key: 'Home' });
+      fireEvent.keyDown(input, { key: 'End' });
+      fireEvent.keyDown(input, { key: 'Enter' });
+    }).not.toThrow();
+  });
+});
+
