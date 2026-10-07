@@ -275,4 +275,56 @@ describe('InvitationCodesDashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to Dashboard' }));
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
   });
+
+  it('exports CSV file when Export CSV button is clicked with guest records present', () => {
+    const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-url');
+    const mockRevokeObjectURL = jest.fn();
+    const originalCreateObjectURL = window.URL.createObjectURL;
+    const originalRevokeObjectURL = window.URL.revokeObjectURL;
+
+    window.URL.createObjectURL = mockCreateObjectURL;
+    window.URL.revokeObjectURL = mockRevokeObjectURL;
+
+    const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    renderComponent();
+
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    fireEvent.click(exportBtn);
+
+    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+    expect(mockAnchorClick).toHaveBeenCalledTimes(1);
+    expect(mockRevokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Invitation codes exported successfully.')).toBeInTheDocument();
+
+    mockAnchorClick.mockRestore();
+    window.URL.createObjectURL = originalCreateObjectURL;
+    window.URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  it('shows warning toast and aborts export when Export CSV is clicked with empty codes list', () => {
+    const mockCreateObjectURL = jest.fn();
+    const originalCreateObjectURL = window.URL.createObjectURL;
+    window.URL.createObjectURL = mockCreateObjectURL;
+
+    (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      create: mockCreate,
+      remove: mockRemove,
+      fetchAll: mockFetchAll,
+    });
+
+    renderComponent();
+
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    fireEvent.click(exportBtn);
+
+    expect(screen.getByText('No invitation codes to export.')).toBeInTheDocument();
+    expect(mockCreateObjectURL).not.toHaveBeenCalled();
+
+    window.URL.createObjectURL = originalCreateObjectURL;
+  });
 });
+

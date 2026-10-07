@@ -333,3 +333,44 @@ export function validateCsvRows(
     };
   });
 }
+
+export function escapeCsvCell(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function generateCsvContent<T extends Record<string, unknown>>(
+  records: T[],
+  headers?: string[]
+): string {
+  if (!records || records.length === 0) {
+    if (headers && headers.length > 0) {
+      return headers.map(escapeCsvCell).join(',') + '\n';
+    }
+    return '';
+  }
+
+  const keys =
+    headers && headers.length > 0
+      ? headers
+      : Array.from(
+        records.reduce((acc, rec) => {
+          if (rec && typeof rec === 'object') {
+            Object.keys(rec).forEach((k) => acc.add(k));
+          }
+          return acc;
+        }, new Set<string>())
+      );
+
+  const headerRow = keys.map(escapeCsvCell).join(',');
+  const dataRows = records.map((record) =>
+    keys.map((key) => escapeCsvCell(record ? record[key] : '')).join(',')
+  );
+
+  return [headerRow, ...dataRows].join('\n');
+}
+
