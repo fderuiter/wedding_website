@@ -12,7 +12,7 @@ const RegistryCardSkeleton: React.FC = () => {
     <div
       data-testid="registry-card-skeleton"
       className="border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md bg-white dark:bg-gray-800 h-full flex flex-col justify-between"
-      style={{ minHeight: 'calc(340px * var(--scale-factor))' }}
+      style={{ minHeight: 'calc(340px * var(--scale-factor, 1))' }}
     >
       <Skeleton className="relative w-full aspect-square !rounded-none" />
       <div className="p-6 pb-16 relative z-20 flex flex-col gap-2">
