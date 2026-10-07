@@ -59,19 +59,21 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
     let url = '';
     if (calendar === 'Google') {
       url = createGoogleCalendarLink(event);
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } else if (calendar === 'Yahoo') {
       url = createYahooCalendarLink(event);
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } else {
       const icsFile = createIcsFile(event);
       const blob = new Blob([icsFile], { type: 'text/calendar' });
+      const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
+      link.href = objectUrl;
       link.download = `${event.name}.ics`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
     }
     setIsOpen(false);
     triggerRef.current?.focus();

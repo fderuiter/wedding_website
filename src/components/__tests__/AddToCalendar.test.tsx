@@ -54,21 +54,23 @@ describe('AddToCalendar', () => {
   });
 
   it('calls createGoogleCalendarLink and window.open when Google is clicked', () => {
+    (calendarUtils.createGoogleCalendarLink as jest.Mock).mockReturnValue('https://calendar.google.com/render?action=TEMPLATE');
     render(<AddToCalendar event={sampleEvent} />);
     fireEvent.click(screen.getByText('Add to Calendar'));
     fireEvent.click(screen.getByText('Google'));
 
     expect(calendarUtils.createGoogleCalendarLink).toHaveBeenCalledWith(sampleEvent);
-    expect(mockWindowOpen).toHaveBeenCalled();
+    expect(mockWindowOpen).toHaveBeenCalledWith('https://calendar.google.com/render?action=TEMPLATE', '_blank', 'noopener,noreferrer');
   });
 
   it('calls createYahooCalendarLink and window.open when Yahoo is clicked', () => {
+    (calendarUtils.createYahooCalendarLink as jest.Mock).mockReturnValue('https://calendar.yahoo.com/?v=60');
     render(<AddToCalendar event={sampleEvent} />);
     fireEvent.click(screen.getByText('Add to Calendar'));
     fireEvent.click(screen.getByText('Yahoo'));
 
     expect(calendarUtils.createYahooCalendarLink).toHaveBeenCalledWith(sampleEvent);
-    expect(mockWindowOpen).toHaveBeenCalled();
+    expect(mockWindowOpen).toHaveBeenCalledWith('https://calendar.yahoo.com/?v=60', '_blank', 'noopener,noreferrer');
   });
 
   it('calls createIcsFile and triggers a download when Apple is clicked', () => {
@@ -79,6 +81,7 @@ describe('AddToCalendar', () => {
 
     expect(calendarUtils.createIcsFile).toHaveBeenCalledWith(sampleEvent);
     expect(mockCreateObjectURL).toHaveBeenCalled();
+    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/mock-url');
   });
 
   it('closes the dropdown when Escape key is pressed', () => {
