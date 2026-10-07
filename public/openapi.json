@@ -1867,6 +1867,185 @@
         }
       }
     },
+    "/api/admin/thank-you-notes/{id}": {
+      "patch": {
+        "summary": "PATCH /api/admin/thank-you-notes/[id]",
+        "description": "Endpoint for /api/admin/thank-you-notes/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "thankYouStatus": {
+                    "type": "string",
+                    "enum": [
+                      "Unsent",
+                      "Sent",
+                      "Not Needed"
+                    ]
+                  },
+                  "thankYouSentAt": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {}
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "thankYouNote": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/admin/thank-you-notes/[id]",
+        "description": "Endpoint for /api/admin/thank-you-notes/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/thank-you-notes/batch": {
+      "post": {
+        "summary": "POST /api/admin/thank-you-notes/batch",
+        "description": "Endpoint for /api/admin/thank-you-notes/batch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "Unsent",
+                      "Sent",
+                      "Not Needed"
+                    ]
+                  },
+                  "thankYouSentAt": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {}
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "thankYouNote": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "ids",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/admin/thank-you-notes/batch",
+        "description": "Endpoint for /api/admin/thank-you-notes/batch",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/thank-you-notes": {
+      "get": {
+        "summary": "GET /api/admin/thank-you-notes",
+        "description": "Endpoint for /api/admin/thank-you-notes",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/upload": {
       "post": {
         "summary": "POST /api/admin/upload",

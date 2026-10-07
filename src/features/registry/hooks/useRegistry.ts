@@ -57,7 +57,17 @@ export function useRegistry() {
             return {
               ...item,
               amountContributed: Math.min(item.price, newAmount),
-              contributors: [...item.contributors, { name: variables.purchaserName, amount: variables.amount, date: new Date().toISOString() }],
+              contributors: [
+                ...item.contributors,
+                {
+                  name: variables.purchaserName,
+                  amount: variables.amount,
+                  date: new Date().toISOString(),
+                  isPlusOne: false,
+                  thankYouStatus: 'Unsent',
+                  thankYouSentAt: null,
+                },
+              ],
               purchased: newAmount >= item.price,
             };
           } else {

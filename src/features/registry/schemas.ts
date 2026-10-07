@@ -3,11 +3,43 @@ import { z } from 'zod';
 import { createMediaAssociationSchema } from '@/features/media/schemas';
 import { createLaxUrlSchema, safeImageUrlSchema } from '@/utils/validation';
 
+export const ThankYouStatusEnum = z.enum(['Unsent', 'Sent', 'Not Needed']);
+export type ThankYouStatus = z.infer<typeof ThankYouStatusEnum>;
+
 export const ContributorSchema = z.object({
+  id: z.string().optional(),
   name: z.string(),
+  email: z.string().nullable().optional(),
+  isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   date: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()),
+  thankYouStatus: z.string().optional().default('Unsent'),
+  thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
+  thankYouNote: z.string().nullable().optional(),
+  registryItemId: z.string().nullable().optional(),
+  registryItem: z.object({
+    id: z.string(),
+    name: z.string(),
+    category: z.string().optional(),
+  }).nullable().optional(),
 });
+
+export const UpdateThankYouNoteSchema = z.object({
+  thankYouStatus: z.enum(['Unsent', 'Sent', 'Not Needed']).optional(),
+  thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional(),
+  thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
+});
+
+export type UpdateThankYouNoteDTO = z.infer<typeof UpdateThankYouNoteSchema>;
+
+export const BatchUpdateThankYouNotesSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'At least one contributor record is required.'),
+  status: z.enum(['Unsent', 'Sent', 'Not Needed']),
+  thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional(),
+  thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
+});
+
+export type BatchUpdateThankYouNotesDTO = z.infer<typeof BatchUpdateThankYouNotesSchema>;
 
 export const ContributionSchema = z.object({
   itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
