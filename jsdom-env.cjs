@@ -11,10 +11,19 @@ class CustomEnvironment extends JSDOMEnvironment {
     await super.setup();
     this.global.TextEncoder = TextEncoder;
     this.global.TextDecoder = TextDecoder;
+    const { TransformStream, ReadableStream, WritableStream, CompressionStream, DecompressionStream } = require('node:stream/web');
     this.global.TransformStream = TransformStream;
     this.global.ReadableStream = ReadableStream;
     this.global.WritableStream = WritableStream;
-    this.global.BroadcastChannel = BroadcastChannel;
+    if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
+    if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
+    this.global.BroadcastChannel = globalThis.BroadcastChannel || class BroadcastChannel {
+      constructor(name) { this.name = name; }
+      postMessage() {}
+      close() {}
+      addEventListener() {}
+      removeEventListener() {}
+    };
     this.global.crypto = require('node:crypto').webcrypto;
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {

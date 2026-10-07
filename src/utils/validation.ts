@@ -122,11 +122,68 @@ export const ImportBackupSchema = z.object({
 });
 
 /**
+ * Sanitizes a URL string for safe usage in HTML anchor href attributes.
+ * Allows valid http://, https://, mailto:, and tel: URLs, safe relative paths, and non-URI strings.
+ * Rejects dangerous URI schemes (javascript:, data:, vbscript:, etc.) and protocol-relative URLs (//)
+ * to prevent XSS and unvalidated redirects.
+ */
+export function sanitizeUrl(url?: string | null): string | undefined {
+  if (!url || typeof url !== 'string') return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+
+  // Block protocol-relative URLs
+  if (trimmed.startsWith('//')) {
+    return undefined;
+  }
+
+  const lower = trimmed.toLowerCase();
+  // Block dangerous schemes explicitly
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:')
+  ) {
+    return undefined;
+  }
+
+  // Allow safe relative paths starting with /
+  if (trimmed.startsWith('/')) {
+    return trimmed;
+  }
+
+  // Explicit check for allowed protocols
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('mailto:') ||
+    lower.startsWith('tel:')
+  ) {
+    return trimmed;
+  }
+
+  // If string contains no colon scheme separator, it's a relative path/query string
+  if (!trimmed.includes(':')) {
+    return trimmed;
+  }
+
+  // String contains a colon scheme separator that is not in the allowed protocols list
+  return undefined;
+}
+
+/**
  * @internal
  */
 export const createLaxUrlSchema = (fieldName = 'URL') =>
   z.string()
     .max(2000, `${fieldName} must be under 2000 characters`)
+    .refine(
+      (val) => {
+        if (!val) return true;
+        return sanitizeUrl(val) !== undefined;
+      },
+      { message: `${fieldName} must be a valid http, https, or relative URL` }
+    )
     .optional()
     .nullable()
     .or(z.literal(''));

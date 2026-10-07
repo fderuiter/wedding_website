@@ -83,6 +83,11 @@ model Attraction {
   latitude    Float
   longitude   Float
   isVisible   Boolean  @default(true)
+  promoCode   String?
+  bookingUrl  String?
+  roomRate    String?
+  cutoffDate  String?
+  shuttleInfo String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
