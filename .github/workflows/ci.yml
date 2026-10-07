@@ -296,6 +296,8 @@ jobs:
 
       - name: Start local test database and application container
         timeout-minutes: 5
+        env:
+          DB_PORT: "5433"
         run: |
           docker compose up --build -d app
 
@@ -309,7 +311,7 @@ jobs:
       - name: Seed local test container database
         timeout-minutes: 1
         env:
-          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5433/wedding
         run: |
           npm run db:seed
 
