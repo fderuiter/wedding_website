@@ -5,6 +5,8 @@ export {
   UpdateAppConfigSchema,
   FAQNodeSchema,
   LogisticsNodeSchema,
+  ScheduleNodeSchema,
+  ScheduleDataSchema,
   GenericNodeSchema,
   ContentNodeSchema,
 } from './schemas';

@@ -60,6 +60,72 @@ function buildCalendarUrl(baseUrl: string, params: Record<string, string>): stri
 }
 
 /**
+ * Converts a structured schedule event node payload into a CalendarEvent interface.
+ * Handles ISO timestamp parsing (e.g. 2026-06-20T15:00:00.000Z) or date/time parameters.
+ */
+export function formatScheduleEventToCalendarEvent(
+  scheduleItem: {
+    title?: string;
+    ceremonyTitle?: string;
+    receptionTitle?: string;
+    startTime?: string;
+    endTime?: string;
+    locationName?: string;
+    location?: string;
+    attireRules?: string;
+    attire?: string;
+    description?: string;
+  },
+  defaultDateStr?: string,
+  timeZone: string = 'UTC'
+): CalendarEvent {
+  const name = scheduleItem.title || scheduleItem.ceremonyTitle || scheduleItem.receptionTitle || 'Wedding Event';
+  const location = scheduleItem.locationName || scheduleItem.location || '';
+  const attire = scheduleItem.attireRules || scheduleItem.attire || '';
+  const rawDesc = scheduleItem.description || '';
+  const description = attire ? `${rawDesc}${rawDesc ? ' | ' : ''}Attire: ${attire}` : rawDesc;
+
+  let startDate = defaultDateStr || '2026-06-20';
+  let startTime = '12:00';
+  let endDate = defaultDateStr || '2026-06-20';
+  let endTime = '13:00';
+
+  if (scheduleItem.startTime) {
+    const startDateObj = new Date(scheduleItem.startTime);
+    if (!isNaN(startDateObj.getTime())) {
+      startDate = startDateObj.toISOString().split('T')[0];
+      startTime = startDateObj.toISOString().split('T')[1].substring(0, 5);
+    }
+  }
+
+  if (scheduleItem.endTime) {
+    const endDateObj = new Date(scheduleItem.endTime);
+    if (!isNaN(endDateObj.getTime())) {
+      endDate = endDateObj.toISOString().split('T')[0];
+      endTime = endDateObj.toISOString().split('T')[1].substring(0, 5);
+    }
+  } else if (scheduleItem.startTime) {
+    const startDateObj = new Date(scheduleItem.startTime);
+    if (!isNaN(startDateObj.getTime())) {
+      const defaultEnd = new Date(startDateObj.getTime() + 60 * 60 * 1000);
+      endDate = defaultEnd.toISOString().split('T')[0];
+      endTime = defaultEnd.toISOString().split('T')[1].substring(0, 5);
+    }
+  }
+
+  return {
+    name,
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    timeZone,
+    location,
+    description,
+  };
+}
+
+/**
  * Creates a URL to add an event to Google Calendar.
  * @param {CalendarEvent} event - The event object.
  * @returns {string} The generated Google Calendar URL.

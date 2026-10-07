@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -122,6 +122,71 @@ describe('Content Node Schema Validation', () => {
         updatedAt: new Date(),
       };
       expect(LogisticsNodeSchema.safeParse(invalidTags).success).toBe(false);
+    });
+  });
+
+  describe('ScheduleNodeSchema', () => {
+    it('accepts structured schedule node with start and end ISO timestamps, category tags, location, and attire rules', () => {
+      const validScheduleNode = {
+        id: 'sched-1',
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Rehearsal Dinner',
+          startTime: '2026-06-19T18:00:00.000Z',
+          endTime: '2026-06-19T21:00:00.000Z',
+          categoryTags: ['Rehearsal', 'VIP'],
+          category: 'Rehearsal',
+          locationName: 'The Grand Ballroom',
+          attireRules: 'Smart Casual',
+          description: 'Dinner for wedding party and family.',
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = ScheduleNodeSchema.safeParse(validScheduleNode);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.data.title).toBe('Rehearsal Dinner');
+        expect(result.data.data.categoryTags).toEqual(['Rehearsal', 'VIP']);
+      }
+    });
+
+    it('rejects schedule node with non-ISO timestamps', () => {
+      const invalidScheduleNode = {
+        id: 'sched-2',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Ceremony',
+          startTime: '3 PM',
+          endTime: '2026-06-20T16:00:00Z',
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = ScheduleNodeSchema.safeParse(invalidScheduleNode);
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects schedule node when endTime is before startTime', () => {
+      const reversedScheduleNode = {
+        id: 'sched-3',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Reception',
+          startTime: '2026-06-20T18:00:00.000Z',
+          endTime: '2026-06-20T12:00:00.000Z',
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = ScheduleNodeSchema.safeParse(reversedScheduleNode);
+      expect(result.success).toBe(false);
     });
   });
 
