@@ -225,7 +225,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
 
   return (
     <Interactive3DCard
-      as={isClickable ? 'button' : 'div'}
+      as="div"
       {...commonProps}
       onClick={isClickable ? () => onClick(item) : undefined}
     >

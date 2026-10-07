@@ -153,13 +153,15 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
-  it('is rendered as a native button when clickable for standard keyboard accessibility', () => {
+  it('is rendered as a div with role="button" and tabIndex when clickable for keyboard accessibility', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    // It should be rendered as a button to natively support Enter/Space activation
-    expect(card.tagName).toBe('BUTTON');
+    // It should be rendered as a div with role="button" and tabIndex to avoid invalid nested button elements
+    expect(card.tagName).toBe('DIV');
+    expect(card).toHaveAttribute('tabIndex', '0');
+    expect(card).toHaveAttribute('role', 'button');
   });
 
   it('renders as a div without tabIndex when item is purchased to avoid focus traps', () => {
