@@ -1,7 +1,7 @@
 import './globals.css';
 import { Geist } from 'next/font/google';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
-import { generateMetadata } from './metadata';
+import { generateMetadata, generateViewport } from './metadata';
 import { getAppConfig, toPublicAppConfig, isSiteInitialized } from '@/lib/config';
 import { ThemeProvider, ThemeMode } from '@/components/ThemeProvider';
 import SetupWizard from '@/components/setup/SetupWizard';
@@ -15,7 +15,7 @@ const geist = Geist({
   subsets: ['latin'],
 });
 
-export { generateMetadata };
+export { generateMetadata, generateViewport };
 
 /**
  * @layout RootLayout
@@ -49,8 +49,29 @@ export default async function RootLayout({
 
   const initialHtmlClass = initialThemeMode === 'light' ? 'light' : 'dark';
 
+  const colorPrimary = config.colorPrimary || '#B91C1C';
+  const colorSecondary = config.colorSecondary || '#B45309';
+  const containerMaxW = config.layoutContainerMaxWidth || '64rem';
+  const gridGap = config.layoutGridGap || '1.5rem';
+  const cardPadding = config.layoutCardPadding || '2rem';
+  const borderRadius = config.layoutBorderRadius || '1rem';
+
+  const serverThemeStyles = `:root {
+    --color-primary: ${colorPrimary};
+    --color-secondary: ${colorSecondary};
+    --color-primary-text: ${colorPrimary};
+    --color-secondary-text: ${colorSecondary};
+    --container-max-w: ${containerMaxW};
+    --grid-gap: ${gridGap};
+    --card-padding: ${cardPadding};
+    --radius-card: ${borderRadius};
+  }`;
+
   return (
     <html lang="en" className={`${initialHtmlClass} ${geist.variable}`}>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
+      </head>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}
       >
@@ -68,3 +89,4 @@ export default async function RootLayout({
     </html>
   );
 }
+
