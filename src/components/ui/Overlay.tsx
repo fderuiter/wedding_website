@@ -14,6 +14,8 @@ export interface OverlayProps {
   id?: string;
   animationType?: 'scale' | 'slide-down' | 'fade';
   layoutClassName?: string;
+  role?: string;
+  'aria-modal'?: boolean | 'true' | 'false';
 }
 
 export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
@@ -27,6 +29,8 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
       id,
       animationType = 'scale',
       layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
+      role,
+      'aria-modal': ariaModal,
     },
     ref
   ) => {
@@ -81,8 +85,8 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
             transition={{ duration: 0.2 }}
             onClick={handleBackdropClick}
             aria-hidden={!isOpen}
-            aria-modal="true"
-            role="dialog"
+            role={role}
+            aria-modal={ariaModal}
           >
             <motion.div
               ref={setOverlayRef}
