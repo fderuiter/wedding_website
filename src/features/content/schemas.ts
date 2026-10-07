@@ -99,7 +99,7 @@ export const ScheduleDataSchema = z.object({
   endTime: z.string().refine(
     (val) => isoTimestampRegex.test(val) && !isNaN(Date.parse(val)),
     { message: 'endTime must be a valid ISO timestamp format (e.g., YYYY-MM-DDTHH:mm:ssZ).' }
-  ),
+  ).optional(),
   categoryTags: z.array(z.string()).optional().default([]),
   category: z.string().optional(),
   locationName: z.string().optional(),

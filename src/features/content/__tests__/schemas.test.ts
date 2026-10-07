@@ -188,6 +188,27 @@ describe('Content Node Schema Validation', () => {
       const result = ScheduleNodeSchema.safeParse(reversedScheduleNode);
       expect(result.success).toBe(false);
     });
+
+    it('accepts schedule node with startTime and omitted endTime', () => {
+      const openEndedNode = {
+        id: 'sched-4',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Welcome Toast',
+          startTime: '2026-06-20T17:00:00.000Z',
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = ScheduleNodeSchema.safeParse(openEndedNode);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.data.title).toBe('Welcome Toast');
+        expect(result.data.data.endTime).toBeUndefined();
+      }
+    });
   });
 
   describe('GenericNodeSchema', () => {
