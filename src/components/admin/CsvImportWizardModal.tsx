@@ -19,6 +19,15 @@ interface CsvImportWizardModalProps {
   existingCodes?: string[];
 }
 
+interface EditableRow {
+  guestName: string;
+  code: string;
+  email: string;
+  dietaryNotes: string;
+  plusOneAllocations: string;
+  extraFields: Record<string, string>;
+}
+
 export function CsvImportWizardModal({
   isOpen,
   onClose,
@@ -31,12 +40,19 @@ export function CsvImportWizardModal({
   const [fileName, setFileName] = useState<string>('');
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
+
+  // Column mapping states
   const [guestNameCol, setGuestNameCol] = useState<string>('');
   const [codeCol, setCodeCol] = useState<string>('');
+  const [emailCol, setEmailCol] = useState<string>('');
+  const [dietaryNotesCol, setDietaryNotesCol] = useState<string>('');
+  const [plusOneCol, setPlusOneCol] = useState<string>('');
+  const [selectedExtraCols, setSelectedExtraCols] = useState<string[]>([]);
+
   const [collisionStrategy, setCollisionStrategy] = useState<'skip' | 'update' | 'reject'>('skip');
 
   // Editable row states for Step 3
-  const [editableRows, setEditableRows] = useState<Array<{ guestName: string; code: string }>>([]);
+  const [editableRows, setEditableRows] = useState<EditableRow[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [importSummary, setImportSummary] = useState<{
@@ -76,6 +92,20 @@ export function CsvImportWizardModal({
       setRawRows(parsed.rows);
       setGuestNameCol(parsed.suggestedGuestNameCol);
       setCodeCol(parsed.suggestedCodeCol);
+      setEmailCol(parsed.suggestedEmailCol || '');
+      setDietaryNotesCol(parsed.suggestedDietaryNotesCol || '');
+      setPlusOneCol(parsed.suggestedPlusOneCol || '');
+
+      const mappedStandard = new Set(
+        [
+          parsed.suggestedGuestNameCol,
+          parsed.suggestedCodeCol,
+          parsed.suggestedEmailCol,
+          parsed.suggestedDietaryNotesCol,
+          parsed.suggestedPlusOneCol,
+        ].filter(Boolean)
+      );
+      setSelectedExtraCols(parsed.headers.filter((h) => !mappedStandard.has(h)));
       setStep(2);
     };
 
@@ -88,10 +118,23 @@ export function CsvImportWizardModal({
       return;
     }
 
-    const initialMapped = rawRows.map((r) => ({
-      guestName: (r[guestNameCol] || '').trim(),
-      code: codeCol ? (r[codeCol] || '').trim().toUpperCase() : '',
-    }));
+    const initialMapped: EditableRow[] = rawRows.map((r) => {
+      const extraFields: Record<string, string> = {};
+      selectedExtraCols.forEach((col) => {
+        if (r[col] !== undefined && r[col].trim() !== '') {
+          extraFields[col] = r[col].trim();
+        }
+      });
+
+      return {
+        guestName: (r[guestNameCol] || '').trim(),
+        code: codeCol ? (r[codeCol] || '').trim().toUpperCase() : '',
+        email: emailCol ? (r[emailCol] || '').trim() : '',
+        dietaryNotes: dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : '',
+        plusOneAllocations: plusOneCol ? (r[plusOneCol] || '').trim() : '0',
+        extraFields,
+      };
+    });
 
     setEditableRows(initialMapped);
     setStep(3);
@@ -99,17 +142,42 @@ export function CsvImportWizardModal({
 
   // Dry-run validation of editable rows
   const validatedRows: ParsedCsvRow[] = useMemo(() => {
-    const recordsMap = editableRows.map((r) => ({
-      GuestNameField: r.guestName,
-      CodeField: r.code,
-    }));
-    return validateCsvRows(recordsMap, 'GuestNameField', 'CodeField', existingDbSet);
-  }, [editableRows, existingDbSet]);
+    const recordsMap = editableRows.map((r) => {
+      const rowObj: Record<string, string> = {
+        GuestNameField: r.guestName,
+        CodeField: r.code,
+        EmailField: r.email,
+        DietaryNotesField: r.dietaryNotes,
+        PlusOneField: r.plusOneAllocations,
+      };
+      Object.entries(r.extraFields || {}).forEach(([k, v]) => {
+        rowObj[k] = v;
+      });
+      return rowObj;
+    });
+
+    return validateCsvRows(
+      recordsMap,
+      {
+        guestNameCol: 'GuestNameField',
+        codeCol: 'CodeField',
+        emailCol: 'EmailField',
+        dietaryNotesCol: 'DietaryNotesField',
+        plusOneCol: 'PlusOneField',
+        extraCols: selectedExtraCols,
+      },
+      existingDbSet
+    );
+  }, [editableRows, selectedExtraCols, existingDbSet]);
 
   const validCount = useMemo(() => validatedRows.filter((r) => r.isValid).length, [validatedRows]);
   const invalidCount = useMemo(() => validatedRows.filter((r) => !r.isValid).length, [validatedRows]);
 
-  const handleCellEdit = (index: number, field: 'guestName' | 'code', value: string) => {
+  const handleCellEdit = (
+    index: number,
+    field: 'guestName' | 'code' | 'email' | 'dietaryNotes' | 'plusOneAllocations',
+    value: string
+  ) => {
     setEditableRows((prev) => {
       const next = [...prev];
       next[index] = {
@@ -120,8 +188,26 @@ export function CsvImportWizardModal({
     });
   };
 
+  const handleExtraFieldEdit = (index: number, key: string, value: string) => {
+    setEditableRows((prev) => {
+      const next = [...prev];
+      const updatedExtra = { ...next[index].extraFields, [key]: value };
+      next[index] = {
+        ...next[index],
+        extraFields: updatedExtra,
+      };
+      return next;
+    });
+  };
+
   const handleDeleteRow = (index: number) => {
     setEditableRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleExtraCol = (header: string) => {
+    setSelectedExtraCols((prev) =>
+      prev.includes(header) ? prev.filter((h) => h !== header) : [...prev, header]
+    );
   };
 
   const handleCommitBatch = async () => {
@@ -141,6 +227,10 @@ export function CsvImportWizardModal({
         records: editableRows.map((r) => ({
           guestName: r.guestName,
           code: r.code || undefined,
+          email: r.email || undefined,
+          dietaryNotes: r.dietaryNotes || undefined,
+          plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+          extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
         })),
         collisionStrategy,
       };
@@ -179,10 +269,23 @@ export function CsvImportWizardModal({
     setRawRows([]);
     setGuestNameCol('');
     setCodeCol('');
+    setEmailCol('');
+    setDietaryNotesCol('');
+    setPlusOneCol('');
+    setSelectedExtraCols([]);
     setEditableRows([]);
     setImportSummary(null);
     onClose();
   };
+
+  // Get unmapped headers for custom field checkbox selection
+  const mappedStandardHeaders = useMemo(() => {
+    return new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
+  }, [guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol]);
+
+  const availableCustomHeaders = useMemo(() => {
+    return csvHeaders.filter((h) => !mappedStandardHeaders.has(h));
+  }, [csvHeaders, mappedStandardHeaders]);
 
   return (
     <Dialog
@@ -196,7 +299,7 @@ export function CsvImportWizardModal({
           </span>
         </div>
       }
-      className="max-w-3xl"
+      className="max-w-4xl"
     >
       <div className="space-y-6">
         {/* Step Indicator */}
@@ -214,7 +317,7 @@ export function CsvImportWizardModal({
         {step === 1 && (
           <div className="space-y-4 py-2">
             <p className="text-sm text-gray-600 dark:text-zinc-300">
-              Select a UTF-8 encoded <code>.csv</code> spreadsheet containing guest names and optional pre-assigned invitation codes (max 5 MB).
+              Select a UTF-8 encoded <code>.csv</code> spreadsheet containing guest names and optional guest information (max 5 MB).
             </p>
             <div className="border-2 border-dashed border-gray-300 dark:border-zinc-700 rounded-xl p-8 text-center bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
               <input
@@ -238,7 +341,7 @@ export function CsvImportWizardModal({
           </div>
         )}
 
-        {/* Step 2: Column Remapping */}
+        {/* Step 2: Multi-Column Mapping */}
         {step === 2 && (
           <div className="space-y-4 py-2">
             <p className="text-sm text-gray-600 dark:text-zinc-300">
@@ -279,20 +382,108 @@ export function CsvImportWizardModal({
                   ))}
                 </select>
               </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-email">Email Address Column (Optional)</Label>
+                <select
+                  id="map-email"
+                  value={emailCol}
+                  onChange={(e) => setEmailCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-dietary-notes">Dietary Notes / Allergies (Optional)</Label>
+                <select
+                  id="map-dietary-notes"
+                  value={dietaryNotesCol}
+                  onChange={(e) => setDietaryNotesCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup className="md:col-span-2">
+                <Label htmlFor="map-plus-ones">Plus-One Allocations Column (Optional)</Label>
+                <select
+                  id="map-plus-ones"
+                  value={plusOneCol}
+                  onChange={(e) => setPlusOneCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Default to 0 --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
             </div>
+
+            {/* Custom Extra Headers Section */}
+            {availableCustomHeaders.length > 0 && (
+              <div className="bg-gray-50 dark:bg-zinc-800/80 p-3 rounded-lg border border-gray-200 dark:border-zinc-700 space-y-2">
+                <h4 className="text-xs font-bold uppercase text-gray-600 dark:text-zinc-300">
+                  Custom / Extra Metadata Columns to Include:
+                </h4>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  {availableCustomHeaders.map((header) => (
+                    <label key={header} className="inline-flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedExtraCols.includes(header)}
+                        onChange={() => toggleExtraCol(header)}
+                        className="rounded border-gray-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                      />
+                      <span className="font-medium text-gray-700 dark:text-zinc-200">{header}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Preview snippet */}
             <div className="bg-gray-50 dark:bg-zinc-800 p-3 rounded-lg border border-gray-200 dark:border-zinc-700">
               <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Sample Data Preview (First 3 rows)</h4>
               <div className="space-y-1 text-xs">
                 {rawRows.slice(0, 3).map((r, i) => (
-                  <div key={i} className="flex justify-between py-1 border-b last:border-0 border-gray-200 dark:border-zinc-700">
+                  <div key={i} className="flex flex-wrap justify-between py-1 border-b last:border-0 border-gray-200 dark:border-zinc-700 gap-2">
                     <span>
                       <strong>Name:</strong> {r[guestNameCol] || <em className="text-red-400">&lt;empty&gt;</em>}
                     </span>
                     <span>
                       <strong>Code:</strong> {codeCol && r[codeCol] ? r[codeCol] : <em className="text-amber-500">&lt;auto-generate&gt;</em>}
                     </span>
+                    {emailCol && (
+                      <span>
+                        <strong>Email:</strong> {r[emailCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                      </span>
+                    )}
+                    {dietaryNotesCol && (
+                      <span>
+                        <strong>Dietary:</strong> {r[dietaryNotesCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                      </span>
+                    )}
+                    {plusOneCol && (
+                      <span>
+                        <strong>Plus-Ones:</strong> {r[plusOneCol] || '0'}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -338,15 +529,19 @@ export function CsvImportWizardModal({
             </div>
 
             {/* Interactive Preview Table */}
-            <div className="max-h-72 overflow-y-auto border border-gray-200 dark:border-zinc-700 rounded-lg">
+            <div className="max-h-80 overflow-y-auto border border-gray-200 dark:border-zinc-700 rounded-lg">
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 uppercase font-bold border-b border-gray-200 dark:border-zinc-700">
                   <tr>
-                    <th className="p-2 w-12 text-center">#</th>
-                    <th className="p-2">Guest Name</th>
-                    <th className="p-2">Invitation Code</th>
-                    <th className="p-2">Validation Status</th>
-                    <th className="p-2 w-12 text-center">Action</th>
+                    <th scope="col" className="p-2 w-10 text-center">#</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Guest Name</th>
+                    <th scope="col" className="p-2 min-w-[110px]">Invitation Code</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Email</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Dietary Notes</th>
+                    <th scope="col" className="p-2 w-16 text-center">Plus-Ones</th>
+                    <th scope="col" className="p-2 min-w-[130px]">Extra Attributes</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Validation Status</th>
+                    <th scope="col" className="p-2 w-10 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
@@ -366,6 +561,7 @@ export function CsvImportWizardModal({
                         <input
                           type="text"
                           value={editableRows[idx]?.guestName || ''}
+                          aria-label={`Guest Name for row ${row.rowIndex}`}
                           onChange={(e) => handleCellEdit(idx, 'guestName', e.target.value)}
                           className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
                         />
@@ -374,10 +570,63 @@ export function CsvImportWizardModal({
                         <input
                           type="text"
                           value={editableRows[idx]?.code || ''}
+                          aria-label={`Invitation Code for row ${row.rowIndex}`}
                           placeholder="Auto-generate"
                           onChange={(e) => handleCellEdit(idx, 'code', e.target.value)}
                           className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 uppercase"
                         />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="email"
+                          value={editableRows[idx]?.email || ''}
+                          aria-label={`Email for row ${row.rowIndex}`}
+                          placeholder="Optional"
+                          onChange={(e) => handleCellEdit(idx, 'email', e.target.value)}
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="text"
+                          value={editableRows[idx]?.dietaryNotes || ''}
+                          aria-label={`Dietary Notes for row ${row.rowIndex}`}
+                          placeholder="Optional"
+                          onChange={(e) => handleCellEdit(idx, 'dietaryNotes', e.target.value)}
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          value={editableRows[idx]?.plusOneAllocations ?? '0'}
+                          aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
+                          onChange={(e) => handleCellEdit(idx, 'plusOneAllocations', e.target.value)}
+                          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                        />
+                      </td>
+                      <td className="p-2">
+                        {Object.keys(editableRows[idx]?.extraFields || {}).length > 0 ? (
+                          <div className="space-y-1">
+                            {Object.entries(editableRows[idx].extraFields).map(([k, v]) => (
+                              <div key={k} className="flex items-center gap-1 text-[11px]">
+                                <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
+                                  {k}:
+                                </span>
+                                <input
+                                  type="text"
+                                  value={v}
+                                  aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
+                                  onChange={(e) => handleExtraFieldEdit(idx, k, e.target.value)}
+                                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 italic text-[11px]">None</span>
+                        )}
                       </td>
                       <td className="p-2 space-y-1">
                         {row.isValid ? (
@@ -409,6 +658,7 @@ export function CsvImportWizardModal({
                           onClick={() => handleDeleteRow(idx)}
                           className="text-red-500 hover:text-red-700 font-bold text-sm px-1"
                           title="Remove row"
+                          aria-label={`Remove row ${row.rowIndex}`}
                         >
                           &times;
                         </button>
@@ -417,7 +667,7 @@ export function CsvImportWizardModal({
                   ))}
                   {editableRows.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="p-4 text-center text-gray-500">
+                      <td colSpan={9} className="p-4 text-center text-gray-500">
                         No rows remaining.
                       </td>
                     </tr>

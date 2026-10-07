@@ -123,16 +123,20 @@ model Contributor {
 }
 
 model InvitationCode {
-  id         String        @id @default(uuid())
-  code       String        @unique
-  guestName  String
-  used       Boolean       @default(false)
-  usedAt     DateTime?
-  tableId    String?
-  table      SeatingTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  seatNumber Int?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id                 String        @id @default(uuid())
+  code               String        @unique
+  guestName          String
+  email              String?
+  dietaryNotes       String?
+  plusOneAllocations Int?          @default(0)
+  extraFields        Json?
+  used               Boolean       @default(false)
+  usedAt             DateTime?
+  tableId            String?
+  table              SeatingTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  seatNumber         Int?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   contributors Contributor[]
 }
