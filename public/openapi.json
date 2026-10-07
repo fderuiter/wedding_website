@@ -1316,6 +1316,22 @@
                       "editorial"
                     ]
                   },
+                  "layoutContainerMaxWidth": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutGridGap": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutCardPadding": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutBorderRadius": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
                   "showCountdown": {
                     "type": "boolean"
                   },
@@ -1516,6 +1532,22 @@
                       "minimal",
                       "editorial"
                     ]
+                  },
+                  "layoutContainerMaxWidth": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutGridGap": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutCardPadding": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutBorderRadius": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1728,6 +1760,22 @@
                       "minimal",
                       "editorial"
                     ]
+                  },
+                  "layoutContainerMaxWidth": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutGridGap": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutCardPadding": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "layoutBorderRadius": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
                   },
                   "showCountdown": {
                     "type": "boolean"

@@ -21,6 +21,10 @@ type ThemeContextType = {
   mode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
   resolvedTheme: ResolvedTheme;
+  layoutContainerMaxWidth: string;
+  layoutGridGap: string;
+  layoutCardPadding: string;
+  layoutBorderRadius: string;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -33,6 +37,10 @@ const ThemeContext = createContext<ThemeContextType>({
   mode: 'system',
   setThemeMode: () => {},
   resolvedTheme: 'dark',
+  layoutContainerMaxWidth: '64rem',
+  layoutGridGap: '1.5rem',
+  layoutCardPadding: '2rem',
+  layoutBorderRadius: '1rem',
 });
 
 export const useTheme = () => useContext(ThemeContext);
@@ -50,6 +58,7 @@ interface HSL {
 }
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
+const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
 
 function sanitizeColor(color: string | undefined | null, fallback: string): string {
   if (color && hexColorRegex.test(color)) {
@@ -61,6 +70,13 @@ function sanitizeColor(color: string | undefined | null, fallback: string): stri
 function sanitizePreset(preset: string | undefined | null, fallback: ThemePreset = DEFAULT_THEME_PRESET): ThemePreset {
   if (preset && isThemePreset(preset)) {
     return preset;
+  }
+  return fallback;
+}
+
+function sanitizeLayoutToken(token: string | undefined | null, fallback: string): string {
+  if (token && layoutTokenRegex.test(token)) {
+    return token;
   }
   return fallback;
 }
@@ -210,11 +226,26 @@ function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5
   }
 }
 
-function generateDynamicStyles(primaryColor: string, secondaryColor: string, themePreset?: string): string {
+function generateDynamicStyles(
+  primaryColor: string,
+  secondaryColor: string,
+  themePreset?: string,
+  layoutTokens?: {
+    containerMaxWidth?: string;
+    gridGap?: string;
+    cardPadding?: string;
+    borderRadius?: string;
+  }
+): string {
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
   const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
   const presetTokens = getPresetTokens(preset);
+
+  const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
+  const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
+  const safeCardPadding = sanitizeLayoutToken(layoutTokens?.cardPadding, '2rem');
+  const safeBorderRadius = sanitizeLayoutToken(layoutTokens?.borderRadius, '1rem');
 
   const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
   const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
@@ -232,6 +263,10 @@ function generateDynamicStyles(primaryColor: string, secondaryColor: string, the
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
 ${presetCssRules}
+      --container-max-w: ${safeContainerMaxWidth};
+      --grid-gap: ${safeGridGap};
+      --card-padding: ${safeCardPadding};
+      --radius-card: ${safeBorderRadius};
     }
 
     /* Light mode document */
@@ -264,6 +299,17 @@ ${presetCssRules}
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
+      --container-max-w: ${safeContainerMaxWidth};
+      --grid-gap: ${safeGridGap};
+      --card-padding: ${safeCardPadding};
+      --radius-card: ${safeBorderRadius};
+    }
+
+    .dark {
+      --container-max-w: ${safeContainerMaxWidth};
+      --grid-gap: ${safeGridGap};
+      --card-padding: ${safeCardPadding};
+      --radius-card: ${safeBorderRadius};
     }
   `;
 }
@@ -293,6 +339,10 @@ type ThemeProviderProps = {
     colorPrimary?: string;
     colorSecondary?: string;
     themePreset?: ThemePreset | string;
+    layoutContainerMaxWidth?: string;
+    layoutGridGap?: string;
+    layoutCardPadding?: string;
+    layoutBorderRadius?: string;
   };
   initialThemeMode?: ThemeMode;
 };
@@ -306,6 +356,10 @@ export function ThemeProvider({
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
+    layoutContainerMaxWidth: sanitizeLayoutToken(propConfig?.layoutContainerMaxWidth, '64rem'),
+    layoutGridGap: sanitizeLayoutToken(propConfig?.layoutGridGap, '1.5rem'),
+    layoutCardPadding: sanitizeLayoutToken(propConfig?.layoutCardPadding, '2rem'),
+    layoutBorderRadius: sanitizeLayoutToken(propConfig?.layoutBorderRadius, '1rem'),
   }));
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(initialThemeMode);
@@ -322,6 +376,10 @@ export function ThemeProvider({
     themeAccent: '#D4AF37',
     themeOutline: '#000000',
     themePreset: DEFAULT_THEME_PRESET,
+    layoutContainerMaxWidth: '64rem',
+    layoutGridGap: '1.5rem',
+    layoutCardPadding: '2rem',
+    layoutBorderRadius: '1rem',
   });
 
   // Client hydration check & sync with localStorage if no explicit initialThemeMode was supplied
@@ -407,6 +465,10 @@ export function ThemeProvider({
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
+        layoutContainerMaxWidth: sanitizeLayoutToken(propConfig.layoutContainerMaxWidth, '64rem'),
+        layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
+        layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
+        layoutBorderRadius: sanitizeLayoutToken(propConfig.layoutBorderRadius, '1rem'),
       });
     }
   }, [propConfig]);
@@ -424,6 +486,10 @@ export function ThemeProvider({
               colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
               colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
               themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
+              layoutContainerMaxWidth: sanitizeLayoutToken(next.layoutContainerMaxWidth, '64rem'),
+              layoutGridGap: sanitizeLayoutToken(next.layoutGridGap, '1.5rem'),
+              layoutCardPadding: sanitizeLayoutToken(next.layoutCardPadding, '2rem'),
+              layoutBorderRadius: sanitizeLayoutToken(next.layoutBorderRadius, '1rem'),
             };
           });
         }
@@ -438,6 +504,10 @@ export function ThemeProvider({
     let secondary = '#B45309';
     let accent = '#D4AF37';
     let outline = '#000000';
+    let containerMaxWidth = '64rem';
+    let gridGap = '1.5rem';
+    let cardPadding = '2rem';
+    let borderRadius = '1rem';
 
     try {
       if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
@@ -449,6 +519,10 @@ export function ThemeProvider({
             secondary = styles.getPropertyValue('--color-secondary').trim() || '#B45309';
             accent = styles.getPropertyValue('--color-accent').trim() || '#D4AF37';
             outline = styles.getPropertyValue('--color-outline').trim() || '#000000';
+            containerMaxWidth = styles.getPropertyValue('--container-max-w').trim() || '64rem';
+            gridGap = styles.getPropertyValue('--grid-gap').trim() || '1.5rem';
+            cardPadding = styles.getPropertyValue('--card-padding').trim() || '2rem';
+            borderRadius = styles.getPropertyValue('--radius-card').trim() || '1rem';
           }
         }
       }
@@ -462,13 +536,23 @@ export function ThemeProvider({
       themeAccent: sanitizeColor(accent, '#D4AF37'),
       themeOutline: sanitizeColor(outline, '#000000'),
       themePreset: config.themePreset,
+      layoutContainerMaxWidth: sanitizeLayoutToken(config?.layoutContainerMaxWidth, sanitizeLayoutToken(containerMaxWidth, '64rem')),
+      layoutGridGap: sanitizeLayoutToken(config?.layoutGridGap, sanitizeLayoutToken(gridGap, '1.5rem')),
+      layoutCardPadding: sanitizeLayoutToken(config?.layoutCardPadding, sanitizeLayoutToken(cardPadding, '2rem')),
+      layoutBorderRadius: sanitizeLayoutToken(config?.layoutBorderRadius, sanitizeLayoutToken(borderRadius, '1rem')),
     });
   }, [config]);
 
   const stylesString = generateDynamicStyles(
     sanitizeColor(config?.colorPrimary, '#B91C1C'),
     sanitizeColor(config?.colorSecondary, '#B45309'),
-    config?.themePreset
+    config?.themePreset,
+    {
+      containerMaxWidth: config?.layoutContainerMaxWidth,
+      gridGap: config?.layoutGridGap,
+      cardPadding: config?.layoutCardPadding,
+      borderRadius: config?.layoutBorderRadius,
+    }
   );
 
   const contextValue: ThemeContextType = {

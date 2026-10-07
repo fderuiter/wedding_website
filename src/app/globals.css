@@ -13,6 +13,11 @@
   --font-mono: var(--font-geist-mono), monospace;
 
   --spacing-header: 56px;
+
+  --container-max-w: 64rem;
+  --grid-gap: 1.5rem;
+  --card-padding: 2rem;
+  --radius-card: 1rem;
 }
 
 :root {
@@ -28,6 +33,10 @@
   --foreground: var(--color-foreground);
   --header-h: var(--spacing-header); /* Height of sticky header */
   --scale-factor: 1; /* Fluid scaling multiplier */
+  --container-max-w: 64rem;
+  --grid-gap: 1.5rem;
+  --card-padding: 2rem;
+  --radius-card: 1rem;
 }
 
 .dark {
