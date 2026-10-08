@@ -39,6 +39,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost,app,db,wedding_website-app-1,0.0.0.0}
       GUEST_PASSCODE: ${GUEST_PASSCODE:-wedding2026}
       RUN_MIGRATIONS: "true"
+      E2E_TEST: ${E2E_TEST:-true}
     depends_on:
       db:
         condition: service_healthy
