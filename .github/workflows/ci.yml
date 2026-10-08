@@ -200,6 +200,11 @@ jobs:
       - name: Security Dependency Audit
         run: npm run check:audit || echo "::warning::High or critical vulnerabilities detected by npm audit"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+
       - name: Run OCI Container & Clean Database Smoke Test
         run: npm run test:container
 
@@ -293,6 +298,11 @@ jobs:
           if [ -f "test-results/a11y-summary.md" ]; then
             cat test-results/a11y-summary.md >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Start local test database and application container
         timeout-minutes: 5
