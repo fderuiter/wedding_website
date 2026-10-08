@@ -138,7 +138,10 @@ async function main() {
 
     // 5. Build OCI image & start app container
     console.log('Building OCI image and starting app container via Docker Compose...');
-    runCommand('docker', ['compose', 'up', '--build', '-d', 'app'], {
+    runCommand('docker', ['compose', 'build'], {
+      env: { ...process.env, DB_PORT: dbPort.toString() }
+    });
+    runCommand('docker', ['compose', 'up', '-d', 'app'], {
       env: { ...process.env, DB_PORT: dbPort.toString() }
     });
 
