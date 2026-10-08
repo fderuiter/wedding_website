@@ -298,8 +298,6 @@ jobs:
         timeout-minutes: 10
         env:
           DB_PORT: "5433"
-          DOCKER_BUILDKIT: "1"
-          COMPOSE_DOCKER_CLI_BUILD: "1"
         run: |
           docker compose up --build -d app
 
