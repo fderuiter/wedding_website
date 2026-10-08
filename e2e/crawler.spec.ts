@@ -64,16 +64,17 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           url: 'http://127.0.0.1:3000',
         }
       ]);
-      const page = await testContext.newPage();
-      try {
-        for (const route of PROTECTED_UI_ROUTES) {
-          console.log(`[Unauthenticated] Navigating to: ${route}`);
+      for (const route of PROTECTED_UI_ROUTES) {
+        console.log(`[Unauthenticated] Navigating to: ${route}`);
+        const page = await testContext.newPage();
+        try {
           try {
             await page.goto(route, { waitUntil: 'domcontentloaded' });
           } catch (gotoError: any) {
             if (
               gotoError?.message?.includes('net::ERR_ABORTED') ||
-              gotoError?.message?.includes('Page crashed')
+              gotoError?.message?.includes('Page crashed') ||
+              gotoError?.message?.includes('Target closed')
             ) {
               await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
             } else {
@@ -82,9 +83,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           }
           const url = new URL(page.url());
           expect(url.pathname).toBe('/admin/login');
+        } finally {
+          await page.close().catch(() => {});
         }
-      } finally {
-        await page.close();
       }
     } finally {
       await testContext.close();
@@ -117,9 +118,11 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       ]);
 
-      await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
-      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
+      await ctx.route((url: any) => {
+        const host = url.host;
+        return host !== '127.0.0.1:3000' && host !== 'localhost:3000' && host !== '127.0.0.1' && host !== 'localhost';
+      }, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
 
       await ctx.route('**/api/weather', async (route: any) => {
         await route.fulfill({
@@ -157,7 +160,6 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
         await setupContextRoutes(pageContext);
         const page = await pageContext.newPage();
-        let anchors: (string | null)[] = [];
 
         try {
           const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
@@ -183,23 +185,18 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
           );
           console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-          anchors = hrefs;
-        } finally {
-          await page.close();
-          await pageContext.close();
-        }
 
-          for (const href of anchors) {
+          for (const href of hrefs) {
             if (!href) continue;
 
             // Skip non-navigational links or fragments
             if (
               href.startsWith('#') ||
-            href.startsWith('mailto:') ||
-            href.startsWith('tel:') ||
-            href.startsWith('javascript:') ||
-            href.startsWith('data:') ||
-            href.startsWith('vbscript:')
+              href.startsWith('mailto:') ||
+              href.startsWith('tel:') ||
+              href.startsWith('javascript:') ||
+              href.startsWith('data:') ||
+              href.startsWith('vbscript:')
             ) {
               continue;
             }
@@ -227,9 +224,10 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
             checkedLinks.add(absoluteCheckUrl);
           }
+        } finally {
+          await page.close();
+          await pageContext.close();
         }
-      } finally {
-        await page.close();
       }
 
       console.log(`Checking ${checkedLinks.size} unique internal links...`);
@@ -239,8 +237,10 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           headers: {
             Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
           },
+          signal: AbortSignal.timeout(15000),
         });
         const status = linkResponse.status;
+        await linkResponse.arrayBuffer();
         expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
     } catch (err) {
