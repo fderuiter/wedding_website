@@ -231,6 +231,24 @@ describe('Content Node Schema Validation', () => {
         expect(result.data.updatedAt).toBeInstanceOf(Date);
       }
     });
+
+    it('accepts schedule node with nullish startTime and endTime', () => {
+      const nullishNode = {
+        id: 'sched-6',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Flexible Activity',
+          startTime: null,
+          endTime: null,
+        },
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+
+      const result = ScheduleNodeSchema.safeParse(nullishNode);
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('GenericNodeSchema', () => {

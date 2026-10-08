@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useId } from 'react';
 import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
 
@@ -29,6 +29,7 @@ interface AddToCalendarProps {
 export default function AddToCalendar({ event, className }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
 
   const handleToggle = () => setIsOpen(!isOpen);
 
@@ -84,7 +85,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
           ref={triggerRef}
           type="button"
           className="btn-primary w-full rounded-full px-8 py-3"
-          id="options-menu"
+          id={menuId}
           aria-haspopup="true"
           aria-expanded={isOpen}
           onClick={handleToggle}
@@ -98,7 +99,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
           ref={overlayRef}
           className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10"
         >
-          <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+          <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby={menuId}>
             {calendarOptions.map((calendar) => (
               <button
                 key={calendar}

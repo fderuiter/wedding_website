@@ -92,11 +92,11 @@ const isoTimestampRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
 export const ScheduleDataSchema = z.object({
   title: z.string().optional(),
-  startTime: z.string().refine(
-    (val) => isoTimestampRegex.test(val) && !isNaN(Date.parse(val)),
+  startTime: z.string().nullish().refine(
+    (val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))),
     { message: 'startTime must be a valid ISO timestamp format (e.g., YYYY-MM-DDTHH:mm:ssZ).' }
-  ),
-  endTime: z.string().refine(
+  ).optional(),
+  endTime: z.string().nullish().refine(
     (val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))),
     { message: 'endTime must be a valid ISO timestamp format (e.g., YYYY-MM-DDTHH:mm:ssZ).' }
   ).optional(),
@@ -145,8 +145,8 @@ export const LogisticsNodeSchema = BaseContentNode.extend({
     receptionTime: z.string().optional(),
     receptionDetails: z.string().optional(),
     receptionAttire: z.string().optional(),
-    startTime: z.string().refine((val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))), { message: 'startTime must be a valid ISO timestamp.' }).optional(),
-    endTime: z.string().refine((val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))), { message: 'endTime must be a valid ISO timestamp.' }).optional(),
+    startTime: z.string().nullish().refine((val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))), { message: 'startTime must be a valid ISO timestamp.' }).optional(),
+    endTime: z.string().nullish().refine((val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))), { message: 'endTime must be a valid ISO timestamp.' }).optional(),
     categoryTags: z.array(z.string()).optional(),
     category: z.string().optional(),
     locationName: z.string().optional(),
