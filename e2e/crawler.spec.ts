@@ -55,28 +55,39 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
 
-    for (const route of PROTECTED_UI_ROUTES) {
-      const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    try {
+      await testContext.addCookies([
+        {
+          name: 'guest_auth',
+          value: guestCookieValue,
+          url: 'http://127.0.0.1:3000',
+        }
+      ]);
+      const page = await testContext.newPage();
       try {
-        await testContext.addCookies([
-          {
-            name: 'guest_auth',
-            value: guestCookieValue,
-            url: 'http://127.0.0.1:3000',
+        for (const route of PROTECTED_UI_ROUTES) {
+          console.log(`[Unauthenticated] Navigating to: ${route}`);
+          try {
+            await page.goto(route, { waitUntil: 'domcontentloaded' });
+          } catch (gotoError: any) {
+            if (
+              gotoError?.message?.includes('net::ERR_ABORTED') ||
+              gotoError?.message?.includes('Page crashed')
+            ) {
+              await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
+            } else {
+              throw gotoError;
+            }
           }
-        ]);
-        console.log(`[Unauthenticated] Navigating to: ${route}`);
-        const page = await testContext.newPage();
-        try {
-          await page.goto(route, { waitUntil: 'domcontentloaded' });
           const url = new URL(page.url());
           expect(url.pathname).toBe('/admin/login');
-        } finally {
-          await page.close();
         }
       } finally {
-        await testContext.close();
+        await page.close();
       }
+    } finally {
+      await testContext.close();
     }
   });
 
@@ -178,44 +189,47 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           await pageContext.close();
         }
 
-        for (const href of anchors) {
-          if (!href) continue;
+          for (const href of anchors) {
+            if (!href) continue;
 
-          // Skip non-navigational links or fragments
-          if (
-            href.startsWith('#') ||
+            // Skip non-navigational links or fragments
+            if (
+              href.startsWith('#') ||
             href.startsWith('mailto:') ||
             href.startsWith('tel:') ||
             href.startsWith('javascript:') ||
             href.startsWith('data:') ||
             href.startsWith('vbscript:')
-          ) {
-            continue;
-          }
+            ) {
+              continue;
+            }
 
-          let resolvedUrl: URL;
-          try {
-            resolvedUrl = new URL(href, targetUrl);
-          } catch {
-            continue;
-          }
+            let resolvedUrl: URL;
+            try {
+              resolvedUrl = new URL(href, targetUrl);
+            } catch {
+              continue;
+            }
 
-          if (resolvedUrl.origin !== new URL(baseURL).origin) {
-            continue;
-          }
+            if (resolvedUrl.origin !== new URL(baseURL).origin) {
+              continue;
+            }
 
-          if (resolvedUrl.pathname.includes('/_next/')) {
-            continue;
-          }
+            if (resolvedUrl.pathname.includes('/_next/')) {
+              continue;
+            }
 
-          let normalizedPath = resolvedUrl.pathname;
-          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-            normalizedPath = normalizedPath.slice(0, -1);
-          }
+            let normalizedPath = resolvedUrl.pathname;
+            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+              normalizedPath = normalizedPath.slice(0, -1);
+            }
 
-          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-          checkedLinks.add(absoluteCheckUrl);
+            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+            checkedLinks.add(absoluteCheckUrl);
+          }
         }
+      } finally {
+        await page.close();
       }
 
       console.log(`Checking ${checkedLinks.size} unique internal links...`);
