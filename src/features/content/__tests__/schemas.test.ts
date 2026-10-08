@@ -209,6 +209,28 @@ describe('Content Node Schema Validation', () => {
         expect(result.data.data.endTime).toBeUndefined();
       }
     });
+
+    it('accepts content nodes with ISO string createdAt/updatedAt dates from JSON payloads', () => {
+      const jsonNode = {
+        id: 'sched-5',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Late Night Snack',
+          startTime: '2026-06-20T23:00:00.000Z',
+          endTime: '',
+        },
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+
+      const result = ScheduleNodeSchema.safeParse(jsonNode);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.createdAt).toBeInstanceOf(Date);
+        expect(result.data.updatedAt).toBeInstanceOf(Date);
+      }
+    });
   });
 
   describe('GenericNodeSchema', () => {
