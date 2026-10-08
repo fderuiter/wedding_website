@@ -91,7 +91,7 @@ export default async function PhotosPage() {
           data-title="Wedding Pics (Good ones) · Friday, Oct 10 📸"
           data-description="Shared album · Tap to view!">
           {urls.map((url, i) => (
-            <object key={i} data={url}></object>
+            <object key={i} data={url} type="image/jpeg"></object>
           ))}
         </div>
       </ErrorBoundary>

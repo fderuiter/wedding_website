@@ -92,14 +92,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
 
-    const routeContext = await browser.newContext({
-      baseURL,
-      reducedMotion: 'reduce',
-    });
-
-    try {
-      // Inject programmatically signed admin auth cookie
-      await routeContext.addCookies([
+    const setupContextRoutes = async (ctx: any) => {
+      await ctx.addCookies([
         {
           name: 'admin_auth',
           value: cookieValue,
@@ -112,13 +106,11 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       ]);
 
-      // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
-      await routeContext.route(/cdn\.jsdelivr\.net/, route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await routeContext.route(/googleusercontent\.com/, route => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
-      await routeContext.route(/openstreetmap\.org/, route => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
 
-      // Mock weather API endpoint to avoid external network dependency in e2e tests
-      await routeContext.route('**/api/weather', async route => {
+      await ctx.route('**/api/weather', async (route: any) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -136,21 +128,24 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         });
       });
 
-      // Mock registry items API endpoint to prevent database connection retries on admin dashboard
-      await routeContext.route('**/api/registry/items', async route => {
+      await ctx.route('**/api/registry/items', async (route: any) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify([]),
         });
       });
+    };
 
+    try {
       for (const route of START_ROUTES) {
         const targetUrl = new URL(route, baseURL).toString();
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        const page = await routeContext.newPage();
+        const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+        await setupContextRoutes(pageContext);
+        const page = await pageContext.newPage();
         let anchors: (string | null)[] = [];
 
         try {
@@ -180,6 +175,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           anchors = hrefs;
         } finally {
           await page.close();
+          await pageContext.close();
         }
 
         for (const href of anchors) {
@@ -233,8 +229,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         const status = linkResponse.status;
         expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
-    } finally {
-      await routeContext.close();
+    } catch (err) {
+      throw err;
     }
   });
 
