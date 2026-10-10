@@ -5,7 +5,7 @@ const runWebServer = !process.env.TEST_CONTAINER;
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   webServer: runWebServer ? {
     command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
     url: 'http://127.0.0.1:3000',
@@ -33,7 +33,8 @@ export default defineConfig({
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu',
+        '--no-zygote',
+        '--js-flags=--max-old-space-size=4096',
       ],
     },
   },
