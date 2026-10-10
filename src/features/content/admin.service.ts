@@ -4,11 +4,11 @@ import { ContentNodeSchema } from './schemas';
 import { z } from 'zod';
 import { formatZodError } from '@/utils/validation';
 
-const ContentNodeInputSchema = z.union([
-  ContentNodeSchema.options[0].omit({ id: true, createdAt: true, updatedAt: true }),
-  ContentNodeSchema.options[1].omit({ id: true, createdAt: true, updatedAt: true }),
-  ContentNodeSchema.options[2].omit({ id: true, createdAt: true, updatedAt: true }),
-]);
+const ContentNodeInputSchema = z.union(
+  ContentNodeSchema.options.map((opt) =>
+    (opt as any).omit({ id: true, createdAt: true, updatedAt: true })
+  ) as [any, any, ...any[]]
+);
 
 function validateContentNodeUpdate(data: any): string | null {
   const result = ContentNodeInputSchema.safeParse(data);

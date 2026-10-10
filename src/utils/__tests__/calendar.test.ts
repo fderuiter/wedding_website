@@ -1,4 +1,4 @@
-import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile } from '../calendar';
+import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, formatScheduleEventToCalendarEvent } from '../calendar';
 import { CalendarEvent } from '@/utils/calendar';
 
 const event: CalendarEvent = {
@@ -62,6 +62,31 @@ describe('calendar utils', () => {
       const invalidEvent = { ...event, startDate: 'invalid-date' };
       const icsString = createIcsFile(invalidEvent);
       expect(icsString).toBe('');
+    });
+  });
+
+  describe('formatScheduleEventToCalendarEvent', () => {
+    it('converts ISO schedule item into CalendarEvent structure with exact start/end times and timezone', () => {
+      const scheduleItem = {
+        title: 'Rehearsal Dinner',
+        startTime: '2026-06-19T18:00:00.000Z',
+        endTime: '2026-06-19T21:00:00.000Z',
+        locationName: 'The Oak Room',
+        attireRules: 'Smart Casual',
+        description: 'Dinner for wedding party.',
+      };
+
+      const result = formatScheduleEventToCalendarEvent(scheduleItem, '2026-06-19', 'America/Chicago');
+
+      expect(result.name).toBe('Rehearsal Dinner');
+      expect(result.startDate).toBe('2026-06-19');
+      expect(result.startTime).toBe('18:00');
+      expect(result.endDate).toBe('2026-06-19');
+      expect(result.endTime).toBe('21:00');
+      expect(result.timeZone).toBe('America/Chicago');
+      expect(result.location).toBe('The Oak Room');
+      expect(result.description).toContain('Dinner for wedding party.');
+      expect(result.description).toContain('Attire: Smart Casual');
     });
   });
 });
