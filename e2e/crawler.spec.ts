@@ -55,16 +55,17 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
 
-    for (const route of PROTECTED_UI_ROUTES) {
-      const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
-      try {
-        await testContext.addCookies([
-          {
-            name: 'guest_auth',
-            value: guestCookieValue,
-            url: 'http://127.0.0.1:3000',
-          }
-        ]);
+    const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    await testContext.addCookies([
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://127.0.0.1:3000',
+      }
+    ]);
+
+    try {
+      for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
         const page = await testContext.newPage();
         try {
@@ -74,9 +75,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         } finally {
           await page.close();
         }
-      } finally {
-        await testContext.close();
       }
+    } finally {
+      await testContext.close();
     }
   });
 
@@ -212,6 +213,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
           checkedLinks.add(absoluteCheckUrl);
         }
+
+        // Reset page state to release memory and unmount active React components
+        await page.goto('about:blank');
       }
 
       console.log(`Checking ${checkedLinks.size} unique internal links...`);

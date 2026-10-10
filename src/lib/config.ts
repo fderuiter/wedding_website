@@ -255,8 +255,10 @@ export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO
     }
 
     if (!rawDbConfig) {
-      dbConfig = AppConfigSchema.parse(await prisma.appConfig.create({
-        data: { 
+      dbConfig = AppConfigSchema.parse(await prisma.appConfig.upsert({
+        where: { id: 'global' },
+        update: {},
+        create: { 
           id: 'global',
           partner1Name: '',
           partner2Name: '',
