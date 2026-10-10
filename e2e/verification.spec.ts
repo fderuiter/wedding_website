@@ -31,7 +31,7 @@ test.describe('UI Verification', () => {
       }
     ]);
 
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/', { waitUntil: 'load' });
 
     // The main content should be visible
     const mainContent = page.locator('main#main-content');
