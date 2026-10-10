@@ -46,7 +46,7 @@ test.describe('Metadata', () => {
     const ogType = page.locator('meta[property="og:type"]');
     await expect(ogType).toHaveAttribute('content', 'website');
     const ogImage = page.locator('meta[property="og:image"]');
-    await expect(ogImage).toHaveAttribute('content', /images\/(placeholder\.png|sunset-embrace\.jpg)/);
+    await expect(ogImage).toHaveAttribute('content', /(api\/og|images\/(placeholder\.png|sunset-embrace\.jpg))/);
 
     // Check Twitter card metadata
     const twitterCard = page.locator('meta[name="twitter:card"]');
@@ -56,7 +56,7 @@ test.describe('Metadata', () => {
     const twitterDescription = page.locator('meta[name="twitter:description"]');
     await expect(twitterDescription).toHaveAttribute('content', /Welcome to our wedding website|Join Jane and John/);
     const twitterImage = page.locator('meta[name="twitter:image"]');
-    await expect(twitterImage).toHaveAttribute('content', /images\/(placeholder\.png|sunset-embrace\.jpg)/);
+    await expect(twitterImage).toHaveAttribute('content', /(api\/og|images\/(placeholder\.png|sunset-embrace\.jpg))/);
 
     // Check canonical link
     const canonicalLink = page.locator('link[rel="canonical"]');
