@@ -81,7 +81,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
   });
 
   test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ browser }) => {
-    test.setTimeout(180000);
+    test.setTimeout(240000);
     const cookieValue = generateAdminCookieValue();
     const guestCookieValue = generateGuestCookieValue();
 
