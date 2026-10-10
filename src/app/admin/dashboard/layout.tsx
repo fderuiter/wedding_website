@@ -5,6 +5,7 @@ import { AdminNav, AdminNavItem } from './AdminNav';
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/dashboard', label: 'Registry', featureId: 'registry' },
+  { href: '/admin/dashboard/thank-you-notes', label: 'Thank-You Notes', featureId: 'registry' },
   { href: '/admin/dashboard/invitation-codes', label: 'Invitation Codes', featureId: 'registry' },
   { href: '/admin/dashboard/seating-chart', label: 'Seating Chart' },
   { href: '/admin/dashboard/site-manager', label: 'Site Manager' },

@@ -84,6 +84,7 @@ flowchart LR
     node_admin_dashboard_seatingchart["seating-chart"]
     node_admin_dashboard_settings["settings"]
     node_admin_dashboard_sitemanager["site-manager"]
+    node_admin_dashboard_thankyounotes["thank-you-notes"]
     node_admin_dashboard_weddingparty["wedding-party"]
     node_admin_login["login"]
     node_api["api"]
@@ -104,6 +105,9 @@ flowchart LR
     node_api_admin_seating_export["export"]
     node_api_admin_settings["settings"]
     node_api_admin_setup["setup"]
+    node_api_admin_thankyounotes["thank-you-notes"]
+    node_api_admin_thankyounotes_id["[id]"]
+    node_api_admin_thankyounotes_batch["batch"]
     node_api_admin_upload["upload"]
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
@@ -146,6 +150,7 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_seatingchart
     node_admin_dashboard --> node_admin_dashboard_settings
     node_admin_dashboard --> node_admin_dashboard_sitemanager
+    node_admin_dashboard --> node_admin_dashboard_thankyounotes
     node_admin_dashboard --> node_admin_dashboard_weddingparty
     node_admin --> node_admin_login
     App --> node_api
@@ -166,6 +171,9 @@ flowchart LR
     node_api_admin_seating --> node_api_admin_seating_export
     node_api_admin --> node_api_admin_settings
     node_api_admin --> node_api_admin_setup
+    node_api_admin --> node_api_admin_thankyounotes
+    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
+    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
     node_api_admin --> node_api_admin_upload
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
@@ -208,6 +216,7 @@ flowchart LR
     class node_admin_dashboard_seatingchart page;
     class node_admin_dashboard_settings page;
     class node_admin_dashboard_sitemanager page;
+    class node_admin_dashboard_thankyounotes page;
     class node_admin_dashboard_weddingparty page;
     class node_admin_login page;
     class node_api_admin_entity api;
@@ -223,6 +232,9 @@ flowchart LR
     class node_api_admin_seating_export api;
     class node_api_admin_settings api;
     class node_api_admin_setup api;
+    class node_api_admin_thankyounotes api;
+    class node_api_admin_thankyounotes_id api;
+    class node_api_admin_thankyounotes_batch api;
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;

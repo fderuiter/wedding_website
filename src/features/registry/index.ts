@@ -1,9 +1,13 @@
 export { registryService } from './service';
+export { thankYouService, ThankYouService } from './thank-you.service';
+export type { ProgressMetrics } from './thank-you.service';
 export type { RegistryItem } from './types';
 export {
   RegistryItemSchema,
   RegistryItemBaseSchema,
   ContributorSchema,
+  UpdateThankYouNoteSchema,
+  BatchUpdateThankYouNotesSchema,
   translateSnapshotToActive,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';

@@ -118,6 +118,9 @@ model Contributor {
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
   date           DateTime      @default(now())
+  thankYouStatus String        @default("Unsent")
+  thankYouSentAt DateTime?
+  thankYouNote   String?
   registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
   registryItemId String?
   createdAt      DateTime      @default(now())
