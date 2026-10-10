@@ -151,82 +151,80 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       });
     };
 
+    const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+    await setupContextRoutes(pageContext);
+    const page = await pageContext.newPage();
+
     try {
       for (const route of START_ROUTES) {
         const targetUrl = new URL(route, baseURL).toString();
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-        await setupContextRoutes(pageContext);
-        const page = await pageContext.newPage();
+        let anchors: (string | null)[] = [];
 
-        try {
-          const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-          expect(response).not.toBeNull();
-          expect(response!.status()).toBe(200);
+        const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        expect(response).not.toBeNull();
+        expect(response!.status()).toBe(200);
 
-          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-          if (route !== '/admin/login') {
-            const currentUrl = new URL(page.url());
-            expect(currentUrl.pathname).not.toBe('/admin/login');
+        // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
+        if (route !== '/admin/login') {
+          const currentUrl = new URL(page.url());
+          expect(currentUrl.pathname).not.toBe('/admin/login');
+        }
+
+        // Check for generic application server or DB errors in page content
+        const content = await page.content();
+        expect(content).not.toContain('Internal Server Error');
+        expect(content).not.toContain('500 Error');
+        expect(content).not.toContain('An unhandled error occurred');
+
+        visitedUrls.add(targetUrl);
+
+        // Parse and extract all anchor links from the navigated page in a single CDP call
+        const hrefs = await page.evaluate(() => 
+          Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+        );
+        console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+        anchors = hrefs;
+
+        for (const href of anchors) {
+          if (!href) continue;
+
+          // Skip non-navigational links or fragments
+          if (
+            href.startsWith('#') ||
+            href.startsWith('mailto:') ||
+            href.startsWith('tel:') ||
+            href.startsWith('javascript:') ||
+            href.startsWith('data:') ||
+            href.startsWith('vbscript:')
+          ) {
+            continue;
           }
 
-          // Check for generic application server or DB errors in page content
-          const content = await page.content();
-          expect(content).not.toContain('Internal Server Error');
-          expect(content).not.toContain('500 Error');
-          expect(content).not.toContain('An unhandled error occurred');
-
-          visitedUrls.add(targetUrl);
-
-          // Parse and extract all anchor links from the navigated page in a single CDP call
-          const hrefs = await page.evaluate(() => 
-            Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-          );
-          console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-
-          for (const href of hrefs) {
-            if (!href) continue;
-
-            // Skip non-navigational links or fragments
-            if (
-              href.startsWith('#') ||
-              href.startsWith('mailto:') ||
-              href.startsWith('tel:') ||
-              href.startsWith('javascript:') ||
-              href.startsWith('data:') ||
-              href.startsWith('vbscript:')
-            ) {
-              continue;
-            }
-
-            let resolvedUrl: URL;
-            try {
-              resolvedUrl = new URL(href, targetUrl);
-            } catch {
-              continue;
-            }
-
-            if (resolvedUrl.origin !== new URL(baseURL).origin) {
-              continue;
-            }
-
-            if (resolvedUrl.pathname.includes('/_next/')) {
-              continue;
-            }
-
-            let normalizedPath = resolvedUrl.pathname;
-            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-              normalizedPath = normalizedPath.slice(0, -1);
-            }
-
-            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-            checkedLinks.add(absoluteCheckUrl);
+          let resolvedUrl: URL;
+          try {
+            resolvedUrl = new URL(href, targetUrl);
+          } catch {
+            continue;
           }
-        } finally {
-          await page.close();
-          await pageContext.close();
+
+          if (resolvedUrl.origin !== new URL(baseURL).origin) {
+            continue;
+          }
+
+          if (resolvedUrl.pathname.includes('/_next/')) {
+            continue;
+          }
+
+          let normalizedPath = resolvedUrl.pathname;
+          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+            normalizedPath = normalizedPath.slice(0, -1);
+          }
+
+          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+          checkedLinks.add(absoluteCheckUrl);
         }
       }
 
@@ -243,8 +241,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         await linkResponse.arrayBuffer();
         expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
-    } catch (err) {
-      throw err;
+    } finally {
+      await page.close();
+      await pageContext.close();
     }
   });
 
