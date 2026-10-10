@@ -55,18 +55,19 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
 
-    for (const route of PROTECTED_UI_ROUTES) {
-      const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
-      try {
-        await testContext.addCookies([
-          {
-            name: 'guest_auth',
-            value: guestCookieValue,
-            url: 'http://127.0.0.1:3000',
-          }
-        ]);
+    const guestContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    await guestContext.addCookies([
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://127.0.0.1:3000',
+      }
+    ]);
+
+    try {
+      for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
-        const page = await testContext.newPage();
+        const page = await guestContext.newPage();
         try {
           await page.goto(route, { waitUntil: 'domcontentloaded' });
           const url = new URL(page.url());
@@ -74,9 +75,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         } finally {
           await page.close();
         }
-      } finally {
-        await testContext.close();
       }
+    } finally {
+      await guestContext.close();
     }
   });
 
@@ -92,29 +93,29 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
 
-    const setupContextRoutes = async (ctx: any) => {
+    const setupContext = async () => {
+      const ctx = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
       await ctx.addCookies([
         {
           name: 'admin_auth',
           value: cookieValue,
-          url: 'http://127.0.0.1:3000',
+          url: baseURL,
         },
         {
           name: 'guest_auth',
           value: guestCookieValue,
-          url: 'http://127.0.0.1:3000',
+          url: baseURL,
         }
       ]);
 
       await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
       await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
 
       await ctx.route('**/api/weather', async (route: any) => {
         await route.fulfill({
           status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
+          json: {
             daily: {
               time: ['2025-10-10'],
               weathercode: [0],
@@ -124,17 +125,36 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               precipitation_probability_max: [0],
               wind_speed_10m_max: [5],
             },
-          }),
+          },
+        });
+      });
+
+      await ctx.route('**/api/registry/items/*', async (route: any) => {
+        await route.fulfill({
+          status: 200,
+          json: {
+            id: '1',
+            name: 'Sample Item',
+            description: 'Sample description',
+            category: 'Home',
+            price: 100,
+            quantity: 1,
+            purchased: false,
+            isGroupGift: false,
+            amountContributed: 0,
+            contributors: [],
+          },
         });
       });
 
       await ctx.route('**/api/registry/items', async (route: any) => {
         await route.fulfill({
           status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([]),
+          json: [],
         });
       });
+
+      return ctx;
     };
 
     try {
@@ -143,11 +163,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-        await setupContextRoutes(pageContext);
+        const pageContext = await setupContext();
         const page = await pageContext.newPage();
-        let anchors: (string | null)[] = [];
-
         try {
           const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
           expect(response).not.toBeNull();
@@ -172,62 +189,71 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
           );
           console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-          anchors = hrefs;
+
+          for (const href of hrefs) {
+            if (!href) continue;
+
+            // Skip non-navigational links or fragments
+            if (
+              href.startsWith('#') ||
+              href.startsWith('mailto:') ||
+              href.startsWith('tel:') ||
+              href.startsWith('javascript:') ||
+              href.startsWith('data:') ||
+              href.startsWith('vbscript:')
+            ) {
+              continue;
+            }
+
+            let resolvedUrl: URL;
+            try {
+              resolvedUrl = new URL(href, targetUrl);
+            } catch {
+              continue;
+            }
+
+            if (resolvedUrl.origin !== new URL(baseURL).origin) {
+              continue;
+            }
+
+            if (resolvedUrl.pathname.includes('/_next/')) {
+              continue;
+            }
+
+            let normalizedPath = resolvedUrl.pathname;
+            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+              normalizedPath = normalizedPath.slice(0, -1);
+            }
+
+            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+            checkedLinks.add(absoluteCheckUrl);
+          }
         } finally {
           await page.close();
           await pageContext.close();
         }
-
-        for (const href of anchors) {
-          if (!href) continue;
-
-          // Skip non-navigational links or fragments
-          if (
-            href.startsWith('#') ||
-            href.startsWith('mailto:') ||
-            href.startsWith('tel:') ||
-            href.startsWith('javascript:') ||
-            href.startsWith('data:') ||
-            href.startsWith('vbscript:')
-          ) {
-            continue;
-          }
-
-          let resolvedUrl: URL;
-          try {
-            resolvedUrl = new URL(href, targetUrl);
-          } catch {
-            continue;
-          }
-
-          if (resolvedUrl.origin !== new URL(baseURL).origin) {
-            continue;
-          }
-
-          if (resolvedUrl.pathname.includes('/_next/')) {
-            continue;
-          }
-
-          let normalizedPath = resolvedUrl.pathname;
-          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-            normalizedPath = normalizedPath.slice(0, -1);
-          }
-
-          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-          checkedLinks.add(absoluteCheckUrl);
-        }
       }
 
       console.log(`Checking ${checkedLinks.size} unique internal links...`);
-      for (const absoluteCheckUrl of checkedLinks) {
-        console.log(`Checking link: ${absoluteCheckUrl}`);
-        const linkResponse = await fetch(absoluteCheckUrl, {
-          headers: {
-            Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-          },
-        });
-        const status = linkResponse.status;
-        expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+      const linksArray = Array.from(checkedLinks);
+      const batchSize = 5;
+      for (let i = 0; i < linksArray.length; i += batchSize) {
+        const batch = linksArray.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (absoluteCheckUrl) => {
+            console.log(`Checking link: ${absoluteCheckUrl}`);
+            const linkResponse = await fetch(absoluteCheckUrl, {
+              headers: {
+                Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+              },
+            });
+            return { absoluteCheckUrl, status: linkResponse.status };
+          })
+        );
+
+        for (const { absoluteCheckUrl, status } of batchResults) {
+          expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+        }
       }
     } catch (err) {
       throw err;
