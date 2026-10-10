@@ -264,3 +264,88 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
     expect(publicConfig.multisiteEnabled).toBe(false);
   });
 });
+
+describe('Request-Level Configuration Memoization (React cache)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('deduplicates multiple calls to getAppConfig with identical arguments within a request', async () => {
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      id: 'global',
+      brideName: 'Cached Bride',
+    });
+
+    const [res1, res2, res3] = await Promise.all([
+      getAppConfig('global'),
+      getAppConfig('global'),
+      getAppConfig('global'),
+    ]);
+
+    expect(res1).toEqual(res2);
+    expect(res2).toEqual(res3);
+    expect(res1.brideName).toBe('Cached Bride');
+
+    // prisma.appConfig.findUnique should only have been called ONCE despite 3 invocations
+    expect(prisma.appConfig.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('memoizes separate calls independently when different arguments are provided', async () => {
+    process.env.MULTISITE_ENABLED = 'true';
+
+    (prisma.appConfig.findUnique as jest.Mock).mockImplementation(async ({ where }: { where: { id: string } }) => {
+      if (where.id === 'site-a') {
+        return { ...baseConfig, id: 'site-a', brideName: 'Bride A' };
+      }
+      if (where.id === 'site-b') {
+        return { ...baseConfig, id: 'site-b', brideName: 'Bride B' };
+      }
+      return { ...baseConfig, id: 'global', brideName: 'Global Bride' };
+    });
+
+    const [resA, resB] = await Promise.all([
+      getAppConfig('site-a'),
+      getAppConfig('site-b'),
+    ]);
+
+    expect(resA.brideName).toBe('Bride A');
+    expect(resB.brideName).toBe('Bride B');
+
+    // Each distinct argument triggers its own DB call
+    expect(prisma.appConfig.findUnique).toHaveBeenCalledWith({ where: { id: 'site-a' } });
+    expect(prisma.appConfig.findUnique).toHaveBeenCalledWith({ where: { id: 'site-b' } });
+
+    delete process.env.MULTISITE_ENABLED;
+  });
+
+  it('fetches fresh configuration on subsequent HTTP requests after settings update', async () => {
+    // Request 1: Initial load
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...baseConfig,
+      id: 'global',
+      brideName: 'Initial Bride',
+    });
+
+    const req1Config = await getAppConfig('global');
+    expect(req1Config.brideName).toBe('Initial Bride');
+    expect(prisma.appConfig.findUnique).toHaveBeenCalledTimes(1);
+
+    // Admin updates settings in database (represented by a new mock return value for Request 2)
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...baseConfig,
+      id: 'global',
+      brideName: 'Updated Bride',
+    });
+
+    // Request 2: Next page request (simulating fresh HTTP request lifecycle)
+    // Clear request scope or fallback store to simulate next request
+    if (typeof globalThis.globalFallbackStore !== 'undefined') {
+      globalThis.globalFallbackStore.clear();
+    }
+
+    const req2Config = await getAppConfig('global');
+    expect(req2Config.brideName).toBe('Updated Bride');
+    expect(prisma.appConfig.findUnique).toHaveBeenCalledTimes(2);
+  });
+});

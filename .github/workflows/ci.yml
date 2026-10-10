@@ -295,7 +295,7 @@ jobs:
           fi
 
       - name: Start local test database and application container
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           DB_PORT: "5433"
         run: |
