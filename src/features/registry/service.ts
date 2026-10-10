@@ -5,7 +5,7 @@ import type { IRegistryRepository, RegistryItem } from './types';
  * Handles business logic for registry-related operations.
  * All methods interact with the database via the injected RegistryRepository.
  */
-export class RegistryService {
+class RegistryService {
   private repository: IRegistryRepository;
 
   constructor(repository: IRegistryRepository) {
@@ -77,19 +77,5 @@ export class RegistryService {
   }
 }
 
-// Export a default instance for backward compatibility/ease of use,
-// injecting the concrete repository.
-const registryServiceInstance = new RegistryService(registryRepository);
+export const registryService = new RegistryService(registryRepository);
 
-// Export static-like accessors to minimize refactoring impact on consumers for now,
-// or better, just export the instance and update consumers.
-// Let's export the instance as `RegistryService` to match the previous named export style
-// but wait, `RegistryService` was a class.
-// If I export `const RegistryService = new ...`, it conflicts with the class name.
-// So I will export the class as `RegistryServiceClass` (or keep it as `RegistryService`)
-// and export the instance as `registryService`.
-// BUT, to satisfy the requirement of "fixing the violation", existing consumers
-// were doing `RegistryService.getAllItems()`.
-// I should update consumers to use `registryService.getAllItems()`.
-
-export const registryService = registryServiceInstance;

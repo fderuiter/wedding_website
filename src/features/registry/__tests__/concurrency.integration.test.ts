@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 
-import { RegistryRepository } from '../repository';
+import { createRegistryRepository } from '../repository';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -19,8 +19,8 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const realPrisma = new PrismaClient({ adapter });
 
-// Instantiate RegistryRepository with the real PrismaClient
-const realRepository = new RegistryRepository(realPrisma);
+// Instantiate RegistryRepository with the real PrismaClient using test factory
+const realRepository = createRegistryRepository(realPrisma);
 
 describe('Registry Gift Contribution Concurrency & Row-Level Locking', () => {
   let testItem: any;
