@@ -124,14 +124,14 @@ const Forecast: React.FC = () => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 'calc(20px * var(--scale-factor))' }}
+      initial={{ opacity: 0, y: 'calc(20px * var(--scale-factor, 1))' }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8 }}
       className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
     >
       <div className="flex flex-col md:flex-row items-center justify-between gap-[var(--grid-gap)]">
         <div className="text-center md:text-left">
-          <Icon name={today.icon.name} className={today.icon.color} style={{ width: 'calc(64px * var(--scale-factor))', height: 'calc(64px * var(--scale-factor))' }} />
+          <Icon name={today.icon.name} className={today.icon.color} style={{ width: 'calc(64px * var(--scale-factor, 1))', height: 'calc(64px * var(--scale-factor, 1))' }} />
           <p className="text-2xl font-bold mt-2">{today.description}</p>
         </div>
         <div className="text-center">
@@ -146,17 +146,17 @@ const Forecast: React.FC = () => {
 
       <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
         <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-          <Icon name="Droplets" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
+          <Icon name="Droplets" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor, 1))', height: 'calc(24px * var(--scale-factor, 1))' }} />
           <p className="font-bold mt-1">Precipitation</p>
           <p className="text-lg">{today.precipitation}%</p>
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-          <Icon name="Wind" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
+          <Icon name="Wind" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor, 1))', height: 'calc(24px * var(--scale-factor, 1))' }} />
           <p className="font-bold mt-1">Wind</p>
           <p className="text-lg">{today.windSpeed} mph</p>
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
-          <Icon name="Thermometer" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor))', height: 'calc(24px * var(--scale-factor))' }} />
+          <Icon name="Thermometer" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor, 1))', height: 'calc(24px * var(--scale-factor, 1))' }} />
           <p className="font-bold mt-1">Feels Like</p>
           <p className="text-lg">{today.feelsLikeHigh}°</p>
         </motion.div>

@@ -206,7 +206,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
 
   const commonProps = {
     className: `${cardClasses} h-full`,
-    style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor))' },
+    style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor, 1))' },
     'data-testid': 'registry-card',
     'aria-label': `${item.name}, ${formatCurrency(item.price)}${
       isClaimed
@@ -215,7 +215,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           ? `, ${fundingPercentage}% funded`
           : ''
     }`,
-    tabIndex: 0,
+    tabIndex: isClickable ? 0 : undefined,
     role: isClickable ? 'button' : undefined,
   };
 
@@ -225,7 +225,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
 
   return (
     <Interactive3DCard
-      as={isClickable ? 'button' : 'div'}
+      as="div"
       {...commonProps}
       onClick={isClickable ? () => onClick(item) : undefined}
     >

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RegistryCard from '../RegistryCard';
+import RegistryCardSkeleton from '../RegistryCardSkeleton';
 import { RegistryItem } from '@/features/registry';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 
@@ -152,36 +153,48 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
-  it('is rendered as a native button when clickable for standard keyboard accessibility', () => {
+  it('is rendered as a div with role="button" and tabIndex when clickable for keyboard accessibility', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    // It should be rendered as a button to natively support Enter/Space activation
-    expect(card.tagName).toBe('BUTTON');
+    // It should be rendered as a div with role="button" and tabIndex to avoid invalid nested button elements
+    expect(card.tagName).toBe('DIV');
+    expect(card).toHaveAttribute('tabIndex', '0');
+    expect(card).toHaveAttribute('role', 'button');
   });
 
-  it('renders as a div with tabIndex when item is purchased to enable focus', () => {
+  it('renders as a div without tabIndex when item is purchased to avoid focus traps', () => {
     const mockOnClick = jest.fn();
     const purchasedItem = { ...mockItem, purchased: true };
     render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    // It should be rendered as a div with tabIndex to allow tabbing
+    // It should be rendered as a div without tabIndex so non-clickable cards stay out of keyboard tab order
     expect(card.tagName).toBe('DIV');
-    expect(card).toHaveAttribute('tabIndex', '0');
+    expect(card).not.toHaveAttribute('tabIndex');
     expect(card).not.toHaveAttribute('role', 'button');
   });
 
-  it('renders as a div with tabIndex when admin to enable focus', () => {
+  it('renders as a div without tabIndex when admin to avoid focus traps', () => {
     const mockOnClick = jest.fn();
     render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
     const card = screen.getByTestId('registry-card');
 
-    // Admin cards have separate buttons, but the card itself should still be focusable
+    // Admin cards have separate buttons, so card container itself does not have tabIndex
     expect(card.tagName).toBe('DIV');
-    expect(card).toHaveAttribute('tabIndex', '0');
+    expect(card).not.toHaveAttribute('tabIndex');
     expect(card).not.toHaveAttribute('role', 'button');
+  });
+
+  it('includes fallback 1 in scale-factor minHeight calculation for RegistryCard and RegistryCardSkeleton', () => {
+    render(<RegistryCard item={mockItem} onClick={() => {}} />);
+    const card = screen.getByTestId('registry-card');
+    expect(card.style.minHeight).toBe('calc(340px * var(--scale-factor, 1))');
+
+    render(<RegistryCardSkeleton />);
+    const skeleton = screen.getByTestId('registry-card-skeleton');
+    expect(skeleton.style.minHeight).toBe('calc(340px * var(--scale-factor, 1))');
   });
 
   it('shows overlay and badge for claimed item', () => {

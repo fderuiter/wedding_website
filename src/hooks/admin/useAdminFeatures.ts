@@ -2,12 +2,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
+const EMPTY_ARRAY: readonly any[] = Object.freeze([]);
+
 export function useAdminFeatures() {
   const queryClient = useQueryClient();
   const queryKey = ['admin-features'];
   const endpoint = '/api/admin/features';
 
-  const { data: features = [], isLoading: loading, error: queryError } = useQuery<any[], Error>({
+  const { data: features = EMPTY_ARRAY as any[], isLoading: loading, error: queryError } = useQuery<any[], Error>({
     queryKey,
     queryFn: async () => {
       let data = await apiClient.get<any[]>(endpoint);
