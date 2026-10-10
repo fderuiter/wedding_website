@@ -64,6 +64,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           url: 'http://127.0.0.1:3000',
         }
       ]);
+
       for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
         const page = await guestContext.newPage();
@@ -122,6 +123,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
       await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
       await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
       // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
       await ctx.route((url: any) => {
         const host = url.host;
@@ -166,7 +168,20 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       await ctx.route('**/api/registry/items', async (route: any) => {
         await route.fulfill({
           status: 200,
-          json: [],
+          json: [
+            {
+              id: '1',
+              name: 'Sample Item',
+              description: 'Sample description',
+              category: 'Home',
+              price: 100,
+              quantity: 1,
+              purchased: false,
+              isGroupGift: false,
+              amountContributed: 0,
+              contributors: [],
+            }
+          ],
         });
       });
 
@@ -273,7 +288,6 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         for (const { absoluteCheckUrl, status } of batchResults) {
           expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
         }
-      }
       }
     } catch (err) {
       throw err;
