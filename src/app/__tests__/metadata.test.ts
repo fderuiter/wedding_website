@@ -1,4 +1,4 @@
-import { generateMetadata } from '../metadata';
+import { generateMetadata, generateViewport } from '../metadata';
 
 
 jest.mock('@/lib/config', () => ({
@@ -10,7 +10,8 @@ jest.mock('@/lib/config', () => ({
     venueName: 'Test Venue',
     venueCity: 'TestCity',
     venueState: 'TS',
-    baseUrl: 'https://testsite.com'
+    baseUrl: 'https://testsite.com',
+    colorPrimary: '#B91C1C',
   })
 }));
 
@@ -35,9 +36,9 @@ describe('generateMetadata', () => {
       description: 'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.',
       images: [
         {
-          url: 'https://testsite.com/images/placeholder.png',
-          width: 1024,
-          height: 1024,
+          url: 'https://testsite.com/api/og',
+          width: 1200,
+          height: 630,
           alt: "A photo for TestBride and TestGroom's wedding.",
         },
       ],
@@ -48,9 +49,17 @@ describe('generateMetadata', () => {
       card: 'summary_large_image',
       title: "TestBride & TestGroom's Wedding",
       description: 'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.',
-      images: ['https://testsite.com/images/placeholder.png'],
+      images: ['https://testsite.com/api/og'],
     });
     expect(metadata.metadataBase?.href).toBe('https://testsite.com/');
   });
 });
+
+describe('generateViewport', () => {
+  it('populates themeColor from primary theme color config', async () => {
+    const viewport = await generateViewport();
+    expect(viewport.themeColor).toBe('#B91C1C');
+  });
+});
+
 

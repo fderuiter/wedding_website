@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { getAppConfig } from '@/lib/config';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
 import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
@@ -14,6 +14,13 @@ function interpolateKeywords(templateStr: string, config: any): string[] {
   return interpolated.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+export async function generateViewport(): Promise<Viewport> {
+  const config = await getAppConfig();
+  const themeColor = config.colorPrimary || '#B91C1C';
+  return {
+    themeColor,
+  };
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
@@ -22,7 +29,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const partner2 = config.partner2Name || config.groomName || '';
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : '';
 
-  const ogImageUrl = config.ogImageUrl || '/images/placeholder.png';
+  const rawOgImageUrl = config.ogImageUrl || '/api/og';
+  const ogImageUrl = rawOgImageUrl === '/images/placeholder.png' ? '/api/og' : rawOgImageUrl;
   const faviconUrl = config.faviconUrl || '/assets/favicon.png';
   const seoKeywords = config.seoKeywords || '';
 
@@ -62,7 +70,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: config.seoTitle || defaultTitle,
     description: config.seoDescription || defaultDescription,
     url: siteUrl,
-    ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${siteUrl}${ogImageUrl}`,
+    ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${siteUrl}${ogImageUrl.startsWith('/') ? ogImageUrl : `/${ogImageUrl}`}`,
     favicon: faviconUrl,
   };
 
@@ -110,4 +118,5 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(siteConfig.url),
   };
 }
+
 

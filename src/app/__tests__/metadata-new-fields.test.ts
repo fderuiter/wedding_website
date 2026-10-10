@@ -149,8 +149,8 @@ describe('generateMetadata - new SEO fields', () => {
       const metadata = await generateMetadata();
       const ogImages = (metadata.openGraph as any)?.images as any[];
 
-      // Falls back to '/images/placeholder.png'
-      expect(ogImages[0].url).toBe('https://example.com/images/placeholder.png');
+      // Falls back to '/api/og'
+      expect(ogImages[0].url).toBe('https://example.com/api/og');
     });
 
     it('includes og image alt text with bride and groom names', async () => {

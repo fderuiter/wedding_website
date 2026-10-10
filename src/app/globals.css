@@ -162,3 +162,43 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
   outline-color: #B91C1C !important;
   outline-offset: 2px !important;
 }
+
+@media print {
+  :root, .dark {
+    --color-primary: #000000 !important;
+    --color-secondary: #333333 !important;
+    --color-primary-light: #e5e7eb !important;
+    --color-secondary-light: #f3f4f6 !important;
+    --color-background: #ffffff !important;
+    --color-foreground: #000000 !important;
+    --color-border: #d1d5db !important;
+    --color-text-on-primary: #ffffff !important;
+    --color-text-on-secondary: #000000 !important;
+    --color-primary-text: #000000 !important;
+    --color-secondary-text: #333333 !important;
+    --background: #ffffff !important;
+    --foreground: #000000 !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, footer, nav, button, .skip-link, .no-print, [role="navigation"] {
+    display: none !important;
+  }
+
+  .card, [class*="card"], article, section {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border-color: #d1d5db !important;
+    box-shadow: none !important;
+  }
+
+  a {
+    color: #000000 !important;
+    text-decoration: underline !important;
+  }
+}
+
