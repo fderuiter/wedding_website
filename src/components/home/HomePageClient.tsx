@@ -11,6 +11,7 @@ import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatDate } from '@/utils/intl';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
+import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
 
 import { isFeatureEnabled } from '@/lib/modules';
 
@@ -84,6 +85,18 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
           </motion.section>
         );
       case 'details': {
+        const hasStructuredSchedule = contentNodes.some(
+          n => n.type === 'Schedule' || (n.type === 'Logistics' && (n.data as any)?.startTime) || (n.data as any)?.startTime
+        );
+
+        if (hasStructuredSchedule) {
+          return (
+            <motion.div key={feature.id} id={feature.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+              <InteractiveTimeline events={contentNodes} timezone={config.timezone} title={feature.title || 'Wedding Day Details'} />
+            </motion.div>
+          );
+        }
+
         const detailsNode = logisticsNodes.find(n => n.ceremonyTitle);
         if (!detailsNode) return (
           <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
