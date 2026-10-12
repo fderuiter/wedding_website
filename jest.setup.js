@@ -31,6 +31,47 @@ import path from 'node:path';
 
 // Provide standard crypto mock in Jest test environments:
 const nodeCrypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const testRequestStore = new AsyncLocalStorage();
+const globalFallbackStore = new Map();
+globalThis.globalFallbackStore = globalFallbackStore;
+
+function createCacheNode() {
+  return { o: new WeakMap(), p: new Map(), v: undefined, h: false };
+}
+
+jest.mock('react', () => {
+  const actualReact = jest.requireActual('react');
+  return {
+    ...actualReact,
+    cache: (fn) => {
+      return function (...args) {
+        const store = testRequestStore.getStore() || globalFallbackStore;
+        let fnMap = store.get(fn);
+        if (!fnMap) {
+          fnMap = createCacheNode();
+          store.set(fn, fnMap);
+        }
+        let node = fnMap;
+        for (const arg of args) {
+          const isObj = (typeof arg === 'object' && arg !== null) || typeof arg === 'function';
+          const map = isObj ? node.o : node.p;
+          let next = map.get(arg);
+          if (!next) {
+            next = createCacheNode();
+            map.set(arg, next);
+          }
+          node = next;
+        }
+        if (node.h) return node.v;
+        const res = fn.apply(this, args);
+        node.v = res;
+        node.h = true;
+        return res;
+      };
+    },
+  };
+});
 if (typeof globalThis !== 'undefined') {
   if (!globalThis.crypto || !globalThis.crypto.subtle) {
     globalThis.crypto = nodeCrypto.webcrypto;
@@ -121,6 +162,7 @@ beforeAll(() => {
   }
 });
 afterEach(() => {
+  globalFallbackStore.clear();
   if (process.env.LIVE_TESTS !== 'true') {
     server.resetHandlers();
   }
