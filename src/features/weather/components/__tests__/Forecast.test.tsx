@@ -126,4 +126,34 @@ describe('Forecast Component', () => {
     expect(screen.getByText('15%')).toBeInTheDocument();
     expect(screen.getByText('12 mph')).toBeInTheDocument();
   });
+
+  it('includes fallback 1 in scale-factor calculation', async () => {
+    const mockWeatherData = {
+      daily: {
+        time: ['2025-10-10'],
+        weathercode: [0],
+        temperature_2m_max: [70],
+        temperature_2m_min: [50],
+        apparent_temperature_max: [65],
+        precipitation_probability_max: [0],
+        wind_speed_10m_max: [5],
+      },
+    };
+
+    server.use(
+      http.get('/api/weather', () => {
+        return HttpResponse.json(mockWeatherData);
+      })
+    );
+
+    const { container } = render(<Forecast />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Clear sky')).toBeInTheDocument();
+    });
+
+    const icons = container.querySelectorAll('svg');
+    expect(icons.length).toBeGreaterThan(0);
+    expect(icons[0].getAttribute('style')).toContain('var(--scale-factor, 1)');
+  });
 });

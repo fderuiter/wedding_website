@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiClient } from '@/lib/apiClient';
 import { generateSecureUUID } from '@/utils/uuid';
 
+const EMPTY_ARRAY: readonly any[] = Object.freeze([]);
+
 interface UseEntityOrchestrationOptions {
   queryKey: string[];
   endpoint: string;
@@ -18,7 +20,7 @@ export function useEntityOrchestration<T extends { id: string }>({
   const queryClient = useQueryClient();
 
   const {
-    data = [],
+    data = EMPTY_ARRAY as unknown as T[],
     isLoading,
     isError,
     error,
