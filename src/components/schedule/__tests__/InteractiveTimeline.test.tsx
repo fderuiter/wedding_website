@@ -207,4 +207,42 @@ describe('InteractiveTimeline Component', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
+
+  it('renders EmptyState and hides timeline border when active category has no matching events', () => {
+    const { rerender, container } = render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
+
+    // Select Rehearsal category
+    const rehearsalTab = screen.getByRole('tab', { name: 'Rehearsal' });
+    fireEvent.click(rehearsalTab);
+    expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
+
+    // Rerender with events omitting Rehearsal category
+    const eventsWithoutRehearsal = [sampleEvents[1], sampleEvents[2]];
+    rerender(<InteractiveTimeline events={eventsWithoutRehearsal} timezone="UTC" />);
+
+    // EmptyState should be displayed
+    expect(screen.getByText('No items found')).toBeInTheDocument();
+    expect(screen.getByText('No schedule events found for "Rehearsal".')).toBeInTheDocument();
+
+    // Clear filter button should be rendered
+    const clearButton = screen.getByRole('button', { name: 'Clear filter' });
+    expect(clearButton).toBeInTheDocument();
+
+    // Vertical timeline border container should not be rendered
+    const timelineBorderContainer = container.querySelector('.border-l-2');
+    expect(timelineBorderContainer).toBeNull();
+
+    // Category tabs should remain visible
+    expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Ceremony' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Reception' })).toBeInTheDocument();
+
+    // Click "Clear filter" to reset category filter to "All"
+    fireEvent.click(clearButton);
+
+    // Schedule cards should reappear and EmptyState should disappear
+    expect(screen.queryByText('No items found')).not.toBeInTheDocument();
+    expect(screen.getByText('Wedding Ceremony')).toBeInTheDocument();
+    expect(screen.getByText('Evening Reception')).toBeInTheDocument();
+  });
 });
