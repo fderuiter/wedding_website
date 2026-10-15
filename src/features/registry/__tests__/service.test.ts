@@ -1,22 +1,24 @@
-import type { RegistryItem, IRegistryRepository } from '../types';
-import { RegistryService } from '../service';
+import type { RegistryItem } from '../types';
+import { registryService } from '../service';
+import { registryRepository } from '../repository';
 
-// Mock the repository interface
-const mockRepository: jest.Mocked<IRegistryRepository> = {
-  getAllItems: jest.fn(),
-  getItemById: jest.fn(),
-  createItem: jest.fn(),
-  updateItem: jest.fn(),
-  deleteItem: jest.fn(),
-  contributeToItem: jest.fn(),
-};
+jest.mock('../repository', () => ({
+  registryRepository: {
+    getAllItems: jest.fn(),
+    getItemById: jest.fn(),
+    createItem: jest.fn(),
+    updateItem: jest.fn(),
+    deleteItem: jest.fn(),
+    contributeToItem: jest.fn(),
+  },
+  createRegistryRepository: jest.fn(),
+}));
 
-describe('RegistryService', () => {
-  let registryService: RegistryService;
+const mockRepository = registryRepository as jest.Mocked<typeof registryRepository>;
 
+describe('registryService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    registryService = new RegistryService(mockRepository);
   });
 
   describe('getAllItems', () => {
