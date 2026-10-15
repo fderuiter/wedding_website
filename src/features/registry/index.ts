@@ -20,4 +20,3 @@ export { GET as registryItemByIdGET, PUT as registryItemByIdPUT, DELETE as regis
 export { POST as registryScrapePOST } from './api/scrape';
 export { GuestSessionProvider, GuestSessionContext, useGuestSession } from './context/GuestSessionContext';
 export type { GuestSessionState, GuestSessionContextType } from './context/GuestSessionContext';
-export { useShareItem } from './hooks/useShareItem';
