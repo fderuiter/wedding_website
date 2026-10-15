@@ -197,7 +197,6 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        let anchors: (string | null)[] = [];
 
         const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
         expect(response).not.toBeNull();
@@ -222,9 +221,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
         );
         console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-        anchors = hrefs;
 
-        for (const href of anchors) {
+        for (const href of hrefs) {
           if (!href) continue;
 
           // Skip non-navigational links or fragments
