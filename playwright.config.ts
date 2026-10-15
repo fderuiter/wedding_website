@@ -33,6 +33,8 @@ export default defineConfig({
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
         '--no-zygote',
         '--js-flags=--max-old-space-size=4096',
       ],
