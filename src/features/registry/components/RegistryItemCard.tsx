@@ -9,16 +9,8 @@ import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { apiClient } from '@/lib/apiClient';
-import { useToast } from '@/components/ui/ToastProvider';
+import { useShareItem } from '../hooks/useShareItem';
 import { useGuestSession } from '../context/GuestSessionContext';
-
-const useOptionalToast = () => {
-  try {
-    return useToast();
-  } catch {
-    return null;
-  }
-};
 
 /**
  * @interface RegistryItemCardProps
@@ -59,8 +51,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   const [codeValidationError, setCodeValidationError] = useState<string | null>(null);
   const [isCodeLocked, setIsCodeLocked] = useState(false);
 
-  const [copied, setCopied] = useState(false);
-  const toastContext = useOptionalToast();
+  const { handleShare, copied } = useShareItem(item);
 
   useEffect(() => {
     if (isSessionVerified && sessionCode) {
@@ -69,61 +60,6 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       setIsCodeLocked(true);
     }
   }, [isSessionVerified, sessionCode, sessionGuestName]);
-
-  const handleShare = async () => {
-    const permalink = typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?item=${encodeURIComponent(item.id)}`
-      : `?item=${encodeURIComponent(item.id)}`;
-
-    let success = false;
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share({
-          title: item.name,
-          text: `Check out ${item.name} on our wedding registry!`,
-          url: permalink,
-        });
-        success = true;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') {
-          return;
-        }
-      }
-    }
-
-    if (!success && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(permalink);
-        success = true;
-      } catch {
-        // Fallback
-      }
-    }
-
-    if (!success && typeof document !== 'undefined') {
-      try {
-        const textarea = document.createElement('textarea');
-        textarea.value = permalink;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        success = true;
-      } catch {
-        // Fallback failed
-      }
-    }
-
-    if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toastContext?.addToast('Link copied to clipboard!', 'success');
-    } else if (toastContext) {
-      toastContext.addToast('Failed to copy link', 'error');
-    }
-  };
 
   const handleCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.toUpperCase();

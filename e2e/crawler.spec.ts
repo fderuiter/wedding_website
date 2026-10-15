@@ -56,15 +56,15 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const guestCookieValue = generateGuestCookieValue();
 
     const guestContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
-    await guestContext.addCookies([
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://127.0.0.1:3000',
-      }
-    ]);
-
     try {
+      await guestContext.addCookies([
+        {
+          name: 'guest_auth',
+          value: guestCookieValue,
+          url: 'http://127.0.0.1:3000',
+        }
+      ]);
+
       for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
         const page = await guestContext.newPage();
