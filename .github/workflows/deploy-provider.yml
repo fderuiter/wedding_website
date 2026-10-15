@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve Artifact Image URI
         id: resolve
@@ -74,13 +74,13 @@ jobs:
 
       - name: Deploy to Google Cloud Run Adapter
         if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Execute Cloud Run Deployment
         if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@251330ba9a8a34bfbc1622895f42e1d53fd14522 # v2
         with:
           service: wedding-website
           image: ${{ steps.resolve.outputs.image_uri }}
