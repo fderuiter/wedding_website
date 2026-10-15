@@ -104,7 +104,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
 
-    const setupContextRoutes = async (ctx: any) => {
+    const setupContext = async () => {
+      const ctx = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
       await ctx.addCookies([
         {
           name: 'admin_auth',
@@ -118,15 +119,16 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       ]);
 
-      await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: transparentPng }));
-      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
-      await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-      // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
+      // Catch-all fallback for third-party requests
       await ctx.route((url: any) => {
-        const host = url.host;
+        const host = url.host || url.hostname;
         return host !== '127.0.0.1:3000' && host !== 'localhost:3000' && host !== '127.0.0.1' && host !== 'localhost';
       }, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
+
+      await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '// dummy js' }));
+      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
       await ctx.route('**/api/weather', async (route: any) => {
         await route.fulfill({
@@ -182,11 +184,9 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           ],
         });
       });
-    };
 
-    const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-    await setupContextRoutes(pageContext);
-    const page = await pageContext.newPage();
+      return ctx;
+    };
 
     try {
       for (const route of START_ROUTES) {
@@ -194,74 +194,89 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        let anchors: (string | null)[] = [];
+        let pageContext = await setupContext();
+        let page = await pageContext.newPage();
 
-        const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-        expect(response).not.toBeNull();
-        expect(response!.status()).toBe(200);
+        try {
+          let response: any = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+              if (response) break;
+            } catch (gotoErr: any) {
+              console.warn(`[Retry ${attempt + 1}] page.goto(${targetUrl}) failed: ${gotoErr?.message}`);
+              await page.close().catch(() => {});
+              await pageContext.close().catch(() => {});
+              await new Promise(r => setTimeout(r, 500));
+              pageContext = await setupContext();
+              page = await pageContext.newPage();
+            }
+          }
+          expect(response).not.toBeNull();
+          expect(response!.status()).toBe(200);
 
-        // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-        if (route !== '/admin/login') {
-          const currentUrl = new URL(page.url());
-          expect(currentUrl.pathname).not.toBe('/admin/login');
+          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
+          if (route !== '/admin/login') {
+            const currentUrl = new URL(page.url());
+            expect(currentUrl.pathname).not.toBe('/admin/login');
+          }
+
+          // Check for generic application server or DB errors in page content
+          const content = await page.content();
+          expect(content).not.toContain('Internal Server Error');
+          expect(content).not.toContain('500 Error');
+          expect(content).not.toContain('An unhandled error occurred');
+
+          visitedUrls.add(targetUrl);
+
+          // Parse and extract all anchor links from the navigated page in a single CDP call
+          const hrefs = await page.evaluate(() => 
+            Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+          );
+          console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+
+          for (const href of hrefs) {
+            if (!href) continue;
+
+            // Skip non-navigational links or fragments
+            if (
+              href.startsWith('#') ||
+              href.startsWith('mailto:') ||
+              href.startsWith('tel:') ||
+              href.startsWith('javascript:') ||
+              href.startsWith('data:') ||
+              href.startsWith('vbscript:')
+            ) {
+              continue;
+            }
+
+            let resolvedUrl: URL;
+            try {
+              resolvedUrl = new URL(href, targetUrl);
+            } catch {
+              continue;
+            }
+
+            if (resolvedUrl.origin !== new URL(baseURL).origin) {
+              continue;
+            }
+
+            if (resolvedUrl.pathname.includes('/_next/')) {
+              continue;
+            }
+
+            let normalizedPath = resolvedUrl.pathname;
+            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+              normalizedPath = normalizedPath.slice(0, -1);
+            }
+
+            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+            checkedLinks.add(absoluteCheckUrl);
+          }
+        } finally {
+          await page.close().catch(() => {});
+          await pageContext.close().catch(() => {});
         }
-
-        // Check for generic application server or DB errors in page content
-        const content = await page.content();
-        expect(content).not.toContain('Internal Server Error');
-        expect(content).not.toContain('500 Error');
-        expect(content).not.toContain('An unhandled error occurred');
-
-        visitedUrls.add(targetUrl);
-
-        // Parse and extract all anchor links from the navigated page in a single CDP call
-        const hrefs = await page.evaluate(() => 
-          Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-        );
-        console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-        anchors = hrefs;
-
-        for (const href of anchors) {
-          if (!href) continue;
-
-          // Skip non-navigational links or fragments
-          if (
-            href.startsWith('#') ||
-            href.startsWith('mailto:') ||
-            href.startsWith('tel:') ||
-            href.startsWith('javascript:') ||
-            href.startsWith('data:') ||
-            href.startsWith('vbscript:')
-          ) {
-            continue;
-          }
-
-          let resolvedUrl: URL;
-          try {
-            resolvedUrl = new URL(href, targetUrl);
-          } catch {
-            continue;
-          }
-
-          if (resolvedUrl.origin !== new URL(baseURL).origin) {
-            continue;
-          }
-
-          if (resolvedUrl.pathname.includes('/_next/')) {
-            continue;
-          }
-
-          let normalizedPath = resolvedUrl.pathname;
-          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-            normalizedPath = normalizedPath.slice(0, -1);
-          }
-
-          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-          checkedLinks.add(absoluteCheckUrl);
-        }
-
-        // Reset page state to release memory and unmount active React components
-        await page.goto('about:blank');
       }
 
       console.log(`Checking ${checkedLinks.size} unique internal links...`);
@@ -289,8 +304,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       }
     } finally {
-      await page.close();
-      await pageContext.close();
+      // Cleanup completed in inner loops
     }
   });
 
