@@ -6,7 +6,7 @@ import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Label, Input, Textarea, Checkbox } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -71,6 +71,7 @@ export default function WeddingPartyDashboardPage() {
     name: currentMember.name || '',
     role: currentMember.role || '',
     bio: currentMember.bio || '',
+    side: currentMember.side || null,
     photo: {
       url: currentMember.photoUrl || (currentMember.photo as any)?.url || '',
       altText: currentMember.photoAlt || (currentMember.photo as any)?.altText || '',
@@ -104,7 +105,7 @@ export default function WeddingPartyDashboardPage() {
           <h1 className="text-3xl font-extrabold text-primary">Wedding Party Studio</h1>
           <div>
             <Button onClick={() => { 
-              setCurrentMember({ name: '', role: '', bio: '', photoUrl: '', link: '', order: 0 }); 
+              setCurrentMember({ name: '', role: '', bio: '', side: undefined, photoUrl: '', link: '', order: 0 }); 
               setIsEditing(true); 
             }}>Add New Member</Button>
           </div>
@@ -121,6 +122,18 @@ export default function WeddingPartyDashboardPage() {
               <FormGroup>
                 <Label>Role</Label>
                 <Input type="text" value={currentMember.role || ''} onChange={e => setCurrentMember({...currentMember, role: e.target.value})} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Side</Label>
+                <Select
+                  value={currentMember.side || ''}
+                  onChange={e => setCurrentMember({...currentMember, side: (e.target.value || null) as any})}
+                >
+                  <option value="">None / Joint</option>
+                  <option value="BRIDE">Bride</option>
+                  <option value="GROOM">Groom</option>
+                  <option value="JOINT">Joint</option>
+                </Select>
               </FormGroup>
               <FormGroup className="md:col-span-2">
                 <Label>Bio</Label>
