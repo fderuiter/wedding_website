@@ -107,4 +107,104 @@ describe('InteractiveTimeline Component', () => {
     const { container } = render(<InteractiveTimeline events={[]} timezone="UTC" />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('assigns roving tabIndex to category tabs', () => {
+    render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
+
+    const allTab = screen.getByRole('tab', { name: 'All' });
+    const rehearsalTab = screen.getByRole('tab', { name: 'Rehearsal' });
+    const ceremonyTab = screen.getByRole('tab', { name: 'Ceremony' });
+    const receptionTab = screen.getByRole('tab', { name: 'Reception' });
+
+    expect(allTab).toHaveAttribute('tabindex', '0');
+    expect(rehearsalTab).toHaveAttribute('tabindex', '-1');
+    expect(ceremonyTab).toHaveAttribute('tabindex', '-1');
+    expect(receptionTab).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.click(ceremonyTab);
+
+    expect(allTab).toHaveAttribute('tabindex', '-1');
+    expect(ceremonyTab).toHaveAttribute('tabindex', '0');
+  });
+
+  it('handles arrow, Home, and End key navigation across category tabs', () => {
+    render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
+
+    const allTab = screen.getByRole('tab', { name: 'All' });
+    const rehearsalTab = screen.getByRole('tab', { name: 'Rehearsal' });
+    const ceremonyTab = screen.getByRole('tab', { name: 'Ceremony' });
+    const receptionTab = screen.getByRole('tab', { name: 'Reception' });
+
+    // ArrowRight: All -> Rehearsal
+    fireEvent.keyDown(allTab, { key: 'ArrowRight' });
+    expect(rehearsalTab).toHaveFocus();
+    expect(rehearsalTab).toHaveAttribute('tabindex', '0');
+    expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
+    expect(screen.queryByText('Wedding Ceremony')).not.toBeInTheDocument();
+
+    // ArrowDown: Rehearsal -> Ceremony
+    fireEvent.keyDown(rehearsalTab, { key: 'ArrowDown' });
+    expect(ceremonyTab).toHaveFocus();
+    expect(ceremonyTab).toHaveAttribute('tabindex', '0');
+
+    // End: Ceremony -> Reception
+    fireEvent.keyDown(ceremonyTab, { key: 'End' });
+    expect(receptionTab).toHaveFocus();
+    expect(receptionTab).toHaveAttribute('tabindex', '0');
+
+    // ArrowRight (wrapping): Reception -> All
+    fireEvent.keyDown(receptionTab, { key: 'ArrowRight' });
+    expect(allTab).toHaveFocus();
+    expect(allTab).toHaveAttribute('tabindex', '0');
+
+    // ArrowLeft (wrapping): All -> Reception
+    fireEvent.keyDown(allTab, { key: 'ArrowLeft' });
+    expect(receptionTab).toHaveFocus();
+
+    // Home: Reception -> All
+    fireEvent.keyDown(receptionTab, { key: 'Home' });
+    expect(allTab).toHaveFocus();
+    expect(allTab).toHaveAttribute('tabindex', '0');
+  });
+
+  it('maintains ARIA controls and labelledby linkages between tab buttons and tabpanel', () => {
+    render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
+
+    const allTab = screen.getByRole('tab', { name: 'All' });
+    const ceremonyTab = screen.getByRole('tab', { name: 'Ceremony' });
+
+    expect(allTab).toHaveAttribute('id', 'timeline-tab-all');
+    expect(allTab).toHaveAttribute('aria-controls', 'timeline-events-panel');
+    expect(ceremonyTab).toHaveAttribute('id', 'timeline-tab-ceremony');
+    expect(ceremonyTab).toHaveAttribute('aria-controls', 'timeline-events-panel');
+
+    const tabPanel = screen.getByRole('tabpanel');
+    expect(tabPanel).toHaveAttribute('id', 'timeline-events-panel');
+    expect(tabPanel).toHaveAttribute('aria-labelledby', 'timeline-tab-all');
+    expect(tabPanel).toHaveAttribute('tabindex', '0');
+
+    fireEvent.click(ceremonyTab);
+    expect(tabPanel).toHaveAttribute('aria-labelledby', 'timeline-tab-ceremony');
+  });
+
+  it('announces live status updates for filter changes', () => {
+    render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
+
+    const statusRegion = screen.getByRole('status');
+    expect(statusRegion).toHaveAttribute('aria-live', 'polite');
+    expect(statusRegion).toHaveTextContent('Showing 3 events for All categories');
+
+    const ceremonyTab = screen.getByRole('tab', { name: 'Ceremony' });
+    fireEvent.click(ceremonyTab);
+
+    expect(statusRegion).toHaveTextContent('Showing 1 event for Ceremony');
+  });
+
+  it('omits filter tabs and status region when only one category exists', () => {
+    const singleCategoryEvents: ContentNodeDTO[] = [sampleEvents[0]];
+    render(<InteractiveTimeline events={singleCategoryEvents} timezone="UTC" />);
+
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });

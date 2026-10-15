@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import type { ContentNodeDTO } from '@/features/content/schemas';
 import AddToCalendar from '@/components/AddToCalendar';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
@@ -22,6 +22,17 @@ interface InteractiveTimelineProps {
   timezone?: string;
   title?: string;
   className?: string;
+}
+
+/**
+ * Slugifies a category name for consistent HTML element IDs.
+ */
+function slugifyCategory(cat: string): string {
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /**
@@ -131,10 +142,13 @@ export default function InteractiveTimeline({
         if (tag.trim()) set.add(tag.trim());
       });
     });
-    return ['All', ...Array.from(set)];
+    return set.size > 1 ? ['All', ...Array.from(set)] : ['All'];
   }, [normalizedEvents]);
 
   const [activeCategory, setActiveCategory] = useState<string>('All');
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const activeCategorySlug = useMemo(() => slugifyCategory(activeCategory), [activeCategory]);
 
   // Filter events based on active category
   const filteredEvents = useMemo(() => {
@@ -144,31 +158,76 @@ export default function InteractiveTimeline({
     );
   }, [normalizedEvents, activeCategory]);
 
+  const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
+    let targetIndex: number | null = null;
+
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        targetIndex = (index + 1) % categories.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        targetIndex = (index - 1 + categories.length) % categories.length;
+        break;
+      case 'Home':
+        targetIndex = 0;
+        break;
+      case 'End':
+        targetIndex = categories.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    e.preventDefault();
+    const targetCat = categories[targetIndex];
+    setActiveCategory(targetCat);
+    tabRefs.current[targetIndex]?.focus();
+  };
+
   if (normalizedEvents.length === 0) {
     return null;
   }
+
+  const categoryLabelText = activeCategory.toLowerCase() === 'all' ? 'All categories' : activeCategory;
 
   return (
     <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
       <h2 className="text-center text-4xl font-bold text-primary mb-8">{title}</h2>
 
+      {/* ARIA Live Status Region for Filter Updates */}
+      {categories.length > 1 && (
+        <div role="status" aria-live="polite" className="sr-only">
+          {`Showing ${filteredEvents.length} event${filteredEvents.length === 1 ? '' : 's'} for ${categoryLabelText}`}
+        </div>
+      )}
+
       {/* Category Filter Tabs */}
       {categories.length > 1 && (
         <div className="flex flex-wrap justify-center gap-2 mb-10" role="tablist" aria-label="Schedule category filters">
-          {categories.map((cat) => {
+          {categories.map((cat, index) => {
             const isActive = activeCategory.toLowerCase() === cat.toLowerCase();
+            const catSlug = slugifyCategory(cat);
             return (
               <button
                 key={cat}
+                ref={(el) => {
+                  tabRefs.current[index] = el;
+                }}
+                id={`timeline-tab-${catSlug}`}
                 type="button"
                 role="tab"
                 aria-selected={isActive}
+                aria-controls="timeline-events-panel"
+                tabIndex={isActive ? 0 : -1}
                 className={`px-5 py-2 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                   isActive
                     ? 'bg-primary text-white shadow-md'
                     : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
                 onClick={() => setActiveCategory(cat)}
+                onKeyDown={(e) => handleKeyDown(e, index)}
               >
                 {cat}
               </button>
@@ -178,7 +237,13 @@ export default function InteractiveTimeline({
       )}
 
       {/* Timeline Event Cards */}
-      <div className="relative border-l-2 border-primary/30 dark:border-primary/40 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10">
+      <div
+        id="timeline-events-panel"
+        role="tabpanel"
+        aria-labelledby={`timeline-tab-${activeCategorySlug}`}
+        tabIndex={0}
+        className="relative border-l-2 border-primary/30 dark:border-primary/40 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10"
+      >
         {filteredEvents.map((event) => {
           const calendarEvent = formatScheduleEventToCalendarEvent(
             {
