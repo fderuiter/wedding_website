@@ -99,7 +99,6 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const guestCookieValue = generateGuestCookieValue();
 
     const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-    const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
 
     const visitedUrls = new Set<string>();
     const checkedLinks = new Set<string>();

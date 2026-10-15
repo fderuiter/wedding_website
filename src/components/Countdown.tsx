@@ -38,21 +38,25 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     return timeLeft;
   }, [weddingDate]);
 
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft());
+  const [isMounted, setIsMounted] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>({});
 
   useEffect(() => {
+    setIsMounted(true);
+    setTimeLeft(calculateTimeLeft());
+
     let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const calculateAndSetTimeout = () => {
       const now = new Date();
       const midnight = new Date();
       midnight.setHours(24, 0, 0, 0);
-      const timeToMidnight = midnight.getTime() - now.getTime();
+      const delay = Math.max(1000, midnight.getTime() - now.getTime());
 
       timerId = setTimeout(() => {
         setTimeLeft(calculateTimeLeft());
         calculateAndSetTimeout(); // Recalculate for the next day
-      }, timeToMidnight);
+      }, delay);
     };
 
     calculateAndSetTimeout();
@@ -66,25 +70,33 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
 
   const timerComponents: React.ReactNode[] = [];
 
-  Object.keys(timeLeft).forEach((interval) => {
-    const value = timeLeft[interval as keyof TimeLeft];
-    if (!value) {
-      return;
-    }
+  if (isMounted) {
+    Object.keys(timeLeft).forEach((interval) => {
+      const value = timeLeft[interval as keyof TimeLeft];
+      if (!value) {
+        return;
+      }
 
-    timerComponents.push(
-      <span key={interval}>
-        {value} {value === 1 ? interval.slice(0, -1) : interval}{' '}
-      </span>
-    );
-  });
+      timerComponents.push(
+        <span key={interval}>
+          {value} {value === 1 ? interval.slice(0, -1) : interval}{' '}
+        </span>
+      );
+    });
+  }
 
-  const daysRemaining = timeLeft.days || 0;
-  const screenReaderText = `${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} to go!`;
+  const daysRemaining = isMounted ? (timeLeft.days || 0) : 0;
+  const screenReaderText = isMounted
+    ? `${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} to go!`
+    : `${formatDate(weddingDate)}`;
 
   return (
     <div>
-      {timerComponents.length ? (
+      {!isMounted ? (
+        <span className="text-2xl font-bold text-primary dark:text-primary-text">
+          {formatDate(weddingDate)}
+        </span>
+      ) : timerComponents.length ? (
         <div
           className="text-2xl font-bold text-primary dark:text-primary-text"
           role="timer"
