@@ -187,8 +187,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       return ctx;
     };
 
-    const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-    await setupContextRoutes(pageContext);
+    const pageContext = await setupContext();
     const page = await pageContext.newPage();
 
     try {
@@ -197,28 +196,6 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        const pageContext = await setupContext();
-        const page = await pageContext.newPage();
-        try {
-          const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-          expect(response).not.toBeNull();
-          expect(response!.status()).toBe(200);
-
-          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-          if (route !== '/admin/login') {
-            const currentUrl = new URL(page.url());
-            expect(currentUrl.pathname).not.toBe('/admin/login');
-          }
-
-          // Check for generic application server or DB errors in page content
-          const content = await page.content();
-          expect(content).not.toContain('Internal Server Error');
-          expect(content).not.toContain('500 Error');
-          expect(content).not.toContain('An unhandled error occurred');
-
-          visitedUrls.add(targetUrl);
-        let anchors: (string | null)[] = [];
-
         const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
         expect(response).not.toBeNull();
         expect(response!.status()).toBe(200);
@@ -242,9 +219,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
         );
         console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-        anchors = hrefs;
 
-        for (const href of anchors) {
+        for (const href of hrefs) {
           if (!href) continue;
 
           // Skip non-navigational links or fragments
