@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '../types';
