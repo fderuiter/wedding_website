@@ -188,16 +188,17 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       });
     };
 
-    for (const route of START_ROUTES) {
-      const targetUrl = new URL(route, baseURL).toString();
-      if (visitedUrls.has(targetUrl)) continue;
+    const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+    await setupContextRoutes(pageContext);
+    const page = await pageContext.newPage();
 
-      console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-      const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-      await setupContextRoutes(pageContext);
-      const page = await pageContext.newPage();
+    try {
+      for (const route of START_ROUTES) {
+        const targetUrl = new URL(route, baseURL).toString();
+        if (visitedUrls.has(targetUrl)) continue;
 
-      try {
+        console.log(`[Authenticated] Navigating to: ${targetUrl}`);
+
         const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
         expect(response).not.toBeNull();
         expect(response!.status()).toBe(200);
@@ -260,35 +261,38 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
           checkedLinks.add(absoluteCheckUrl);
         }
-      } finally {
-        await page.close();
-        await pageContext.close();
-      }
-    }
 
-    console.log(`Checking ${checkedLinks.size} unique internal links...`);
-    const linksArray = Array.from(checkedLinks);
-    const batchSize = 5;
-    for (let i = 0; i < linksArray.length; i += batchSize) {
-      const batch = linksArray.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map(async (absoluteCheckUrl) => {
-          console.log(`Checking link: ${absoluteCheckUrl}`);
-          const linkResponse = await fetch(absoluteCheckUrl, {
-            headers: {
-              Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-            },
-            signal: AbortSignal.timeout(15000),
-          });
-          const status = linkResponse.status;
-          await linkResponse.arrayBuffer();
-          return { absoluteCheckUrl, status };
-        })
-      );
-
-      for (const { absoluteCheckUrl, status } of batchResults) {
-        expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+        // Reset page state to release memory and unmount active React components
+        await page.goto('about:blank');
       }
+
+      console.log(`Checking ${checkedLinks.size} unique internal links...`);
+      const linksArray = Array.from(checkedLinks);
+      const batchSize = 5;
+      for (let i = 0; i < linksArray.length; i += batchSize) {
+        const batch = linksArray.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (absoluteCheckUrl) => {
+            console.log(`Checking link: ${absoluteCheckUrl}`);
+            const linkResponse = await fetch(absoluteCheckUrl, {
+              headers: {
+                Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+              },
+              signal: AbortSignal.timeout(15000),
+            });
+            const status = linkResponse.status;
+            await linkResponse.arrayBuffer();
+            return { absoluteCheckUrl, status };
+          })
+        );
+
+        for (const { absoluteCheckUrl, status } of batchResults) {
+          expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+        }
+      }
+    } finally {
+      await page.close().catch(() => {});
+      await pageContext.close().catch(() => {});
     }
   });
 
