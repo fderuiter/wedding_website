@@ -93,7 +93,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     }
   });
 
-  test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ browser }) => {
+  test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ page, context }) => {
     test.setTimeout(180000);
     const cookieValue = generateAdminCookieValue();
     const guestCookieValue = generateGuestCookieValue();
@@ -105,134 +105,105 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
 
-    const setupContextRoutes = async (ctx: any) => {
-      await ctx.addCookies([
-        {
-          name: 'admin_auth',
-          value: cookieValue,
-          url: 'http://127.0.0.1:3000',
+    await context.addCookies([
+      {
+        name: 'admin_auth',
+        value: cookieValue,
+        url: 'http://127.0.0.1:3000',
+      },
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://127.0.0.1:3000',
+      }
+    ]);
+
+    // Fallback for any other external third-party requests (registered first so specific handlers registered below take precedence)
+    await context.route((url: URL) => {
+      const hostname = url.hostname;
+      return hostname !== '127.0.0.1' && hostname !== 'localhost';
+    }, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
+
+    await context.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
+    await context.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+    await context.route(/cdn\.jsdelivr\.net|unpkg\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    await context.route(/open-meteo\.com/, (route: any) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        daily: {
+          time: ['2025-10-10'],
+          weathercode: [0],
+          temperature_2m_max: [75],
+          temperature_2m_min: [55],
+          apparent_temperature_max: [75],
+          precipitation_probability_max: [0],
+          wind_speed_10m_max: [5],
         },
-        {
-          name: 'guest_auth',
-          value: guestCookieValue,
-          url: 'http://127.0.0.1:3000',
-        }
-      ]);
+      }),
+    }));
 
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
-      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
-      await ctx.route(/cdn\.jsdelivr\.net|unpkg\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-
-      // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
-      await ctx.route((url: any) => {
-        const host = url.host;
-        return host !== '127.0.0.1:3000' && host !== 'localhost:3000' && host !== '127.0.0.1' && host !== 'localhost';
-      }, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
-
-      await ctx.route('**/api/weather', async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            daily: {
-              time: ['2025-10-10'],
-              weathercode: [0],
-              temperature_2m_max: [75],
-              temperature_2m_min: [55],
-              apparent_temperature_max: [75],
-              precipitation_probability_max: [0],
-              wind_speed_10m_max: [5],
-            },
-          }),
-        });
+    await context.route('**/api/weather', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          daily: {
+            time: ['2025-10-10'],
+            weathercode: [0],
+            temperature_2m_max: [75],
+            temperature_2m_min: [55],
+            apparent_temperature_max: [75],
+            precipitation_probability_max: [0],
+            wind_speed_10m_max: [5],
+          },
+        }),
       });
+    });
 
-      await ctx.route('**/api/registry/items', async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([]),
-        });
+    await context.route('**/api/registry/items', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
       });
-    };
+    });
 
     for (const route of START_ROUTES) {
       const targetUrl = new URL(route, baseURL).toString();
       if (visitedUrls.has(targetUrl)) continue;
 
       console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-      let anchors: (string | null)[] = [];
-      const routeContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-      await setupContextRoutes(routeContext);
-      let page = await routeContext.newPage();
-
+      let response;
       try {
-        let response;
-        try {
-          response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-        } catch (gotoError: any) {
-          if (
-            gotoError?.message?.includes('net::ERR_ABORTED') ||
-            gotoError?.message?.includes('Page crashed') ||
-            gotoError?.message?.includes('Target closed')
-          ) {
-            await page.close().catch(() => {});
-            page = await routeContext.newPage();
-            response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-          } else {
-            throw gotoError;
-          }
-        }
-
-        expect(response).not.toBeNull();
-        expect(response!.status()).toBe(200);
-
-        // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-        if (route !== '/admin/login') {
-          const currentUrl = new URL(page.url());
-          expect(currentUrl.pathname).not.toBe('/admin/login');
-        }
-
-        // Check for generic application server or DB errors in page content
-        let content = '';
-        try {
-          content = await page.content();
-        } catch (contentErr: any) {
-          if (contentErr?.message?.includes('Target crashed') || contentErr?.message?.includes('Page crashed')) {
-            const reqResp = await routeContext.request.get(targetUrl);
-            content = await reqResp.text();
-          } else {
-            throw contentErr;
-          }
-        }
-        expect(content).not.toContain('Internal Server Error');
-        expect(content).not.toContain('500 Error');
-        expect(content).not.toContain('An unhandled error occurred');
-
-        visitedUrls.add(targetUrl);
-
-        // Parse and extract all anchor links from the navigated page
-        let hrefs: (string | null)[] = [];
-        try {
-          hrefs = await page.evaluate(() => 
-            Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-          );
-        } catch {
-          const hrefMatches = content.matchAll(/href="([^"]+)"/g);
-          hrefs = Array.from(hrefMatches, m => m[1]);
-        }
-        console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-        anchors = hrefs;
-      } finally {
-        await page.close().catch(() => {});
-        await routeContext.close().catch(() => {});
+        response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+      } catch {
+        response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
       }
 
-      for (const href of anchors) {
+      expect(response).not.toBeNull();
+      expect(response!.status()).toBe(200);
+
+      if (route !== '/admin/login') {
+        const currentUrl = new URL(page.url());
+        expect(currentUrl.pathname).not.toBe('/admin/login');
+      }
+
+      const content = await page.content();
+      expect(content).not.toContain('Internal Server Error');
+      expect(content).not.toContain('500 Error');
+      expect(content).not.toContain('An unhandled error occurred');
+
+      visitedUrls.add(targetUrl);
+
+      const hrefs = await page.evaluate(() => 
+        Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+      );
+      console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+
+      for (const href of hrefs) {
         if (!href) continue;
 
-        // Skip non-navigational links or fragments
         if (
           href.startsWith('#') ||
           href.startsWith('mailto:') ||
@@ -272,30 +243,25 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     console.log(`Checking ${checkedLinks.size} unique internal links...`);
     const linksArray = Array.from(checkedLinks);
     const batchSize = 5;
-    const linkCheckContext = await browser.newContext({ baseURL });
-    try {
-      for (let i = 0; i < linksArray.length; i += batchSize) {
-        const batch = linksArray.slice(i, i + batchSize);
-        const batchResults = await Promise.all(
-          batch.map(async (absoluteCheckUrl) => {
-            console.log(`Checking link: ${absoluteCheckUrl}`);
-            const linkResponse = await linkCheckContext.request.get(absoluteCheckUrl, {
-              headers: {
-                Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-              },
-              timeout: 15000,
-            });
-            const status = linkResponse.status();
-            return { absoluteCheckUrl, status };
-          })
-        );
+    for (let i = 0; i < linksArray.length; i += batchSize) {
+      const batch = linksArray.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (absoluteCheckUrl) => {
+          console.log(`Checking link: ${absoluteCheckUrl}`);
+          const linkResponse = await context.request.get(absoluteCheckUrl, {
+            headers: {
+              Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+            },
+            timeout: 15000,
+          });
+          const status = linkResponse.status();
+          return { absoluteCheckUrl, status };
+        })
+      );
 
-        for (const { absoluteCheckUrl, status } of batchResults) {
-          expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
-        }
+      for (const { absoluteCheckUrl, status } of batchResults) {
+        expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
       }
-    } finally {
-      await linkCheckContext.close().catch(() => {});
     }
   });
 
