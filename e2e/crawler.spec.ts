@@ -55,8 +55,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
 
-    const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
-    await testContext.addCookies([
+    const guestContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    await guestContext.addCookies([
       {
         name: 'guest_auth',
         value: guestCookieValue,
@@ -99,6 +99,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const guestCookieValue = generateGuestCookieValue();
 
     const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
 
     const visitedUrls = new Set<string>();
     const checkedLinks = new Set<string>();
@@ -187,8 +188,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       return ctx;
     };
 
-    const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-    await setupContextRoutes(pageContext);
+    const pageContext = await setupContext();
     const page = await pageContext.newPage();
 
     try {
