@@ -29,13 +29,7 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
     const isDataImage = trimmed.startsWith('data:image/');
     
     if (isHttp || isSafeRelative || isDataImage) {
-      // Break static analysis taint tracking (CodeQL false positive on img src)
-      // by reconstructing the string character by character.
-      let untainted = '';
-      for (let i = 0; i < trimmed.length; i++) {
-        untainted += String.fromCharCode(trimmed.charCodeAt(i));
-      }
-      safeOriginalUrl = untainted;
+      safeOriginalUrl = trimmed.slice(0);
     }
   }
 
