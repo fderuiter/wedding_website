@@ -67,7 +67,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     try {
       for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
-        const page = await guestContext.newPage();
+        const page = await testContext.newPage();
         try {
           try {
             await page.goto(route, { waitUntil: 'domcontentloaded' });
@@ -89,7 +89,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       }
     } finally {
-      await guestContext.close();
+      await testContext.close();
     }
   });
 
@@ -104,8 +104,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
 
-    const setupContext = async () => {
-      const ctx = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+    const setupContextRoutes = async (ctx: any) => {
       await ctx.addCookies([
         {
           name: 'admin_auth',
@@ -120,7 +119,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       ]);
 
       await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
+      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: transparentPng }));
       await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
       await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
       // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
@@ -183,8 +182,6 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           ],
         });
       });
-
-      return ctx;
     };
 
     const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
