@@ -85,6 +85,17 @@ describe('AdminSettingsPage - handleUpload', () => {
     return render(ui);
   };
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (global.fetch as unknown) = mockFetch;
+    (window.fetch as unknown) = mockFetch;
+    (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => mockConfig,
+    });
+  });
+
   it('renders the favicon upload input', async () => {
     renderWithProviders(<AdminSettingsPage />);
 
