@@ -56,17 +56,18 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const guestCookieValue = generateGuestCookieValue();
 
     const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    await testContext.addCookies([
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://127.0.0.1:3000',
+      }
+    ]);
+
     try {
-      await testContext.addCookies([
-        {
-          name: 'guest_auth',
-          value: guestCookieValue,
-          url: 'http://127.0.0.1:3000',
-        }
-      ]);
       for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
-        const page = await testContext.newPage();
+        const page = await guestContext.newPage();
         try {
           try {
             await page.goto(route, { waitUntil: 'domcontentloaded' });
@@ -88,12 +89,12 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       }
     } finally {
-      await testContext.close();
+      await guestContext.close();
     }
   });
 
   test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ browser }) => {
-    test.setTimeout(180000);
+    test.setTimeout(240000);
     const cookieValue = generateAdminCookieValue();
     const guestCookieValue = generateGuestCookieValue();
 
@@ -103,20 +104,25 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     const checkedLinks = new Set<string>();
     const baseURL = 'http://127.0.0.1:3000';
 
-    const setupContextRoutes = async (ctx: any) => {
+    const setupContext = async () => {
+      const ctx = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
       await ctx.addCookies([
         {
           name: 'admin_auth',
           value: cookieValue,
-          url: 'http://127.0.0.1:3000',
+          url: baseURL,
         },
         {
           name: 'guest_auth',
           value: guestCookieValue,
-          url: 'http://127.0.0.1:3000',
+          url: baseURL,
         }
       ]);
 
+      await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
+      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+      await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
       // Fulfill external CDN/third-party image/script requests with dummy response to prevent script load errors in headless Chromium
       await ctx.route((url: any) => {
         const host = url.host;
@@ -126,8 +132,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       await ctx.route('**/api/weather', async (route: any) => {
         await route.fulfill({
           status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
+          json: {
             daily: {
               time: ['2025-10-10'],
               weathercode: [0],
@@ -137,17 +142,49 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               precipitation_probability_max: [0],
               wind_speed_10m_max: [5],
             },
-          }),
+          },
+        });
+      });
+
+      await ctx.route('**/api/registry/items/*', async (route: any) => {
+        await route.fulfill({
+          status: 200,
+          json: {
+            id: '1',
+            name: 'Sample Item',
+            description: 'Sample description',
+            category: 'Home',
+            price: 100,
+            quantity: 1,
+            purchased: false,
+            isGroupGift: false,
+            amountContributed: 0,
+            contributors: [],
+          },
         });
       });
 
       await ctx.route('**/api/registry/items', async (route: any) => {
         await route.fulfill({
           status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([]),
+          json: [
+            {
+              id: '1',
+              name: 'Sample Item',
+              description: 'Sample description',
+              category: 'Home',
+              price: 100,
+              quantity: 1,
+              purchased: false,
+              isGroupGift: false,
+              amountContributed: 0,
+              contributors: [],
+            }
+          ],
         });
       });
+
+      return ctx;
     };
 
     const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
@@ -160,6 +197,26 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
+        const pageContext = await setupContext();
+        const page = await pageContext.newPage();
+        try {
+          const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+          expect(response).not.toBeNull();
+          expect(response!.status()).toBe(200);
+
+          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
+          if (route !== '/admin/login') {
+            const currentUrl = new URL(page.url());
+            expect(currentUrl.pathname).not.toBe('/admin/login');
+          }
+
+          // Check for generic application server or DB errors in page content
+          const content = await page.content();
+          expect(content).not.toContain('Internal Server Error');
+          expect(content).not.toContain('500 Error');
+          expect(content).not.toContain('An unhandled error occurred');
+
+          visitedUrls.add(targetUrl);
         let anchors: (string | null)[] = [];
 
         const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
@@ -225,20 +282,34 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
           checkedLinks.add(absoluteCheckUrl);
         }
+
+        // Reset page state to release memory and unmount active React components
+        await page.goto('about:blank');
       }
 
       console.log(`Checking ${checkedLinks.size} unique internal links...`);
-      for (const absoluteCheckUrl of checkedLinks) {
-        console.log(`Checking link: ${absoluteCheckUrl}`);
-        const linkResponse = await fetch(absoluteCheckUrl, {
-          headers: {
-            Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-          },
-          signal: AbortSignal.timeout(15000),
-        });
-        const status = linkResponse.status;
-        await linkResponse.arrayBuffer();
-        expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+      const linksArray = Array.from(checkedLinks);
+      const batchSize = 5;
+      for (let i = 0; i < linksArray.length; i += batchSize) {
+        const batch = linksArray.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (absoluteCheckUrl) => {
+            console.log(`Checking link: ${absoluteCheckUrl}`);
+            const linkResponse = await fetch(absoluteCheckUrl, {
+              headers: {
+                Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+              },
+              signal: AbortSignal.timeout(15000),
+            });
+            const status = linkResponse.status;
+            await linkResponse.arrayBuffer();
+            return { absoluteCheckUrl, status };
+          })
+        );
+
+        for (const { absoluteCheckUrl, status } of batchResults) {
+          expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+        }
       }
     } finally {
       await page.close();

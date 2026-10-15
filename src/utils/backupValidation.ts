@@ -70,6 +70,7 @@ const BackupWeddingPartyMemberSchema = z.object({
   photoId: z.string().min(1).max(255),
 
   // Nullable/Optional fields
+  side: WeddingPartyMemberSchema.shape.side.optional(),
   link: WeddingPartyMemberSchema.shape.link.nullable().optional(),
   order: WeddingPartyMemberSchema.shape.order.optional(),
 });

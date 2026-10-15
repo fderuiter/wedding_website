@@ -700,6 +700,21 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
+                        "side": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "BRIDE",
+                                "GROOM",
+                                "JOINT"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "link": {
                           "anyOf": [
                             {
