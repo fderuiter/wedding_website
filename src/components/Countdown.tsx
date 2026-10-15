@@ -7,15 +7,21 @@ import { formatDate } from '@/utils/intl';
  * @typedef {object} TimeLeft
  * @description Represents the time remaining until a target date.
  * @property {number} [days] - The number of days remaining.
+ * @property {number} [hours] - The number of hours remaining.
+ * @property {number} [minutes] - The number of minutes remaining.
+ * @property {number} [seconds] - The number of seconds remaining.
  */
 type TimeLeft = {
   days?: number;
+  hours?: number;
+  minutes?: number;
+  seconds?: number;
 };
 
 /**
  * @function Countdown
  * @description A React component that displays a countdown to a specified target date.
- * It calculates the number of days remaining and updates daily.
+ * It calculates the number of days, hours, minutes, and seconds remaining and updates every second.
  * @param {object} props - The component props.
  * @param {string} props.targetDate - The target date for the countdown in a string format recognizable by the Date constructor (e.g., "YYYY-MM-DDTHH:mm:ss").
  * @returns {JSX.Element} The rendered Countdown component.
@@ -31,7 +37,10 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
 
     if (difference > 0) {
       timeLeft = {
-        days: Math.ceil(difference / (1000 * 60 * 60 * 24)),
+        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((difference / (1000 * 60)) % 60),
+        seconds: Math.floor((difference / 1000) % 60),
       };
     }
 
@@ -43,37 +52,32 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
 
   useEffect(() => {
     setIsMounted(true);
-    setTimeLeft(calculateTimeLeft());
+    const initialTimeLeft = calculateTimeLeft();
+    setTimeLeft(initialTimeLeft);
 
-    let timerId: ReturnType<typeof setTimeout> | null = null;
+    if (Object.keys(initialTimeLeft).length === 0) {
+      return;
+    }
 
-    const calculateAndSetTimeout = () => {
-      const now = new Date();
-      const midnight = new Date();
-      midnight.setHours(24, 0, 0, 0);
-      const delay = Math.max(1000, midnight.getTime() - now.getTime());
-
-      timerId = setTimeout(() => {
-        setTimeLeft(calculateTimeLeft());
-        calculateAndSetTimeout(); // Recalculate for the next day
-      }, delay);
-    };
-
-    calculateAndSetTimeout();
+    const intervalId = setInterval(() => {
+      const updatedTimeLeft = calculateTimeLeft();
+      setTimeLeft(updatedTimeLeft);
+      if (Object.keys(updatedTimeLeft).length === 0) {
+        clearInterval(intervalId);
+      }
+    }, 1000);
 
     return () => {
-      if (timerId) {
-        clearTimeout(timerId);
-      }
+      clearInterval(intervalId);
     };
   }, [calculateTimeLeft]);
 
   const timerComponents: React.ReactNode[] = [];
 
   if (isMounted) {
-    Object.keys(timeLeft).forEach((interval) => {
-      const value = timeLeft[interval as keyof TimeLeft];
-      if (!value) {
+    (Object.keys(timeLeft) as Array<keyof TimeLeft>).forEach((interval) => {
+      const value = timeLeft[interval];
+      if (value === undefined) {
         return;
       }
 
@@ -85,9 +89,10 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     });
   }
 
-  const daysRemaining = isMounted ? (timeLeft.days || 0) : 0;
   const screenReaderText = isMounted
-    ? `${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} to go!`
+    ? timerComponents.length
+      ? `${timeLeft.days || 0} ${(timeLeft.days || 0) === 1 ? 'day' : 'days'}, ${timeLeft.hours || 0} ${(timeLeft.hours || 0) === 1 ? 'hour' : 'hours'}, ${timeLeft.minutes || 0} ${(timeLeft.minutes || 0) === 1 ? 'minute' : 'minutes'}, ${timeLeft.seconds || 0} ${(timeLeft.seconds || 0) === 1 ? 'second' : 'seconds'} to go!`
+      : 'The wedding day is here!'
     : `${formatDate(weddingDate)}`;
 
   return (
