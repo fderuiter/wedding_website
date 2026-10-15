@@ -55,8 +55,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
 
-    const testContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
-    await testContext.addCookies([
+    const guestContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    await guestContext.addCookies([
       {
         name: 'guest_auth',
         value: guestCookieValue,
