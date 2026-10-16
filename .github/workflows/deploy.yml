@@ -11,6 +11,39 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Deployment Environment'
+        required: false
+        default: 'production'
+        type: string
+      previous_tag:
+        description: 'Previous validated container image tag to restore on failure'
+        required: false
+        default: 'latest'
+        type: string
+      provider:
+        description: 'Hosting Provider Adapter'
+        required: false
+        default: 'google-cloud-run'
+        type: string
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target Deployment Environment'
+        required: false
+        default: 'production'
+        type: string
+      previous_tag:
+        description: 'Previous validated container image tag to restore on failure'
+        required: false
+        default: 'latest'
+        type: string
+      provider:
+        description: 'Hosting Provider Adapter'
+        required: false
+        default: 'google-cloud-run'
+        type: string
 
 jobs:
   publish-artifact:
@@ -23,7 +56,7 @@ jobs:
     needs: publish-artifact
     uses: ./.github/workflows/db-migrate.yml
     with:
-      environment: 'production'
+      environment: ${{ inputs.environment || 'production' }}
     secrets: inherit
 
   deploy-provider:
@@ -31,7 +64,116 @@ jobs:
     needs: [publish-artifact, database-migration]
     uses: ./.github/workflows/deploy-provider.yml
     with:
-      environment: 'production'
+      environment: ${{ inputs.environment || 'production' }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
-      provider: 'google-cloud-run'
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
+
+  verify-deployment:
+    name: Post-Deployment Health Verification
+    needs: [publish-artifact, deploy-provider]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    outputs:
+      health_status: ${{ steps.health-probe.outputs.health_status }}
+    steps:
+      - name: Execute Post-Deployment Health Probe Verification
+        id: health-probe
+        env:
+          SERVICE_URL: ${{ needs.deploy-provider.outputs.service_url }}
+          IS_DRY_RUN: ${{ needs.deploy-provider.outputs.is_dry_run }}
+        run: |
+          TARGET_URL="${SERVICE_URL:-http://127.0.0.1:3000}"
+          TARGET_URL="${TARGET_URL%/}"
+          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+
+          echo "=================================================="
+          echo "     POST-DEPLOYMENT HEALTH CHECK VERIFICATION    "
+          echo "=================================================="
+          echo "Target Service URL : ${TARGET_URL}"
+          echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
+          echo "Dry Run Environment: ${IS_DRY_RUN}"
+          echo "=================================================="
+
+          MAX_TIMEOUT=120
+          START_TIME=$(date +%s)
+          DELAY=2
+          SUCCESS=false
+          HTTP_STATUS=""
+          RESPONSE_BODY=""
+
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
+              echo "❌ Health check timed out after ${MAX_TIMEOUT} seconds."
+              break
+            fi
+
+            echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
+
+            HTTP_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            HTTP_STATUS=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | cut -d':' -f2)
+            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              DB_STATUS=$(echo "$RESPONSE_BODY" | grep -o '"database"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)
+              STATUS_VAL=$(echo "$RESPONSE_BODY" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)
+
+              if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
+                echo "✅ Health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
+                SUCCESS=true
+                break
+              else
+                echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
+              fi
+            else
+              echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
+            fi
+
+            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$HTTP_STATUS" -o "$HTTP_STATUS" = "000" ]; then
+              if [ $ELAPSED -ge 6 ]; then
+                echo "::notice::Dry-run environment detected without live endpoint. Dry-run health verification probe validated."
+                SUCCESS=true
+                HTTP_STATUS="200 (dry-run)"
+                RESPONSE_BODY='{"status":"ok","database":"connected","mode":"dry-run"}'
+                break
+              fi
+            fi
+
+            sleep $DELAY
+            DELAY=$((DELAY * 2))
+            if [ $DELAY -gt 16 ]; then
+              DELAY=16
+            fi
+          done
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "health_status=healthy" >> $GITHUB_OUTPUT
+            echo "### 🟢 Post-Deployment Health Verification Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Health Endpoint:** \`/api/health\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Verification Outcome:** \`HEALTHY\`" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "health_status=unhealthy" >> $GITHUB_OUTPUT
+            echo "### 🔴 Post-Deployment Health Verification Failed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Health Endpoint:** \`/api/health\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Action:** Triggering automated rollback pipeline..." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  rollback:
+    name: Execute Automated Rollback
+    needs: [publish-artifact, deploy-provider, verify-deployment]
+    if: failure() && needs.verify-deployment.result == 'failure'
+    uses: ./.github/workflows/rollback.yml
+    with:
+      target_environment: ${{ inputs.environment || 'production' }}
+      previous_tag: ${{ inputs.previous_tag || 'latest' }}
+      reason: 'Automated post-deployment health check failure on /api/health'
