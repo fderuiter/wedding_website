@@ -34,11 +34,11 @@ const getWeatherDescription = (code: number): string => {
 };
 
 const getWeatherIcon = (code: number): { name: IconName, color: string } => {
-  if (code <= 1) return { name: 'Sun', color: 'text-secondary' };
-  if (code <= 3) return { name: 'Cloud', color: 'text-gray-400' };
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'CloudRain', color: 'text-blue-400' };
-  if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: 'CloudSnow', color: 'text-sky-300' };
-  return { name: 'Cloud', color: 'text-gray-400' };
+  if (code <= 1) return { name: 'Sun', color: 'text-status-warning' };
+  if (code <= 3) return { name: 'Cloud', color: 'text-muted-foreground' };
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'CloudRain', color: 'text-status-info' };
+  if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: 'CloudSnow', color: 'text-status-info' };
+  return { name: 'Cloud', color: 'text-muted-foreground' };
 };
 
 /**
@@ -73,24 +73,24 @@ const Forecast: React.FC = () => {
   if (isLoading) {
     return (
       <div
-        className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto min-h-[320px] flex flex-col justify-between"
+        className="bg-surface/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-border/20 max-w-[var(--container-max-w)] mx-auto min-h-[320px] flex flex-col justify-between"
         data-testid="forecast-skeleton"
       >
         <span className="sr-only">Loading forecast...</span>
         <div className="flex flex-col md:flex-row items-center justify-between gap-[var(--grid-gap)]">
           <div className="flex flex-col items-center md:items-start gap-2">
-            <Skeleton className="w-16 h-16 rounded-full bg-white/30" />
-            <Skeleton className="w-32 h-6 rounded bg-white/30" />
+            <Skeleton className="w-16 h-16 rounded-full bg-surface/30" />
+            <Skeleton className="w-32 h-6 rounded bg-surface/30" />
           </div>
           <div className="flex flex-col items-center gap-2">
-            <Skeleton className="w-48 h-16 rounded bg-white/30" />
-            <Skeleton className="w-24 h-4 rounded bg-white/30" />
+            <Skeleton className="w-48 h-16 rounded bg-surface/30" />
+            <Skeleton className="w-24 h-4 rounded bg-surface/30" />
           </div>
         </div>
-        <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
-          <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
-          <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
-          <Skeleton className="h-16 w-full rounded-xl bg-white/30" />
+        <div className="mt-8 pt-6 border-t border-border/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
+          <Skeleton className="h-16 w-full rounded-xl bg-surface/30" />
+          <Skeleton className="h-16 w-full rounded-xl bg-surface/30" />
+          <Skeleton className="h-16 w-full rounded-xl bg-surface/30" />
         </div>
       </div>
     );
@@ -99,12 +99,12 @@ const Forecast: React.FC = () => {
   if (error || !weatherData || !weatherData.daily) {
     return (
       <div
-        className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
+        className="bg-surface/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-border/20 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
         role="alert"
       >
         <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
         <h3 className="text-xl font-bold">Unable to Load Weather</h3>
-        <p className="text-base text-red-500 font-medium">
+        <p className="text-base text-status-error font-medium">
           Failed to load forecast. Please try again later.
         </p>
         <Button onClick={fetchWeather} variant="primary" size="md">
@@ -133,14 +133,14 @@ const Forecast: React.FC = () => {
       initial={{ opacity: 0, y: 'calc(20px * var(--scale-factor, 1))' }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8 }}
-      className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
+      className="bg-surface/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-border/20 max-w-[var(--container-max-w)] mx-auto"
     >
       {!isLiveForecast && (
         <div
           data-testid="seasonal-badge"
-          className="mb-6 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center text-sm font-medium text-amber-200 flex flex-col sm:flex-row items-center justify-center gap-2"
+          className="mb-6 p-3 bg-status-warning/10 border border-status-warning/30 rounded-lg text-center text-sm font-medium text-status-warning flex flex-col sm:flex-row items-center justify-center gap-2"
         >
-          <Icon name="Info" className="w-4 h-4 text-amber-400 shrink-0" />
+          <Icon name="Info" className="w-4 h-4 text-status-warning shrink-0" />
           <span>
             Seasonal Climate Averages
             {liveForecastAvailableDate && (
@@ -167,7 +167,7 @@ const Forecast: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-white/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
+      <div className="mt-8 pt-6 border-t border-border/20 grid grid-cols-1 sm:grid-cols-3 gap-[var(--grid-gap)] text-center">
         <motion.div whileHover={{ scale: 1.05 }} className="flex flex-col items-center">
           <Icon name="Droplets" className="opacity-70" style={{ width: 'calc(24px * var(--scale-factor, 1))', height: 'calc(24px * var(--scale-factor, 1))' }} />
           <p className="font-bold mt-1">Precipitation</p>

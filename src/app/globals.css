@@ -4,10 +4,22 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-primary: #B91C1C;
-  --color-secondary: #B45309;
+  --color-primary: var(--color-primary, #B91C1C);
+  --color-secondary: var(--color-secondary, #B45309);
   --color-primary-light: #FCA5A5;
   --color-secondary-light: #FDE68A;
+
+  --color-surface: var(--color-surface, #FFFFFF);
+  --color-muted: var(--color-muted, #F3F4F6);
+  --color-muted-foreground: var(--color-muted-foreground, #6B7280);
+
+  --color-status-error: var(--color-status-error, #B91C1C);
+  --color-status-success: var(--color-status-success, #15803D);
+  --color-status-warning: var(--color-status-warning, #B45309);
+  --color-status-info: var(--color-status-info, #1D4ED8);
+
+  --color-badge-bg: var(--color-badge-bg, #F3F4F6);
+  --color-badge-text: var(--color-badge-text, #111827);
 
   --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
@@ -22,8 +34,20 @@
 
 :root {
   --color-background: #FFFFFF;
+  --color-surface: #FFFFFF;
   --color-foreground: #111827;
+  --color-muted: #F3F4F6;
+  --color-muted-foreground: #4B5563;
   --color-border: #E5E7EB;
+
+  --color-status-error: #B91C1C;
+  --color-status-success: #15803D;
+  --color-status-warning: #B45309;
+  --color-status-info: #1D4ED8;
+
+  --color-badge-bg: #F3F4F6;
+  --color-badge-text: #111827;
+
   --color-text-on-primary: #FFFFFF;
   --color-text-on-secondary: #171717;
   --color-primary-text: #B91C1C;
@@ -52,8 +76,20 @@
 
 .dark {
   --color-background: #111827;
+  --color-surface: #1F2937;
   --color-foreground: #F9FAFB;
+  --color-muted: #374151;
+  --color-muted-foreground: #9CA3AF;
   --color-border: #4B5563;
+
+  --color-status-error: #FCA5A5;
+  --color-status-success: #86EFAC;
+  --color-status-warning: #FDE68A;
+  --color-status-info: #93C5FD;
+
+  --color-badge-bg: #374151;
+  --color-badge-text: #F9FAFB;
+
   --color-text-on-primary: #FFFFFF;
   --color-text-on-secondary: #171717;
   --color-primary-text: #FCA5A5;

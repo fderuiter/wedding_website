@@ -155,7 +155,7 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
         onBlur={handleBlur}
         style={{
           ...(reduceMotion ? {} : {
-            transformPerspective: cardPerspective,
+            transformPerspective: cardPerspective || 'var(--card-perspective, 1000px)',
             rotateX,
             rotateY,
             transformStyle: 'preserve-3d',
