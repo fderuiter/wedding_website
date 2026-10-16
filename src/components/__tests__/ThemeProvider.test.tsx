@@ -388,6 +388,11 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem).not.toBeNull();
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
     expect(styleElem?.textContent).toContain('--dialog-border-radius: 0.5rem;');
+    expect(styleElem?.textContent).toContain('--input-bg: #ffffff;');
+    expect(styleElem?.textContent).toContain('--input-border: #d1d5db;');
+    expect(styleElem?.textContent).toContain('--input-radius: 0.375rem;');
+    expect(styleElem?.textContent).toContain('--form-label-text: #111827;');
+    expect(styleElem?.textContent).toContain('--form-error-text: #dc2626;');
   });
 
   it('injects romantic theme preset tokens when themePreset prop is romantic', () => {
@@ -401,6 +406,11 @@ describe('ThemeProvider Theme Presets', () => {
     const styleElem = container.querySelector('#dynamic-theme-style');
     expect(styleElem?.textContent).toContain('--btn-radius: 9999px;');
     expect(styleElem?.textContent).toContain('--dialog-border-radius: 1.25rem;');
+    expect(styleElem?.textContent).toContain('--input-bg: #fffafb;');
+    expect(styleElem?.textContent).toContain('--input-border: #fce7f3;');
+    expect(styleElem?.textContent).toContain('--input-radius: 0.75rem;');
+    expect(styleElem?.textContent).toContain('--form-label-text: #831843;');
+    expect(styleElem?.textContent).toContain('--form-error-text: #be123c;');
   });
 
   it('updates themePreset dynamically via DRAFT_UPDATE window message', () => {
@@ -432,6 +442,11 @@ describe('ThemeProvider Theme Presets', () => {
     expect(getByTestId('theme-preset')).toHaveTextContent('editorial');
     const styleElem = container.querySelector('#dynamic-theme-style');
     expect(styleElem?.textContent).toContain('--btn-radius: 0.125rem;');
+    expect(styleElem?.textContent).toContain('--input-bg: #fcfbf9;');
+    expect(styleElem?.textContent).toContain('--input-border: #000000;');
+    expect(styleElem?.textContent).toContain('--input-radius: 0.125rem;');
+    expect(styleElem?.textContent).toContain('--form-label-text: #000000;');
+    expect(styleElem?.textContent).toContain('--form-error-text: #b91c1c;');
 
     Object.defineProperty(window, 'parent', { writable: true, value: originalParent });
   });

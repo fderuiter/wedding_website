@@ -54,6 +54,13 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens.darkTokens?.['--dialog-bg']).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-border-color']).toBeDefined();
       expect(tokens.darkTokens?.['--btn-outline-border']).toBeDefined();
+
+      // Check standardized print tokens
+      expect(tokens['--print-bg']).toBeDefined();
+      expect(tokens['--print-text']).toBeDefined();
+      expect(tokens['--print-border']).toBeDefined();
+      expect(tokens['--print-header-border']).toBeDefined();
+      expect(tokens['--print-badge-bg']).toBeDefined();
     }
   });
 
