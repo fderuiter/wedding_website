@@ -27,7 +27,7 @@ test.describe('Guest Photos Empty State', () => {
       },
     ]);
 
-    await page.goto('/photos', { waitUntil: 'networkidle' });
+    await page.goto('/photos', { waitUntil: 'domcontentloaded' });
 
     // Verify empty state container is rendered
     const emptyState = page.locator('[data-testid="guest-photos-empty-state"]');
