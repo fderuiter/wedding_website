@@ -113,8 +113,17 @@ export function useEntityOrchestration<T extends { id: string }>({
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
       if (previousData) {
-        const sorted = [...previousData].sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
-        queryClient.setQueryData<T[]>(queryKey, sorted);
+        const entityMap = new Map<string, T>(previousData.map(entity => [entity.id, entity]));
+        const reordered: T[] = [];
+        for (const id of orderedIds) {
+          const entity = entityMap.get(id);
+          if (entity) {
+            reordered.push(entity);
+            entityMap.delete(id);
+          }
+        }
+        reordered.push(...entityMap.values());
+        queryClient.setQueryData<T[]>(queryKey, reordered);
       }
       return { previousData };
     },
