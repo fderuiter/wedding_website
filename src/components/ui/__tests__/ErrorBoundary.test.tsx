@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ErrorBoundary } from '../ErrorBoundary';
+import { useFormPersist } from '@/hooks/useFormPersist';
 
 const ProblemChild: React.FC<{ shouldThrow?: boolean }> = ({ shouldThrow }) => {
   if (shouldThrow) {
@@ -10,11 +11,26 @@ const ProblemChild: React.FC<{ shouldThrow?: boolean }> = ({ shouldThrow }) => {
   return <div>Component working normally</div>;
 };
 
+const PersistentFormChild: React.FC<{ shouldThrow?: boolean }> = ({ shouldThrow }) => {
+  const [form, setForm] = useFormPersist('test_eb_form', { text: '' });
+  if (shouldThrow) {
+    throw new Error('Form child crash');
+  }
+  return (
+    <input
+      aria-label="Test Input"
+      value={form.text}
+      onChange={(e) => setForm({ text: e.target.value })}
+    />
+  );
+};
+
 describe('ErrorBoundary Component', () => {
   // Prevent console.error clutter during intentionally thrown error tests
   let consoleSpy: jest.SpyInstance;
 
   beforeEach(() => {
+    window.sessionStorage.clear();
     consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -88,4 +104,41 @@ describe('ErrorBoundary Component', () => {
     expect(screen.getByText('Custom Error: Test component crashed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /custom reset/i })).toBeInTheDocument();
   });
+
+  it('retains form state across error boundary reset and component remount', () => {
+    let shouldThrow = false;
+    const { rerender } = render(
+      <ErrorBoundary>
+        <PersistentFormChild shouldThrow={shouldThrow} />
+      </ErrorBoundary>
+    );
+
+    const input = screen.getByLabelText('Test Input');
+    fireEvent.change(input, { target: { value: 'hello recovery' } });
+    expect(input).toHaveValue('hello recovery');
+
+    // Trigger error boundary
+    shouldThrow = true;
+    rerender(
+      <ErrorBoundary>
+        <PersistentFormChild shouldThrow={shouldThrow} />
+      </ErrorBoundary>
+    );
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    // Reset error boundary: update props first so children won't throw when remounted
+    shouldThrow = false;
+    rerender(
+      <ErrorBoundary>
+        <PersistentFormChild shouldThrow={shouldThrow} />
+      </ErrorBoundary>
+    );
+
+    const retryButton = screen.getByRole('button', { name: /try again/i });
+    fireEvent.click(retryButton);
+
+    expect(screen.getByLabelText('Test Input')).toHaveValue('hello recovery');
+  });
 });
+

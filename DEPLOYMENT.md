@@ -136,7 +136,10 @@ The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2, 3, and 4
 
 ### 2. Artifact Publication (`publish-artifact.yml`)
 - **Triggers**: Release pipeline, pushes to `main` or `v*` tags, manual `workflow_dispatch`.
-- **Permissions**: `packages: write` (for GitHub Container Registry).
+- **Permissions**: `packages: write` (for GitHub Container Registry), `id-token: write` and `attestations: write` (for OIDC cryptographic build provenance attestations).
+- **Actions**:
+  - Builds and pushes multi-architecture OCI images to GHCR and optional Docker Hub.
+  - Generates signed OIDC build provenance attestations via `actions/attest-build-provenance`.
 - **Outputs**:
   - `image_uri`: Immutable URI (`ghcr.io/<owner>/<repo>:<sha>`).
   - `image_tag`: Immutable commit SHA or custom release tag.

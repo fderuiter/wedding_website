@@ -19,7 +19,7 @@ export const MediaCreateSchema = z.object({
 
 export const MediaUpdateSchema = MediaCreateSchema.partial();
 
-export const ImageAssociationSchema = z.object({
+const ImageAssociationSchema = z.object({
   imageId: z.string().nullable().optional(),
   imageUrl: z.string()
     .max(2000, 'Image URL must be under 2000 characters')
@@ -31,7 +31,7 @@ export const ImageAssociationSchema = z.object({
   image: MediaSchema.nullable().optional(),
 });
 
-export const PhotoAssociationSchema = z.object({
+const PhotoAssociationSchema = z.object({
   photoId: z.string().nullable().optional(),
   photoUrl: z.string()
     .max(2000, 'Photo URL must be under 2000 characters')

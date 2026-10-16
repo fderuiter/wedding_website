@@ -582,7 +582,7 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
         <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
         <Suspense fallback={<Html>Loading…</Html>}>
           <Physics key={resetKey} gravity={[0, 0, 0]}>
-            {performanceTier !== 'low' && <Sparkles color={themeAccent} />}
+            {performanceTier !== 'low' && <Sparkles />}
             {performanceTier !== 'low' && <Environment preset="sunset" />}
             <PhysicsHeart 
               scale={scale} 

@@ -34,3 +34,37 @@ describe('safeUrlSchema', () => {
   });
 });
 
+describe('GuestPhotoUploadSchema', () => {
+  const { GuestPhotoUploadSchema } = require('../validation');
+
+  it('validates valid 10MB JPEG, PNG, and WebP files', () => {
+    const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
+    const validJpeg = { size: 1024, type: 'image/jpeg', name: 'photo.jpg' };
+    const validWebp = { size: 1024, type: 'image/webp', name: 'photo.webp' };
+
+    expect(GuestPhotoUploadSchema.safeParse({ file: validPng }).success).toBe(true);
+    expect(GuestPhotoUploadSchema.safeParse({ file: validJpeg }).success).toBe(true);
+    expect(GuestPhotoUploadSchema.safeParse({ file: validWebp }).success).toBe(true);
+  });
+
+  it('rejects files exceeding 10MB', () => {
+    const oversized = { size: 10 * 1024 * 1024 + 1, type: 'image/png', name: 'photo.png' };
+    const result = GuestPhotoUploadSchema.safeParse({ file: oversized });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('File size exceeds 10MB limit');
+    }
+  });
+
+  it('rejects unsupported file formats', () => {
+    const pdfFile = { size: 1024, type: 'application/pdf', name: 'doc.pdf' };
+    const result = GuestPhotoUploadSchema.safeParse({ file: pdfFile });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe(
+        'Invalid file format. Only JPEG, PNG, and WebP images are allowed'
+      );
+    }
+  });
+});
+

@@ -67,11 +67,33 @@ export interface ComponentTokens {
   '--schedule-tag-bg': string;
   '--schedule-tag-text': string;
 
+  '--toast-success-bg': string;
+  '--toast-success-text': string;
+  '--toast-error-bg': string;
+  '--toast-error-text': string;
+  '--toast-info-bg': string;
+  '--toast-info-text': string;
+  '--toast-confirm-bg': string;
+  '--toast-confirm-text': string;
+  '--toast-radius': string;
+  '--toast-close-hover-bg': string;
+
   '--print-bg': string;
   '--print-text': string;
   '--print-border': string;
   '--print-header-border': string;
   '--print-badge-bg': string;
+
+  '--glow-color': string;
+  '--glow-gradient': string;
+  '--particle-color': string;
+  '--3d-metalness': string;
+  '--3d-roughness': string;
+  '--3d-env-map-intensity': string;
+  '--card-perspective': string;
+  '--card-max-rotation': string;
+  '--card-spring-stiffness': string;
+  '--card-spring-damping': string;
 
   darkTokens?: Partial<Omit<ComponentTokens, 'darkTokens'>>;
 }
@@ -165,11 +187,33 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#f3f4f6',
     '--schedule-tag-text': '#374151',
 
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#1f2937',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.375rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#ffffff',
     '--print-text': '#111827',
     '--print-border': '#e5e7eb',
     '--print-header-border': '#111827',
     '--print-badge-bg': '#f3f4f6',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #D4AF37)',
+    '--3d-metalness': '1',
+    '--3d-roughness': '0.2',
+    '--3d-env-map-intensity': '1.2',
+    '--card-perspective': '1000px',
+    '--card-max-rotation': '10deg',
+    '--card-spring-stiffness': '300',
+    '--card-spring-damping': '20',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -259,11 +303,33 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#f1f5f9',
     '--schedule-tag-text': '#0f172a',
 
+    '--toast-success-bg': '#047857',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#0369a1',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#0f172a',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.5rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#ffffff',
     '--print-text': '#0f172a',
     '--print-border': '#cbd5e1',
     '--print-header-border': '#0f172a',
     '--print-badge-bg': '#f1f5f9',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #3B82F6)',
+    '--3d-metalness': '0.8',
+    '--3d-roughness': '0.15',
+    '--3d-env-map-intensity': '1.5',
+    '--card-perspective': '1200px',
+    '--card-max-rotation': '12deg',
+    '--card-spring-stiffness': '400',
+    '--card-spring-damping': '25',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -353,11 +419,33 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#fce7f3',
     '--schedule-tag-text': '#9d174d',
 
+    '--toast-success-bg': '#047857',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#be123c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#831843',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '1rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#fffafb',
     '--print-text': '#831843',
     '--print-border': '#fbcfe8',
     '--print-header-border': '#9d174d',
     '--print-badge-bg': '#fce7f3',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #F472B6)',
+    '--3d-metalness': '0.9',
+    '--3d-roughness': '0.3',
+    '--3d-env-map-intensity': '1.0',
+    '--card-perspective': '900px',
+    '--card-max-rotation': '8deg',
+    '--card-spring-stiffness': '250',
+    '--card-spring-damping': '18',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -448,11 +536,33 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#f4f4f5',
     '--schedule-tag-text': '#18181b',
 
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#991b1b',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#18181b',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0px',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.15)',
+
     '--print-bg': '#ffffff',
     '--print-text': '#18181b',
     '--print-border': '#e4e4e7',
     '--print-header-border': '#18181b',
     '--print-badge-bg': '#f4f4f5',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #71717A)',
+    '--3d-metalness': '0.5',
+    '--3d-roughness': '0.4',
+    '--3d-env-map-intensity': '0.8',
+    '--card-perspective': '800px',
+    '--card-max-rotation': '6deg',
+    '--card-spring-stiffness': '200',
+    '--card-spring-damping': '30',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -545,11 +655,33 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#e4e4e7',
     '--schedule-tag-text': '#000000',
 
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#000000',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.125rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#fcfbf9',
     '--print-text': '#000000',
     '--print-border': '#000000',
     '--print-header-border': '#000000',
     '--print-badge-bg': '#e4e4e7',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #000000)',
+    '--3d-metalness': '1.0',
+    '--3d-roughness': '0.1',
+    '--3d-env-map-intensity': '1.8',
+    '--card-perspective': '1500px',
+    '--card-max-rotation': '15deg',
+    '--card-spring-stiffness': '500',
+    '--card-spring-damping': '15',
 
     darkTokens: {
       '--btn-primary-border': '#ffffff',

@@ -3,12 +3,43 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
-import { FormGroup, Label, Input } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { generateCsvContent } from '@/utils/csv';
+
+export function matchDietaryCategory(notes: string | null | undefined, category: string): boolean {
+  if (!notes || !notes.trim()) return false;
+  const lower = notes.trim().toLowerCase();
+
+  const isGlutenFree = /\b(gf|gluten[- ]free|gluten)\b/i.test(lower);
+  const isVegan = /\b(vegan)\b/i.test(lower);
+  const isVegetarian = /\b(vegetarian|veg)\b/i.test(lower) && !isVegan;
+  const isDairyFree = /\b(df|dairy[- ]free|dairy|lactose)\b/i.test(lower);
+  const isNutFree = /\b(nut[- ]free|nut|nuts|peanut|allergy|allergies)\b/i.test(lower);
+
+  switch (category) {
+    case 'gluten-free':
+      return isGlutenFree;
+    case 'vegetarian':
+      return isVegetarian;
+    case 'vegan':
+      return isVegan;
+    case 'dairy-free':
+      return isDairyFree;
+    case 'nut-free':
+      return isNutFree;
+    case 'other':
+      return !isGlutenFree && !isVegan && !isVegetarian && !isDairyFree && !isNutFree;
+    case 'has_restriction':
+      return true;
+    case 'all':
+    default:
+      return true;
+  }
+}
 
 export function getAttendanceStatus(item: { used: boolean; extraFields?: Record<string, any> | null }): 'attending' | 'declined' | 'pending' {
   const rawVal = item.extraFields?.attendanceStatus ??
@@ -58,6 +89,7 @@ export default function InvitationCodesDashboardPage() {
   const [newCode, setNewCode] = useState({ guestName: '', code: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
+  const [dietaryFilter, setDietaryFilter] = useState<string>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'attending' | 'declined' | 'pending'>('all');
 
   const counts = useMemo(() => {
@@ -77,6 +109,46 @@ export default function InvitationCodesDashboardPage() {
     };
   }, [codes]);
 
+  const cateringSummary = useMemo(() => {
+    let totalWithRestrictions = 0;
+    let glutenFree = 0;
+    let vegetarian = 0;
+    let vegan = 0;
+    let dairyFree = 0;
+    let nutFree = 0;
+    let other = 0;
+
+    for (const item of codes) {
+      if (!item.dietaryNotes || !item.dietaryNotes.trim()) continue;
+      totalWithRestrictions++;
+      const notes = item.dietaryNotes.trim();
+
+      const gf = matchDietaryCategory(notes, 'gluten-free');
+      const veg = matchDietaryCategory(notes, 'vegetarian');
+      const vgn = matchDietaryCategory(notes, 'vegan');
+      const df = matchDietaryCategory(notes, 'dairy-free');
+      const nut = matchDietaryCategory(notes, 'nut-free');
+      const oth = matchDietaryCategory(notes, 'other');
+
+      if (gf) glutenFree++;
+      if (veg) vegetarian++;
+      if (vgn) vegan++;
+      if (df) dairyFree++;
+      if (nut) nutFree++;
+      if (oth) other++;
+    }
+
+    return {
+      totalWithRestrictions,
+      glutenFree,
+      vegetarian,
+      vegan,
+      dairyFree,
+      nutFree,
+      other,
+    };
+  }, [codes]);
+
   const filteredCodes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return codes.filter((item) => {
@@ -88,15 +160,22 @@ export default function InvitationCodesDashboardPage() {
         if (attendanceFilter !== attendanceStatus) return false;
       }
 
+      if (dietaryFilter !== 'all') {
+        if (!matchDietaryCategory(item.dietaryNotes, dietaryFilter)) {
+          return false;
+        }
+      }
+
       if (!query) return true;
 
       const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
       const matchesCode = item.code ? item.code.toLowerCase().includes(query) : false;
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
+      const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
 
-      return matchesName || matchesCode || matchesEmail;
+      return matchesName || matchesCode || matchesEmail || matchesDietary;
     });
-  }, [codes, searchQuery, statusFilter, attendanceFilter]);
+  }, [codes, searchQuery, statusFilter, attendanceFilter, dietaryFilter]);
 
   const handleSave = async () => {
     if (!newCode.guestName.trim()) {
@@ -215,17 +294,82 @@ export default function InvitationCodesDashboardPage() {
         </div>
       )}
 
+      {/* Catering & Dietary Summary Widget */}
+      <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 mb-8" data-testid="catering-summary-widget">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-gray-100 dark:border-gray-700/60 pb-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <span>🍽️</span> Catering & Dietary Summary
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Overview of guest dietary requirements and restriction counts
+            </p>
+          </div>
+          <div className="text-sm font-semibold text-primary dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-1 rounded-full self-start sm:self-auto border border-red-200 dark:border-red-800/40">
+            {cateringSummary.totalWithRestrictions} {cateringSummary.totalWithRestrictions === 1 ? 'Guest' : 'Guests'} with Dietary Notes
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
+          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Gluten-Free</div>
+            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.glutenFree}</div>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegetarian</div>
+            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegetarian}</div>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegan</div>
+            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegan}</div>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Dairy-Free</div>
+            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.dairyFree}</div>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Nut / Allergy</div>
+            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.nutFree}</div>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Other</div>
+            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.other}</div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-4 mb-6">
-        <FormGroup className="relative flex-1 max-w-md space-y-0">
-          <Input
-            type="text"
-            placeholder="Search by name, code, or email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            aria-label="Search invitation codes"
-            className="w-full"
-          />
-        </FormGroup>
+        <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+          <FormGroup className="relative flex-1 max-w-md space-y-0">
+            <Input
+              type="text"
+              placeholder="Search by name, code, email, or dietary notes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search invitation codes"
+              className="w-full"
+            />
+          </FormGroup>
+
+          <FormGroup className="w-full sm:w-auto space-y-0">
+            <Select
+              id="dietary-filter"
+              aria-label="Filter by dietary category"
+              value={dietaryFilter}
+              onChange={(e) => setDietaryFilter(e.target.value)}
+              className="w-full sm:w-auto"
+            >
+              <option value="all">All Dietary Categories</option>
+              <option value="has_restriction">Has Dietary Restriction</option>
+              <option value="gluten-free">Gluten-Free</option>
+              <option value="vegetarian">Vegetarian</option>
+              <option value="vegan">Vegan</option>
+              <option value="dairy-free">Dairy-Free</option>
+              <option value="nut-free">Nut-Free / Allergy</option>
+              <option value="other">Other Dietary Restrictions</option>
+            </Select>
+          </FormGroup>
+        </div>
 
         <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
           {/* Redemption Status Tab Group */}
@@ -347,6 +491,11 @@ export default function InvitationCodesDashboardPage() {
                   </span>
                 </span>
               </div>
+              {item.dietaryNotes && item.dietaryNotes.trim() && (
+                <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
+                  <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+                </div>
+              )}
             </div>
             <div>
               <Button
@@ -368,4 +517,3 @@ export default function InvitationCodesDashboardPage() {
     </div>
   );
 }
-

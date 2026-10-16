@@ -240,4 +240,42 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     // Focus restored to the triggering button
     expect(document.activeElement).toBe(weddingPartyBtn);
   });
+
+  test('persists draft step and inputs to sessionStorage and restores on remount', async () => {
+    window.sessionStorage.clear();
+
+    const { unmount } = renderWithProviders(<SetupWizard />);
+
+    // Log in
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+
+    // Enter partner names
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Taylor' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Jordan' } });
+
+    // Verify draft stored in sessionStorage
+    const saved = window.sessionStorage.getItem('setup_wizard_draft');
+    expect(saved).not.toBeNull();
+    expect(JSON.parse(saved!)).toMatchObject({
+      partner1Name: 'Taylor',
+      partner2Name: 'Jordan',
+    });
+
+    // Unmount and remount SetupWizard
+    unmount();
+
+    renderWithProviders(<SetupWizard />);
+
+    // Log in again
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+
+    expect(screen.getByLabelText(/Partner 1/i)).toHaveValue('Taylor');
+    expect(screen.getByLabelText(/Partner 2/i)).toHaveValue('Jordan');
+  });
 });

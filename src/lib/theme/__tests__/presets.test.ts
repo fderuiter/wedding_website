@@ -49,6 +49,18 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--schedule-tag-bg']).toBeDefined();
       expect(tokens['--schedule-tag-text']).toBeDefined();
 
+      // Check toast feedback tokens
+      expect(tokens['--toast-success-bg']).toBeDefined();
+      expect(tokens['--toast-success-text']).toBeDefined();
+      expect(tokens['--toast-error-bg']).toBeDefined();
+      expect(tokens['--toast-error-text']).toBeDefined();
+      expect(tokens['--toast-info-bg']).toBeDefined();
+      expect(tokens['--toast-info-text']).toBeDefined();
+      expect(tokens['--toast-confirm-bg']).toBeDefined();
+      expect(tokens['--toast-confirm-text']).toBeDefined();
+      expect(tokens['--toast-radius']).toBeDefined();
+      expect(tokens['--toast-close-hover-bg']).toBeDefined();
+
       // Check dark tokens schema
       expect(tokens.darkTokens).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-bg']).toBeDefined();
@@ -61,6 +73,18 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--print-border']).toBeDefined();
       expect(tokens['--print-header-border']).toBeDefined();
       expect(tokens['--print-badge-bg']).toBeDefined();
+
+      // Check 3D and canvas tokens
+      expect(tokens['--glow-color']).toBeDefined();
+      expect(tokens['--glow-gradient']).toBeDefined();
+      expect(tokens['--particle-color']).toBeDefined();
+      expect(tokens['--3d-metalness']).toBeDefined();
+      expect(tokens['--3d-roughness']).toBeDefined();
+      expect(tokens['--3d-env-map-intensity']).toBeDefined();
+      expect(tokens['--card-perspective']).toBeDefined();
+      expect(tokens['--card-max-rotation']).toBeDefined();
+      expect(tokens['--card-spring-stiffness']).toBeDefined();
+      expect(tokens['--card-spring-damping']).toBeDefined();
     }
   });
 

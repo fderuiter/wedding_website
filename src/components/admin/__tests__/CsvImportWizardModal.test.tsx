@@ -170,4 +170,48 @@ describe('CsvImportWizardModal Component', () => {
       })
     );
   });
+
+  test('persists edited rows and mapping state in sessionStorage and restores on remount', async () => {
+    window.sessionStorage.clear();
+
+    const { unmount } = renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nCharlie Brown,CHARLIE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Guest Name')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    // Edit guest name in step 3
+    const nameInput = screen.getByDisplayValue('Charlie Brown');
+    fireEvent.change(nameInput, { target: { value: 'Charlie Brown Jr.' } });
+
+    // Verify persisted in sessionStorage
+    const saved = window.sessionStorage.getItem('csv_import_wizard_draft');
+    expect(saved).not.toBeNull();
+    const parsed = JSON.parse(saved!);
+    expect(parsed.step).toBe(3);
+    expect(parsed.editableRows[0].guestName).toBe('Charlie Brown Jr.');
+
+    // Unmount and remount modal
+    unmount();
+
+    renderModal(true);
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Charlie Brown Jr.')).toBeInTheDocument();
+    });
+  });
 });
