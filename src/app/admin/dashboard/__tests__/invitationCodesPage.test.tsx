@@ -131,9 +131,16 @@ describe('InvitationCodesDashboardPage', () => {
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'All (5)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Redeemed (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Unused (4)' })).toBeInTheDocument();
+    const tabList = screen.getByRole('tablist', { name: 'Filter invitation codes by status' });
+    expect(tabList).toBeInTheDocument();
+
+    const allTab = screen.getByRole('tab', { name: 'All (5)' });
+    const redeemedTab = screen.getByRole('tab', { name: 'Redeemed (1)' });
+    const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
+
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
   });
 
   it('filters codes by text search query (guest name, code, email) with trim and case-insensitivity', () => {
@@ -163,34 +170,50 @@ describe('InvitationCodesDashboardPage', () => {
   it('filters codes by status filter tabs (All, Redeemed, Unused)', () => {
     renderComponent();
 
-    const redeemedTab = screen.getByRole('button', { name: 'Redeemed (1)' });
-    const unusedTab = screen.getByRole('button', { name: 'Unused (4)' });
-    const allTab = screen.getByRole('button', { name: 'All (5)' });
+    expect(screen.getByRole('tablist', { name: 'Filter invitation codes by status' })).toBeInTheDocument();
+
+    const redeemedTab = screen.getByRole('tab', { name: 'Redeemed (1)' });
+    const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
+    const allTab = screen.getByRole('tab', { name: 'All (5)' });
+
+    // Initial state
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
 
     // Click Redeemed tab
     fireEvent.click(redeemedTab);
     expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
+    expect(allTab).toHaveAttribute('aria-selected', 'false');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'true');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
 
     // Click Unused tab
     fireEvent.click(unusedTab);
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
     expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(allTab).toHaveAttribute('aria-selected', 'false');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'true');
 
     // Click All tab
     fireEvent.click(allTab);
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
   });
 
   it('combines text search and status filter tab', () => {
     renderComponent();
 
     const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
-    const unusedTab = screen.getByRole('button', { name: 'Unused (4)' });
+    const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
 
     // Switch to Unused tab
     fireEvent.click(unusedTab);
@@ -377,7 +400,7 @@ describe('InvitationCodesDashboardPage', () => {
     renderComponent();
 
     const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
-    const redeemedTab = screen.getByRole('button', { name: 'Redeemed (2)' });
+    const redeemedTab = screen.getByRole('tab', { name: 'Redeemed (2)' });
     const declinedTab = screen.getByRole('button', { name: 'Declined (1)' });
 
     // Select Redeemed filter and Declined filter -> Bob Jones

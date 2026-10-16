@@ -399,9 +399,15 @@ export default function InvitationCodesDashboardPage() {
           {/* Redemption Status Tab Group */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
-            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+            <div
+              role="tablist"
+              aria-label="Filter invitation codes by status"
+              className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={statusFilter === 'all'}
                 onClick={() => setStatusFilter('all')}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   statusFilter === 'all'
@@ -413,6 +419,8 @@ export default function InvitationCodesDashboardPage() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={statusFilter === 'redeemed'}
                 onClick={() => setStatusFilter('redeemed')}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   statusFilter === 'redeemed'
@@ -424,6 +432,8 @@ export default function InvitationCodesDashboardPage() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={statusFilter === 'unused'}
                 onClick={() => setStatusFilter('unused')}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   statusFilter === 'unused'
