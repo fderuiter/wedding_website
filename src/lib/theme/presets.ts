@@ -44,6 +44,17 @@ export interface ComponentTokens {
   '--schedule-node-border': string;
   '--schedule-tag-bg': string;
   '--schedule-tag-text': string;
+
+  '--glow-color': string;
+  '--glow-gradient': string;
+  '--particle-color': string;
+  '--3d-metalness': string;
+  '--3d-roughness': string;
+  '--3d-env-map-intensity': string;
+  '--card-perspective': string;
+  '--card-max-rotation': string;
+  '--card-spring-stiffness': string;
+  '--card-spring-damping': string;
 }
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -89,6 +100,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f3f4f6',
     '--schedule-tag-text': '#374151',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #D4AF37)',
+    '--3d-metalness': '1',
+    '--3d-roughness': '0.2',
+    '--3d-env-map-intensity': '1.2',
+    '--card-perspective': '1000px',
+    '--card-max-rotation': '10deg',
+    '--card-spring-stiffness': '300',
+    '--card-spring-damping': '20',
   },
   modern: {
     '--btn-radius': '0.5rem',
@@ -132,6 +154,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f1f5f9',
     '--schedule-tag-text': '#0f172a',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #3B82F6)',
+    '--3d-metalness': '0.8',
+    '--3d-roughness': '0.15',
+    '--3d-env-map-intensity': '1.5',
+    '--card-perspective': '1200px',
+    '--card-max-rotation': '12deg',
+    '--card-spring-stiffness': '400',
+    '--card-spring-damping': '25',
   },
   romantic: {
     '--btn-radius': '9999px',
@@ -175,6 +208,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#fffafb',
     '--schedule-tag-bg': '#fce7f3',
     '--schedule-tag-text': '#9d174d',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #F472B6)',
+    '--3d-metalness': '0.9',
+    '--3d-roughness': '0.3',
+    '--3d-env-map-intensity': '1.0',
+    '--card-perspective': '900px',
+    '--card-max-rotation': '8deg',
+    '--card-spring-stiffness': '250',
+    '--card-spring-damping': '18',
   },
   minimal: {
     '--btn-radius': '0px',
@@ -218,6 +262,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f4f4f5',
     '--schedule-tag-text': '#18181b',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #71717A)',
+    '--3d-metalness': '0.5',
+    '--3d-roughness': '0.4',
+    '--3d-env-map-intensity': '0.8',
+    '--card-perspective': '800px',
+    '--card-max-rotation': '6deg',
+    '--card-spring-stiffness': '200',
+    '--card-spring-damping': '30',
   },
   editorial: {
     '--btn-radius': '0.125rem',
@@ -261,6 +316,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#000000',
     '--schedule-tag-bg': '#e4e4e7',
     '--schedule-tag-text': '#000000',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #000000)',
+    '--3d-metalness': '1.0',
+    '--3d-roughness': '0.1',
+    '--3d-env-map-intensity': '1.8',
+    '--card-perspective': '1500px',
+    '--card-max-rotation': '15deg',
+    '--card-spring-stiffness': '500',
+    '--card-spring-damping': '15',
   },
 };
 

@@ -15,6 +15,13 @@ function TestComponent() {
       <span data-testid="layout-grid-gap">{theme.layoutGridGap}</span>
       <span data-testid="layout-card-padding">{theme.layoutCardPadding}</span>
       <span data-testid="layout-border-radius">{theme.layoutBorderRadius}</span>
+      <span data-testid="metalness">{theme.metalness}</span>
+      <span data-testid="roughness">{theme.roughness}</span>
+      <span data-testid="env-map-intensity">{theme.envMapIntensity}</span>
+      <span data-testid="card-perspective">{theme.cardPerspective}</span>
+      <span data-testid="card-max-rotation">{theme.cardMaxRotation}</span>
+      <span data-testid="card-spring-stiffness">{theme.cardSpringStiffness}</span>
+      <span data-testid="card-spring-damping">{theme.cardSpringDamping}</span>
     </div>
   );
 }
@@ -446,5 +453,22 @@ describe('ThemeProvider Theme Presets', () => {
     expect(getByTestId('theme-preset')).toHaveTextContent('classic');
     const styleElem = container.querySelector('#dynamic-theme-style');
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
+  });
+
+  it('exposes 3D material reflectance and card perspective tokens in context', () => {
+    const { getByTestId } = render(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('modern');
+    expect(getByTestId('metalness')).toHaveTextContent('0.8');
+    expect(getByTestId('roughness')).toHaveTextContent('0.15');
+    expect(getByTestId('env-map-intensity')).toHaveTextContent('1.5');
+    expect(getByTestId('card-perspective')).toHaveTextContent('1200');
+    expect(getByTestId('card-max-rotation')).toHaveTextContent('12');
+    expect(getByTestId('card-spring-stiffness')).toHaveTextContent('400');
+    expect(getByTestId('card-spring-damping')).toHaveTextContent('25');
   });
 });

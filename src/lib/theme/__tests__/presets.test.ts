@@ -41,6 +41,18 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--schedule-node-border']).toBeDefined();
       expect(tokens['--schedule-tag-bg']).toBeDefined();
       expect(tokens['--schedule-tag-text']).toBeDefined();
+
+      // Check 3D and canvas tokens
+      expect(tokens['--glow-color']).toBeDefined();
+      expect(tokens['--glow-gradient']).toBeDefined();
+      expect(tokens['--particle-color']).toBeDefined();
+      expect(tokens['--3d-metalness']).toBeDefined();
+      expect(tokens['--3d-roughness']).toBeDefined();
+      expect(tokens['--3d-env-map-intensity']).toBeDefined();
+      expect(tokens['--card-perspective']).toBeDefined();
+      expect(tokens['--card-max-rotation']).toBeDefined();
+      expect(tokens['--card-spring-stiffness']).toBeDefined();
+      expect(tokens['--card-spring-damping']).toBeDefined();
     }
   });
 
