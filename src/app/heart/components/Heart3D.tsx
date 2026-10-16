@@ -24,8 +24,8 @@ export function Heart3D({
 }) {
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
-  const { themeOutline } = useTheme();
-  
+  const { themeOutline, metalness = 1, roughness = 0.2, envMapIntensity = 1.2 } = useTheme();
+
   const geom = useMemo(() => {
     const s = new THREE.Shape();
     s.moveTo(0, -1.4);
@@ -49,26 +49,26 @@ export function Heart3D({
     () =>
       new THREE.MeshPhysicalMaterial({
         color: primaryColor,
-        metalness: 1,
-        roughness: 0.2,
-        envMapIntensity: 1.2,
+        metalness,
+        roughness,
+        envMapIntensity,
         clippingPlanes: [planeLeft],
         clipShadows: true,
       }),
-    [planeLeft, primaryColor],
+    [planeLeft, primaryColor, metalness, roughness, envMapIntensity],
   );
 
   const silver = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
         color: secondaryColor,
-        metalness: 1,
-        roughness: 0.25,
-        envMapIntensity: 1.2,
+        metalness,
+        roughness: roughness + 0.05,
+        envMapIntensity,
         clippingPlanes: [planeRight],
         clipShadows: true,
       }),
-    [planeRight, secondaryColor],
+    [planeRight, secondaryColor, metalness, roughness, envMapIntensity],
   );
 
   return (
