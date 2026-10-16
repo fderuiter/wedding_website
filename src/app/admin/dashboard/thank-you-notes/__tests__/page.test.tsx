@@ -175,4 +175,46 @@ describe('ThankYouNotesPage', () => {
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();
   });
+
+  it('renders pagination controls and triggers page navigation when clicked', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ...mockData,
+              pagination: {
+                page: 1,
+                pageSize: 1,
+                totalItems: 2,
+                totalPages: 2,
+              },
+            }),
+        });
+      }
+      return Promise.reject(new Error('Unknown endpoint'));
+    });
+
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    });
+
+    const nextBtn = screen.getByRole('button', { name: 'Next page' });
+    expect(nextBtn).toBeEnabled();
+
+    fireEvent.click(nextBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('page=2')
+      );
+    });
+  });
 });

@@ -44,14 +44,14 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         isOpen={isOpen}
         onClose={onClose}
         className={cn(
-          'bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
+          'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
           className
         )}
         style={{
-          backgroundColor: 'var(--dialog-bg, #ffffff)',
+          backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
           borderRadius: 'var(--dialog-border-radius, 0.5rem)',
-          boxShadow: 'var(--dialog-shadow, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1))',
-          borderColor: 'var(--dialog-border-color, #e5e7eb)',
+          boxShadow: 'var(--dialog-shadow, var(--shadow-overlay, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)))',
+          borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
           ...style,
         }}
       >

@@ -33,7 +33,7 @@ export function useEntityOrchestration<T extends { id: string }>({
     enabled,
   });
 
-  const { mutateAsync: create } = useMutation({
+  const { mutateAsync: createItem } = useMutation({
     mutationFn: async (payload: Partial<T>) => apiClient.post<T>(endpoint, payload),
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey });
@@ -60,7 +60,7 @@ export function useEntityOrchestration<T extends { id: string }>({
     }
   });
 
-  const { mutateAsync: update } = useMutation({
+  const { mutateAsync: updateItem } = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => apiClient.put<T>(`${endpoint}/${id}`, payload),
     onMutate: async ({ id, payload }) => {
       await queryClient.cancelQueries({ queryKey });
@@ -87,7 +87,7 @@ export function useEntityOrchestration<T extends { id: string }>({
     }
   });
 
-  const { mutateAsync: remove } = useMutation({
+  const { mutateAsync: removeItem } = useMutation({
     mutationFn: async (id: string) => apiClient.delete(`${endpoint}/${id}`),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey });
@@ -107,7 +107,65 @@ export function useEntityOrchestration<T extends { id: string }>({
     }
   });
 
-  const { mutateAsync: reorder } = useMutation({
+  const { mutateAsync: removeBatchItems } = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map(id => apiClient.delete(`${endpoint}/${id}`)));
+    },
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousData = queryClient.getQueryData<T[]>(queryKey);
+      if (previousData) {
+        const idSet = new Set(ids);
+        queryClient.setQueryData<T[]>(queryKey, old => old?.filter(item => !idSet.has(item.id)));
+      }
+      return { previousData };
+    },
+    onSuccess: (_data, ids) => {
+      const idSet = new Set(ids);
+      queryClient.setQueryData<T[]>(queryKey, old => old?.filter(item => !idSet.has(item.id)));
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+    },
+    meta: {
+      successMessage: `Deleted selected ${entityName}s successfully.`,
+    }
+  });
+
+  const { mutateAsync: updateBatchItems } = useMutation({
+    mutationFn: async ({ ids, payload }: { ids: string[]; payload: Partial<T> }) => {
+      await Promise.all(ids.map(id => apiClient.put<T>(`${endpoint}/${id}`, payload)));
+    },
+    onMutate: async ({ ids, payload }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousData = queryClient.getQueryData<T[]>(queryKey);
+      if (previousData) {
+        const idSet = new Set(ids);
+        queryClient.setQueryData<T[]>(queryKey, old =>
+          old?.map(item => idSet.has(item.id) ? { ...item, ...payload } : item)
+        );
+      }
+      return { previousData };
+    },
+    onSuccess: (_data, variables) => {
+      const idSet = new Set(variables.ids);
+      queryClient.setQueryData<T[]>(queryKey, old =>
+        old?.map(item => idSet.has(item.id) ? { ...item, ...variables.payload } : item)
+      );
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+    },
+    meta: {
+      successMessage: `Updated selected ${entityName}s successfully.`,
+    }
+  });
+
+  const { mutateAsync: reorderItems } = useMutation({
     mutationFn: async (orderedIds: string[]) => apiClient.put(endpoint, { action: 'reorder', orderedIds }),
     onMutate: async (orderedIds) => {
       await queryClient.cancelQueries({ queryKey });
@@ -134,9 +192,11 @@ export function useEntityOrchestration<T extends { id: string }>({
     isError,
     error,
     fetchAll,
-    create,
-    update: (id: string, payload: Partial<T>) => update({ id, payload }),
-    remove,
-    reorder,
+    create: createItem,
+    update: (id: string, payload: Partial<T>) => updateItem({ id, payload }),
+    updateBatch: (ids: string[], payload: Partial<T>) => updateBatchItems({ ids, payload }),
+    remove: removeItem,
+    removeBatch: removeBatchItems,
+    reorder: reorderItems,
   };
 }

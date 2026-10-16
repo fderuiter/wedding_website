@@ -3,13 +3,14 @@
  */
 
 import { reviveDates } from '@/app/api/admin/maintenance/import/route';
-import { createAuditSnapshot, pruneSnapshotsBulk } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots, pruneSnapshotsBulk } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     snapshotVersion: {
       create: jest.fn(),
+      createMany: jest.fn(),
       findMany: jest.fn(),
       deleteMany: jest.fn(),
     },
@@ -21,6 +22,9 @@ const mockPrisma = prisma as any;
 describe('High-Throughput Safe Backup Import Utilities', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
+    mockPrisma.snapshotVersion.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.snapshotVersion.createMany.mockResolvedValue({ count: 0 });
   });
 
   describe('reviveDates - Iterative deep-traversal', () => {
@@ -176,6 +180,60 @@ describe('High-Throughput Safe Backup Import Utilities', () => {
         },
       });
       expect(mockPrisma.snapshotVersion.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createBatchAuditSnapshots - Transactional Batch Audit Snapshots', () => {
+    it('returns early when records array is empty or undefined', async () => {
+      await createBatchAuditSnapshots('Contributor', []);
+      expect(mockPrisma.snapshotVersion.createMany).not.toHaveBeenCalled();
+
+      await createBatchAuditSnapshots('Contributor', null as any);
+      expect(mockPrisma.snapshotVersion.createMany).not.toHaveBeenCalled();
+    });
+
+    it('creates snapshots in bulk using createMany and normalizes entityType', async () => {
+      mockPrisma.snapshotVersion.createMany.mockResolvedValue({ count: 2 });
+      mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
+
+      const records = [
+        { id: 'c1', name: 'Alice', thankYouStatus: 'Sent' },
+        { id: 'c2', name: 'Bob', thankYouStatus: 'Sent' },
+      ];
+
+      await createBatchAuditSnapshots('contributor', records, 'Admin');
+
+      expect(mockPrisma.snapshotVersion.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            entityType: 'Contributor',
+            entityId: 'c1',
+            data: records[0],
+            author: 'Admin',
+          },
+          {
+            entityType: 'Contributor',
+            entityId: 'c2',
+            data: records[1],
+            author: 'Admin',
+          },
+        ],
+      });
+    });
+
+    it('uses custom txClient when passed', async () => {
+      const customTxClient = {
+        snapshotVersion: {
+          createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+      };
+
+      const records = [{ id: 'c1', name: 'Alice' }];
+
+      await createBatchAuditSnapshots('Contributor', records, 'System', customTxClient);
+
+      expect(customTxClient.snapshotVersion.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.snapshotVersion.createMany).not.toHaveBeenCalled();
     });
   });
 });
