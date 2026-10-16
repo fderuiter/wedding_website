@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { InvitationCodeSchema } from '@/features/registry/schemas';
 
-export const SeatingTableShapeSchema = z.enum(['round', 'rectangular', 'square']);
+const SeatingTableShapeSchema = z.enum(['round', 'rectangular', 'square']);
 
 export const SeatingTableSchema = z.object({
   id: z.string(),
@@ -20,22 +20,8 @@ export const SeatingTableSchema = z.object({
 
 export type SeatingTableDTO = z.infer<typeof SeatingTableSchema>;
 
-export const CreateSeatingTableSchema = SeatingTableSchema.omit({ id: true, createdAt: true, updatedAt: true, invitationCodes: true }).partial({
-  shape: true,
-  capacity: true,
-  x: true,
-  y: true,
-  width: true,
-  height: true,
-  rotation: true,
-});
-
-export const UpdateSeatingTableSchema = CreateSeatingTableSchema.partial();
-
 export const AssignSeatSchema = z.object({
   invitationCodeId: z.string().min(1, 'Invitation code ID is required.'),
   tableId: z.string().nullable(),
   seatNumber: z.number().int().positive().nullable().optional(),
 });
-
-export type AssignSeatDTO = z.infer<typeof AssignSeatSchema>;

@@ -37,6 +37,7 @@ describe('RegistryItemForm', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit).toHaveBeenCalledWith({
+      itemType: 'PHYSICAL',
       name: 'Toaster',
       description: 'Toast bread',
       price: 12.34,
@@ -45,6 +46,8 @@ describe('RegistryItemForm', () => {
       imageUrl: 'http://example.com/img.jpg',
       vendorUrl: 'http://vendor.com/item',
       isGroupGift: true,
+      paymentHandleType: undefined,
+      paymentHandle: undefined,
     });
   });
 
@@ -70,6 +73,7 @@ describe('RegistryItemForm', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit).toHaveBeenCalledWith({
+      itemType: 'PHYSICAL',
       name: 'Mixer',
       description: '',
       price: 120.5,
@@ -78,6 +82,41 @@ describe('RegistryItemForm', () => {
       imageUrl: '',
       vendorUrl: '',
       isGroupGift: false,
+      paymentHandleType: undefined,
+      paymentHandle: undefined,
+    });
+  });
+
+  it('supports creating a cash fund with target goal amount and payment handle', async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    render(<RegistryItemForm mode="add" onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/Item Type/i), { target: { value: 'CASH_FUND' } });
+
+    expect(screen.queryByLabelText(/Import from Product URL/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Quantity/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Target Goal Amount/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Item Name/i), { target: { value: 'Honeymoon Fund' } });
+    fireEvent.change(screen.getByLabelText(/Target Goal Amount/i), { target: { value: '2500' } });
+    fireEvent.change(screen.getByLabelText(/Payment Service/i), { target: { value: 'Venmo' } });
+    fireEvent.change(screen.getByLabelText(/Payment Handle/i), { target: { value: '@our-honeymoon' } });
+
+    fireEvent.submit(screen.getByTestId('form'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith({
+      itemType: 'CASH_FUND',
+      name: 'Honeymoon Fund',
+      category: 'Cash Fund',
+      price: 2500,
+      quantity: 1,
+      isGroupGift: true,
+      paymentHandleType: 'Venmo',
+      paymentHandle: '@our-honeymoon',
+      description: '',
+      imageUrl: '',
+      vendorUrl: undefined,
     });
   });
 
@@ -191,5 +230,38 @@ describe('RegistryItemForm', () => {
 
     fireEvent.click(screen.getByTestId('btn-apply-favicon-image'));
     expect(screen.getByLabelText(/Image URL/i)).toHaveValue('https://www.example.com/favicon.ico');
+  });
+
+  it('persists draft attributes and scrapeUrl to sessionStorage and restores on remount', async () => {
+    window.sessionStorage.clear();
+
+    const { unmount } = render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Import from Product URL/i), {
+      target: { value: 'https://example.com/draft-product' },
+    });
+    fireEvent.change(screen.getByLabelText(/Item Name/i), {
+      target: { value: 'Espresso Machine' },
+    });
+    fireEvent.change(screen.getByLabelText(/Price/i), {
+      target: { value: '299.99' },
+    });
+
+    // Check sessionStorage
+    const saved = window.sessionStorage.getItem('registry_item_form_add');
+    expect(saved).not.toBeNull();
+    const parsed = JSON.parse(saved!);
+    expect(parsed.scrapeUrl).toBe('https://example.com/draft-product');
+    expect(parsed.values.name).toBe('Espresso Machine');
+    expect(parsed.values.price).toBe('299.99');
+
+    // Unmount and remount
+    unmount();
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    expect(screen.getByLabelText(/Import from Product URL/i)).toHaveValue('https://example.com/draft-product');
+    expect(screen.getByLabelText(/Item Name/i)).toHaveValue('Espresso Machine');
+    expect(screen.getByLabelText(/Price/i)).toHaveValue(299.99);
   });
 });

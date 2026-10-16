@@ -12,6 +12,7 @@ import { formatDate } from '@/utils/intl';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
+import FaqAccordion from '@/components/faq/FaqAccordion';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
@@ -76,9 +77,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
 
   const formattedDate = formatDate(config.weddingDate);
 
-  const faqs = contentNodes
-    .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
-    .map(n => n.data);
+  const faqNodes = contentNodes.filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ');
 
   const logisticsNodes = contentNodes
     .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
@@ -199,19 +198,8 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       case 'faq':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary">{feature.title || 'Questions You Probably Have'}</h2>
-            <div className="space-y-4 text-left">
-              {faqs.length > 0 ? (
-                faqs.map((faq, i) => (
-                  <div key={i}>
-                    <h3 className="font-semibold text-lg">{faq.question}</h3>
-                    <p>{faq.answer}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-gray-500 dark:text-gray-400">No FAQs available yet.</div>
-              )}
-            </div>
+            <h2 className="text-center text-4xl font-bold text-primary mb-8">{feature.title || 'Questions You Probably Have'}</h2>
+            <FaqAccordion faqs={faqNodes} />
           </motion.section>
         );
       case 'custom':

@@ -34,6 +34,7 @@ const mockCodes = [
     guestName: 'Alice Smith',
     code: 'ALICE123',
     email: 'alice@example.com',
+    dietaryNotes: 'Gluten Free, Dairy Free',
     used: false,
   },
   {
@@ -41,6 +42,7 @@ const mockCodes = [
     guestName: 'Bob Jones',
     code: 'BOB456',
     email: 'bob@example.com',
+    dietaryNotes: 'Vegan',
     used: true,
   },
   {
@@ -48,6 +50,23 @@ const mockCodes = [
     guestName: 'Charlie Brown',
     code: 'CHARLIE789',
     email: 'charlie@example.com',
+    dietaryNotes: 'Vegetarian, Nut allergy',
+    used: false,
+  },
+  {
+    id: 'code-4',
+    guestName: 'Diana Prince',
+    code: 'DIANA101',
+    email: 'diana@example.com',
+    dietaryNotes: 'Kosher option',
+    used: false,
+  },
+  {
+    id: 'code-5',
+    guestName: 'Evan Wright',
+    code: 'EVAN202',
+    email: 'evan@example.com',
+    dietaryNotes: '   ',
     used: false,
   },
 ];
@@ -112,9 +131,9 @@ describe('InvitationCodesDashboardPage', () => {
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'All (3)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All (5)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Redeemed (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Unused (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unused (4)' })).toBeInTheDocument();
   });
 
   it('filters codes by text search query (guest name, code, email) with trim and case-insensitivity', () => {
@@ -145,8 +164,8 @@ describe('InvitationCodesDashboardPage', () => {
     renderComponent();
 
     const redeemedTab = screen.getByRole('button', { name: 'Redeemed (1)' });
-    const unusedTab = screen.getByRole('button', { name: 'Unused (2)' });
-    const allTab = screen.getByRole('button', { name: 'All (3)' });
+    const unusedTab = screen.getByRole('button', { name: 'Unused (4)' });
+    const allTab = screen.getByRole('button', { name: 'All (5)' });
 
     // Click Redeemed tab
     fireEvent.click(redeemedTab);
@@ -171,7 +190,7 @@ describe('InvitationCodesDashboardPage', () => {
     renderComponent();
 
     const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
-    const unusedTab = screen.getByRole('button', { name: 'Unused (2)' });
+    const unusedTab = screen.getByRole('button', { name: 'Unused (4)' });
 
     // Switch to Unused tab
     fireEvent.click(unusedTab);
@@ -187,6 +206,85 @@ describe('InvitationCodesDashboardPage', () => {
     expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
     expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
     expect(screen.getByText('No invitation codes match your search or filter criteria.')).toBeInTheDocument();
+  });
+
+  it('renders catering summary header widget with aggregated totals', () => {
+    renderComponent();
+
+    const widget = screen.getByTestId('catering-summary-widget');
+    expect(widget).toBeInTheDocument();
+    expect(screen.getByText('Catering & Dietary Summary')).toBeInTheDocument();
+
+    // 4 guests have non-whitespace dietary notes (Alice, Bob, Charlie, Diana)
+    expect(screen.getByText('4 Guests with Dietary Notes')).toBeInTheDocument();
+  });
+
+  it('filters codes by dietary category select dropdown', () => {
+    renderComponent();
+
+    const select = screen.getByRole('combobox', { name: 'Filter by dietary category' });
+
+    // Filter by Gluten-Free
+    fireEvent.change(select, { target: { value: 'gluten-free' } });
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
+
+    // Filter by Vegan
+    fireEvent.change(select, { target: { value: 'vegan' } });
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+    expect(screen.getByText('Bob Jones')).toBeInTheDocument();
+
+    // Filter by Vegetarian
+    fireEvent.change(select, { target: { value: 'vegetarian' } });
+    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+
+    // Filter by Dairy-Free
+    fireEvent.change(select, { target: { value: 'dairy-free' } });
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+
+    // Filter by Nut-Free / Allergy
+    fireEvent.change(select, { target: { value: 'nut-free' } });
+    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+
+    // Filter by Other
+    fireEvent.change(select, { target: { value: 'other' } });
+    expect(screen.getByText('Diana Prince')).toBeInTheDocument();
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+
+    // Filter by Has Dietary Restriction
+    fireEvent.change(select, { target: { value: 'has_restriction' } });
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    expect(screen.getByText('Bob Jones')).toBeInTheDocument();
+    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(screen.getByText('Diana Prince')).toBeInTheDocument();
+    expect(screen.queryByText('Evan Wright')).not.toBeInTheDocument();
+  });
+
+  it('filters codes by text search in dietary notes', () => {
+    renderComponent();
+
+    const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
+
+    fireEvent.change(searchInput, { target: { value: 'Kosher' } });
+    expect(screen.getByText('Diana Prince')).toBeInTheDocument();
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'Dairy' } });
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+  });
+
+  it('renders dietary badge on guest cards with non-empty dietary notes and omits empty/whitespace notes', () => {
+    renderComponent();
+
+    const badges = screen.getAllByTestId('dietary-badge');
+    expect(badges).toHaveLength(4); // Alice, Bob, Charlie, Diana
+    expect(badges[0]).toHaveTextContent('Dietary: Gluten Free, Dairy Free');
+    expect(badges[1]).toHaveTextContent('Dietary: Vegan');
+
+    // Evan Wright has whitespace dietary notes, so no badge should be rendered on Evan's card
+    const evanCard = screen.getByText('Evan Wright').closest('div');
+    expect(evanCard?.querySelector('[data-testid="dietary-badge"]')).toBeNull();
   });
 
   it('correctly derives guest RSVP attendance status via getAttendanceStatus', () => {
@@ -433,4 +531,3 @@ describe('InvitationCodesDashboardPage', () => {
     window.URL.createObjectURL = originalCreateObjectURL;
   });
 });
-

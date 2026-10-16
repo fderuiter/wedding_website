@@ -2,6 +2,8 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
+import { formatCurrency } from '@/utils/intl';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 function parseDurationSec(val?: string, fallback = 0.8): number {
   if (!val) return fallback;
@@ -32,12 +34,25 @@ interface RegistryItemProgressBarProps {
  */
 const RegistryItemProgressBar: React.FC<RegistryItemProgressBarProps> = ({ contributed, total, className }) => {
   const percent = total > 0 ? Math.min(100, (contributed / total) * 100) : 0;
+  const roundedPercent = Math.round(percent);
+  const reduceMotion = useReducedMotion();
+
   const { themePreset } = useTheme();
   const presetTokens = getPresetTokens(themePreset);
-  const duration = parseDurationSec(presetTokens['--motion-duration-slow'], 0.8);
+  const duration = reduceMotion ? 0 : parseDurationSec(presetTokens['--motion-duration-slow'], 0.8);
+
+  const formattedValueText = `${formatCurrency(contributed)} of ${formatCurrency(total)} funded (${roundedPercent}%)`;
 
   return (
-    <div className={`w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-1 ${className || ''}`.trim()} role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Gift funding progress">
+    <div
+      className={`w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-1 ${className || ''}`.trim()}
+      role="progressbar"
+      aria-valuenow={roundedPercent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuetext={formattedValueText}
+      aria-label="Gift funding progress"
+    >
       <motion.div
         className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full"
         initial={{ width: 0 }}

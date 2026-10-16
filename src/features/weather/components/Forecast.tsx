@@ -18,6 +18,8 @@ function parseDurationSec(val?: string, fallback = 0.8): number {
 }
 
 interface WeatherData {
+  isLiveForecast?: boolean;
+  liveForecastAvailableDate?: string;
   daily: {
     time: string[];
     weathercode: number[];
@@ -56,7 +58,7 @@ const getWeatherIcon = (code: number): { name: IconName, color: string } => {
  * @returns {JSX.Element} The rendered Forecast component.
  */
 const Forecast: React.FC = () => {
-  const [weather, setWeather] = useState<WeatherData['daily'] | null>(null);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +71,7 @@ const Forecast: React.FC = () => {
     setError(null);
     try {
       const data = await apiClient.get<WeatherData>('/api/weather');
-      setWeather(data.daily);
+      setWeatherData(data);
     } catch (err) {
       console.error('Error fetching weather:', err);
       setError('Failed to load forecast. Please try again later.');
@@ -108,7 +110,7 @@ const Forecast: React.FC = () => {
     );
   }
 
-  if (error || !weather) {
+  if (error || !weatherData || !weatherData.daily) {
     return (
       <div
         className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
@@ -125,6 +127,10 @@ const Forecast: React.FC = () => {
       </div>
     );
   }
+
+  const weather = weatherData.daily;
+  const isLiveForecast = weatherData.isLiveForecast !== false;
+  const liveForecastAvailableDate = weatherData.liveForecastAvailableDate;
 
   const today = {
     high: Math.round(weather.temperature_2m_max[0]),
@@ -144,6 +150,23 @@ const Forecast: React.FC = () => {
       className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-[var(--shadow-lg)] p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
       style={{ boxShadow: 'var(--shadow-lg)' }}
     >
+      {!isLiveForecast && (
+        <div
+          data-testid="seasonal-badge"
+          className="mb-6 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center text-sm font-medium text-amber-200 flex flex-col sm:flex-row items-center justify-center gap-2"
+        >
+          <Icon name="Info" className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>
+            Seasonal Climate Averages
+            {liveForecastAvailableDate && (
+              <span className="ml-1 opacity-90">
+                (Live forecast available on {liveForecastAvailableDate})
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row items-center justify-between gap-[var(--grid-gap)]">
         <div className="text-center md:text-left">
           <Icon name={today.icon.name} className={today.icon.color} style={{ width: 'calc(64px * var(--scale-factor, 1))', height: 'calc(64px * var(--scale-factor, 1))' }} />

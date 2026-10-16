@@ -8,15 +8,12 @@ export {
   ContributorSchema,
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
-  ThankYouStatusEnum,
-  BatchImportInvitationCodeItemSchema,
+  ItemTypeEnum,
+  BatchImportInvitationCodesSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
-  ThankYouStatus,
-  UpdateThankYouNoteDTO,
-  BatchUpdateThankYouNotesDTO,
-  BatchImportInvitationCodesDTO,
+  ItemType,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';

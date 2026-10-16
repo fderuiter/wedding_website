@@ -64,11 +64,18 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
       [forwardedRef]
     );
 
-    const { themePreset } = useTheme();
+    const {
+      cardPerspective = 1000,
+      cardMaxRotation = 10,
+      cardSpringStiffness = 300,
+      cardSpringDamping = 20,
+      themePreset,
+    } = useTheme();
+
     const presetTokens = getPresetTokens(themePreset);
-    const stiffness = parseFloat(presetTokens['--motion-spring-stiffness']) || 300;
-    const damping = parseFloat(presetTokens['--motion-spring-damping']) || 20;
-    const tiltMaxDeg = parseFloat(presetTokens['--motion-tilt-max-deg']) || 10;
+    const stiffness = parseFloat(presetTokens['--motion-spring-stiffness']) || cardSpringStiffness;
+    const damping = parseFloat(presetTokens['--motion-spring-damping']) || cardSpringDamping;
+    const tiltMaxDeg = parseFloat(presetTokens['--motion-tilt-max-deg']) || cardMaxRotation;
 
     const x = useMotionValue(0);
     const y = useMotionValue(0);
@@ -164,7 +171,7 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
         onBlur={handleBlur}
         style={{
           ...(reduceMotion ? {} : {
-            transformPerspective: 1000,
+            transformPerspective: cardPerspective,
             rotateX,
             rotateY,
             transformStyle: 'preserve-3d',
@@ -181,4 +188,3 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
 ) as unknown as Interactive3DCardComponent;
 
 (Interactive3DCard as any).displayName = 'Interactive3DCard';
-

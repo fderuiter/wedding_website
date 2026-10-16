@@ -2,6 +2,7 @@ import {
   parseCsvContent,
   parseCsvLines,
   validateCsvRows,
+  parseInvitationCodesCsv,
   generateCsvContent,
   escapeCsvCell,
   generateSampleCsvTemplate,
@@ -28,14 +29,26 @@ describe('CSV Parser Utility', () => {
     expect(parsed.rows[0]['Name']).toBe('Alice "Ace" Smith');
   });
 
-  it('auto-detects column headers intelligently for multi-column spreadsheets', () => {
-    const csv = 'Full Name,Invite Code,Email Address,Dietary Allergies,Plus One Count,Table Group\nJane Doe,JANE12,jane@example.com,Gluten Free,2,VIP Table';
+  it('auto-detects column headers intelligently for multi-column spreadsheets including companion names', () => {
+    const csv = 'Full Name,Invite Code,Email Address,Dietary Allergies,Plus One Count,Companion First Name,Companion Last Name,Table Group\nJane Doe,JANE12,jane@example.com,Gluten Free,2,Jack,Doe,VIP Table';
     const parsed = parseCsvContent(csv);
     expect(parsed.suggestedGuestNameCol).toBe('Full Name');
     expect(parsed.suggestedCodeCol).toBe('Invite Code');
     expect(parsed.suggestedEmailCol).toBe('Email Address');
     expect(parsed.suggestedDietaryNotesCol).toBe('Dietary Allergies');
     expect(parsed.suggestedPlusOneCol).toBe('Plus One Count');
+    expect(parsed.suggestedPlusOneFirstNameCol).toBe('Companion First Name');
+    expect(parsed.suggestedPlusOneLastNameCol).toBe('Companion Last Name');
+  });
+
+  it('parses CSV using parseInvitationCodesCsv helper', () => {
+    const csv = 'Guest Name,Code,Plus-One First Name,Plus-One Last Name\nAlice,A1,Bob,Smith';
+    const { parseResult, rows } = parseInvitationCodesCsv(csv);
+    expect(parseResult.suggestedPlusOneFirstNameCol).toBe('Plus-One First Name');
+    expect(parseResult.suggestedPlusOneLastNameCol).toBe('Plus-One Last Name');
+    expect(rows[0].isValid).toBe(true);
+    expect(rows[0].plusOneFirstName).toBe('Bob');
+    expect(rows[0].plusOneLastName).toBe('Smith');
   });
 
   it('disambiguates duplicate CSV headers gracefully', () => {
@@ -107,6 +120,29 @@ describe('CSV Parser Utility', () => {
     expect(validated[1].dietaryNotes).toBe('Vegan');
     expect(validated[1].plusOneAllocations).toBe(2);
     expect(validated[1].extraFields).toEqual({ 'Custom Field': 'Table 5' });
+  });
+
+  it('validates companion name length limits in validateCsvRows', () => {
+    const longName = 'A'.repeat(101);
+    const rows = [
+      {
+        'Guest Name': 'David',
+        'Code': 'DAV100',
+        'Plus-One First Name': longName,
+        'Plus-One Last Name': longName,
+      },
+    ];
+
+    const validated = validateCsvRows(rows, {
+      guestNameCol: 'Guest Name',
+      codeCol: 'Code',
+      plusOneFirstNameCol: 'Plus-One First Name',
+      plusOneLastNameCol: 'Plus-One Last Name',
+    });
+
+    expect(validated[0].isValid).toBe(false);
+    expect(validated[0].errors).toContain('Plus-one first name must be under 100 characters.');
+    expect(validated[0].errors).toContain('Plus-one last name must be under 100 characters.');
   });
 
   describe('generateCsvContent', () => {

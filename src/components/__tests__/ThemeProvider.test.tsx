@@ -15,6 +15,13 @@ function TestComponent() {
       <span data-testid="layout-grid-gap">{theme.layoutGridGap}</span>
       <span data-testid="layout-card-padding">{theme.layoutCardPadding}</span>
       <span data-testid="layout-border-radius">{theme.layoutBorderRadius}</span>
+      <span data-testid="metalness">{theme.metalness}</span>
+      <span data-testid="roughness">{theme.roughness}</span>
+      <span data-testid="env-map-intensity">{theme.envMapIntensity}</span>
+      <span data-testid="card-perspective">{theme.cardPerspective}</span>
+      <span data-testid="card-max-rotation">{theme.cardMaxRotation}</span>
+      <span data-testid="card-spring-stiffness">{theme.cardSpringStiffness}</span>
+      <span data-testid="card-spring-damping">{theme.cardSpringDamping}</span>
     </div>
   );
 }
@@ -388,6 +395,9 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem).not.toBeNull();
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
     expect(styleElem?.textContent).toContain('--dialog-border-radius: 0.5rem;');
+    expect(styleElem?.textContent).toContain('--toast-radius: 0.375rem;');
+    expect(styleElem?.textContent).toContain('--toast-success-bg: #15803d;');
+    expect(styleElem?.textContent).toContain('--toast-error-bg: #b91c1c;');
     expect(styleElem?.textContent).toContain('--input-bg: #ffffff;');
     expect(styleElem?.textContent).toContain('--input-border: #d1d5db;');
     expect(styleElem?.textContent).toContain('--input-radius: 0.375rem;');
@@ -463,6 +473,37 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
   });
 
+  it('exposes 3D material reflectance and card perspective tokens in context', () => {
+    const { getByTestId } = render(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('modern');
+    expect(getByTestId('metalness')).toHaveTextContent('0.8');
+    expect(getByTestId('roughness')).toHaveTextContent('0.15');
+    expect(getByTestId('env-map-intensity')).toHaveTextContent('1.5');
+    expect(getByTestId('card-perspective')).toHaveTextContent('1200');
+    expect(getByTestId('card-max-rotation')).toHaveTextContent('12');
+    expect(getByTestId('card-spring-stiffness')).toHaveTextContent('400');
+    expect(getByTestId('card-spring-damping')).toHaveTextContent('25');
+  });
+
+  it('correctly parses zero values for numerical theme tokens without falling back', () => {
+    // Test that zero value tokens like roughness 0 do not trigger falsy fallback values
+    const { getByTestId } = render(
+      <ThemeProvider config={{ themePreset: 'editorial' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('editorial');
+    expect(getByTestId('metalness')).toHaveTextContent('1');
+    expect(getByTestId('roughness')).toHaveTextContent('0.1');
+    expect(getByTestId('env-map-intensity')).toHaveTextContent('1.8');
+  });
+
   it('injects dark preset tokens into .dark block in dynamic style element', () => {
     const { container } = render(
       <ThemeProvider config={{ themePreset: 'modern' }}>
@@ -494,3 +535,103 @@ describe('ThemeProvider Theme Presets', () => {
     expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
   });
 });
+
+describe('Blocking Theme Script Execution', () => {
+  const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
+
+  function runInlineScript() {
+    eval(themeScript);
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = 'dark';
+  });
+
+  it('applies light class when localStorage has theme_mode light', () => {
+    localStorage.setItem('theme_mode', 'light');
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('applies dark class when localStorage has theme_mode dark', () => {
+    document.documentElement.className = 'light';
+    localStorage.setItem('theme_mode', 'dark');
+    runInlineScript();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
+  });
+
+  it('applies light class when mode is system/missing and OS prefers light mode', () => {
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query.includes('dark') ? false : true,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('applies dark class when mode is system/missing and OS prefers dark mode', () => {
+    document.documentElement.className = 'light';
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query.includes('dark') ? true : false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
+  });
+
+  it('handles DOMException when localStorage access throws (restricted context)', () => {
+    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Access denied', 'SecurityError');
+    });
+
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    getItemSpy.mockRestore();
+  });
+
+  it('seamlessly hydrates ThemeProvider with pre-applied light document class', () => {
+    document.documentElement.className = 'light';
+    const { getByTestId } = render(
+      <ThemeProvider initialThemeMode="system">
+        <ThemeModeTestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('resolved-theme')).toHaveTextContent('light');
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+});
+
