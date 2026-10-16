@@ -8,16 +8,11 @@ export {
   ContributorSchema,
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
-  ThankYouStatusEnum,
   InvitationCodeSchema,
-  BatchImportInvitationCodeItemSchema,
   GuestAddressUpdateSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
-  ThankYouStatus,
-  UpdateThankYouNoteDTO,
-  BatchUpdateThankYouNotesDTO,
   InvitationCodeDTO,
   BatchImportInvitationCodesDTO,
   GuestAddressUpdateDTO,

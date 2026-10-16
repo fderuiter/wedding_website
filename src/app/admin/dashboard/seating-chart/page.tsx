@@ -16,6 +16,7 @@ export default function SeatingChartAdminPage() {
   const [editingTable, setEditingTable] = useState<SeatingTableDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch tables & invitation codes
   const fetchData = useCallback(async () => {
@@ -49,6 +50,22 @@ export default function SeatingChartAdminPage() {
 
   // Derive unassigned guests
   const unassignedGuests = allGuests.filter((g) => !g.tableId);
+
+  // Compute search matching stats
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const isSearching = normalizedQuery.length > 0;
+
+  const matchingGuests = isSearching
+    ? allGuests.filter(
+      (g) =>
+        g.guestName.toLowerCase().includes(normalizedQuery) ||
+          g.code.toLowerCase().includes(normalizedQuery)
+    )
+    : [];
+
+  const matchingGuestCount = matchingGuests.length;
+  const matchingUnassignedCount = matchingGuests.filter((g) => !g.tableId).length;
+  const matchingSeatedCount = matchingGuestCount - matchingUnassignedCount;
 
   // Table CRUD handlers
   const handleCreateTable = () => {
@@ -225,6 +242,59 @@ export default function SeatingChartAdminPage() {
           </div>
         </div>
 
+        {/* Global Guest Search Control Bar */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <label htmlFor="global-guest-search" className="sr-only">
+              Search all guests across floorplan and unassigned list
+            </label>
+            <div className="relative">
+              <input
+                id="global-guest-search"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search guest name or code across floorplan..."
+                className="w-full pl-9 pr-8 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+              />
+              <svg
+                className="w-4 h-4 text-gray-400 absolute left-3 top-2.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 font-bold text-xs"
+                  aria-label="Clear search query"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Search Result Match Summary */}
+          {isSearching && (
+            <div className="flex items-center gap-2 text-xs" aria-live="polite">
+              {matchingGuestCount > 0 ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                  Found {matchingGuestCount} match{matchingGuestCount === 1 ? '' : 'es'} ({matchingSeatedCount} seated, {matchingUnassignedCount} unassigned)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600">
+                  No guests match &ldquo;{searchQuery}&rdquo;
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
         {isLoading && (
           <div className="p-4 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
@@ -246,6 +316,8 @@ export default function SeatingChartAdminPage() {
               unassignedGuests={unassignedGuests}
               tables={tables}
               onAssignGuestToTable={handleAssignGuestToTable}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
             />
           </div>
 
@@ -258,6 +330,7 @@ export default function SeatingChartAdminPage() {
               onUpdateTablePosition={handleUpdateTablePosition}
               onDropGuestOnTable={handleAssignGuestToTable}
               onUnassignGuest={handleUnassignGuest}
+              searchQuery={searchQuery}
             />
 
             {/* Selected Table Inspector Bar */}

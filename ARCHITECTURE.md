@@ -108,6 +108,7 @@ flowchart LR
     node_api_admin_thankyounotes["thank-you-notes"]
     node_api_admin_thankyounotes_id["[id]"]
     node_api_admin_thankyounotes_batch["batch"]
+    node_api_admin_thankyounotes_export["export"]
     node_api_admin_upload["upload"]
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
@@ -175,6 +176,7 @@ flowchart LR
     node_api_admin --> node_api_admin_thankyounotes
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
+    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_export
     node_api_admin --> node_api_admin_upload
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
@@ -237,6 +239,7 @@ flowchart LR
     class node_api_admin_thankyounotes api;
     class node_api_admin_thankyounotes_id api;
     class node_api_admin_thankyounotes_batch api;
+    class node_api_admin_thankyounotes_export api;
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
