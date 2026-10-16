@@ -4,6 +4,7 @@ import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { generateMetadata, generateViewport } from './metadata';
 import { getAppConfig, toPublicAppConfig, isSiteInitialized } from '@/lib/config';
 import { ThemeProvider, ThemeMode } from '@/components/ThemeProvider';
+import { generateDynamicStyles } from '@/lib/theme/generator';
 import SetupWizard from '@/components/setup/SetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { cookies } from 'next/headers';
@@ -51,21 +52,23 @@ export default async function RootLayout({
 
   const colorPrimary = config.colorPrimary || '#B91C1C';
   const colorSecondary = config.colorSecondary || '#B45309';
+  const themePreset = config.themePreset || 'classic';
   const containerMaxW = config.layoutContainerMaxWidth || '64rem';
   const gridGap = config.layoutGridGap || '1.5rem';
   const cardPadding = config.layoutCardPadding || '2rem';
   const borderRadius = config.layoutBorderRadius || '1rem';
 
-  const serverThemeStyles = `:root {
-    --color-primary: ${colorPrimary};
-    --color-secondary: ${colorSecondary};
-    --color-primary-text: ${colorPrimary};
-    --color-secondary-text: ${colorSecondary};
-    --container-max-w: ${containerMaxW};
-    --grid-gap: ${gridGap};
-    --card-padding: ${cardPadding};
-    --radius-card: ${borderRadius};
-  }`;
+  const serverThemeStyles = generateDynamicStyles(
+    colorPrimary,
+    colorSecondary,
+    themePreset,
+    {
+      containerMaxWidth: containerMaxW,
+      gridGap: gridGap,
+      cardPadding: cardPadding,
+      borderRadius: borderRadius,
+    }
+  );
 
   const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
 
@@ -73,7 +76,7 @@ export default async function RootLayout({
     <html lang="en" suppressHydrationWarning className={`${initialHtmlClass} ${geist.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <style dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
+        <style id="dynamic-theme-style" dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
       </head>
       <body
         className={`${geist.variable} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}

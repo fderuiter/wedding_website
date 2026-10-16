@@ -56,4 +56,27 @@ describe('RootLayout Server Component Cookie Hydration', () => {
     expect(jsx.type).toBe('html');
     expect(jsx.props.className).toContain('dark');
   });
+
+  it('renders full preset tokens and dark mode selectors inside a single <style id="dynamic-theme-style"> tag in <head>', async () => {
+    mockCookies.mockResolvedValue({
+      get: () => undefined,
+    });
+
+    const jsx = await RootLayout({ children: <div>Child Content</div> });
+    const head = jsx.props.children.find((child: any) => child && child.type === 'head');
+    expect(head).toBeDefined();
+
+    const styleTag = head.props.children.find(
+      (child: any) => child && child.type === 'style' && child.props.id === 'dynamic-theme-style'
+    );
+    expect(styleTag).toBeDefined();
+
+    const cssText = styleTag.props.dangerouslySetInnerHTML.__html;
+    expect(cssText).toContain(':root {');
+    expect(cssText).toContain('--color-primary:');
+    expect(cssText).toContain('--btn-radius:');
+    expect(cssText).toContain('--dialog-bg:');
+    expect(cssText).toContain('html:not(.dark) {');
+    expect(cssText).toContain('.dark {');
+  });
 });
