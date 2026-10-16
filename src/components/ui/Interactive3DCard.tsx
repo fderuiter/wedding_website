@@ -144,13 +144,46 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
       }
     }, [Component, isInteractive]);
 
+    const {
+      'aria-describedby': _unusedDescribedBy,
+      onClick: _unusedClick,
+      onKeyDown: _unusedKeyDown,
+      ...restMixedHandlers
+    } = mixedHandlers;
+
+    const cardRole = props.role || (onClick ? 'button' : (!isInteractive ? 'region' : undefined));
+    const cardTabIndex = props.tabIndex ?? 0;
+    const combinedDescribedBy = [props['aria-describedby'], mixedHandlers['aria-describedby']].filter(Boolean).join(' ') || undefined;
+
+    const handleCardClick = (e: React.MouseEvent<any>) => {
+      mixedHandlers.onClick?.(e);
+      if (props.onClick && props.onClick !== onClick) {
+        props.onClick(e);
+      }
+    };
+
+    const handleCardKeyDown = (e: React.KeyboardEvent<any>) => {
+      mixedHandlers.onKeyDown?.(e);
+      if (props.onKeyDown) {
+        (props.onKeyDown as any)(e);
+      }
+    };
+
     return (
       <MotionComponentWrapper
         asComponent={Component}
         ref={setRef}
+        role={cardRole}
+        tabIndex={cardTabIndex}
+        aria-describedby={combinedDescribedBy}
         {...(props as any)}
-        className={cn(className)}
-        {...mixedHandlers}
+        className={cn(
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all',
+          className
+        )}
+        {...restMixedHandlers}
+        onClick={handleCardClick}
+        onKeyDown={handleCardKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}
         style={{
