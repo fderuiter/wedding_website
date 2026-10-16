@@ -8,7 +8,7 @@ import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
 import { ThemeSelector } from '../ui/ThemeSelector';
-import { deriveBrandMonogram } from '@/features/content';
+import { deriveBrandMonogram } from '@/features/content/schemas';
 
 /**
  * @interface NavbarProps
