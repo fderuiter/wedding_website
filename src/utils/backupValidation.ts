@@ -171,6 +171,9 @@ const BackupRegistryItemSchema = z.object({
   quantity: RegistryItemSchema.shape.quantity,
 
   // Optional/Nullable fields
+  itemType: RegistryItemSchema.shape.itemType.optional(),
+  paymentHandleType: RegistryItemSchema.shape.paymentHandleType.nullable().optional(),
+  paymentHandle: RegistryItemSchema.shape.paymentHandle.nullable().optional(),
   vendorUrl: RegistryItemSchema.shape.vendorUrl.nullable().optional(),
   isGroupGift: RegistryItemSchema.shape.isGroupGift.optional(),
   purchased: RegistryItemSchema.shape.purchased.optional(),

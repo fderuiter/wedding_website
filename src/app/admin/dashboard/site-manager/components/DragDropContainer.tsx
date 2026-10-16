@@ -17,12 +17,14 @@ interface DragDropContainerProps {
   features: Feature[];
   saveFeatures: (updated: Feature[]) => Promise<any>;
   toggleVisibility: (id: string) => void;
+  onDeleteSection?: (id: string) => void;
 }
 
 export default function DragDropContainer({
   features,
   saveFeatures,
   toggleVisibility,
+  onDeleteSection,
 }: DragDropContainerProps) {
   const [announcement, setAnnouncement] = useState<string>('');
 
@@ -135,6 +137,22 @@ export default function DragDropContainer({
                         >
                           {feature.visible ? 'Visible' : 'Hidden'}
                         </Button>
+                        {feature.type === 'custom' && (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            aria-label={`Delete ${feature.title || feature.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onDeleteSection) {
+                                onDeleteSection(feature.id);
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}

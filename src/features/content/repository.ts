@@ -50,6 +50,20 @@ export class ContentRepository implements IContentRepository {
     return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
 
+  async createNode(data: { type: string; tags?: string[]; data: any }, author: string = 'System'): Promise<ContentNodeDTO> {
+    return executeInTransaction(this.client, async (tx) => {
+      const node = await tx.contentNode.create({
+        data: {
+          type: data.type,
+          tags: data.tags || [],
+          data: data.data,
+        }
+      });
+      await createAuditSnapshot('ContentNode', node.id, node, author, tx);
+      return ContentNodeSchema.parse(node);
+    });
+  }
+
 }
 
 export const contentRepository = new ContentRepository();

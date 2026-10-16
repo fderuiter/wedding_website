@@ -10,6 +10,8 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 
+import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
+
 export const metadata: Metadata = {
   title: 'Photos',
   alternates: {
@@ -68,8 +70,12 @@ export default async function PhotosPage() {
         Our Wedding Photos
       </h1>
       <p className="text-center text-lg mb-8">
-        Here is a small selection of photos from our special day. You can view the full album on Google Photos.
+        Here is a small selection of photos from our special day. You can view the full album on Google Photos or upload your own photos below.
       </p>
+
+      <div className="mb-10">
+        <PhotoGalleryClient initialPhotos={urls} />
+      </div>
 
       {isUsingFallback && (
         <div
