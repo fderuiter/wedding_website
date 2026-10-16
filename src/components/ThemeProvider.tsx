@@ -347,11 +347,19 @@ function applyResolvedTheme(resolved: ResolvedTheme) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   if (resolved === 'dark') {
-    root.classList.add('dark');
-    root.classList.remove('light');
+    if (!root.classList.contains('dark')) {
+      root.classList.add('dark');
+    }
+    if (root.classList.contains('light')) {
+      root.classList.remove('light');
+    }
   } else {
-    root.classList.add('light');
-    root.classList.remove('dark');
+    if (!root.classList.contains('light')) {
+      root.classList.add('light');
+    }
+    if (root.classList.contains('dark')) {
+      root.classList.remove('dark');
+    }
   }
 }
 
@@ -423,7 +431,15 @@ export function ThemeProvider({
     } else if (currentMode === 'dark') {
       resolved = 'dark';
     } else {
-      resolved = getSystemTheme();
+      if (
+        typeof document !== 'undefined' &&
+        (document.documentElement.classList.contains('dark') ||
+          document.documentElement.classList.contains('light'))
+      ) {
+        resolved = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      } else {
+        resolved = getSystemTheme();
+      }
     }
 
     setResolvedTheme(resolved);
