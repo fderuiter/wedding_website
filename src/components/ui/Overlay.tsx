@@ -3,7 +3,17 @@
 import React, { useCallback } from 'react';
 import { useOverlay } from '@/hooks/useOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '@/components/ThemeProvider';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { cn } from '@/utils/cn';
+
+function parseDurationSec(val?: string, fallback = 0.2): number {
+  if (!val) return fallback;
+  if (val.endsWith('ms')) return parseFloat(val) / 1000;
+  if (val.endsWith('s')) return parseFloat(val);
+  const parsed = parseFloat(val);
+  return isNaN(parsed) ? fallback : parsed;
+}
 
 export interface OverlayProps {
   isOpen: boolean;
@@ -35,6 +45,9 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
     ref
   ) => {
     const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose);
+    const { themePreset } = useTheme();
+    const presetTokens = getPresetTokens(themePreset);
+    const durationNormal = parseDurationSec(presetTokens['--motion-duration-normal'], 0.2);
 
     const setOverlayRef = useCallback(
       (node: HTMLDivElement | null) => {
@@ -54,19 +67,19 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
         initial: { opacity: 0, scale: 0.95 },
         animate: { opacity: 1, scale: 1 },
         exit: { opacity: 0, scale: 0.95 },
-        transition: { duration: 0.2 },
+        transition: { duration: durationNormal },
       },
       'slide-down': {
         initial: { opacity: 0, y: -20 },
         animate: { opacity: 1, y: 0 },
         exit: { opacity: 0, y: -20 },
-        transition: { duration: 0.2 },
+        transition: { duration: durationNormal },
       },
       fade: {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
         exit: { opacity: 0 },
-        transition: { duration: 0.2 },
+        transition: { duration: durationNormal },
       },
     };
 
@@ -82,7 +95,7 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: durationNormal }}
             onClick={handleBackdropClick}
             aria-hidden={!isOpen}
             role={role}
