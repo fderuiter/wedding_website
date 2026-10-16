@@ -49,8 +49,23 @@ jest.mock('next/server', () => {
       }
     }
 
-    json() {
-      return Promise.resolve(JSON.parse(this.bodyContent));
+    async json() {
+      if (typeof this.bodyContent === 'string') {
+        return JSON.parse(this.bodyContent);
+      }
+      if (this.bodyContent && typeof (this.bodyContent as any).getReader === 'function') {
+        const reader = (this.bodyContent as any).getReader();
+        const decoder = new TextDecoder();
+        let result = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          result += decoder.decode(value, { stream: true });
+        }
+        result += decoder.decode();
+        return JSON.parse(result);
+      }
+      return this.bodyContent;
     }
   }
 
@@ -169,6 +184,68 @@ describe('Maintenance API Routes Integration Tests', () => {
         contributor: mockContributor,
         snapshotVersion: mockSnapshot,
       });
+    });
+
+    test('fetches records sequentially using cursor pagination across multiple chunks', async () => {
+      const chunk1 = Array.from({ length: 100 }, (_, i) => ({ id: `ri_${i + 1}`, name: `Item ${i + 1}` }));
+      const chunk2 = Array.from({ length: 50 }, (_, i) => ({ id: `ri_${i + 101}`, name: `Item ${i + 101}` }));
+
+      mockPrisma.appConfig.findMany.mockResolvedValue([]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+      mockPrisma.media.findMany.mockResolvedValue([]);
+      mockPrisma.weddingPartyMember.findMany.mockResolvedValue([]);
+      mockPrisma.attraction.findMany.mockResolvedValue([]);
+      mockPrisma.registryItem.findMany
+        .mockResolvedValueOnce(chunk1 as any)
+        .mockResolvedValueOnce(chunk2 as any);
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+      mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/export');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.registryItem).toHaveLength(150);
+      expect(data.registryItem[0].id).toBe('ri_1');
+      expect(data.registryItem[149].id).toBe('ri_150');
+
+      expect(mockPrisma.registryItem.findMany).toHaveBeenNthCalledWith(1, {
+        take: 100,
+        orderBy: { id: 'asc' },
+      });
+      expect(mockPrisma.registryItem.findMany).toHaveBeenNthCalledWith(2, {
+        take: 100,
+        orderBy: { id: 'asc' },
+        cursor: { id: 'ri_100' },
+        skip: 1,
+      });
+    });
+
+    test('sanitizes appConfig records before stream output', async () => {
+      mockPrisma.appConfig.findMany.mockResolvedValue([
+        {
+          id: 'global',
+          brideName: 'Alice',
+          adminPassword: 'SuperSecretPassword',
+          databaseUrl: 'postgres://secret:password@localhost/db',
+        },
+      ] as any);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+      mockPrisma.media.findMany.mockResolvedValue([]);
+      mockPrisma.weddingPartyMember.findMany.mockResolvedValue([]);
+      mockPrisma.attraction.findMany.mockResolvedValue([]);
+      mockPrisma.registryItem.findMany.mockResolvedValue([]);
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+      mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/export');
+      const res = await GET(req);
+
+      const data = await res.json();
+      expect(data.appConfig[0].brideName).toBe('Alice');
+      expect(data.appConfig[0].adminPassword).toBeUndefined();
+      expect(data.appConfig[0].databaseUrl).toBeUndefined();
     });
   });
 
