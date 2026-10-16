@@ -225,7 +225,7 @@ export function parseInvitationCodesCsv(
   return { parseResult, rows };
 }
 
-export function parseCsvLines(text: string): string[][] {
+function parseCsvLines(text: string): string[][] {
   const result: string[][] = [];
   let currentRow: string[] = [];
   let currentField = '';

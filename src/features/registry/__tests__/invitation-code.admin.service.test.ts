@@ -10,6 +10,7 @@ describe('InvitationCodeAdminService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
+        createMany: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
       },
@@ -147,9 +148,7 @@ describe('InvitationCodeAdminService', () => {
 
     it('imports batch of valid guest records successfully including extra fields', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
-      mockPrismaClient.invitationCode.create.mockImplementation((args: any) =>
-        Promise.resolve({ id: 'new-id', ...args.data })
-      );
+      mockPrismaClient.invitationCode.createMany.mockResolvedValue({ count: 2 });
 
       const records = [
         {
@@ -171,26 +170,29 @@ describe('InvitationCodeAdminService', () => {
       expect(result.count).toBe(2);
       expect(result.imported).toBe(2);
       expect(result.skipped).toBe(0);
-      expect(mockPrismaClient.invitationCode.create).toHaveBeenCalledTimes(2);
-      expect(mockPrismaClient.invitationCode.create).toHaveBeenNthCalledWith(1, {
-        data: {
-          guestName: 'John Doe',
-          code: 'JOHN100',
-          email: 'john@example.com',
-          dietaryNotes: 'Gluten Free',
-          plusOneAllocations: 1,
-          plusOneFirstName: 'Sarah',
-          plusOneLastName: 'Doe',
-          extraFields: { Table: '5' },
-          used: false,
-        },
+      expect(mockPrismaClient.invitationCode.createMany).toHaveBeenCalledTimes(1);
+      const createManyCall = mockPrismaClient.invitationCode.createMany.mock.calls[0][0];
+      expect(createManyCall.data).toHaveLength(2);
+      expect(createManyCall.data[0]).toEqual({
+        guestName: 'John Doe',
+        code: 'JOHN100',
+        email: 'john@example.com',
+        dietaryNotes: 'Gluten Free',
+        plusOneAllocations: 1,
+        plusOneFirstName: 'Sarah',
+        plusOneLastName: 'Doe',
+        extraFields: { Table: '5' },
+        used: false,
       });
+      expect(createManyCall.data[1].guestName).toBe('Jane Smith');
+      expect(createManyCall.data[1].code).toMatch(/^[A-Z0-9]{8}$/);
     });
 
     it('skips duplicate codes when collisionStrategy is skip', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([
         { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
       ]);
+      mockPrismaClient.invitationCode.createMany.mockResolvedValue({ count: 1 });
 
       const records = [
         { guestName: 'New Guest 1', code: 'EXISTING1' },
@@ -201,7 +203,22 @@ describe('InvitationCodeAdminService', () => {
 
       expect(result.imported).toBe(1);
       expect(result.skipped).toBe(1);
-      expect(mockPrismaClient.invitationCode.create).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.invitationCode.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.invitationCode.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            guestName: 'New Guest 2',
+            code: 'NEWCODE1',
+            email: null,
+            dietaryNotes: null,
+            plusOneAllocations: 0,
+            plusOneFirstName: null,
+            plusOneLastName: null,
+            extraFields: undefined,
+            used: false,
+          },
+        ],
+      });
     });
 
     it('updates existing record including extra fields when collisionStrategy is update', async () => {
@@ -225,6 +242,7 @@ describe('InvitationCodeAdminService', () => {
 
       expect(result.updated).toBe(1);
       expect(result.imported).toBe(0);
+      expect(mockPrismaClient.invitationCode.createMany).not.toHaveBeenCalled();
       expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: {
@@ -235,6 +253,28 @@ describe('InvitationCodeAdminService', () => {
           extraFields: { Group: 'VIP' },
         },
       });
+    });
+
+    it('processes bulk updates concurrently in bounded parallel chunks', async () => {
+      // Simulate 60 existing records in DB to exceed the 50-item chunk size
+      const dbRecords = Array.from({ length: 60 }, (_, idx) => ({
+        id: `id-${idx + 1}`,
+        code: `CODE${idx + 1}`,
+        guestName: `Guest ${idx + 1}`,
+      }));
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue(dbRecords);
+      mockPrismaClient.invitationCode.update.mockResolvedValue({});
+
+      const records = dbRecords.map((rec) => ({
+        guestName: `${rec.guestName} Updated`,
+        code: rec.code,
+      }));
+
+      const result = await service.importBatch(records, 'update');
+
+      expect(result.updated).toBe(60);
+      expect(result.imported).toBe(0);
+      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledTimes(60);
     });
 
     it('throws error when collisionStrategy is reject and duplicate code is detected', async () => {

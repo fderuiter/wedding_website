@@ -22,12 +22,19 @@ describe('registryService', () => {
   });
 
   describe('getAllItems', () => {
-    it('returns all registry items and propagates includeContributors flag', async () => {
-      const items = [{ id: '1' } as RegistryItem];
-      mockRepository.getAllItems.mockResolvedValue(items);
+    it('returns paginated registry items and propagates options to repository', async () => {
+      const paginatedResult = {
+        items: [{ id: '1' } as RegistryItem],
+        total: 1,
+        page: 2,
+        limit: 10,
+        totalPages: 1,
+      };
+      mockRepository.getAllItems.mockResolvedValue(paginatedResult as any);
 
-      await expect(registryService.getAllItems({ includeContributors: true })).resolves.toEqual(items);
-      expect(mockRepository.getAllItems).toHaveBeenCalledWith({ includeContributors: true });
+      const options = { page: 2, limit: 10, category: 'Kitchen', includeContributors: true };
+      await expect(registryService.getAllItems(options)).resolves.toEqual(paginatedResult);
+      expect(mockRepository.getAllItems).toHaveBeenCalledWith(options);
     });
 
     it('throws when repository fails', async () => {

@@ -314,7 +314,7 @@ function parseLdImage(imageField: any): { url: string; alt?: string } | null {
   return null;
 }
 
-export function parsePrice(value: string | number | null | undefined): number | undefined {
+function parsePrice(value: string | number | null | undefined): number | undefined {
   if (value === null || value === undefined) return undefined;
 
   let num: number;

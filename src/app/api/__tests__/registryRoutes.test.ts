@@ -155,26 +155,55 @@ describe('Registry API routes', () => {
   });
 
   describe('GET /api/registry/items', () => {
-    it('returns items without contributors for public guest requests', async () => {
+    it('returns paginated items without contributors for public guest requests', async () => {
       mockIsAdminRequest.mockResolvedValue(false);
-      const items = [{ id: '1', name: 'Item', contributors: [] }];
-      mockGetAllItems.mockResolvedValue(items);
+      const paginatedData = { items: [{ id: '1', name: 'Item', contributors: [] }], total: 1, page: 1, limit: 20, totalPages: 1 };
+      mockGetAllItems.mockResolvedValue(paginatedData);
       const res = await getItems();
       expect(res.status).toBe(200);
-      expect(mockGetAllItems).toHaveBeenCalledWith({ includeContributors: false });
+      expect(mockGetAllItems).toHaveBeenCalledWith({
+        page: 1,
+        limit: 20,
+        category: undefined,
+        minPrice: undefined,
+        maxPrice: undefined,
+        includeContributors: false,
+      });
       const json = await res.json();
-      expect(json.data).toEqual(items);
+      expect(json.data).toEqual(paginatedData);
     });
 
-    it('requests contributors for administrative requests', async () => {
+    it('requests contributors and validates query parameters for administrative requests', async () => {
       mockIsAdminRequest.mockResolvedValue(true);
-      const items = [{ id: '1', name: 'Item', contributors: [{ name: 'John', amount: 50, date: '2026-01-01' }] }];
-      mockGetAllItems.mockResolvedValue(items);
-      const res = await getItems();
+      const paginatedData = {
+        items: [{ id: '1', name: 'Item', contributors: [{ name: 'John', amount: 50, date: '2026-01-01' }] }],
+        total: 1,
+        page: 2,
+        limit: 10,
+        totalPages: 1,
+      };
+      mockGetAllItems.mockResolvedValue(paginatedData);
+      const req = new Request('http://localhost/api/registry/items?page=2&limit=10&category=Kitchen&minPrice=10&maxPrice=100');
+      const res = await getItems(req as unknown as NextRequest);
       expect(res.status).toBe(200);
-      expect(mockGetAllItems).toHaveBeenCalledWith({ includeContributors: true });
+      expect(mockGetAllItems).toHaveBeenCalledWith({
+        page: 2,
+        limit: 10,
+        category: 'Kitchen',
+        minPrice: 10,
+        maxPrice: 100,
+        includeContributors: true,
+      });
       const json = await res.json();
-      expect(json.data).toEqual(items);
+      expect(json.data).toEqual(paginatedData);
+    });
+
+    it('returns 400 when query parameters fail validation', async () => {
+      const req = new Request('http://localhost/api/registry/items?limit=500');
+      const res = await getItems(req as unknown as NextRequest);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toContain('Invalid query parameters');
     });
 
     it('returns 500 on service failure', async () => {
