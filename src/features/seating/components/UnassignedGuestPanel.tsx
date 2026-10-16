@@ -23,6 +23,7 @@ export function UnassignedGuestPanel({
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
+  const [targetSeatNumber, setTargetSeatNumber] = useState<number | undefined>(undefined);
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -51,9 +52,14 @@ export function UnassignedGuestPanel({
   const handleQuickAssignSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedGuestForModal && targetTableId) {
-      onAssignGuestToTable(selectedGuestForModal.id, targetTableId);
+      if (targetSeatNumber !== undefined) {
+        onAssignGuestToTable(selectedGuestForModal.id, targetTableId, targetSeatNumber);
+      } else {
+        onAssignGuestToTable(selectedGuestForModal.id, targetTableId);
+      }
       setSelectedGuestForModal(null);
       setTargetTableId('');
+      setTargetSeatNumber(undefined);
     }
   };
 
@@ -130,11 +136,13 @@ export function UnassignedGuestPanel({
       </div>
 
       {/* Accessible Click-to-Assign Dialog */}
+      {/* Accessible Click-to-Assign Dialog */}
       <Dialog
         isOpen={Boolean(selectedGuestForModal)}
         onClose={() => {
           setSelectedGuestForModal(null);
           setTargetTableId('');
+          setTargetSeatNumber(undefined);
         }}
         title={selectedGuestForModal ? `Assign ${selectedGuestForModal.guestName}` : undefined}
         className="max-w-sm w-full"
@@ -147,7 +155,10 @@ export function UnassignedGuestPanel({
             <select
               id="quick-assign-table-select"
               value={targetTableId}
-              onChange={(e) => setTargetTableId(e.target.value)}
+              onChange={(e) => {
+                setTargetTableId(e.target.value);
+                setTargetSeatNumber(undefined);
+              }}
               className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               {tables.map((t) => (
@@ -157,12 +168,40 @@ export function UnassignedGuestPanel({
               ))}
             </select>
           </div>
+
+          <div>
+            <label htmlFor="unassigned-seat-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Select Seat (Optional)
+            </label>
+            <select
+              id="unassigned-seat-select"
+              value={targetSeatNumber ?? ''}
+              onChange={(e) => setTargetSeatNumber(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+              className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            >
+              <option value="">Any available seat</option>
+              {(() => {
+                const selTable = tables.find((t) => t.id === targetTableId);
+                if (!selTable) return null;
+                return Array.from({ length: selTable.capacity }, (_, idx) => idx + 1).map((seatNum) => {
+                  const occ = selTable.invitationCodes?.find((g) => g.seatNumber === seatNum);
+                  return (
+                    <option key={seatNum} value={seatNum}>
+                      Seat {seatNum} {occ ? `(${occ.guestName})` : '(Empty)'}
+                    </option>
+                  );
+                });
+              })()}
+            </select>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => {
                 setSelectedGuestForModal(null);
                 setTargetTableId('');
+                setTargetSeatNumber(undefined);
               }}
               className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
             >
