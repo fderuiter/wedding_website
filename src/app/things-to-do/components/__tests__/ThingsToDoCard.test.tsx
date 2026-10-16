@@ -101,4 +101,52 @@ describe('ThingsToDoCard', () => {
 
     expect(screen.queryByText('Book Hotel Block')).not.toBeInTheDocument();
   });
+
+  it('renders fallback Google Maps directions link when directions is missing but coordinates exist', () => {
+    const fallbackAttraction: AttractionDTO = {
+      ...mockAttraction,
+      directions: '',
+      latitude: 45.0,
+      longitude: -90.0,
+    };
+
+    render(<ThingsToDoCard attraction={fallbackAttraction} />);
+
+    const directionsLink = screen.getByText('Directions').closest('a');
+    expect(directionsLink).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/dir/?api=1&destination=45,-90'
+    );
+    expect(directionsLink).toHaveAttribute('target', '_blank');
+  });
+
+  it('renders fallback Google Maps directions link when custom directions is invalid but coordinates exist', () => {
+    const invalidDirectionsAttraction: AttractionDTO = {
+      ...mockAttraction,
+      directions: 'javascript:alert(1)',
+      latitude: 45.0,
+      longitude: -90.0,
+    };
+
+    render(<ThingsToDoCard attraction={invalidDirectionsAttraction} />);
+
+    const directionsLink = screen.getByText('Directions').closest('a');
+    expect(directionsLink).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/dir/?api=1&destination=45,-90'
+    );
+  });
+
+  it('omits directions link when directions is empty and coordinates are (0, 0)', () => {
+    const noDirectionsAttraction: AttractionDTO = {
+      ...mockAttraction,
+      directions: '',
+      latitude: 0,
+      longitude: 0,
+    };
+
+    render(<ThingsToDoCard attraction={noDirectionsAttraction} />);
+
+    expect(screen.queryByText('Directions')).not.toBeInTheDocument();
+  });
 });
