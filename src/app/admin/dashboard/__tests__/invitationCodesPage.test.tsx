@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import InvitationCodesDashboardPage from '../invitation-codes/page';
+import InvitationCodesDashboardPage, { getAttendanceStatus } from '../invitation-codes/page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 
@@ -189,6 +189,113 @@ describe('InvitationCodesDashboardPage', () => {
     expect(screen.getByText('No invitation codes match your search or filter criteria.')).toBeInTheDocument();
   });
 
+  it('correctly derives guest RSVP attendance status via getAttendanceStatus', () => {
+    // Explicit extraFields values
+    expect(getAttendanceStatus({ used: true, extraFields: { attendanceStatus: 'attending' } })).toBe('attending');
+    expect(getAttendanceStatus({ used: true, extraFields: { rsvpStatus: 'accepted' } })).toBe('attending');
+    expect(getAttendanceStatus({ used: true, extraFields: { attending: true } })).toBe('attending');
+    expect(getAttendanceStatus({ used: false, extraFields: { attendance: 'declined' } })).toBe('declined');
+    expect(getAttendanceStatus({ used: true, extraFields: { status: 'rejected' } })).toBe('declined');
+    expect(getAttendanceStatus({ used: false, extraFields: { attending: false } })).toBe('declined');
+    expect(getAttendanceStatus({ used: false, extraFields: { rsvpStatus: 'pending' } })).toBe('pending');
+
+    // Legacy fallback behavior (undefined or empty extraFields)
+    expect(getAttendanceStatus({ used: true, extraFields: undefined })).toBe('attending');
+    expect(getAttendanceStatus({ used: true, extraFields: null })).toBe('attending');
+    expect(getAttendanceStatus({ used: true, extraFields: {} })).toBe('attending');
+    expect(getAttendanceStatus({ used: false, extraFields: undefined })).toBe('pending');
+    expect(getAttendanceStatus({ used: false, extraFields: null })).toBe('pending');
+  });
+
+  it('filters codes by RSVP attendance filter tabs (All, Attending, Declined, Pending)', () => {
+    const rsvpMockCodes = [
+      { id: '1', guestName: 'Alice Smith', code: 'A1', used: false }, // pending
+      { id: '2', guestName: 'Bob Jones', code: 'B2', used: true, extraFields: { attendanceStatus: 'attending' } }, // attending
+      { id: '3', guestName: 'Charlie Brown', code: 'C3', used: true, extraFields: { attendanceStatus: 'declined' } }, // declined
+      { id: '4', guestName: 'Diana Prince', code: 'D4', used: false, extraFields: { rsvpStatus: 'pending' } }, // pending
+    ];
+
+    (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+      data: rsvpMockCodes,
+      isLoading: false,
+      error: null,
+      create: mockCreate,
+      remove: mockRemove,
+      fetchAll: mockFetchAll,
+    });
+
+    renderComponent();
+
+    const allAttendanceTab = screen.getByRole('button', { name: 'All attendance (4)' });
+    const attendingTab = screen.getByRole('button', { name: 'Attending (1)' });
+    const declinedTab = screen.getByRole('button', { name: 'Declined (1)' });
+    const pendingTab = screen.getByRole('button', { name: 'Pending (2)' });
+
+    // Click Attending tab
+    fireEvent.click(attendingTab);
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+    expect(screen.getByText('Bob Jones')).toBeInTheDocument();
+    expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
+    expect(screen.queryByText('Diana Prince')).not.toBeInTheDocument();
+
+    // Click Declined tab
+    fireEvent.click(declinedTab);
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(screen.queryByText('Diana Prince')).not.toBeInTheDocument();
+
+    // Click Pending tab
+    fireEvent.click(pendingTab);
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
+    expect(screen.getByText('Diana Prince')).toBeInTheDocument();
+
+    // Click All Attendance tab
+    fireEvent.click(allAttendanceTab);
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    expect(screen.getByText('Bob Jones')).toBeInTheDocument();
+    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(screen.getByText('Diana Prince')).toBeInTheDocument();
+  });
+
+  it('combines redemption status filter, attendance filter, and search query', () => {
+    const mixedMockCodes = [
+      { id: '1', guestName: 'Alice Smith', code: 'A1', used: true, extraFields: { attendanceStatus: 'attending' } },
+      { id: '2', guestName: 'Bob Jones', code: 'B2', used: true, extraFields: { attendanceStatus: 'declined' } },
+      { id: '3', guestName: 'Charlie Brown', code: 'C3', used: false },
+    ];
+
+    (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+      data: mixedMockCodes,
+      isLoading: false,
+      error: null,
+      create: mockCreate,
+      remove: mockRemove,
+      fetchAll: mockFetchAll,
+    });
+
+    renderComponent();
+
+    const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
+    const redeemedTab = screen.getByRole('button', { name: 'Redeemed (2)' });
+    const declinedTab = screen.getByRole('button', { name: 'Declined (1)' });
+
+    // Select Redeemed filter and Declined filter -> Bob Jones
+    fireEvent.click(redeemedTab);
+    fireEvent.click(declinedTab);
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+    expect(screen.getByText('Bob Jones')).toBeInTheDocument();
+    expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
+
+    // Search for "Alice" while on Redeemed + Declined -> empty state
+    fireEvent.change(searchInput, { target: { value: 'Alice' } });
+    expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    expect(screen.getByText('No invitation codes match your search or filter criteria.')).toBeInTheDocument();
+  });
+
   it('shows appropriate empty states when codes array is empty vs when filter produces no matches', () => {
     // Case 1: Database has codes, but search matches nothing
     renderComponent();
@@ -223,8 +330,7 @@ describe('InvitationCodesDashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate New Code' }));
     expect(screen.getByRole('heading', { name: 'Generate Invitation Code' })).toBeInTheDocument();
 
-    const inputs = screen.getAllByRole('textbox');
-    // inputs[0] is searchInput, inputs[1] is Guest Name, inputs[2] is Code
+    // Guest Name and Code inputs
     const guestNameInput = screen.getByPlaceholderText('e.g. John Doe');
     const codeInput = screen.getByPlaceholderText('e.g. JOHN123');
 
