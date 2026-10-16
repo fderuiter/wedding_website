@@ -471,4 +471,18 @@ describe('ThemeProvider Theme Presets', () => {
     expect(getByTestId('card-spring-stiffness')).toHaveTextContent('400');
     expect(getByTestId('card-spring-damping')).toHaveTextContent('25');
   });
+
+  it('correctly parses zero values for numerical theme tokens without falling back', () => {
+    // Test that zero value tokens like roughness 0 do not trigger falsy fallback values
+    const { getByTestId } = render(
+      <ThemeProvider config={{ themePreset: 'editorial' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('editorial');
+    expect(getByTestId('metalness')).toHaveTextContent('1');
+    expect(getByTestId('roughness')).toHaveTextContent('0.1');
+    expect(getByTestId('env-map-intensity')).toHaveTextContent('1.8');
+  });
 });

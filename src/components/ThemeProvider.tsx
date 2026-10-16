@@ -570,13 +570,18 @@ export function ThemeProvider({
   );
 
   const activePresetTokens = getPresetTokens(config?.themePreset);
-  const metalness = parseFloat(activePresetTokens['--3d-metalness']) || 1;
-  const roughness = parseFloat(activePresetTokens['--3d-roughness']) || 0.2;
-  const envMapIntensity = parseFloat(activePresetTokens['--3d-env-map-intensity']) || 1.2;
-  const cardPerspective = parseFloat(activePresetTokens['--card-perspective']) || 1000;
-  const cardMaxRotation = parseFloat(activePresetTokens['--card-max-rotation']) || 10;
-  const cardSpringStiffness = parseFloat(activePresetTokens['--card-spring-stiffness']) || 300;
-  const cardSpringDamping = parseFloat(activePresetTokens['--card-spring-damping']) || 20;
+  const parseTokenNum = (val: string | undefined, fallback: number): number => {
+    if (!val) return fallback;
+    const parsed = parseFloat(val);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  };
+  const metalness = parseTokenNum(activePresetTokens['--3d-metalness'], 1);
+  const roughness = parseTokenNum(activePresetTokens['--3d-roughness'], 0.2);
+  const envMapIntensity = parseTokenNum(activePresetTokens['--3d-env-map-intensity'], 1.2);
+  const cardPerspective = parseTokenNum(activePresetTokens['--card-perspective'], 1000);
+  const cardMaxRotation = parseTokenNum(activePresetTokens['--card-max-rotation'], 10);
+  const cardSpringStiffness = parseTokenNum(activePresetTokens['--card-spring-stiffness'], 300);
+  const cardSpringDamping = parseTokenNum(activePresetTokens['--card-spring-damping'], 20);
 
   const contextValue: ThemeContextType = {
     ...theme,
