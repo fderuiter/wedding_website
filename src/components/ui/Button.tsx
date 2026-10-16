@@ -14,7 +14,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       size = 'md',
       style,
       disabled,
-      type = 'button',
+      type,
       onClick,
       onKeyDown,
       'aria-disabled': ariaDisabledProp,
