@@ -44,12 +44,18 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     vy: 0,
   });
 
+  const cachedRectRef = useRef<{ width: number; height: number; left: number; top: number } | DOMRect | null>(null);
+
   const getNormalizedCoords = (clientX: number, clientY: number) => {
     let xNorm = 0;
     let yNorm = 0;
     
-    if (options.domRef && options.domRef.current) {
-      const rect = options.domRef.current.getBoundingClientRect();
+    let rect = cachedRectRef.current;
+    if (!rect && options.domRef && options.domRef.current) {
+      rect = options.domRef.current.getBoundingClientRect();
+    }
+
+    if (rect) {
       const { width, height, left, top } = rect;
       if (width > 0 && height > 0) {
         xNorm = Math.max(-0.5, Math.min(0.5, (clientX - left) / width - 0.5));
@@ -67,9 +73,13 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     if (isDestroyed || reduceMotion) return;
     
     if (e.stopPropagation) e.stopPropagation();
+
+    if (options.domRef && options.domRef.current) {
+      cachedRectRef.current = options.domRef.current.getBoundingClientRect();
+    }
     
-    const target = e.target as any;
-    if (target.setPointerCapture && e.pointerId !== undefined) {
+    const target = e?.target as any;
+    if (target?.setPointerCapture && e?.pointerId !== undefined) {
       try { target.setPointerCapture(e.pointerId); } catch(err) {}
     }
 
@@ -116,11 +126,12 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
   }, [options, reduceMotion, isDestroyed]);
 
   const handlePointerUp = useCallback((e: any) => {
+    cachedRectRef.current = null;
     if (!dragState.current.active) return;
     if (e.stopPropagation) e.stopPropagation();
     
-    const target = e.target as any;
-    if (target.releasePointerCapture && e.pointerId !== undefined) {
+    const target = e?.target as any;
+    if (target?.releasePointerCapture && e?.pointerId !== undefined) {
       try { target.releasePointerCapture(e.pointerId); } catch (err) {}
     }
 
@@ -138,6 +149,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
   }, [options]);
 
   const handlePointerLeave = useCallback((e: any) => {
+    cachedRectRef.current = null;
     if (dragState.current.active) {
       handlePointerUp(e);
     }
@@ -146,6 +158,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
   const destroy = useCallback(() => {
     if (isDestroyed) return;
     setIsDestroyed(true);
+    cachedRectRef.current = null;
     dragState.current.active = false;
     if (options.onDestroy) options.onDestroy();
   }, [isDestroyed, options]);
