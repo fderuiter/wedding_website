@@ -12,7 +12,7 @@ import { GET as getEntityById, PUT as updateEntityById, DELETE as deleteEntityBy
 import { registryScrapePOST as scrapeUrl } from '@/features/registry';
 import { POST as guestLogin } from '@/app/api/guest/login/route';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
-import { redactLogData } from '@/lib/logger';
+import { logger } from '@/lib/logger';
 
 describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
   beforeEach(() => {
@@ -142,7 +142,8 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
   });
 
   describe('Log Redaction Security Controls', () => {
-    test('redactLogData strips sensitive credentials from log payloads', () => {
+    test('logger redacts sensitive credentials from log payloads', () => {
+      const consoleSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
       const payload = {
         username: 'admin',
         password: 'my-super-secret-password',
@@ -153,7 +154,10 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
         },
       };
 
-      const redacted = redactLogData(payload);
+      logger.info(payload);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      const redacted = consoleSpy.mock.calls[0][0];
 
       expect(redacted.password).toBe('[REDACTED]');
       expect(redacted.nested.GUEST_PASSCODE).toBe('[REDACTED]');
@@ -161,6 +165,8 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
       expect(redacted.nested.DATABASE_URL).toContain('[REDACTED]');
       expect(redacted.nested.DATABASE_URL).not.toContain('supersecret');
       expect(redacted.username).toBe('admin');
+
+      consoleSpy.mockRestore();
     });
   });
 });

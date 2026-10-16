@@ -78,7 +78,7 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 
   const dynamicKeywords = interpolateKeywords(seoKeywords, config);
-  const dims = getLocalImageDimensions(ogImageUrl);
+  const dims = await getLocalImageDimensions(ogImageUrl);
   const ogImageObj = {
     url: siteConfig.ogImage,
     width: dims?.width || 1200,

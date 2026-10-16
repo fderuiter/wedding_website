@@ -31,6 +31,7 @@ jest.mock('@/lib/prisma', () => ({
 
 import { POST as addItemPOST, GET as getItemsGET } from '@/app/api/registry/items/route';
 import { POST as restorePOST } from '@/app/api/admin/versions/[id]/restore/route';
+// eslint-disable-next-line no-restricted-imports
 import { registryService } from '@/features/registry/service';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
@@ -45,12 +46,12 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
     jest.clearAllMocks();
   });
 
-  describe('Routing adapter middleware - Request payload translation', () => {
-    it('translates legacy request payload (v1) to active format (v2)', async () => {
+  describe('Routing adapter middleware - Request payload validation', () => {
+    it('validates standard active request payload (v2)', async () => {
       mockIsAdminRequest.mockResolvedValue(true);
       mockCreateItem.mockResolvedValue({
         id: 'item-123',
-        name: 'Legacy Toaster',
+        name: 'Standard Toaster',
         price: 99.99,
         quantity: 2,
         category: 'Kitchen',
@@ -64,15 +65,17 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         contributors: [],
       });
 
-      const legacyPayload = {
-        legacy_name: 'Legacy Toaster',
-        legacy_price: 99.99,
-        legacy_quantity: 2,
-        legacy_category: 'Kitchen',
-        legacy_description: 'Cozy toast',
-        legacy_imageUrl: '/images/toaster.png',
-        legacy_vendorUrl: 'https://example.com/toaster',
-        legacy_isGroupGift: true,
+      const activePayload = {
+        name: 'Standard Toaster',
+        price: 99.99,
+        quantity: 2,
+        category: 'Kitchen',
+        description: 'Cozy toast',
+        imageUrl: '/images/toaster.png',
+        imageAlt: undefined,
+        imageDecorative: undefined,
+        vendorUrl: 'https://example.com/toaster',
+        isGroupGift: true,
       };
 
       const req = new Request('http://localhost/api/registry/items', {
@@ -81,56 +84,54 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
           'Content-Type': 'application/json',
           'x-api-version': 'v1',
         },
-        body: JSON.stringify(legacyPayload),
+        body: JSON.stringify(activePayload),
       }) as unknown as NextRequest;
 
       const res = await addItemPOST(req, {} as any);
       expect(res.status).toBe(201);
 
-      // Verify createItem was called with mapped properties
       expect(mockCreateItem).toHaveBeenCalledWith({
-        name: 'Legacy Toaster',
+        itemType: 'PHYSICAL',
+        paymentHandleType: undefined,
+        paymentHandle: undefined,
+        name: 'Standard Toaster',
         price: 99.99,
         quantity: 2,
         category: 'Kitchen',
         description: 'Cozy toast',
         imageUrl: '/images/toaster.png',
+        imageAlt: undefined,
+        imageDecorative: undefined,
         vendorUrl: 'https://example.com/toaster',
         isGroupGift: true,
       });
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      // Verify response payload is translated back to legacy format
       expect(json.data.item).toEqual(
         expect.objectContaining({
-          legacy_name: 'Legacy Toaster',
-          legacy_price: 99.99,
-          legacy_quantity: 2,
-          legacy_category: 'Kitchen',
-          legacy_description: 'Cozy toast',
-          legacy_imageUrl: '/images/toaster.png',
-          legacy_vendorUrl: 'https://example.com/toaster',
-          legacy_isGroupGift: true,
+          name: 'Standard Toaster',
+          price: 99.99,
+          quantity: 2,
+          category: 'Kitchen',
         })
       );
-      expect(res.headers.get('x-api-version')).toBe('v1');
+      expect(res.headers.get('x-api-version')).toBe('v2');
     });
 
-    it('returns standard 400 Bad Request error when legacy payload misses mandatory properties', async () => {
+    it('returns standard 400 Bad Request error when payload misses mandatory properties', async () => {
       mockIsAdminRequest.mockResolvedValue(true);
       
-      const incompleteLegacyPayload = {
-        legacy_price: 99.99, // missing legacy_name, legacy_quantity, legacy_category
+      const incompletePayload = {
+        price: 99.99, // missing name, quantity, category
       };
 
       const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-version': 'v1',
         },
-        body: JSON.stringify(incompleteLegacyPayload),
+        body: JSON.stringify(incompletePayload),
       }) as unknown as NextRequest;
 
       const res = await addItemPOST(req, {} as any);
@@ -174,7 +175,7 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
       expect(res.headers.get('x-api-version')).toBe('v2');
     });
 
-    it('returns legacy v1 format when requested via version parameter', async () => {
+    it('returns standard v2 format even when legacy version query parameter is supplied', async () => {
       mockGetAllItems.mockResolvedValue([
         {
           id: 'item-1',
@@ -199,12 +200,10 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.data[0]).toHaveProperty('legacy_name', 'Modern Mixer');
-      expect(json.data[0]).toHaveProperty('legacy_price', 249.99);
-      expect(json.data[0]).toHaveProperty('legacy_quantity', 1);
-      expect(json.data[0]).toHaveProperty('legacy_category', 'Kitchen');
-      expect(json.data[0]).not.toHaveProperty('name');
-      expect(res.headers.get('x-api-version')).toBe('v1');
+      expect(json.data[0]).toHaveProperty('name', 'Modern Mixer');
+      expect(json.data[0]).toHaveProperty('price', 249.99);
+      expect(json.data[0]).not.toHaveProperty('legacy_name');
+      expect(res.headers.get('x-api-version')).toBe('v2');
     });
   });
 
@@ -248,6 +247,9 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
       expect(prisma.registryItem.upsert).toHaveBeenCalledWith({
         where: { id: 'registry-item-1' },
         update: {
+          itemType: 'PHYSICAL',
+          paymentHandleType: null,
+          paymentHandle: null,
           name: 'Old Gold Ring',
           price: 500,
           quantity: 1,
@@ -262,6 +264,9 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         },
         create: {
           id: 'registry-item-1',
+          itemType: 'PHYSICAL',
+          paymentHandleType: null,
+          paymentHandle: null,
           name: 'Old Gold Ring',
           price: 500,
           quantity: 1,

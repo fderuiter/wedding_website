@@ -1,4 +1,4 @@
-import { toPublicAppConfig, isMultisiteEnabled, APP_DEFAULTS, getEnvConfigOverrides, getAppConfig } from '../config';
+import { toPublicAppConfig, isMultisiteEnabled, APP_DEFAULTS, getAppConfig } from '../config';
 import { prisma } from '../prisma';
 
 jest.mock('../prisma', () => ({
@@ -141,7 +141,41 @@ describe('Configuration System Layers & Precedence', () => {
     expect(APP_DEFAULTS.venueName).not.toContain('Plummer');
   });
 
-  it('getEnvConfigOverrides extracts SITE_* environment variable overrides', () => {
+  it('extracts SITE_* environment variable overrides via getAppConfig', async () => {
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      id: 'global',
+      brideName: 'Original Bride',
+      groomName: 'Original Groom',
+      weddingDate: new Date('2026-08-15T00:00:00.000Z'),
+      baseUrl: 'https://site.com',
+      venueName: 'Original Venue',
+      venueAddress: '123 Way',
+      venueCity: 'City',
+      venueState: 'CA',
+      venueZip: '90001',
+      latitude: 34.0522,
+      longitude: -118.2437,
+      storyText: 'Story',
+      venueDescription: 'Desc',
+      travelAdvice: 'Travel',
+      heroTitle: 'Hero',
+      heroSubtitle: 'Sub',
+      seoTitle: 'SEO Title',
+      seoDescription: 'SEO Desc',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/assets/og-image.jpg',
+      seoKeywords: 'keywords',
+      colorPrimary: '#123456',
+      colorSecondary: '#654321',
+      timezone: 'UTC',
+      showCountdown: true,
+      showAddToCalendar: true,
+      features: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      subdomain: null,
+    });
+
     process.env.SITE_BRIDE_NAME = 'Alice';
     process.env.SITE_GROOM_NAME = 'Bob';
     process.env.SITE_VENUE_NAME = 'Sunset Gardens';
@@ -150,15 +184,15 @@ describe('Configuration System Layers & Precedence', () => {
     process.env.SITE_BRAND_LOGO_URL = '/images/tenant-logo.svg';
     process.env.SITE_BRAND_LOGO_ALT = 'Tenant Brand Logo';
 
-    const overrides = getEnvConfigOverrides();
+    const config = await getAppConfig('global');
 
-    expect(overrides.brideName).toBe('Alice');
-    expect(overrides.groomName).toBe('Bob');
-    expect(overrides.venueName).toBe('Sunset Gardens');
-    expect(overrides.showCountdown).toBe(false);
-    expect(overrides.brandMonogram).toBe('A & B');
-    expect(overrides.brandLogoUrl).toBe('/images/tenant-logo.svg');
-    expect(overrides.brandLogoAlt).toBe('Tenant Brand Logo');
+    expect(config.brideName).toBe('Alice');
+    expect(config.groomName).toBe('Bob');
+    expect(config.venueName).toBe('Sunset Gardens');
+    expect(config.showCountdown).toBe(false);
+    expect(config.brandMonogram).toBe('A & B');
+    expect(config.brandLogoUrl).toBe('/images/tenant-logo.svg');
+    expect(config.brandLogoAlt).toBe('Tenant Brand Logo');
   });
 
   it('getAppConfig applies deterministic precedence (Env Overrides > DB Config > Application Defaults)', async () => {
@@ -203,6 +237,29 @@ describe('Configuration System Layers & Precedence', () => {
     expect(effectiveConfig.brideName).toBe('Env Bride Override');
     expect(effectiveConfig.groomName).toBe('DB Groom');
     expect(effectiveConfig.venueName).toBe('DB Venue');
+  });
+
+  it('merges themeTokens with deterministic precedence (Presets < DB themeTokens < SITE_THEME_TOKENS)', async () => {
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      id: 'global',
+      themePreset: 'modern',
+      themeTokens: {
+        '--btn-radius': '12px',
+        '--custom-db-token': 'from-db',
+      },
+    });
+
+    process.env.SITE_THEME_TOKENS = '{"--btn-radius": "20px", "--custom-env-token": "from-env"}';
+
+    const effectiveConfig = await getAppConfig('global');
+
+    // Modern preset default for --btn-radius is 0.5rem (8px), but DB had 12px, and env had 20px
+    expect(effectiveConfig.themeTokens['--btn-radius']).toBe('20px');
+    expect(effectiveConfig.themeTokens['--custom-db-token']).toBe('from-db');
+    expect(effectiveConfig.themeTokens['--custom-env-token']).toBe('from-env');
+    // Non-overridden modern preset tokens remain intact
+    expect(effectiveConfig.themeTokens['--btn-font-weight']).toBe('600');
   });
 
   it('fails clearly with descriptive error if invalid config is parsed in production', async () => {

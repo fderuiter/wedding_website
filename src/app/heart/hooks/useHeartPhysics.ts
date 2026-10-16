@@ -6,6 +6,10 @@ import { RigidBodyType } from '@dimforge/rapier3d-compat';
 import { RapierRigidBody } from '@react-three/rapier';
 import { PHYSICS_CONSTANTS } from '../constants';
 
+const tempQuaternion = new THREE.Quaternion();
+const tempEuler = new THREE.Euler();
+const tempVector = new THREE.Vector3();
+
 interface UseHeartPhysicsProps {
   mainRbRef: React.RefObject<RapierRigidBody>
   leftRbRef: React.RefObject<RapierRigidBody>
@@ -129,11 +133,9 @@ export function useHeartPhysics({
       const position = mainRbRef.current.translation();
 
       // Easter egg logic
-      const secretSpot = {
-        x: viewportWidth / 2 - 2,
-        y: viewportHeight / 2 - 2,
-      };
-      const isInSecretSpot = position.x > secretSpot.x && position.y > secretSpot.y;
+      const secretSpotX = viewportWidth / 2 - 2;
+      const secretSpotY = viewportHeight / 2 - 2;
+      const isInSecretSpot = position.x > secretSpotX && position.y > secretSpotY;
       if (isInSecretSpot !== wasInSecretSpot.current) {
         wasInSecretSpot.current = isInSecretSpot;
         setShowEasterEgg(isInSecretSpot);
@@ -142,20 +144,41 @@ export function useHeartPhysics({
       if (!interacted) {
         if (!reduceMotion) {
           const rotation = mainRbRef.current.rotation();
-          const euler = new THREE.Euler().setFromQuaternion(
-            new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
-          );
-          euler.y += PHYSICS_CONSTANTS.IDLE_ROTATION_SPEED;
-          mainRbRef.current.setRotation(new THREE.Quaternion().setFromEuler(euler), true);
+          if (typeof tempQuaternion.set === 'function') {
+            tempQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+          } else {
+            tempQuaternion.x = rotation.x;
+            tempQuaternion.y = rotation.y;
+            tempQuaternion.z = rotation.z;
+            tempQuaternion.w = rotation.w;
+          }
+          if (typeof tempEuler.setFromQuaternion === 'function') {
+            tempEuler.setFromQuaternion(tempQuaternion);
+          }
+          tempEuler.y += PHYSICS_CONSTANTS.IDLE_ROTATION_SPEED;
+          if (typeof tempQuaternion.setFromEuler === 'function') {
+            tempQuaternion.setFromEuler(tempEuler);
+          }
+          mainRbRef.current.setRotation(tempQuaternion, true);
         }
       } else {
         const distance = Math.sqrt(position.x ** 2 + position.y ** 2);
         if (distance > 0.1) {
           if (!reduceMotion) {
-            const force = new THREE.Vector3(-position.x, -position.y, 0)
-              .normalize()
-              .multiplyScalar(PHYSICS_CONSTANTS.RETURN_FORCE_MULTIPLIER);
-            mainRbRef.current.addForce(force, true);
+            if (typeof tempVector.set === 'function') {
+              tempVector.set(-position.x, -position.y, 0);
+            } else {
+              tempVector.x = -position.x;
+              tempVector.y = -position.y;
+              tempVector.z = 0;
+            }
+            if (typeof tempVector.normalize === 'function') {
+              tempVector.normalize();
+            }
+            if (typeof tempVector.multiplyScalar === 'function') {
+              tempVector.multiplyScalar(PHYSICS_CONSTANTS.RETURN_FORCE_MULTIPLIER);
+            }
+            mainRbRef.current.addForce(tempVector, true);
           } else {
             mainRbRef.current.setTranslation({ x: 0, y: 0, z: position.z }, true);
             mainRbRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);

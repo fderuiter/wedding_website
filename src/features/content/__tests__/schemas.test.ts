@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, deriveBrandMonogram } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, deriveBrandMonogram, ThemeTokensSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -32,6 +32,31 @@ describe('Content Node Schema Validation', () => {
 
       const result = FAQNodeSchema.safeParse(minimalFAQ);
       expect(result.success).toBe(true);
+    });
+
+    it('accepts FAQ node with category, categoryTags, and keywords', () => {
+      const extendedFAQ = {
+        id: 'faq-ext-1',
+        type: 'FAQ',
+        tags: ['homepage'],
+        data: {
+          question: 'Is there a shuttle service?',
+          answer: 'Yes, shuttles will run every 15 minutes.',
+          category: 'Travel',
+          categoryTags: ['Shuttle', 'Transport'],
+          keywords: ['bus', 'shuttle', 'timing'],
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = FAQNodeSchema.safeParse(extendedFAQ);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.data.category).toBe('Travel');
+        expect(result.data.data.categoryTags).toEqual(['Shuttle', 'Transport']);
+        expect(result.data.data.keywords).toEqual(['bus', 'shuttle', 'timing']);
+      }
     });
 
     it('rejects FAQ node with mismatched type or invalid data structure', () => {
@@ -384,6 +409,84 @@ describe('Content Node Schema Validation', () => {
       };
 
       await expect(adminService['validate'](invalidInput)).rejects.toThrow(/Validation Error/);
+    });
+  });
+
+  describe('ThemeTokensSchema Validation', () => {
+    it('accepts valid CSS token keys and safe CSS values', () => {
+      const validTokens = {
+        '--btn-radius': '0.5rem',
+        '--custom-bg-color': '#123456',
+        '--heading_font_size': '24px',
+        '--shadow-layer': '0 4px 6px rgba(0, 0, 0, 0.1)',
+      };
+
+      const result = ThemeTokensSchema.safeParse(validTokens);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual(validTokens);
+      }
+    });
+
+    it('rejects CSS token keys that do not start with "--"', () => {
+      const invalidKeyTokens = {
+        'btn-radius': '0.5rem',
+      };
+
+      const result = ThemeTokensSchema.safeParse(invalidKeyTokens);
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects CSS token values containing injection characters (; { } < > newlines comments)', () => {
+      const semicolonInjection = { '--btn-radius': '0.5rem; color: red;' };
+      const braceInjection = { '--btn-radius': '0.5rem } body { display: none }' };
+      const tagInjection = { '--btn-radius': '0.5rem </style><script>alert(1)</script>' };
+      const commentInjection = { '--btn-radius': '0.5rem /* comment */' };
+      const newlineInjection = { '--btn-radius': '0.5rem\ncolor: red' };
+
+      expect(ThemeTokensSchema.safeParse(semicolonInjection).success).toBe(false);
+      expect(ThemeTokensSchema.safeParse(braceInjection).success).toBe(false);
+      expect(ThemeTokensSchema.safeParse(tagInjection).success).toBe(false);
+      expect(ThemeTokensSchema.safeParse(commentInjection).success).toBe(false);
+      expect(ThemeTokensSchema.safeParse(newlineInjection).success).toBe(false);
+    });
+
+    it('parses JSON string themeTokens in AppConfigSchema', () => {
+      const configWithJsonStringTokens = {
+        id: 'cfg-tokens-1',
+        weddingDate: new Date(),
+        baseUrl: 'https://example.com',
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        features: [],
+        themeTokens: '{"--btn-radius": "1rem", "--card-bg": "#f0f0f0"}',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = AppConfigSchema.safeParse(configWithJsonStringTokens);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.themeTokens).toEqual({
+          '--btn-radius': '1rem',
+          '--card-bg': '#f0f0f0',
+        });
+      }
     });
   });
 

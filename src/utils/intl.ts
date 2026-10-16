@@ -4,6 +4,7 @@ type NumberFormatFn = (value: number | bigint) => string;
 type DateTimeFormatFn = (date?: Date | number) => string;
 
 const numberFormatCache = new Map<string, Intl.NumberFormat>();
+const defaultCurrencyNumberMap = new Map<number, string>();
 const numberFormatFnCache = new Map<string, NumberFormatFn>();
 
 const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
@@ -36,71 +37,39 @@ function serializeOptions(options: Intl.DateTimeFormatOptions): string {
   return str;
 }
 
-let defaultNumberFormatFn: NumberFormatFn | null = null;
+let defaultNumberFormatter: Intl.NumberFormat | null = null;
 
 function getNumberFormatFn(
   locale: string,
   currency: string
 ): NumberFormatFn {
-  if (locale === 'en-US' && currency === 'USD' && defaultNumberFormatFn) {
-    return defaultNumberFormatFn;
-  }
   const key = `${locale}:${currency}`;
-  let formatFn = numberFormatFnCache.get(key);
-  if (!formatFn) {
-    if (numberFormatCache.size >= MAX_CACHE_SIZE) {
-      const oldestKey = numberFormatCache.keys().next().value;
-      if (oldestKey !== undefined) {
-        numberFormatCache.delete(oldestKey);
-        numberFormatFnCache.delete(oldestKey);
+  const cachedFn = numberFormatFnCache.get(key);
+  if (cachedFn !== undefined) {
+    return cachedFn;
+  }
+  if (numberFormatCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = numberFormatCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      numberFormatCache.delete(oldestKey);
+      numberFormatFnCache.delete(oldestKey);
+      if (oldestKey === 'en-US:USD') {
+        defaultNumberFormatter = null;
+        defaultCurrencyNumberMap.clear();
       }
     }
-    const formatter = new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    const numberCache = new Map<number | bigint, string>();
-    if (locale === 'en-US' && currency === 'USD') {
-      formatFn = (val: number | bigint) => {
-        if (typeof val === 'number' && Number.isInteger(val) && val >= 0) {
-          if (val < 1000) {
-            return '$' + val + '.00';
-          }
-          if (val < 1000000) {
-            const th = (val / 1000) | 0;
-            const rem = val % 1000;
-            const remStr = rem < 10 ? '00' + rem : rem < 100 ? '0' + rem : '' + rem;
-            return '$' + th + ',' + remStr + '.00';
-          }
-        }
-        let cached = numberCache.get(val);
-        if (cached === undefined) {
-          if (numberCache.size >= 10000) {
-            numberCache.clear();
-          }
-          cached = formatter.format(val);
-          numberCache.set(val, cached);
-        }
-        return cached;
-      };
-      defaultNumberFormatFn = formatFn;
-    } else {
-      formatFn = (val: number | bigint) => {
-        let cached = numberCache.get(val);
-        if (cached === undefined) {
-          if (numberCache.size >= 10000) {
-            numberCache.clear();
-          }
-          cached = formatter.format(val);
-          numberCache.set(val, cached);
-        }
-        return cached;
-      };
-    }
-    numberFormatCache.set(key, formatter);
-    numberFormatFnCache.set(key, formatFn);
+  }
+  const formatter = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const formatFn = formatter.format.bind(formatter);
+  numberFormatCache.set(key, formatter);
+  numberFormatFnCache.set(key, formatFn);
+  if (locale === 'en-US' && currency === 'USD') {
+    defaultNumberFormatter = formatter;
   }
   return formatFn;
 }
@@ -109,18 +78,20 @@ function getDateTimeFormatFn(
   locale: string,
   options: Intl.DateTimeFormatOptions
 ): DateTimeFormatFn {
-  let localeMap = options && typeof options === 'object' ? optionsLocaleCache.get(options) : undefined;
-  if (localeMap) {
-    const existing = localeMap.get(locale);
-    if (existing) {
-      return existing;
+  if (typeof options === 'object' && options !== null) {
+    const localeMap = optionsLocaleCache.get(options);
+    if (localeMap !== undefined) {
+      const existing = localeMap.get(locale);
+      if (existing !== undefined) {
+        return existing;
+      }
     }
   }
 
   const serialized = serializeOptions(options);
   const key = `${locale}:${serialized}`;
   let formatFn = dateTimeFormatFnCache.get(key);
-  if (!formatFn) {
+  if (formatFn === undefined) {
     if (dateTimeFormatCache.size >= MAX_CACHE_SIZE) {
       const oldestKey = dateTimeFormatCache.keys().next().value;
       if (oldestKey !== undefined) {
@@ -129,24 +100,14 @@ function getDateTimeFormatFn(
       }
     }
     const formatter = new Intl.DateTimeFormat(locale, options);
-    let lastTime: number | null = null;
-    let lastResult = '';
-    formatFn = (d?: Date | number) => {
-      if (d === undefined) return formatter.format();
-      const t = typeof d === 'number' ? d : d.getTime();
-      if (t === lastTime) {
-        return lastResult;
-      }
-      lastTime = t;
-      lastResult = formatter.format(d);
-      return lastResult;
-    };
+    formatFn = formatter.format.bind(formatter);
     dateTimeFormatCache.set(key, formatter);
     dateTimeFormatFnCache.set(key, formatFn);
   }
 
-  if (options && typeof options === 'object') {
-    if (!localeMap) {
+  if (typeof options === 'object' && options !== null) {
+    let localeMap = optionsLocaleCache.get(options);
+    if (localeMap === undefined) {
       localeMap = new Map<string, DateTimeFormatFn>();
       optionsLocaleCache.set(options, localeMap);
     }
@@ -156,6 +117,11 @@ function getDateTimeFormatFn(
   return formatFn;
 }
 
+let lastCurrencyValue: number | string | null = null;
+let lastCurrencyCode: string | null = null;
+let lastCurrencyLocale: string | null = null;
+let lastFormattedCurrencyResult: string = '';
+
 /**
  * Formats a numeric value as a currency string using Intl.NumberFormat.
  * @param value The amount to format.
@@ -163,31 +129,19 @@ function getDateTimeFormatFn(
  * @param locale The locale (default: 'en-US' if no global configuration exists).
  * @returns Formatted currency string.
  */
-const FAST_USD_CACHE: string[] = (() => {
-  const cache = new Array<string>(10000);
-  for (let i = 0; i < 1000; i++) {
-    cache[i] = '$' + i + '.00';
-  }
-  for (let i = 1000; i < 10000; i++) {
-    const th = (i / 1000) | 0;
-    const rem = i % 1000;
-    const remStr = rem < 10 ? '00' + rem : rem < 100 ? '0' + rem : '' + rem;
-    cache[i] = '$' + th + ',' + remStr + '.00';
-  }
-  return cache;
-})();
-
 export function formatCurrency(
   value: number | string,
   currency: string = 'USD',
   locale: string = 'en-US'
 ): string {
-  if (locale === 'en-US' && currency === 'USD' && typeof value === 'number' && value >= 0 && value < 10000 && (value | 0) === value) {
-    if (!defaultNumberFormatFn) {
-      getNumberFormatFn(locale, currency);
-    }
-    return FAST_USD_CACHE[value];
+  if (
+    value === lastCurrencyValue &&
+    currency === lastCurrencyCode &&
+    locale === lastCurrencyLocale
+  ) {
+    return lastFormattedCurrencyResult;
   }
+  const originalValue = value;
   if (typeof value === 'string') {
     const num = Number(value);
     if (num !== num) {
@@ -198,8 +152,23 @@ export function formatCurrency(
   if (value === null || value === undefined) {
     return '';
   }
-  return getNumberFormatFn(locale, currency)(value);
+  let result: string;
+  if (currency === 'USD' && locale === 'en-US' && defaultNumberFormatter !== null) {
+    result = defaultNumberFormatter.format(value);
+  } else {
+    result = getNumberFormatFn(locale, currency)(value);
+  }
+  lastCurrencyValue = originalValue;
+  lastCurrencyCode = currency;
+  lastCurrencyLocale = locale;
+  lastFormattedCurrencyResult = result;
+  return result;
 }
+
+let lastDateInput: Date | string | number | null = null;
+let lastOptions: Intl.DateTimeFormatOptions | null = null;
+let lastLocale: string | null = null;
+let lastFormattedResult: string = '';
 
 /**
  * Formats a Date object or date string to a localized date string using Intl.DateTimeFormat.
@@ -216,25 +185,44 @@ export function formatDate(
   if (date === 'Anonymous' || date === 'Masked') {
     return String(date);
   }
+  if (
+    date === lastDateInput &&
+    options === lastOptions &&
+    locale === lastLocale
+  ) {
+    return lastFormattedResult;
+  }
   const d = date instanceof Date ? date : new Date(date);
   const time = d.getTime();
   if (time !== time) {
     return String(date);
   }
-  const fn = (typeof options === 'object' && options !== null ? optionsLocaleCache.get(options)?.get(locale) : undefined) || getDateTimeFormatFn(locale, options);
-  return fn(d);
+  const result = getDateTimeFormatFn(locale, options)(d);
+  lastDateInput = date;
+  lastOptions = options;
+  lastLocale = locale;
+  lastFormattedResult = result;
+  return result;
 }
 
 /**
  * Clears the internal Intl caches. Useful for test isolation.
  */
 export function clearIntlCaches(): void {
-  defaultNumberFormatFn = null;
   numberFormatCache.clear();
   numberFormatFnCache.clear();
   dateTimeFormatCache.clear();
   dateTimeFormatFnCache.clear();
   optionsLocaleCache = new WeakMap();
+  defaultNumberFormatter = null;
+  lastCurrencyValue = null;
+  lastCurrencyCode = null;
+  lastCurrencyLocale = null;
+  lastFormattedCurrencyResult = '';
+  lastDateInput = null;
+  lastOptions = null;
+  lastLocale = null;
+  lastFormattedResult = '';
 }
 
 /**

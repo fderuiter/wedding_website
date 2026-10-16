@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { ThemeProvider, useTheme } from '../ThemeProvider';
+import { ThemeProvider, useTheme, optimizeContrast, contrastCache, clearContrastCache } from '../ThemeProvider';
 
 // Helper component to display theme values
 function TestComponent() {
@@ -533,5 +533,247 @@ describe('ThemeProvider Theme Presets', () => {
     expect(cssText).toContain('.dark {');
     expect(cssText).toContain('--dialog-bg: #231118;');
     expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
+  });
+
+  it('injects custom themeTokens overrides into dynamic style block', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themeTokens: { '--btn-radius': '1.5rem', '--custom-accent-token': '#ff0055' } }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('--btn-radius: 1.5rem;');
+    expect(cssText).toContain('--custom-accent-token: #ff0055;');
+  });
+
+  it('sanitizes themeTokens values containing injection attempts', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themeTokens: { '--btn-radius': '1rem; color: red;', '--safe-token': '20px' } }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).not.toContain('--btn-radius: 1rem; color: red;');
+    expect(cssText).toContain('--safe-token: 20px;');
+  });
+});
+
+describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {
+  it('outputs calibrated contrast CSS variables for primary text, secondary text, error text, focus ring, and surface border', () => {
+    const { container } = render(
+      <ThemeProvider config={{ colorPrimary: '#B91C1C', colorSecondary: '#B45309' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem).not.toBeNull();
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('--color-primary-text:');
+    expect(cssText).toContain('--color-secondary-text:');
+    expect(cssText).toContain('--color-error-text:');
+    expect(cssText).toContain('--color-focus-ring:');
+    expect(cssText).toContain('--color-surface-border:');
+  });
+
+  it('includes container cascade surface rules covering gray, slate, zinc, stone, neutral families and data-surface attributes', () => {
+    const { container } = render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    // Check light container surface rules
+    expect(cssText).toContain('.bg-white');
+    expect(cssText).toContain('[data-surface="light"]');
+    expect(cssText).toContain('.bg-gray-50');
+    expect(cssText).toContain('.bg-slate-50');
+    expect(cssText).toContain('.bg-zinc-50');
+    expect(cssText).toContain('.bg-stone-50');
+    expect(cssText).toContain('.bg-neutral-50');
+
+    // Check dark container surface rules
+    expect(cssText).toContain('.bg-black');
+    expect(cssText).toContain('[data-surface="dark"]');
+    expect(cssText).toContain('.bg-gray-800');
+    expect(cssText).toContain('.bg-slate-800');
+    expect(cssText).toContain('.bg-zinc-800');
+    expect(cssText).toContain('.bg-stone-800');
+    expect(cssText).toContain('.bg-neutral-800');
+    expect(cssText).toContain('.dark .dark\\:bg-gray-800');
+    expect(cssText).toContain('.dark .dark\\:bg-slate-800');
+    expect(cssText).toContain('.dark .dark\\:bg-zinc-800');
+    expect(cssText).toContain('.dark .dark\\:bg-stone-800');
+    expect(cssText).toContain('.dark .dark\\:bg-neutral-800');
+  });
+});
+
+describe('optimizeContrast In-Memory Cache', () => {
+  beforeEach(() => {
+    clearContrastCache();
+  });
+
+  it('stores optimized contrast calculation results in cache map', () => {
+    expect(contrastCache.size).toBe(0);
+    const result1 = optimizeContrast('#B91C1C', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+    expect(contrastCache.get('#b91c1c:#ffffff:4.5')).toBe(result1);
+  });
+
+  it('returns cached results on repeated calls with identical parameters', () => {
+    const firstCall = optimizeContrast('#B45309', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    // Call again with same parameters
+    const secondCall = optimizeContrast('#B45309', '#FFFFFF', 4.5);
+    expect(secondCall).toBe(firstCall);
+    expect(contrastCache.size).toBe(1);
+  });
+
+  it('normalizes case in hex strings for cache key lookups', () => {
+    const resultUpper = optimizeContrast('#AABBCC', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    const resultLower = optimizeContrast('#aabbcc', '#ffffff', 4.5);
+    expect(resultLower).toBe(resultUpper);
+    expect(contrastCache.size).toBe(1);
+  });
+
+  it('clears cache when clearContrastCache is called', () => {
+    optimizeContrast('#123456', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    clearContrastCache();
+    expect(contrastCache.size).toBe(0);
+  });
+
+  it('caps cache size to prevent unbounded memory growth', () => {
+    clearContrastCache();
+    // Fill cache up to 1005 items
+    for (let i = 0; i < 1005; i++) {
+      const hex = '#' + i.toString(16).padStart(6, '0');
+      optimizeContrast(hex, '#FFFFFF', 4.5);
+    }
+    expect(contrastCache.size).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe('Blocking Theme Script Execution', () => {
+  const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
+
+  function runInlineScript() {
+    eval(themeScript);
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = 'dark';
+  });
+
+  it('applies light class when localStorage has theme_mode light', () => {
+    localStorage.setItem('theme_mode', 'light');
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('applies dark class when localStorage has theme_mode dark', () => {
+    document.documentElement.className = 'light';
+    localStorage.setItem('theme_mode', 'dark');
+    runInlineScript();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
+  });
+
+  it('applies light class when mode is system/missing and OS prefers light mode', () => {
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query.includes('dark') ? false : true,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('applies dark class when mode is system/missing and OS prefers dark mode', () => {
+    document.documentElement.className = 'light';
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query.includes('dark') ? true : false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
+  });
+
+  it('handles DOMException when localStorage access throws (restricted context)', () => {
+    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Access denied', 'SecurityError');
+    });
+
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    getItemSpy.mockRestore();
+  });
+
+  it('outputs mode-specific CSS custom properties for .dark scopes across theme presets', () => {
+    const { rerender } = render(
+      <ThemeProvider config={{ themePreset: 'editorial' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    let styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl).not.toBeNull();
+    expect(styleEl?.textContent).toContain('.dark {');
+    expect(styleEl?.textContent).toContain('--dialog-bg: #1c1917;');
+    expect(styleEl?.textContent).toContain('--btn-focus-ring: #ffffff;');
+
+    rerender(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl?.textContent).toContain('--dialog-bg: #0f172a;');
+    expect(styleEl?.textContent).toContain('--btn-focus-ring: #38bdf8;');
   });
 });

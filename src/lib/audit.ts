@@ -25,37 +25,51 @@ export async function createAuditSnapshot(
       author,
     },
   });
-
-  // Handle version limit & pruning asynchronously?
-  // The constraints say: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
-  // And "Snapshot creation must not increase API response latency for guest users by more than 50ms."
-  // If we run it without await, we save time. Wait, but the PR requirement says: "Retention management must run as a maintenance process to avoid performance impact on primary data mutations."
-  // A standard way to run this in the background is to just not await the pruning promise, or have a separate bulk operation.
-  // We can write a prune function here and trigger it via `void pruneSnapshots(...)`
-  void pruneSnapshots(normalizedType, entityId);
 }
 
-async function pruneSnapshots(entityType: string, entityId: string) {
-  try {
-    const limit = env.HISTORY_VERSION_LIMIT;
-    
-    // Find all versions ordered by createdAt DESC
-    const snapshots = await prisma.snapshotVersion.findMany({
-      where: { entityType, entityId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-      // We only need ids after the limit
-      skip: limit,
-    });
+export async function createBatchAuditSnapshots(
+  entityType: string,
+  records: any[],
+  author: string = 'System',
+  txClient?: any
+) {
+  if (!records || records.length === 0) {
+    return;
+  }
 
-    if (snapshots && snapshots.length > 0) {
-      const idsToDelete = snapshots.map(s => s.id);
-      await prisma.snapshotVersion.deleteMany({
-        where: { id: { in: idsToDelete } }
-      });
-    }
-  } catch (err) {
-    logger.error('Error during snapshot pruning:', err);
+  const client = txClient || prisma;
+
+  const normalizedType = Object.values(Prisma.ModelName).find(
+    (name) => name.toLowerCase() === entityType.toLowerCase()
+  ) || entityType;
+
+  const snapshots = records.map((record) => {
+    const entityId = record.id || record.entityId;
+    const data =
+      record.data !== undefined && record.entityId !== undefined && record.id === undefined
+        ? record.data
+        : record;
+    return {
+      entityType: normalizedType,
+      entityId,
+      data,
+      author,
+    };
+  });
+
+  await client.snapshotVersion.createMany({
+    data: snapshots,
+  });
+
+  const entitiesToPrune = records
+    .map((record) => ({
+      entityType: normalizedType,
+      entityId: record.id || record.entityId,
+    }))
+    .filter((item) => Boolean(item.entityId));
+
+  if (entitiesToPrune.length > 0) {
+    void pruneSnapshotsBulk(entitiesToPrune);
   }
 }
 
@@ -90,6 +104,8 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
     });
 
     // Group snapshots by (entityType, entityId) in memory to determine which IDs exceed the limit
+    if (!snapshots || snapshots.length === 0) return;
+
     const grouped = new Map<string, string[]>();
     for (const s of snapshots) {
       const key = `${s.entityType}:${s.entityId}`;

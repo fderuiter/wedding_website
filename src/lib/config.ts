@@ -7,6 +7,7 @@ import { isHostAllowed } from '../utils/hostValidation';
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG } from './modules';
+import { getPresetTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
   return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
@@ -54,6 +55,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
   themePreset: 'classic',
+  themeTokens: {},
   layoutContainerMaxWidth: '64rem',
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
@@ -85,7 +87,7 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
 /**
  * Extract site configuration overrides specified via environment variables (Layer 1 override).
  */
-export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
+function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   const overrides: Partial<LocalAppConfig> = {};
 
   if (process.env.SITE_PARTNER1_NAME) overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
@@ -119,6 +121,13 @@ export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
   if (process.env.SITE_COLOR_SECONDARY) overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
   if (process.env.SITE_THEME_PRESET) overrides.themePreset = process.env.SITE_THEME_PRESET as any;
+  if (process.env.SITE_THEME_TOKENS) {
+    try {
+      (overrides as any).themeTokens = JSON.parse(process.env.SITE_THEME_TOKENS);
+    } catch {
+      // Ignore malformed JSON in environment variable
+    }
+  }
   if (process.env.SITE_SHOW_COUNTDOWN !== undefined) {
     overrides.showCountdown = process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
   }
@@ -181,14 +190,6 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   }
 
   return sanitized as PublicAppConfig;
-}
-
-/**
- * Ensures baseline Logistics and FAQ content nodes exist in the database if configured.
- * Fresh installations start with a clean slate for content nodes.
- */
-async function bootstrapLogisticsNodes() {
-  // Unconfigured template start: no automatic personal defaults created.
 }
 
 async function getSubdomainFromHeaders(): Promise<string | null> {
@@ -287,6 +288,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
           colorPrimary: '#B91C1C',
           colorSecondary: '#B45309',
           themePreset: 'classic',
+          themeTokens: {},
           timezone: 'UTC',
           showCountdown: true,
           showAddToCalendar: true,
@@ -296,7 +298,6 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
       dbConfig = AppConfigSchema.parse(rawDbConfig);
     }
 
-    await bootstrapLogisticsNodes();
   } catch (error) {
     if (process.env.NODE_ENV === 'production') {
       console.error('Database connection failed during configuration load:', error);
@@ -306,12 +307,24 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   }
 
   const envOverrides = getEnvConfigOverrides();
+  const activePreset = envOverrides.themePreset || dbConfig?.themePreset || APP_DEFAULTS.themePreset;
+  const presetTokens = getPresetTokens(activePreset, 'light');
+  const { darkTokens, ...cleanPresetTokens } = presetTokens as any;
+
+  // Deterministic Precedence: Default Component Tokens < DB Stored Tokens < Env Overrides
+  const mergedThemeTokens = {
+    ...cleanPresetTokens,
+    ...((dbConfig as any)?.themeTokens || {}),
+    ...((envOverrides as any)?.themeTokens || {}),
+  };
+  delete (mergedThemeTokens as any).darkTokens;
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
   const mergedConfig = {
     ...APP_DEFAULTS,
     ...(dbConfig || {}),
     ...envOverrides,
+    themeTokens: mergedThemeTokens,
   };
 
   const partner1Name = mergedConfig.partner1Name || mergedConfig.brideName || '';

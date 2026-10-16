@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
-import { ContributionSchema, translateActiveToLegacy } from '../schemas';
+import { ContributionSchema } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { isAdminRequest } from '@/core/auth/auth.server';
@@ -22,7 +22,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, name, amount, code } = parseResult.data;
+  const { itemId, name, amount, code, message } = parseResult.data;
 
   if (!isFeatureEnabled('groupGifting', config.modules)) {
     const item = await registryService.getItemById(itemId);
@@ -46,6 +46,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     name,
     amount,
     code: finalCode,
+    message,
   });
 
   const isAdmin = await isAdminRequest(request);
@@ -53,4 +54,4 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     return NextResponse.json(maskRegistryItem(updatedItem));
   }
   return NextResponse.json(sanitizeRegistryItem(updatedItem));
-}, { translateActiveToLegacy });
+});

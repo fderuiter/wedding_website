@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "themeTokens" JSONB NOT NULL DEFAULT '{}';

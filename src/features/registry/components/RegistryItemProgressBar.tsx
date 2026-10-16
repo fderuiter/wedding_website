@@ -1,7 +1,17 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/components/ThemeProvider';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { formatCurrency } from '@/utils/intl';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+
+function parseDurationSec(val?: string, fallback = 0.8): number {
+  if (!val) return fallback;
+  if (val.endsWith('ms')) return parseFloat(val) / 1000;
+  if (val.endsWith('s')) return parseFloat(val);
+  const parsed = parseFloat(val);
+  return isNaN(parsed) ? fallback : parsed;
+}
 
 /**
  * @interface RegistryItemProgressBarProps
@@ -27,6 +37,10 @@ const RegistryItemProgressBar: React.FC<RegistryItemProgressBarProps> = ({ contr
   const roundedPercent = Math.round(percent);
   const reduceMotion = useReducedMotion();
 
+  const { themePreset } = useTheme();
+  const presetTokens = getPresetTokens(themePreset);
+  const duration = reduceMotion ? 0 : parseDurationSec(presetTokens['--motion-duration-slow'], 0.8);
+
   const formattedValueText = `${formatCurrency(contributed)} of ${formatCurrency(total)} funded (${roundedPercent}%)`;
 
   return (
@@ -43,7 +57,7 @@ const RegistryItemProgressBar: React.FC<RegistryItemProgressBarProps> = ({ contr
         className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full"
         initial={{ width: 0 }}
         animate={{ width: `${percent}%` }}
-        transition={{ duration: reduceMotion ? 0 : 0.8, ease: 'easeInOut' }}
+        transition={{ duration, ease: 'easeInOut' }}
       />
     </div>
   );

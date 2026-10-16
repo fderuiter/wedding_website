@@ -49,6 +49,16 @@ function PhysicsHeart({
 }) {
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
+  const namesText = [p1, p2].filter(Boolean).join(' and ');
+  const wholeHeartLabel = namesText
+    ? `Interactive 3D Heart: ${namesText}. Status: Whole.`
+    : 'Interactive 3D Heart. Status: Whole.';
+  const leftShardLabel = p1
+    ? `Broken heart left segment: ${p1}.`
+    : 'Broken heart left segment.';
+  const rightShardLabel = p2
+    ? `Broken heart right segment: ${p2}.`
+    : 'Broken heart right segment.';
   const heartRef = useRef<RapierRigidBody>(null!);
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!);
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!);
@@ -230,11 +240,12 @@ function PhysicsHeart({
         </div>
         {!isBroken && (
           <button
+            type="button"
             ref={wholeButtonRef}
             onFocus={() => handleFocus('whole')}
             onBlur={() => handleBlur('whole')}
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-            aria-label={'Interactive 3D Heart. Status: Whole.'}
+            aria-label={wholeHeartLabel}
             {...getMainInteractiveProps()}
           />
         )}
@@ -268,11 +279,12 @@ function PhysicsHeart({
           <Html zIndexRange={[100, 0]} prepend center>
             {LeftAccessibleElements}
             <button
+              type="button"
               ref={leftButtonRef}
               onFocus={() => handleFocus('left')}
               onBlur={() => handleBlur('left')}
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={'Broken heart left segment.'}
+              aria-label={leftShardLabel}
               {...getLeftInteractiveProps()}
             />
           </Html>
@@ -287,11 +299,12 @@ function PhysicsHeart({
           <Html zIndexRange={[100, 0]} prepend center>
             {RightAccessibleElements}
             <button
+              type="button"
               ref={rightButtonRef}
               onFocus={() => handleFocus('right')}
               onBlur={() => handleBlur('right')}
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={'Broken heart right segment.'}
+              aria-label={rightShardLabel}
               {...getRightInteractiveProps()}
             />
           </Html>
@@ -350,6 +363,7 @@ function WebGLFallback({
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const positionStart = useRef({ x: 0, y: 0 });
+  const [announcement, setAnnouncement] = useState('');
 
   const getEventCoordinates = (e: React.PointerEvent) => {
     if (typeof e.clientX === 'number' && !isNaN(e.clientX)) {
@@ -397,25 +411,33 @@ function WebGLFallback({
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       setPosition(prev => ({ ...prev, y: prev.y - step }));
+      setAnnouncement('Moved up');
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setPosition(prev => ({ ...prev, y: prev.y + step }));
+      setAnnouncement('Moved down');
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       setPosition(prev => ({ ...prev, x: prev.x - step }));
+      setAnnouncement('Moved left');
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
       setPosition(prev => ({ ...prev, x: prev.x + step }));
+      setAnnouncement('Moved right');
     }
   };
 
   return (
     <div className="flex items-center justify-center h-full w-full relative overflow-hidden bg-black text-white">
+      <div className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </div>
       <div
         data-testid="webgl-fallback-heart"
         tabIndex={0}
+        role="button"
         aria-label={`Interactive 2D Heart: ${p1} and ${p2}. Use arrow keys to move, or drag with mouse/touch.`}
-        className="absolute cursor-grab active:cursor-grabbing focus:outline-none focus:ring-4 focus:ring-white rounded-full p-4 transition-transform duration-75 select-none"
+        className="absolute cursor-grab active:cursor-grabbing focus:outline-none focus:ring-4 focus:ring-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white rounded-full p-4 transition-transform duration-75 select-none"
         style={{
           transform: `translate(${position.x}px, ${position.y}px)`,
         }}
@@ -430,7 +452,9 @@ function WebGLFallback({
           viewBox="0 0 24 24"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="animate-pulse"
+          aria-hidden="true"
+          role="img"
+          className="animate-pulse motion-reduce:animate-none"
           style={{ filter: `drop-shadow(0 0 10px ${accentColor})` }}
         >
           <path
