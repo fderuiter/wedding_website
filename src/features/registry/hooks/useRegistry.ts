@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
@@ -21,6 +21,13 @@ export function useRegistry() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(12);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
+  const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
+  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState<SortOption>('default');
   const router = useRouter();
 
   useEffect(() => {
@@ -31,18 +38,93 @@ export function useRegistry() {
     checkAdminStatus();
   }, []);
 
+  const [priceRangeUserSet, setPriceRangeUserSet] = useState(false);
+
+  const [categoryFilterState, setCategoryFilterState] = useState<string[]>([]);
+
+  const categoryParam = useMemo(() => {
+    if (Array.isArray(categoryFilterState) && categoryFilterState.length > 0) {
+      return categoryFilterState[0];
+    }
+    return '';
+  }, [categoryFilterState]);
+
+  const endpoint = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+    if (categoryParam) {
+      params.set('category', categoryParam);
+    }
+    if (priceRange[0] > 0) {
+      params.set('minPrice', String(priceRange[0]));
+    }
+    if (priceRange[1] < 1000) {
+      params.set('maxPrice', String(priceRange[1]));
+    }
+    return `/api/registry/items?${params.toString()}`;
+  }, [page, limit, categoryParam, priceRange]);
+
   const {
-    data: items = [],
+    data: queryResult,
     isLoading,
     error,
-    fetchAll: refetch,
-    remove: deleteItem,
-  } = useEntityOrchestration<RegistryItem>({
-    queryKey: ['registry-items'],
+    refetch,
+  } = useQuery({
+    queryKey: ['registry-items', page, limit, categoryParam, priceRange[0], priceRange[1]],
+    queryFn: async () => apiClient.get<any>(endpoint),
+    placeholderData: (previousData) => previousData,
+  });
+
+  const { remove: deleteItem } = useEntityOrchestration<RegistryItem>({
+    queryKey: ['registry-items', page, limit, categoryParam, priceRange[0], priceRange[1]],
     endpoint: '/api/registry/items',
     entityName: 'registry item',
     apiClient,
+    enabled: false,
   });
+
+  const items = useMemo(() => {
+    if (!queryResult) return [];
+    if (Array.isArray(queryResult)) return queryResult;
+    if (typeof queryResult === 'object' && Array.isArray((queryResult as any).items)) {
+      return (queryResult as any).items as RegistryItem[];
+    }
+    return [];
+  }, [queryResult]);
+
+  const total = useMemo(() => {
+    if (queryResult && typeof queryResult === 'object' && 'total' in queryResult && typeof (queryResult as any).total === 'number') {
+      return (queryResult as any).total;
+    }
+    return items.length;
+  }, [queryResult, items.length]);
+
+  const totalPages = useMemo(() => {
+    if (queryResult && typeof queryResult === 'object' && 'totalPages' in queryResult && typeof (queryResult as any).totalPages === 'number') {
+      return (queryResult as any).totalPages;
+    }
+    return Math.ceil(total / limit) || 1;
+  }, [queryResult, total, limit]);
+
+  const {
+    categories,
+    selectedCategories: categoryFilter,
+    setSelectedCategories: setCategoryFilter,
+    filteredItems: categoryFilteredItems,
+  } = useFilter(items, useCallback((item: RegistryItem) => item.category, []));
+
+  const handleSetCategoryFilter = useCallback((categories: string[]) => {
+    setCategoryFilter(categories);
+    setCategoryFilterState(categories);
+    setPage(1);
+  }, [setCategoryFilter]);
+
+  const handleSetPriceRange = useCallback((range: [number, number]) => {
+    setPriceRange(range);
+    setPriceRangeUserSet(true);
+    setPage(1);
+  }, []);
 
   const { mutate: contribute } = useMutation({
     mutationFn: async ({ itemId, purchaserName, amount, code }: { itemId: string; purchaserName: string; amount: number; code?: string }) => {
@@ -101,19 +183,6 @@ export function useRegistry() {
     }
   });
 
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
-  const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
-  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortOption, setSortOption] = useState<SortOption>('default');
-
-  const {
-    categories,
-    selectedCategories: categoryFilter,
-    setSelectedCategories: setCategoryFilter,
-    filteredItems: categoryFilteredItems,
-  } = useFilter(items, useCallback((item: RegistryItem) => item.category, []));
-
   const [minPrice, maxPrice] = useMemo(() => {
     if (items.length === 0) return [0, 1000];
     let min = items[0].price, max = items[0].price;
@@ -125,8 +194,10 @@ export function useRegistry() {
   }, [items]);
 
   useEffect(() => {
-    setPriceRange([minPrice, maxPrice]);
-  }, [minPrice, maxPrice]);
+    if (!priceRangeUserSet && items.length > 0) {
+      setPriceRange([minPrice, maxPrice]);
+    }
+  }, [minPrice, maxPrice, priceRangeUserSet, items.length]);
 
   const filteredItems = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
@@ -236,15 +307,24 @@ export function useRegistry() {
 
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);
+    setCategoryFilterState([]);
     setPriceRange([minPrice, maxPrice]);
+    setPriceRangeUserSet(false);
     setShowGroupGiftsOnly(false);
     setShowAvailableOnly(false);
     setSearchQuery('');
     setSortOption('default');
-  }, [setCategoryFilter, setPriceRange, minPrice, maxPrice]);
+    setPage(1);
+  }, [setCategoryFilter, minPrice, maxPrice]);
 
   return {
     items,
+    total,
+    page,
+    setPage,
+    limit,
+    setLimit,
+    totalPages,
     isLoading,
     error,
     refetch,
@@ -259,9 +339,9 @@ export function useRegistry() {
     minPrice,
     maxPrice,
     categoryFilter,
-    setCategoryFilter,
+    setCategoryFilter: handleSetCategoryFilter,
     priceRange,
-    setPriceRange,
+    setPriceRange: handleSetPriceRange,
     showGroupGiftsOnly,
     setShowGroupGiftsOnly,
     showAvailableOnly,

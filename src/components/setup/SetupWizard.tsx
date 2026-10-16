@@ -243,7 +243,7 @@ function SetupWizardContent() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-                {error && !isAuthenticated && <FormMessage role="alert">{error}</FormMessage>}
+                {error && !isAuthenticated && <FormMessage>{error}</FormMessage>}
               </FormGroup>
               <Button disabled={loading} type="submit" variant="primary" className="w-full py-3">
                 {loading ? 'Authenticating...' : 'Continue'}
@@ -290,9 +290,9 @@ function SetupWizardContent() {
                   required 
                 />
                 {isDefaultUrl(baseUrl) ? (
-                  <FormMessage role="alert">Please use your own URL.</FormMessage>
+                  <FormMessage>Please use your own URL.</FormMessage>
                 ) : (error && isAuthenticated && step === 2) ? (
-                  <FormMessage role="alert">{error}</FormMessage>
+                  <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>
               <div className="grid grid-cols-3 gap-4">

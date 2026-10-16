@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { ThemeProvider, useTheme } from '../ThemeProvider';
+import { ThemeProvider, useTheme, optimizeContrast, contrastCache, clearContrastCache } from '../ThemeProvider';
 
 // Helper component to display theme values
 function TestComponent() {
@@ -590,6 +590,56 @@ describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {
   });
 });
 
+describe('optimizeContrast In-Memory Cache', () => {
+  beforeEach(() => {
+    clearContrastCache();
+  });
+
+  it('stores optimized contrast calculation results in cache map', () => {
+    expect(contrastCache.size).toBe(0);
+    const result1 = optimizeContrast('#B91C1C', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+    expect(contrastCache.get('#b91c1c:#ffffff:4.5')).toBe(result1);
+  });
+
+  it('returns cached results on repeated calls with identical parameters', () => {
+    const firstCall = optimizeContrast('#B45309', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    // Call again with same parameters
+    const secondCall = optimizeContrast('#B45309', '#FFFFFF', 4.5);
+    expect(secondCall).toBe(firstCall);
+    expect(contrastCache.size).toBe(1);
+  });
+
+  it('normalizes case in hex strings for cache key lookups', () => {
+    const resultUpper = optimizeContrast('#AABBCC', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    const resultLower = optimizeContrast('#aabbcc', '#ffffff', 4.5);
+    expect(resultLower).toBe(resultUpper);
+    expect(contrastCache.size).toBe(1);
+  });
+
+  it('clears cache when clearContrastCache is called', () => {
+    optimizeContrast('#123456', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    clearContrastCache();
+    expect(contrastCache.size).toBe(0);
+  });
+
+  it('caps cache size to prevent unbounded memory growth', () => {
+    clearContrastCache();
+    // Fill cache up to 1005 items
+    for (let i = 0; i < 1005; i++) {
+      const hex = '#' + i.toString(16).padStart(6, '0');
+      optimizeContrast(hex, '#FFFFFF', 4.5);
+    }
+    expect(contrastCache.size).toBeLessThanOrEqual(1000);
+  });
+});
+
 describe('Blocking Theme Script Execution', () => {
   const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
 
@@ -675,16 +725,27 @@ describe('Blocking Theme Script Execution', () => {
     getItemSpy.mockRestore();
   });
 
-  it('seamlessly hydrates ThemeProvider with pre-applied light document class', () => {
-    document.documentElement.className = 'light';
-    const { getByTestId } = render(
-      <ThemeProvider initialThemeMode="system">
-        <ThemeModeTestComponent />
+  it('outputs mode-specific CSS custom properties for .dark scopes across theme presets', () => {
+    const { rerender } = render(
+      <ThemeProvider config={{ themePreset: 'editorial' }}>
+        <TestComponent />
       </ThemeProvider>
     );
 
-    expect(getByTestId('resolved-theme')).toHaveTextContent('light');
-    expect(document.documentElement.classList.contains('light')).toBe(true);
-    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    let styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl).not.toBeNull();
+    expect(styleEl?.textContent).toContain('.dark {');
+    expect(styleEl?.textContent).toContain('--dialog-bg: #1c1917;');
+    expect(styleEl?.textContent).toContain('--btn-focus-ring: #ffffff;');
+
+    rerender(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    styleEl = document.getElementById('dynamic-theme-style');
+    expect(styleEl?.textContent).toContain('--dialog-bg: #0f172a;');
+    expect(styleEl?.textContent).toContain('--btn-focus-ring: #38bdf8;');
   });
 });

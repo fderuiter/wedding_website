@@ -26,13 +26,21 @@ test('Checkbox and Label are correctly linked via context id and htmlFor', () =>
   expect(label.htmlFor).toBe(checkbox.id);
 });
 
-test('FormMessage returns null when it has no children', () => {
-  const { container } = render(
+test('FormMessage renders persistent live region container when empty', () => {
+  render(
     <FormGroup>
-      <FormMessage />
+      <FormMessage data-testid="empty-message" />
     </FormGroup>
   );
-  expect(container.firstChild?.childNodes.length).toBe(0);
+  const msg = screen.getByTestId('empty-message');
+  expect(msg).toBeInTheDocument();
+  expect(msg.tagName).toBe('P');
+  expect(msg).toHaveClass('sr-only');
+  expect(msg).not.toHaveClass('mt-1');
+  expect(msg).toHaveAttribute('role', 'status');
+  expect(msg).toHaveAttribute('aria-live', 'polite');
+  expect(msg).toHaveAttribute('aria-atomic', 'true');
+  expect(msg.textContent).toBe('');
 });
 
 test('Form controls omit aria-describedby unless FormMessage is present and active', () => {
@@ -100,13 +108,69 @@ test('Dynamic transition of FormMessage content from active to empty and vice ve
   // Clear message
   fireEvent.click(btnClear);
   expect(input).not.toHaveAttribute('aria-describedby');
-  expect(screen.queryByTestId('my-message')).not.toBeInTheDocument();
+  const emptyMessage = screen.getByTestId('my-message');
+  expect(emptyMessage).toBeInTheDocument();
+  expect(emptyMessage).toHaveClass('sr-only');
+  expect(emptyMessage.textContent).toBe('');
 
   // Re-set message
   fireEvent.click(btnSet);
   expect(input).toHaveAttribute('aria-describedby');
   const newMessage = screen.getByTestId('my-message');
   expect(input.getAttribute('aria-describedby')).toBe(newMessage.id);
+  expect(newMessage).toHaveClass('mt-1');
+  expect(newMessage.textContent).toBe('Updated message');
+});
+
+test('FormMessage sets correct ARIA role and aria-live based on FormGroup state and prop overrides', () => {
+  const { rerender } = render(
+    <FormGroup state="error">
+      <FormMessage data-testid="msg">Error message</FormMessage>
+    </FormGroup>
+  );
+  let msg = screen.getByTestId('msg');
+  expect(msg).toHaveAttribute('role', 'alert');
+  expect(msg).toHaveAttribute('aria-live', 'assertive');
+  expect(msg).toHaveAttribute('aria-atomic', 'true');
+
+  rerender(
+    <FormGroup state="default">
+      <FormMessage data-testid="msg">Default message</FormMessage>
+    </FormGroup>
+  );
+  msg = screen.getByTestId('msg');
+  expect(msg).toHaveAttribute('role', 'status');
+  expect(msg).toHaveAttribute('aria-live', 'polite');
+
+  rerender(
+    <FormGroup state="success">
+      <FormMessage data-testid="msg">Success message</FormMessage>
+    </FormGroup>
+  );
+  msg = screen.getByTestId('msg');
+  expect(msg).toHaveAttribute('role', 'status');
+  expect(msg).toHaveAttribute('aria-live', 'polite');
+
+  rerender(
+    <FormGroup state="warning">
+      <FormMessage data-testid="msg">Warning message</FormMessage>
+    </FormGroup>
+  );
+  msg = screen.getByTestId('msg');
+  expect(msg).toHaveAttribute('role', 'status');
+  expect(msg).toHaveAttribute('aria-live', 'polite');
+
+  // Custom prop overrides
+  rerender(
+    <FormGroup state="default">
+      <FormMessage data-testid="msg" role="alert" aria-live="assertive">
+        Custom message
+      </FormMessage>
+    </FormGroup>
+  );
+  msg = screen.getByTestId('msg');
+  expect(msg).toHaveAttribute('role', 'alert');
+  expect(msg).toHaveAttribute('aria-live', 'assertive');
 });
 
 test('Dynamic transition of FormMessage unmounting and mounting', () => {
