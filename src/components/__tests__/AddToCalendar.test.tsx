@@ -8,6 +8,7 @@ import * as calendarUtils from '@/utils/calendar';
 jest.mock('@/utils/calendar', () => ({
   createGoogleCalendarLink: jest.fn(),
   createYahooCalendarLink: jest.fn(),
+  createOutlookCalendarLink: jest.fn(),
   createIcsFile: jest.fn(),
 }));
 
@@ -71,6 +72,16 @@ describe('AddToCalendar', () => {
 
     expect(calendarUtils.createYahooCalendarLink).toHaveBeenCalledWith(sampleEvent);
     expect(mockWindowOpen).toHaveBeenCalledWith('https://calendar.yahoo.com/?v=60', '_blank', 'noopener,noreferrer');
+  });
+
+  it('calls createOutlookCalendarLink and window.open when Outlook.com is clicked', () => {
+    (calendarUtils.createOutlookCalendarLink as jest.Mock).mockReturnValue('https://outlook.live.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose');
+    render(<AddToCalendar event={sampleEvent} />);
+    fireEvent.click(screen.getByText('Add to Calendar'));
+    fireEvent.click(screen.getByText('Outlook.com'));
+
+    expect(calendarUtils.createOutlookCalendarLink).toHaveBeenCalledWith(sampleEvent);
+    expect(mockWindowOpen).toHaveBeenCalledWith('https://outlook.live.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose', '_blank', 'noopener,noreferrer');
   });
 
   it('calls createIcsFile and triggers a download when Apple is clicked', () => {

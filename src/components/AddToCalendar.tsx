@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useId } from 'react';
-import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
+import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
 
 /**
@@ -63,6 +63,9 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
       window.open(url, '_blank', 'noopener,noreferrer');
     } else if (calendar === 'Yahoo') {
       url = createYahooCalendarLink(event);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else if (calendar === 'Outlook.com') {
+      url = createOutlookCalendarLink(event);
       window.open(url, '_blank', 'noopener,noreferrer');
     } else {
       const icsFile = createIcsFile(event);
