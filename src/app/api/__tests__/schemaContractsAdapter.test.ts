@@ -72,6 +72,8 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         category: 'Kitchen',
         description: 'Cozy toast',
         imageUrl: '/images/toaster.png',
+        imageAlt: undefined,
+        imageDecorative: undefined,
         vendorUrl: 'https://example.com/toaster',
         isGroupGift: true,
       };

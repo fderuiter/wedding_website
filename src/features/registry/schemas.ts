@@ -82,6 +82,7 @@ export const RegistryItemSchema = RegistryItemBaseSchema.extend({
 
 export type RegistryItemDTO = z.infer<typeof RegistryItemSchema>;
 
+
 export function translateSnapshotToActive(snapshotData: any) {
   if (!snapshotData) return null;
   return {
