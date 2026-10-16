@@ -208,4 +208,74 @@ describe('ThankYouService', () => {
       expect(mockPrisma.snapshotVersion.create).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('exportThankYouNotesCsv', () => {
+    it('formats records into RFC 4180 CSV strings with standard headers', async () => {
+      const sampleContributors = [
+        {
+          id: 'c1',
+          name: 'Alice Johnson',
+          email: 'alice@example.com',
+          amount: 100,
+          date: '2026-06-01T00:00:00.000Z',
+          thankYouStatus: 'Sent',
+          thankYouSentAt: '2026-06-02T00:00:00.000Z',
+          thankYouNote: 'Thank you for the coffee maker,\nit is awesome!',
+          registryItem: { id: 'item1', name: 'Coffee Maker', category: 'Kitchen' },
+        },
+      ];
+
+      mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
+
+      const csv = await service.exportThankYouNotesCsv();
+
+      expect(csv).toContain(
+        'Contributor Name,Email,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft'
+      );
+      expect(csv).toContain('Alice Johnson');
+      expect(csv).toContain('alice@example.com');
+      expect(csv).toContain('Coffee Maker');
+      expect(csv).toContain('Kitchen');
+      expect(csv).toContain('100');
+      expect(csv).toContain('"Thank you for the coffee maker,\nit is awesome!"');
+    });
+
+    it('filters records by status when status filter option is specified', async () => {
+      const sampleContributors = [
+        {
+          id: 'c1',
+          name: 'Alice Johnson',
+          amount: 100,
+          date: '2026-06-01T00:00:00.000Z',
+          thankYouStatus: 'Sent',
+          registryItem: { id: 'item1', name: 'Coffee Maker', category: 'Kitchen' },
+        },
+        {
+          id: 'c2',
+          name: 'Bob Smith',
+          amount: 50,
+          date: '2026-06-02T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          registryItem: { id: 'item2', name: 'Toaster', category: 'Kitchen' },
+        },
+      ];
+
+      mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
+
+      const csv = await service.exportThankYouNotesCsv({ status: 'Unsent' });
+
+      expect(csv).toContain('Bob Smith');
+      expect(csv).not.toContain('Alice Johnson');
+    });
+
+    it('returns empty CSV header row with trailing newline when no records match', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      const csv = await service.exportThankYouNotesCsv();
+
+      expect(csv).toBe(
+        'Contributor Name,Email,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft\n'
+      );
+    });
+  });
 });
