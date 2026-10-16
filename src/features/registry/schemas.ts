@@ -152,6 +152,15 @@ export function translateSnapshotToActive(snapshotData: any) {
   };
 }
 
+export const PlusOneResponseSchema = z.object({
+  name: z.string().optional().default('Plus One'),
+  attending: z.boolean().default(true),
+  mealSelection: z.string().optional().or(z.literal('')),
+  dietaryNotes: z.string().optional().or(z.literal('')),
+});
+
+export type PlusOneResponse = z.infer<typeof PlusOneResponseSchema>;
+
 export const InvitationCodeSchema = z.object({
   id: z.string(),
   code: z.string().trim().min(1, 'Code is required.').max(50, 'Code must be under 50 characters.'),
@@ -159,6 +168,9 @@ export const InvitationCodeSchema = z.object({
   email: z.string().trim().email('Invalid email address.').nullable().optional().or(z.literal('')),
   dietaryNotes: z.string().trim().nullable().optional(),
   plusOneAllocations: z.coerce.number().int().nonnegative().optional().default(0),
+  rsvpStatus: z.string().nullable().optional().default('pending'),
+  mealSelection: z.string().nullable().optional(),
+  plusOneResponses: z.array(PlusOneResponseSchema).nullable().optional(),
   extraFields: z.record(z.string(), z.any()).nullable().optional(),
   used: z.boolean().default(false),
   usedAt: z.union([z.string(), z.date()]).nullable().optional(),
@@ -169,6 +181,16 @@ export const InvitationCodeSchema = z.object({
 });
 
 export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
+
+export const GuestRsvpSchema = z.object({
+  code: z.string({ message: 'Invitation code is required.' }).trim().min(1, 'Invitation code is required.'),
+  rsvpStatus: z.enum(['attending', 'declined', 'pending'], { message: 'Invalid RSVP status.' }),
+  mealSelection: z.string().optional().or(z.literal('')),
+  dietaryNotes: z.string().optional().or(z.literal('')),
+  plusOneResponses: z.array(PlusOneResponseSchema).optional().default([]),
+});
+
+export type GuestRsvpDTO = z.infer<typeof GuestRsvpSchema>;
 
 export const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(100, 'Guest name must be under 100 characters.'),

@@ -83,6 +83,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
             invitationCode: data.code || val,
             guestName: data.guestName,
             isVerified: true,
+            rsvpStatus: data.rsvpStatus,
+            mealSelection: data.mealSelection,
+            dietaryNotes: data.dietaryNotes,
+            plusOneAllocations: data.plusOneAllocations,
+            plusOneResponses: data.plusOneResponses,
+            menuOptions: data.menuOptions,
           });
         } else {
           setCodeValidationError('Invalid invitation code.');
@@ -242,6 +248,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                           invitationCode: data.code || invitationCode,
                           guestName: data.guestName,
                           isVerified: true,
+                          rsvpStatus: data.rsvpStatus,
+                          mealSelection: data.mealSelection,
+                          dietaryNotes: data.dietaryNotes,
+                          plusOneAllocations: data.plusOneAllocations,
+                          plusOneResponses: data.plusOneResponses,
+                          menuOptions: data.menuOptions,
                         });
                       } else {
                         setCodeValidationError('Invalid invitation code.');

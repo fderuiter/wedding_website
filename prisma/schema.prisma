@@ -41,6 +41,7 @@ model AppConfig {
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
   showAddToCalendar Boolean  @default(true)
+  menuOptions      Json?    @default("[\"Beef\", \"Chicken\", \"Vegetarian\", \"Vegan\"]")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -144,6 +145,9 @@ model InvitationCode {
   email              String?
   dietaryNotes       String?
   plusOneAllocations Int?          @default(0)
+  rsvpStatus         String?       @default("pending")
+  mealSelection      String?
+  plusOneResponses   Json?
   extraFields        Json?
   used               Boolean       @default(false)
   usedAt             DateTime?

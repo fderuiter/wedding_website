@@ -99,6 +99,7 @@ const updatedConfig = {
   showCountdown: true,
   showAddToCalendar: true,
   modules: DEFAULT_MODULE_CONFIG,
+  menuOptions: ['Beef', 'Chicken', 'Vegetarian', 'Vegan'],
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),

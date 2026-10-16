@@ -492,6 +492,52 @@ export default function AdminSettingsPage() {
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-2">Menu & Meal Options</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Configure the entrée options available to guests when submitting their RSVP and meal selections.
+            </p>
+            <div className="space-y-3">
+              {(localConfig.menuOptions || []).map((option: string, idx: number) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    value={option}
+                    onChange={(e) => {
+                      const updated = [...(localConfig.menuOptions || [])];
+                      updated[idx] = e.target.value;
+                      setLocalConfig((prev: any) => ({ ...prev, menuOptions: updated }));
+                    }}
+                    placeholder="e.g. Beef Tenderloin"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      const updated = (localConfig.menuOptions || []).filter((_: any, i: number) => i !== idx);
+                      setLocalConfig((prev: any) => ({ ...prev, menuOptions: updated }));
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const updated = [...(localConfig.menuOptions || []), ''];
+                  setLocalConfig((prev: any) => ({ ...prev, menuOptions: updated }));
+                }}
+              >
+                + Add Menu Option
+              </Button>
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-2">Feature & Module Management</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Enable or disable optional site capabilities. Disabling a feature removes its navigation links, protects page routes, disables backend API endpoints, and handles dependencies automatically.

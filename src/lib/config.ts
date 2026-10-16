@@ -59,6 +59,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true,
   showAddToCalendar: true,
+  menuOptions: ['Beef', 'Chicken', 'Vegetarian', 'Vegan'],
   modules: DEFAULT_MODULE_CONFIG,
   features: [],
   createdAt: new Date(),

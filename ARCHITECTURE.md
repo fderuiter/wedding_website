@@ -114,6 +114,7 @@ flowchart LR
     node_api_admin_versions_id_restore["restore"]
     node_api_guest["guest"]
     node_api_guest_login["login"]
+    node_api_guest_rsvp["rsvp"]
     node_api_health["health"]
     node_api_media["media"]
     node_api_media_id["[id]"]
@@ -180,6 +181,7 @@ flowchart LR
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
     node_api --> node_api_guest
     node_api_guest --> node_api_guest_login
+    node_api_guest --> node_api_guest_rsvp
     node_api --> node_api_health
     node_api --> node_api_media
     node_api_media --> node_api_media_id
@@ -239,6 +241,7 @@ flowchart LR
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
     class node_api_guest_login api;
+    class node_api_guest_rsvp api;
     class node_api_health api;
     class node_api_media api;
     class node_api_media_id api;
@@ -433,6 +436,7 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
+| `menuOptions` | `default` | Configuration field for menuOptions |
 | `modules` | `default` | Configuration field for modules |
 | `features` | `pipe` | Configuration field for features |
 | `createdAt` | `date` | Configuration field for createdAt |

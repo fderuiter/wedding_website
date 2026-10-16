@@ -43,6 +43,7 @@ export const RawUpdateAppConfigSchema = z.object({
   layoutBorderRadius: layoutTokenSchema.optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  menuOptions: z.union([z.array(z.string()), z.string().transform((s) => s.split(',').map(x => x.trim()).filter(Boolean))]).optional(),
   modules: ModuleConfigSchema.partial().optional(),
   timezone: z.string().refine(
     (val) => {
@@ -257,6 +258,17 @@ export const AppConfigSchema = z.object({
   timezone: z.string().default('America/Chicago'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
+  menuOptions: z.union([
+    z.string().transform((str) => {
+      try {
+        const parsed = JSON.parse(str);
+        return Array.isArray(parsed) ? parsed : ['Beef', 'Chicken', 'Vegetarian', 'Vegan'];
+      } catch {
+        return ['Beef', 'Chicken', 'Vegetarian', 'Vegan'];
+      }
+    }),
+    z.array(z.string())
+  ]).optional().default(['Beef', 'Chicken', 'Vegetarian', 'Vegan']),
   modules: z.any().optional().transform((val) => resolveModuleConfig(val)).default(DEFAULT_MODULE_CONFIG),
   features: z.union([
     z.string().transform((str) => {

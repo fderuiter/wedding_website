@@ -94,6 +94,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       timezone: validData.timezone,
       showCountdown: validData.showCountdown,
       showAddToCalendar: validData.showAddToCalendar,
+      menuOptions: validData.menuOptions ? (JSON.stringify(validData.menuOptions) as any) : undefined,
     },
   });
 
@@ -170,6 +171,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     timezone: data.timezone ?? 'UTC',
     showCountdown: data.showCountdown ?? true,
     showAddToCalendar: data.showAddToCalendar ?? true,
+    menuOptions: data.menuOptions,
     subdomain: data.subdomain || null,
   });
 
@@ -211,6 +213,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       timezone: validData.timezone,
       showCountdown: validData.showCountdown,
       showAddToCalendar: validData.showAddToCalendar,
+      menuOptions: validData.menuOptions ? (JSON.stringify(validData.menuOptions) as any) : undefined,
     },
   });
 

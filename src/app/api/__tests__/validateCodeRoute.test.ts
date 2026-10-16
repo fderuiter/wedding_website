@@ -61,6 +61,13 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'John Doe',
         code: 'USEDCODE',
+        rsvpStatus: 'pending',
+        mealSelection: '',
+        dietaryNotes: '',
+        plusOneAllocations: 0,
+        plusOneResponses: [],
+        menuOptions: ['Beef', 'Chicken', 'Vegetarian', 'Vegan'],
+        email: undefined,
       }
     });
   });
@@ -84,6 +91,13 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'Jane Smith',
         code: 'GOODCODE',
+        rsvpStatus: 'pending',
+        mealSelection: '',
+        dietaryNotes: '',
+        plusOneAllocations: 0,
+        plusOneResponses: [],
+        menuOptions: ['Beef', 'Chicken', 'Vegetarian', 'Vegan'],
+        email: undefined,
       }
     });
 

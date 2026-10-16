@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getAppConfig } from '@/lib/config';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
@@ -20,6 +21,8 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(404, 'Invalid invitation code.');
   }
 
+  const config = await getAppConfig('global');
+
   const token = await signGuestInviteSessionToken({
     code: invite.code,
     guestName: invite.guestName,
@@ -29,6 +32,13 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     valid: true,
     guestName: invite.guestName,
     code: invite.code,
+    email: invite.email,
+    dietaryNotes: invite.dietaryNotes || '',
+    rsvpStatus: invite.rsvpStatus || 'pending',
+    mealSelection: invite.mealSelection || '',
+    plusOneAllocations: invite.plusOneAllocations ?? 0,
+    plusOneResponses: invite.plusOneResponses || [],
+    menuOptions: config.menuOptions || ['Beef', 'Chicken', 'Vegetarian', 'Vegan'],
   });
 
   response.cookies.set(GUEST_INVITE_COOKIE, token, {

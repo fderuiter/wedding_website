@@ -1353,6 +1353,17 @@
                   "showAddToCalendar": {
                     "type": "boolean"
                   },
+                  "menuOptions": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {}
+                    ]
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -1569,6 +1580,17 @@
                   },
                   "showAddToCalendar": {
                     "type": "boolean"
+                  },
+                  "menuOptions": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {}
+                    ]
                   },
                   "modules": {
                     "type": "object",
@@ -1797,6 +1819,17 @@
                   },
                   "showAddToCalendar": {
                     "type": "boolean"
+                  },
+                  "menuOptions": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {}
+                    ]
                   },
                   "modules": {
                     "type": "object",
@@ -2141,6 +2174,114 @@
                 },
                 "required": [
                   "passcode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/guest/rsvp": {
+      "post": {
+        "summary": "POST /api/guest/rsvp",
+        "description": "Endpoint for /api/guest/rsvp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "rsvpStatus": {
+                    "type": "string",
+                    "enum": [
+                      "attending",
+                      "declined",
+                      "pending"
+                    ]
+                  },
+                  "mealSelection": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "dietaryNotes": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "plusOneResponses": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "default": "Plus One",
+                          "type": "string"
+                        },
+                        "attending": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "mealSelection": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "dietaryNotes": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "attending"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "code",
+                  "rsvpStatus",
+                  "plusOneResponses"
                 ],
                 "additionalProperties": false
               }

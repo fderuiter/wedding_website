@@ -10,6 +10,8 @@ export {
   BatchUpdateThankYouNotesSchema,
   ThankYouStatusEnum,
   BatchImportInvitationCodeItemSchema,
+  GuestRsvpSchema,
+  PlusOneResponseSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
@@ -17,6 +19,8 @@ export type {
   UpdateThankYouNoteDTO,
   BatchUpdateThankYouNotesDTO,
   BatchImportInvitationCodesDTO,
+  GuestRsvpDTO,
+  PlusOneResponse,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';

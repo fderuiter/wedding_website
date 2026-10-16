@@ -16,10 +16,26 @@ export interface GuestSessionState {
   lastErrorCode: string | null;
   draftInvitationCode: string;
   isRecoveryModalOpen: boolean;
+  rsvpStatus?: 'attending' | 'declined' | 'pending';
+  mealSelection?: string;
+  dietaryNotes?: string;
+  plusOneAllocations?: number;
+  plusOneResponses?: any[];
+  menuOptions?: string[];
 }
 
 export interface GuestSessionContextType extends GuestSessionState {
-  setSession: (session: { invitationCode: string; guestName: string; isVerified?: boolean }) => void;
+  setSession: (session: {
+    invitationCode: string;
+    guestName: string;
+    isVerified?: boolean;
+    rsvpStatus?: 'attending' | 'declined' | 'pending';
+    mealSelection?: string;
+    dietaryNotes?: string;
+    plusOneAllocations?: number;
+    plusOneResponses?: any[];
+    menuOptions?: string[];
+  }) => void;
   clearSession: () => Promise<void>;
   refreshSession: () => Promise<void>;
   openRecoveryModal: () => void;
@@ -212,7 +228,17 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [sessionState.status, toast, openRecoveryModal, refreshSession]);
 
   const setSession = useCallback(
-    (newSession: { invitationCode: string; guestName: string; isVerified?: boolean }) => {
+    (newSession: {
+      invitationCode: string;
+      guestName: string;
+      isVerified?: boolean;
+      rsvpStatus?: 'attending' | 'declined' | 'pending';
+      mealSelection?: string;
+      dietaryNotes?: string;
+      plusOneAllocations?: number;
+      plusOneResponses?: any[];
+      menuOptions?: string[];
+    }) => {
       const verified = newSession.isVerified ?? true;
       setSessionState(prev => ({
         ...prev,
@@ -222,6 +248,12 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         isLoading: false,
         status: verified ? 'authenticated' : 'unauthenticated',
         draftInvitationCode: newSession.invitationCode || prev.draftInvitationCode,
+        rsvpStatus: newSession.rsvpStatus ?? prev.rsvpStatus,
+        mealSelection: newSession.mealSelection ?? prev.mealSelection,
+        dietaryNotes: newSession.dietaryNotes ?? prev.dietaryNotes,
+        plusOneAllocations: newSession.plusOneAllocations ?? prev.plusOneAllocations,
+        plusOneResponses: newSession.plusOneResponses ?? prev.plusOneResponses,
+        menuOptions: newSession.menuOptions ?? prev.menuOptions,
         lastErrorCode: null,
         isRecoveryModalOpen: false,
       }));
@@ -279,6 +311,12 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             status: 'authenticated',
             lastErrorCode: null,
             draftInvitationCode: verifiedCode,
+            rsvpStatus: data.rsvpStatus || prev.rsvpStatus,
+            mealSelection: data.mealSelection || prev.mealSelection,
+            dietaryNotes: data.dietaryNotes || prev.dietaryNotes,
+            plusOneAllocations: data.plusOneAllocations ?? prev.plusOneAllocations,
+            plusOneResponses: data.plusOneResponses || prev.plusOneResponses,
+            menuOptions: data.menuOptions || prev.menuOptions,
             isRecoveryModalOpen: false,
           }));
 
