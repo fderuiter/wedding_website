@@ -223,10 +223,6 @@ export const FormMessage = React.forwardRef<
     };
   }, [messageUniqueId, hasContent, registerMessage]);
 
-  if (!children) {
-    return null;
-  }
-
   const stateStyles = {
     default: 'text-[var(--form-message-text,#6b7280)]',
     error: 'text-[var(--form-error-text,#dc2626)] font-medium',
@@ -234,11 +230,22 @@ export const FormMessage = React.forwardRef<
     warning: 'text-[var(--form-warning-text,#ca8a04)] font-medium',
   };
 
+  const role = props.role ?? (state === 'error' ? 'alert' : 'status');
+  const ariaLive = props['aria-live'] ?? (state === 'error' ? 'assertive' : 'polite');
+
   return (
     <p
       ref={ref}
       id={messageId}
-      className={cn('text-xs mt-1', stateStyles[state], className)}
+      role={role}
+      aria-live={ariaLive}
+      aria-atomic="true"
+      className={cn(
+        'text-xs',
+        hasContent ? 'mt-1' : 'sr-only',
+        stateStyles[state],
+        className
+      )}
       {...props}
     >
       {children}
