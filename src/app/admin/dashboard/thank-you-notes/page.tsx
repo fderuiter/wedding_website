@@ -48,6 +48,14 @@ export default function ThankYouNotesPage() {
 
   const [statusFilter, setStatusFilter] = useState<'All' | 'Unsent' | 'Sent' | 'Not Needed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 50;
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 50,
+    totalItems: 0,
+    totalPages: 1,
+  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Editing single item state
@@ -56,6 +64,16 @@ export default function ThankYouNotesPage() {
   const [editNote, setEditNote] = useState<string>('');
   const [editSentAt, setEditSentAt] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
+    setStatusFilter(tab);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+  };
 
   const handleExportCsv = () => {
     const params = new URLSearchParams();
@@ -87,6 +105,8 @@ export default function ThankYouNotesPage() {
       if (searchQuery.trim()) {
         params.set('search', searchQuery.trim());
       }
+      params.set('page', currentPage.toString());
+      params.set('pageSize', pageSize.toString());
 
       const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
       if (!res.ok) {
@@ -104,12 +124,15 @@ export default function ThankYouNotesPage() {
           completionPercentage: 0,
         }
       );
+      if (data.pagination) {
+        setPagination(data.pagination);
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred while loading thank-you notes.');
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, searchQuery]);
+  }, [statusFilter, searchQuery, currentPage, pageSize]);
 
   useEffect(() => {
     fetchData();
@@ -332,7 +355,7 @@ export default function ThankYouNotesPage() {
             type="text"
             placeholder="Search contributor name or gift item..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             aria-label="Search contributor name or gift item"
             className="w-full"
           />
@@ -350,7 +373,7 @@ export default function ThankYouNotesPage() {
               type="button"
               role="tab"
               aria-selected={statusFilter === tab}
-              onClick={() => setStatusFilter(tab)}
+              onClick={() => handleStatusFilterChange(tab)}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                 statusFilter === tab
                   ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -587,6 +610,52 @@ export default function ThankYouNotesPage() {
               })}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!isLoading && !error && pagination.totalItems > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 px-2">
+          <div className="text-xs text-gray-600 dark:text-gray-400">
+            Showing{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {(pagination.page - 1) * pagination.pageSize + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {Math.min(pagination.page * pagination.pageSize, pagination.totalItems)}
+            </span>{' '}
+            of{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {pagination.totalItems}
+            </span>{' '}
+            contributor records
+          </div>
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage <= 1 || isLoading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                Previous
+              </Button>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 px-2">
+                Page {pagination.page} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage >= pagination.totalPages || isLoading}
+                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                aria-label="Next page"
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

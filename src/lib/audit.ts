@@ -35,6 +35,52 @@ export async function createAuditSnapshot(
   void pruneSnapshots(normalizedType, entityId);
 }
 
+export async function createBatchAuditSnapshots(
+  entityType: string,
+  records: any[],
+  author: string = 'System',
+  txClient?: any
+) {
+  if (!records || records.length === 0) {
+    return;
+  }
+
+  const client = txClient || prisma;
+
+  const normalizedType = Object.values(Prisma.ModelName).find(
+    (name) => name.toLowerCase() === entityType.toLowerCase()
+  ) || entityType;
+
+  const snapshots = records.map((record) => {
+    const entityId = record.id || record.entityId;
+    const data =
+      record.data !== undefined && record.entityId !== undefined && record.id === undefined
+        ? record.data
+        : record;
+    return {
+      entityType: normalizedType,
+      entityId,
+      data,
+      author,
+    };
+  });
+
+  await client.snapshotVersion.createMany({
+    data: snapshots,
+  });
+
+  const entitiesToPrune = records
+    .map((record) => ({
+      entityType: normalizedType,
+      entityId: record.id || record.entityId,
+    }))
+    .filter((item) => Boolean(item.entityId));
+
+  if (entitiesToPrune.length > 0) {
+    void pruneSnapshotsBulk(entitiesToPrune);
+  }
+}
+
 async function pruneSnapshots(entityType: string, entityId: string) {
   try {
     const limit = env.HISTORY_VERSION_LIMIT;
@@ -90,6 +136,8 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
     });
 
     // Group snapshots by (entityType, entityId) in memory to determine which IDs exceed the limit
+    if (!snapshots || snapshots.length === 0) return;
+
     const grouped = new Map<string, string[]>();
     for (const s of snapshots) {
       const key = `${s.entityType}:${s.entityId}`;

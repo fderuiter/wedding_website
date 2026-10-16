@@ -5,18 +5,88 @@ describe('ThankYouService', () => {
   let mockPrisma: any;
 
   beforeEach(() => {
+    let mockData: any[] = [];
+
     mockPrisma = {
       contributor: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockImplementation(async (args?: any) => {
+          if (!args || (!args.where && args.skip === undefined && args.take === undefined)) {
+            return mockData;
+          }
+          let results = [...mockData];
+          if (args.where?.thankYouStatus?.equals) {
+            const eq = args.where.thankYouStatus.equals.toLowerCase();
+            results = results.filter(
+              (c) => (c.thankYouStatus || 'unsent').toLowerCase() === eq
+            );
+          } else if (args.where?.thankYouStatus?.in) {
+            const list = args.where.thankYouStatus.in.map((s: string) => s.toLowerCase());
+            results = results.filter((c) =>
+              list.includes((c.thankYouStatus || 'unsent').toLowerCase())
+            );
+          }
+          if (args.where?.OR) {
+            const term = args.where.OR[0].name.contains.toLowerCase();
+            results = results.filter(
+              (c) =>
+                (c.name || '').toLowerCase().includes(term) ||
+                (c.registryItem?.name || '').toLowerCase().includes(term)
+            );
+          }
+          const skip = args.skip ?? 0;
+          const take = args.take ?? 50;
+          return results.slice(skip, skip + take);
+        }),
+        count: jest.fn().mockImplementation(async (args?: any) => {
+          let results = [...mockData];
+          if (args?.where?.thankYouStatus?.equals) {
+            const eq = args.where.thankYouStatus.equals.toLowerCase();
+            results = results.filter(
+              (c) => (c.thankYouStatus || 'unsent').toLowerCase() === eq
+            );
+          } else if (args?.where?.thankYouStatus?.in) {
+            const list = args.where.thankYouStatus.in.map((s: string) => s.toLowerCase());
+            results = results.filter((c) =>
+              list.includes((c.thankYouStatus || 'unsent').toLowerCase())
+            );
+          }
+          if (args?.where?.OR) {
+            const term = args.where.OR[0].name.contains.toLowerCase();
+            results = results.filter(
+              (c) =>
+                (c.name || '').toLowerCase().includes(term) ||
+                (c.registryItem?.name || '').toLowerCase().includes(term)
+            );
+          }
+          return results.length;
+        }),
+        groupBy: jest.fn().mockImplementation(async () => {
+          const map: Record<string, number> = {};
+          for (const c of mockData) {
+            const st = c.thankYouStatus || 'Unsent';
+            map[st] = (map[st] || 0) + 1;
+          }
+          return Object.entries(map).map(([st, count]) => ({
+            thankYouStatus: st,
+            _count: { _all: count },
+          }));
+        }),
         findUnique: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
       },
       snapshotVersion: {
         create: jest.fn().mockResolvedValue({ id: 'snapshot-1' }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
         findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+    };
+
+    // Helper method for setting mock dataset
+    mockPrisma.contributor.findMany.mockResolvedValue = (data: any[]) => {
+      mockData = data;
+      return mockPrisma.contributor.findMany;
     };
 
     service = new ThankYouService(mockPrisma);
@@ -129,6 +199,60 @@ describe('ThankYouService', () => {
       expect(searchResult2.items.length).toBe(1);
       expect(searchResult2.items[0].id).toBe('c2');
     });
+
+    it('applies Prisma skip and take clauses based on page and pageSize parameters', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      const result = await service.getThankYouNotes({ page: 2, pageSize: 15 });
+
+      expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 15,
+          take: 15,
+        })
+      );
+      expect(result.pagination).toEqual({
+        page: 2,
+        pageSize: 15,
+        totalItems: 0,
+        totalPages: 1,
+      });
+    });
+
+    it('uses default pagination options skip: 0 and take: 50 when omitted', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      await service.getThankYouNotes();
+
+      expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 0,
+          take: 50,
+        })
+      );
+    });
+
+    it('pushes status and search filters down to Prisma where clause with case-insensitive conditions', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      await service.getThankYouNotes({ status: 'Unsent', search: 'Coffee' });
+
+      expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            thankYouStatus: { equals: 'Unsent', mode: 'insensitive' },
+            OR: [
+              { name: { contains: 'Coffee', mode: 'insensitive' } },
+              { registryItem: { name: { contains: 'Coffee', mode: 'insensitive' } } },
+            ],
+          },
+        })
+      );
+      expect(mockPrisma.contributor.groupBy).toHaveBeenCalledWith({
+        by: ['thankYouStatus'],
+        _count: { _all: true },
+      });
+    });
   });
 
   describe('updateThankYouNote', () => {
@@ -205,7 +329,21 @@ describe('ThankYouService', () => {
         where: { id: { in: ['c1', 'c2'] } },
         data: expect.objectContaining({ thankYouStatus: 'Sent' }),
       });
-      expect(mockPrisma.snapshotVersion.create).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.snapshotVersion.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            entityType: 'Contributor',
+            entityId: 'c1',
+            author: 'Admin',
+          }),
+          expect.objectContaining({
+            entityType: 'Contributor',
+            entityId: 'c2',
+            author: 'Admin',
+          }),
+        ]),
+      });
+      expect(mockPrisma.snapshotVersion.createMany).toHaveBeenCalledTimes(1);
     });
   });
 

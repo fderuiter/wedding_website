@@ -58,6 +58,25 @@ describe('Thank-You Notes API Routes', () => {
         search: 'Jane',
       });
     });
+
+    it('passes pagination parameters page and pageSize to thankYouService', async () => {
+      (thankYouService.getThankYouNotes as jest.Mock).mockResolvedValue({
+        items: [],
+        metrics: { total: 0, sent: 0, unsent: 0, notNeeded: 0, thanked: 0, completionPercentage: 0 },
+        pagination: { page: 2, pageSize: 25, totalItems: 0, totalPages: 1 },
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes?page=2&pageSize=25');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.pagination).toEqual({ page: 2, pageSize: 25, totalItems: 0, totalPages: 1 });
+      expect(thankYouService.getThankYouNotes).toHaveBeenCalledWith({
+        page: 2,
+        pageSize: 25,
+      });
+    });
   });
 
   describe('PATCH /api/admin/thank-you-notes/[id]', () => {

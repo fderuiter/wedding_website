@@ -41,7 +41,7 @@ export class ContentService {
   async createCustomSection(title: string, content: string, author?: string) {
     const features = await this.repo.getFeatures();
     const newFeature = {
-      id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: 'custom',
       title,
       content,

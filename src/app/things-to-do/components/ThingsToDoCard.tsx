@@ -5,6 +5,7 @@ import { MediaImage } from '@/components/MediaImage';
 import type { AttractionDTO } from '@/features/attractions';
 import { Icon } from '@/components/ui/Icon';
 import { sanitizeUrl } from '@/utils/validation';
+import { resolveDirectionsUrl } from '@/utils/maps';
 
 /**
  * @interface ThingsToDoCardProps
@@ -38,7 +39,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
 
   const safeBookingUrl = sanitizeUrl(attraction.bookingUrl);
   const safeWebsiteUrl = sanitizeUrl(attraction.website);
-  const safeDirectionsUrl = sanitizeUrl(attraction.directions);
+  const directionsUrl = resolveDirectionsUrl(attraction);
 
   const isSafeUrl = (url?: string): url is string => {
     if (!url) return false;
@@ -63,7 +64,6 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
 
   const isBookingUrlSafe = safeBookingUrl && isSafeUrl(safeBookingUrl);
   const isWebsiteUrlSafe = safeWebsiteUrl && isSafeUrl(safeWebsiteUrl);
-  const isDirectionsUrlSafe = safeDirectionsUrl && isSafeUrl(safeDirectionsUrl);
 
   const hasHotelBlock = Boolean(
     attraction.promoCode ||
@@ -75,13 +75,13 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   );
 
   return (
-    <div className="group bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 flex flex-col h-full">
+    <div className="group bg-white dark:bg-gray-800 rounded-xl shadow-[var(--shadow-lg)] overflow-hidden transform hover:scale-105 transition-transform duration-[var(--motion-duration-normal)] flex flex-col h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
       <div className="relative h-48 w-full">
         <MediaImage
           media={attraction.image}
           fallbackUrl="/images/placeholder.png"
           fallbackAlt={attraction.name}
-          className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-110"
+          className="object-cover w-full h-full transition-transform duration-[var(--motion-duration-normal)] group-hover:scale-110"
         />
       </div>
       <div className="p-6 flex flex-col flex-grow">
@@ -160,9 +160,9 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : <div />}
-          {isDirectionsUrlSafe && safeDirectionsUrl ? (
+          {directionsUrl ? (
             <a
-              href={safeDirectionsUrl}
+              href={directionsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"

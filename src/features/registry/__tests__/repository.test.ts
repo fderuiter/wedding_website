@@ -30,6 +30,7 @@ jest.mock('@/lib/prisma', () => ({
 
 const mockRegistryItem: RegistryItem = {
   id: '1',
+  itemType: 'PHYSICAL',
   name: 'Test Item',
   price: 100,
   description: 'Test Description',
@@ -106,39 +107,45 @@ describe('RegistryRepository', () => {
   });
 
   describe('createItem', () => {
-    it('should create a new item', async () => {
-      const newItemData = {
-        name: 'New Item',
-        price: 200,
-        description: 'New Description',
-        vendorUrl: 'http://new.com',
-        imageUrl: 'http://new.com/image.jpg',
-        category: 'New Category',
+    it('should create a cash fund item with payment metadata', async () => {
+      const fundData = {
+        itemType: 'CASH_FUND' as const,
+        name: 'Honeymoon Fund',
+        price: 1000,
+        category: 'Cash Fund',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@honeymoon',
+      };
+      (prisma.media.create as jest.Mock).mockResolvedValue({ id: 'media3' });
+      (prisma.registryItem.create as jest.Mock).mockResolvedValue({
+        ...fundData,
+        id: '3',
+        description: '',
         quantity: 1,
         isGroupGift: true,
-      };
-      (prisma.media.create as jest.Mock).mockResolvedValue({ id: 'media2' });
-      (prisma.registryItem.create as jest.Mock).mockResolvedValue({ 
-        ...newItemData, 
-        id: '2', 
-        imageId: 'media2',
-        purchased: false, 
+        imageId: 'media3',
+        vendorUrl: null,
+        purchased: false,
         amountContributed: 0,
-        contributors: []
+        contributors: [],
       });
-      const item = await registryRepository.createItem(newItemData);
-      expect(item.name).toBe('New Item');
-      expect(prisma.media.create).toHaveBeenCalled();
+
+      const item = await registryRepository.createItem(fundData);
+      expect(item.itemType).toBe('CASH_FUND');
+      expect(item.paymentHandle).toBe('@honeymoon');
       expect(prisma.registryItem.create).toHaveBeenCalledWith({
         data: {
-          name: newItemData.name,
-          price: newItemData.price,
-          quantity: newItemData.quantity,
-          category: newItemData.category,
-          description: newItemData.description,
-          imageId: 'media2',
-          vendorUrl: newItemData.vendorUrl,
-          isGroupGift: newItemData.isGroupGift,
+          itemType: 'CASH_FUND',
+          paymentHandleType: 'Venmo',
+          paymentHandle: '@honeymoon',
+          name: 'Honeymoon Fund',
+          price: 1000,
+          quantity: 1,
+          category: 'Cash Fund',
+          description: '',
+          imageId: 'media3',
+          vendorUrl: null,
+          isGroupGift: true,
           contributors: {
             create: [],
           },

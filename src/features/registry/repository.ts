@@ -76,16 +76,22 @@ class RegistryRepository implements IRegistryRepository {
       mediaId = media.id;
     }
 
+    const itemType = data.itemType || 'PHYSICAL';
+    const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
+
     const item = await this.client.registryItem.create({
       data: {
+        itemType,
+        paymentHandleType: data.paymentHandleType || null,
+        paymentHandle: data.paymentHandle || null,
         name: data.name,
         price: data.price,
-        quantity: data.quantity,
+        quantity: isFund ? 1 : (data.quantity ?? 1),
         category: data.category,
         description: data.description || '',
         imageId: mediaId,
         vendorUrl: data.vendorUrl || null,
-        isGroupGift: data.isGroupGift,
+        isGroupGift: isFund ? true : (data.isGroupGift ?? false),
         contributors: {
           create: []
         }
