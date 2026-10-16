@@ -234,6 +234,53 @@ describe('useRegistry', () => {
     expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '3']);
   });
 
+  describe('sorting options', () => {
+    it('should default to original item order', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.sortOption).toBe('default');
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '2', '3']);
+    });
+
+    it('should sort items by price low to high (price-asc)', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.setSortOption('price-asc');
+      });
+
+      expect(result.current.sortOption).toBe('price-asc');
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '2', '3']);
+    });
+
+    it('should sort items by price high to low (price-desc)', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.setSortOption('price-desc');
+      });
+
+      expect(result.current.sortOption).toBe('price-desc');
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['3', '2', '1']);
+    });
+
+    it('should sort items by most wanted (most-wanted)', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.setSortOption('most-wanted');
+      });
+
+      expect(result.current.sortOption).toBe('most-wanted');
+      expect(result.current.filteredItems[0].id).toBe('3');
+      expect(result.current.filteredItems[0].amountContributed).toBe(150);
+    });
+  });
+
   describe('URL query param synchronization', () => {
     it('should auto-open target item modal when ?item=<itemId> is present in URL', async () => {
       window.history.replaceState({}, '', '/?item=3');

@@ -12,6 +12,8 @@ import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
 
+export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
+
 export function useRegistry() {
   const queryClient = useQueryClient();
   const { confirm } = useToast();
@@ -102,6 +104,7 @@ export function useRegistry() {
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
   const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
+  const [sortOption, setSortOption] = useState<SortOption>('default');
 
   const {
     categories,
@@ -125,13 +128,28 @@ export function useRegistry() {
   }, [minPrice, maxPrice]);
 
   const filteredItems = useMemo(() => {
-    return categoryFilteredItems.filter(item => {
+    const result = categoryFilteredItems.filter(item => {
       const inPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
       const isGroupGift = !showGroupGiftsOnly || item.isGroupGift;
       const isAvailable = !showAvailableOnly || !item.purchased;
       return inPrice && isGroupGift && isAvailable;
     });
-  }, [categoryFilteredItems, priceRange, showGroupGiftsOnly, showAvailableOnly]);
+
+    if (sortOption === 'price-asc') {
+      return [...result].sort((a, b) => a.price - b.price);
+    }
+    if (sortOption === 'price-desc') {
+      return [...result].sort((a, b) => b.price - a.price);
+    }
+    if (sortOption === 'most-wanted') {
+      return [...result].sort((a, b) => {
+        const diff = (b.amountContributed || 0) - (a.amountContributed || 0);
+        if (diff !== 0) return diff;
+        return (b.contributors?.length || 0) - (a.contributors?.length || 0);
+      });
+    }
+    return result;
+  }, [categoryFilteredItems, priceRange, showGroupGiftsOnly, showAvailableOnly, sortOption]);
 
   const visibleItems = useMemo(() => {
     return filteredItems.slice(0, visibleItemsCount);
@@ -233,6 +251,8 @@ export function useRegistry() {
     setShowGroupGiftsOnly,
     showAvailableOnly,
     setShowAvailableOnly,
+    sortOption,
+    setSortOption,
     handleCardClick,
     handleCloseModal,
     handleEdit,
