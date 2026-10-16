@@ -89,25 +89,45 @@ export default function InvitationCodesDashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
-  const [newCode, setNewCode] = useState({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
+  const [newCode, setNewCode] = useState({
+    guestName: '',
+    code: '',
+    email: '',
+    plusOneFirstName: '',
+    plusOneLastName: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: '',
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [addressFilter, setAddressFilter] = useState<'all' | 'complete' | 'missing'>('all');
   const [dietaryFilter, setDietaryFilter] = useState<string>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'attending' | 'declined' | 'pending'>('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   // Guardrail: Reset selection state when active search query or filters change
   useEffect(() => {
     setSelectedIds([]);
-  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter]);
+  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter, addressFilter]);
+
+  const isAddressComplete = (item: any) => {
+    return Boolean(item.addressLine1?.trim() && item.city?.trim() && item.zipCode?.trim());
+  };
 
   const counts = useMemo(() => {
+    const complete = codes.filter((c) => isAddressComplete(c)).length;
     return {
       all: codes.length,
       redeemed: codes.filter((c) => c.used).length,
       unused: codes.filter((c) => !c.used).length,
+      addressComplete: complete,
+      addressMissing: codes.length - complete,
     };
   }, [codes]);
 
@@ -166,6 +186,10 @@ export default function InvitationCodesDashboardPage() {
       if (statusFilter === 'redeemed' && !item.used) return false;
       if (statusFilter === 'unused' && item.used) return false;
 
+      const hasAddress = isAddressComplete(item);
+      if (addressFilter === 'complete' && !hasAddress) return false;
+      if (addressFilter === 'missing' && hasAddress) return false;
+
       if (attendanceFilter !== 'all') {
         const attendanceStatus = getAttendanceStatus(item);
         if (attendanceFilter !== attendanceStatus) return false;
@@ -184,11 +208,16 @@ export default function InvitationCodesDashboardPage() {
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
       const matchesPlusOneFirstName = item.plusOneFirstName ? item.plusOneFirstName.toLowerCase().includes(query) : false;
       const matchesPlusOneLastName = item.plusOneLastName ? item.plusOneLastName.toLowerCase().includes(query) : false;
+      const matchesAddress = [item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
 
-      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName || matchesDietary;
+      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName || matchesAddress || matchesDietary;
     });
-  }, [codes, searchQuery, statusFilter, attendanceFilter, dietaryFilter]);
+  }, [codes, searchQuery, statusFilter, addressFilter, attendanceFilter, dietaryFilter]);
 
   const allFilteredSelected = useMemo(() => {
     if (filteredCodes.length === 0) return false;
@@ -291,14 +320,36 @@ export default function InvitationCodesDashboardPage() {
       return;
     }
     try {
-      await create({
+      const payload: any = {
         guestName: newCode.guestName.trim(),
         code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
         plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
         plusOneLastName: newCode.plusOneLastName.trim() || undefined,
         used: false,
+      };
+      if (newCode.email.trim()) payload.email = newCode.email.trim();
+      if (newCode.addressLine1.trim()) payload.addressLine1 = newCode.addressLine1.trim();
+      if (newCode.addressLine2.trim()) payload.addressLine2 = newCode.addressLine2.trim();
+      if (newCode.city.trim()) payload.city = newCode.city.trim();
+      if (newCode.state.trim()) payload.state = newCode.state.trim();
+      if (newCode.zipCode.trim()) payload.zipCode = newCode.zipCode.trim();
+      if (newCode.country.trim()) payload.country = newCode.country.trim();
+
+      await create(payload);
+      setNewCode({
+        guestName: '',
+        code: '',
+        email: '',
+        plusOneFirstName: '',
+        plusOneLastName: '',
+        addressLine1: '',
+        addressLine2: '',
+        city: '',
+        state: '',
+        zipCode: '',
+        country: '',
       });
-      setNewCode({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
+
       setIsCreating(false);
       addToast('Invitation code created successfully.', 'success');
     } catch (e: any) {
@@ -307,7 +358,7 @@ export default function InvitationCodesDashboardPage() {
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
-    const card = e.currentTarget.closest('.bg-white');
+    const card = e.currentTarget.closest('.bg-white, .dark\\:bg-gray-800');
     const isConfirmed = await confirm('Are you sure you want to delete this invitation code?');
     if (!isConfirmed) return;
     if (card) {
@@ -333,6 +384,12 @@ export default function InvitationCodesDashboardPage() {
       Email: item.email || '',
       'Plus-One First Name': item.plusOneFirstName || '',
       'Plus-One Last Name': item.plusOneLastName || '',
+      'Address Line 1': item.addressLine1 || '',
+      'Address Line 2': item.addressLine2 || '',
+      City: item.city || '',
+      State: item.state || '',
+      'ZIP Code': item.zipCode || '',
+      Country: item.country || '',
       'Dietary Notes': item.dietaryNotes || '',
       'Plus Ones': item.plusOneAllocations ?? 0,
       Status: item.used ? 'Redeemed' : 'Unused',
@@ -363,7 +420,19 @@ export default function InvitationCodesDashboardPage() {
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
           <Button onClick={() => {
-            setNewCode({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
+            setNewCode({
+              guestName: '',
+              code: '',
+              email: '',
+              plusOneFirstName: '',
+              plusOneLastName: '',
+              addressLine1: '',
+              addressLine2: '',
+              city: '',
+              state: '',
+              zipCode: '',
+              country: '',
+            });
             setIsCreating(true);
           }}>Generate New Code</Button>
         </div>
@@ -399,6 +468,15 @@ export default function InvitationCodesDashboardPage() {
               />
             </FormGroup>
             <FormGroup>
+              <Label>Email (Optional)</Label>
+              <Input
+                type="email"
+                placeholder="guest@example.com"
+                value={newCode.email}
+                onChange={e => setNewCode({ ...newCode, email: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
               <Label>Plus-One First Name (Optional)</Label>
               <Input
                 type="text"
@@ -414,6 +492,60 @@ export default function InvitationCodesDashboardPage() {
                 placeholder="e.g. Smith"
                 value={newCode.plusOneLastName}
                 onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Address Line 1 (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="123 Main St"
+                value={newCode.addressLine1}
+                onChange={e => setNewCode({ ...newCode, addressLine1: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Address Line 2 (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="Apt 4B"
+                value={newCode.addressLine2}
+                onChange={e => setNewCode({ ...newCode, addressLine2: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>City (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="San Francisco"
+                value={newCode.city}
+                onChange={e => setNewCode({ ...newCode, city: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>State / Province (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="CA"
+                value={newCode.state}
+                onChange={e => setNewCode({ ...newCode, state: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>ZIP / Postal Code (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="94102"
+                value={newCode.zipCode}
+                onChange={e => setNewCode({ ...newCode, zipCode: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Country (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="United States"
+                value={newCode.country}
+                onChange={e => setNewCode({ ...newCode, country: e.target.value })}
               />
             </FormGroup>
           </div>
@@ -473,7 +605,7 @@ export default function InvitationCodesDashboardPage() {
           <FormGroup className="relative flex-1 max-w-md space-y-0">
             <Input
               type="text"
-              placeholder="Search by name, code, email, or dietary notes..."
+              placeholder="Search by name, code, email, address, or dietary notes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               aria-label="Search invitation codes"
@@ -515,7 +647,7 @@ export default function InvitationCodesDashboardPage() {
                 role="tab"
                 aria-selected={statusFilter === 'all'}
                 onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === 'all'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -528,7 +660,7 @@ export default function InvitationCodesDashboardPage() {
                 role="tab"
                 aria-selected={statusFilter === 'redeemed'}
                 onClick={() => setStatusFilter('redeemed')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === 'redeemed'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -541,13 +673,53 @@ export default function InvitationCodesDashboardPage() {
                 role="tab"
                 aria-selected={statusFilter === 'unused'}
                 onClick={() => setStatusFilter('unused')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === 'unused'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 Unused ({counts.unused})
+              </button>
+            </div>
+          </div>
+
+          {/* Address Completion Filter */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address:</span>
+            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setAddressFilter('all')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  addressFilter === 'all'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All Addresses
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddressFilter('complete')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  addressFilter === 'complete'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Address Complete ({counts.addressComplete})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddressFilter('missing')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  addressFilter === 'missing'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Address Missing ({counts.addressMissing})
               </button>
             </div>
           </div>
@@ -560,7 +732,7 @@ export default function InvitationCodesDashboardPage() {
                 type="button"
                 onClick={() => setAttendanceFilter('all')}
                 aria-label={`All attendance (${attendanceCounts.all})`}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'all'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -571,7 +743,7 @@ export default function InvitationCodesDashboardPage() {
               <button
                 type="button"
                 onClick={() => setAttendanceFilter('attending')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'attending'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -582,7 +754,7 @@ export default function InvitationCodesDashboardPage() {
               <button
                 type="button"
                 onClick={() => setAttendanceFilter('declined')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'declined'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -593,7 +765,7 @@ export default function InvitationCodesDashboardPage() {
               <button
                 type="button"
                 onClick={() => setAttendanceFilter('pending')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'pending'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -624,62 +796,83 @@ export default function InvitationCodesDashboardPage() {
       )}
 
       <div className="grid gap-4 pb-10" ref={containerRef}>
-        {filteredCodes.map(item => (
-          <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center gap-4">
-            <div className="flex items-center gap-4">
-              <input
-                type="checkbox"
-                aria-label={`Select invitation code for ${item.guestName}`}
-                checked={selectedIds.includes(item.id)}
-                onChange={() => handleToggleSelectRow(item.id)}
-                className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
-              />
-              <div>
-                <div className="font-bold text-lg">{item.guestName}</div>
-                {(item.plusOneFirstName || item.plusOneLastName) && (
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+        {filteredCodes.map((item) => {
+          const hasAddress = isAddressComplete(item);
+          return (
+            <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-4 space-y-1">
+                <input
+                  type="checkbox"
+                  aria-label={`Select invitation code for ${item.guestName}`}
+                  checked={selectedIds.includes(item.id)}
+                  onChange={() => handleToggleSelectRow(item.id)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
+                />
+                <div>
+                  <div className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</div>
+                  {(item.plusOneFirstName || item.plusOneLastName) && (
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                    </div>
+                  )}
+                  <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
+                    Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
                   </div>
-                )}
-                <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-                  Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
-                </div>
-                <div className="text-xs mt-1 text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4">
-                  <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
-                  <span>
-                    RSVP:{' '}
-                    <span
-                      className={
-                        getAttendanceStatus(item) === 'attending'
-                          ? 'text-green-600 font-semibold'
-                          : getAttendanceStatus(item) === 'declined'
-                            ? 'text-red-600 font-semibold'
-                            : 'text-amber-600 font-semibold'
-                      }
-                    >
-                      {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
+
+                  {/* Mailing Address Display */}
+                  <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
+                    <span className="font-bold">Mailing Address: </span>
+                    {hasAddress ? (
+                      <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
+                        {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                      </span>
+                    ) : item.addressLine1 ? (
+                      <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
+                        Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+                    )}
+                  </div>
+
+                  <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
+                    <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+                    <span>
+                      RSVP:{' '}
+                      <span
+                        className={
+                          getAttendanceStatus(item) === 'attending'
+                            ? 'text-green-600 font-semibold'
+                            : getAttendanceStatus(item) === 'declined'
+                              ? 'text-red-600 font-semibold'
+                              : 'text-amber-600 font-semibold'
+                        }
+                      >
+                        {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
+                      </span>
                     </span>
-                  </span>
-                </div>
-                {item.dietaryNotes && item.dietaryNotes.trim() && (
-                  <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
-                    <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
                   </div>
-                )}
+                  {item.dietaryNotes && item.dietaryNotes.trim() && (
+                    <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
+                      <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={`Delete code for ${item.guestName}`}
+                  onClick={(e) => handleDelete(item.id, e)}
+                >
+                  Delete
+                </Button>
               </div>
             </div>
-            <div>
-              <Button
-                variant="danger"
-                size="sm"
-                aria-label={`Delete code for ${item.guestName}`}
-                onClick={(e) => handleDelete(item.id, e)}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
         {codes.length > 0 && filteredCodes.length === 0 && (
           <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>

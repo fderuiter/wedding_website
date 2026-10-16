@@ -19,6 +19,7 @@ export const ContributorSchema = z.object({
   email: z.string().nullable().optional(),
   isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+  message: z.string().nullable().optional(),
   date: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()),
   thankYouStatus: z.string().optional().default('Unsent'),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
@@ -49,6 +50,7 @@ export const ContributionSchema = z.object({
   name: z.string({ message: 'Name is required and must be under 100 characters.' }).trim().min(1, 'Name is required and must be under 100 characters.').max(100, 'Name is required and must be under 100 characters.'),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   code: z.string().trim().optional(),
+  message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
 }, { message: 'Invalid request body.' });
 
 export const ItemTypeEnum = z.enum(['PHYSICAL', 'CASH_FUND', 'EXPERIENCE_FUND']);
@@ -105,6 +107,12 @@ export const InvitationCodeSchema = z.object({
   code: z.string().trim().min(1, 'Code is required.').max(50, 'Code must be under 50 characters.'),
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
   email: z.string().trim().email('Invalid email address.').nullable().optional().or(z.literal('')),
+  addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').nullable().optional().or(z.literal('')),
+  addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').nullable().optional().or(z.literal('')),
+  city: z.string().trim().max(100, 'City must be under 100 characters.').nullable().optional().or(z.literal('')),
+  state: z.string().trim().max(100, 'State must be under 100 characters.').nullable().optional().or(z.literal('')),
+  zipCode: z.string().trim().max(20, 'Zip Code must be under 20 characters.').nullable().optional().or(z.literal('')),
+  country: z.string().trim().max(100, 'Country must be under 100 characters.').nullable().optional().or(z.literal('')),
   dietaryNotes: z.string().trim().nullable().optional(),
   plusOneAllocations: z.coerce.number().int().nonnegative().optional().default(0),
   plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').nullable().optional().or(z.literal('')),
@@ -129,6 +137,12 @@ const BatchImportInvitationCodeItemSchema = z.object({
     z.null(),
     z.undefined()
   ]).optional(),
+  addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').optional().or(z.literal('')).nullable(),
+  addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').optional().or(z.literal('')).nullable(),
+  city: z.string().trim().max(100, 'City must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  state: z.string().trim().max(100, 'State must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  zipCode: z.string().trim().max(20, 'Zip Code must be under 20 characters.').optional().or(z.literal('')).nullable(),
+  country: z.string().trim().max(100, 'Country must be under 100 characters.').optional().or(z.literal('')).nullable(),
   dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),
   plusOneAllocations: z.coerce.number().int('Plus-one allocation must be an integer.').nonnegative('Plus-one allocation must be non-negative.').optional(),
   plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').optional().or(z.literal('')).nullable(),
@@ -141,5 +155,18 @@ export const BatchImportInvitationCodesSchema = z.object({
   collisionStrategy: z.enum(['skip', 'update', 'reject']).default('skip'),
 });
 
+export type BatchImportInvitationCodesDTO = z.infer<typeof BatchImportInvitationCodesSchema>;
+
+export const GuestAddressUpdateSchema = z.object({
+  code: z.string().trim().optional(),
+  addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').optional().or(z.literal('')).nullable(),
+  addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').optional().or(z.literal('')).nullable(),
+  city: z.string().trim().max(100, 'City must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  state: z.string().trim().max(100, 'State must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  zipCode: z.string().trim().max(20, 'Zip Code must be under 20 characters.').optional().or(z.literal('')).nullable(),
+  country: z.string().trim().max(100, 'Country must be under 100 characters.').optional().or(z.literal('')).nullable(),
+});
+
+export type GuestAddressUpdateDTO = z.infer<typeof GuestAddressUpdateSchema>;
 
 

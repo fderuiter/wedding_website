@@ -59,8 +59,13 @@ describe('FloorplanCanvas component', () => {
     onUpdateTablePosition: jest.fn(),
     onDropGuestOnTable: jest.fn(),
     onUnassignGuest: jest.fn(),
+    onOpenSeatAssignModal: jest.fn(),
     onAddTable: jest.fn(),
   };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   it('renders canvas container with theme preset background, border, and grid dot variables', () => {
     const { container } = render(<FloorplanCanvas {...defaultProps} />);
@@ -94,12 +99,12 @@ describe('FloorplanCanvas component', () => {
     render(<FloorplanCanvas {...defaultProps} />);
 
     // Assigned seat circle for Seat 1 on Head Table
-    const assignedSeat = screen.getByTitle(/Seat 1: John Doe/).closest('div') as HTMLElement;
+    const assignedSeat = screen.getByTitle(/Seat 1: John Doe/).closest('button, div') as HTMLElement;
     expect(assignedSeat.style.backgroundColor).toBe('var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))');
     expect(assignedSeat.style.color).toBe('var(--floorplan-seat-assigned-text, #ffffff)');
 
     // Unassigned seat circle for Seat 2 on Head Table
-    const unassignedSeat = screen.getByTitle(/Seat 2: Empty/).closest('div') as HTMLElement;
+    const unassignedSeat = screen.getByTitle(/Seat 2: Empty/).closest('button, div') as HTMLElement;
     expect(unassignedSeat.style.backgroundColor).toBe('var(--floorplan-table-bg, #ffffff)');
     expect(unassignedSeat.className).toContain('hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]');
   });
@@ -119,7 +124,7 @@ describe('FloorplanCanvas component', () => {
   it('applies scale-125 bg-primary/20 border-primary feedback when hovering dragged guest over an individual seat', () => {
     render(<FloorplanCanvas {...defaultProps} />);
 
-    const unassignedSeat = screen.getByTitle(/Seat 2: Empty/).closest('div') as HTMLElement;
+    const unassignedSeat = screen.getByTitle(/Seat 2: Empty/).closest('button, div') as HTMLElement;
     fireEvent.dragEnter(unassignedSeat, {
       dataTransfer: { types: ['text/plain'] },
     });
@@ -272,6 +277,16 @@ describe('FloorplanCanvas component', () => {
 
       fireEvent.keyDown(assignedSeat, { key: 'Backspace' });
       expect(onUnassignGuest).toHaveBeenCalledWith('guest-1');
+    });
+
+    it('opens seat assign modal when Enter is pressed on empty seat', () => {
+      const onOpenSeatAssignModal = jest.fn();
+      render(<FloorplanCanvas {...defaultProps} onOpenSeatAssignModal={onOpenSeatAssignModal} />);
+
+      const emptySeat = screen.getByLabelText('Seat 2: Empty');
+      fireEvent.keyDown(emptySeat, { key: 'Enter' });
+
+      expect(onOpenSeatAssignModal).toHaveBeenCalledWith('table-1', 2);
     });
 
     it('stops event propagation on seat keydown to prevent table handler trigger', () => {
