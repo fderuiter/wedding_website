@@ -58,10 +58,10 @@ export const Label = React.forwardRef<
       htmlFor={id}
       className={cn(
         'block text-sm font-semibold leading-none',
-        state === 'error' ? 'text-[var(--form-error-text,#dc2626)]' : 
+        state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' : 
           state === 'success' ? 'text-[var(--form-success-text,#16a34a)]' : 
             state === 'warning' ? 'text-[var(--form-warning-text,#ca8a04)]' : 
-              'text-[var(--form-label-text,#111827)]',
+              'text-[var(--form-label-text,var(--color-primary-text,#111827))]',
         className
       )}
       {...props}
@@ -77,8 +77,8 @@ export const Input = React.forwardRef<
   const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
-    default: 'border-[var(--input-border,#d1d5db)] focus-visible:ring-[var(--input-focus-ring,var(--color-primary,#B91C1C))]',
-    error: 'border-[var(--input-error-border,#ef4444)] focus-visible:ring-[var(--input-error-focus-ring,#ef4444)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
     success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
     warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
   };
@@ -92,7 +92,7 @@ export const Input = React.forwardRef<
         ...style,
       }}
       className={cn(
-        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,#111827)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -112,8 +112,8 @@ export const Textarea = React.forwardRef<
   const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
-    default: 'border-[var(--input-border,#d1d5db)] focus-visible:ring-[var(--input-focus-ring,var(--color-primary,#B91C1C))]',
-    error: 'border-[var(--input-error-border,#ef4444)] focus-visible:ring-[var(--input-error-focus-ring,#ef4444)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
     success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
     warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
   };
@@ -126,7 +126,7 @@ export const Textarea = React.forwardRef<
         ...style,
       }}
       className={cn(
-        'flex min-h-[80px] w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,#111827)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex min-h-[80px] w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -146,8 +146,8 @@ export const Select = React.forwardRef<
   const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
-    default: 'border-[var(--input-border,#d1d5db)] focus-visible:ring-[var(--input-focus-ring,var(--color-primary,#B91C1C))]',
-    error: 'border-[var(--input-error-border,#ef4444)] focus-visible:ring-[var(--input-error-focus-ring,#ef4444)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
     success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
     warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
   };
@@ -160,7 +160,7 @@ export const Select = React.forwardRef<
         ...style,
       }}
       className={cn(
-        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,#111827)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         stateStyles[state],
         className
       )}
@@ -180,8 +180,8 @@ export const Checkbox = React.forwardRef<
   const { id, state, messageId, hasMessage } = useFormItem();
 
   const stateStyles = {
-    default: 'border-[var(--input-border,#d1d5db)] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-primary,#B91C1C))]',
-    error: 'border-[var(--input-error-border,#ef4444)] text-[var(--form-error-text,#ef4444)] focus-visible:ring-[var(--input-error-focus-ring,#ef4444)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] text-[var(--form-error-text,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
     success: 'border-[var(--input-success-border,#22c55e)] text-[var(--form-success-text,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
     warning: 'border-[var(--input-warning-border,#f59e0b)] text-[var(--form-warning-text,#ca8a04)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
   };
@@ -224,8 +224,8 @@ export const FormMessage = React.forwardRef<
   }, [messageUniqueId, hasContent, registerMessage]);
 
   const stateStyles = {
-    default: 'text-[var(--form-message-text,#6b7280)]',
-    error: 'text-[var(--form-error-text,#dc2626)] font-medium',
+    default: 'text-[var(--form-message-text,var(--color-secondary-text,#6b7280))]',
+    error: 'text-[var(--form-error-text,var(--color-error-text,#dc2626))] font-medium',
     success: 'text-[var(--form-success-text,#16a34a)] font-medium',
     warning: 'text-[var(--form-warning-text,#ca8a04)] font-medium',
   };

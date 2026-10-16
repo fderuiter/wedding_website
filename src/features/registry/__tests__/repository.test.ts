@@ -289,6 +289,7 @@ describe('RegistryRepository', () => {
             create: {
               name: contribution.name,
               amount: contribution.amount,
+              message: null,
               date: expect.any(Date),
             },
           },
@@ -298,6 +299,53 @@ describe('RegistryRepository', () => {
           contributors: true,
         },
       });
+    });
+
+    it('should save guest message when provided and sanitize whitespace-only messages to null', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      // 1. With valid message
+      const contributionWithMessage = { name: 'Alice', amount: 50, message: '  Best wishes for both of you!  ' };
+      await registryRepository.contributeToItem('1', contributionWithMessage);
+
+      expect(tx.registryItem.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          contributors: {
+            create: expect.objectContaining({
+              name: 'Alice',
+              amount: 50,
+              message: 'Best wishes for both of you!',
+            }),
+          },
+        }),
+      }));
+
+      // 2. With whitespace-only message
+      const contributionWithWhitespace = { name: 'Bob', amount: 50, message: '   ' };
+      await registryRepository.contributeToItem('1', contributionWithWhitespace);
+
+      expect(tx.registryItem.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          contributors: {
+            create: expect.objectContaining({
+              name: 'Bob',
+              amount: 50,
+              message: null,
+            }),
+          },
+        }),
+      }));
     });
 
     it('should throw an error if item is not found', async () => {
@@ -344,6 +392,7 @@ describe('RegistryRepository', () => {
             create: {
               name: contribution.name,
               amount: contribution.amount,
+              message: null,
               date: expect.any(Date),
             },
           },
@@ -403,6 +452,7 @@ describe('RegistryRepository', () => {
             create: {
               name: 'Guest Contributor',
               amount: 50,
+              message: null,
               date: expect.any(Date),
             },
           },
@@ -460,6 +510,7 @@ describe('RegistryRepository', () => {
             create: {
               name: 'Jane Smith',
               amount: 50,
+              message: null,
               date: expect.any(Date),
               invitationCodeId: 'invite-good',
             },
@@ -533,6 +584,7 @@ describe('RegistryRepository', () => {
             create: {
               name: 'Jane Smith',
               amount: 50,
+              message: null,
               date: expect.any(Date),
               invitationCodeId: 'invite-used',
             },

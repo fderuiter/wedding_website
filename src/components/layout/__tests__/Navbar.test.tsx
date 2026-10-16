@@ -27,13 +27,48 @@ const mockConfig = {
   ],
 } as any;
 
-describe('Navbar Component - Active aria-current Accessibility', () => {
+describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', () => {
   let headerRef: React.RefObject<HTMLElement | null>;
 
   beforeEach(() => {
     currentPathname = '/';
     window.location.hash = '';
     headerRef = React.createRef();
+  });
+
+  it('renders brand logo and nav links using dynamic CSS variable tokens', () => {
+    render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    const brandLink = screen.getByText('A & F');
+    expect(brandLink).toHaveClass('text-[var(--color-primary-text)]');
+    expect(brandLink).not.toHaveClass('text-gray-800');
+    expect(brandLink).not.toHaveClass('dark:text-white');
+  });
+
+  it('renders admin mode controls without hardcoded text-white and text-gray-700 classes', () => {
+    render(
+      <Navbar
+        isAdmin={true}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    const adminSpan = screen.getByText('Admin Mode');
+    expect(adminSpan).toHaveClass('text-[var(--color-primary-text)]');
+    expect(adminSpan).not.toHaveClass('text-gray-700');
+
+    const logoutBtn = screen.getByRole('button', { name: /logout/i });
+    expect(logoutBtn).toHaveClass('text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))]');
+    expect(logoutBtn).not.toHaveClass('text-white');
   });
 
   it('sets aria-current="page" on Home link when at root pathname without hash', () => {

@@ -308,8 +308,15 @@ function generateDynamicStyles(
 
   const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
   const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
+  const errorTextLight = optimizeContrast('#DC2626', '#FFFFFF', 4.5);
+  const focusRingLight = optimizeContrast(safePrimary, '#FFFFFF', 3.0);
+  const surfaceBorderLight = optimizeContrast('#6B7280', '#FFFFFF', 3.0);
+
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
+  const errorTextDark = optimizeContrast('#EF4444', '#111827', 4.5);
+  const focusRingDark = optimizeContrast(safePrimary, '#111827', 3.0);
+  const surfaceBorderDark = optimizeContrast('#9CA3AF', '#111827', 3.0);
 
   const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
   const seatAssignedTextDark = optimizeContrast('#ffffff', safePrimary, 4.5);
@@ -330,6 +337,9 @@ function generateDynamicStyles(
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
+      --color-error-text: ${errorTextDark};
+      --color-focus-ring: ${focusRingDark};
+      --color-surface-border: ${surfaceBorderDark};
 ${lightPresetCssRules}
       --floorplan-seat-assigned-text: ${seatAssignedTextDark};
       --container-max-w: ${safeContainerMaxWidth};
@@ -338,44 +348,129 @@ ${lightPresetCssRules}
       --radius-card: ${safeBorderRadius};
     }
 
-    /* Light mode document */
-    html:not(.dark) {
+    /* Light mode document context */
+    html:not(.dark),
+    html.light,
+    [data-surface="light"] {
       --color-primary: ${primaryTextLight};
       --color-secondary: ${secondaryTextLight};
       --color-primary-text: ${primaryTextLight};
       --color-secondary-text: ${secondaryTextLight};
+      --color-error-text: ${errorTextLight};
+      --color-focus-ring: ${focusRingLight};
+      --color-surface-border: ${surfaceBorderLight};
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
     }
 
     /* Light containers in any document mode */
     .bg-white,
+    [data-surface="light"],
     .bg-gray-50,
     .bg-gray-100,
+    .bg-gray-200,
+    .bg-gray-300,
+    .bg-gray-400,
     .bg-slate-50,
-    .bg-slate-100 {
+    .bg-slate-100,
+    .bg-slate-200,
+    .bg-slate-300,
+    .bg-slate-400,
+    .bg-zinc-50,
+    .bg-zinc-100,
+    .bg-zinc-200,
+    .bg-zinc-300,
+    .bg-zinc-400,
+    .bg-stone-50,
+    .bg-stone-100,
+    .bg-stone-200,
+    .bg-stone-300,
+    .bg-stone-400,
+    .bg-neutral-50,
+    .bg-neutral-100,
+    .bg-neutral-200,
+    .bg-neutral-300,
+    .bg-neutral-400 {
       --color-primary: ${primaryTextLight};
       --color-secondary: ${secondaryTextLight};
       --color-primary-text: ${primaryTextLight};
       --color-secondary-text: ${secondaryTextLight};
+      --color-error-text: ${errorTextLight};
+      --color-focus-ring: ${focusRingLight};
+      --color-surface-border: ${surfaceBorderLight};
     }
 
     /* Re-assert dark mode variables for dark backgrounds under dark mode */
+    .dark .dark\\:bg-black,
+    .dark [data-surface="dark"],
+    .dark .dark\\:bg-gray-600,
+    .dark .dark\\:bg-gray-700,
     .dark .dark\\:bg-gray-800,
-    .dark .dark\\:bg-zinc-800,
     .dark .dark\\:bg-gray-900,
+    .dark .dark\\:bg-gray-950,
+    .dark .dark\\:bg-slate-600,
+    .dark .dark\\:bg-slate-700,
+    .dark .dark\\:bg-slate-800,
+    .dark .dark\\:bg-slate-900,
+    .dark .dark\\:bg-slate-950,
+    .dark .dark\\:bg-zinc-600,
+    .dark .dark\\:bg-zinc-700,
+    .dark .dark\\:bg-zinc-800,
     .dark .dark\\:bg-zinc-900,
-    .dark .dark\\:bg-black {
+    .dark .dark\\:bg-zinc-950,
+    .dark .dark\\:bg-stone-600,
+    .dark .dark\\:bg-stone-700,
+    .dark .dark\\:bg-stone-800,
+    .dark .dark\\:bg-stone-900,
+    .dark .dark\\:bg-stone-950,
+    .dark .dark\\:bg-neutral-600,
+    .dark .dark\\:bg-neutral-700,
+    .dark .dark\\:bg-neutral-800,
+    .dark .dark\\:bg-neutral-900,
+    .dark .dark\\:bg-neutral-950,
+    .bg-black,
+    [data-surface="dark"],
+    .bg-gray-600,
+    .bg-gray-700,
+    .bg-gray-800,
+    .bg-gray-900,
+    .bg-gray-950,
+    .bg-slate-600,
+    .bg-slate-700,
+    .bg-slate-800,
+    .bg-slate-900,
+    .bg-slate-950,
+    .bg-zinc-600,
+    .bg-zinc-700,
+    .bg-zinc-800,
+    .bg-zinc-900,
+    .bg-zinc-950,
+    .bg-stone-600,
+    .bg-stone-700,
+    .bg-stone-800,
+    .bg-stone-900,
+    .bg-stone-950,
+    .bg-neutral-600,
+    .bg-neutral-700,
+    .bg-neutral-800,
+    .bg-neutral-900,
+    .bg-neutral-950 {
       --color-primary: ${safePrimary};
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
-      --container-max-w: ${safeContainerMaxWidth};
-      --grid-gap: ${safeGridGap};
-      --card-padding: ${safeCardPadding};
-      --radius-card: ${safeBorderRadius};
+      --color-error-text: ${errorTextDark};
+      --color-focus-ring: ${focusRingDark};
+      --color-surface-border: ${surfaceBorderDark};
     }
 
     .dark {
+      --color-primary: ${safePrimary};
+      --color-secondary: ${safeSecondary};
+      --color-primary-text: ${primaryTextDark};
+      --color-secondary-text: ${secondaryTextDark};
+      --color-error-text: ${errorTextDark};
+      --color-focus-ring: ${focusRingDark};
+      --color-surface-border: ${surfaceBorderDark};
 ${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};

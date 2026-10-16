@@ -171,7 +171,7 @@ describe('intl utils', () => {
       expect(duration).toBeLessThan(50);
     });
 
-    test('10,000 date format operations execute under 20ms', () => {
+    test('10,000 date format operations execute under 50ms', () => {
       const date = new Date(2026, 5, 15);
       const options = { year: 'numeric' as const, month: 'long' as const, day: 'numeric' as const };
 

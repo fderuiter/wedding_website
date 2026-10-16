@@ -132,6 +132,7 @@ model Contributor {
   email          String?
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
+  message        String?
   date           DateTime      @default(now())
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
@@ -150,6 +151,12 @@ model InvitationCode {
   code               String        @unique
   guestName          String
   email              String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  zipCode            String?
+  country            String?
   dietaryNotes       String?
   plusOneAllocations Int?          @default(0)
   plusOneFirstName   String?
@@ -199,5 +206,6 @@ model SnapshotVersion {
   author     String   @default("Admin")
   createdAt  DateTime @default(now())
 
+  @@index([entityType, entityId, createdAt(sort: Desc)])
   @@index([createdAt])
 }
