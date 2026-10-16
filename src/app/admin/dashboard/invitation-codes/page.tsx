@@ -26,7 +26,7 @@ export default function InvitationCodesDashboardPage() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [newCode, setNewCode] = useState({ guestName: '', code: '' });
+  const [newCode, setNewCode] = useState({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
 
@@ -49,8 +49,10 @@ export default function InvitationCodesDashboardPage() {
       const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
       const matchesCode = item.code ? item.code.toLowerCase().includes(query) : false;
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
+      const matchesPlusOneFirstName = item.plusOneFirstName ? item.plusOneFirstName.toLowerCase().includes(query) : false;
+      const matchesPlusOneLastName = item.plusOneLastName ? item.plusOneLastName.toLowerCase().includes(query) : false;
 
-      return matchesName || matchesCode || matchesEmail;
+      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName;
     });
   }, [codes, searchQuery, statusFilter]);
 
@@ -63,9 +65,11 @@ export default function InvitationCodesDashboardPage() {
       await create({
         guestName: newCode.guestName.trim(),
         code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
+        plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
+        plusOneLastName: newCode.plusOneLastName.trim() || undefined,
         used: false,
       });
-      setNewCode({ guestName: '', code: '' });
+      setNewCode({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
       setIsCreating(false);
       addToast('Invitation code created successfully.', 'success');
     } catch (e: any) {
@@ -98,6 +102,8 @@ export default function InvitationCodesDashboardPage() {
       'Guest Name': item.guestName || '',
       'Invitation Code': item.code || '',
       Email: item.email || '',
+      'Plus-One First Name': item.plusOneFirstName || '',
+      'Plus-One Last Name': item.plusOneLastName || '',
       'Dietary Notes': item.dietaryNotes || '',
       'Plus Ones': item.plusOneAllocations ?? 0,
       Status: item.used ? 'Redeemed' : 'Unused',
@@ -128,7 +134,7 @@ export default function InvitationCodesDashboardPage() {
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
           <Button onClick={() => {
-            setNewCode({ guestName: '', code: '' });
+            setNewCode({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
             setIsCreating(true);
           }}>Generate New Code</Button>
         </div>
@@ -161,6 +167,24 @@ export default function InvitationCodesDashboardPage() {
                 placeholder="e.g. JOHN123"
                 value={newCode.code}
                 onChange={e => setNewCode({ ...newCode, code: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One First Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Jane"
+                value={newCode.plusOneFirstName}
+                onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One Last Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith"
+                value={newCode.plusOneLastName}
+                onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
               />
             </FormGroup>
           </div>
@@ -224,6 +248,11 @@ export default function InvitationCodesDashboardPage() {
           <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
             <div>
               <div className="font-bold text-lg">{item.guestName}</div>
+              {(item.plusOneFirstName || item.plusOneLastName) && (
+                <div className="text-sm text-gray-600 dark:text-gray-300">
+                  Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                </div>
+              )}
               <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
                 Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
               </div>

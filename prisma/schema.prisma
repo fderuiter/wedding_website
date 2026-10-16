@@ -144,6 +144,8 @@ model InvitationCode {
   email              String?
   dietaryNotes       String?
   plusOneAllocations Int?          @default(0)
+  plusOneFirstName   String?
+  plusOneLastName    String?
   extraFields        Json?
   used               Boolean       @default(false)
   usedAt             DateTime?
