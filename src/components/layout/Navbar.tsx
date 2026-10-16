@@ -2,7 +2,7 @@
 
 import { Icon } from '../ui/Icon';
 import { Overlay } from '../ui/Overlay';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
@@ -35,6 +35,22 @@ interface NavbarProps {
 export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [activeHash, setActiveHash] = useState<string>('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    setActiveHash(window.location.hash);
+
+    const handleHashChange = () => {
+      setActiveHash(window.location.hash);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, []);
 
   // Safely parse features array
   let features: any[] = [];
@@ -56,6 +72,58 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
       { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
     ];
   }
+
+  useEffect(() => {
+    if (pathname !== '/' || typeof window === 'undefined') return;
+
+    const sectionIds = features
+      .filter((f) => f.visible && f.id !== 'hero')
+      .map((f) => f.id);
+
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    const observerCallback: IntersectionObserverCallback = (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          setActiveHash(`#${entry.target.id}`);
+        }
+      });
+    };
+
+    const observerOptions: IntersectionObserverInit = {
+      root: null,
+      rootMargin: '-20% 0px -60% 0px',
+      threshold: 0,
+    };
+
+    const observer = new IntersectionObserver(observerCallback, observerOptions);
+
+    sectionIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        observer.observe(el);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [pathname, features]);
+
+  const isLinkActive = (href: string) => {
+    if (href.includes('#')) {
+      if (pathname !== '/') return false;
+      const hashPart = href.substring(href.indexOf('#'));
+      return activeHash === hashPart;
+    }
+    if (pathname === '/') {
+      if (href === '/') {
+        return !activeHash || activeHash === '#top' || activeHash === '#hero';
+      }
+      return false;
+    }
+    return pathname === href;
+  };
 
   const homeNavLinks = features
     .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story')
@@ -87,20 +155,28 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
             </div>
             <div className="hidden md:block">
               <nav aria-label="Global Navigation" className="ml-10 flex items-baseline space-x-4">
-                {allLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    aria-current={pathname === link.href ? 'page' : undefined}
-                    className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                      pathname === link.href
-                        ? 'text-white bg-primary'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+                {allLinks.map((link) => {
+                  const active = isLinkActive(link.href);
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => {
+                        if (link.href.includes('#')) {
+                          setActiveHash(link.href.substring(link.href.indexOf('#')));
+                        }
+                      }}
+                      className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                        active
+                          ? 'text-white bg-primary'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {link.label}
+                    </Link>
+                  );
+                })}
               </nav>
             </div>
             <div className="hidden md:flex md:items-center md:gap-4">
@@ -145,22 +221,30 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         layoutClassName="fixed top-16 bottom-0 left-0 right-0 z-40 flex flex-col justify-start"
         className="w-full bg-white dark:bg-gray-800 shadow-xl border-b border-gray-200 dark:border-gray-700"
       >
-        <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-          {allLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setIsMenuOpen(false)}
-              aria-current={pathname === link.href ? 'page' : undefined}
-              className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                pathname === link.href
-                  ? 'text-white bg-primary'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              {link.label}
-            </Link>
-          ))}
+        <nav aria-label="Mobile Navigation" className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+          {allLinks.map((link) => {
+            const active = isLinkActive(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => {
+                  if (link.href.includes('#')) {
+                    setActiveHash(link.href.substring(link.href.indexOf('#')));
+                  }
+                  setIsMenuOpen(false);
+                }}
+                aria-current={active ? 'page' : undefined}
+                className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                  active
+                    ? 'text-white bg-primary'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
           <div className="pt-3 pb-2 px-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</span>
             <ThemeSelector />
@@ -185,7 +269,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               </div>
             </div>
           )}
-        </div>
+        </nav>
       </Overlay>
     </>
   );
