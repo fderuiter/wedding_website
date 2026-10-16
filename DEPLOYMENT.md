@@ -113,11 +113,29 @@ The automated release architecture consists of four distinct, modular workflows:
 │ 4. Provider Deployment (deploy-provider.yml)              │
 │    • Consumes published release artifact (by SHA/tag)     │
 │    • Isolated provider credentials (e.g. Cloud Run)       │
-│    • Independent deployment evolution                     │
-└───────────────────────────────────────────────────────────┘
+│    • Exports service URL parameter                         │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│ 5. Post-Deployment Verification (verify-deployment)       │
+│    • Polls /api/health with retries & exponential backoff │
+│    • Verifies HTTP 200 & database connectivity status    │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+               [Success]            [Failure]
+                    │                   │
+                    ▼                   ▼
+┌───────────────────────┐   ┌──────────────────────────────┐
+│ Release Complete      │   │ 6. Automated Rollback        │
+│ High Availability     │   │    • Calls rollback.yml      │
+│ Preserved             │   │    • Restores previous tag   │
+└───────────────────────┘   └──────────────────────────────┘
 ```
 
-The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2, 3, and 4 in safe sequence for releases.
+The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2 through 6 in safe sequence for releases.
 
 ---
 
@@ -154,9 +172,20 @@ The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2, 3, and 4
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
 - **Triggers**: Release pipeline, manual `workflow_dispatch` with `image_tag` parameter.
 - **Secrets required**: Provider credentials (e.g. `GCP_SA_KEY`, `DEPLOY_WEBHOOK_URL`).
+- **Outputs**:
+  - `service_url`: Target deployment service URL.
+  - `is_dry_run`: Boolean flag indicating if deployment executed in dry-run mode.
 - **Actions**:
   - Consumes a pre-built, tested release artifact tag.
   - Deploys the container to hosting provider (e.g. Google Cloud Run).
+  - Exports the active service URL as a job output.
+
+### 5. Post-Deployment Verification & Automated Rollback (`deploy.yml` & `rollback.yml`)
+- **Triggers**: Runs automatically in `deploy.yml` post-provider deployment.
+- **Actions**:
+  - `verify-deployment` polls `/api/health` with configurable exponential backoff and a 2-minute maximum timeout.
+  - Validates HTTP status code 200 and confirms JSON body `database == 'connected'` and `status == 'ok'`.
+  - Automatically invokes `rollback.yml` if health probes fail or time out, restoring the previous stable OCI image tag and outputting step summary logs.
 
 ---
 
