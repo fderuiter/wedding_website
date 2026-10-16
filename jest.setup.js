@@ -196,48 +196,73 @@ global.ResizeObserver = jest.fn().mockImplementation(() => ({
 }));
 
 jest.mock('next/server', () => {
+  class MockNextResponse {
+    static next = jest.fn(() => ({
+      status: 200,
+      headers: new Headers(),
+    }));
+    static redirect = jest.fn((url, init) => {
+      const headers = new Headers();
+      headers.set('location', url.toString());
+      return {
+        status: init?.status || 307,
+        headers,
+      };
+    });
+    static json = jest.fn((body, init) => {
+      const responseCookies = new Map();
+      const headers = new Headers();
+
+      const cookies = {
+        set: jest.fn((key, value, options) => {
+          responseCookies.set(key, { name: key, value });
+          let cookieString = `${key}=${value}; Path=/`;
+          if (options?.expires) {
+            cookieString += `; Expires=${options.expires.toUTCString()}`;
+          }
+          if (options?.maxAge === 0) {
+            cookieString += '; Max-Age=0';
+          }
+          headers.set('set-cookie', cookieString);
+        }),
+        get: jest.fn((key) => responseCookies.get(key)),
+        delete: jest.fn((key) => responseCookies.delete(key)),
+      };
+
+      return {
+        status: init?.status || 200,
+        headers: headers,
+        json: () => Promise.resolve(body),
+        cookies: cookies,
+      };
+    });
+
+    constructor(body, init) {
+      this.bodyContent = body;
+      this.status = init?.status || 200;
+      this.headers = new Headers();
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          init.headers.forEach((v, k) => this.headers.set(k, v));
+        } else if (typeof init.headers === 'object') {
+          Object.entries(init.headers).forEach(([k, v]) => {
+            this.headers.set(k, v);
+          });
+        }
+      }
+    }
+
+    json() {
+      return Promise.resolve(typeof this.bodyContent === 'string' ? JSON.parse(this.bodyContent) : this.bodyContent);
+    }
+
+    text() {
+      return Promise.resolve(typeof this.bodyContent === 'string' ? this.bodyContent : JSON.stringify(this.bodyContent));
+    }
+  }
+
   return {
-    NextResponse: {
-      next: jest.fn(() => ({
-        status: 200,
-        headers: new Headers(),
-      })),
-      redirect: jest.fn((url, init) => {
-        const headers = new Headers();
-        headers.set('location', url.toString());
-        return {
-          status: init?.status || 307,
-          headers,
-        };
-      }),
-      json: jest.fn((body, init) => {
-        const responseCookies = new Map();
-        const headers = new Headers();
-
-        const cookies = {
-          set: jest.fn((key, value, options) => {
-            responseCookies.set(key, { name: key, value });
-            let cookieString = `${key}=${value}; Path=/`;
-            if (options?.expires) {
-              cookieString += `; Expires=${options.expires.toUTCString()}`;
-            }
-            if (options?.maxAge === 0) {
-              cookieString += '; Max-Age=0';
-            }
-            headers.set('set-cookie', cookieString);
-          }),
-          get: jest.fn((key) => responseCookies.get(key)),
-          delete: jest.fn((key) => responseCookies.delete(key)),
-        };
-
-        return {
-          status: init?.status || 200,
-          headers: headers,
-          json: () => Promise.resolve(body),
-          cookies: cookies,
-        };
-      }),
-    },
+    NextResponse: MockNextResponse,
     NextRequest: jest.fn((input, init) => {
       const requestCookies = new Map();
       if (init?.headers?.cookie) {

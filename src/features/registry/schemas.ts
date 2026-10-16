@@ -3,9 +3,6 @@ import { z } from 'zod';
 import { createMediaAssociationSchema } from '@/features/media/schemas';
 import { createLaxUrlSchema, safeImageUrlSchema } from '@/utils/validation';
 
-export const ThankYouStatusEnum = z.enum(['Unsent', 'Sent', 'Not Needed']);
-export type ThankYouStatus = z.infer<typeof ThankYouStatusEnum>;
-
 export const ContributorSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
@@ -30,16 +27,12 @@ export const UpdateThankYouNoteSchema = z.object({
   thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
 });
 
-export type UpdateThankYouNoteDTO = z.infer<typeof UpdateThankYouNoteSchema>;
-
 export const BatchUpdateThankYouNotesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'At least one contributor record is required.'),
   status: z.enum(['Unsent', 'Sent', 'Not Needed']),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional(),
   thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
 });
-
-export type BatchUpdateThankYouNotesDTO = z.infer<typeof BatchUpdateThankYouNotesSchema>;
 
 export const ContributionSchema = z.object({
   itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
@@ -170,7 +163,7 @@ export const InvitationCodeSchema = z.object({
 
 export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
 
-export const BatchImportInvitationCodeItemSchema = z.object({
+const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(100, 'Guest name must be under 100 characters.'),
   code: z.string().trim().optional().or(z.literal('')),
   email: z.union([
@@ -188,8 +181,6 @@ export const BatchImportInvitationCodesSchema = z.object({
   records: z.array(BatchImportInvitationCodeItemSchema).min(1, 'At least one record is required for batch import.'),
   collisionStrategy: z.enum(['skip', 'update', 'reject']).default('skip'),
 });
-
-export type BatchImportInvitationCodesDTO = z.infer<typeof BatchImportInvitationCodesSchema>;
 
 
 

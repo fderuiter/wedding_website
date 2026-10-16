@@ -30,7 +30,13 @@ export function GlobalRadialGlow() {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(800px_circle_at_50%_50%,rgba(190,18,60,0.06),transparent)] motion-safe:animate-pulse-scale" />
+      <div
+        className="absolute inset-0 motion-safe:animate-pulse-scale"
+        style={{
+          background:
+            'var(--glow-gradient, radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent), transparent))',
+        }}
+      />
     </div>
   );
 }

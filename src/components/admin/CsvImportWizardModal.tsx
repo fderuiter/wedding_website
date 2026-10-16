@@ -5,6 +5,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import {
   parseCsvContent,
   validateCsvRows,
@@ -29,6 +30,36 @@ interface EditableRow {
   extraFields: Record<string, string>;
 }
 
+interface CsvImportPersistedState {
+  step: 1 | 2 | 3 | 4;
+  fileName: string;
+  csvHeaders: string[];
+  rawRows: Record<string, string>[];
+  guestNameCol: string;
+  codeCol: string;
+  emailCol: string;
+  dietaryNotesCol: string;
+  plusOneCol: string;
+  selectedExtraCols: string[];
+  collisionStrategy: 'skip' | 'update' | 'reject';
+  editableRows: EditableRow[];
+}
+
+const initialCsvImportState: CsvImportPersistedState = {
+  step: 1,
+  fileName: '',
+  csvHeaders: [],
+  rawRows: [],
+  guestNameCol: '',
+  codeCol: '',
+  emailCol: '',
+  dietaryNotesCol: '',
+  plusOneCol: '',
+  selectedExtraCols: [],
+  collisionStrategy: 'skip',
+  editableRows: [],
+};
+
 export function CsvImportWizardModal({
   isOpen,
   onClose,
@@ -37,23 +68,59 @@ export function CsvImportWizardModal({
 }: CsvImportWizardModalProps) {
   const { addToast } = useToast();
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [fileName, setFileName] = useState<string>('');
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
+  const [csvFormState, setCsvFormState, clearPersistedCsvState] = useFormPersist<CsvImportPersistedState>(
+    'csv_import_wizard_draft',
+    initialCsvImportState
+  );
 
-  // Column mapping states
-  const [guestNameCol, setGuestNameCol] = useState<string>('');
-  const [codeCol, setCodeCol] = useState<string>('');
-  const [emailCol, setEmailCol] = useState<string>('');
-  const [dietaryNotesCol, setDietaryNotesCol] = useState<string>('');
-  const [plusOneCol, setPlusOneCol] = useState<string>('');
-  const [selectedExtraCols, setSelectedExtraCols] = useState<string[]>([]);
+  const {
+    step,
+    fileName,
+    csvHeaders,
+    rawRows,
+    guestNameCol,
+    codeCol,
+    emailCol,
+    dietaryNotesCol,
+    plusOneCol,
+    selectedExtraCols,
+    collisionStrategy,
+    editableRows,
+  } = csvFormState;
 
-  const [collisionStrategy, setCollisionStrategy] = useState<'skip' | 'update' | 'reject'>('skip');
+  const setStep = (val: 1 | 2 | 3 | 4 | ((prev: 1 | 2 | 3 | 4) => 1 | 2 | 3 | 4)) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      step: typeof val === 'function' ? val(prev.step) : val,
+    }));
+  };
 
-  // Editable row states for Step 3
-  const [editableRows, setEditableRows] = useState<EditableRow[]>([]);
+  const setFileName = (val: string) => setCsvFormState((prev) => ({ ...prev, fileName: val }));
+  const setCsvHeaders = (val: string[]) => setCsvFormState((prev) => ({ ...prev, csvHeaders: val }));
+  const setRawRows = (val: Record<string, string>[]) => setCsvFormState((prev) => ({ ...prev, rawRows: val }));
+  const setGuestNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, guestNameCol: val }));
+  const setCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, codeCol: val }));
+  const setEmailCol = (val: string) => setCsvFormState((prev) => ({ ...prev, emailCol: val }));
+  const setDietaryNotesCol = (val: string) => setCsvFormState((prev) => ({ ...prev, dietaryNotesCol: val }));
+  const setPlusOneCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneCol: val }));
+  const setSelectedExtraCols = (
+    val: string[] | ((prev: string[]) => string[])
+  ) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      selectedExtraCols: typeof val === 'function' ? val(prev.selectedExtraCols) : val,
+    }));
+  };
+  const setCollisionStrategy = (val: 'skip' | 'update' | 'reject') =>
+    setCsvFormState((prev) => ({ ...prev, collisionStrategy: val }));
+  const setEditableRows = (
+    val: EditableRow[] | ((prev: EditableRow[]) => EditableRow[])
+  ) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      editableRows: typeof val === 'function' ? val(prev.editableRows) : val,
+    }));
+  };
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [importSummary, setImportSummary] = useState<{
@@ -290,17 +357,8 @@ export function CsvImportWizardModal({
   };
 
   const handleResetModal = () => {
-    setStep(1);
-    setFileName('');
-    setCsvHeaders([]);
-    setRawRows([]);
-    setGuestNameCol('');
-    setCodeCol('');
-    setEmailCol('');
-    setDietaryNotesCol('');
-    setPlusOneCol('');
-    setSelectedExtraCols([]);
-    setEditableRows([]);
+    clearPersistedCsvState();
+    setCsvFormState(initialCsvImportState);
     setImportSummary(null);
     onClose();
   };
