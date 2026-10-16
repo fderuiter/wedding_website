@@ -45,12 +45,22 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
       {
         name: 'admin_auth',
         value: generateAdminCookieValue(),
-        url: baseURL,
+        url: 'http://127.0.0.1:3000',
       },
       {
         name: 'guest_auth',
         value: generateGuestCookieValue(),
-        url: baseURL,
+        url: 'http://127.0.0.1:3000',
+      },
+      {
+        name: 'admin_auth',
+        value: generateAdminCookieValue(),
+        url: 'http://localhost:3000',
+      },
+      {
+        name: 'guest_auth',
+        value: generateGuestCookieValue(),
+        url: 'http://localhost:3000',
       },
     ]);
 

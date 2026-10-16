@@ -32,10 +32,11 @@ function generateGuestCookieValue() {
 }
 
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
-  const baseURL = 'http://127.0.0.1:3000';
   await context.addCookies([
-    { name: 'admin_auth', value: generateAdminCookieValue(), url: baseURL },
-    { name: 'guest_auth', value: generateGuestCookieValue(), url: baseURL },
+    { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://127.0.0.1:3000' },
+    { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://127.0.0.1:3000' },
+    { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://localhost:3000' },
+    { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://localhost:3000' },
   ]);
 
   // Go to invitation codes dashboard
@@ -51,14 +52,18 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   if (countText.includes('All (0)')) {
     // Generate code 1
     await generateBtn.click();
+    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('e.g. John Doe').fill('Alex Johnson');
     await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await expect(page.getByText('Alex Johnson')).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 10000 });
 
     // Generate code 2
     await generateBtn.click();
+    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('e.g. John Doe').fill('Sam Taylor');
     await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await expect(page.getByText('Sam Taylor')).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 10000 });
   }
 

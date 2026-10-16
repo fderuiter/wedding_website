@@ -25,6 +25,11 @@ test.describe('Guest Photos Empty State', () => {
         value: guestCookieValue,
         url: 'http://127.0.0.1:3000',
       },
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://localhost:3000',
+      },
     ]);
 
     await page.goto('/photos', { waitUntil: 'domcontentloaded' });
