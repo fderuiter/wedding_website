@@ -199,4 +199,5 @@ model SnapshotVersion {
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([createdAt])
 }

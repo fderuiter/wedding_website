@@ -1,5 +1,5 @@
-import React from 'react';
-import { render } from '@testing-library/react';
+import React, { act } from 'react';
+import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Interactive3DCard } from '../Interactive3DCard';
 
@@ -49,4 +49,48 @@ test('Interactive3DCard preserves DOM tree continuity and does not unmount/remou
   const updatedInput = container.querySelector('[data-testid="test-input"]') as HTMLInputElement;
   expect(updatedInput).toBe(input);
   expect(updatedInput.value).toBe('changed-value');
+});
+
+test('Interactive3DCard applies focus visible classes, tabIndex, and ARIA roles', () => {
+  const { container } = render(
+    <Interactive3DCard onClick={jest.fn()}>
+      Accessible Card Content
+    </Interactive3DCard>
+  );
+
+  const card = container.firstChild as HTMLElement;
+  expect(card).toHaveAttribute('tabIndex', '0');
+  expect(card).toHaveAttribute('role', 'button');
+  expect(card).toHaveClass('focus-visible:ring-2');
+  expect(card).toHaveClass('focus-visible:ring-primary');
+  expect(card).toHaveAttribute('aria-describedby');
+});
+
+test('Interactive3DCard handles keyboard controls and triggers onClick on Enter/Space', () => {
+  const handleClick = jest.fn();
+  const handleKeyDown = jest.fn();
+
+  const { container } = render(
+    <Interactive3DCard onClick={handleClick} onKeyDown={handleKeyDown}>
+      Keyboard Card
+    </Interactive3DCard>
+  );
+
+  const card = container.firstChild as HTMLElement;
+
+  // Arrow navigation
+  act(() => {
+    fireEvent.keyDown(card, { key: 'ArrowUp' });
+    fireEvent.keyDown(card, { key: 'ArrowDown' });
+    fireEvent.keyDown(card, { key: 'ArrowLeft' });
+    fireEvent.keyDown(card, { key: 'ArrowRight' });
+  });
+
+  expect(handleKeyDown).toHaveBeenCalledTimes(4);
+
+  // Action key triggers click
+  act(() => {
+    fireEvent.keyDown(card, { key: 'Enter' });
+  });
+  expect(handleClick).toHaveBeenCalledTimes(1);
 });

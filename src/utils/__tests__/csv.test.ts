@@ -1,6 +1,5 @@
 import {
   parseCsvContent,
-  parseCsvLines,
   validateCsvRows,
   parseInvitationCodesCsv,
   generateCsvContent,
@@ -11,12 +10,11 @@ import {
 describe('CSV Parser Utility', () => {
   it('parses standard CSV lines with quotes and commas', () => {
     const csv = 'Guest Name,Invitation Code\n"Doe, John",CODE123\n"Smith, Jane",CODE456';
-    const lines = parseCsvLines(csv);
-    expect(lines).toEqual([
-      ['Guest Name', 'Invitation Code'],
-      ['Doe, John', 'CODE123'],
-      ['Smith, Jane', 'CODE456'],
-    ]);
+    const parsed = parseCsvContent(csv);
+    expect(parsed.headers).toEqual(['Guest Name', 'Invitation Code']);
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rows[0]).toEqual({ 'Guest Name': 'Doe, John', 'Invitation Code': 'CODE123' });
+    expect(parsed.rows[1]).toEqual({ 'Guest Name': 'Smith, Jane', 'Invitation Code': 'CODE456' });
   });
 
   it('handles escaped quotes and CRLF line endings', () => {

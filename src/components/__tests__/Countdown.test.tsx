@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Countdown from '../Countdown';
 
@@ -21,6 +21,39 @@ describe('Countdown', () => {
     render(<Countdown targetDate={targetDate.toISOString()} />);
 
     expect(screen.getByRole('timer')).toHaveTextContent('10 days 5 hours 3 minutes 12 seconds to go!');
+  });
+
+  it('provides proper ARIA attributes and focus management without duplicate sr-only elements', () => {
+    const now = new Date('2026-10-15T12:00:00Z');
+    jest.setSystemTime(now);
+
+    const targetDate = new Date('2026-10-25T17:03:12Z');
+    const { container } = render(<Countdown targetDate={targetDate.toISOString()} />);
+
+    const timer = screen.getByRole('timer');
+    expect(timer).toHaveAttribute('aria-live', 'polite');
+    expect(timer).toHaveAttribute('aria-atomic', 'true');
+    expect(timer).toHaveAttribute('tabIndex', '0');
+    expect(timer).toHaveAttribute('aria-label', '10 days, 5 hours, 3 minutes, 12 seconds to go!');
+
+    // Verify there are no duplicate .sr-only elements
+    expect(container.querySelector('.sr-only')).toBeNull();
+  });
+
+  it('responds to keyboard events (Space and Enter) with state feedback announcements', () => {
+    const now = new Date('2026-10-15T12:00:00Z');
+    jest.setSystemTime(now);
+
+    const targetDate = new Date('2026-10-25T17:03:12Z');
+    render(<Countdown targetDate={targetDate.toISOString()} />);
+
+    const timer = screen.getByRole('timer');
+
+    fireEvent.keyDown(timer, { key: ' ' });
+    expect(timer).toHaveAttribute('aria-label', 'Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+
+    fireEvent.keyDown(timer, { key: 'Enter' });
+    expect(timer).toHaveAttribute('aria-label', 'Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
   });
 
   it('updates sub-day time units every second', () => {

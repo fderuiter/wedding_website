@@ -7,9 +7,26 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size = 'md', style, ...props }, ref) => {
+  (
+    {
+      className,
+      variant = 'primary',
+      size = 'md',
+      style,
+      disabled,
+      type = 'button',
+      onClick,
+      onKeyDown,
+      'aria-disabled': ariaDisabledProp,
+      ...props
+    },
+    ref
+  ) => {
+    const isAriaDisabled = ariaDisabledProp === true || ariaDisabledProp === 'true';
+    const isDisabled = Boolean(disabled) || isAriaDisabled;
+
     const baseStyles =
-      'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+      'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
 
     const variants = {
       primary:
@@ -30,15 +47,38 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       lg: 'h-12 px-8 text-lg',
     };
 
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (isDisabled) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      onClick?.(e);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (isDisabled && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      onKeyDown?.(e);
+    };
+
     return (
       <button
         ref={ref}
+        type={type}
+        disabled={disabled}
+        aria-disabled={isDisabled ? true : undefined}
         style={{
           borderRadius: 'var(--btn-radius, 0.375rem)',
           fontWeight: 'var(--btn-font-weight, 500)',
           ...style,
         }}
         className={cn(baseStyles, variants[variant], sizes[size], className)}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
         {...props}
       />
     );
