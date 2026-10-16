@@ -232,6 +232,22 @@ describe('RegistryItemCard Component', () => {
     });
   });
 
+  it('allows entering a personal message and passes it to onContribute', async () => {
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+      </Overlay>
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jane Contributor' } });
+    fireEvent.change(screen.getByLabelText(/Personal Message/i), { target: { value: 'So happy for you both!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+    await waitFor(() => {
+      expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Jane Contributor', 100, undefined, 'So happy for you both!');
+    });
+  });
+
   it('calls onContribute with correct details for group gift contribution', async () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Contributor' } });

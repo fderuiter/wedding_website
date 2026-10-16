@@ -9,6 +9,7 @@ export const ContributorSchema = z.object({
   email: z.string().nullable().optional(),
   isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+  message: z.string().nullable().optional(),
   date: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()),
   thankYouStatus: z.string().optional().default('Unsent'),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
@@ -39,6 +40,7 @@ export const ContributionSchema = z.object({
   name: z.string({ message: 'Name is required and must be under 100 characters.' }).trim().min(1, 'Name is required and must be under 100 characters.').max(100, 'Name is required and must be under 100 characters.'),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   code: z.string().trim().optional(),
+  message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
 }, { message: 'Invalid request body.' });
 
 export const RegistryItemBaseSchema = z.object({

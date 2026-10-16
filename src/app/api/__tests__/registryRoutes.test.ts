@@ -118,6 +118,37 @@ describe('Registry API routes', () => {
       });
     });
 
+    it('processes a valid contribution with personal message', async () => {
+      mockContributeToItem.mockResolvedValue({ id: '1', amountContributed: 25 });
+      const contributionWithMessage = {
+        ...validContribution,
+        message: 'Wishing you a lifetime of love and happiness!',
+      };
+      const req = new Request('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify(contributionWithMessage),
+      });
+      const res = await contribute(req);
+      expect(res.status).toBe(200);
+      expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, {
+        name: validContribution.name,
+        amount: validContribution.amount,
+        message: 'Wishing you a lifetime of love and happiness!',
+      });
+    });
+
+    it('rejects contribution when personal message exceeds 1000 characters', async () => {
+      const longMessage = 'a'.repeat(1001);
+      const req = new Request('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({ ...validContribution, message: longMessage }),
+      });
+      const res = await contribute(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Personal note must be under 1000 characters.');
+    });
+
     it('returns 400 for invalid data', async () => {
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',

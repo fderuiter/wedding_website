@@ -237,6 +237,7 @@ export class ThankYouService {
     const headers = [
       'Contributor Name',
       'Email',
+      'Guest Message',
       'Gift Item',
       'Category',
       'Contribution Amount',
@@ -249,6 +250,7 @@ export class ThankYouService {
     const records = items.map((item: any) => ({
       'Contributor Name': item.name || '',
       'Email': item.email || '',
+      'Guest Message': item.message || '',
       'Gift Item': item.registryItem?.name || 'General Registry',
       'Category': item.registryItem?.category || '',
       'Contribution Amount': item.amount !== undefined && item.amount !== null ? item.amount : '',

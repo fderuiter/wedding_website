@@ -67,7 +67,7 @@ class RegistryService {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; amount: number; code?: string }
+    contribution: { name: string; amount: number; code?: string; message?: string | null }
   ) {
     if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {
       throw new Error('Contribution must be a positive number.');
