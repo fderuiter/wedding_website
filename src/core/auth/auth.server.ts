@@ -1,8 +1,37 @@
 import { cookies } from 'next/headers';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
 
-const ADMIN_COOKIE = 'admin_auth';
+export const ADMIN_COOKIE = 'admin_auth';
+
+/**
+ * Return default cookie options for admin authentication.
+ *
+ * @param maxAge - Optional cookie expiration in seconds (defaults to 8 hours: 28800 seconds).
+ * @returns Standard cookie options object.
+ */
+export function getAdminCookieOptions(maxAge: number = 60 * 60 * 8) {
+  return {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge,
+  };
+}
+
+/**
+ * Sets the admin authentication cookie on a response object.
+ *
+ * @param response - The NextResponse instance to set the cookie on.
+ * @param token - The token string to store.
+ * @param maxAge - Optional maxAge override in seconds.
+ * @returns The response instance.
+ */
+export function setAdminAuthCookie(response: NextResponse, token: string, maxAge?: number): NextResponse {
+  response.cookies.set(ADMIN_COOKIE, token, getAdminCookieOptions(maxAge));
+  return response;
+}
 
 /**
  * Resolve the admin signing secret used for token HMAC operations.

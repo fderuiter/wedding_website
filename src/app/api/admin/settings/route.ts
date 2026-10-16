@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content';
+import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 import { formatZodError } from '@/utils/validation';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
@@ -64,37 +64,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
 
   const updatedConfig = await prisma.appConfig.update({
     where: { id: targetId },
-    data: {
-      partner1Name: validData.partner1Name,
-      partner2Name: validData.partner2Name,
-      brideName: validData.brideName,
-      groomName: validData.groomName,
-      subdomain: validData.subdomain || null,
-      weddingDate: validData.weddingDate,
-      baseUrl: validData.baseUrl,
-      venueName: validData.venueName,
-      venueAddress: validData.venueAddress,
-      venueCity: validData.venueCity,
-      venueState: validData.venueState,
-      venueZip: validData.venueZip,
-      latitude: validData.latitude,
-      longitude: validData.longitude,
-      storyText: validData.storyText,
-      venueDescription: validData.venueDescription,
-      travelAdvice: validData.travelAdvice,
-      heroTitle: validData.heroTitle,
-      heroSubtitle: validData.heroSubtitle,
-      seoTitle: validData.seoTitle,
-      seoDescription: validData.seoDescription,
-      faviconUrl: validData.faviconUrl,
-      ogImageUrl: validData.ogImageUrl,
-      seoKeywords: validData.seoKeywords,
-      colorPrimary: validData.colorPrimary,
-      colorSecondary: validData.colorSecondary,
-      timezone: validData.timezone,
-      showCountdown: validData.showCountdown,
-      showAddToCalendar: validData.showAddToCalendar,
-    },
+    data: toAppConfigDbPayload(validData),
   });
 
   await prisma.snapshotVersion.create({
@@ -182,35 +152,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const createdConfig = await prisma.appConfig.create({
     data: {
       id: newId,
-      partner1Name: validData.partner1Name,
-      partner2Name: validData.partner2Name,
-      brideName: validData.brideName,
-      groomName: validData.groomName,
-      subdomain: validData.subdomain || null,
-      weddingDate: validData.weddingDate,
-      baseUrl: validData.baseUrl,
-      venueName: validData.venueName,
-      venueAddress: validData.venueAddress,
-      venueCity: validData.venueCity,
-      venueState: validData.venueState,
-      venueZip: validData.venueZip,
-      latitude: validData.latitude,
-      longitude: validData.longitude,
-      storyText: validData.storyText,
-      venueDescription: validData.venueDescription,
-      travelAdvice: validData.travelAdvice,
-      heroTitle: validData.heroTitle,
-      heroSubtitle: validData.heroSubtitle,
-      seoTitle: validData.seoTitle,
-      seoDescription: validData.seoDescription,
-      faviconUrl: validData.faviconUrl,
-      ogImageUrl: validData.ogImageUrl,
-      seoKeywords: validData.seoKeywords,
-      colorPrimary: validData.colorPrimary,
-      colorSecondary: validData.colorSecondary,
-      timezone: validData.timezone,
-      showCountdown: validData.showCountdown,
-      showAddToCalendar: validData.showAddToCalendar,
+      ...toAppConfigDbPayload(validData),
     },
   });
 

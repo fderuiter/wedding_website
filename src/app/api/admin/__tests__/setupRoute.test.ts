@@ -210,6 +210,27 @@ describe('Setup API Route (/api/admin/setup)', () => {
       expect(json.groomName).toBe('Bob');
       expect(json.baseUrl).toBe('https://ourwedding.com');
       expect(json.timezone).toBe('America/Los_Angeles');
+
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
+        where: { id: 'global' },
+        update: expect.objectContaining({
+          brideName: 'Alice',
+          groomName: 'Bob',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          baseUrl: 'https://ourwedding.com',
+          timezone: 'America/Los_Angeles',
+        }),
+        create: expect.objectContaining({
+          id: 'global',
+          brideName: 'Alice',
+          groomName: 'Bob',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          baseUrl: 'https://ourwedding.com',
+          timezone: 'America/Los_Angeles',
+        }),
+      });
     });
 
     test('replay attack fails with 403 Forbidden once site is initialized and caller is unauthenticated', async () => {

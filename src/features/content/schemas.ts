@@ -81,6 +81,46 @@ export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) =
   };
 });
 
+/**
+ * Map validated configuration data into the standard database payload structure for Prisma AppConfig operations.
+ *
+ * @param data - The validated data output from UpdateAppConfigSchema.
+ * @returns Object formatted for Prisma appConfig create, update, and upsert operations.
+ */
+export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>) {
+  return {
+    partner1Name: data.partner1Name,
+    partner2Name: data.partner2Name,
+    brideName: data.brideName,
+    groomName: data.groomName,
+    subdomain: data.subdomain || null,
+    weddingDate: data.weddingDate,
+    baseUrl: data.baseUrl,
+    venueName: data.venueName,
+    venueAddress: data.venueAddress,
+    venueCity: data.venueCity,
+    venueState: data.venueState,
+    venueZip: data.venueZip,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    storyText: data.storyText,
+    venueDescription: data.venueDescription,
+    travelAdvice: data.travelAdvice,
+    heroTitle: data.heroTitle,
+    heroSubtitle: data.heroSubtitle,
+    seoTitle: data.seoTitle,
+    seoDescription: data.seoDescription,
+    faviconUrl: data.faviconUrl,
+    ogImageUrl: data.ogImageUrl,
+    seoKeywords: data.seoKeywords,
+    colorPrimary: data.colorPrimary,
+    colorSecondary: data.colorSecondary,
+    timezone: data.timezone,
+    showCountdown: data.showCountdown,
+    showAddToCalendar: data.showAddToCalendar,
+  };
+}
+
 const BaseContentNode = z.object({
   id: z.string(),
   tags: z.array(z.string()),
