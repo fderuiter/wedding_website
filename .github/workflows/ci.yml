@@ -3,13 +3,10 @@ permissions:
 
 name: CI
 
-# Automatic triggers temporarily disabled during rapid development.
-# Restore by replacing workflow_dispatch with:
-#   push:
-#     branches: [ main ]
-#   pull_request:
 on:
-  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
 
 jobs:
   verify:
