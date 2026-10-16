@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { SeatingTableDTO } from '../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 interface FloorplanCanvasProps {
   tables: SeatingTableDTO[];

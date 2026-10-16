@@ -4,7 +4,7 @@ import SeatingChartAdminPage from '@/app/admin/dashboard/seating-chart/page';
 import { FloorplanCanvas } from '../FloorplanCanvas';
 import { UnassignedGuestPanel } from '../UnassignedGuestPanel';
 import { SeatingTableDTO } from '../../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 // Mock fetch for SeatingChartAdminPage testing
 const mockTables: SeatingTableDTO[] = [

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { thankYouService } from '@/features/registry/thank-you.service';
+import { thankYouService } from '@/features/registry';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
