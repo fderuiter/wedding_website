@@ -58,9 +58,36 @@ describe('InvitationCodeAdminService', () => {
         (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneAllocations: -1 })
       ).rejects.toThrow('Validation Error: Plus-one allocation must be a non-negative integer.');
     });
+
+    it('throws error for plusOneFirstName or plusOneLastName over 100 characters', async () => {
+      const longName = 'A'.repeat(101);
+      await expect(
+        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneFirstName: longName })
+      ).rejects.toThrow('Validation Error: Plus-one first name must be under 100 characters.');
+
+      await expect(
+        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneLastName: longName })
+      ).rejects.toThrow('Validation Error: Plus-one last name must be under 100 characters.');
+    });
   });
 
   describe('preSave', () => {
+    it('trims companion names and coerces empty strings to null', async () => {
+      mockPrismaClient.invitationCode.findUnique.mockResolvedValue(null);
+      const data = {
+        guestName: 'Alice',
+        code: '  alice999  ',
+        plusOneFirstName: '  Jane  ',
+        plusOneLastName: '   ',
+      };
+      const processed = await (service as any).preSave(data, mockPrismaClient);
+
+      expect(processed.guestName).toBe('Alice');
+      expect(processed.code).toBe('ALICE999');
+      expect(processed.plusOneFirstName).toBe('Jane');
+      expect(processed.plusOneLastName).toBeNull();
+    });
+
     it('trims and converts custom code to uppercase', async () => {
       mockPrismaClient.invitationCode.findUnique.mockResolvedValue(null);
       const data = { guestName: 'Alice', code: '  alice999  ' };
@@ -131,6 +158,8 @@ describe('InvitationCodeAdminService', () => {
           email: 'john@example.com',
           dietaryNotes: 'Gluten Free',
           plusOneAllocations: 1,
+          plusOneFirstName: 'Sarah',
+          plusOneLastName: 'Doe',
           extraFields: { Table: '5' },
         },
         { guestName: 'Jane Smith', code: '' },
@@ -150,6 +179,8 @@ describe('InvitationCodeAdminService', () => {
           email: 'john@example.com',
           dietaryNotes: 'Gluten Free',
           plusOneAllocations: 1,
+          plusOneFirstName: 'Sarah',
+          plusOneLastName: 'Doe',
           extraFields: { Table: '5' },
           used: false,
         },

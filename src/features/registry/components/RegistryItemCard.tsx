@@ -166,12 +166,22 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
       <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
       <p className="text-lg font-semibold mb-1 text-secondary">
-        Price: {formatCurrency(item.price)}
+        {item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND' ? 'Target Goal:' : 'Price:'} {formatCurrency(item.price)}
       </p>
+      {item.paymentHandle && (
+        <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-900/60 rounded-md border border-gray-200 dark:border-gray-700">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+            Send directly via {item.paymentHandleType || 'Payment App'}:
+          </p>
+          <p className="text-sm font-mono text-primary font-bold mt-0.5 select-all">
+            {item.paymentHandle}
+          </p>
+        </div>
+      )}
       {item.isGroupGift && (
         <div className="mb-3">
           <p className="text-sm text-secondary">
-            Group Gift - {formatCurrency(item.amountContributed)} contributed so far.
+            {item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND' ? 'Fund Contributions' : 'Group Gift'} - {formatCurrency(item.amountContributed)} contributed so far.
           </p>
           {!isFullyFunded && (
             <p className="text-sm text-gray-600 dark:text-gray-400">

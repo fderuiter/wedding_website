@@ -178,7 +178,20 @@ export const FAQNodeSchema = BaseContentNode.extend({
   data: z.object({
     question: z.string().optional(),
     answer: z.string().optional(),
-  }),
+    category: z.string().optional(),
+    categoryTags: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return val;
+    }),
+    keywords: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return val;
+    }),
+  }).passthrough(),
 });
 
 export const LogisticsNodeSchema = BaseContentNode.extend({
