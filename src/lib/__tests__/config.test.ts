@@ -199,6 +199,29 @@ describe('Configuration System Layers & Precedence', () => {
     expect(effectiveConfig.venueName).toBe('DB Venue');
   });
 
+  it('merges themeTokens with deterministic precedence (Presets < DB themeTokens < SITE_THEME_TOKENS)', async () => {
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      id: 'global',
+      themePreset: 'modern',
+      themeTokens: {
+        '--btn-radius': '12px',
+        '--custom-db-token': 'from-db',
+      },
+    });
+
+    process.env.SITE_THEME_TOKENS = '{"--btn-radius": "20px", "--custom-env-token": "from-env"}';
+
+    const effectiveConfig = await getAppConfig('global');
+
+    // Modern preset default for --btn-radius is 0.5rem (8px), but DB had 12px, and env had 20px
+    expect(effectiveConfig.themeTokens['--btn-radius']).toBe('20px');
+    expect(effectiveConfig.themeTokens['--custom-db-token']).toBe('from-db');
+    expect(effectiveConfig.themeTokens['--custom-env-token']).toBe('from-env');
+    // Non-overridden modern preset tokens remain intact
+    expect(effectiveConfig.themeTokens['--btn-font-weight']).toBe('600');
+  });
+
   it('fails clearly with descriptive error if invalid config is parsed in production', async () => {
     process.env.NODE_ENV = 'production';
     process.env.SITE_LATITUDE = 'invalid-latitude';

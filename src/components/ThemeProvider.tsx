@@ -95,6 +95,11 @@ function sanitizeLayoutToken(token: string | undefined | null, fallback: string)
   return fallback;
 }
 
+function sanitizeTokenValue(val: string | undefined | null): string {
+  if (!val || typeof val !== 'string') return '';
+  return val.replace(/[;{}<>\r\n]|\/\*|\*\//g, '');
+}
+
 function hexToRgb(hex: string): RGB {
   const cleanHex = hex.replace(/^#/, '');
   let r = 0, g = 0, b = 0;
@@ -244,6 +249,7 @@ function generateDynamicStyles(
   primaryColor: string,
   secondaryColor: string,
   themePreset?: string,
+  customTokens?: Record<string, string>,
   layoutTokens?: {
     containerMaxWidth?: string;
     gridGap?: string;
@@ -254,8 +260,27 @@ function generateDynamicStyles(
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
   const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
-  const lightPresetTokens = getPresetTokens(preset, 'light');
-  const darkPresetTokens = getPresetTokens(preset, 'dark');
+  const baseLightTokens = getPresetTokens(preset, 'light');
+  const baseDarkTokens = getPresetTokens(preset, 'dark');
+
+  const sanitizedCustomTokens: Record<string, string> = {};
+  if (customTokens && typeof customTokens === 'object') {
+    for (const [k, v] of Object.entries(customTokens)) {
+      if (k.startsWith('--')) {
+        sanitizedCustomTokens[k] = sanitizeTokenValue(v);
+      }
+    }
+  }
+
+  const lightPresetTokens = {
+    ...baseLightTokens,
+    ...sanitizedCustomTokens,
+  };
+
+  const darkPresetTokens = {
+    ...baseDarkTokens,
+    ...sanitizedCustomTokens,
+  };
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
   const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
@@ -361,6 +386,7 @@ type ThemeProviderProps = {
     colorPrimary?: string;
     colorSecondary?: string;
     themePreset?: ThemePreset | string;
+    themeTokens?: Record<string, string>;
     layoutContainerMaxWidth?: string;
     layoutGridGap?: string;
     layoutCardPadding?: string;
@@ -378,6 +404,7 @@ export function ThemeProvider({
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
+    themeTokens: propConfig?.themeTokens || {},
     layoutContainerMaxWidth: sanitizeLayoutToken(propConfig?.layoutContainerMaxWidth, '64rem'),
     layoutGridGap: sanitizeLayoutToken(propConfig?.layoutGridGap, '1.5rem'),
     layoutCardPadding: sanitizeLayoutToken(propConfig?.layoutCardPadding, '2rem'),
@@ -487,6 +514,7 @@ export function ThemeProvider({
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
+        themeTokens: propConfig.themeTokens || {},
         layoutContainerMaxWidth: sanitizeLayoutToken(propConfig.layoutContainerMaxWidth, '64rem'),
         layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
         layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
@@ -508,6 +536,7 @@ export function ThemeProvider({
               colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
               colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
               themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
+              themeTokens: next.themeTokens || {},
               layoutContainerMaxWidth: sanitizeLayoutToken(next.layoutContainerMaxWidth, '64rem'),
               layoutGridGap: sanitizeLayoutToken(next.layoutGridGap, '1.5rem'),
               layoutCardPadding: sanitizeLayoutToken(next.layoutCardPadding, '2rem'),
@@ -569,6 +598,7 @@ export function ThemeProvider({
     sanitizeColor(config?.colorPrimary, '#B91C1C'),
     sanitizeColor(config?.colorSecondary, '#B45309'),
     config?.themePreset,
+    config?.themeTokens,
     {
       containerMaxWidth: config?.layoutContainerMaxWidth,
       gridGap: config?.layoutGridGap,

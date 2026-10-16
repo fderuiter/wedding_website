@@ -37,6 +37,7 @@ model AppConfig {
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")
   themePreset      String   @default("classic")
+  themeTokens      Json     @default("{}")
   features         Json     @default("[]")
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)

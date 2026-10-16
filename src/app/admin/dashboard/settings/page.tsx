@@ -205,6 +205,8 @@ export default function AdminSettingsPage() {
   } = useAdminSettings(selectedProfileId);
 
   const [localConfig, setLocalConfig] = useState<any>(null);
+  const [themeTokensText, setThemeTokensText] = useState('{}');
+  const [themeTokensError, setThemeTokensError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
   const [createError, setCreateError] = useState('');
@@ -212,8 +214,36 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     if (initialConfig) {
       setLocalConfig(initialConfig);
+      if (initialConfig.themeTokens) {
+        try {
+          const tokensObj = typeof initialConfig.themeTokens === 'string'
+            ? JSON.parse(initialConfig.themeTokens)
+            : initialConfig.themeTokens;
+          setThemeTokensText(JSON.stringify(tokensObj, null, 2));
+        } catch {
+          setThemeTokensText('{}');
+        }
+      } else {
+        setThemeTokensText('{}');
+      }
     }
   }, [initialConfig]);
+
+  const handleTokensChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    setThemeTokensText(text);
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        setThemeTokensError('');
+        setLocalConfig((prev: any) => ({ ...prev, themeTokens: parsed }));
+      } else {
+        setThemeTokensError('Theme tokens must be a JSON object mapping CSS variables to values.');
+      }
+    } catch {
+      setThemeTokensError('Invalid JSON format.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -487,7 +517,37 @@ export default function AdminSettingsPage() {
                   />
                 </div>
               </FormGroup>
+              <FormGroup>
+                <Label>Theme Preset</Label>
+                <select
+                  name="themePreset"
+                  value={localConfig.themePreset || 'classic'}
+                  onChange={(e) => setLocalConfig((prev: any) => ({ ...prev, themePreset: e.target.value }))}
+                  className="w-full rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                >
+                  <option value="classic">Classic</option>
+                  <option value="modern">Modern</option>
+                  <option value="romantic">Romantic</option>
+                  <option value="minimal">Minimal</option>
+                  <option value="editorial">Editorial</option>
+                </select>
+              </FormGroup>
             </div>
+            <FormGroup>
+              <Label>Custom CSS Theme Tokens (JSON)</Label>
+              <Textarea
+                value={themeTokensText}
+                onChange={handleTokensChange}
+                rows={5}
+                placeholder='{\n  "--btn-radius": "0.5rem",\n  "--card-bg": "#ffffff"\n}'
+                className="font-mono text-xs"
+              />
+              {themeTokensError ? (
+                <FormMessage role="alert">{themeTokensError}</FormMessage>
+              ) : (
+                <FormMessage>Provide custom CSS token overrides in JSON format. Keys must start with --.</FormMessage>
+              )}
+            </FormGroup>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">

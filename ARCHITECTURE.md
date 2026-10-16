@@ -439,6 +439,7 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `colorPrimary` | `default` | Configuration field for colorPrimary |
 | `colorSecondary` | `default` | Configuration field for colorSecondary |
 | `themePreset` | `default` | Configuration field for themePreset |
+| `themeTokens` | `default` | Configuration field for themeTokens |
 | `layoutContainerMaxWidth` | `default` | Configuration field for layoutContainerMaxWidth |
 | `layoutGridGap` | `default` | Configuration field for layoutGridGap |
 | `layoutCardPadding` | `default` | Configuration field for layoutCardPadding |

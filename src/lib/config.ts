@@ -7,6 +7,7 @@ import { isHostAllowed } from '../utils/hostValidation';
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG } from './modules';
+import { getPresetTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
   return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
@@ -51,6 +52,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
   themePreset: 'classic',
+  themeTokens: {},
   layoutContainerMaxWidth: '64rem',
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
@@ -116,6 +118,13 @@ export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
   if (process.env.SITE_COLOR_SECONDARY) overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
   if (process.env.SITE_THEME_PRESET) overrides.themePreset = process.env.SITE_THEME_PRESET as any;
+  if (process.env.SITE_THEME_TOKENS) {
+    try {
+      (overrides as any).themeTokens = JSON.parse(process.env.SITE_THEME_TOKENS);
+    } catch {
+      // Ignore malformed JSON in environment variable
+    }
+  }
   if (process.env.SITE_SHOW_COUNTDOWN !== undefined) {
     overrides.showCountdown = process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
   }
@@ -281,6 +290,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
           colorPrimary: '#B91C1C',
           colorSecondary: '#B45309',
           themePreset: 'classic',
+          themeTokens: {},
           timezone: 'UTC',
           showCountdown: true,
           showAddToCalendar: true,
@@ -300,12 +310,24 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   }
 
   const envOverrides = getEnvConfigOverrides();
+  const activePreset = envOverrides.themePreset || dbConfig?.themePreset || APP_DEFAULTS.themePreset;
+  const presetTokens = getPresetTokens(activePreset, 'light');
+  const { darkTokens, ...cleanPresetTokens } = presetTokens as any;
+
+  // Deterministic Precedence: Default Component Tokens < DB Stored Tokens < Env Overrides
+  const mergedThemeTokens = {
+    ...cleanPresetTokens,
+    ...((dbConfig as any)?.themeTokens || {}),
+    ...((envOverrides as any)?.themeTokens || {}),
+  };
+  delete (mergedThemeTokens as any).darkTokens;
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
   const mergedConfig = {
     ...APP_DEFAULTS,
     ...(dbConfig || {}),
     ...envOverrides,
+    themeTokens: mergedThemeTokens,
   };
 
   const partner1Name = mergedConfig.partner1Name || mergedConfig.brideName || '';

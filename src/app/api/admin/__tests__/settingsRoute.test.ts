@@ -91,6 +91,7 @@ const updatedConfig = {
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
   themePreset: 'classic',
+  themeTokens: {},
   layoutContainerMaxWidth: '64rem',
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
@@ -228,6 +229,26 @@ describe('PUT /api/admin/settings', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           seoKeywords: '{{brideName}} and {{groomName}} wedding, wedding website',
+        }),
+      })
+    );
+  });
+
+  it('persists themePreset and themeTokens to database', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const customTokens = { '--btn-radius': '0.75rem', '--card-bg': '#fafafa' };
+    const req = makeAuthReq({
+      ...validConfigData,
+      themePreset: 'modern',
+      themeTokens: customTokens,
+    });
+    await PUT(req);
+
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          themePreset: 'modern',
+          themeTokens: customTokens,
         }),
       })
     );
