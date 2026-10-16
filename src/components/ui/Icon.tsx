@@ -39,7 +39,9 @@ export type IconName =
   | 'Tag'
   | 'Gift'
   | 'Calendar'
-  | 'Truck';
+  | 'Truck'
+  | 'Upload'
+  | 'Image';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -354,6 +356,22 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
           <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
           <circle cx="7" cy="18" r="2" />
           <circle cx="17" cy="18" r="2" />
+        </svg>
+      );
+    case 'Upload':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" x2="12" y1="3" y2="15" />
+        </svg>
+      );
+    case 'Image':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+          <circle cx="9" cy="9" r="2" />
+          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
         </svg>
       );
     default:
