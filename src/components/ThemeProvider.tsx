@@ -267,6 +267,9 @@ function generateDynamicStyles(
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
 
+  const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
+  const seatAssignedTextDark = optimizeContrast('#ffffff', safePrimary, 4.5);
+
   const lightPresetCssRules = Object.entries(lightPresetTokens)
     .filter(([key]) => key !== 'darkTokens')
     .map(([key, value]) => `      ${key}: ${value};`)
@@ -284,6 +287,7 @@ function generateDynamicStyles(
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
 ${lightPresetCssRules}
+      --floorplan-seat-assigned-text: ${seatAssignedTextDark};
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
       --card-padding: ${safeCardPadding};
@@ -296,6 +300,7 @@ ${lightPresetCssRules}
       --color-secondary: ${secondaryTextLight};
       --color-primary-text: ${primaryTextLight};
       --color-secondary-text: ${secondaryTextLight};
+      --floorplan-seat-assigned-text: ${seatAssignedTextLight};
     }
 
     /* Light containers in any document mode */
