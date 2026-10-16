@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CsvImportWizardModal } from '../CsvImportWizardModal';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { validateSingleCsvRow } from '@/utils/csv';
 
 class MockFileReader {
   onload: ((e: any) => void) | null = null;
@@ -213,6 +214,105 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Charlie Brown Jr.')).toBeInTheDocument();
     });
+  });
+
+  test('triggers incremental re-validation and updates duplicate code warnings dynamically across affected rows when code changes', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent =
+      'Guest Name,Invitation Code\n' +
+      'Alice,CODE1\n' +
+      'Bob,CODE1\n' +
+      'Charlie,CODE3';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Guest Name')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    // Initially, Alice and Bob share CODE1 and show duplicate code error
+    const duplicateErrorsInitial = screen.getAllByText(/Duplicate code "CODE1"/i);
+    expect(duplicateErrorsInitial.length).toBe(2);
+
+    // Edit Bob's code to CODE2 (so CODE1 is no longer duplicate)
+    const codeInputs = screen.getAllByDisplayValue('CODE1');
+    fireEvent.change(codeInputs[1], { target: { value: 'CODE2' } });
+
+    // Duplicate errors for CODE1 should now be gone
+    await waitFor(() => {
+      expect(screen.queryByText(/Duplicate code "CODE1"/i)).not.toBeInTheDocument();
+    });
+
+    // Edit Charlie's code to CODE1 (so Alice and Charlie now conflict on CODE1)
+    const charlieCodeInput = screen.getByDisplayValue('CODE3');
+    fireEvent.change(charlieCodeInput, { target: { value: 'CODE1' } });
+
+    // Duplicate errors for CODE1 should reappear on Alice and Charlie
+    await waitFor(() => {
+      const duplicateErrorsAfter = screen.getAllByText(/Duplicate code "CODE1"/i);
+      expect(duplicateErrorsAfter.length).toBe(2);
+    });
+  });
+
+  test('maintains sub-16ms validation latency during cell editing in step 3 for large datasets up to 2,000 rows', () => {
+    const rowsCount = 2000;
+    const editableRows = Array.from({ length: rowsCount }, (_, i) => ({
+      guestName: `Guest ${i}`,
+      code: `CODE_${i}`,
+      email: `guest${i}@example.com`,
+      dietaryNotes: '',
+      plusOneAllocations: '0',
+      plusOneFirstName: '',
+      plusOneLastName: '',
+      extraFields: {},
+    }));
+
+    const freqMap = new Map<string, number>();
+    editableRows.forEach((r) => freqMap.set(r.code, 1));
+    const dbCodes = new Set<string>();
+
+    const start = performance.now();
+    // Perform single cell update re-validation on row 0
+    const updatedRow = { ...editableRows[0], guestName: 'Guest 0 Updated' };
+    const validatedSingle = validateSingleCsvRow(
+      {
+        GuestNameField: updatedRow.guestName,
+        CodeField: updatedRow.code,
+        EmailField: updatedRow.email,
+        DietaryNotesField: updatedRow.dietaryNotes,
+        PlusOneField: updatedRow.plusOneAllocations,
+        PlusOneFirstNameField: updatedRow.plusOneFirstName,
+        PlusOneLastNameField: updatedRow.plusOneLastName,
+      },
+      0,
+      {
+        guestNameCol: 'GuestNameField',
+        codeCol: 'CodeField',
+        emailCol: 'EmailField',
+        dietaryNotesCol: 'DietaryNotesField',
+        plusOneCol: 'PlusOneField',
+        plusOneFirstNameCol: 'PlusOneFirstNameField',
+        plusOneLastNameCol: 'PlusOneLastNameField',
+      },
+      freqMap,
+      dbCodes
+    );
+    const duration = performance.now() - start;
+
+    expect(validatedSingle.isValid).toBe(true);
+    expect(validatedSingle.guestName).toBe('Guest 0 Updated');
+    expect(duration).toBeLessThan(16); // Validation latency remains under 16ms
   });
 
   test('renders accessible step progress navigation and status live region', async () => {

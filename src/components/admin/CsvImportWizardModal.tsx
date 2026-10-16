@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label } from '@/components/ui/forms';
@@ -8,10 +8,11 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import {
   parseCsvContent,
-  validateCsvRows,
+  validateSingleCsvRow,
   generateSampleCsvTemplate,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
+  ColumnMappingOptions,
 } from '@/utils/csv';
 
 interface CsvImportWizardModalProps {
@@ -83,6 +84,318 @@ const initialCsvImportState: CsvImportPersistedState = {
   collisionStrategy: 'skip',
   editableRows: [],
 };
+
+const EDITABLE_MAPPING: ColumnMappingOptions = {
+  guestNameCol: 'GuestNameField',
+  codeCol: 'CodeField',
+  emailCol: 'EmailField',
+  addressLine1Col: 'AddressLine1Field',
+  addressLine2Col: 'AddressLine2Field',
+  cityCol: 'CityField',
+  stateCol: 'StateField',
+  zipCodeCol: 'ZipCodeField',
+  countryCol: 'CountryField',
+  dietaryNotesCol: 'DietaryNotesField',
+  plusOneCol: 'PlusOneField',
+  plusOneFirstNameCol: 'PlusOneFirstNameField',
+  plusOneLastNameCol: 'PlusOneLastNameField',
+};
+
+const HOISTED_EDITABLE_MAPPED_COLS = new Set([
+  'GuestNameField',
+  'CodeField',
+  'EmailField',
+  'AddressLine1Field',
+  'AddressLine2Field',
+  'CityField',
+  'StateField',
+  'ZipCodeField',
+  'CountryField',
+  'DietaryNotesField',
+  'PlusOneField',
+  'PlusOneFirstNameField',
+  'PlusOneLastNameField',
+]);
+
+function toRowRecord(r: EditableRow): Record<string, string> {
+  const rowObj: Record<string, string> = {
+    GuestNameField: r.guestName,
+    CodeField: r.code,
+    EmailField: r.email,
+    AddressLine1Field: r.addressLine1,
+    AddressLine2Field: r.addressLine2,
+    CityField: r.city,
+    StateField: r.state,
+    ZipCodeField: r.zipCode,
+    CountryField: r.country,
+    DietaryNotesField: r.dietaryNotes,
+    PlusOneField: r.plusOneAllocations,
+    PlusOneFirstNameField: r.plusOneFirstName,
+    PlusOneLastNameField: r.plusOneLastName,
+  };
+  if (r.extraFields) {
+    Object.entries(r.extraFields).forEach(([k, v]) => {
+      rowObj[k] = v;
+    });
+  }
+  return rowObj;
+}
+
+function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: Set<string>) {
+  const freqMap = new Map<string, number>();
+  rows.forEach((r) => {
+    const rawCode = (r.code || '').trim().toUpperCase();
+    if (rawCode) {
+      freqMap.set(rawCode, (freqMap.get(rawCode) || 0) + 1);
+    }
+  });
+
+  const mapping: ColumnMappingOptions = {
+    ...EDITABLE_MAPPING,
+    extraCols,
+  };
+
+  const parsed = rows.map((r, idx) =>
+    validateSingleCsvRow(toRowRecord(r), idx, mapping, freqMap, dbSet, HOISTED_EDITABLE_MAPPED_COLS)
+  );
+
+  return { parsed, freqMap };
+}
+
+interface EditableTableRowProps {
+  row: ParsedCsvRow;
+  editableRow: EditableRow;
+  index: number;
+  onCellEdit: (
+    index: number,
+    field:
+      | 'guestName'
+      | 'code'
+      | 'email'
+      | 'addressLine1'
+      | 'addressLine2'
+      | 'city'
+      | 'state'
+      | 'zipCode'
+      | 'country'
+      | 'dietaryNotes'
+      | 'plusOneAllocations'
+      | 'plusOneFirstName'
+      | 'plusOneLastName',
+    value: string
+  ) => void;
+  onExtraFieldEdit: (index: number, key: string, value: string) => void;
+  onDeleteRow: (index: number) => void;
+}
+
+const EditableTableRow = React.memo(function EditableTableRow({
+  row,
+  editableRow,
+  index,
+  onCellEdit,
+  onExtraFieldEdit,
+  onDeleteRow,
+}: EditableTableRowProps) {
+  return (
+    <tr
+      className={
+        !row.isValid
+          ? 'bg-red-50/70 dark:bg-red-950/30 text-gray-900 dark:text-zinc-100'
+          : row.warnings.length > 0
+            ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
+            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
+      }
+    >
+      <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.guestName || ''}
+          aria-label={`Guest Name for row ${row.rowIndex}`}
+          onChange={(e) => onCellEdit(index, 'guestName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.code || ''}
+          aria-label={`Invitation Code for row ${row.rowIndex}`}
+          placeholder="Auto-generate"
+          onChange={(e) => onCellEdit(index, 'code', e.target.value)}
+          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 uppercase"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="email"
+          value={editableRow?.email || ''}
+          aria-label={`Email for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'email', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.addressLine1 || ''}
+          aria-label={`Address Line 1 for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'addressLine1', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.addressLine2 || ''}
+          aria-label={`Address Line 2 for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'addressLine2', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.city || ''}
+          aria-label={`City for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'city', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.state || ''}
+          aria-label={`State for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'state', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.zipCode || ''}
+          aria-label={`ZIP Code for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'zipCode', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.country || ''}
+          aria-label={`Country for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'country', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.dietaryNotes || ''}
+          aria-label={`Dietary Notes for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'dietaryNotes', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2 text-center">
+        <input
+          type="number"
+          min="0"
+          value={editableRow?.plusOneAllocations ?? '0'}
+          aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
+          onChange={(e) => onCellEdit(index, 'plusOneAllocations', e.target.value)}
+          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.plusOneFirstName || ''}
+          aria-label={`Plus-One First Name for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'plusOneFirstName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.plusOneLastName || ''}
+          aria-label={`Plus-One Last Name for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'plusOneLastName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        {Object.keys(editableRow?.extraFields || {}).length > 0 ? (
+          <div className="space-y-1">
+            {Object.entries(editableRow.extraFields).map(([k, v]) => (
+              <div key={k} className="flex items-center gap-1 text-[11px]">
+                <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
+                  {k}:
+                </span>
+                <input
+                  type="text"
+                  value={v}
+                  aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
+                  onChange={(e) => onExtraFieldEdit(index, k, e.target.value)}
+                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="text-gray-400 italic text-[11px]">None</span>
+        )}
+      </td>
+      <td className="p-2 space-y-1">
+        {row.isValid ? (
+          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
+            Valid
+          </span>
+        ) : (
+          row.errors.map((err, ei) => (
+            <span
+              key={ei}
+              className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
+            >
+              ✕ {err}
+            </span>
+          ))
+        )}
+        {row.warnings.map((warn, wi) => (
+          <span
+            key={wi}
+            className="block text-[10px] font-medium text-amber-600 dark:text-amber-400"
+          >
+            ⚠ {warn}
+          </span>
+        ))}
+      </td>
+      <td className="p-2 text-center">
+        <button
+          type="button"
+          onClick={() => onDeleteRow(index)}
+          className="text-red-500 hover:text-red-700 font-bold text-sm px-1"
+          title="Remove row"
+          aria-label={`Remove row ${row.rowIndex}`}
+        >
+          &times;
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 export function CsvImportWizardModal({
   isOpen,
@@ -298,56 +611,35 @@ export function CsvImportWizardModal({
     setStep(3);
   };
 
-  // Dry-run validation of editable rows
-  const validatedRows: ParsedCsvRow[] = useMemo(() => {
-    const recordsMap = editableRows.map((r) => {
-      const rowObj: Record<string, string> = {
-        GuestNameField: r.guestName,
-        CodeField: r.code,
-        EmailField: r.email,
-        AddressLine1Field: r.addressLine1,
-        AddressLine2Field: r.addressLine2,
-        CityField: r.city,
-        StateField: r.state,
-        ZipCodeField: r.zipCode,
-        CountryField: r.country,
-        DietaryNotesField: r.dietaryNotes,
-        PlusOneField: r.plusOneAllocations,
-        PlusOneFirstNameField: r.plusOneFirstName,
-        PlusOneLastNameField: r.plusOneLastName,
-      };
-      Object.entries(r.extraFields || {}).forEach(([k, v]) => {
-        rowObj[k] = v;
-      });
-      return rowObj;
-    });
+  // Incremental row validation state
+  const [validatedRows, setValidatedRows] = useState<ParsedCsvRow[]>([]);
+  const codeFrequencyRef = useRef<Map<string, number>>(new Map());
 
-    return validateCsvRows(
-      recordsMap,
-      {
-        guestNameCol: 'GuestNameField',
-        codeCol: 'CodeField',
-        emailCol: 'EmailField',
-        addressLine1Col: 'AddressLine1Field',
-        addressLine2Col: 'AddressLine2Field',
-        cityCol: 'CityField',
-        stateCol: 'StateField',
-        zipCodeCol: 'ZipCodeField',
-        countryCol: 'CountryField',
-        dietaryNotesCol: 'DietaryNotesField',
-        plusOneCol: 'PlusOneField',
-        plusOneFirstNameCol: 'PlusOneFirstNameField',
-        plusOneLastNameCol: 'PlusOneLastNameField',
-        extraCols: selectedExtraCols,
-      },
-      existingDbSet
-    );
-  }, [editableRows, selectedExtraCols, existingDbSet]);
+  const editableRowsRef = useRef(editableRows);
+  editableRowsRef.current = editableRows;
+
+  const selectedExtraColsRef = useRef(selectedExtraCols);
+  selectedExtraColsRef.current = selectedExtraCols;
+
+  const existingDbSetRef = useRef(existingDbSet);
+  existingDbSetRef.current = existingDbSet;
+
+  // Synchronize full validation when step 3 is entered, row count changes, or mapping/DB set changes
+  useEffect(() => {
+    if (step === 3 && editableRows.length > 0) {
+      const { parsed, freqMap } = computeFullValidation(editableRows, selectedExtraCols, existingDbSet);
+      codeFrequencyRef.current = freqMap;
+      setValidatedRows(parsed);
+    } else if (step !== 3) {
+      setValidatedRows([]);
+      codeFrequencyRef.current.clear();
+    }
+  }, [step, editableRows.length, selectedExtraCols, existingDbSet]);
 
   const validCount = useMemo(() => validatedRows.filter((r) => r.isValid).length, [validatedRows]);
   const invalidCount = useMemo(() => validatedRows.filter((r) => !r.isValid).length, [validatedRows]);
 
-  const handleCellEdit = (
+  const handleCellEdit = useCallback((
     index: number,
     field:
       | 'guestName'
@@ -365,17 +657,89 @@ export function CsvImportWizardModal({
       | 'plusOneLastName',
     value: string
   ) => {
+    const updatedValue = field === 'code' ? value.toUpperCase() : value;
+    const currentEditable = editableRowsRef.current;
+    const oldRow = currentEditable[index];
+
     setEditableRows((prev) => {
       const next = [...prev];
       next[index] = {
         ...next[index],
-        [field]: field === 'code' ? value.toUpperCase() : value,
+        [field]: updatedValue,
       };
       return next;
     });
-  };
 
-  const handleExtraFieldEdit = (index: number, key: string, value: string) => {
+    setValidatedRows((prevValidated) => {
+      if (!prevValidated || prevValidated.length !== currentEditable.length) {
+        return prevValidated;
+      }
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: selectedExtraColsRef.current,
+      };
+
+      if (field !== 'code') {
+        const updatedEditableRow = {
+          ...currentEditable[index],
+          [field]: value,
+        };
+        const nextValidated = [...prevValidated];
+        nextValidated[index] = validateSingleCsvRow(
+          toRowRecord(updatedEditableRow),
+          index,
+          mapping,
+          codeFrequencyRef.current,
+          existingDbSetRef.current,
+          HOISTED_EDITABLE_MAPPED_COLS
+        );
+        return nextValidated;
+      } else {
+        const oldCode = (oldRow?.code || '').trim().toUpperCase();
+        const newCode = (value || '').trim().toUpperCase();
+
+        if (oldCode === newCode) return prevValidated;
+
+        const freqMap = codeFrequencyRef.current;
+        if (oldCode) {
+          const count = freqMap.get(oldCode) || 0;
+          if (count <= 1) freqMap.delete(oldCode);
+          else freqMap.set(oldCode, count - 1);
+        }
+        if (newCode) {
+          freqMap.set(newCode, (freqMap.get(newCode) || 0) + 1);
+        }
+
+        const nextValidated = [...prevValidated];
+        const updatedEditableRow = {
+          ...currentEditable[index],
+          code: newCode,
+        };
+
+        for (let i = 0; i < currentEditable.length; i++) {
+          const rCode = i === index ? newCode : (currentEditable[i].code || '').trim().toUpperCase();
+          if (i === index || rCode === oldCode || rCode === newCode) {
+            const rowToVal = i === index ? updatedEditableRow : currentEditable[i];
+            nextValidated[i] = validateSingleCsvRow(
+              toRowRecord(rowToVal),
+              i,
+              mapping,
+              freqMap,
+              existingDbSetRef.current,
+              HOISTED_EDITABLE_MAPPED_COLS
+            );
+          }
+        }
+
+        return nextValidated;
+      }
+    });
+  }, [setEditableRows]);
+
+  const handleExtraFieldEdit = useCallback((index: number, key: string, value: string) => {
+    const currentEditable = editableRowsRef.current;
+
     setEditableRows((prev) => {
       const next = [...prev];
       const updatedExtra = { ...next[index].extraFields, [key]: value };
@@ -385,11 +749,74 @@ export function CsvImportWizardModal({
       };
       return next;
     });
-  };
 
-  const handleDeleteRow = (index: number) => {
-    setEditableRows((prev) => prev.filter((_, i) => i !== index));
-  };
+    setValidatedRows((prevValidated) => {
+      if (!prevValidated || prevValidated.length !== currentEditable.length) return prevValidated;
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: selectedExtraColsRef.current,
+      };
+
+      const updatedEditableRow = {
+        ...currentEditable[index],
+        extraFields: { ...currentEditable[index].extraFields, [key]: value },
+      };
+
+      const nextValidated = [...prevValidated];
+      nextValidated[index] = validateSingleCsvRow(
+        toRowRecord(updatedEditableRow),
+        index,
+        mapping,
+        codeFrequencyRef.current,
+        existingDbSetRef.current,
+        HOISTED_EDITABLE_MAPPED_COLS
+      );
+      return nextValidated;
+    });
+  }, [setEditableRows]);
+
+  const handleDeleteRow = useCallback((index: number) => {
+    const currentEditable = editableRowsRef.current;
+    const deletedRow = currentEditable[index];
+    const deletedCode = (deletedRow?.code || '').trim().toUpperCase();
+
+    const remainingEditable = currentEditable.filter((_, i) => i !== index);
+    setEditableRows(remainingEditable);
+
+    setValidatedRows((prevValidated) => {
+      if (!prevValidated) return [];
+
+      const freqMap = codeFrequencyRef.current;
+      if (deletedCode) {
+        const count = freqMap.get(deletedCode) || 0;
+        if (count <= 1) freqMap.delete(deletedCode);
+        else freqMap.set(deletedCode, count - 1);
+      }
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: selectedExtraColsRef.current,
+      };
+
+      const remainingValidated = prevValidated.filter((_, i) => i !== index);
+
+      return remainingValidated.map((row, i) => {
+        const rCode = (remainingEditable[i].code || '').trim().toUpperCase();
+        if (rCode === deletedCode) {
+          return validateSingleCsvRow(
+            toRowRecord(remainingEditable[i]),
+            i,
+            mapping,
+            freqMap,
+            existingDbSetRef.current,
+            HOISTED_EDITABLE_MAPPED_COLS
+          );
+        }
+        return { ...row, rowIndex: i + 1 };
+      });
+    });
+  }, [setEditableRows]);
 
   const toggleExtraCol = (header: string) => {
     setSelectedExtraCols((prev) =>
@@ -966,204 +1393,15 @@ export function CsvImportWizardModal({
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
                   {validatedRows.map((row, idx) => (
-                    <tr
+                    <EditableTableRow
                       key={idx}
-                      className={
-                        !row.isValid
-                          ? 'bg-red-50/70 dark:bg-red-950/30 text-gray-900 dark:text-zinc-100'
-                          : row.warnings.length > 0
-                            ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
-                            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
-                      }
-                    >
-                      <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.guestName || ''}
-                          aria-label={`Guest Name for row ${row.rowIndex}`}
-                          onChange={(e) => handleCellEdit(idx, 'guestName', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.code || ''}
-                          aria-label={`Invitation Code for row ${row.rowIndex}`}
-                          placeholder="Auto-generate"
-                          onChange={(e) => handleCellEdit(idx, 'code', e.target.value)}
-                          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 uppercase"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="email"
-                          value={editableRows[idx]?.email || ''}
-                          aria-label={`Email for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'email', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.addressLine1 || ''}
-                          aria-label={`Address Line 1 for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'addressLine1', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.addressLine2 || ''}
-                          aria-label={`Address Line 2 for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'addressLine2', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.city || ''}
-                          aria-label={`City for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'city', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.state || ''}
-                          aria-label={`State for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'state', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.zipCode || ''}
-                          aria-label={`ZIP Code for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'zipCode', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.country || ''}
-                          aria-label={`Country for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'country', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.dietaryNotes || ''}
-                          aria-label={`Dietary Notes for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'dietaryNotes', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2 text-center">
-                        <input
-                          type="number"
-                          min="0"
-                          value={editableRows[idx]?.plusOneAllocations ?? '0'}
-                          aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
-                          onChange={(e) => handleCellEdit(idx, 'plusOneAllocations', e.target.value)}
-                          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.plusOneFirstName || ''}
-                          aria-label={`Plus-One First Name for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'plusOneFirstName', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.plusOneLastName || ''}
-                          aria-label={`Plus-One Last Name for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'plusOneLastName', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
-                        />
-                      </td>
-                      <td className="p-2">
-                        {Object.keys(editableRows[idx]?.extraFields || {}).length > 0 ? (
-                          <div className="space-y-1">
-                            {Object.entries(editableRows[idx].extraFields).map(([k, v]) => (
-                              <div key={k} className="flex items-center gap-1 text-[11px]">
-                                <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
-                                  {k}:
-                                </span>
-                                <input
-                                  type="text"
-                                  value={v}
-                                  aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
-                                  onChange={(e) => handleExtraFieldEdit(idx, k, e.target.value)}
-                                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 italic text-[11px]">None</span>
-                        )}
-                      </td>
-                      <td className="p-2 space-y-1">
-                        {row.isValid ? (
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
-                            Valid
-                          </span>
-                        ) : (
-                          row.errors.map((err, ei) => (
-                            <span
-                              key={ei}
-                              className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
-                            >
-                              ✕ {err}
-                            </span>
-                          ))
-                        )}
-                        {row.warnings.map((warn, wi) => (
-                          <span
-                            key={wi}
-                            className="block text-[10px] font-medium text-amber-600 dark:text-amber-400"
-                          >
-                            ⚠ {warn}
-                          </span>
-                        ))}
-                      </td>
-                      <td className="p-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRow(idx)}
-                          className="text-red-500 hover:text-red-700 font-bold text-sm px-1"
-                          title="Remove row"
-                          aria-label={`Remove row ${row.rowIndex}`}
-                        >
-                          &times;
-                        </button>
-                      </td>
-                    </tr>
+                      row={row}
+                      editableRow={editableRows[idx]}
+                      index={idx}
+                      onCellEdit={handleCellEdit}
+                      onExtraFieldEdit={handleExtraFieldEdit}
+                      onDeleteRow={handleDeleteRow}
+                    />
                   ))}
                   {editableRows.length === 0 && (
                     <tr>
