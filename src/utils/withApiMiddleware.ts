@@ -8,11 +8,7 @@ import { generateSecureUUID } from './uuid';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
-export interface ApiMiddlewareOptions {
-  translateActiveToLegacy?: (activeData: any) => any;
-}
-
-export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddlewareOptions) {
+export function withApiMiddleware(handler: RouteHandler) {
   return async (req: NextRequest, context: any) => {
     try {
       let pathname = '/';
@@ -61,25 +57,13 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
         return response;
       }
 
-      let data = await response.json().catch(() => ({}));
-
-      let isLegacy = false;
-      if (req && typeof req.headers?.get === 'function') {
-        const versionHeader = req.headers.get('x-api-version') || req.headers.get('X-API-Version');
-        const url = req.nextUrl || (req.url ? new URL(req.url) : null);
-        const versionParam = url?.searchParams?.get?.('version');
-        isLegacy = (versionHeader === 'v1' || versionParam === 'v1');
-      }
-
-      if (isLegacy && options?.translateActiveToLegacy) {
-        data = options.translateActiveToLegacy(data);
-      }
+      const data = await response.json().catch(() => ({}));
 
       let finalResponse: NextResponse;
       if (response.status >= 400) {
         if (response.status >= 500 && process.env.NODE_ENV === 'production') {
           const referenceId = generateSecureUUID();
-          logger.error('Unhandled API Error:', data.error || data.message || 'API Error', { apiVersion: isLegacy ? 'v1' : 'v2', route: pathname, referenceId });
+          logger.error('Unhandled API Error:', data.error || data.message || 'API Error', { apiVersion: 'v2', route: pathname, referenceId });
           finalResponse = NextResponse.json(
             { 
               success: false, 
@@ -108,11 +92,7 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
         );
       }
 
-      if (isLegacy) {
-        finalResponse.headers.set('x-api-version', 'v1');
-      } else {
-        finalResponse.headers.set('x-api-version', 'v2');
-      }
+      finalResponse.headers.set('x-api-version', 'v2');
 
       // Copy cookies from original response if it was a NextResponse
       if ('cookies' in response) {
@@ -166,7 +146,7 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
         );
       }
 
-      let apiVersion = 'v2';
+      const apiVersion = 'v2';
       let route = 'unknown';
 
       try {
@@ -182,30 +162,6 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
             route = url.pathname;
           } else if (req.url && typeof req.url === 'string' && !req.url.startsWith('http')) {
             route = req.url;
-          }
-
-          // Extract API version from headers or query parameters
-          let versionHeader: string | null = null;
-          if (req.headers && typeof req.headers.get === 'function') {
-            try {
-              versionHeader = req.headers.get('x-api-version') || req.headers.get('X-API-Version');
-            } catch {
-              // Ignore
-            }
-          }
-          
-          let versionParam: string | null = null;
-          if (url && typeof url.searchParams?.get === 'function') {
-            try {
-              versionParam = url.searchParams.get('version');
-            } catch {
-              // Ignore
-            }
-          }
-
-          const extractedVersion = versionHeader || versionParam;
-          if (extractedVersion) {
-            apiVersion = extractedVersion;
           }
         }
       } catch {
