@@ -54,6 +54,9 @@ export const RawUpdateAppConfigSchema = z.object({
   seoDescription: z.string(),
   faviconUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
   ogImageUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
+  brandMonogram: z.string().nullable().optional(),
+  brandLogoUrl: z.string().refine(val => !val || val === '' || (val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) || val.startsWith('http://') || val.startsWith('https://'), { message: 'Invalid URL format' }).nullable().optional(),
+  brandLogoAlt: z.string().nullable().optional(),
   seoKeywords: z.string(),
   colorPrimary: z.string().regex(hexColorRegex).optional(),
   colorSecondary: z.string().regex(hexColorRegex).optional(),
@@ -331,6 +334,9 @@ export const AppConfigSchema = z.object({
   seoDescription: z.string(),
   faviconUrl: z.string(),
   ogImageUrl: z.string(),
+  brandMonogram: z.string().nullable().optional(),
+  brandLogoUrl: z.string().nullable().optional(),
+  brandLogoAlt: z.string().nullable().optional(),
   seoKeywords: z.string(),
   colorPrimary: z.string().default('#B91C1C'),
   colorSecondary: z.string().default('#B45309'),
@@ -372,3 +378,33 @@ export type AppConfigDTO = z.infer<typeof AppConfigSchema>;
 
 const PublicAppConfigSchema = AppConfigSchema;
 export type PublicAppConfigDTO = z.infer<typeof PublicAppConfigSchema>;
+
+/**
+ * Derive brand monogram text based on explicit brandMonogram token or partner names initials.
+ * Example: partner1Name: "Alice", partner2Name: "Bob" -> "A & B"
+ */
+export function deriveBrandMonogram(config: {
+  brandMonogram?: string | null;
+  partner1Name?: string | null;
+  partner2Name?: string | null;
+  brideName?: string | null;
+  groomName?: string | null;
+} | null | undefined): string {
+  if (!config) return 'A & F';
+  if (config.brandMonogram && config.brandMonogram.trim() !== '') {
+    return config.brandMonogram.trim();
+  }
+  const p1 = (config.partner1Name || config.brideName || '').trim();
+  const p2 = (config.partner2Name || config.groomName || '').trim();
+
+  if (p1 && p2) {
+    const i1 = p1.charAt(0).toUpperCase();
+    const i2 = p2.charAt(0).toUpperCase();
+    return `${i1} & ${i2}`;
+  }
+  if (p1) return p1.charAt(0).toUpperCase();
+  if (p2) return p2.charAt(0).toUpperCase();
+
+  return 'A & F';
+}
+
