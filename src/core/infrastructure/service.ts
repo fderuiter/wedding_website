@@ -81,9 +81,9 @@ export class BaseService<T extends { id: string }> {
 
   async reorder(orderedIds: string[]): Promise<void> {
     await this.repo.transaction(async (txRepo) => {
-      for (let i = 0; i < orderedIds.length; i++) {
-        await txRepo.update(orderedIds[i], { order: i });
-      }
+      await Promise.all(
+        orderedIds.map((id, index) => txRepo.update(id, { order: index }))
+      );
     });
   }
 
