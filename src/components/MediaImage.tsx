@@ -29,7 +29,7 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
     const isDataImage = trimmed.startsWith('data:image/');
     
     if (isHttp || isSafeRelative || isDataImage) {
-      safeOriginalUrl = trimmed.slice(0);
+      safeOriginalUrl = trimmed;
     }
   }
 

@@ -80,7 +80,7 @@ jobs:
 
       - name: Execute Cloud Run Deployment
         if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
-        uses: google-github-actions/deploy-cloudrun@251330ba9a8a34bfbc1622895f42e1d53fd14522 # v2
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: wedding-website
           image: ${{ steps.resolve.outputs.image_uri }}

@@ -31,6 +31,19 @@ export interface ComponentTokens {
   '--dialog-border-color': string;
   '--dialog-title-color': string;
   '--dialog-desc-color': string;
+
+  '--schedule-card-bg': string;
+  '--schedule-card-border': string;
+  '--schedule-card-radius': string;
+  '--schedule-filter-bg': string;
+  '--schedule-filter-text': string;
+  '--schedule-filter-hover-bg': string;
+  '--schedule-filter-active-bg': string;
+  '--schedule-filter-active-text': string;
+  '--schedule-node-bg': string;
+  '--schedule-node-border': string;
+  '--schedule-tag-bg': string;
+  '--schedule-tag-text': string;
 }
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -63,6 +76,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#e5e7eb',
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#6b7280',
+
+    '--schedule-card-bg': '#ffffff',
+    '--schedule-card-border': '#e5e7eb',
+    '--schedule-card-radius': '1rem',
+    '--schedule-filter-bg': '#f3f4f6',
+    '--schedule-filter-text': '#374151',
+    '--schedule-filter-hover-bg': '#e5e7eb',
+    '--schedule-filter-active-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-filter-active-text': '#ffffff',
+    '--schedule-node-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-node-border': '#ffffff',
+    '--schedule-tag-bg': '#f3f4f6',
+    '--schedule-tag-text': '#374151',
   },
   modern: {
     '--btn-radius': '0.5rem',
@@ -93,6 +119,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#f1f5f9',
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#64748b',
+
+    '--schedule-card-bg': '#ffffff',
+    '--schedule-card-border': '#f1f5f9',
+    '--schedule-card-radius': '0.75rem',
+    '--schedule-filter-bg': '#f8fafc',
+    '--schedule-filter-text': '#334155',
+    '--schedule-filter-hover-bg': '#f1f5f9',
+    '--schedule-filter-active-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-filter-active-text': '#ffffff',
+    '--schedule-node-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-node-border': '#ffffff',
+    '--schedule-tag-bg': '#f1f5f9',
+    '--schedule-tag-text': '#0f172a',
   },
   romantic: {
     '--btn-radius': '9999px',
@@ -123,6 +162,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#fce7f3',
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#9d174d',
+
+    '--schedule-card-bg': '#fffafb',
+    '--schedule-card-border': '#fce7f3',
+    '--schedule-card-radius': '1.25rem',
+    '--schedule-filter-bg': '#fdf2f8',
+    '--schedule-filter-text': '#831843',
+    '--schedule-filter-hover-bg': '#fbcfe8',
+    '--schedule-filter-active-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-filter-active-text': '#ffffff',
+    '--schedule-node-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-node-border': '#fffafb',
+    '--schedule-tag-bg': '#fce7f3',
+    '--schedule-tag-text': '#9d174d',
   },
   minimal: {
     '--btn-radius': '0px',
@@ -153,6 +205,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#e4e4e7',
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#71717a',
+
+    '--schedule-card-bg': '#ffffff',
+    '--schedule-card-border': '#e4e4e7',
+    '--schedule-card-radius': '0px',
+    '--schedule-filter-bg': '#f4f4f5',
+    '--schedule-filter-text': '#18181b',
+    '--schedule-filter-hover-bg': '#e4e4e7',
+    '--schedule-filter-active-bg': '#18181b',
+    '--schedule-filter-active-text': '#ffffff',
+    '--schedule-node-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-node-border': '#ffffff',
+    '--schedule-tag-bg': '#f4f4f5',
+    '--schedule-tag-text': '#18181b',
   },
   editorial: {
     '--btn-radius': '0.125rem',
@@ -183,6 +248,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#000000',
     '--dialog-title-color': '#000000',
     '--dialog-desc-color': '#3f3f46',
+
+    '--schedule-card-bg': '#fcfbf9',
+    '--schedule-card-border': '#000000',
+    '--schedule-card-radius': '0.125rem',
+    '--schedule-filter-bg': '#f4f4f5',
+    '--schedule-filter-text': '#000000',
+    '--schedule-filter-hover-bg': '#e4e4e7',
+    '--schedule-filter-active-bg': '#000000',
+    '--schedule-filter-active-text': '#ffffff',
+    '--schedule-node-bg': 'var(--color-primary, #B91C1C)',
+    '--schedule-node-border': '#000000',
+    '--schedule-tag-bg': '#e4e4e7',
+    '--schedule-tag-text': '#000000',
   },
 };
 
