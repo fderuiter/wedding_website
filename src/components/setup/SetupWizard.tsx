@@ -5,6 +5,10 @@ import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
 import { Container, Card, Heading } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
+import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
+import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
+import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
+import { AttractionsManagerModal } from './AttractionsManagerModal';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -37,6 +41,14 @@ export default function SetupWizard() {
   // Login
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Content Management Modals
+  const [isWeddingPartyModalOpen, setIsWeddingPartyModalOpen] = useState(false);
+  const [isAttractionsModalOpen, setIsAttractionsModalOpen] = useState(false);
+
+  // Content Counts
+  const { data: partyMembers = [] } = useAdminWeddingParty();
+  const { data: attractions = [] } = useAdminAttractions();
   
   // Config state
   const [partner1Name, setPartner1Name] = useState('');
@@ -160,7 +172,7 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-xl">
             <Heading className="mb-4">Step 1: The Essentials</Heading>
-            <p className="mb-4 text-gray-700">Let's start with your names and when the big day is.</p>
+            <p className="mb-4 text-gray-700">Let&apos;s start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormGroup>
@@ -222,13 +234,13 @@ export default function SetupWizard() {
         <Container>
           <Card className="max-w-2xl text-center">
             <Heading className="mb-4">Step 2: Add Content</Heading>
-            <p className="mb-6 text-gray-700">Great! Your core details are set. Now let's add some content like your wedding party and things to do in the area.</p>
+            <p className="mb-6 text-gray-700">Great! Your core details are set. Now let&apos;s add some content like your wedding party and things to do in the area.</p>
             <div className="space-y-4">
-              <Button onClick={() => window.open('/admin/dashboard/wedding-party', '_blank')} variant="secondary" className="w-full py-3">
-                Manage Wedding Party (Opens in New Tab)
+              <Button onClick={() => setIsWeddingPartyModalOpen(true)} variant="secondary" className="w-full py-3">
+                Manage Wedding Party ({partyMembers.length} {partyMembers.length === 1 ? 'member' : 'members'})
               </Button>
-              <Button onClick={() => window.open('/admin/dashboard/attractions', '_blank')} variant="secondary" className="w-full py-3">
-                Manage Attractions (Opens in New Tab)
+              <Button onClick={() => setIsAttractionsModalOpen(true)} variant="secondary" className="w-full py-3">
+                Manage Attractions ({attractions.length} {attractions.length === 1 ? 'item' : 'items'})
               </Button>
             </div>
             <p className="mt-6 mb-4 text-sm text-gray-600">You can also do this later from the Admin Dashboard.</p>
@@ -240,6 +252,16 @@ export default function SetupWizard() {
           </Card>
         </Container>
       </AccessibleStep>
+
+      <WeddingPartyManagerModal
+        isOpen={isWeddingPartyModalOpen}
+        onClose={() => setIsWeddingPartyModalOpen(false)}
+      />
+
+      <AttractionsManagerModal
+        isOpen={isAttractionsModalOpen}
+        onClose={() => setIsAttractionsModalOpen(false)}
+      />
     </main>
   );
 }
