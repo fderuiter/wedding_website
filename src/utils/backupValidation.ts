@@ -9,6 +9,60 @@ export function formatZodError(error: z.ZodError): string {
   return error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
 }
 
+export interface PathDiagnostic {
+  path: string;
+  message: string;
+}
+
+export function formatZodIssues(error: z.ZodError): PathDiagnostic[] {
+  return error.issues.map(issue => ({
+    path: issue.path.length > 0 ? issue.path.join('.') : 'root',
+    message: issue.message,
+  }));
+}
+
+export function reviveDates(root: any): any {
+  if (root === null || root === undefined) return root;
+  if (typeof root === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(root)) {
+    return new Date(root);
+  }
+  if (typeof root !== 'object') {
+    return root;
+  }
+
+  const stack: any[] = [root];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    if (current === null || typeof current !== 'object') {
+      continue;
+    }
+
+    if (Array.isArray(current)) {
+      for (let i = 0; i < current.length; i++) {
+        const val = current[i];
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(val)) {
+          current[i] = new Date(val);
+        } else if (val !== null && typeof val === 'object') {
+          stack.push(val);
+        }
+      }
+    } else {
+      for (const key of Object.keys(current)) {
+        const val = current[key];
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(val)) {
+          current[key] = new Date(val);
+        } else if (val !== null && typeof val === 'object') {
+          stack.push(val);
+        }
+      }
+    }
+  }
+
+  return root;
+}
+
 // AppConfig database-aligned schema
 const BackupAppConfigSchema = z.object({
   // System-level metadata fields (Required)

@@ -9,6 +9,7 @@ interface UseEntityOrchestrationOptions {
   endpoint: string;
   entityName: string;
   apiClient: ApiClient;
+  enabled?: boolean;
 }
 
 export function useEntityOrchestration<T extends { id: string }>({
@@ -16,6 +17,7 @@ export function useEntityOrchestration<T extends { id: string }>({
   endpoint,
   entityName,
   apiClient,
+  enabled,
 }: UseEntityOrchestrationOptions) {
   const queryClient = useQueryClient();
 
@@ -28,6 +30,7 @@ export function useEntityOrchestration<T extends { id: string }>({
   } = useQuery<T[], Error>({
     queryKey,
     queryFn: async () => apiClient.get<T[]>(endpoint),
+    enabled,
   });
 
   const { mutateAsync: create } = useMutation({

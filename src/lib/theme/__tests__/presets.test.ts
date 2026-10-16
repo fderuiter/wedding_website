@@ -16,6 +16,13 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       const tokens = THEME_PRESETS[presetKey];
       expect(tokens).toBeDefined();
 
+      // Check layout surface tokens
+      expect(tokens['--container-bg']).toBeDefined();
+      expect(tokens['--card-bg']).toBeDefined();
+      expect(tokens['--card-border']).toBeDefined();
+      expect(tokens['--card-shadow']).toBeDefined();
+      expect(tokens['--heading-color']).toBeDefined();
+
       // Check key button and dialog component CSS variables
       expect(tokens['--btn-radius']).toBeDefined();
       expect(tokens['--btn-font-weight']).toBeDefined();
