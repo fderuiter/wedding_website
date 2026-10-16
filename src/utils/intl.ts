@@ -40,7 +40,7 @@ function getNumberFormatFn(
   locale: string,
   currency: string
 ): NumberFormatFn {
-  const key = `${locale}:${currency}`;
+  const key = locale === 'en-US' && currency === 'USD' ? 'en-US:USD' : `${locale}:${currency}`;
   let formatFn = numberFormatFnCache.get(key);
   if (!formatFn) {
     if (numberFormatCache.size >= MAX_CACHE_SIZE) {
@@ -56,7 +56,7 @@ function getNumberFormatFn(
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    formatFn = formatter.format.bind(formatter);
+    formatFn = formatter.format;
     numberFormatCache.set(key, formatter);
     numberFormatFnCache.set(key, formatFn);
   }
@@ -89,7 +89,7 @@ function getDateTimeFormatFn(
       }
     }
     const formatter = new Intl.DateTimeFormat(locale, options);
-    formatFn = formatter.format.bind(formatter);
+    formatFn = formatter.format;
     dateTimeFormatCache.set(key, formatter);
     dateTimeFormatFnCache.set(key, formatFn);
   }
