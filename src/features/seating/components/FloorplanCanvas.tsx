@@ -12,6 +12,7 @@ interface FloorplanCanvasProps {
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
   onUnassignGuest: (guestId: string) => void;
   searchQuery?: string;
+  onOpenSeatAssignModal?: (tableId: string, seatNumber: number) => void;
 }
 
 export function FloorplanCanvas({
@@ -22,10 +23,12 @@ export function FloorplanCanvas({
   onDropGuestOnTable,
   onUnassignGuest,
   searchQuery,
+  onOpenSeatAssignModal,
 }: FloorplanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
 
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
   const isSearching = normalizedQuery.length > 0;
@@ -46,6 +49,44 @@ export function FloorplanCanvas({
       });
     });
   }
+
+  // Handle table keyboard arrow navigation
+  const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
+    const step = e.shiftKey ? 10 : 2;
+    let newX = table.x;
+    let newY = table.y;
+    let moved = false;
+
+    switch (e.key) {
+      case 'ArrowLeft':
+        newX = Math.max(0, table.x - step);
+        moved = true;
+        break;
+      case 'ArrowRight':
+        newX = Math.min(2000, table.x + step);
+        moved = true;
+        break;
+      case 'ArrowUp':
+        newY = Math.max(0, table.y - step);
+        moved = true;
+        break;
+      case 'ArrowDown':
+        newY = Math.min(2000, table.y + step);
+        moved = true;
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        onSelectTable(table.id);
+        break;
+    }
+
+    if (moved) {
+      e.preventDefault();
+      onUpdateTablePosition(table.id, newX, newY);
+      setLiveAnnouncement(`${table.name} moved to X ${newX}, Y ${newY}`);
+    }
+  };
 
   // Handle table mouse drag
   const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
@@ -89,6 +130,29 @@ export function FloorplanCanvas({
     const guestId = e.dataTransfer.getData('text/plain');
     if (guestId) {
       onDropGuestOnTable(guestId, tableId, seatNumber);
+    }
+  };
+
+  const handleSeatKeyDown = (
+    e: React.KeyboardEvent,
+    table: SeatingTableDTO,
+    seatNumber: number,
+    assignedGuest?: InvitationCodeDTO
+  ) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (assignedGuest) {
+        onUnassignGuest(assignedGuest.id);
+        setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${seatNumber}`);
+      } else {
+        onOpenSeatAssignModal?.(table.id, seatNumber);
+      }
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && assignedGuest) {
+      e.preventDefault();
+      e.stopPropagation();
+      onUnassignGuest(assignedGuest.id);
+      setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${seatNumber}`);
     }
   };
 
@@ -139,21 +203,37 @@ export function FloorplanCanvas({
       }
 
       seats.push(
-        <div
+        <button
           key={i}
+          type="button"
+          tabIndex={0}
           onDragOver={handleDragOver}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
-          onDoubleClick={() => assignedGuest && onUnassignGuest(assignedGuest.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (assignedGuest) {
+              onUnassignGuest(assignedGuest.id);
+              setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
+            } else {
+              onOpenSeatAssignModal?.(table.id, i);
+            }
+          }}
+          onKeyDown={(e) => handleSeatKeyDown(e, table, i, assignedGuest)}
           data-testid={isMatch ? 'matching-seat' : undefined}
           data-is-search-match={isMatch ? 'true' : 'false'}
           title={
             assignedGuest
               ? isMatch
                 ? `Seat ${i}: ${assignedGuest.guestName} (Search Match! Double click to unassign)`
-                : `Seat ${i}: ${assignedGuest.guestName} (Double click to unassign)`
-              : `Seat ${i}: Empty (Drop guest here)`
+                : `Seat ${i}: ${assignedGuest.guestName} (Double click or press Enter/Space/Delete to unassign)`
+              : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
           }
-          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all ${
+          aria-label={
+            assignedGuest
+              ? `Seat ${i} of ${table.name}: ${assignedGuest.guestName}. Press Enter or Delete to unassign.`
+              : `Seat ${i} of ${table.name}: Empty. Press Enter to assign guest.`
+          }
+          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-1 ${
             assignedGuest
               ? isMatch
                 ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
@@ -187,14 +267,14 @@ export function FloorplanCanvas({
           }
         >
           {assignedGuest ? (
-            <span className="truncate px-0.5 text-[10px]" aria-label={`Seat ${i} ${assignedGuest.guestName}`}>
+            <span className="truncate px-0.5 text-[10px]" aria-hidden="true">
               {assignedGuest.guestName.split(' ')[0][0]}
               {assignedGuest.guestName.split(' ')[1]?.[0] || ''}
             </span>
           ) : (
-            <span>{i}</span>
+            <span aria-hidden="true">{i}</span>
           )}
-        </div>
+        </button>
       );
     }
     return seats;
@@ -216,6 +296,11 @@ export function FloorplanCanvas({
       aria-label="Interactive 2D Reception Floorplan Canvas"
       role="region"
     >
+      {/* Live Region for Screen Reader Announcements */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveAnnouncement}
+      </div>
+
       {/* Canvas Header Banner */}
       <div
         className="absolute top-3 left-3 backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"
@@ -254,9 +339,10 @@ export function FloorplanCanvas({
               e.stopPropagation();
               onSelectTable(table.id);
             }}
+            onKeyDown={(e) => handleTableKeyDown(e, table)}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDropOnTable(e, table.id)}
-            className={`absolute cursor-move transition-all transform hover:scale-[1.02] ${
+            className={`absolute cursor-move transition-all transform hover:scale-[1.02] focus:outline-hidden focus:ring-4 focus:ring-primary focus:ring-offset-2 ${
               isSelected ? 'ring-4 ring-primary ring-offset-2 z-20' : 'z-10'
             } ${
               hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''

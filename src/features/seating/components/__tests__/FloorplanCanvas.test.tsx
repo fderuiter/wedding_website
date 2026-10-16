@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FloorplanCanvas } from '../FloorplanCanvas';
 import { SeatingTableDTO } from '../../schemas';
@@ -59,7 +59,12 @@ describe('FloorplanCanvas component', () => {
     onUpdateTablePosition: jest.fn(),
     onDropGuestOnTable: jest.fn(),
     onUnassignGuest: jest.fn(),
+    onOpenSeatAssignModal: jest.fn(),
   };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   it('renders canvas container with theme preset background, border, and grid dot variables', () => {
     const { container } = render(<FloorplanCanvas {...defaultProps} />);
@@ -93,13 +98,69 @@ describe('FloorplanCanvas component', () => {
     render(<FloorplanCanvas {...defaultProps} />);
 
     // Assigned seat circle for Seat 1 on Head Table
-    const assignedSeat = screen.getByTitle(/Seat 1: John Doe/).closest('div') as HTMLElement;
+    const assignedSeat = screen.getByTitle(/Seat 1: John Doe/).closest('button, div') as HTMLElement;
     expect(assignedSeat.style.backgroundColor).toBe('var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))');
     expect(assignedSeat.style.color).toBe('var(--floorplan-seat-assigned-text, #ffffff)');
 
     // Unassigned seat circle for Seat 2 on Head Table
-    const unassignedSeat = screen.getByTitle(/Seat 2: Empty/).closest('div') as HTMLElement;
+    const unassignedSeat = screen.getByTitle(/Seat 2: Empty/).closest('button, div') as HTMLElement;
     expect(unassignedSeat.style.backgroundColor).toBe('var(--floorplan-table-bg, #ffffff)');
     expect(unassignedSeat.className).toContain('hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]');
+  });
+
+  it('repositions table when arrow keys are pressed', () => {
+    render(<FloorplanCanvas {...defaultProps} />);
+
+    const headTableContainer = screen.getByRole('button', { name: /^Head Table,/i });
+    headTableContainer.focus();
+
+    // ArrowRight without shift -> moves +2px
+    fireEvent.keyDown(headTableContainer, { key: 'ArrowRight' });
+    expect(defaultProps.onUpdateTablePosition).toHaveBeenCalledWith('table-1', 102, 100);
+
+    // ArrowRight with shift -> moves +10px
+    fireEvent.keyDown(headTableContainer, { key: 'ArrowRight', shiftKey: true });
+    expect(defaultProps.onUpdateTablePosition).toHaveBeenCalledWith('table-1', 110, 100);
+
+    // ArrowDown without shift -> moves +2px in Y
+    fireEvent.keyDown(headTableContainer, { key: 'ArrowDown' });
+    expect(defaultProps.onUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 102);
+
+    // ArrowUp -> moves -2px in Y
+    fireEvent.keyDown(headTableContainer, { key: 'ArrowUp' });
+    expect(defaultProps.onUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 98);
+  });
+
+  it('selects table on Enter or Space keypress', () => {
+    render(<FloorplanCanvas {...defaultProps} />);
+
+    const headTableContainer = screen.getByRole('button', { name: /^Head Table,/i });
+    fireEvent.keyDown(headTableContainer, { key: 'Enter' });
+    expect(defaultProps.onSelectTable).toHaveBeenCalledWith('table-1');
+
+    fireEvent.keyDown(headTableContainer, { key: ' ' });
+    expect(defaultProps.onSelectTable).toHaveBeenCalledWith('table-1');
+  });
+
+  it('renders seat buttons with descriptive aria-label and handles keydown unassignment / assignment', () => {
+    render(<FloorplanCanvas {...defaultProps} />);
+
+    const occupiedSeat = screen.getByLabelText(/Seat 1 of Head Table: John Doe/i);
+    expect(occupiedSeat.tagName.toLowerCase()).toBe('button');
+    expect(occupiedSeat).toHaveAttribute('tabIndex', '0');
+
+    // Pressing Enter or Delete on occupied seat triggers unassign
+    fireEvent.keyDown(occupiedSeat, { key: 'Enter' });
+    expect(defaultProps.onUnassignGuest).toHaveBeenCalledWith('guest-1');
+
+    fireEvent.keyDown(occupiedSeat, { key: 'Delete' });
+    expect(defaultProps.onUnassignGuest).toHaveBeenCalledWith('guest-1');
+
+    const emptySeat = screen.getByLabelText(/Seat 2 of Head Table: Empty/i);
+    expect(emptySeat.tagName.toLowerCase()).toBe('button');
+
+    // Pressing Enter on empty seat triggers open seat assign modal
+    fireEvent.keyDown(emptySeat, { key: 'Enter' });
+    expect(defaultProps.onOpenSeatAssignModal).toHaveBeenCalledWith('table-1', 2);
   });
 });

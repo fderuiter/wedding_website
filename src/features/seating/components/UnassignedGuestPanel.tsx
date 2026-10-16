@@ -22,6 +22,7 @@ export function UnassignedGuestPanel({
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
+  const [targetSeatNumber, setTargetSeatNumber] = useState<number | undefined>(undefined);
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -50,9 +51,10 @@ export function UnassignedGuestPanel({
   const handleQuickAssignSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedGuestForModal && targetTableId) {
-      onAssignGuestToTable(selectedGuestForModal.id, targetTableId);
+      onAssignGuestToTable(selectedGuestForModal.id, targetTableId, targetSeatNumber);
       setSelectedGuestForModal(null);
       setTargetTableId('');
+      setTargetSeatNumber(undefined);
     }
   };
 
@@ -137,12 +139,16 @@ export function UnassignedGuestPanel({
             </h3>
             <form onSubmit={handleQuickAssignSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="unassigned-table-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Select Reception Table
                 </label>
                 <select
+                  id="unassigned-table-select"
                   value={targetTableId}
-                  onChange={(e) => setTargetTableId(e.target.value)}
+                  onChange={(e) => {
+                    setTargetTableId(e.target.value);
+                    setTargetSeatNumber(undefined);
+                  }}
                   className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                 >
                   {tables.map((t) => (
@@ -150,6 +156,32 @@ export function UnassignedGuestPanel({
                       {t.name} ({t.invitationCodes?.length || 0}/{t.capacity} seats)
                     </option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="unassigned-seat-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Select Seat (Optional)
+                </label>
+                <select
+                  id="unassigned-seat-select"
+                  value={targetSeatNumber ?? ''}
+                  onChange={(e) => setTargetSeatNumber(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="">Any available seat</option>
+                  {(() => {
+                    const selTable = tables.find((t) => t.id === targetTableId);
+                    if (!selTable) return null;
+                    return Array.from({ length: selTable.capacity }, (_, idx) => idx + 1).map((seatNum) => {
+                      const occ = selTable.invitationCodes?.find((g) => g.seatNumber === seatNum);
+                      return (
+                        <option key={seatNum} value={seatNum}>
+                          Seat {seatNum} {occ ? `(${occ.guestName})` : '(Empty)'}
+                        </option>
+                      );
+                    });
+                  })()}
                 </select>
               </div>
               <div className="flex justify-end gap-2 pt-2">

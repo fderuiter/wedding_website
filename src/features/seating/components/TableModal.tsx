@@ -24,6 +24,8 @@ export function TableModal({
   const [width, setWidth] = useState(120);
   const [height, setHeight] = useState(120);
   const [rotation, setRotation] = useState(0);
+  const [x, setX] = useState(0);
+  const [y, setY] = useState(0);
 
   useEffect(() => {
     if (table) {
@@ -33,6 +35,8 @@ export function TableModal({
       setWidth(table.width || 120);
       setHeight(table.height || 120);
       setRotation(table.rotation || 0);
+      setX(table.x || 0);
+      setY(table.y || 0);
     } else {
       setName('');
       setShape('round');
@@ -40,6 +44,8 @@ export function TableModal({
       setWidth(120);
       setHeight(120);
       setRotation(0);
+      setX(0);
+      setY(0);
     }
   }, [table, isOpen]);
 
@@ -57,6 +63,8 @@ export function TableModal({
       width,
       height,
       rotation,
+      x,
+      y,
     });
     onClose();
   };
@@ -160,6 +168,37 @@ export function TableModal({
                 value={rotation}
                 onChange={(e) => setRotation(parseInt(e.target.value) || 0)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="table-x" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                X Position (px)
+              </label>
+              <input
+                id="table-x"
+                type="number"
+                min={0}
+                max={2000}
+                value={x}
+                onChange={(e) => setX(parseInt(e.target.value) || 0)}
+                className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+              />
+            </div>
+            <div>
+              <label htmlFor="table-y" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                Y Position (px)
+              </label>
+              <input
+                id="table-y"
+                type="number"
+                min={0}
+                max={2000}
+                value={y}
+                onChange={(e) => setY(parseInt(e.target.value) || 0)}
+                className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
               />
             </div>
           </div>
