@@ -61,6 +61,19 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--print-border']).toBeDefined();
       expect(tokens['--print-header-border']).toBeDefined();
       expect(tokens['--print-badge-bg']).toBeDefined();
+
+      // Check floorplan canvas tokens
+      expect(tokens['--canvas-bg']).toBeDefined();
+      expect(tokens['--canvas-grid-dot']).toBeDefined();
+      expect(tokens['--canvas-border']).toBeDefined();
+      expect(tokens['--floorplan-table-bg']).toBeDefined();
+      expect(tokens['--floorplan-table-border']).toBeDefined();
+      expect(tokens['--floorplan-table-radius']).toBeDefined();
+      expect(tokens['--floorplan-seat-assigned-bg']).toBeDefined();
+      expect(tokens['--floorplan-seat-assigned-text']).toBeDefined();
+      expect(tokens['--floorplan-seat-unassigned-hover']).toBeDefined();
+      expect(tokens['--floorplan-status-overcapacity-bg']).toBeDefined();
+      expect(tokens['--floorplan-status-overcapacity-border']).toBeDefined();
     }
   });
 
