@@ -165,6 +165,8 @@ export const InvitationCodeSchema = z.object({
   email: z.string().trim().email('Invalid email address.').nullable().optional().or(z.literal('')),
   dietaryNotes: z.string().trim().nullable().optional(),
   plusOneAllocations: z.coerce.number().int().nonnegative().optional().default(0),
+  plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').nullable().optional().or(z.literal('')),
+  plusOneLastName: z.string().trim().max(100, 'Plus-one last name must be under 100 characters.').nullable().optional().or(z.literal('')),
   extraFields: z.record(z.string(), z.any()).nullable().optional(),
   used: z.boolean().default(false),
   usedAt: z.union([z.string(), z.date()]).nullable().optional(),
@@ -187,6 +189,8 @@ const BatchImportInvitationCodeItemSchema = z.object({
   ]).optional(),
   dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),
   plusOneAllocations: z.coerce.number().int('Plus-one allocation must be an integer.').nonnegative('Plus-one allocation must be non-negative.').optional(),
+  plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  plusOneLastName: z.string().trim().max(100, 'Plus-one last name must be under 100 characters.').optional().or(z.literal('')).nullable(),
   extraFields: z.record(z.string(), z.any()).optional().nullable(),
 });
 
