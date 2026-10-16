@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import {
   parseCsvContent,
   validateCsvRows,
+  generateSampleCsvTemplate,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
 } from '@/utils/csv';
@@ -63,6 +64,32 @@ export function CsvImportWizardModal({
   } | null>(null);
 
   const existingDbSet = useMemo(() => new Set(existingCodes.map(c => c.toUpperCase())), [existingCodes]);
+
+  const handleDownloadSample = () => {
+    const sampleCsv = generateSampleCsvTemplate();
+    const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
+    if (typeof window !== 'undefined' && typeof window.URL?.createObjectURL === 'function') {
+      let url: string | null = null;
+      try {
+        url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'guest_list_template.csv');
+        link.setAttribute('aria-label', 'Download Sample CSV Template');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } finally {
+        if (url && typeof window.URL?.revokeObjectURL === 'function') {
+          try {
+            window.URL.revokeObjectURL(url);
+          } catch {
+            // Ignore object URL revocation errors in test runners
+          }
+        }
+      }
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -337,6 +364,21 @@ export function CsvImportWizardModal({
                 <span className="font-semibold text-primary">Click to select CSV file</span>
                 <span className="text-xs text-gray-500 dark:text-zinc-400">or drag and drop spreadsheet here</span>
               </label>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-gray-500 dark:text-zinc-400">
+                Need a starting point?
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadSample}
+                aria-label="Download Sample CSV Template"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold"
+              >
+                <span>📥</span> Download Sample CSV Template
+              </Button>
             </div>
           </div>
         )}
