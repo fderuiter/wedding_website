@@ -448,3 +448,37 @@ export function generateCsvContent<T extends Record<string, unknown>>(
   return [headerRow, ...dataRows].join('\n');
 }
 
+export function generateSampleCsvTemplate(): string {
+  const sampleRows = [
+    {
+      'Guest Name': 'Jane Doe',
+      'Invitation Code': 'WED2026-JANE',
+      Email: 'jane.doe@example.com',
+      'Dietary Notes': 'Vegetarian',
+      'Plus-One Allocations': 1,
+    },
+    {
+      'Guest Name': 'John Smith',
+      'Invitation Code': 'WED2026-JOHN',
+      Email: 'john.smith@example.com',
+      'Dietary Notes': 'None',
+      'Plus-One Allocations': 0,
+    },
+    {
+      'Guest Name': 'Alex Johnson',
+      'Invitation Code': '',
+      Email: 'alex.johnson@example.com',
+      'Dietary Notes': 'Gluten-Free',
+      'Plus-One Allocations': 2,
+    },
+  ];
+
+  return generateCsvContent(sampleRows, [
+    'Guest Name',
+    'Invitation Code',
+    'Email',
+    'Dietary Notes',
+    'Plus-One Allocations',
+  ]);
+}
+

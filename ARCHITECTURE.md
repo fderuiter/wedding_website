@@ -108,15 +108,20 @@ flowchart LR
     node_api_admin_thankyounotes["thank-you-notes"]
     node_api_admin_thankyounotes_id["[id]"]
     node_api_admin_thankyounotes_batch["batch"]
+    node_api_admin_thankyounotes_export["export"]
     node_api_admin_upload["upload"]
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
     node_api_admin_versions_id_restore["restore"]
     node_api_guest["guest"]
     node_api_guest_login["login"]
+    node_api_guest_photos["photos"]
+    node_api_guest_photos_upload["upload"]
     node_api_health["health"]
     node_api_media["media"]
     node_api_media_id["[id]"]
+    node_api_photos["photos"]
+    node_api_photos_upload["upload"]
     node_api_ready["ready"]
     node_api_registry["registry"]
     node_api_registry_contribute["contribute"]
@@ -174,15 +179,20 @@ flowchart LR
     node_api_admin --> node_api_admin_thankyounotes
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
+    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_export
     node_api_admin --> node_api_admin_upload
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
     node_api --> node_api_guest
     node_api_guest --> node_api_guest_login
+    node_api_guest --> node_api_guest_photos
+    node_api_guest_photos --> node_api_guest_photos_upload
     node_api --> node_api_health
     node_api --> node_api_media
     node_api_media --> node_api_media_id
+    node_api --> node_api_photos
+    node_api_photos --> node_api_photos_upload
     node_api --> node_api_ready
     node_api --> node_api_registry
     node_api_registry --> node_api_registry_contribute
@@ -235,13 +245,16 @@ flowchart LR
     class node_api_admin_thankyounotes api;
     class node_api_admin_thankyounotes_id api;
     class node_api_admin_thankyounotes_batch api;
+    class node_api_admin_thankyounotes_export api;
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
     class node_api_guest_login api;
+    class node_api_guest_photos_upload api;
     class node_api_health api;
     class node_api_media api;
     class node_api_media_id api;
+    class node_api_photos_upload api;
     class node_api_ready api;
     class node_api_registry_contribute api;
     class node_api_registry_items api;

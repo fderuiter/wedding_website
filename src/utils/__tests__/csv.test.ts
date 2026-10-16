@@ -5,6 +5,7 @@ import {
   parseInvitationCodesCsv,
   generateCsvContent,
   escapeCsvCell,
+  generateSampleCsvTemplate,
 } from '../csv';
 
 describe('CSV Parser Utility', () => {
@@ -219,6 +220,34 @@ describe('CSV Parser Utility', () => {
       expect(parsed.rows[0]['Guest Name']).toBe('Smith, Jane "Janey"');
       expect(parsed.rows[0]['Invitation Code']).toBe('JANEY100');
       expect(parsed.rows[0]['Dietary Notes']).toBe('Gluten Free, Nut Allergy');
+    });
+  });
+
+  describe('generateSampleCsvTemplate', () => {
+    it('generates standard headers and representative sample rows', () => {
+      const template = generateSampleCsvTemplate();
+      expect(typeof template).toBe('string');
+
+      const parsed = parseCsvContent(template);
+      expect(parsed.headers).toEqual([
+        'Guest Name',
+        'Invitation Code',
+        'Email',
+        'Dietary Notes',
+        'Plus-One Allocations',
+      ]);
+      expect(parsed.suggestedGuestNameCol).toBe('Guest Name');
+      expect(parsed.suggestedCodeCol).toBe('Invitation Code');
+      expect(parsed.suggestedEmailCol).toBe('Email');
+      expect(parsed.suggestedDietaryNotesCol).toBe('Dietary Notes');
+      expect(parsed.suggestedPlusOneCol).toBe('Plus-One Allocations');
+
+      expect(parsed.rows.length).toBeGreaterThanOrEqual(1);
+      expect(parsed.rows[0]['Guest Name']).toBe('Jane Doe');
+      expect(parsed.rows[0]['Invitation Code']).toBe('WED2026-JANE');
+      expect(parsed.rows[0]['Email']).toBe('jane.doe@example.com');
+      expect(parsed.rows[0]['Dietary Notes']).toBe('Vegetarian');
+      expect(parsed.rows[0]['Plus-One Allocations']).toBe('1');
     });
   });
 });

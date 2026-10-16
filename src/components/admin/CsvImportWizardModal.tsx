@@ -5,9 +5,11 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import {
   parseCsvContent,
   validateCsvRows,
+  generateSampleCsvTemplate,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
 } from '@/utils/csv';
@@ -30,6 +32,40 @@ interface EditableRow {
   extraFields: Record<string, string>;
 }
 
+interface CsvImportPersistedState {
+  step: 1 | 2 | 3 | 4;
+  fileName: string;
+  csvHeaders: string[];
+  rawRows: Record<string, string>[];
+  guestNameCol: string;
+  codeCol: string;
+  emailCol: string;
+  dietaryNotesCol: string;
+  plusOneCol: string;
+  plusOneFirstNameCol: string;
+  plusOneLastNameCol: string;
+  selectedExtraCols: string[];
+  collisionStrategy: 'skip' | 'update' | 'reject';
+  editableRows: EditableRow[];
+}
+
+const initialCsvImportState: CsvImportPersistedState = {
+  step: 1,
+  fileName: '',
+  csvHeaders: [],
+  rawRows: [],
+  guestNameCol: '',
+  codeCol: '',
+  emailCol: '',
+  dietaryNotesCol: '',
+  plusOneCol: '',
+  plusOneFirstNameCol: '',
+  plusOneLastNameCol: '',
+  selectedExtraCols: [],
+  collisionStrategy: 'skip',
+  editableRows: [],
+};
+
 export function CsvImportWizardModal({
   isOpen,
   onClose,
@@ -38,25 +74,63 @@ export function CsvImportWizardModal({
 }: CsvImportWizardModalProps) {
   const { addToast } = useToast();
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [fileName, setFileName] = useState<string>('');
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
+  const [csvFormState, setCsvFormState, clearPersistedCsvState] = useFormPersist<CsvImportPersistedState>(
+    'csv_import_wizard_draft',
+    initialCsvImportState
+  );
 
-  // Column mapping states
-  const [guestNameCol, setGuestNameCol] = useState<string>('');
-  const [codeCol, setCodeCol] = useState<string>('');
-  const [emailCol, setEmailCol] = useState<string>('');
-  const [dietaryNotesCol, setDietaryNotesCol] = useState<string>('');
-  const [plusOneCol, setPlusOneCol] = useState<string>('');
-  const [plusOneFirstNameCol, setPlusOneFirstNameCol] = useState<string>('');
-  const [plusOneLastNameCol, setPlusOneLastNameCol] = useState<string>('');
-  const [selectedExtraCols, setSelectedExtraCols] = useState<string[]>([]);
+  const {
+    step,
+    fileName,
+    csvHeaders,
+    rawRows,
+    guestNameCol,
+    codeCol,
+    emailCol,
+    dietaryNotesCol,
+    plusOneCol,
+    plusOneFirstNameCol,
+    plusOneLastNameCol,
+    selectedExtraCols,
+    collisionStrategy,
+    editableRows,
+  } = csvFormState;
 
-  const [collisionStrategy, setCollisionStrategy] = useState<'skip' | 'update' | 'reject'>('skip');
+  const setStep = (val: 1 | 2 | 3 | 4 | ((prev: 1 | 2 | 3 | 4) => 1 | 2 | 3 | 4)) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      step: typeof val === 'function' ? val(prev.step) : val,
+    }));
+  };
 
-  // Editable row states for Step 3
-  const [editableRows, setEditableRows] = useState<EditableRow[]>([]);
+  const setFileName = (val: string) => setCsvFormState((prev) => ({ ...prev, fileName: val }));
+  const setCsvHeaders = (val: string[]) => setCsvFormState((prev) => ({ ...prev, csvHeaders: val }));
+  const setRawRows = (val: Record<string, string>[]) => setCsvFormState((prev) => ({ ...prev, rawRows: val }));
+  const setGuestNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, guestNameCol: val }));
+  const setCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, codeCol: val }));
+  const setEmailCol = (val: string) => setCsvFormState((prev) => ({ ...prev, emailCol: val }));
+  const setDietaryNotesCol = (val: string) => setCsvFormState((prev) => ({ ...prev, dietaryNotesCol: val }));
+  const setPlusOneCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneCol: val }));
+  const setPlusOneFirstNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneFirstNameCol: val }));
+  const setPlusOneLastNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneLastNameCol: val }));
+  const setSelectedExtraCols = (
+    val: string[] | ((prev: string[]) => string[])
+  ) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      selectedExtraCols: typeof val === 'function' ? val(prev.selectedExtraCols) : val,
+    }));
+  };
+  const setCollisionStrategy = (val: 'skip' | 'update' | 'reject') =>
+    setCsvFormState((prev) => ({ ...prev, collisionStrategy: val }));
+  const setEditableRows = (
+    val: EditableRow[] | ((prev: EditableRow[]) => EditableRow[])
+  ) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      editableRows: typeof val === 'function' ? val(prev.editableRows) : val,
+    }));
+  };
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [importSummary, setImportSummary] = useState<{
@@ -67,6 +141,32 @@ export function CsvImportWizardModal({
   } | null>(null);
 
   const existingDbSet = useMemo(() => new Set(existingCodes.map(c => c.toUpperCase())), [existingCodes]);
+
+  const handleDownloadSample = () => {
+    const sampleCsv = generateSampleCsvTemplate();
+    const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
+    if (typeof window !== 'undefined' && typeof window.URL?.createObjectURL === 'function') {
+      let url: string | null = null;
+      try {
+        url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'guest_list_template.csv');
+        link.setAttribute('aria-label', 'Download Sample CSV Template');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } finally {
+        if (url && typeof window.URL?.revokeObjectURL === 'function') {
+          try {
+            window.URL.revokeObjectURL(url);
+          } catch {
+            // Ignore object URL revocation errors in test runners
+          }
+        }
+      }
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -279,19 +379,8 @@ export function CsvImportWizardModal({
   };
 
   const handleResetModal = () => {
-    setStep(1);
-    setFileName('');
-    setCsvHeaders([]);
-    setRawRows([]);
-    setGuestNameCol('');
-    setCodeCol('');
-    setEmailCol('');
-    setDietaryNotesCol('');
-    setPlusOneCol('');
-    setPlusOneFirstNameCol('');
-    setPlusOneLastNameCol('');
-    setSelectedExtraCols([]);
-    setEditableRows([]);
+    clearPersistedCsvState();
+    setCsvFormState(initialCsvImportState);
     setImportSummary(null);
     onClose();
   };
@@ -321,14 +410,14 @@ export function CsvImportWizardModal({
     >
       <div className="space-y-6">
         {/* Step Indicator */}
-        <div className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 border-gray-200 dark:border-zinc-800">
-          <span className={step >= 1 ? 'text-primary font-bold' : ''}>1. Upload File</span>
+        <div className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">
+          <span className={step >= 1 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>1. Upload File</span>
           <span>&rarr;</span>
-          <span className={step >= 2 ? 'text-primary font-bold' : ''}>2. Map Columns</span>
+          <span className={step >= 2 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>2. Map Columns</span>
           <span>&rarr;</span>
-          <span className={step >= 3 ? 'text-primary font-bold' : ''}>3. Review & Validate</span>
+          <span className={step >= 3 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>3. Review & Validate</span>
           <span>&rarr;</span>
-          <span className={step === 4 ? 'text-primary font-bold' : ''}>4. Complete</span>
+          <span className={step === 4 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>4. Complete</span>
         </div>
 
         {/* Step 1: File Upload */}
@@ -356,6 +445,21 @@ export function CsvImportWizardModal({
                 <span className="text-xs text-gray-500 dark:text-zinc-400">or drag and drop spreadsheet here</span>
               </label>
             </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-gray-500 dark:text-zinc-400">
+                Need a starting point?
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadSample}
+                aria-label="Download Sample CSV Template"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold"
+              >
+                <span>📥</span> Download Sample CSV Template
+              </Button>
+            </div>
           </div>
         )}
 
@@ -373,7 +477,7 @@ export function CsvImportWizardModal({
                   id="map-guest-name"
                   value={guestNameCol}
                   onChange={(e) => setGuestNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Select Column --</option>
                   {csvHeaders.map((h) => (
@@ -390,7 +494,7 @@ export function CsvImportWizardModal({
                   id="map-invitation-code"
                   value={codeCol}
                   onChange={(e) => setCodeCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Auto-Generate Blank Codes --</option>
                   {csvHeaders.map((h) => (
@@ -407,7 +511,7 @@ export function CsvImportWizardModal({
                   id="map-email"
                   value={emailCol}
                   onChange={(e) => setEmailCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Unmapped --</option>
                   {csvHeaders.map((h) => (
@@ -424,7 +528,7 @@ export function CsvImportWizardModal({
                   id="map-dietary-notes"
                   value={dietaryNotesCol}
                   onChange={(e) => setDietaryNotesCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Unmapped --</option>
                   {csvHeaders.map((h) => (
@@ -441,7 +545,7 @@ export function CsvImportWizardModal({
                   id="map-plus-ones"
                   value={plusOneCol}
                   onChange={(e) => setPlusOneCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Default to 0 --</option>
                   {csvHeaders.map((h) => (
@@ -581,7 +685,7 @@ export function CsvImportWizardModal({
                   id="collision-strategy"
                   value={collisionStrategy}
                   onChange={(e) => setCollisionStrategy(e.target.value as any)}
-                  className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold"
+                  className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold text-gray-900 dark:text-zinc-100"
                 >
                   <option value="skip">Skip Duplicates</option>
                   <option value="update">Update Existing Records</option>
@@ -614,20 +718,20 @@ export function CsvImportWizardModal({
                       key={idx}
                       className={
                         !row.isValid
-                          ? 'bg-red-50/70 dark:bg-red-950/30'
+                          ? 'bg-red-50/70 dark:bg-red-950/30 text-gray-900 dark:text-zinc-100'
                           : row.warnings.length > 0
-                            ? 'bg-amber-50/50 dark:bg-amber-950/20'
-                            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40'
+                            ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
+                            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
                       }
                     >
-                      <td className="p-2 text-center font-mono text-gray-400">{row.rowIndex}</td>
+                      <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
                       <td className="p-2">
                         <input
                           type="text"
                           value={editableRows[idx]?.guestName || ''}
                           aria-label={`Guest Name for row ${row.rowIndex}`}
                           onChange={(e) => handleCellEdit(idx, 'guestName', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
                         />
                       </td>
                       <td className="p-2">
@@ -637,7 +741,7 @@ export function CsvImportWizardModal({
                           aria-label={`Invitation Code for row ${row.rowIndex}`}
                           placeholder="Auto-generate"
                           onChange={(e) => handleCellEdit(idx, 'code', e.target.value)}
-                          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 uppercase"
+                          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 uppercase"
                         />
                       </td>
                       <td className="p-2">
@@ -647,7 +751,7 @@ export function CsvImportWizardModal({
                           aria-label={`Email for row ${row.rowIndex}`}
                           placeholder="Optional"
                           onChange={(e) => handleCellEdit(idx, 'email', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
                         />
                       </td>
                       <td className="p-2">
@@ -657,7 +761,7 @@ export function CsvImportWizardModal({
                           aria-label={`Dietary Notes for row ${row.rowIndex}`}
                           placeholder="Optional"
                           onChange={(e) => handleCellEdit(idx, 'dietaryNotes', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
                         />
                       </td>
                       <td className="p-2 text-center">
@@ -667,7 +771,7 @@ export function CsvImportWizardModal({
                           value={editableRows[idx]?.plusOneAllocations ?? '0'}
                           aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
                           onChange={(e) => handleCellEdit(idx, 'plusOneAllocations', e.target.value)}
-                          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
                         />
                       </td>
                       <td className="p-2">
@@ -703,7 +807,7 @@ export function CsvImportWizardModal({
                                   value={v}
                                   aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
                                   onChange={(e) => handleExtraFieldEdit(idx, k, e.target.value)}
-                                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
                                 />
                               </div>
                             ))}

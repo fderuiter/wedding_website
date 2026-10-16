@@ -67,12 +67,59 @@ export interface ComponentTokens {
   '--schedule-tag-bg': string;
   '--schedule-tag-text': string;
 
+  '--toast-success-bg': string;
+  '--toast-success-text': string;
+  '--toast-error-bg': string;
+  '--toast-error-text': string;
+  '--toast-info-bg': string;
+  '--toast-info-text': string;
+  '--toast-confirm-bg': string;
+  '--toast-confirm-text': string;
+  '--toast-radius': string;
+  '--toast-close-hover-bg': string;
+
   '--print-bg': string;
   '--print-text': string;
   '--print-border': string;
   '--print-header-border': string;
   '--print-badge-bg': string;
+
+  '--glow-color': string;
+  '--glow-gradient': string;
+  '--particle-color': string;
+  '--3d-metalness': string;
+  '--3d-roughness': string;
+  '--3d-env-map-intensity': string;
+  '--card-perspective': string;
+  '--card-max-rotation': string;
+  '--card-spring-stiffness': string;
+  '--card-spring-damping': string;
+
+  darkTokens?: Partial<Omit<ComponentTokens, 'darkTokens'>>;
 }
+
+const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
+  '--btn-outline-bg': 'transparent',
+  '--btn-outline-text': '#f9fafb',
+  '--btn-outline-border': '#4b5563',
+  '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.1)',
+  '--btn-ghost-bg': 'transparent',
+  '--btn-ghost-text': '#f9fafb',
+  '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
+  '--dialog-bg': '#18181b',
+  '--dialog-border-color': '#27272a',
+  '--dialog-title-color': '#f9fafb',
+  '--dialog-desc-color': '#a1a1aa',
+  '--dialog-shadow': '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+  '--dialog-backdrop': 'rgba(0, 0, 0, 0.75)',
+  '--schedule-card-bg': '#18181b',
+  '--schedule-card-border': '#27272a',
+  '--schedule-filter-bg': '#27272a',
+  '--schedule-filter-text': '#e4e4e7',
+  '--schedule-filter-hover-bg': '#3f3f46',
+  '--schedule-tag-bg': '#27272a',
+  '--schedule-tag-text': '#e4e4e7',
+};
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
   classic: {
@@ -140,11 +187,56 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#f3f4f6',
     '--schedule-tag-text': '#374151',
 
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#1f2937',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.375rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#ffffff',
     '--print-text': '#111827',
     '--print-border': '#e5e7eb',
     '--print-header-border': '#111827',
     '--print-badge-bg': '#f3f4f6',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #D4AF37)',
+    '--3d-metalness': '1',
+    '--3d-roughness': '0.2',
+    '--3d-env-map-intensity': '1.2',
+    '--card-perspective': '1000px',
+    '--card-max-rotation': '10deg',
+    '--card-spring-stiffness': '300',
+    '--card-spring-damping': '20',
+
+    darkTokens: {
+      '--btn-outline-bg': 'transparent',
+      '--btn-outline-text': '#f9fafb',
+      '--btn-outline-border': '#4b5563',
+      '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.1)',
+      '--btn-ghost-bg': 'transparent',
+      '--btn-ghost-text': '#f9fafb',
+      '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
+      '--dialog-bg': '#1f2937',
+      '--dialog-border-color': '#374151',
+      '--dialog-title-color': '#f9fafb',
+      '--dialog-desc-color': '#9ca3af',
+      '--dialog-shadow': '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+      '--dialog-backdrop': 'rgba(0, 0, 0, 0.75)',
+      '--schedule-card-bg': '#1f2937',
+      '--schedule-card-border': '#374151',
+      '--schedule-filter-bg': '#374151',
+      '--schedule-filter-text': '#f9fafb',
+      '--schedule-filter-hover-bg': '#4b5563',
+      '--schedule-tag-bg': '#374151',
+      '--schedule-tag-text': '#f9fafb',
+    },
   },
   modern: {
     '--container-bg': '#f8fafc',
@@ -211,11 +303,56 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#f1f5f9',
     '--schedule-tag-text': '#0f172a',
 
+    '--toast-success-bg': '#047857',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#0369a1',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#0f172a',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.5rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#ffffff',
     '--print-text': '#0f172a',
     '--print-border': '#cbd5e1',
     '--print-header-border': '#0f172a',
     '--print-badge-bg': '#f1f5f9',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #3B82F6)',
+    '--3d-metalness': '0.8',
+    '--3d-roughness': '0.15',
+    '--3d-env-map-intensity': '1.5',
+    '--card-perspective': '1200px',
+    '--card-max-rotation': '12deg',
+    '--card-spring-stiffness': '400',
+    '--card-spring-damping': '25',
+
+    darkTokens: {
+      '--btn-outline-bg': 'transparent',
+      '--btn-outline-text': 'var(--color-primary, #B91C1C)',
+      '--btn-outline-border': 'var(--color-primary, #B91C1C)',
+      '--btn-outline-hover-bg': 'color-mix(in srgb, var(--color-primary, #B91C1C) 20%, transparent)',
+      '--btn-ghost-bg': 'transparent',
+      '--btn-ghost-text': '#f8fafc',
+      '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
+      '--dialog-bg': '#0f172a',
+      '--dialog-border-color': '#1e293b',
+      '--dialog-title-color': '#f8fafc',
+      '--dialog-desc-color': '#94a3b8',
+      '--dialog-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+      '--dialog-backdrop': 'rgba(2, 6, 23, 0.8)',
+      '--schedule-card-bg': '#0f172a',
+      '--schedule-card-border': '#1e293b',
+      '--schedule-filter-bg': '#1e293b',
+      '--schedule-filter-text': '#f8fafc',
+      '--schedule-filter-hover-bg': '#334155',
+      '--schedule-tag-bg': '#1e293b',
+      '--schedule-tag-text': '#f8fafc',
+    },
   },
   romantic: {
     '--container-bg': '#fdf2f8',
@@ -282,11 +419,57 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#fce7f3',
     '--schedule-tag-text': '#9d174d',
 
+    '--toast-success-bg': '#047857',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#be123c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#831843',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '1rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#fffafb',
     '--print-text': '#831843',
     '--print-border': '#fbcfe8',
     '--print-header-border': '#9d174d',
     '--print-badge-bg': '#fce7f3',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #F472B6)',
+    '--3d-metalness': '0.9',
+    '--3d-roughness': '0.3',
+    '--3d-env-map-intensity': '1.0',
+    '--card-perspective': '900px',
+    '--card-max-rotation': '8deg',
+    '--card-spring-stiffness': '250',
+    '--card-spring-damping': '18',
+
+    darkTokens: {
+      '--btn-outline-bg': 'transparent',
+      '--btn-outline-text': 'var(--color-primary, #B91C1C)',
+      '--btn-outline-border': 'color-mix(in srgb, var(--color-primary, #B91C1C) 50%, #fce7f3)',
+      '--btn-outline-hover-bg': 'color-mix(in srgb, var(--color-primary, #B91C1C) 18%, transparent)',
+      '--btn-ghost-bg': 'transparent',
+      '--btn-ghost-text': '#fdf2f8',
+      '--btn-ghost-hover-bg': 'rgba(244, 114, 182, 0.15)',
+      '--dialog-bg': '#231118',
+      '--dialog-border-color': '#4a1d2f',
+      '--dialog-title-color': '#fdf2f8',
+      '--dialog-desc-color': '#fbcfe8',
+      '--dialog-shadow': '0 20px 30px -10px rgba(0, 0, 0, 0.6)',
+      '--dialog-backdrop': 'rgba(20, 5, 12, 0.8)',
+      '--schedule-card-bg': '#231118',
+      '--schedule-card-border': '#4a1d2f',
+      '--schedule-filter-bg': '#3b1827',
+      '--schedule-filter-text': '#fdf2f8',
+      '--schedule-filter-hover-bg': '#501d35',
+      '--schedule-node-border': '#231118',
+      '--schedule-tag-bg': '#3b1827',
+      '--schedule-tag-text': '#fbcfe8',
+    },
   },
   minimal: {
     '--container-bg': '#fafafa',
@@ -353,11 +536,59 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#f4f4f5',
     '--schedule-tag-text': '#18181b',
 
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#991b1b',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#18181b',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0px',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.15)',
+
     '--print-bg': '#ffffff',
     '--print-text': '#18181b',
     '--print-border': '#e4e4e7',
     '--print-header-border': '#18181b',
     '--print-badge-bg': '#f4f4f5',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #71717A)',
+    '--3d-metalness': '0.5',
+    '--3d-roughness': '0.4',
+    '--3d-env-map-intensity': '0.8',
+    '--card-perspective': '800px',
+    '--card-max-rotation': '6deg',
+    '--card-spring-stiffness': '200',
+    '--card-spring-damping': '30',
+
+    darkTokens: {
+      '--btn-outline-bg': 'transparent',
+      '--btn-outline-text': '#f4f4f5',
+      '--btn-outline-border': '#52525b',
+      '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.08)',
+      '--btn-ghost-bg': 'transparent',
+      '--btn-ghost-text': '#f4f4f5',
+      '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.08)',
+      '--dialog-bg': '#18181b',
+      '--dialog-border-color': '#27272a',
+      '--dialog-title-color': '#f4f4f5',
+      '--dialog-desc-color': '#a1a1aa',
+      '--dialog-shadow': '0 1px 3px 0 rgba(0, 0, 0, 0.5)',
+      '--dialog-backdrop': 'rgba(0, 0, 0, 0.7)',
+      '--schedule-card-bg': '#18181b',
+      '--schedule-card-border': '#27272a',
+      '--schedule-filter-bg': '#27272a',
+      '--schedule-filter-text': '#f4f4f5',
+      '--schedule-filter-hover-bg': '#3f3f46',
+      '--schedule-filter-active-bg': '#f4f4f5',
+      '--schedule-filter-active-text': '#18181b',
+      '--schedule-node-border': '#18181b',
+      '--schedule-tag-bg': '#27272a',
+      '--schedule-tag-text': '#f4f4f5',
+    },
   },
   editorial: {
     '--container-bg': '#f5f5f4',
@@ -424,11 +655,62 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-tag-bg': '#e4e4e7',
     '--schedule-tag-text': '#000000',
 
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#000000',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.125rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+
     '--print-bg': '#fcfbf9',
     '--print-text': '#000000',
     '--print-border': '#000000',
     '--print-header-border': '#000000',
     '--print-badge-bg': '#e4e4e7',
+
+    '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent)',
+    '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent), transparent)',
+    '--particle-color': 'var(--color-accent, #000000)',
+    '--3d-metalness': '1.0',
+    '--3d-roughness': '0.1',
+    '--3d-env-map-intensity': '1.8',
+    '--card-perspective': '1500px',
+    '--card-max-rotation': '15deg',
+    '--card-spring-stiffness': '500',
+    '--card-spring-damping': '15',
+
+    darkTokens: {
+      '--btn-primary-border': '#ffffff',
+      '--btn-secondary-border': '#ffffff',
+      '--btn-outline-bg': '#1c1917',
+      '--btn-outline-text': '#ffffff',
+      '--btn-outline-border': '#ffffff',
+      '--btn-outline-hover-bg': '#292524',
+      '--btn-ghost-bg': 'transparent',
+      '--btn-ghost-text': '#ffffff',
+      '--btn-ghost-hover-bg': '#292524',
+      '--btn-focus-ring': '#ffffff',
+      '--dialog-bg': '#1c1917',
+      '--dialog-border-color': '#ffffff',
+      '--dialog-title-color': '#ffffff',
+      '--dialog-desc-color': '#d6d3d1',
+      '--dialog-shadow': '4px 4px 0px 0px rgba(255,255,255,0.9)',
+      '--dialog-backdrop': 'rgba(0, 0, 0, 0.85)',
+      '--schedule-card-bg': '#1c1917',
+      '--schedule-card-border': '#ffffff',
+      '--schedule-filter-bg': '#292524',
+      '--schedule-filter-text': '#ffffff',
+      '--schedule-filter-hover-bg': '#44403c',
+      '--schedule-filter-active-bg': '#ffffff',
+      '--schedule-filter-active-text': '#1c1917',
+      '--schedule-node-border': '#ffffff',
+      '--schedule-tag-bg': '#292524',
+      '--schedule-tag-text': '#ffffff',
+    },
   },
 };
 
@@ -438,9 +720,20 @@ export function isThemePreset(value: unknown): value is ThemePreset {
   return typeof value === 'string' && THEME_PRESET_KEYS.includes(value as ThemePreset);
 }
 
-export function getPresetTokens(preset?: string | null): ComponentTokens {
-  if (preset && isThemePreset(preset)) {
-    return THEME_PRESETS[preset];
+export function getPresetTokens(
+  preset?: string | null,
+  mode: 'light' | 'dark' = 'light'
+): ComponentTokens {
+  const selectedPreset = preset && isThemePreset(preset) ? preset : DEFAULT_THEME_PRESET;
+  const baseTokens = THEME_PRESETS[selectedPreset];
+
+  if (mode === 'dark') {
+    return {
+      ...baseTokens,
+      ...DEFAULT_DARK_TOKENS,
+      ...(baseTokens.darkTokens || {}),
+    };
   }
-  return THEME_PRESETS[DEFAULT_THEME_PRESET];
+
+  return baseTokens;
 }
