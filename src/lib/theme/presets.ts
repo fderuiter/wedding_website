@@ -3,6 +3,12 @@ export type ThemePreset = 'classic' | 'modern' | 'romantic' | 'minimal' | 'edito
 export const THEME_PRESET_KEYS: ThemePreset[] = ['classic', 'modern', 'romantic', 'minimal', 'editorial'];
 
 export interface ComponentTokens {
+  '--container-bg': string;
+  '--card-bg': string;
+  '--card-border': string;
+  '--card-shadow': string;
+  '--heading-color': string;
+
   '--btn-radius': string;
   '--btn-font-weight': string;
   '--btn-primary-bg': string;
@@ -59,6 +65,12 @@ export interface ComponentTokens {
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
   classic: {
+    '--container-bg': 'var(--color-background, #fff1f2)',
+    '--card-bg': '#ffffff',
+    '--card-border': '#e5e7eb',
+    '--card-shadow': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+    '--heading-color': 'var(--color-primary, #b91c1c)',
+
     '--btn-radius': '0.375rem',
     '--btn-font-weight': '500',
     '--btn-primary-bg': 'var(--color-primary, #B91C1C)',
@@ -113,6 +125,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
   modern: {
+    '--container-bg': '#f8fafc',
+    '--card-bg': '#ffffff',
+    '--card-border': '#f1f5f9',
+    '--card-shadow': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+    '--heading-color': 'var(--color-primary, #B91C1C)',
+
     '--btn-radius': '0.5rem',
     '--btn-font-weight': '600',
     '--btn-primary-bg': 'var(--color-primary, #B91C1C)',
@@ -167,6 +185,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
   romantic: {
+    '--container-bg': '#fdf2f8',
+    '--card-bg': '#fffafb',
+    '--card-border': '#fce7f3',
+    '--card-shadow': '0 20px 30px -10px rgba(225, 175, 185, 0.35)',
+    '--heading-color': 'var(--color-primary, #B91C1C)',
+
     '--btn-radius': '9999px',
     '--btn-font-weight': '500',
     '--btn-primary-bg': 'var(--color-primary, #B91C1C)',
@@ -221,6 +245,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
   minimal: {
+    '--container-bg': '#fafafa',
+    '--card-bg': '#ffffff',
+    '--card-border': '#e4e4e7',
+    '--card-shadow': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+    '--heading-color': '#18181b',
+
     '--btn-radius': '0px',
     '--btn-font-weight': '500',
     '--btn-primary-bg': 'var(--color-primary, #B91C1C)',
@@ -275,6 +305,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.15)',
   },
   editorial: {
+    '--container-bg': '#f5f5f4',
+    '--card-bg': '#fcfbf9',
+    '--card-border': '#000000',
+    '--card-shadow': '4px 4px 0px 0px rgba(0,0,0,0.9)',
+    '--heading-color': '#000000',
+
     '--btn-radius': '0.125rem',
     '--btn-font-weight': '700',
     '--btn-primary-bg': 'var(--color-primary, #B91C1C)',
