@@ -108,6 +108,61 @@ describe('InteractiveTimeline Component', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('applies custom category accent colors when provided in event categoryColors or structured tags', () => {
+    const eventsWithCategoryColors: ContentNodeDTO[] = [
+      {
+        id: 'event-accent-1',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Ceremony Event',
+          startTime: '2026-06-20T14:00:00.000Z',
+          categoryTags: ['Ceremony'],
+          categoryColors: {
+            Ceremony: { bg: 'rgb(254, 243, 199)', text: 'rgb(146, 64, 14)' },
+          },
+        },
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+      {
+        id: 'event-accent-2',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Reception Party',
+          startTime: '2026-06-20T18:00:00.000Z',
+          categoryTags: [
+            { name: 'Reception', bg: 'rgb(254, 226, 226)', text: 'rgb(153, 27, 27)' },
+          ],
+        },
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+    ];
+
+    render(<InteractiveTimeline events={eventsWithCategoryColors} timezone="UTC" />);
+
+    // Click Ceremony tab to activate it
+    const ceremonyTab = screen.getByRole('tab', { name: 'Ceremony' });
+    fireEvent.click(ceremonyTab);
+
+    // Active Ceremony tab should have custom background
+    expect(ceremonyTab).toHaveStyle({ backgroundColor: 'rgb(254, 243, 199)', color: 'rgb(146, 64, 14)' });
+
+    // Category tag badge for Ceremony should also have custom styles
+    const ceremonyBadge = screen.getByText('Ceremony', { selector: 'span' });
+    expect(ceremonyBadge).toHaveStyle({ backgroundColor: 'rgb(254, 243, 199)', color: 'rgb(146, 64, 14)' });
+
+    // Click Reception tab
+    const receptionTab = screen.getByRole('tab', { name: 'Reception' });
+    fireEvent.click(receptionTab);
+
+    expect(receptionTab).toHaveStyle({ backgroundColor: 'rgb(254, 226, 226)', color: 'rgb(153, 27, 27)' });
+    const receptionBadge = screen.getByText('Reception', { selector: 'span' });
+    expect(receptionBadge).toHaveStyle({ backgroundColor: 'rgb(254, 226, 226)', color: 'rgb(153, 27, 27)' });
+  });
+
   it('renders EmptyState and hides timeline border when active category has no matching events', () => {
     const { rerender, container } = render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
 

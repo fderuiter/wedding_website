@@ -90,6 +90,26 @@ const BaseContentNode = z.object({
 
 const isoTimestampRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
+export const CategoryColorSchema = z.object({
+  bg: z.string().optional(),
+  text: z.string().optional(),
+  border: z.string().optional(),
+  accent: z.string().optional(),
+  color: z.string().optional(),
+});
+
+const CategoryTagItemSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    bg: z.string().optional(),
+    text: z.string().optional(),
+    border: z.string().optional(),
+    accent: z.string().optional(),
+    color: z.string().optional(),
+  }),
+]);
+
 export const ScheduleDataSchema = z.object({
   title: z.string().optional(),
   startTime: z.string().nullish().refine(
@@ -100,14 +120,41 @@ export const ScheduleDataSchema = z.object({
     (val) => !val || (isoTimestampRegex.test(val) && !isNaN(Date.parse(val))),
     { message: 'endTime must be a valid ISO timestamp format (e.g., YYYY-MM-DDTHH:mm:ssZ).' }
   ).optional(),
-  categoryTags: z.array(z.string()).optional().default([]),
+  categoryColors: z.record(z.string(), CategoryColorSchema).optional(),
+  categoryTags: z.array(CategoryTagItemSchema).optional().default([]),
   category: z.string().optional(),
   locationName: z.string().optional(),
   location: z.string().optional(),
   attireRules: z.string().optional(),
   attire: z.string().optional(),
   description: z.string().optional(),
-}).passthrough().superRefine((val, ctx) => {
+}).passthrough().transform((data) => {
+  const extractedColors: Record<string, z.infer<typeof CategoryColorSchema>> = {
+    ...(data.categoryColors || {}),
+  };
+  const normalizedTags: string[] = [];
+
+  if (Array.isArray(data.categoryTags)) {
+    for (const tagItem of data.categoryTags) {
+      if (typeof tagItem === 'string') {
+        normalizedTags.push(tagItem);
+      } else if (tagItem && typeof tagItem === 'object' && tagItem.name) {
+        normalizedTags.push(tagItem.name);
+        const { name, ...colorAttrs } = tagItem;
+        extractedColors[name] = {
+          ...extractedColors[name],
+          ...colorAttrs,
+        };
+      }
+    }
+  }
+
+  return {
+    ...data,
+    categoryTags: normalizedTags,
+    categoryColors: Object.keys(extractedColors).length > 0 ? extractedColors : data.categoryColors,
+  };
+}).superRefine((val, ctx) => {
   if (val.startTime && val.endTime) {
     const start = new Date(val.startTime).getTime();
     const end = new Date(val.endTime).getTime();

@@ -210,6 +210,37 @@ describe('Content Node Schema Validation', () => {
       }
     });
 
+    it('validates schedule node with categoryColors and structured categoryTags', () => {
+      const structuredScheduleNode = {
+        id: 'sched-5',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Ceremony',
+          startTime: '2026-06-20T15:00:00.000Z',
+          categoryTags: [
+            'General',
+            { name: 'Ceremony', bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
+          ],
+          categoryColors: {
+            Reception: { bg: '#fee2e2', text: '#991b1b' },
+          },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = ScheduleNodeSchema.safeParse(structuredScheduleNode);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.data.categoryTags).toEqual(['General', 'Ceremony']);
+        expect(result.data.data.categoryColors).toEqual({
+          Reception: { bg: '#fee2e2', text: '#991b1b' },
+          Ceremony: { bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
+        });
+      }
+    });
+
     it('accepts content nodes with ISO string createdAt/updatedAt dates from JSON payloads', () => {
       const jsonNode = {
         id: 'sched-5',

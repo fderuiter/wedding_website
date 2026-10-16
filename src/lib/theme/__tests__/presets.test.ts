@@ -27,6 +27,20 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--dialog-shadow']).toBeDefined();
       expect(tokens['--dialog-backdrop']).toBeDefined();
       expect(tokens['--dialog-border-color']).toBeDefined();
+
+      // Check standardized schedule tokens
+      expect(tokens['--schedule-card-bg']).toBeDefined();
+      expect(tokens['--schedule-card-border']).toBeDefined();
+      expect(tokens['--schedule-card-radius']).toBeDefined();
+      expect(tokens['--schedule-filter-bg']).toBeDefined();
+      expect(tokens['--schedule-filter-text']).toBeDefined();
+      expect(tokens['--schedule-filter-hover-bg']).toBeDefined();
+      expect(tokens['--schedule-filter-active-bg']).toBeDefined();
+      expect(tokens['--schedule-filter-active-text']).toBeDefined();
+      expect(tokens['--schedule-node-bg']).toBeDefined();
+      expect(tokens['--schedule-node-border']).toBeDefined();
+      expect(tokens['--schedule-tag-bg']).toBeDefined();
+      expect(tokens['--schedule-tag-text']).toBeDefined();
     }
   });
 

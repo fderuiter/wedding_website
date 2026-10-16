@@ -6,12 +6,21 @@ import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 
+interface CategoryColorStyle {
+  bg?: string;
+  text?: string;
+  border?: string;
+  accent?: string;
+  color?: string;
+}
+
 interface ScheduleEventItem {
   id: string;
   title: string;
   startTime: string;
   endTime: string;
   categoryTags: string[];
+  categoryColors?: Record<string, CategoryColorStyle>;
   locationName?: string;
   attireRules?: string;
   description?: string;
@@ -91,11 +100,32 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
     })
     .map((node) => {
       const data = node.data as any;
-      const categoryTags: string[] = Array.isArray(data?.categoryTags)
+      const rawCategoryTags = Array.isArray(data?.categoryTags)
         ? data.categoryTags
         : data?.category
           ? [data.category]
           : ['General'];
+
+      const categoryTags: string[] = [];
+      const eventCategoryColors: Record<string, CategoryColorStyle> = {
+        ...(data?.categoryColors || {}),
+      };
+
+      for (const item of rawCategoryTags) {
+        if (typeof item === 'string') {
+          if (item.trim()) categoryTags.push(item.trim());
+        } else if (item && typeof item === 'object' && item.name) {
+          const tagName = item.name.trim();
+          if (tagName) {
+            categoryTags.push(tagName);
+            const { name, ...colorAttrs } = item;
+            eventCategoryColors[tagName] = {
+              ...eventCategoryColors[tagName],
+              ...colorAttrs,
+            };
+          }
+        }
+      }
 
       return {
         id: node.id,
@@ -103,6 +133,7 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         startTime: data?.startTime || '',
         endTime: data?.endTime || '',
         categoryTags: categoryTags.length > 0 ? categoryTags : ['General'],
+        categoryColors: Object.keys(eventCategoryColors).length > 0 ? eventCategoryColors : undefined,
         locationName: data?.locationName || data?.location || '',
         attireRules: data?.attireRules || data?.attire || data?.receptionAttire || '',
         description: data?.description || data?.receptionDetails || '',
@@ -123,6 +154,20 @@ export default function InteractiveTimeline({
   className = '',
 }: InteractiveTimelineProps) {
   const normalizedEvents = useMemo(() => normalizeEvents(initialNodes), [initialNodes]);
+
+  // Consolidate category color schemas across all events
+  const globalCategoryColors = useMemo(() => {
+    const map: Record<string, CategoryColorStyle> = {};
+    normalizedEvents.forEach((ev) => {
+      if (ev.categoryColors) {
+        Object.entries(ev.categoryColors).forEach(([catName, colorStyle]) => {
+          map[catName] = { ...map[catName], ...colorStyle };
+          map[catName.toLowerCase()] = { ...map[catName.toLowerCase()], ...colorStyle };
+        });
+      }
+    });
+    return map;
+  }, [normalizedEvents]);
 
   // Extract all unique categories across events
   const categories = useMemo(() => {
@@ -158,17 +203,33 @@ export default function InteractiveTimeline({
         <div className="flex flex-wrap justify-center gap-2 mb-10" role="tablist" aria-label="Schedule category filters">
           {categories.map((cat) => {
             const isActive = activeCategory.toLowerCase() === cat.toLowerCase();
+            const catColor = globalCategoryColors[cat] || globalCategoryColors[cat.toLowerCase()];
+
+            let tabStyle: React.CSSProperties;
+            if (isActive) {
+              const bg = catColor?.bg || catColor?.accent || catColor?.color || 'var(--schedule-filter-active-bg)';
+              const text = catColor?.text || 'var(--schedule-filter-active-text)';
+              tabStyle = {
+                backgroundColor: bg,
+                color: text,
+                border: catColor?.border ? `1px solid ${catColor.border}` : '1px solid transparent',
+              };
+            } else {
+              tabStyle = {
+                backgroundColor: 'var(--schedule-filter-bg)',
+                color: 'var(--schedule-filter-text)',
+                border: '1px solid transparent',
+              };
+            }
+
             return (
               <button
                 key={cat}
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                className={`px-5 py-2 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
-                  isActive
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                }`}
+                style={tabStyle}
+                className="px-5 py-2 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary shadow-sm hover:opacity-90"
                 onClick={() => setActiveCategory(cat)}
               >
                 {cat}
@@ -186,7 +247,7 @@ export default function InteractiveTimeline({
           actionLabel="Clear filter"
         />
       ) : (
-        <div className="relative border-l-2 border-primary/30 dark:border-primary/40 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10">
+        <div className="relative border-l-2 border-primary/30 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10">
           {filteredEvents.map((event) => {
             const calendarEvent = formatScheduleEventToCalendarEvent(
               {
@@ -208,11 +269,22 @@ export default function InteractiveTimeline({
               <div key={event.id} className="relative group">
                 {/* Timeline Visual Time-Slot Node/Badge */}
                 <div
-                  className="absolute -left-[31px] sm:-left-[47px] top-1.5 h-5 w-5 rounded-full border-4 border-white dark:border-gray-900 bg-primary shadow"
+                  className="absolute -left-[31px] sm:-left-[47px] top-1.5 h-5 w-5 rounded-full border-4 shadow"
+                  style={{
+                    backgroundColor: 'var(--schedule-node-bg)',
+                    borderColor: 'var(--schedule-node-border)',
+                  }}
                   aria-hidden="true"
                 />
 
-                <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 shadow-md transition-shadow hover:shadow-lg">
+                <div
+                  className="p-6 shadow-md transition-shadow hover:shadow-lg border"
+                  style={{
+                    backgroundColor: 'var(--schedule-card-bg)',
+                    borderColor: 'var(--schedule-card-border)',
+                    borderRadius: 'var(--schedule-card-radius)',
+                  }}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
                     <div>
                       {dateHeaderStr && (
@@ -220,12 +292,18 @@ export default function InteractiveTimeline({
                           {dateHeaderStr}
                         </p>
                       )}
-                      <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{event.title}</h3>
+                      <h3 className="text-2xl font-bold">{event.title}</h3>
                     </div>
 
                     {/* Time-Slot Indicator */}
                     {timeSlotStr && (
-                      <span className="inline-flex items-center rounded-full bg-primary/10 dark:bg-primary/20 px-3 py-1 text-sm font-semibold text-primary">
+                      <span
+                        className="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold"
+                        style={{
+                          backgroundColor: 'var(--schedule-tag-bg)',
+                          color: 'var(--schedule-tag-text)',
+                        }}
+                      >
                         <time dateTime={event.startTime}>{timeSlotStr}</time>
                       </span>
                     )}
@@ -234,38 +312,55 @@ export default function InteractiveTimeline({
                   {/* Category Tags */}
                   {event.categoryTags.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-4">
-                      {event.categoryTags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-block px-2.5 py-0.5 text-xs font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                      {event.categoryTags.map((tag) => {
+                        const tagColor = event.categoryColors?.[tag] || globalCategoryColors[tag] || globalCategoryColors[tag.toLowerCase()];
+                        const tagBg = tagColor?.bg || tagColor?.accent || tagColor?.color || 'var(--schedule-tag-bg)';
+                        const tagText = tagColor?.text || 'var(--schedule-tag-text)';
+                        const tagBorder = tagColor?.border ? `1px solid ${tagColor.border}` : undefined;
+
+                        return (
+                          <span
+                            key={tag}
+                            className="inline-block px-2.5 py-0.5 text-xs font-medium rounded border border-transparent"
+                            style={{
+                              backgroundColor: tagBg,
+                              color: tagText,
+                              border: tagBorder,
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
 
                   {/* Event Details */}
-                  <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-6">
+                  <div className="space-y-2 text-sm opacity-90 mb-6">
                     {event.locationName && (
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900 dark:text-gray-200">Location:</span>
+                        <span className="font-semibold">Location:</span>
                         <span>{event.locationName}</span>
                       </div>
                     )}
 
                     {event.attireRules && (
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900 dark:text-gray-200">Attire:</span>
+                        <span className="font-semibold">Attire:</span>
                         <span>{event.attireRules}</span>
                       </div>
                     )}
 
-                    {event.description && <p className="pt-2 text-gray-600 dark:text-gray-400">{event.description}</p>}
+                    {event.description && <p className="pt-2 opacity-80">{event.description}</p>}
                   </div>
 
                   {/* Per-Event Calendar Export Dropdown */}
-                  <div className="pt-2 border-t border-gray-100 dark:border-gray-700/60">
+                  <div
+                    className="pt-2 border-t"
+                    style={{
+                      borderColor: 'var(--schedule-card-border)',
+                    }}
+                  >
                     <AddToCalendar event={calendarEvent} />
                   </div>
                 </div>
