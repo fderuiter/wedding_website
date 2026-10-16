@@ -10,6 +10,8 @@ import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
+import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { ThemePreset } from '@/lib/theme/presets';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -61,7 +63,24 @@ function SetupWizardContent() {
   const [venueCity, setVenueCity] = useState('');
   const [venueState, setVenueState] = useState('');
   const [timezone, setTimezone] = useState('America/Chicago');
+  const [themePreset, setThemePreset] = useState<ThemePreset>('classic');
+  const [colorPrimary, setColorPrimary] = useState('#4A5568');
+  const [colorSecondary, setColorSecondary] = useState('#2D3748');
+  const [layoutContainerMaxWidth, setLayoutContainerMaxWidth] = useState('64rem');
+  const [layoutGridGap, setLayoutGridGap] = useState('1.5rem');
+  const [layoutCardPadding, setLayoutCardPadding] = useState('2rem');
+  const [layoutBorderRadius, setLayoutBorderRadius] = useState('1rem');
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
+
+  const handleThemeChange = (fields: Record<string, any>) => {
+    if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
+    if (fields.colorPrimary !== undefined) setColorPrimary(fields.colorPrimary);
+    if (fields.colorSecondary !== undefined) setColorSecondary(fields.colorSecondary);
+    if (fields.layoutContainerMaxWidth !== undefined) setLayoutContainerMaxWidth(fields.layoutContainerMaxWidth);
+    if (fields.layoutGridGap !== undefined) setLayoutGridGap(fields.layoutGridGap);
+    if (fields.layoutCardPadding !== undefined) setLayoutCardPadding(fields.layoutCardPadding);
+    if (fields.layoutBorderRadius !== undefined) setLayoutBorderRadius(fields.layoutBorderRadius);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,6 +153,13 @@ function SetupWizardContent() {
           heroSubtitle: 'Thank you for celebrating with us!',
           seoTitle: `${partner1Name} & ${partner2Name}'s Wedding`,
           seoDescription: `Join ${partner1Name} and ${partner2Name} for their wedding celebration.`,
+          themePreset,
+          colorPrimary,
+          colorSecondary,
+          layoutContainerMaxWidth,
+          layoutGridGap,
+          layoutCardPadding,
+          layoutBorderRadius,
         }),
       });
       if (res.ok) {
@@ -236,6 +262,22 @@ function SetupWizardContent() {
                   <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} required />
                 </FormGroup>
               </div>
+
+              <div className="pt-4 border-t border-gray-200 dark:border-zinc-700">
+                <ThemeConfigurationPanel
+                  values={{
+                    themePreset,
+                    colorPrimary,
+                    colorSecondary,
+                    layoutContainerMaxWidth,
+                    layoutGridGap,
+                    layoutCardPadding,
+                    layoutBorderRadius,
+                  }}
+                  onChange={handleThemeChange}
+                />
+              </div>
+
               <Button disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? 'Saving...' : 'Next Step'}
               </Button>
