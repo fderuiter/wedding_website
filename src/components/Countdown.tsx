@@ -49,6 +49,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
 
   const [isMounted, setIsMounted] = useState(false);
   const [timeLeft, setTimeLeft] = useState<TimeLeft>({});
+  const [announcement, setAnnouncement] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -95,28 +96,56 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
       : 'The wedding day is here!'
     : `${formatDate(weddingDate)}`;
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setAnnouncement(`Countdown status: ${screenReaderText}`);
+      }
+    },
+    [screenReaderText]
+  );
+
+  const activeLabel = announcement || screenReaderText;
+
   return (
-    <div>
+    <div className="inline-block">
       {!isMounted ? (
-        <span className="text-2xl font-bold text-primary dark:text-primary-text">
+        <div
+          tabIndex={0}
+          className="text-2xl font-bold text-primary dark:text-primary-text focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-primary-text focus:ring-offset-2 rounded-md"
+          aria-label={`Target wedding date: ${formatDate(weddingDate)}`}
+          onKeyDown={handleKeyDown}
+        >
           {formatDate(weddingDate)}
-        </span>
+        </div>
       ) : timerComponents.length ? (
         <div
-          className="text-2xl font-bold text-primary dark:text-primary-text"
+          className="text-2xl font-bold text-primary dark:text-primary-text focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-primary-text focus:ring-offset-2 rounded-md transition-shadow"
           role="timer"
+          aria-live="polite"
           aria-atomic="true"
+          aria-label={activeLabel}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
         >
-          {timerComponents} to go!
+          <span aria-hidden="true">
+            {timerComponents} to go!
+          </span>
         </div>
       ) : (
-        <span className="text-2xl font-bold text-primary dark:text-primary-text">
+        <div
+          className="text-2xl font-bold text-primary dark:text-primary-text focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-primary-text focus:ring-offset-2 rounded-md"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          aria-label="The wedding day is here!"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+        >
           The wedding day is here!
-        </span>
+        </div>
       )}
-      <span className="sr-only" aria-live="polite">
-        {screenReaderText}
-      </span>
       <noscript>
         <div className="text-2xl font-bold text-primary dark:text-primary-text">
           {formatDate(weddingDate)}

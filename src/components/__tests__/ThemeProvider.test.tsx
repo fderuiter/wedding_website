@@ -589,3 +589,102 @@ describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {
     expect(cssText).toContain('.dark .dark\\:bg-neutral-800');
   });
 });
+
+describe('Blocking Theme Script Execution', () => {
+  const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
+
+  function runInlineScript() {
+    eval(themeScript);
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = 'dark';
+  });
+
+  it('applies light class when localStorage has theme_mode light', () => {
+    localStorage.setItem('theme_mode', 'light');
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('applies dark class when localStorage has theme_mode dark', () => {
+    document.documentElement.className = 'light';
+    localStorage.setItem('theme_mode', 'dark');
+    runInlineScript();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
+  });
+
+  it('applies light class when mode is system/missing and OS prefers light mode', () => {
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query.includes('dark') ? false : true,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('applies dark class when mode is system/missing and OS prefers dark mode', () => {
+    document.documentElement.className = 'light';
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query.includes('dark') ? true : false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
+  });
+
+  it('handles DOMException when localStorage access throws (restricted context)', () => {
+    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Access denied', 'SecurityError');
+    });
+
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    runInlineScript();
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    getItemSpy.mockRestore();
+  });
+
+  it('seamlessly hydrates ThemeProvider with pre-applied light document class', () => {
+    document.documentElement.className = 'light';
+    const { getByTestId } = render(
+      <ThemeProvider initialThemeMode="system">
+        <ThemeModeTestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('resolved-theme')).toHaveTextContent('light');
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+});

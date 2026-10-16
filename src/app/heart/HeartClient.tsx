@@ -49,6 +49,16 @@ function PhysicsHeart({
 }) {
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
+  const namesText = [p1, p2].filter(Boolean).join(' and ');
+  const wholeHeartLabel = namesText
+    ? `Interactive 3D Heart: ${namesText}. Status: Whole.`
+    : 'Interactive 3D Heart. Status: Whole.';
+  const leftShardLabel = p1
+    ? `Broken heart left segment: ${p1}.`
+    : 'Broken heart left segment.';
+  const rightShardLabel = p2
+    ? `Broken heart right segment: ${p2}.`
+    : 'Broken heart right segment.';
   const heartRef = useRef<RapierRigidBody>(null!);
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!);
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!);
@@ -230,11 +240,12 @@ function PhysicsHeart({
         </div>
         {!isBroken && (
           <button
+            type="button"
             ref={wholeButtonRef}
             onFocus={() => handleFocus('whole')}
             onBlur={() => handleBlur('whole')}
             className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-32 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-            aria-label={'Interactive 3D Heart. Status: Whole.'}
+            aria-label={wholeHeartLabel}
             {...getMainInteractiveProps()}
           />
         )}
@@ -268,11 +279,12 @@ function PhysicsHeart({
           <Html zIndexRange={[100, 0]} prepend center>
             {LeftAccessibleElements}
             <button
+              type="button"
               ref={leftButtonRef}
               onFocus={() => handleFocus('left')}
               onBlur={() => handleBlur('left')}
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={'Broken heart left segment.'}
+              aria-label={leftShardLabel}
               {...getLeftInteractiveProps()}
             />
           </Html>
@@ -287,11 +299,12 @@ function PhysicsHeart({
           <Html zIndexRange={[100, 0]} prepend center>
             {RightAccessibleElements}
             <button
+              type="button"
               ref={rightButtonRef}
               onFocus={() => handleFocus('right')}
               onBlur={() => handleBlur('right')}
               className="opacity-0 focus:opacity-100 focus:outline-none focus:ring-4 focus:ring-white w-16 h-32 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-              aria-label={'Broken heart right segment.'}
+              aria-label={rightShardLabel}
               {...getRightInteractiveProps()}
             />
           </Html>

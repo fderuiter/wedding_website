@@ -77,6 +77,56 @@ export function FloorplanCanvas({
     setDraggingTableId(null);
   };
 
+  // Handle table keyboard navigation & repositioning
+  const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSelectTable(table.id);
+      return;
+    }
+
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      const step = e.shiftKey ? 50 : 10;
+      let dx = 0;
+      let dy = 0;
+      if (e.key === 'ArrowLeft') dx = -step;
+      if (e.key === 'ArrowRight') dx = step;
+      if (e.key === 'ArrowUp') dy = -step;
+      if (e.key === 'ArrowDown') dy = step;
+
+      const tableWidth = table.width || 120;
+      const tableHeight = table.height || 120;
+
+      let canvasWidth = 800;
+      let canvasHeight = 650;
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        canvasWidth = rect.width || canvasRef.current.clientWidth || 800;
+        canvasHeight = rect.height || canvasRef.current.clientHeight || 650;
+      }
+
+      const maxX = Math.max(0, canvasWidth - tableWidth);
+      const maxY = Math.max(0, canvasHeight - tableHeight);
+
+      const newX = Math.max(0, Math.min(maxX, table.x + dx));
+      const newY = Math.max(0, Math.min(maxY, table.y + dy));
+
+      onUpdateTablePosition(table.id, Math.round(newX), Math.round(newY));
+    }
+  };
+
+  // Handle seat circle keyboard events
+  const handleSeatKeyDown = (e: React.KeyboardEvent, assignedGuestId?: string) => {
+    e.stopPropagation();
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      if (assignedGuestId) {
+        onUnassignGuest(assignedGuestId);
+      }
+    }
+  };
+
   // HTML5 Drag and Drop for Guest Cards onto Table
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -141,6 +191,14 @@ export function FloorplanCanvas({
       seats.push(
         <div
           key={i}
+          tabIndex={0}
+          role="button"
+          aria-label={
+            assignedGuest
+              ? `Seat ${i}: ${assignedGuest.guestName}`
+              : `Seat ${i}: Empty`
+          }
+          onKeyDown={(e) => handleSeatKeyDown(e, assignedGuest?.id)}
           onDragOver={handleDragOver}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
           onDoubleClick={() => assignedGuest && onUnassignGuest(assignedGuest.id)}
@@ -153,19 +211,38 @@ export function FloorplanCanvas({
                 : `Seat ${i}: ${assignedGuest.guestName} (Double click to unassign)`
               : `Seat ${i}: Empty (Drop guest here)`
           }
-          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all ${
+          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
             assignedGuest
               ? isMatch
                 ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
                 : isSearching
-                  ? 'bg-primary/60 text-white/80 border-primary/60 shadow-sm opacity-60'
-                  : 'bg-primary text-white border-primary shadow-sm hover:scale-110'
-              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-dashed border-gray-400 hover:border-primary hover:bg-red-50'
+                  ? 'opacity-60 shadow-sm'
+                  : 'shadow-sm hover:scale-110'
+              : 'hover:border-primary hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]'
           }`}
-          style={{
-            left: `${seatX}px`,
-            top: `${seatY}px`,
-          }}
+          style={
+            assignedGuest
+              ? isMatch
+                ? {
+                  left: `${seatX}px`,
+                  top: `${seatY}px`,
+                }
+                : {
+                  left: `${seatX}px`,
+                  top: `${seatY}px`,
+                  backgroundColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                  color: 'var(--floorplan-seat-assigned-text, #ffffff)',
+                  borderColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                }
+              : {
+                left: `${seatX}px`,
+                top: `${seatY}px`,
+                backgroundColor: 'var(--floorplan-table-bg, #ffffff)',
+                color: 'color-mix(in srgb, var(--color-foreground, #1f2937) 75%, transparent)',
+                borderColor: 'var(--floorplan-table-border, #9ca3af)',
+                borderStyle: 'dashed',
+              }
+          }
         >
           {assignedGuest ? (
             <span className="truncate px-0.5 text-[10px]" aria-label={`Seat ${i} ${assignedGuest.guestName}`}>
@@ -187,16 +264,26 @@ export function FloorplanCanvas({
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onClick={() => onSelectTable(null)}
-      className="relative w-full h-[650px] bg-slate-50 dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
+      className="relative w-full h-[650px] rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
       style={{
-        backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+        backgroundColor: 'var(--canvas-bg, #f8fafc)',
+        border: 'var(--canvas-border, 2px dashed #cbd5e1)',
+        backgroundImage: 'radial-gradient(circle, var(--canvas-grid-dot, #cbd5e1) 1px, transparent 1px)',
         backgroundSize: '24px 24px',
       }}
       aria-label="Interactive 2D Reception Floorplan Canvas"
       role="region"
     >
       {/* Canvas Header Banner */}
-      <div className="absolute top-3 left-3 bg-white/90 dark:bg-gray-800/90 backdrop-blur border border-gray-200 dark:border-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 shadow-sm z-10 flex items-center gap-2">
+      <div
+        className="absolute top-3 left-3 backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"
+        style={{
+          backgroundColor: 'color-mix(in srgb, var(--floorplan-table-bg, #ffffff) 90%, transparent)',
+          borderColor: 'var(--floorplan-table-border, #e5e7eb)',
+          borderRadius: 'var(--floorplan-table-radius, 0.5rem)',
+          color: 'var(--color-foreground, #374151)',
+        }}
+      >
         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
         {isSearching ? (
           totalSeatedMatches > 0 ? (
@@ -215,7 +302,6 @@ export function FloorplanCanvas({
         const assignedCount = table.invitationCodes?.length || 0;
         const isSelected = selectedTableId === table.id;
         const isOverCapacity = assignedCount > table.capacity;
-        const isFull = assignedCount === table.capacity;
         const hasMatchingGuest = isSearching && (table.invitationCodes || []).some(isGuestMatch);
 
         return (
@@ -226,9 +312,10 @@ export function FloorplanCanvas({
               e.stopPropagation();
               onSelectTable(table.id);
             }}
+            onKeyDown={(e) => handleTableKeyDown(e, table)}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDropOnTable(e, table.id)}
-            className={`absolute cursor-move transition-all transform hover:scale-[1.02] ${
+            className={`absolute cursor-move transition-all transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
               isSelected ? 'ring-4 ring-primary ring-offset-2 z-20' : 'z-10'
             } ${
               hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''
@@ -247,27 +334,43 @@ export function FloorplanCanvas({
             {/* Table Surface */}
             <div
               className={`w-full h-full border-2 flex flex-col items-center justify-center p-2 text-center shadow-md relative transition-colors ${
-                table.shape === 'round'
-                  ? 'rounded-full'
-                  : table.shape === 'square'
-                    ? 'rounded-xl'
-                    : 'rounded-2xl'
-              } ${
-                isOverCapacity
-                  ? 'bg-red-50 border-red-500 text-red-900 dark:bg-red-950 dark:border-red-600 dark:text-red-200'
-                  : isFull
-                    ? 'bg-amber-50 border-amber-500 text-amber-900 dark:bg-amber-950 dark:border-amber-600 dark:text-amber-200'
-                    : 'bg-white border-gray-300 dark:bg-gray-800 dark:border-gray-600 text-gray-800 dark:text-gray-100'
+                table.shape === 'round' ? 'rounded-full' : ''
               }`}
+              style={{
+                backgroundColor: isOverCapacity
+                  ? 'var(--floorplan-status-overcapacity-bg, #fef2f2)'
+                  : 'var(--floorplan-table-bg, #ffffff)',
+                borderColor: isOverCapacity
+                  ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
+                  : 'var(--floorplan-table-border, #d1d5db)',
+                borderRadius: table.shape === 'round'
+                  ? '9999px'
+                  : 'var(--floorplan-table-radius, 0.75rem)',
+                color: isOverCapacity
+                  ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
+                  : 'var(--color-foreground, #1f2937)',
+              }}
             >
               <span className="font-bold text-xs truncate max-w-[90%]">{table.name}</span>
-              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+              <span
+                className="text-[10px] font-medium"
+                style={{
+                  color: isOverCapacity
+                    ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
+                    : 'color-mix(in srgb, var(--color-foreground, #1f2937) 65%, transparent)',
+                }}
+              >
                 {assignedCount} / {table.capacity} seats
               </span>
 
               {/* Over capacity warning badge */}
               {isOverCapacity && (
-                <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce">
+                <span
+                  className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce"
+                  style={{
+                    backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
+                  }}
+                >
                   Over capacity!
                 </span>
               )}
