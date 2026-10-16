@@ -17,11 +17,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       secondary:
         'bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-secondary,#B45309))]',
       danger:
-        'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] focus-visible:ring-[var(--btn-danger-bg,#b91c1c)]',
+        'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] focus-visible:ring-[var(--btn-focus-ring,#b91c1c)]',
       ghost:
-        'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,inherit)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]',
+        'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,inherit)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-primary,#B91C1C))]',
       outline:
-        'bg-[var(--btn-outline-bg,transparent)] text-[var(--btn-outline-text,inherit)] border border-[var(--btn-outline-border,#d1d5db)] hover:bg-[var(--btn-outline-hover-bg,rgba(0,0,0,0.05))]',
+        'bg-[var(--btn-outline-bg,transparent)] text-[var(--btn-outline-text,inherit)] border border-[var(--btn-outline-border,#d1d5db)] hover:bg-[var(--btn-outline-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-primary,#B91C1C))]',
     };
 
     const sizes = {
