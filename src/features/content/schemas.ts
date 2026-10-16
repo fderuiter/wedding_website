@@ -4,7 +4,10 @@ import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
-export const layoutTokenSchema = z.string().regex(layoutTokenRegex, 'Invalid CSS length unit format.');
+export const layoutTokenSchema = z.string().refine(
+  (val) => val === '' || layoutTokenRegex.test(val),
+  { message: 'Invalid CSS length unit format.' }
+);
 
 export const RawUpdateAppConfigSchema = z.object({
   partner1Name: z.string().optional(),
@@ -78,6 +81,10 @@ export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) =
     partner2Name,
     brideName: data.brideName ?? partner1Name,
     groomName: data.groomName ?? partner2Name,
+    layoutContainerMaxWidth: !data.layoutContainerMaxWidth || data.layoutContainerMaxWidth === '' ? '64rem' : data.layoutContainerMaxWidth,
+    layoutGridGap: !data.layoutGridGap || data.layoutGridGap === '' ? '1.5rem' : data.layoutGridGap,
+    layoutCardPadding: !data.layoutCardPadding || data.layoutCardPadding === '' ? '2rem' : data.layoutCardPadding,
+    layoutBorderRadius: !data.layoutBorderRadius || data.layoutBorderRadius === '' ? '1rem' : data.layoutBorderRadius,
   };
 });
 
@@ -178,7 +185,20 @@ export const FAQNodeSchema = BaseContentNode.extend({
   data: z.object({
     question: z.string().optional(),
     answer: z.string().optional(),
-  }),
+    category: z.string().optional(),
+    categoryTags: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return val;
+    }),
+    keywords: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return val;
+    }),
+  }).passthrough(),
 });
 
 export const LogisticsNodeSchema = BaseContentNode.extend({

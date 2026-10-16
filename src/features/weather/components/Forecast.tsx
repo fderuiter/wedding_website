@@ -6,6 +6,16 @@ import { Icon, IconName } from '@/components/ui/Icon';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { useTheme } from '@/components/ThemeProvider';
+import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
+
+function parseDurationSec(val?: string, fallback = 0.8): number {
+  if (!val) return fallback;
+  if (val.endsWith('ms')) return parseFloat(val) / 1000;
+  if (val.endsWith('s')) return parseFloat(val);
+  const parsed = parseFloat(val);
+  return isNaN(parsed) ? fallback : parsed;
+}
 
 interface WeatherData {
   isLiveForecast?: boolean;
@@ -51,6 +61,10 @@ const Forecast: React.FC = () => {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { themePreset } = useTheme();
+  const presetTokens = getPresetTokens(themePreset);
+  const duration = parseDurationSec(presetTokens['--motion-duration-slow'], 0.8);
 
   const fetchWeather = useCallback(async () => {
     setIsLoading(true);
@@ -132,8 +146,9 @@ const Forecast: React.FC = () => {
     <motion.div
       initial={{ opacity: 0, y: 'calc(20px * var(--scale-factor, 1))' }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8 }}
-      className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
+      transition={{ duration, ease: parseMotionEasing(presetTokens['--motion-ease-default']) }}
+      className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-[var(--shadow-lg)] p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
+      style={{ boxShadow: 'var(--shadow-lg)' }}
     >
       {!isLiveForecast && (
         <div

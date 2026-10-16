@@ -330,6 +330,9 @@ describe('POST /api/admin/versions/[id]/restore', () => {
   it('restores RegistryItem successfully', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const mockRegistrySnapshot = {
+      itemType: 'PHYSICAL',
+      paymentHandleType: null,
+      paymentHandle: null,
       name: 'Kitchen Mixer',
       description: 'For baking',
       category: 'Home',
@@ -404,6 +407,9 @@ describe('POST /api/admin/versions/[id]/restore', () => {
 
     expect(res.status).toBe(200);
     const expectedTranslatedData = {
+      itemType: 'PHYSICAL',
+      paymentHandleType: null,
+      paymentHandle: null,
       name: 'Legacy Mixer',
       description: 'Legacy details',
       category: 'Legacy Group',
@@ -449,6 +455,9 @@ describe('POST /api/admin/versions/[id]/restore', () => {
 
     expect(res.status).toBe(200);
     const expectedTranslatedData = {
+      itemType: 'PHYSICAL',
+      paymentHandleType: null,
+      paymentHandle: null,
       name: 'Old Title',
       description: 'Old Details',
       category: 'Old Group',

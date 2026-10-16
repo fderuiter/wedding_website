@@ -77,22 +77,6 @@ export function getNavLinks(role: RouteRole, moduleConfig?: unknown) {
   }));
 }
 
-export function getRequiredModuleForRoute(pathname: string): FeatureId | undefined {
-  const normalizedPathname = normalizePath(pathname);
-
-  const matches = APP_ROUTES.filter(route => {
-    const normalizedRoutePath = normalizePath(route.path);
-    return route.exact 
-      ? normalizedPathname === normalizedRoutePath 
-      : normalizedPathname.startsWith(normalizedRoutePath);
-  });
-
-  if (matches.length === 0) return undefined;
-
-  matches.sort((a, b) => normalizePath(b.path).length - normalizePath(a.path).length);
-  return matches[0].requiredModule;
-}
-
 export function isProtectedRoute(pathname: string, method: string = 'GET'): boolean {
   const normalizedPathname = normalizePath(pathname);
 
