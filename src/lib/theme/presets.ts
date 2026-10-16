@@ -32,6 +32,22 @@ export interface ComponentTokens {
   '--dialog-title-color': string;
   '--dialog-desc-color': string;
 
+  '--input-bg': string;
+  '--input-border': string;
+  '--input-focus-ring': string;
+  '--input-radius': string;
+  '--input-error-border': string;
+  '--input-error-focus-ring': string;
+  '--input-success-border': string;
+  '--input-success-focus-ring': string;
+  '--input-warning-border': string;
+  '--input-warning-focus-ring': string;
+  '--form-label-text': string;
+  '--form-message-text': string;
+  '--form-error-text': string;
+  '--form-success-text': string;
+  '--form-warning-text': string;
+
   '--schedule-card-bg': string;
   '--schedule-card-border': string;
   '--schedule-card-radius': string;
@@ -77,6 +93,22 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#6b7280',
 
+    '--input-bg': '#ffffff',
+    '--input-border': '#d1d5db',
+    '--input-focus-ring': 'var(--color-primary, #B91C1C)',
+    '--input-radius': '0.375rem',
+    '--input-error-border': '#ef4444',
+    '--input-error-focus-ring': '#ef4444',
+    '--input-success-border': '#22c55e',
+    '--input-success-focus-ring': '#22c55e',
+    '--input-warning-border': '#f59e0b',
+    '--input-warning-focus-ring': '#f59e0b',
+    '--form-label-text': '#111827',
+    '--form-message-text': '#6b7280',
+    '--form-error-text': '#dc2626',
+    '--form-success-text': '#16a34a',
+    '--form-warning-text': '#ca8a04',
+
     '--schedule-card-bg': '#ffffff',
     '--schedule-card-border': '#e5e7eb',
     '--schedule-card-radius': '1rem',
@@ -119,6 +151,22 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#f1f5f9',
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#64748b',
+
+    '--input-bg': '#ffffff',
+    '--input-border': '#cbd5e1',
+    '--input-focus-ring': 'var(--color-primary, #B91C1C)',
+    '--input-radius': '0.5rem',
+    '--input-error-border': '#f87171',
+    '--input-error-focus-ring': '#ef4444',
+    '--input-success-border': '#4ade80',
+    '--input-success-focus-ring': '#22c55e',
+    '--input-warning-border': '#fbbf24',
+    '--input-warning-focus-ring': '#f59e0b',
+    '--form-label-text': '#0f172a',
+    '--form-message-text': '#64748b',
+    '--form-error-text': '#e11d48',
+    '--form-success-text': '#059669',
+    '--form-warning-text': '#d97706',
 
     '--schedule-card-bg': '#ffffff',
     '--schedule-card-border': '#f1f5f9',
@@ -163,6 +211,22 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#9d174d',
 
+    '--input-bg': '#fffafb',
+    '--input-border': '#fce7f3',
+    '--input-focus-ring': 'var(--color-primary, #B91C1C)',
+    '--input-radius': '0.75rem',
+    '--input-error-border': '#f43f5e',
+    '--input-error-focus-ring': '#f43f5e',
+    '--input-success-border': '#10b981',
+    '--input-success-focus-ring': '#10b981',
+    '--input-warning-border': '#f59e0b',
+    '--input-warning-focus-ring': '#f59e0b',
+    '--form-label-text': '#831843',
+    '--form-message-text': '#9d174d',
+    '--form-error-text': '#be123c',
+    '--form-success-text': '#047857',
+    '--form-warning-text': '#b45309',
+
     '--schedule-card-bg': '#fffafb',
     '--schedule-card-border': '#fce7f3',
     '--schedule-card-radius': '1.25rem',
@@ -206,6 +270,22 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-title-color': 'inherit',
     '--dialog-desc-color': '#71717a',
 
+    '--input-bg': '#ffffff',
+    '--input-border': '#e4e4e7',
+    '--input-focus-ring': 'var(--color-primary, #B91C1C)',
+    '--input-radius': '0px',
+    '--input-error-border': '#991b1b',
+    '--input-error-focus-ring': '#991b1b',
+    '--input-success-border': '#166534',
+    '--input-success-focus-ring': '#166534',
+    '--input-warning-border': '#854d0e',
+    '--input-warning-focus-ring': '#854d0e',
+    '--form-label-text': '#18181b',
+    '--form-message-text': '#71717a',
+    '--form-error-text': '#991b1b',
+    '--form-success-text': '#166534',
+    '--form-warning-text': '#854d0e',
+
     '--schedule-card-bg': '#ffffff',
     '--schedule-card-border': '#e4e4e7',
     '--schedule-card-radius': '0px',
@@ -248,6 +328,22 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-border-color': '#000000',
     '--dialog-title-color': '#000000',
     '--dialog-desc-color': '#3f3f46',
+
+    '--input-bg': '#fcfbf9',
+    '--input-border': '#000000',
+    '--input-focus-ring': '#000000',
+    '--input-radius': '0.125rem',
+    '--input-error-border': '#b91c1c',
+    '--input-error-focus-ring': '#000000',
+    '--input-success-border': '#15803d',
+    '--input-success-focus-ring': '#000000',
+    '--input-warning-border': '#a16207',
+    '--input-warning-focus-ring': '#000000',
+    '--form-label-text': '#000000',
+    '--form-message-text': '#3f3f46',
+    '--form-error-text': '#b91c1c',
+    '--form-success-text': '#15803d',
+    '--form-warning-text': '#a16207',
 
     '--schedule-card-bg': '#fcfbf9',
     '--schedule-card-border': '#000000',
