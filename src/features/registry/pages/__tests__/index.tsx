@@ -33,6 +33,9 @@ describe('RegistryPage', () => {
     setShowGroupGiftsOnly: jest.fn(),
     showAvailableOnly: false,
     setShowAvailableOnly: jest.fn(),
+    searchQuery: '',
+    setSearchQuery: jest.fn(),
+    handleClearFilters: jest.fn(),
     selectedItem: null,
     isModalOpen: false,
     setVisibleItemsCount: jest.fn(),
@@ -112,5 +115,71 @@ describe('RegistryPage', () => {
 
     expect(screen.getByText(/no gifts match the current filters/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+  });
+
+  it('renders search input control and handles typing', () => {
+    const mockSetSearchQuery = jest.fn();
+    mockUseRegistry.mockReturnValue({
+      ...defaultMockState,
+      setSearchQuery: mockSetSearchQuery,
+    } as any);
+
+    render(<RegistryPage />);
+
+    const searchInput = screen.getByRole('textbox', { name: /search gifts/i });
+    expect(searchInput).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'espresso' } });
+    expect(mockSetSearchQuery).toHaveBeenCalledWith('espresso');
+  });
+
+  it('renders clear search button when searchQuery is non-empty and resets search query on click', () => {
+    const mockSetSearchQuery = jest.fn();
+    mockUseRegistry.mockReturnValue({
+      ...defaultMockState,
+      searchQuery: 'espresso',
+      setSearchQuery: mockSetSearchQuery,
+    } as any);
+
+    render(<RegistryPage />);
+
+    const clearButton = screen.getByRole('button', { name: /clear search query/i });
+    expect(clearButton).toBeInTheDocument();
+
+    fireEvent.click(clearButton);
+    expect(mockSetSearchQuery).toHaveBeenCalledWith('');
+  });
+
+  it('calls handleClearFilters / setSearchQuery when Clear Filters button is clicked in empty state', () => {
+    const mockSetSearchQuery = jest.fn();
+    const mockHandleClearFilters = jest.fn();
+    mockUseRegistry.mockReturnValue({
+      ...defaultMockState,
+      items: [
+        {
+          id: '1',
+          name: 'Coffee Maker',
+          category: 'Kitchen',
+          price: 150,
+          amountContributed: 0,
+          purchased: false,
+          isGroupGift: false,
+          contributors: [],
+        },
+      ],
+      filteredItems: [],
+      visibleItems: [],
+      searchQuery: 'nonexistent',
+      setSearchQuery: mockSetSearchQuery,
+      handleClearFilters: mockHandleClearFilters,
+    } as any);
+
+    render(<RegistryPage />);
+
+    const clearFiltersBtn = screen.getByRole('button', { name: /clear filters/i });
+    fireEvent.click(clearFiltersBtn);
+
+    expect(mockHandleClearFilters).toHaveBeenCalledTimes(1);
+    expect(mockSetSearchQuery).toHaveBeenCalledWith('');
   });
 });

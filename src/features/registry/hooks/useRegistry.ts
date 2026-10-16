@@ -102,6 +102,7 @@ export function useRegistry() {
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
   const [showGroupGiftsOnly, setShowGroupGiftsOnly] = useState(false);
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const {
     categories,
@@ -125,13 +126,18 @@ export function useRegistry() {
   }, [minPrice, maxPrice]);
 
   const filteredItems = useMemo(() => {
+    const trimmedQuery = searchQuery.trim().toLowerCase();
     return categoryFilteredItems.filter(item => {
       const inPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
       const isGroupGift = !showGroupGiftsOnly || item.isGroupGift;
       const isAvailable = !showAvailableOnly || !item.purchased;
-      return inPrice && isGroupGift && isAvailable;
+      const matchesSearch = !trimmedQuery || (
+        (item.name?.toLowerCase().includes(trimmedQuery) ?? false) ||
+        (item.description?.toLowerCase().includes(trimmedQuery) ?? false)
+      );
+      return inPrice && isGroupGift && isAvailable && matchesSearch;
     });
-  }, [categoryFilteredItems, priceRange, showGroupGiftsOnly, showAvailableOnly]);
+  }, [categoryFilteredItems, priceRange, showGroupGiftsOnly, showAvailableOnly, searchQuery]);
 
   const visibleItems = useMemo(() => {
     return filteredItems.slice(0, visibleItemsCount);
@@ -210,6 +216,14 @@ export function useRegistry() {
     });
   }, [contribute, handleCloseModal]);
 
+  const handleClearFilters = useCallback(() => {
+    setCategoryFilter([]);
+    setPriceRange([minPrice, maxPrice]);
+    setShowGroupGiftsOnly(false);
+    setShowAvailableOnly(false);
+    setSearchQuery('');
+  }, [setCategoryFilter, setPriceRange, minPrice, maxPrice]);
+
   return {
     items,
     isLoading,
@@ -233,6 +247,9 @@ export function useRegistry() {
     setShowGroupGiftsOnly,
     showAvailableOnly,
     setShowAvailableOnly,
+    searchQuery,
+    setSearchQuery,
+    handleClearFilters,
     handleCardClick,
     handleCloseModal,
     handleEdit,
