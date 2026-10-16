@@ -18,6 +18,7 @@ interface FloorplanCanvasProps {
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
   onUnassignGuest: (guestId: string) => void;
   searchQuery?: string;
+  onOpenSeatAssignModal?: (tableId: string, seatNumber: number) => void;
   onAddTable?: () => void;
 }
 
@@ -29,11 +30,13 @@ export function FloorplanCanvas({
   onDropGuestOnTable,
   onUnassignGuest,
   searchQuery,
+  onOpenSeatAssignModal,
   onAddTable,
 }: FloorplanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
 
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
@@ -55,36 +58,6 @@ export function FloorplanCanvas({
       });
     });
   }
-
-  // Handle table mouse drag
-  const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
-    e.stopPropagation();
-    if (e.button !== 0) return; // Only primary click
-    setDraggingTableId(table.id);
-    onSelectTable(table.id);
-
-    if (canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      setDragOffset({
-        x: mouseX - table.x,
-        y: mouseY - table.y,
-      });
-    }
-  };
-
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!draggingTableId || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const newX = Math.max(0, Math.min(rect.width - 120, e.clientX - rect.left - dragOffset.x));
-    const newY = Math.max(0, Math.min(rect.height - 120, e.clientY - rect.top - dragOffset.y));
-    onUpdateTablePosition(draggingTableId, Math.round(newX), Math.round(newY));
-  };
-
-  const handleCanvasMouseUp = () => {
-    setDraggingTableId(null);
-  };
 
   // Handle table keyboard navigation & repositioning
   const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
@@ -122,17 +95,61 @@ export function FloorplanCanvas({
       const newY = Math.max(0, Math.min(maxY, table.y + dy));
 
       onUpdateTablePosition(table.id, Math.round(newX), Math.round(newY));
+      setLiveAnnouncement(`${table.name} moved to X ${Math.round(newX)}, Y ${Math.round(newY)}`);
     }
   };
 
-  // Handle seat circle keyboard events
-  const handleSeatKeyDown = (e: React.KeyboardEvent, assignedGuestId?: string) => {
+  // Handle table mouse drag
+  const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
     e.stopPropagation();
-    if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (e.button !== 0) return; // Only primary click
+    setDraggingTableId(table.id);
+    onSelectTable(table.id);
+
+    if (canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      setDragOffset({
+        x: mouseX - table.x,
+        y: mouseY - table.y,
+      });
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (!draggingTableId || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = Math.max(0, Math.min(rect.width - 120, e.clientX - rect.left - dragOffset.x));
+    const newY = Math.max(0, Math.min(rect.height - 120, e.clientY - rect.top - dragOffset.y));
+    onUpdateTablePosition(draggingTableId, Math.round(newX), Math.round(newY));
+  };
+
+  const handleCanvasMouseUp = () => {
+    setDraggingTableId(null);
+  };
+
+  // Seat circle keyboard events
+  const handleSeatKeyDown = (
+    e: React.KeyboardEvent,
+    table: SeatingTableDTO,
+    seatNumber: number,
+    assignedGuest?: InvitationCodeDTO
+  ) => {
+    if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (assignedGuestId) {
-        onUnassignGuest(assignedGuestId);
+      e.stopPropagation();
+      if (assignedGuest) {
+        onUnassignGuest(assignedGuest.id);
+        setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${seatNumber}`);
+      } else {
+        onOpenSeatAssignModal?.(table.id, seatNumber);
       }
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && assignedGuest) {
+      e.preventDefault();
+      e.stopPropagation();
+      onUnassignGuest(assignedGuest.id);
+      setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${seatNumber}`);
     }
   };
 
@@ -261,8 +278,9 @@ export function FloorplanCanvas({
       }
 
       seats.push(
-        <div
+        <button
           key={i}
+          type="button"
           tabIndex={0}
           role="button"
           aria-label={
@@ -270,12 +288,20 @@ export function FloorplanCanvas({
               ? `Seat ${i}: ${assignedGuest.guestName}`
               : `Seat ${i}: Empty`
           }
-          onKeyDown={(e) => handleSeatKeyDown(e, assignedGuest?.id)}
           onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
           onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
           onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
-          onDoubleClick={() => assignedGuest && onUnassignGuest(assignedGuest.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (assignedGuest) {
+              onUnassignGuest(assignedGuest.id);
+              setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
+            } else {
+              onOpenSeatAssignModal?.(table.id, i);
+            }
+          }}
+          onKeyDown={(e) => handleSeatKeyDown(e, table, i, assignedGuest)}
           data-testid={isMatch ? 'matching-seat' : undefined}
           data-is-search-match={isMatch ? 'true' : 'false'}
           data-is-drop-target={isSeatDropTarget ? 'true' : undefined}
@@ -283,8 +309,8 @@ export function FloorplanCanvas({
             assignedGuest
               ? isMatch
                 ? `Seat ${i}: ${assignedGuest.guestName} (Search Match! Double click to unassign)`
-                : `Seat ${i}: ${assignedGuest.guestName} (Double click to unassign)`
-              : `Seat ${i}: Empty (Drop guest here)`
+                : `Seat ${i}: ${assignedGuest.guestName} (Double click or press Enter/Space/Delete to unassign)`
+              : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
           }
           className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
             isSeatDropTarget
@@ -322,14 +348,14 @@ export function FloorplanCanvas({
           }
         >
           {assignedGuest ? (
-            <span className="truncate px-0.5 text-[10px]" aria-label={`Seat ${i} ${assignedGuest.guestName}`}>
+            <span className="truncate px-0.5 text-[10px]" aria-hidden="true">
               {assignedGuest.guestName.split(' ')[0][0]}
               {assignedGuest.guestName.split(' ')[1]?.[0] || ''}
             </span>
           ) : (
-            <span>{i}</span>
+            <span aria-hidden="true">{i}</span>
           )}
-        </div>
+        </button>
       );
     }
     return seats;
@@ -413,6 +439,11 @@ export function FloorplanCanvas({
       aria-label="Interactive 2D Reception Floorplan Canvas"
       role="region"
     >
+      {/* Live Region for Screen Reader Announcements */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveAnnouncement}
+      </div>
+
       {/* Canvas Header Banner */}
       <div
         className="absolute top-3 left-3 backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"

@@ -14,6 +14,7 @@ export default function SeatingChartAdminPage() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<SeatingTableDTO | null>(null);
+  const [assignSeatTarget, setAssignSeatTarget] = useState<{ tableId: string; seatNumber: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -398,6 +399,7 @@ export default function SeatingChartAdminPage() {
               onDropGuestOnTable={handleAssignGuestToTable}
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
+              onOpenSeatAssignModal={(tableId, seatNumber) => setAssignSeatTarget({ tableId, seatNumber })}
               onAddTable={handleCreateTable}
             />
 
@@ -462,6 +464,80 @@ export default function SeatingChartAdminPage() {
         onSave={handleSaveTable}
         onDelete={handleDeleteTable}
       />
+
+      {/* Target Seat Assignment Modal */}
+      {assignSeatTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 max-w-sm w-full shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              Assign Guest to {tables.find((t) => t.id === assignSeatTarget.tableId)?.name || 'Table'} (Seat {assignSeatTarget.seatNumber})
+            </h3>
+            {unassignedGuests.length === 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  All guests have already been assigned to tables.
+                </p>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAssignSeatTarget(null)}
+                    className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const guestId = formData.get('guestId') as string;
+                  if (guestId && assignSeatTarget) {
+                    handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
+                    setAssignSeatTarget(null);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Select Guest
+                  </label>
+                  <select
+                    id="modal-assign-guest"
+                    name="guestId"
+                    required
+                    defaultValue={unassignedGuests[0]?.id || ''}
+                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                  >
+                    {unassignedGuests.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.guestName} ({g.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAssignSeatTarget(null)}
+                    className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90"
+                  >
+                    Assign Guest
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
