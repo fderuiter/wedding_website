@@ -48,6 +48,13 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--schedule-node-border']).toBeDefined();
       expect(tokens['--schedule-tag-bg']).toBeDefined();
       expect(tokens['--schedule-tag-text']).toBeDefined();
+
+      // Check standardized print tokens
+      expect(tokens['--print-bg']).toBeDefined();
+      expect(tokens['--print-text']).toBeDefined();
+      expect(tokens['--print-border']).toBeDefined();
+      expect(tokens['--print-header-border']).toBeDefined();
+      expect(tokens['--print-badge-bg']).toBeDefined();
     }
   });
 
