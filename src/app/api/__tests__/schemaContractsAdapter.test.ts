@@ -31,6 +31,7 @@ jest.mock('@/lib/prisma', () => ({
 
 import { POST as addItemPOST, GET as getItemsGET } from '@/app/api/registry/items/route';
 import { POST as restorePOST } from '@/app/api/admin/versions/[id]/restore/route';
+// eslint-disable-next-line no-restricted-imports
 import { registryService } from '@/features/registry/service';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
@@ -88,12 +89,17 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
       expect(res.status).toBe(201);
 
       expect(mockCreateItem).toHaveBeenCalledWith({
+        itemType: 'PHYSICAL',
+        paymentHandleType: undefined,
+        paymentHandle: undefined,
         name: 'Standard Toaster',
         price: 99.99,
         quantity: 2,
         category: 'Kitchen',
         description: 'Cozy toast',
         imageUrl: '/images/toaster.png',
+        imageAlt: undefined,
+        imageDecorative: undefined,
         vendorUrl: 'https://example.com/toaster',
         isGroupGift: true,
       });
@@ -239,6 +245,9 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
       expect(prisma.registryItem.upsert).toHaveBeenCalledWith({
         where: { id: 'registry-item-1' },
         update: {
+          itemType: 'PHYSICAL',
+          paymentHandleType: null,
+          paymentHandle: null,
           name: 'Old Gold Ring',
           price: 500,
           quantity: 1,
@@ -253,6 +262,9 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         },
         create: {
           id: 'registry-item-1',
+          itemType: 'PHYSICAL',
+          paymentHandleType: null,
+          paymentHandle: null,
           name: 'Old Gold Ring',
           price: 500,
           quantity: 1,

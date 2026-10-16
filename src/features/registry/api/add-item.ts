@@ -39,6 +39,9 @@ export const POST = createValidatedRoute({
     const newItemData = body;
 
     const newItem = await registryService.createItem({
+      itemType: newItemData.itemType,
+      paymentHandleType: newItemData.paymentHandleType,
+      paymentHandle: newItemData.paymentHandle,
       name: newItemData.name,
       description: newItemData.description || '',
       category: newItemData.category || 'Uncategorized',
