@@ -1527,6 +1527,17 @@
                       "editorial"
                     ]
                   },
+                  "themeTokens": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^--[a-zA-Z0-9_-]+$"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -1615,7 +1626,8 @@
                   "faviconUrl",
                   "ogImageUrl",
                   "seoKeywords",
-                  "themePreset"
+                  "themePreset",
+                  "themeTokens"
                 ],
                 "additionalProperties": {}
               }
@@ -1740,6 +1752,17 @@
                       "editorial"
                     ]
                   },
+                  "themeTokens": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^--[a-zA-Z0-9_-]+$"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -1828,7 +1851,8 @@
                   "faviconUrl",
                   "ogImageUrl",
                   "seoKeywords",
-                  "themePreset"
+                  "themePreset",
+                  "themeTokens"
                 ],
                 "additionalProperties": {}
               }
@@ -1964,6 +1988,17 @@
                       "editorial"
                     ]
                   },
+                  "themeTokens": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^--[a-zA-Z0-9_-]+$"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -2052,7 +2087,8 @@
                   "faviconUrl",
                   "ogImageUrl",
                   "seoKeywords",
-                  "themePreset"
+                  "themePreset",
+                  "themeTokens"
                 ],
                 "additionalProperties": {}
               }

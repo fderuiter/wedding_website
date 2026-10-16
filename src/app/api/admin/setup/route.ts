@@ -92,6 +92,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     colorPrimary: body.colorPrimary ?? '#B91C1C',
     colorSecondary: body.colorSecondary ?? '#B45309',
     themePreset: body.themePreset ?? 'classic',
+    themeTokens: body.themeTokens ?? {},
     layoutContainerMaxWidth: body.layoutContainerMaxWidth,
     layoutGridGap: body.layoutGridGap,
     layoutCardPadding: body.layoutCardPadding,

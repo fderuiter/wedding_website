@@ -46,6 +46,8 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       features: snapshotData.features ?? [],
       colorPrimary: snapshotData.colorPrimary ?? '#B91C1C',
       colorSecondary: snapshotData.colorSecondary ?? '#B45309',
+      themePreset: snapshotData.themePreset ?? 'classic',
+      themeTokens: snapshotData.themeTokens ?? {},
       timezone: snapshotData.timezone ?? 'UTC',
       showCountdown: snapshotData.showCountdown !== false,
       showAddToCalendar: snapshotData.showAddToCalendar !== false,

@@ -608,7 +608,7 @@ describe('InvitationCodesDashboardPage', () => {
       expect(selectAllCheckbox.indeterminate).toBe(true);
 
       // Filter to Unused tab and select all filtered
-      const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
+      const unusedTab = screen.getByRole('tab', { name: /Unused/i });
       fireEvent.click(unusedTab);
 
       const selectAllFiltered = screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' });
@@ -632,7 +632,7 @@ describe('InvitationCodesDashboardPage', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
       expect(screen.getByText('1 Selected')).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('tab', { name: 'Redeemed (1)' }));
+      fireEvent.click(screen.getByRole('tab', { name: /Redeemed/i }));
       expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
     });
 

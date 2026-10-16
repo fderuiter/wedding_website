@@ -9,6 +9,24 @@ export const layoutTokenSchema = z.string().refine(
   { message: 'Invalid CSS length unit format.' }
 );
 
+export const cssTokenKeyRegex = /^--[a-zA-Z0-9_-]+$/;
+
+export function isValidCssTokenValue(val: string): boolean {
+  if (typeof val !== 'string') return false;
+  // Disallow CSS code injection characters and control syntax
+  if (/[;{}<>\r\n]|\/\*|\*\//.test(val)) return false;
+  return true;
+}
+
+export const ThemeTokensSchema = z.record(
+  z.string().regex(cssTokenKeyRegex, 'Invalid CSS token identifier format. Must start with "--" and contain alphanumeric characters, hyphens, or underscores.'),
+  z.string().refine((val) => isValidCssTokenValue(val), {
+    message: 'Invalid CSS token value or contains disallowed characters.',
+  })
+).default({});
+
+export type ThemeTokensDTO = z.infer<typeof ThemeTokensSchema>;
+
 export const RawUpdateAppConfigSchema = z.object({
   partner1Name: z.string().optional(),
   partner2Name: z.string().optional(),
@@ -40,6 +58,7 @@ export const RawUpdateAppConfigSchema = z.object({
   colorPrimary: z.string().regex(hexColorRegex).optional(),
   colorSecondary: z.string().regex(hexColorRegex).optional(),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic'),
+  themeTokens: ThemeTokensSchema.optional().default({}),
   layoutContainerMaxWidth: layoutTokenSchema.optional(),
   layoutGridGap: layoutTokenSchema.optional(),
   layoutCardPadding: layoutTokenSchema.optional(),
@@ -123,6 +142,7 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     colorPrimary: data.colorPrimary,
     colorSecondary: data.colorSecondary,
     themePreset: data.themePreset,
+    themeTokens: data.themeTokens,
     layoutContainerMaxWidth: data.layoutContainerMaxWidth,
     layoutGridGap: data.layoutGridGap,
     layoutCardPadding: data.layoutCardPadding,
@@ -315,6 +335,17 @@ export const AppConfigSchema = z.object({
   colorPrimary: z.string().default('#B91C1C'),
   colorSecondary: z.string().default('#B45309'),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic'),
+  themeTokens: z.union([
+    z.string().transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch (e) {
+        return {};
+      }
+    }),
+    ThemeTokensSchema,
+    z.record(z.string(), z.string())
+  ]).pipe(ThemeTokensSchema).default({}),
   layoutContainerMaxWidth: layoutTokenSchema.optional().default('64rem'),
   layoutGridGap: layoutTokenSchema.optional().default('1.5rem'),
   layoutCardPadding: layoutTokenSchema.optional().default('2rem'),

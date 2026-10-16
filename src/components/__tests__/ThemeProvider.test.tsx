@@ -534,6 +534,34 @@ describe('ThemeProvider Theme Presets', () => {
     expect(cssText).toContain('--dialog-bg: #231118;');
     expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
   });
+
+  it('injects custom themeTokens overrides into dynamic style block', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themeTokens: { '--btn-radius': '1.5rem', '--custom-accent-token': '#ff0055' } }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('--btn-radius: 1.5rem;');
+    expect(cssText).toContain('--custom-accent-token: #ff0055;');
+  });
+
+  it('sanitizes themeTokens values containing injection attempts', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themeTokens: { '--btn-radius': '1rem; color: red;', '--safe-token': '20px' } }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).not.toContain('--btn-radius: 1rem; color: red;');
+    expect(cssText).toContain('--safe-token: 20px;');
+  });
 });
 
 describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {

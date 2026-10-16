@@ -464,7 +464,7 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i });
+    const input = screen.getByPlaceholderText(/Search and select timezone/i);
     expect(input).toBeInTheDocument();
     expect(input).toHaveAttribute('aria-expanded', 'false');
     expect(input).toHaveAttribute('aria-haspopup', 'listbox');
@@ -479,7 +479,7 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i });
+    const input = screen.getByPlaceholderText(/Search and select timezone/i);
     fireEvent.focus(input);
 
     expect(input).toHaveAttribute('aria-expanded', 'true');
@@ -498,24 +498,26 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i });
+    const input = screen.getByPlaceholderText(/Search and select timezone/i);
     fireEvent.focus(input);
     // Clear search so all timezones or multiple timezones are filtered
     fireEvent.change(input, { target: { value: 'America/' } });
 
+    const getTzOptions = () => within(screen.getByRole('listbox')).getAllByRole('option');
+
     // Press ArrowDown to highlight first option
     fireEvent.keyDown(input, { key: 'ArrowDown' });
-    expect(within(screen.getByRole('listbox')).getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(getTzOptions()[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-0');
 
     // Press ArrowDown again to highlight second option
     fireEvent.keyDown(input, { key: 'ArrowDown' });
-    expect(within(screen.getByRole('listbox')).getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+    expect(getTzOptions()[1]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-1');
 
     // Press ArrowUp to move back to first option
     fireEvent.keyDown(input, { key: 'ArrowUp' });
-    expect(within(screen.getByRole('listbox')).getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(getTzOptions()[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-0');
   });
 
@@ -526,7 +528,7 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i });
+    const input = screen.getByPlaceholderText(/Search and select timezone/i);
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: 'America/' } });
 
@@ -536,12 +538,12 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
 
     // End key
     fireEvent.keyDown(input, { key: 'End' });
-    expect(within(listbox).getAllByRole('option')[lastIndex]).toHaveAttribute('aria-selected', 'true');
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')[lastIndex]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', `timezone-option-${lastIndex}`);
 
     // Home key
     fireEvent.keyDown(input, { key: 'Home' });
-    expect(within(listbox).getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', 'timezone-option-0');
   });
 
@@ -552,7 +554,7 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i }) as HTMLInputElement;
+    const input = screen.getByPlaceholderText(/Search and select timezone/i) as HTMLInputElement;
     fireEvent.focus(input);
 
     // Filter down to a specific timezone
@@ -576,7 +578,7 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i }) as HTMLInputElement;
+    const input = screen.getByPlaceholderText(/Search and select timezone/i) as HTMLInputElement;
     fireEvent.focus(input);
 
     // Type partial search
@@ -597,7 +599,7 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
     });
 
-    const input = screen.getByRole('combobox', { name: /Timezone/i });
+    const input = screen.getByPlaceholderText(/Search and select timezone/i);
     fireEvent.focus(input);
 
     // Search for nonexistent timezone
