@@ -33,8 +33,6 @@ export function use3DInteraction({
 
   const announce = useCallback((message: string) => {
     setLiveAnnouncement(message);
-    // Clear the announcement after a short delay so the same message can be announced again if repeated
-    setTimeout(() => setLiveAnnouncement(''), 1000);
   }, []);
 
   const handleKeyDown = useCallback(
