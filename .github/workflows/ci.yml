@@ -308,6 +308,7 @@ jobs:
         env:
           DB_PORT: "5433"
         run: |
+          lsof -ti:3000 | xargs kill -9 2>/dev/null || true
           docker compose build
           docker compose up -d app
 
