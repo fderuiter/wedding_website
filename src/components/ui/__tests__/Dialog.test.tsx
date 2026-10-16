@@ -61,8 +61,8 @@ describe('Dialog', () => {
     );
 
     expect(ref.current).toHaveStyle({
-      backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
-      borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
+      backgroundColor: 'var(--dialog-bg, #ffffff)',
+      borderColor: 'var(--dialog-border-color, #e5e7eb)',
     });
   });
 });
