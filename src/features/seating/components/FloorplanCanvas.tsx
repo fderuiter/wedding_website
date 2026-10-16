@@ -151,7 +151,7 @@ export function FloorplanCanvas({
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onClick={() => onSelectTable(null)}
-      className="relative w-full h-[650px] bg-slate-50 dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-white"
+      className="relative w-full h-[650px] bg-slate-50 dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
       style={{
         backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
         backgroundSize: '24px 24px',
