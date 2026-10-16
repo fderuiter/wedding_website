@@ -29,6 +29,11 @@
   --color-primary-text: #B91C1C;
   --color-secondary-text: #B45309;
 
+  --dialog-bg: var(--color-background);
+  --dialog-border-color: var(--color-border);
+  --dialog-title-color: var(--color-foreground);
+  --dialog-desc-color: #4B5563;
+
   --background: var(--color-background);
   --foreground: var(--color-foreground);
   --header-h: var(--spacing-header); /* Height of sticky header */
@@ -47,6 +52,11 @@
   --color-text-on-secondary: #171717;
   --color-primary-text: #FCA5A5;
   --color-secondary-text: #FDE68A;
+
+  --dialog-bg: var(--color-background);
+  --dialog-border-color: var(--color-border);
+  --dialog-title-color: var(--color-foreground);
+  --dialog-desc-color: #9CA3AF;
 
   --background: var(--color-background);
   --foreground: var(--color-foreground);
