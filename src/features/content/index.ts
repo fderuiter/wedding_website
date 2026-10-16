@@ -1,20 +1,7 @@
 export { ContentService, contentService } from './service';
 export { ContentRepository, contentRepository } from './repository';
-export {
-  AppConfigSchema,
-  RawUpdateAppConfigSchema,
-  UpdateAppConfigSchema,
-  FAQNodeSchema,
-  LogisticsNodeSchema,
-  ScheduleNodeSchema,
-  ScheduleDataSchema,
-  GenericNodeSchema,
-  ContentNodeSchema,
-} from './schemas';
-export type {
-  ContentNodeDTO,
-  AppConfigDTO,
-} from './schemas';
+export { ContentNodeAdminService } from './admin.service';
+export * from './schemas';
 export type { IContentRepository } from './types';
 
 

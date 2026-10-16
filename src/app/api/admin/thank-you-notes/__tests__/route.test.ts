@@ -2,7 +2,7 @@ import { GET } from '../route';
 import { PATCH } from '../[id]/route';
 import { POST as BATCH_POST } from '../batch/route';
 import { NextRequest } from 'next/server';
-import { thankYouService } from '@/features/registry/thank-you.service';
+import { thankYouService } from '@/features/registry';
 
 jest.mock('@/features/registry/thank-you.service', () => ({
   thankYouService: {

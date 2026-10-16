@@ -1,23 +1,11 @@
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
 export type { ProgressMetrics } from './thank-you.service';
+export { RegistryItemAdminService } from './admin.service';
+export { InvitationCodeAdminService } from './invitation-code.admin.service';
+export { useRegistry } from './hooks/useRegistry';
 export type { RegistryItem } from './types';
-export {
-  RegistryItemSchema,
-  RegistryItemBaseSchema,
-  ContributorSchema,
-  UpdateThankYouNoteSchema,
-  BatchUpdateThankYouNotesSchema,
-  ThankYouStatusEnum,
-  BatchImportInvitationCodeItemSchema,
-  translateSnapshotToActive,
-} from './schemas';
-export type {
-  ThankYouStatus,
-  UpdateThankYouNoteDTO,
-  BatchUpdateThankYouNotesDTO,
-  BatchImportInvitationCodesDTO,
-} from './schemas';
+export * from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
 export { default as EditItemPage } from './pages/edit-item';

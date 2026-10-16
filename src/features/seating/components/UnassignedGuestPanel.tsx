@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
 
 interface UnassignedGuestPanelProps {

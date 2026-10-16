@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { SeatingTableAdminService } from '@/features/seating/admin.service';
-import { AssignSeatSchema } from '@/features/seating/schemas';
+import { SeatingTableAdminService, AssignSeatSchema } from '@/features/seating';
 import { ApiError } from '@/utils/ApiError';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {

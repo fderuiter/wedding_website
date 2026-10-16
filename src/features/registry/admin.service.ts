@@ -2,7 +2,7 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
-import { handleMediaFields } from '@/features/admin/utils';
+import { handleMediaFields } from '@/features/admin';
 import { z } from 'zod';
 
 const RegistryItemInputSchema = deriveAdminInputSchema(RegistryItemSchema);

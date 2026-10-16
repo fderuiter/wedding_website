@@ -1,7 +1,7 @@
 'use client';
 
 import { SeatingTableDTO } from '../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 interface PrintableFloorplanProps {
   tables: SeatingTableDTO[];

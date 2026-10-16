@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InteractiveTimeline from '../InteractiveTimeline';
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { ContentNodeDTO } from '@/features/content';
 
 describe('InteractiveTimeline Component', () => {
   const sampleEvents: ContentNodeDTO[] = [

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RegistryPage from '../index';
-import { useRegistry } from '@/features/registry/hooks/useRegistry';
+import { useRegistry } from '@/features/registry';
 
 jest.mock('@/features/registry/hooks/useRegistry');
 

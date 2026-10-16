@@ -1,6 +1,6 @@
 import { LogisticsRepository } from '../repository';
 import { LogisticsService } from '../service';
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { ContentNodeDTO } from '@/features/content';
 
 describe('LogisticsRepository Chronological Sorting', () => {
   let repo: LogisticsRepository;

@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { formatDate } from '@/utils/intl';
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 
 export default function HistoryTimelinePage() {
   const [versions, setVersions] = useState<any[]>([]);

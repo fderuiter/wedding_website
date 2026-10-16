@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 import { useToast } from '@/components/ui/ToastProvider';
 import { formatDate } from '@/utils/intl';
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 
 interface AdminPreviewLayoutProps {
   children: React.ReactNode;

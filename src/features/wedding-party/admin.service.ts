@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { handleMediaFields } from '@/features/admin/utils';
+import { handleMediaFields } from '@/features/admin';
 import { WeddingPartyMemberSchema } from './schemas';
 import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
 

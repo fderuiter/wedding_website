@@ -1,7 +1,6 @@
 import { useEntityOrchestration } from '../useEntityOrchestration';
-import type { InvitationCodeDTO } from '@/features/registry/schemas';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
+import type { InvitationCodeDTO } from '@/features/registry';
+import { apiClient } from '@/features/admin';
 
 export function useAdminInvitationCodes() {
   return useEntityOrchestration<InvitationCodeDTO>({

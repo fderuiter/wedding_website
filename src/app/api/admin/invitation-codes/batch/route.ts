@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { BatchImportInvitationCodesSchema } from '@/features/registry/schemas';
-import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
+import { BatchImportInvitationCodesSchema, InvitationCodeAdminService } from '@/features/registry';
 import { formatZodError } from '@/utils/validation';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {

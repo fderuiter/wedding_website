@@ -3,7 +3,7 @@
 import { POST } from '../invitation-codes/batch/route';
 import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
+import { InvitationCodeAdminService } from '@/features/registry';
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),

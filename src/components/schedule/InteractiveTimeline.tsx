@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef } from 'react';
-import type { ContentNodeDTO } from '@/features/content/schemas';
+import type { ContentNodeDTO } from '@/features/content';
 import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
