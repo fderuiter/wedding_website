@@ -29,16 +29,136 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+interface ToastItemProps {
+  toast: Toast;
+  onClose: (id: string) => void;
+  duration?: number;
+}
+
+const ToastItem = ({ toast, onClose, duration = 5000 }: ToastItemProps) => {
+  const remainingRef = useRef<number>(duration);
+  const startTimeRef = useRef<number>(Date.now());
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoveredRef = useRef<boolean>(false);
+  const isFocusedRef = useRef<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
+
+  const startTimer = useCallback(() => {
+    if (remainingRef.current <= 0) {
+      onClose(toast.id);
+      return;
+    }
+    startTimeRef.current = Date.now();
+    isPausedRef.current = false;
+    timerRef.current = setTimeout(() => {
+      onClose(toast.id);
+    }, remainingRef.current);
+  }, [toast.id, onClose]);
+
+  const pauseTimer = useCallback(() => {
+    if (isPausedRef.current) return;
+    isPausedRef.current = true;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const elapsed = Date.now() - startTimeRef.current;
+    remainingRef.current = Math.max(0, remainingRef.current - elapsed);
+  }, []);
+
+  const resumeTimer = useCallback(() => {
+    if (!isPausedRef.current) return;
+    if (!isHoveredRef.current && !isFocusedRef.current) {
+      startTimer();
+    }
+  }, [startTimer]);
+
+  useEffect(() => {
+    startTimer();
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [startTimer]);
+
+  const handleMouseEnter = () => {
+    isHoveredRef.current = true;
+    pauseTimer();
+  };
+
+  const handleMouseLeave = () => {
+    isHoveredRef.current = false;
+    resumeTimer();
+  };
+
+  const handleFocus = () => {
+    isFocusedRef.current = true;
+    pauseTimer();
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) {
+      return;
+    }
+    isFocusedRef.current = false;
+    resumeTimer();
+  };
+
+  return (
+    <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      tabIndex={-1}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      className={`px-4 py-3 rounded shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto focus:outline-none ${
+        toast.type === 'success' ? 'bg-green-600 text-white' :
+          toast.type === 'error' ? 'bg-red-600 text-white' :
+            toast.type === 'confirm' ? 'bg-gray-800 text-white' :
+              'bg-blue-600 text-white'
+      }`}
+    >
+      <div className="flex justify-between items-center w-full gap-2">
+        <span>{toast.message}</span>
+        <div className="flex items-center gap-2">
+          {toast.action && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                toast.action?.onClick();
+                onClose(toast.id);
+              }}
+              className="text-xs px-2.5 py-1 bg-white/20 text-white hover:bg-white/30 border-white/40 focus:ring-1 focus:ring-white"
+            >
+              {toast.action.label}
+            </Button>
+          )}
+          {toast.type !== 'confirm' && (
+            <Button 
+              variant="ghost"
+              size="sm"
+              onClick={() => onClose(toast.id)} 
+              className="ml-2 text-white hover:text-white dark:hover:text-white hover:bg-white/20 dark:hover:bg-white/20"
+              aria-label="Close notification"
+            >
+              &times;
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const removeToast = useCallback((id: string) => {
-    const timer = timersRef.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      timersRef.current.delete(id);
-    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -51,14 +171,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   ) => {
     const id = generateSecureUUID();
     setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel, action }]);
-    if (type !== 'confirm') {
-      const timer = setTimeout(() => {
-        timersRef.current.delete(id);
-        removeToast(id);
-      }, 5000);
-      timersRef.current.set(id, timer);
-    }
-  }, [removeToast]);
+  }, []);
 
   const confirm = useCallback((message: string): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -74,14 +187,6 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
       setToasts((prev) => [...prev, { id, message, type: 'confirm', onConfirm, onCancel }]);
     });
   }, [removeToast]);
-
-  useEffect(() => {
-    const timers = timersRef.current;
-    return () => {
-      timers.forEach((timer) => clearTimeout(timer));
-      timers.clear();
-    };
-  }, []);
 
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast, confirm }}>
@@ -112,54 +217,26 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         </Dialog>
       ))}
       <div 
-        aria-live="polite" 
-        aria-atomic="true"
         className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"
       >
-        {toasts.filter(t => t.type !== 'confirm').map((toast) => (
-          <div
-            key={toast.id}
-            role={toast.type === 'error' ? 'alert' : 'status'}
-            className={`px-4 py-3 rounded shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto ${
-              toast.type === 'success' ? 'bg-green-600 text-white' :
-                toast.type === 'error' ? 'bg-red-600 text-white' :
-                  toast.type === 'confirm' ? 'bg-gray-800 text-white' :
-                    'bg-blue-600 text-white'
-            }`}
-          >
-            <div className="flex justify-between items-center w-full gap-2">
-              <span>{toast.message}</span>
-              <div className="flex items-center gap-2">
-                {toast.action && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toast.action?.onClick();
-                      removeToast(toast.id);
-                    }}
-                    className="text-xs px-2.5 py-1 bg-white/20 text-white hover:bg-white/30 border-white/40 focus:ring-1 focus:ring-white"
-                  >
-                    {toast.action.label}
-                  </Button>
-                )}
-                {toast.type !== 'confirm' && (
-                  <Button 
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeToast(toast.id)} 
-                    className="ml-2 text-white hover:text-white dark:hover:text-white hover:bg-white/20 dark:hover:bg-white/20"
-                    aria-label="Close notification"
-                  >
-                    &times;
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+        <div
+          aria-live="assertive"
+          aria-atomic="true"
+          className="flex flex-col gap-2 pointer-events-none"
+        >
+          {toasts.filter(t => t.type === 'error').map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onClose={removeToast} />
+          ))}
+        </div>
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          className="flex flex-col gap-2 pointer-events-none"
+        >
+          {toasts.filter(t => t.type !== 'error' && t.type !== 'confirm').map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onClose={removeToast} />
+          ))}
+        </div>
       </div>
     </ToastContext.Provider>
   );
@@ -172,4 +249,3 @@ export const useToast = () => {
   }
   return context;
 };
-

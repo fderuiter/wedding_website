@@ -500,4 +500,35 @@ describe('ThemeProvider Theme Presets', () => {
     expect(getByTestId('roughness')).toHaveTextContent('0.1');
     expect(getByTestId('env-map-intensity')).toHaveTextContent('1.8');
   });
+
+  it('injects dark preset tokens into .dark block in dynamic style element', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem).not.toBeNull();
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('.dark {');
+    expect(cssText).toContain('--dialog-bg: #0f172a;');
+    expect(cssText).toContain('--dialog-border-color: #1e293b;');
+  });
+
+  it('updates .dark block tokens when preset changes', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themePreset: 'romantic' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('.dark {');
+    expect(cssText).toContain('--dialog-bg: #231118;');
+    expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
+  });
 });

@@ -254,7 +254,8 @@ function generateDynamicStyles(
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
   const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
-  const presetTokens = getPresetTokens(preset);
+  const lightPresetTokens = getPresetTokens(preset, 'light');
+  const darkPresetTokens = getPresetTokens(preset, 'dark');
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
   const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
@@ -266,7 +267,13 @@ function generateDynamicStyles(
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
 
-  const presetCssRules = Object.entries(presetTokens)
+  const lightPresetCssRules = Object.entries(lightPresetTokens)
+    .filter(([key]) => key !== 'darkTokens')
+    .map(([key, value]) => `      ${key}: ${value};`)
+    .join('\n');
+
+  const darkPresetCssRules = Object.entries(darkPresetTokens)
+    .filter(([key]) => key !== 'darkTokens')
     .map(([key, value]) => `      ${key}: ${value};`)
     .join('\n');
 
@@ -276,7 +283,7 @@ function generateDynamicStyles(
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
-${presetCssRules}
+${lightPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
       --card-padding: ${safeCardPadding};
@@ -320,6 +327,7 @@ ${presetCssRules}
     }
 
     .dark {
+${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
       --card-padding: ${safeCardPadding};

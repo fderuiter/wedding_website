@@ -33,6 +33,8 @@ describe('RegistryPage', () => {
     setShowGroupGiftsOnly: jest.fn(),
     showAvailableOnly: false,
     setShowAvailableOnly: jest.fn(),
+    sortOption: 'default',
+    setSortOption: jest.fn(),
     selectedItem: null,
     isModalOpen: false,
     setVisibleItemsCount: jest.fn(),
@@ -112,5 +114,25 @@ describe('RegistryPage', () => {
 
     expect(screen.getByText(/no gifts match the current filters/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+  });
+
+  it('renders sort select control and calls setSortOption on change', () => {
+    const mockSetSortOption = jest.fn();
+    mockUseRegistry.mockReturnValue({
+      ...defaultMockState,
+      setSortOption: mockSetSortOption,
+    } as any);
+
+    render(<RegistryPage />);
+
+    const sortSelect = screen.getByRole('combobox', { name: /sort gifts/i });
+    expect(sortSelect).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Default' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Price: Low to High' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Price: High to Low' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Most Wanted' })).toBeInTheDocument();
+
+    fireEvent.change(sortSelect, { target: { value: 'price-asc' } });
+    expect(mockSetSortOption).toHaveBeenCalledWith('price-asc');
   });
 });
