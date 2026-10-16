@@ -400,6 +400,7 @@ export default function SeatingChartAdminPage() {
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
               onOpenSeatAssignModal={(tableId, seatNumber) => setAssignSeatTarget({ tableId, seatNumber })}
+              onAddTable={handleCreateTable}
             />
 
             {/* Selected Table Inspector Bar */}
