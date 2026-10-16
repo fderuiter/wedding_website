@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface UseFormPersistOptions {
   enabled?: boolean;
+  debounceMs?: number;
 }
 
 /**
@@ -18,7 +19,7 @@ export function useFormPersist<T>(
   initialValues: T,
   options: UseFormPersistOptions = {}
 ): [T, React.Dispatch<React.SetStateAction<T>>, () => void] {
-  const { enabled = true } = options;
+  const { enabled = true, debounceMs = 0 } = options;
 
   // Initialize state from sessionStorage if available, falling back to initialValues
   const [state, setState] = useState<T>(() => {
@@ -78,21 +79,31 @@ export function useFormPersist<T>(
     }
   }, [key, enabled, initialValues]);
 
-  // Sync state changes to sessionStorage
+  // Sync state changes to sessionStorage with debouncing to prevent main-thread jank on large form state edits
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') {
       return;
     }
-    try {
-      if (state === undefined || state === null) {
-        window.sessionStorage.removeItem(key);
-      } else {
-        window.sessionStorage.setItem(key, JSON.stringify(state));
+
+    const handler = () => {
+      try {
+        if (state === undefined || state === null) {
+          window.sessionStorage.removeItem(key);
+        } else {
+          window.sessionStorage.setItem(key, JSON.stringify(state));
+        }
+      } catch (err) {
+        console.warn(`useFormPersist: Failed to write key "${key}" to sessionStorage:`, err);
       }
-    } catch (err) {
-      console.warn(`useFormPersist: Failed to write key "${key}" to sessionStorage:`, err);
+    };
+
+    if (debounceMs > 0) {
+      const timer = setTimeout(handler, debounceMs);
+      return () => clearTimeout(timer);
+    } else {
+      handler();
     }
-  }, [key, state, enabled]);
+  }, [key, state, enabled, debounceMs]);
 
   // Method to clear persisted state from sessionStorage
   const clearPersistedState = useCallback(() => {

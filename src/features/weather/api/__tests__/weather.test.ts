@@ -1,4 +1,5 @@
 import { GET } from '@/app/api/weather/route';
+import { getWeatherForecast } from '@/features/weather/api/weather-proxy';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 import { getAppConfig, APP_DEFAULTS } from '@/lib/config';
@@ -56,6 +57,9 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
+    );
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(true);
     expect(body.data.daily).toEqual(mockWeatherData.daily);
@@ -84,6 +88,9 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
+    );
     const body = await response.json();
     expect(calledOpenMeteo).toBe(false);
     expect(body.data.isLiveForecast).toBe(false);
@@ -124,6 +131,9 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
+    );
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(true);
     expect(body.data.daily).toEqual(mockWeatherData.daily);
@@ -150,6 +160,9 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
+    );
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(false);
     expect(body.data.daily).toBeDefined();
@@ -176,9 +189,42 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
+    );
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(false);
     expect(body.data.daily).toBeDefined();
+  });
+
+  it('should call fetch with revalidate option set to 3600', async () => {
+    const nearDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    const mockConfig = {
+      ...APP_DEFAULTS,
+      weddingDate: nearDate,
+      timezone: 'UTC',
+      latitude: 40.7128,
+      longitude: -74.006,
+      modules: { weather: { enabled: true } },
+    };
+    mockGetAppConfig.mockResolvedValue(mockConfig as any);
+
+    const fetchSpy = jest.spyOn(global, 'fetch');
+
+    server.use(
+      http.get('https://api.open-meteo.com/v1/forecast', () => {
+        return HttpResponse.json({ daily: {} });
+      })
+    );
+
+    await getWeatherForecast();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.open-meteo.com/v1/forecast'),
+      expect.objectContaining({
+        next: { revalidate: 3600 },
+      })
+    );
   });
 });
 

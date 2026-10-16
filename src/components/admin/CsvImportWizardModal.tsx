@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label } from '@/components/ui/forms';
@@ -8,10 +8,11 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import {
   parseCsvContent,
-  validateCsvRows,
+  validateSingleCsvRow,
   generateSampleCsvTemplate,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
+  ColumnMappingOptions,
 } from '@/utils/csv';
 
 interface CsvImportWizardModalProps {
@@ -25,8 +26,16 @@ interface EditableRow {
   guestName: string;
   code: string;
   email: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
   dietaryNotes: string;
   plusOneAllocations: string;
+  plusOneFirstName: string;
+  plusOneLastName: string;
   extraFields: Record<string, string>;
 }
 
@@ -38,8 +47,16 @@ interface CsvImportPersistedState {
   guestNameCol: string;
   codeCol: string;
   emailCol: string;
+  addressLine1Col: string;
+  addressLine2Col: string;
+  cityCol: string;
+  stateCol: string;
+  zipCodeCol: string;
+  countryCol: string;
   dietaryNotesCol: string;
   plusOneCol: string;
+  plusOneFirstNameCol: string;
+  plusOneLastNameCol: string;
   selectedExtraCols: string[];
   collisionStrategy: 'skip' | 'update' | 'reject';
   editableRows: EditableRow[];
@@ -53,12 +70,332 @@ const initialCsvImportState: CsvImportPersistedState = {
   guestNameCol: '',
   codeCol: '',
   emailCol: '',
+  addressLine1Col: '',
+  addressLine2Col: '',
+  cityCol: '',
+  stateCol: '',
+  zipCodeCol: '',
+  countryCol: '',
   dietaryNotesCol: '',
   plusOneCol: '',
+  plusOneFirstNameCol: '',
+  plusOneLastNameCol: '',
   selectedExtraCols: [],
   collisionStrategy: 'skip',
   editableRows: [],
 };
+
+const EDITABLE_MAPPING: ColumnMappingOptions = {
+  guestNameCol: 'GuestNameField',
+  codeCol: 'CodeField',
+  emailCol: 'EmailField',
+  addressLine1Col: 'AddressLine1Field',
+  addressLine2Col: 'AddressLine2Field',
+  cityCol: 'CityField',
+  stateCol: 'StateField',
+  zipCodeCol: 'ZipCodeField',
+  countryCol: 'CountryField',
+  dietaryNotesCol: 'DietaryNotesField',
+  plusOneCol: 'PlusOneField',
+  plusOneFirstNameCol: 'PlusOneFirstNameField',
+  plusOneLastNameCol: 'PlusOneLastNameField',
+};
+
+const HOISTED_EDITABLE_MAPPED_COLS = new Set([
+  'GuestNameField',
+  'CodeField',
+  'EmailField',
+  'AddressLine1Field',
+  'AddressLine2Field',
+  'CityField',
+  'StateField',
+  'ZipCodeField',
+  'CountryField',
+  'DietaryNotesField',
+  'PlusOneField',
+  'PlusOneFirstNameField',
+  'PlusOneLastNameField',
+]);
+
+function toRowRecord(r: EditableRow): Record<string, string> {
+  const rowObj: Record<string, string> = {
+    GuestNameField: r.guestName,
+    CodeField: r.code,
+    EmailField: r.email,
+    AddressLine1Field: r.addressLine1,
+    AddressLine2Field: r.addressLine2,
+    CityField: r.city,
+    StateField: r.state,
+    ZipCodeField: r.zipCode,
+    CountryField: r.country,
+    DietaryNotesField: r.dietaryNotes,
+    PlusOneField: r.plusOneAllocations,
+    PlusOneFirstNameField: r.plusOneFirstName,
+    PlusOneLastNameField: r.plusOneLastName,
+  };
+  if (r.extraFields) {
+    Object.entries(r.extraFields).forEach(([k, v]) => {
+      rowObj[k] = v;
+    });
+  }
+  return rowObj;
+}
+
+function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: Set<string>) {
+  const freqMap = new Map<string, number>();
+  rows.forEach((r) => {
+    const rawCode = (r.code || '').trim().toUpperCase();
+    if (rawCode) {
+      freqMap.set(rawCode, (freqMap.get(rawCode) || 0) + 1);
+    }
+  });
+
+  const mapping: ColumnMappingOptions = {
+    ...EDITABLE_MAPPING,
+    extraCols,
+  };
+
+  const parsed = rows.map((r, idx) =>
+    validateSingleCsvRow(toRowRecord(r), idx, mapping, freqMap, dbSet, HOISTED_EDITABLE_MAPPED_COLS)
+  );
+
+  return { parsed, freqMap };
+}
+
+interface EditableTableRowProps {
+  row: ParsedCsvRow;
+  editableRow: EditableRow;
+  index: number;
+  onCellEdit: (
+    index: number,
+    field:
+      | 'guestName'
+      | 'code'
+      | 'email'
+      | 'addressLine1'
+      | 'addressLine2'
+      | 'city'
+      | 'state'
+      | 'zipCode'
+      | 'country'
+      | 'dietaryNotes'
+      | 'plusOneAllocations'
+      | 'plusOneFirstName'
+      | 'plusOneLastName',
+    value: string
+  ) => void;
+  onExtraFieldEdit: (index: number, key: string, value: string) => void;
+  onDeleteRow: (index: number) => void;
+}
+
+const EditableTableRow = React.memo(function EditableTableRow({
+  row,
+  editableRow,
+  index,
+  onCellEdit,
+  onExtraFieldEdit,
+  onDeleteRow,
+}: EditableTableRowProps) {
+  return (
+    <tr
+      className={
+        !row.isValid
+          ? 'bg-red-50/70 dark:bg-red-950/30 text-gray-900 dark:text-zinc-100'
+          : row.warnings.length > 0
+            ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
+            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
+      }
+    >
+      <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.guestName || ''}
+          aria-label={`Guest Name for row ${row.rowIndex}`}
+          onChange={(e) => onCellEdit(index, 'guestName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.code || ''}
+          aria-label={`Invitation Code for row ${row.rowIndex}`}
+          placeholder="Auto-generate"
+          onChange={(e) => onCellEdit(index, 'code', e.target.value)}
+          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 uppercase"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="email"
+          value={editableRow?.email || ''}
+          aria-label={`Email for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'email', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.addressLine1 || ''}
+          aria-label={`Address Line 1 for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'addressLine1', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.addressLine2 || ''}
+          aria-label={`Address Line 2 for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'addressLine2', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.city || ''}
+          aria-label={`City for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'city', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.state || ''}
+          aria-label={`State for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'state', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.zipCode || ''}
+          aria-label={`ZIP Code for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'zipCode', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.country || ''}
+          aria-label={`Country for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'country', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.dietaryNotes || ''}
+          aria-label={`Dietary Notes for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'dietaryNotes', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2 text-center">
+        <input
+          type="number"
+          min="0"
+          value={editableRow?.plusOneAllocations ?? '0'}
+          aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
+          onChange={(e) => onCellEdit(index, 'plusOneAllocations', e.target.value)}
+          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.plusOneFirstName || ''}
+          aria-label={`Plus-One First Name for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'plusOneFirstName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.plusOneLastName || ''}
+          aria-label={`Plus-One Last Name for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'plusOneLastName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        {Object.keys(editableRow?.extraFields || {}).length > 0 ? (
+          <div className="space-y-1">
+            {Object.entries(editableRow.extraFields).map(([k, v]) => (
+              <div key={k} className="flex items-center gap-1 text-[11px]">
+                <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
+                  {k}:
+                </span>
+                <input
+                  type="text"
+                  value={v}
+                  aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
+                  onChange={(e) => onExtraFieldEdit(index, k, e.target.value)}
+                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="text-gray-400 italic text-[11px]">None</span>
+        )}
+      </td>
+      <td className="p-2 space-y-1">
+        {row.isValid ? (
+          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
+            Valid
+          </span>
+        ) : (
+          row.errors.map((err, ei) => (
+            <span
+              key={ei}
+              className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
+            >
+              ✕ {err}
+            </span>
+          ))
+        )}
+        {row.warnings.map((warn, wi) => (
+          <span
+            key={wi}
+            className="block text-[10px] font-medium text-amber-600 dark:text-amber-400"
+          >
+            ⚠ {warn}
+          </span>
+        ))}
+      </td>
+      <td className="p-2 text-center">
+        <button
+          type="button"
+          onClick={() => onDeleteRow(index)}
+          className="text-red-500 hover:text-red-700 font-bold text-sm px-1"
+          title="Remove row"
+          aria-label={`Remove row ${row.rowIndex}`}
+        >
+          &times;
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 export function CsvImportWizardModal({
   isOpen,
@@ -81,8 +418,16 @@ export function CsvImportWizardModal({
     guestNameCol,
     codeCol,
     emailCol,
+    addressLine1Col,
+    addressLine2Col,
+    cityCol,
+    stateCol,
+    zipCodeCol,
+    countryCol,
     dietaryNotesCol,
     plusOneCol,
+    plusOneFirstNameCol,
+    plusOneLastNameCol,
     selectedExtraCols,
     collisionStrategy,
     editableRows,
@@ -101,8 +446,16 @@ export function CsvImportWizardModal({
   const setGuestNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, guestNameCol: val }));
   const setCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, codeCol: val }));
   const setEmailCol = (val: string) => setCsvFormState((prev) => ({ ...prev, emailCol: val }));
+  const setAddressLine1Col = (val: string) => setCsvFormState((prev) => ({ ...prev, addressLine1Col: val }));
+  const setAddressLine2Col = (val: string) => setCsvFormState((prev) => ({ ...prev, addressLine2Col: val }));
+  const setCityCol = (val: string) => setCsvFormState((prev) => ({ ...prev, cityCol: val }));
+  const setStateCol = (val: string) => setCsvFormState((prev) => ({ ...prev, stateCol: val }));
+  const setZipCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, zipCodeCol: val }));
+  const setCountryCol = (val: string) => setCsvFormState((prev) => ({ ...prev, countryCol: val }));
   const setDietaryNotesCol = (val: string) => setCsvFormState((prev) => ({ ...prev, dietaryNotesCol: val }));
   const setPlusOneCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneCol: val }));
+  const setPlusOneFirstNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneFirstNameCol: val }));
+  const setPlusOneLastNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneLastNameCol: val }));
   const setSelectedExtraCols = (
     val: string[] | ((prev: string[]) => string[])
   ) => {
@@ -187,16 +540,32 @@ export function CsvImportWizardModal({
       setGuestNameCol(parsed.suggestedGuestNameCol);
       setCodeCol(parsed.suggestedCodeCol);
       setEmailCol(parsed.suggestedEmailCol || '');
+      setAddressLine1Col(parsed.suggestedAddressLine1Col || '');
+      setAddressLine2Col(parsed.suggestedAddressLine2Col || '');
+      setCityCol(parsed.suggestedCityCol || '');
+      setStateCol(parsed.suggestedStateCol || '');
+      setZipCodeCol(parsed.suggestedZipCodeCol || '');
+      setCountryCol(parsed.suggestedCountryCol || '');
       setDietaryNotesCol(parsed.suggestedDietaryNotesCol || '');
       setPlusOneCol(parsed.suggestedPlusOneCol || '');
+      setPlusOneFirstNameCol(parsed.suggestedPlusOneFirstNameCol || '');
+      setPlusOneLastNameCol(parsed.suggestedPlusOneLastNameCol || '');
 
       const mappedStandard = new Set(
         [
           parsed.suggestedGuestNameCol,
           parsed.suggestedCodeCol,
           parsed.suggestedEmailCol,
+          parsed.suggestedAddressLine1Col,
+          parsed.suggestedAddressLine2Col,
+          parsed.suggestedCityCol,
+          parsed.suggestedStateCol,
+          parsed.suggestedZipCodeCol,
+          parsed.suggestedCountryCol,
           parsed.suggestedDietaryNotesCol,
           parsed.suggestedPlusOneCol,
+          parsed.suggestedPlusOneFirstNameCol,
+          parsed.suggestedPlusOneLastNameCol,
         ].filter(Boolean)
       );
       setSelectedExtraCols(parsed.headers.filter((h) => !mappedStandard.has(h)));
@@ -224,8 +593,16 @@ export function CsvImportWizardModal({
         guestName: (r[guestNameCol] || '').trim(),
         code: codeCol ? (r[codeCol] || '').trim().toUpperCase() : '',
         email: emailCol ? (r[emailCol] || '').trim() : '',
+        addressLine1: addressLine1Col ? (r[addressLine1Col] || '').trim() : '',
+        addressLine2: addressLine2Col ? (r[addressLine2Col] || '').trim() : '',
+        city: cityCol ? (r[cityCol] || '').trim() : '',
+        state: stateCol ? (r[stateCol] || '').trim() : '',
+        zipCode: zipCodeCol ? (r[zipCodeCol] || '').trim() : '',
+        country: countryCol ? (r[countryCol] || '').trim() : '',
         dietaryNotes: dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : '',
         plusOneAllocations: plusOneCol ? (r[plusOneCol] || '').trim() : '0',
+        plusOneFirstName: plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : '',
+        plusOneLastName: plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : '',
         extraFields,
       };
     });
@@ -234,55 +611,135 @@ export function CsvImportWizardModal({
     setStep(3);
   };
 
-  // Dry-run validation of editable rows
-  const validatedRows: ParsedCsvRow[] = useMemo(() => {
-    const recordsMap = editableRows.map((r) => {
-      const rowObj: Record<string, string> = {
-        GuestNameField: r.guestName,
-        CodeField: r.code,
-        EmailField: r.email,
-        DietaryNotesField: r.dietaryNotes,
-        PlusOneField: r.plusOneAllocations,
-      };
-      Object.entries(r.extraFields || {}).forEach(([k, v]) => {
-        rowObj[k] = v;
-      });
-      return rowObj;
-    });
+  // Incremental row validation state
+  const [validatedRows, setValidatedRows] = useState<ParsedCsvRow[]>([]);
+  const codeFrequencyRef = useRef<Map<string, number>>(new Map());
 
-    return validateCsvRows(
-      recordsMap,
-      {
-        guestNameCol: 'GuestNameField',
-        codeCol: 'CodeField',
-        emailCol: 'EmailField',
-        dietaryNotesCol: 'DietaryNotesField',
-        plusOneCol: 'PlusOneField',
-        extraCols: selectedExtraCols,
-      },
-      existingDbSet
-    );
-  }, [editableRows, selectedExtraCols, existingDbSet]);
+  const editableRowsRef = useRef(editableRows);
+  editableRowsRef.current = editableRows;
+
+  const selectedExtraColsRef = useRef(selectedExtraCols);
+  selectedExtraColsRef.current = selectedExtraCols;
+
+  const existingDbSetRef = useRef(existingDbSet);
+  existingDbSetRef.current = existingDbSet;
+
+  // Synchronize full validation when step 3 is entered, row count changes, or mapping/DB set changes
+  useEffect(() => {
+    if (step === 3 && editableRows.length > 0) {
+      const { parsed, freqMap } = computeFullValidation(editableRows, selectedExtraCols, existingDbSet);
+      codeFrequencyRef.current = freqMap;
+      setValidatedRows(parsed);
+    } else if (step !== 3) {
+      setValidatedRows([]);
+      codeFrequencyRef.current.clear();
+    }
+  }, [step, editableRows.length, selectedExtraCols, existingDbSet]);
 
   const validCount = useMemo(() => validatedRows.filter((r) => r.isValid).length, [validatedRows]);
   const invalidCount = useMemo(() => validatedRows.filter((r) => !r.isValid).length, [validatedRows]);
 
-  const handleCellEdit = (
+  const handleCellEdit = useCallback((
     index: number,
-    field: 'guestName' | 'code' | 'email' | 'dietaryNotes' | 'plusOneAllocations',
+    field:
+      | 'guestName'
+      | 'code'
+      | 'email'
+      | 'addressLine1'
+      | 'addressLine2'
+      | 'city'
+      | 'state'
+      | 'zipCode'
+      | 'country'
+      | 'dietaryNotes'
+      | 'plusOneAllocations'
+      | 'plusOneFirstName'
+      | 'plusOneLastName',
     value: string
   ) => {
+    const updatedValue = field === 'code' ? value.toUpperCase() : value;
+    const currentEditable = editableRowsRef.current;
+    const oldRow = currentEditable[index];
+
     setEditableRows((prev) => {
       const next = [...prev];
       next[index] = {
         ...next[index],
-        [field]: field === 'code' ? value.toUpperCase() : value,
+        [field]: updatedValue,
       };
       return next;
     });
-  };
 
-  const handleExtraFieldEdit = (index: number, key: string, value: string) => {
+    setValidatedRows((prevValidated) => {
+      if (!prevValidated || prevValidated.length !== currentEditable.length) {
+        return prevValidated;
+      }
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: selectedExtraColsRef.current,
+      };
+
+      if (field !== 'code') {
+        const updatedEditableRow = {
+          ...currentEditable[index],
+          [field]: value,
+        };
+        const nextValidated = [...prevValidated];
+        nextValidated[index] = validateSingleCsvRow(
+          toRowRecord(updatedEditableRow),
+          index,
+          mapping,
+          codeFrequencyRef.current,
+          existingDbSetRef.current,
+          HOISTED_EDITABLE_MAPPED_COLS
+        );
+        return nextValidated;
+      } else {
+        const oldCode = (oldRow?.code || '').trim().toUpperCase();
+        const newCode = (value || '').trim().toUpperCase();
+
+        if (oldCode === newCode) return prevValidated;
+
+        const freqMap = codeFrequencyRef.current;
+        if (oldCode) {
+          const count = freqMap.get(oldCode) || 0;
+          if (count <= 1) freqMap.delete(oldCode);
+          else freqMap.set(oldCode, count - 1);
+        }
+        if (newCode) {
+          freqMap.set(newCode, (freqMap.get(newCode) || 0) + 1);
+        }
+
+        const nextValidated = [...prevValidated];
+        const updatedEditableRow = {
+          ...currentEditable[index],
+          code: newCode,
+        };
+
+        for (let i = 0; i < currentEditable.length; i++) {
+          const rCode = i === index ? newCode : (currentEditable[i].code || '').trim().toUpperCase();
+          if (i === index || rCode === oldCode || rCode === newCode) {
+            const rowToVal = i === index ? updatedEditableRow : currentEditable[i];
+            nextValidated[i] = validateSingleCsvRow(
+              toRowRecord(rowToVal),
+              i,
+              mapping,
+              freqMap,
+              existingDbSetRef.current,
+              HOISTED_EDITABLE_MAPPED_COLS
+            );
+          }
+        }
+
+        return nextValidated;
+      }
+    });
+  }, [setEditableRows]);
+
+  const handleExtraFieldEdit = useCallback((index: number, key: string, value: string) => {
+    const currentEditable = editableRowsRef.current;
+
     setEditableRows((prev) => {
       const next = [...prev];
       const updatedExtra = { ...next[index].extraFields, [key]: value };
@@ -292,11 +749,74 @@ export function CsvImportWizardModal({
       };
       return next;
     });
-  };
 
-  const handleDeleteRow = (index: number) => {
-    setEditableRows((prev) => prev.filter((_, i) => i !== index));
-  };
+    setValidatedRows((prevValidated) => {
+      if (!prevValidated || prevValidated.length !== currentEditable.length) return prevValidated;
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: selectedExtraColsRef.current,
+      };
+
+      const updatedEditableRow = {
+        ...currentEditable[index],
+        extraFields: { ...currentEditable[index].extraFields, [key]: value },
+      };
+
+      const nextValidated = [...prevValidated];
+      nextValidated[index] = validateSingleCsvRow(
+        toRowRecord(updatedEditableRow),
+        index,
+        mapping,
+        codeFrequencyRef.current,
+        existingDbSetRef.current,
+        HOISTED_EDITABLE_MAPPED_COLS
+      );
+      return nextValidated;
+    });
+  }, [setEditableRows]);
+
+  const handleDeleteRow = useCallback((index: number) => {
+    const currentEditable = editableRowsRef.current;
+    const deletedRow = currentEditable[index];
+    const deletedCode = (deletedRow?.code || '').trim().toUpperCase();
+
+    const remainingEditable = currentEditable.filter((_, i) => i !== index);
+    setEditableRows(remainingEditable);
+
+    setValidatedRows((prevValidated) => {
+      if (!prevValidated) return [];
+
+      const freqMap = codeFrequencyRef.current;
+      if (deletedCode) {
+        const count = freqMap.get(deletedCode) || 0;
+        if (count <= 1) freqMap.delete(deletedCode);
+        else freqMap.set(deletedCode, count - 1);
+      }
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: selectedExtraColsRef.current,
+      };
+
+      const remainingValidated = prevValidated.filter((_, i) => i !== index);
+
+      return remainingValidated.map((row, i) => {
+        const rCode = (remainingEditable[i].code || '').trim().toUpperCase();
+        if (rCode === deletedCode) {
+          return validateSingleCsvRow(
+            toRowRecord(remainingEditable[i]),
+            i,
+            mapping,
+            freqMap,
+            existingDbSetRef.current,
+            HOISTED_EDITABLE_MAPPED_COLS
+          );
+        }
+        return { ...row, rowIndex: i + 1 };
+      });
+    });
+  }, [setEditableRows]);
 
   const toggleExtraCol = (header: string) => {
     setSelectedExtraCols((prev) =>
@@ -322,8 +842,16 @@ export function CsvImportWizardModal({
           guestName: r.guestName,
           code: r.code || undefined,
           email: r.email || undefined,
+          addressLine1: r.addressLine1 || undefined,
+          addressLine2: r.addressLine2 || undefined,
+          city: r.city || undefined,
+          state: r.state || undefined,
+          zipCode: r.zipCode || undefined,
+          country: r.country || undefined,
           dietaryNotes: r.dietaryNotes || undefined,
           plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+          plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+          plusOneLastName: r.plusOneLastName.trim() || undefined,
           extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
         })),
         collisionStrategy,
@@ -365,8 +893,38 @@ export function CsvImportWizardModal({
 
   // Get unmapped headers for custom field checkbox selection
   const mappedStandardHeaders = useMemo(() => {
-    return new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
-  }, [guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol]);
+    return new Set(
+      [
+        guestNameCol,
+        codeCol,
+        emailCol,
+        addressLine1Col,
+        addressLine2Col,
+        cityCol,
+        stateCol,
+        zipCodeCol,
+        countryCol,
+        dietaryNotesCol,
+        plusOneCol,
+        plusOneFirstNameCol,
+        plusOneLastNameCol,
+      ].filter(Boolean)
+    );
+  }, [
+    guestNameCol,
+    codeCol,
+    emailCol,
+    addressLine1Col,
+    addressLine2Col,
+    cityCol,
+    stateCol,
+    zipCodeCol,
+    countryCol,
+    dietaryNotesCol,
+    plusOneCol,
+    plusOneFirstNameCol,
+    plusOneLastNameCol,
+  ]);
 
   const availableCustomHeaders = useMemo(() => {
     return csvHeaders.filter((h) => !mappedStandardHeaders.has(h));
@@ -379,7 +937,12 @@ export function CsvImportWizardModal({
       title={
         <div className="flex items-center justify-between">
           <span className="font-extrabold text-xl text-primary">Import Guest Invitation Codes</span>
-          <span className="text-xs font-semibold px-2.5 py-1 bg-gray-100 dark:bg-zinc-800 rounded-full text-gray-600 dark:text-zinc-300">
+          <span
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="text-xs font-semibold px-2.5 py-1 bg-gray-100 dark:bg-zinc-800 rounded-full text-gray-600 dark:text-zinc-300"
+          >
             Step {step} of 4
           </span>
         </div>
@@ -388,15 +951,45 @@ export function CsvImportWizardModal({
     >
       <div className="space-y-6">
         {/* Step Indicator */}
-        <div className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">
-          <span className={step >= 1 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>1. Upload File</span>
-          <span>&rarr;</span>
-          <span className={step >= 2 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>2. Map Columns</span>
-          <span>&rarr;</span>
-          <span className={step >= 3 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>3. Review & Validate</span>
-          <span>&rarr;</span>
-          <span className={step === 4 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>4. Complete</span>
-        </div>
+        <nav aria-label="Import progress">
+          <ol className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">
+            <li>
+              <span
+                aria-current={step === 1 ? 'step' : undefined}
+                className={step >= 1 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                1. Upload File
+              </span>
+            </li>
+            <span aria-hidden="true">&rarr;</span>
+            <li>
+              <span
+                aria-current={step === 2 ? 'step' : undefined}
+                className={step >= 2 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                2. Map Columns
+              </span>
+            </li>
+            <span aria-hidden="true">&rarr;</span>
+            <li>
+              <span
+                aria-current={step === 3 ? 'step' : undefined}
+                className={step >= 3 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                3. Review & Validate
+              </span>
+            </li>
+            <span aria-hidden="true">&rarr;</span>
+            <li>
+              <span
+                aria-current={step === 4 ? 'step' : undefined}
+                className={step === 4 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                4. Complete
+              </span>
+            </li>
+          </ol>
+        </nav>
 
         {/* Step 1: File Upload */}
         {step === 1 && (
@@ -517,7 +1110,109 @@ export function CsvImportWizardModal({
                 </select>
               </FormGroup>
 
-              <FormGroup className="md:col-span-2">
+              <FormGroup>
+                <Label htmlFor="map-address-line1">Address Line 1 Column (Optional)</Label>
+                <select
+                  id="map-address-line1"
+                  value={addressLine1Col}
+                  onChange={(e) => setAddressLine1Col(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-address-line2">Address Line 2 Column (Optional)</Label>
+                <select
+                  id="map-address-line2"
+                  value={addressLine2Col}
+                  onChange={(e) => setAddressLine2Col(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-city">City Column (Optional)</Label>
+                <select
+                  id="map-city"
+                  value={cityCol}
+                  onChange={(e) => setCityCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-state">State / Province Column (Optional)</Label>
+                <select
+                  id="map-state"
+                  value={stateCol}
+                  onChange={(e) => setStateCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-zip-code">ZIP / Postal Code Column (Optional)</Label>
+                <select
+                  id="map-zip-code"
+                  value={zipCodeCol}
+                  onChange={(e) => setZipCodeCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-country">Country Column (Optional)</Label>
+                <select
+                  id="map-country"
+                  value={countryCol}
+                  onChange={(e) => setCountryCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
                 <Label htmlFor="map-plus-ones">Plus-One Allocations Column (Optional)</Label>
                 <select
                   id="map-plus-ones"
@@ -526,6 +1221,40 @@ export function CsvImportWizardModal({
                   className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Default to 0 --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-plus-one-first-name">Plus-One First Name Column (Optional)</Label>
+                <select
+                  id="map-plus-one-first-name"
+                  value={plusOneFirstNameCol}
+                  onChange={(e) => setPlusOneFirstNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-plus-one-last-name">Plus-One Last Name Column (Optional)</Label>
+                <select
+                  id="map-plus-one-last-name"
+                  value={plusOneLastNameCol}
+                  onChange={(e) => setPlusOneLastNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
                   {csvHeaders.map((h) => (
                     <option key={h} value={h}>
                       {h}
@@ -584,6 +1313,16 @@ export function CsvImportWizardModal({
                         <strong>Plus-Ones:</strong> {r[plusOneCol] || '0'}
                       </span>
                     )}
+                    {plusOneFirstNameCol && (
+                      <span>
+                        <strong>Plus-One First:</strong> {r[plusOneFirstNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                      </span>
+                    )}
+                    {plusOneLastNameCol && (
+                      <span>
+                        <strong>Plus-One Last:</strong> {r[plusOneLastNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -629,7 +1368,7 @@ export function CsvImportWizardModal({
             </div>
 
             {/* Interactive Preview Table */}
-            <div className="max-h-80 overflow-y-auto border border-gray-200 dark:border-zinc-700 rounded-lg">
+            <div className="max-h-80 overflow-auto border border-gray-200 dark:border-zinc-700 rounded-lg">
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 uppercase font-bold border-b border-gray-200 dark:border-zinc-700">
                   <tr>
@@ -637,8 +1376,16 @@ export function CsvImportWizardModal({
                     <th scope="col" className="p-2 min-w-[120px]">Guest Name</th>
                     <th scope="col" className="p-2 min-w-[110px]">Invitation Code</th>
                     <th scope="col" className="p-2 min-w-[120px]">Email</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Address Line 1</th>
+                    <th scope="col" className="p-2 min-w-[100px]">Address Line 2</th>
+                    <th scope="col" className="p-2 min-w-[100px]">City</th>
+                    <th scope="col" className="p-2 min-w-[80px]">State</th>
+                    <th scope="col" className="p-2 min-w-[80px]">ZIP Code</th>
+                    <th scope="col" className="p-2 min-w-[90px]">Country</th>
                     <th scope="col" className="p-2 min-w-[120px]">Dietary Notes</th>
                     <th scope="col" className="p-2 w-16 text-center">Plus-Ones</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Plus-One First Name</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Plus-One Last Name</th>
                     <th scope="col" className="p-2 min-w-[130px]">Extra Attributes</th>
                     <th scope="col" className="p-2 min-w-[120px]">Validation Status</th>
                     <th scope="col" className="p-2 w-10 text-center">Action</th>
@@ -646,128 +1393,19 @@ export function CsvImportWizardModal({
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
                   {validatedRows.map((row, idx) => (
-                    <tr
+                    <EditableTableRow
                       key={idx}
-                      className={
-                        !row.isValid
-                          ? 'bg-red-50/70 dark:bg-red-950/30 text-gray-900 dark:text-zinc-100'
-                          : row.warnings.length > 0
-                            ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
-                            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
-                      }
-                    >
-                      <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.guestName || ''}
-                          aria-label={`Guest Name for row ${row.rowIndex}`}
-                          onChange={(e) => handleCellEdit(idx, 'guestName', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.code || ''}
-                          aria-label={`Invitation Code for row ${row.rowIndex}`}
-                          placeholder="Auto-generate"
-                          onChange={(e) => handleCellEdit(idx, 'code', e.target.value)}
-                          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 uppercase"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="email"
-                          value={editableRows[idx]?.email || ''}
-                          aria-label={`Email for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'email', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={editableRows[idx]?.dietaryNotes || ''}
-                          aria-label={`Dietary Notes for row ${row.rowIndex}`}
-                          placeholder="Optional"
-                          onChange={(e) => handleCellEdit(idx, 'dietaryNotes', e.target.value)}
-                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2 text-center">
-                        <input
-                          type="number"
-                          min="0"
-                          value={editableRows[idx]?.plusOneAllocations ?? '0'}
-                          aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
-                          onChange={(e) => handleCellEdit(idx, 'plusOneAllocations', e.target.value)}
-                          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                        />
-                      </td>
-                      <td className="p-2">
-                        {Object.keys(editableRows[idx]?.extraFields || {}).length > 0 ? (
-                          <div className="space-y-1">
-                            {Object.entries(editableRows[idx].extraFields).map(([k, v]) => (
-                              <div key={k} className="flex items-center gap-1 text-[11px]">
-                                <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
-                                  {k}:
-                                </span>
-                                <input
-                                  type="text"
-                                  value={v}
-                                  aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
-                                  onChange={(e) => handleExtraFieldEdit(idx, k, e.target.value)}
-                                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 italic text-[11px]">None</span>
-                        )}
-                      </td>
-                      <td className="p-2 space-y-1">
-                        {row.isValid ? (
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
-                            Valid
-                          </span>
-                        ) : (
-                          row.errors.map((err, ei) => (
-                            <span
-                              key={ei}
-                              className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
-                            >
-                              ✕ {err}
-                            </span>
-                          ))
-                        )}
-                        {row.warnings.map((warn, wi) => (
-                          <span
-                            key={wi}
-                            className="block text-[10px] font-medium text-amber-600 dark:text-amber-400"
-                          >
-                            ⚠ {warn}
-                          </span>
-                        ))}
-                      </td>
-                      <td className="p-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRow(idx)}
-                          className="text-red-500 hover:text-red-700 font-bold text-sm px-1"
-                          title="Remove row"
-                          aria-label={`Remove row ${row.rowIndex}`}
-                        >
-                          &times;
-                        </button>
-                      </td>
-                    </tr>
+                      row={row}
+                      editableRow={editableRows[idx]}
+                      index={idx}
+                      onCellEdit={handleCellEdit}
+                      onExtraFieldEdit={handleExtraFieldEdit}
+                      onDeleteRow={handleDeleteRow}
+                    />
                   ))}
                   {editableRows.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="p-4 text-center text-gray-500">
+                      <td colSpan={17} className="p-4 text-center text-gray-500">
                         No rows remaining.
                       </td>
                     </tr>

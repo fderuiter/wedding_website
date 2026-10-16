@@ -13,6 +13,7 @@ export interface ThankYouContributorItem {
   id: string;
   name: string;
   email?: string | null;
+  message?: string | null;
   amount: number;
   date: string;
   thankYouStatus: 'Unsent' | 'Sent' | 'Not Needed' | string;
@@ -47,6 +48,14 @@ export default function ThankYouNotesPage() {
 
   const [statusFilter, setStatusFilter] = useState<'All' | 'Unsent' | 'Sent' | 'Not Needed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 50;
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 50,
+    totalItems: 0,
+    totalPages: 1,
+  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Editing single item state
@@ -55,6 +64,16 @@ export default function ThankYouNotesPage() {
   const [editNote, setEditNote] = useState<string>('');
   const [editSentAt, setEditSentAt] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
+    setStatusFilter(tab);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+  };
 
   const handleExportCsv = () => {
     const params = new URLSearchParams();
@@ -86,6 +105,8 @@ export default function ThankYouNotesPage() {
       if (searchQuery.trim()) {
         params.set('search', searchQuery.trim());
       }
+      params.set('page', currentPage.toString());
+      params.set('pageSize', pageSize.toString());
 
       const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
       if (!res.ok) {
@@ -103,12 +124,15 @@ export default function ThankYouNotesPage() {
           completionPercentage: 0,
         }
       );
+      if (data.pagination) {
+        setPagination(data.pagination);
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred while loading thank-you notes.');
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, searchQuery]);
+  }, [statusFilter, searchQuery, currentPage, pageSize]);
 
   useEffect(() => {
     fetchData();
@@ -331,7 +355,7 @@ export default function ThankYouNotesPage() {
             type="text"
             placeholder="Search contributor name or gift item..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             aria-label="Search contributor name or gift item"
             className="w-full"
           />
@@ -349,7 +373,7 @@ export default function ThankYouNotesPage() {
               type="button"
               role="tab"
               aria-selected={statusFilter === tab}
-              onClick={() => setStatusFilter(tab)}
+              onClick={() => handleStatusFilterChange(tab)}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                 statusFilter === tab
                   ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -515,21 +539,37 @@ export default function ThankYouNotesPage() {
 
                     <TableCell className="max-w-xs">
                       {isEditing ? (
-                        <textarea
-                          aria-label={`Thank-you note message for ${item.name}`}
-                          rows={2}
-                          value={editNote}
-                          onChange={(e) => setEditNote(e.target.value)}
-                          placeholder="Add custom thank-you note draft..."
-                          className="w-full text-xs p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
-                        />
-                      ) : (
-                        <div className="text-xs text-gray-700 dark:text-gray-300 truncate max-w-xs">
-                          {item.thankYouNote ? (
-                            <span title={item.thankYouNote}>{item.thankYouNote}</span>
-                          ) : (
-                            <span className="text-gray-400 italic">No note added</span>
+                        <div className="space-y-1">
+                          {item.message && (
+                            <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
+                              <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                              <p className="italic">{item.message}</p>
+                            </div>
                           )}
+                          <textarea
+                            aria-label={`Thank-you note message for ${item.name}`}
+                            rows={2}
+                            value={editNote}
+                            onChange={(e) => setEditNote(e.target.value)}
+                            placeholder="Add custom thank-you note draft..."
+                            className="w-full text-xs p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1 max-w-xs">
+                          {item.message && (
+                            <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
+                              <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                              <p className="italic whitespace-pre-wrap">{item.message}</p>
+                            </div>
+                          )}
+                          <div className="truncate">
+                            {item.thankYouNote ? (
+                              <span title={item.thankYouNote}>{item.thankYouNote}</span>
+                            ) : (
+                              <span className="text-gray-400 italic">No note added</span>
+                            )}
+                          </div>
                         </div>
                       )}
                     </TableCell>
@@ -570,6 +610,52 @@ export default function ThankYouNotesPage() {
               })}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!isLoading && !error && pagination.totalItems > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 px-2">
+          <div className="text-xs text-gray-600 dark:text-gray-400">
+            Showing{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {(pagination.page - 1) * pagination.pageSize + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {Math.min(pagination.page * pagination.pageSize, pagination.totalItems)}
+            </span>{' '}
+            of{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {pagination.totalItems}
+            </span>{' '}
+            contributor records
+          </div>
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage <= 1 || isLoading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                Previous
+              </Button>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 px-2">
+                Page {pagination.page} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage >= pagination.totalPages || isLoading}
+                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                aria-label="Next page"
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ThemePreset,
   THEME_PRESETS,
@@ -111,6 +111,12 @@ function sanitizeFontToken(token: string | undefined | null, fallback: string): 
   return fallback;
 }
 
+function sanitizeTokenValue(val: string | undefined | null): string {
+  if (!val || typeof val !== 'string') return '';
+  return val.replace(/[;{}<>\r\n]|\/\*|\*\//g, '');
+}
+}
+
 function hexToRgb(hex: string): RGB {
   const cleanHex = hex.replace(/^#/, '');
   let r = 0, g = 0, b = 0;
@@ -209,57 +215,77 @@ function getContrastRatio(color1: RGB, color2: RGB): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5): string {
+export const contrastCache = new Map<string, string>();
+
+export function clearContrastCache(): void {
+  contrastCache.clear();
+}
+
+export function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5): string {
+  const cacheKey = `${baseHex.toLowerCase()}:${bgHex.toLowerCase()}:${minRatio}`;
+  if (contrastCache.has(cacheKey)) {
+    return contrastCache.get(cacheKey)!;
+  }
+
+  let computedHex = baseHex;
   try {
     const baseRgb = hexToRgb(baseHex);
     const bgRgb = hexToRgb(bgHex);
     
     if (getContrastRatio(baseRgb, bgRgb) >= minRatio) {
-      return baseHex;
-    }
-    
-    const bgLuminance = getLuminance(bgRgb);
-    const { h, s, l } = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
-    
-    const isLightBg = bgLuminance > 0.5;
-    let currentL = l;
-    let bestHex = baseHex;
-    const step = 0.01; 
-
-    if (isLightBg) {
-      while (currentL > 0) {
-        currentL -= step;
-        if (currentL < 0) currentL = 0;
-        const testRgb = hslToRgb(h, s, currentL);
-        const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
-        if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
-          return testHex;
-        }
-        bestHex = testHex;
-      }
+      computedHex = baseHex;
     } else {
-      while (currentL < 1) {
-        currentL += step;
-        if (currentL > 1) currentL = 1;
-        const testRgb = hslToRgb(h, s, currentL);
-        const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
-        if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
-          return testHex;
+      const bgLuminance = getLuminance(bgRgb);
+      const { h, s, l } = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
+      
+      const isLightBg = bgLuminance > 0.5;
+      let currentL = l;
+      let bestHex = baseHex;
+      const step = 0.01; 
+
+      if (isLightBg) {
+        while (currentL > 0) {
+          currentL -= step;
+          if (currentL < 0) currentL = 0;
+          const testRgb = hslToRgb(h, s, currentL);
+          const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
+          if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
+            bestHex = testHex;
+            break;
+          }
+          bestHex = testHex;
         }
-        bestHex = testHex;
+      } else {
+        while (currentL < 1) {
+          currentL += step;
+          if (currentL > 1) currentL = 1;
+          const testRgb = hslToRgb(h, s, currentL);
+          const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
+          if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
+            bestHex = testHex;
+            break;
+          }
+          bestHex = testHex;
+        }
       }
+      computedHex = bestHex;
     }
-    
-    return bestHex;
   } catch {
-    return baseHex;
+    computedHex = baseHex;
   }
+
+  if (contrastCache.size >= 1000) {
+    contrastCache.clear();
+  }
+  contrastCache.set(cacheKey, computedHex);
+  return computedHex;
 }
 
 function generateDynamicStyles(
   primaryColor: string,
   secondaryColor: string,
   themePreset?: string,
+  customTokens?: Record<string, string>,
   layoutTokens?: {
     containerMaxWidth?: string;
     gridGap?: string;
@@ -275,8 +301,27 @@ function generateDynamicStyles(
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
   const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
-  const lightPresetTokens = getPresetTokens(preset, 'light');
-  const darkPresetTokens = getPresetTokens(preset, 'dark');
+  const baseLightTokens = getPresetTokens(preset, 'light');
+  const baseDarkTokens = getPresetTokens(preset, 'dark');
+
+  const sanitizedCustomTokens: Record<string, string> = {};
+  if (customTokens && typeof customTokens === 'object') {
+    for (const [k, v] of Object.entries(customTokens)) {
+      if (k.startsWith('--')) {
+        sanitizedCustomTokens[k] = sanitizeTokenValue(v);
+      }
+    }
+  }
+
+  const lightPresetTokens = {
+    ...baseLightTokens,
+    ...sanitizedCustomTokens,
+  };
+
+  const darkPresetTokens = {
+    ...baseDarkTokens,
+    ...sanitizedCustomTokens,
+  };
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
   const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
@@ -289,8 +334,18 @@ function generateDynamicStyles(
 
   const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
   const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
+  const errorTextLight = optimizeContrast('#DC2626', '#FFFFFF', 4.5);
+  const focusRingLight = optimizeContrast(safePrimary, '#FFFFFF', 3.0);
+  const surfaceBorderLight = optimizeContrast('#6B7280', '#FFFFFF', 3.0);
+
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
+  const errorTextDark = optimizeContrast('#EF4444', '#111827', 4.5);
+  const focusRingDark = optimizeContrast(safePrimary, '#111827', 3.0);
+  const surfaceBorderDark = optimizeContrast('#9CA3AF', '#111827', 3.0);
+
+  const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
+  const seatAssignedTextDark = optimizeContrast('#ffffff', safePrimary, 4.5);
 
   const lightPresetCssRules = Object.entries(lightPresetTokens)
     .filter(([key]) => key !== 'darkTokens')
@@ -308,53 +363,143 @@ function generateDynamicStyles(
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
+      --color-error-text: ${errorTextDark};
+      --color-focus-ring: ${focusRingDark};
+      --color-surface-border: ${surfaceBorderDark};
 ${lightPresetCssRules}
       --font-heading: ${safeFontHeading};
       --font-body: ${safeFontBody};
       --font-mono: ${safeFontMono};
+      --floorplan-seat-assigned-text: ${seatAssignedTextDark};
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
       --card-padding: ${safeCardPadding};
       --radius-card: ${safeBorderRadius};
     }
 
-    /* Light mode document */
-    html:not(.dark) {
+    /* Light mode document context */
+    html:not(.dark),
+    html.light,
+    [data-surface="light"] {
       --color-primary: ${primaryTextLight};
       --color-secondary: ${secondaryTextLight};
       --color-primary-text: ${primaryTextLight};
       --color-secondary-text: ${secondaryTextLight};
+      --color-error-text: ${errorTextLight};
+      --color-focus-ring: ${focusRingLight};
+      --color-surface-border: ${surfaceBorderLight};
+      --floorplan-seat-assigned-text: ${seatAssignedTextLight};
     }
 
     /* Light containers in any document mode */
     .bg-white,
+    [data-surface="light"],
     .bg-gray-50,
     .bg-gray-100,
+    .bg-gray-200,
+    .bg-gray-300,
+    .bg-gray-400,
     .bg-slate-50,
-    .bg-slate-100 {
+    .bg-slate-100,
+    .bg-slate-200,
+    .bg-slate-300,
+    .bg-slate-400,
+    .bg-zinc-50,
+    .bg-zinc-100,
+    .bg-zinc-200,
+    .bg-zinc-300,
+    .bg-zinc-400,
+    .bg-stone-50,
+    .bg-stone-100,
+    .bg-stone-200,
+    .bg-stone-300,
+    .bg-stone-400,
+    .bg-neutral-50,
+    .bg-neutral-100,
+    .bg-neutral-200,
+    .bg-neutral-300,
+    .bg-neutral-400 {
       --color-primary: ${primaryTextLight};
       --color-secondary: ${secondaryTextLight};
       --color-primary-text: ${primaryTextLight};
       --color-secondary-text: ${secondaryTextLight};
+      --color-error-text: ${errorTextLight};
+      --color-focus-ring: ${focusRingLight};
+      --color-surface-border: ${surfaceBorderLight};
     }
 
     /* Re-assert dark mode variables for dark backgrounds under dark mode */
+    .dark .dark\\:bg-black,
+    .dark [data-surface="dark"],
+    .dark .dark\\:bg-gray-600,
+    .dark .dark\\:bg-gray-700,
     .dark .dark\\:bg-gray-800,
-    .dark .dark\\:bg-zinc-800,
     .dark .dark\\:bg-gray-900,
+    .dark .dark\\:bg-gray-950,
+    .dark .dark\\:bg-slate-600,
+    .dark .dark\\:bg-slate-700,
+    .dark .dark\\:bg-slate-800,
+    .dark .dark\\:bg-slate-900,
+    .dark .dark\\:bg-slate-950,
+    .dark .dark\\:bg-zinc-600,
+    .dark .dark\\:bg-zinc-700,
+    .dark .dark\\:bg-zinc-800,
     .dark .dark\\:bg-zinc-900,
-    .dark .dark\\:bg-black {
+    .dark .dark\\:bg-zinc-950,
+    .dark .dark\\:bg-stone-600,
+    .dark .dark\\:bg-stone-700,
+    .dark .dark\\:bg-stone-800,
+    .dark .dark\\:bg-stone-900,
+    .dark .dark\\:bg-stone-950,
+    .dark .dark\\:bg-neutral-600,
+    .dark .dark\\:bg-neutral-700,
+    .dark .dark\\:bg-neutral-800,
+    .dark .dark\\:bg-neutral-900,
+    .dark .dark\\:bg-neutral-950,
+    .bg-black,
+    [data-surface="dark"],
+    .bg-gray-600,
+    .bg-gray-700,
+    .bg-gray-800,
+    .bg-gray-900,
+    .bg-gray-950,
+    .bg-slate-600,
+    .bg-slate-700,
+    .bg-slate-800,
+    .bg-slate-900,
+    .bg-slate-950,
+    .bg-zinc-600,
+    .bg-zinc-700,
+    .bg-zinc-800,
+    .bg-zinc-900,
+    .bg-zinc-950,
+    .bg-stone-600,
+    .bg-stone-700,
+    .bg-stone-800,
+    .bg-stone-900,
+    .bg-stone-950,
+    .bg-neutral-600,
+    .bg-neutral-700,
+    .bg-neutral-800,
+    .bg-neutral-900,
+    .bg-neutral-950 {
       --color-primary: ${safePrimary};
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
-      --container-max-w: ${safeContainerMaxWidth};
-      --grid-gap: ${safeGridGap};
-      --card-padding: ${safeCardPadding};
-      --radius-card: ${safeBorderRadius};
+      --color-error-text: ${errorTextDark};
+      --color-focus-ring: ${focusRingDark};
+      --color-surface-border: ${surfaceBorderDark};
     }
 
     .dark {
+      --color-primary: ${safePrimary};
+      --color-secondary: ${safeSecondary};
+      --color-primary-text: ${primaryTextDark};
+      --color-secondary-text: ${secondaryTextDark};
+      --color-error-text: ${errorTextDark};
+      --color-focus-ring: ${focusRingDark};
+      --color-surface-border: ${surfaceBorderDark};
 ${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
@@ -375,11 +520,19 @@ function applyResolvedTheme(resolved: ResolvedTheme) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   if (resolved === 'dark') {
-    root.classList.add('dark');
-    root.classList.remove('light');
+    if (!root.classList.contains('dark')) {
+      root.classList.add('dark');
+    }
+    if (root.classList.contains('light')) {
+      root.classList.remove('light');
+    }
   } else {
-    root.classList.add('light');
-    root.classList.remove('dark');
+    if (!root.classList.contains('light')) {
+      root.classList.add('light');
+    }
+    if (root.classList.contains('dark')) {
+      root.classList.remove('dark');
+    }
   }
 }
 
@@ -389,6 +542,7 @@ type ThemeProviderProps = {
     colorPrimary?: string | null;
     colorSecondary?: string | null;
     themePreset?: ThemePreset | string | null;
+    themeTokens?: Record<string, string>;
     layoutContainerMaxWidth?: string | null;
     layoutGridGap?: string | null;
     layoutCardPadding?: string | null;
@@ -409,6 +563,7 @@ export function ThemeProvider({
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
+    themeTokens: propConfig?.themeTokens || {},
     layoutContainerMaxWidth: sanitizeLayoutToken(propConfig?.layoutContainerMaxWidth, '64rem'),
     layoutGridGap: sanitizeLayoutToken(propConfig?.layoutGridGap, '1.5rem'),
     layoutCardPadding: sanitizeLayoutToken(propConfig?.layoutCardPadding, '2rem'),
@@ -457,7 +612,15 @@ export function ThemeProvider({
     } else if (currentMode === 'dark') {
       resolved = 'dark';
     } else {
-      resolved = getSystemTheme();
+      if (
+        typeof document !== 'undefined' &&
+        (document.documentElement.classList.contains('dark') ||
+          document.documentElement.classList.contains('light'))
+      ) {
+        resolved = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      } else {
+        resolved = getSystemTheme();
+      }
     }
 
     setResolvedTheme(resolved);
@@ -521,6 +684,7 @@ export function ThemeProvider({
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
+        themeTokens: propConfig.themeTokens || {},
         layoutContainerMaxWidth: sanitizeLayoutToken(propConfig.layoutContainerMaxWidth, '64rem'),
         layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
         layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
@@ -545,6 +709,7 @@ export function ThemeProvider({
               colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
               colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
               themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
+              themeTokens: next.themeTokens || {},
               layoutContainerMaxWidth: sanitizeLayoutToken(next.layoutContainerMaxWidth, '64rem'),
               layoutGridGap: sanitizeLayoutToken(next.layoutGridGap, '1.5rem'),
               layoutCardPadding: sanitizeLayoutToken(next.layoutCardPadding, '2rem'),
@@ -602,22 +767,37 @@ export function ThemeProvider({
     });
   }, [config]);
 
-  const stylesString = generateDynamicStyles(
-    sanitizeColor(config?.colorPrimary, '#B91C1C'),
-    sanitizeColor(config?.colorSecondary, '#B45309'),
-    config?.themePreset,
-    {
-      containerMaxWidth: config?.layoutContainerMaxWidth,
-      gridGap: config?.layoutGridGap,
-      cardPadding: config?.layoutCardPadding,
-      borderRadius: config?.layoutBorderRadius,
-    },
-    {
-      fontHeading: config?.fontHeading,
-      fontBody: config?.fontBody,
-      fontMono: config?.fontMono,
-    }
-  );
+  const stylesString = useMemo(() => {
+    return generateDynamicStyles(
+      sanitizeColor(config.colorPrimary, '#B91C1C'),
+      sanitizeColor(config.colorSecondary, '#B45309'),
+      config.themePreset,
+      config.themeTokens,
+      {
+        containerMaxWidth: config.layoutContainerMaxWidth,
+        gridGap: config.layoutGridGap,
+        cardPadding: config.layoutCardPadding,
+        borderRadius: config.layoutBorderRadius,
+      },
+      {
+        fontHeading: config.fontHeading,
+        fontBody: config.fontBody,
+        fontMono: config.fontMono,
+      }
+    );
+  }, [
+    config.colorPrimary,
+    config.colorSecondary,
+    config.themePreset,
+    config.themeTokens,
+    config.layoutContainerMaxWidth,
+    config.layoutGridGap,
+    config.layoutCardPadding,
+    config.layoutBorderRadius,
+    config.fontHeading,
+    config.fontBody,
+    config.fontMono,
+  ]);
 
   const activePresetTokens = getPresetTokens(config?.themePreset);
   const fontHeading = sanitizeFontToken(config?.fontHeading, activePresetTokens['--font-heading']);

@@ -91,6 +91,56 @@ describe('RegistryItemCard Component', () => {
     expect(screen.queryByLabelText(/Contribution Amount/i)).not.toBeInTheDocument();
   });
 
+  it('renders correctly for a CASH_FUND item with payment handle', () => {
+    const cashFundItem: RegistryItem = {
+      ...mockGroupItem,
+      id: 'cash-fund-1',
+      name: 'Honeymoon Cash Fund',
+      price: 500,
+      itemType: 'CASH_FUND',
+      paymentHandleType: 'Venmo',
+      paymentHandle: '@happy-couple',
+      amountContributed: 100,
+    };
+
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard item={cashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+      </Overlay>
+    );
+
+    expect(screen.getByText('Honeymoon Cash Fund')).toBeInTheDocument();
+    expect(screen.getByText('Target Goal: $500.00')).toBeInTheDocument();
+    expect(screen.getByText('Send directly via Venmo:')).toBeInTheDocument();
+    expect(screen.getByText('@happy-couple')).toBeInTheDocument();
+    expect(screen.getByText(/Fund Contributions - \$100.00 contributed so far./)).toBeInTheDocument();
+  });
+
+  it('renders correctly for an EXPERIENCE_FUND item with payment handle', () => {
+    const experienceFundItem: RegistryItem = {
+      ...mockGroupItem,
+      id: 'exp-fund-1',
+      name: 'Scuba Diving Tour',
+      price: 300,
+      itemType: 'EXPERIENCE_FUND',
+      paymentHandleType: 'Zelle',
+      paymentHandle: 'couple@example.com',
+      amountContributed: 0,
+    };
+
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard item={experienceFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+      </Overlay>
+    );
+
+    expect(screen.getByText('Scuba Diving Tour')).toBeInTheDocument();
+    expect(screen.getByText('Target Goal: $300.00')).toBeInTheDocument();
+    expect(screen.getByText('Send directly via Zelle:')).toBeInTheDocument();
+    expect(screen.getByText('couple@example.com')).toBeInTheDocument();
+    expect(screen.getByText(/Fund Contributions - \$0.00 contributed so far./)).toBeInTheDocument();
+  });
+
   it('renders correctly for a group gift item', () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
 
@@ -229,6 +279,22 @@ describe('RegistryItemCard Component', () => {
       expect(mockOnContribute).toHaveBeenCalledTimes(1);
       // For single items, amount sent is the full price
       expect(mockOnContribute).toHaveBeenCalledWith(mockSingleItem.id, 'Claimer', mockSingleItem.price);
+    });
+  });
+
+  it('allows entering a personal message and passes it to onContribute', async () => {
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+      </Overlay>
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jane Contributor' } });
+    fireEvent.change(screen.getByLabelText(/Personal Message/i), { target: { value: 'So happy for you both!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+    await waitFor(() => {
+      expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Jane Contributor', 100, undefined, 'So happy for you both!');
     });
   });
 

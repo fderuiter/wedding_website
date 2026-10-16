@@ -41,6 +41,7 @@ export type IconName =
   | 'Gift'
   | 'Calendar'
   | 'Truck'
+  | 'UploadCloud'
   | 'Upload'
   | 'Image';
 
@@ -364,6 +365,14 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
           <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
           <circle cx="7" cy="18" r="2" />
           <circle cx="17" cy="18" r="2" />
+        </svg>
+      );
+    case 'UploadCloud':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+          <path d="M12 12v9" />
+          <path d="m16 16-4-4-4 4" />
         </svg>
       );
     case 'Upload':

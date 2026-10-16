@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useCallback, ElementType, ComponentPropsWitho
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
 import { useTheme } from '../ThemeProvider';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { cn } from '@/utils/cn';
 
 const motionComponentCache = new Map<ElementType, any>();
@@ -68,18 +69,33 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
       cardMaxRotation = 10,
       cardSpringStiffness = 300,
       cardSpringDamping = 20,
+      themePreset,
     } = useTheme();
+
+    const presetTokens = getPresetTokens(themePreset);
+    const stiffness = parseFloat(presetTokens['--motion-spring-stiffness']) || cardSpringStiffness;
+    const damping = parseFloat(presetTokens['--motion-spring-damping']) || cardSpringDamping;
+    const tiltMaxDeg = parseFloat(presetTokens['--motion-tilt-max-deg']) || cardMaxRotation;
 
     const x = useMotionValue(0);
     const y = useMotionValue(0);
 
-    // Smooth the motion values using springs
-    const mouseXSpring = useSpring(x, { stiffness: cardSpringStiffness, damping: cardSpringDamping });
-    const mouseYSpring = useSpring(y, { stiffness: cardSpringStiffness, damping: cardSpringDamping });
+    // Smooth the motion values using springs driven by theme tokens
+    const mouseXSpring = useSpring(x, { stiffness, damping });
+    const mouseYSpring = useSpring(y, { stiffness, damping });
 
-    // Transform mouse position to rotation
-    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], [`${cardMaxRotation}deg`, `-${cardMaxRotation}deg`]);
-    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], [`-${cardMaxRotation}deg`, `${cardMaxRotation}deg`]);
+    useEffect(() => {
+      if ((mouseXSpring as any).setOptions) {
+        (mouseXSpring as any).setOptions({ stiffness, damping });
+      }
+      if ((mouseYSpring as any).setOptions) {
+        (mouseYSpring as any).setOptions({ stiffness, damping });
+      }
+    }, [stiffness, damping, mouseXSpring, mouseYSpring]);
+
+    // Transform mouse position to rotation using theme tilt limit
+    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], [`${tiltMaxDeg}deg`, `-${tiltMaxDeg}deg`]);
+    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], [`-${tiltMaxDeg}deg`, `${tiltMaxDeg}deg`]);
 
     const Component = as || 'div';
     const isInteractive = Component === 'button' || Component === 'a';
@@ -144,13 +160,46 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
       }
     }, [Component, isInteractive]);
 
+    const {
+      'aria-describedby': _unusedDescribedBy,
+      onClick: _unusedClick,
+      onKeyDown: _unusedKeyDown,
+      ...restMixedHandlers
+    } = mixedHandlers;
+
+    const cardRole = props.role || (onClick ? 'button' : (!isInteractive ? 'region' : undefined));
+    const cardTabIndex = props.tabIndex ?? 0;
+    const combinedDescribedBy = [props['aria-describedby'], mixedHandlers['aria-describedby']].filter(Boolean).join(' ') || undefined;
+
+    const handleCardClick = (e: React.MouseEvent<any>) => {
+      mixedHandlers.onClick?.(e);
+      if (props.onClick && props.onClick !== onClick) {
+        props.onClick(e);
+      }
+    };
+
+    const handleCardKeyDown = (e: React.KeyboardEvent<any>) => {
+      mixedHandlers.onKeyDown?.(e);
+      if (props.onKeyDown) {
+        (props.onKeyDown as any)(e);
+      }
+    };
+
     return (
       <MotionComponentWrapper
         asComponent={Component}
         ref={setRef}
+        role={cardRole}
+        tabIndex={cardTabIndex}
+        aria-describedby={combinedDescribedBy}
         {...(props as any)}
-        className={cn(className)}
-        {...mixedHandlers}
+        className={cn(
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all',
+          className
+        )}
+        {...restMixedHandlers}
+        onClick={handleCardClick}
+        onKeyDown={handleCardKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}
         style={{
@@ -172,4 +221,3 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
 ) as unknown as Interactive3DCardComponent;
 
 (Interactive3DCard as any).displayName = 'Interactive3DCard';
-

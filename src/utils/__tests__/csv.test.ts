@@ -1,7 +1,8 @@
 import {
   parseCsvContent,
-  parseCsvLines,
   validateCsvRows,
+  validateSingleCsvRow,
+  parseInvitationCodesCsv,
   generateCsvContent,
   escapeCsvCell,
   generateSampleCsvTemplate,
@@ -10,12 +11,11 @@ import {
 describe('CSV Parser Utility', () => {
   it('parses standard CSV lines with quotes and commas', () => {
     const csv = 'Guest Name,Invitation Code\n"Doe, John",CODE123\n"Smith, Jane",CODE456';
-    const lines = parseCsvLines(csv);
-    expect(lines).toEqual([
-      ['Guest Name', 'Invitation Code'],
-      ['Doe, John', 'CODE123'],
-      ['Smith, Jane', 'CODE456'],
-    ]);
+    const parsed = parseCsvContent(csv);
+    expect(parsed.headers).toEqual(['Guest Name', 'Invitation Code']);
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rows[0]).toEqual({ 'Guest Name': 'Doe, John', 'Invitation Code': 'CODE123' });
+    expect(parsed.rows[1]).toEqual({ 'Guest Name': 'Smith, Jane', 'Invitation Code': 'CODE456' });
   });
 
   it('handles escaped quotes and CRLF line endings', () => {
@@ -28,14 +28,26 @@ describe('CSV Parser Utility', () => {
     expect(parsed.rows[0]['Name']).toBe('Alice "Ace" Smith');
   });
 
-  it('auto-detects column headers intelligently for multi-column spreadsheets', () => {
-    const csv = 'Full Name,Invite Code,Email Address,Dietary Allergies,Plus One Count,Table Group\nJane Doe,JANE12,jane@example.com,Gluten Free,2,VIP Table';
+  it('auto-detects column headers intelligently for multi-column spreadsheets including companion names', () => {
+    const csv = 'Full Name,Invite Code,Email Address,Dietary Allergies,Plus One Count,Companion First Name,Companion Last Name,Table Group\nJane Doe,JANE12,jane@example.com,Gluten Free,2,Jack,Doe,VIP Table';
     const parsed = parseCsvContent(csv);
     expect(parsed.suggestedGuestNameCol).toBe('Full Name');
     expect(parsed.suggestedCodeCol).toBe('Invite Code');
     expect(parsed.suggestedEmailCol).toBe('Email Address');
     expect(parsed.suggestedDietaryNotesCol).toBe('Dietary Allergies');
     expect(parsed.suggestedPlusOneCol).toBe('Plus One Count');
+    expect(parsed.suggestedPlusOneFirstNameCol).toBe('Companion First Name');
+    expect(parsed.suggestedPlusOneLastNameCol).toBe('Companion Last Name');
+  });
+
+  it('parses CSV using parseInvitationCodesCsv helper', () => {
+    const csv = 'Guest Name,Code,Plus-One First Name,Plus-One Last Name\nAlice,A1,Bob,Smith';
+    const { parseResult, rows } = parseInvitationCodesCsv(csv);
+    expect(parseResult.suggestedPlusOneFirstNameCol).toBe('Plus-One First Name');
+    expect(parseResult.suggestedPlusOneLastNameCol).toBe('Plus-One Last Name');
+    expect(rows[0].isValid).toBe(true);
+    expect(rows[0].plusOneFirstName).toBe('Bob');
+    expect(rows[0].plusOneLastName).toBe('Smith');
   });
 
   it('disambiguates duplicate CSV headers gracefully', () => {
@@ -107,6 +119,29 @@ describe('CSV Parser Utility', () => {
     expect(validated[1].dietaryNotes).toBe('Vegan');
     expect(validated[1].plusOneAllocations).toBe(2);
     expect(validated[1].extraFields).toEqual({ 'Custom Field': 'Table 5' });
+  });
+
+  it('validates companion name length limits in validateCsvRows', () => {
+    const longName = 'A'.repeat(101);
+    const rows = [
+      {
+        'Guest Name': 'David',
+        'Code': 'DAV100',
+        'Plus-One First Name': longName,
+        'Plus-One Last Name': longName,
+      },
+    ];
+
+    const validated = validateCsvRows(rows, {
+      guestNameCol: 'Guest Name',
+      codeCol: 'Code',
+      plusOneFirstNameCol: 'Plus-One First Name',
+      plusOneLastNameCol: 'Plus-One Last Name',
+    });
+
+    expect(validated[0].isValid).toBe(false);
+    expect(validated[0].errors).toContain('Plus-one first name must be under 100 characters.');
+    expect(validated[0].errors).toContain('Plus-one last name must be under 100 characters.');
   });
 
   describe('generateCsvContent', () => {
@@ -212,6 +247,59 @@ describe('CSV Parser Utility', () => {
       expect(parsed.rows[0]['Email']).toBe('jane.doe@example.com');
       expect(parsed.rows[0]['Dietary Notes']).toBe('Vegetarian');
       expect(parsed.rows[0]['Plus-One Allocations']).toBe('1');
+    });
+  });
+
+  describe('validateSingleCsvRow & Hoisted Set Allocations', () => {
+    it('validates a single CSV row correctly using provided frequency map and DB set', () => {
+      const row = {
+        'Guest Name': 'Alice Smith',
+        Code: 'ALICE1',
+        Email: 'alice@example.com',
+      };
+      const freqMap = new Map([['ALICE1', 1]]);
+      const dbCodes = new Set<string>();
+
+      const result = validateSingleCsvRow(
+        row,
+        0,
+        { guestNameCol: 'Guest Name', codeCol: 'Code', emailCol: 'Email' },
+        freqMap,
+        dbCodes
+      );
+
+      expect(result.isValid).toBe(true);
+      expect(result.guestName).toBe('Alice Smith');
+      expect(result.code).toBe('ALICE1');
+      expect(result.email).toBe('alice@example.com');
+    });
+
+    it('allocates hoisted column Set only once per batch instead of per-row', () => {
+      let setConstructorCount = 0;
+      const OriginalSet = global.Set;
+
+      // Spy on Set construction during validateCsvRows execution
+      const SetSpy = jest.fn().mockImplementation(function (this: unknown, iterable?: Iterable<unknown>) {
+        setConstructorCount++;
+        return new OriginalSet(iterable);
+      });
+      (global as unknown as { Set: typeof Set }).Set = SetSpy as unknown as typeof Set;
+
+      try {
+        const rows = Array.from({ length: 100 }, (_, i) => ({
+          'Guest Name': `Guest ${i}`,
+          Code: `CODE${i}`,
+        }));
+
+        setConstructorCount = 0;
+        validateCsvRows(rows, { guestNameCol: 'Guest Name', codeCol: 'Code' }, new OriginalSet());
+
+        // For 100 rows, column mapping Set must be allocated exactly 1 time per batch call, not 100 times!
+        // (Note: existingDbCodes is also passed or constructed once as default parameter)
+        expect(setConstructorCount).toBeLessThanOrEqual(2);
+      } finally {
+        global.Set = OriginalSet;
+      }
     });
   });
 });

@@ -398,6 +398,9 @@ export function getStorageProvider(): StorageProvider {
   return storageProviderInstance;
 }
 
+/**
+ * @internal Reset cached storage provider instance for testing purposes only.
+ */
 export function resetStorageProvider(): void {
   storageProviderInstance = null;
 }
