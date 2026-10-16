@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { useAdminFeatures } from '@/hooks/admin/useAdminFeatures';
 
+import type { Feature } from './components/DragDropContainer';
+
 function DragDropSkeleton() {
   return (
     <div className="space-y-4">
@@ -44,12 +46,19 @@ export default function SiteManagerPage() {
   const { features, loading, error, saveFeatures } = useAdminFeatures();
 
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [sectionToDelete, setSectionToDelete] = useState<Feature | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [customContent, setCustomContent] = useState('');
 
   const toggleVisibility = (id: string) => {
     const updated = features.map(f => f.id === id ? { ...f, visible: !f.visible } : f);
     saveFeatures(updated).then(() => addToast('Section visibility updated', 'success'));
+  };
+
+  const deleteCustomSection = (id: string) => {
+    const updated = features.filter(f => f.id !== id);
+    saveFeatures(updated).then(() => addToast('Section deleted', 'success'));
+    setSectionToDelete(null);
   };
 
   const addCustomSection = () => {
@@ -93,7 +102,40 @@ export default function SiteManagerPage() {
           features={features}
           saveFeatures={saveFeatures}
           toggleVisibility={toggleVisibility}
+          onDeleteSection={(id) => {
+            const target = features.find(f => f.id === id);
+            if (target) setSectionToDelete(target);
+          }}
         />
+
+        <Dialog
+          isOpen={!!sectionToDelete}
+          onClose={() => setSectionToDelete(null)}
+          title="Delete Custom Section"
+          className="dark:bg-gray-800"
+        >
+          <div className="space-y-4">
+            <p className="text-gray-700 dark:text-gray-300">
+              Are you sure you want to delete the section &quot;{sectionToDelete?.title || sectionToDelete?.id}&quot;? This action cannot be undone.
+            </p>
+            <div className="flex gap-4 mt-6">
+              <Button
+                onClick={() => sectionToDelete && deleteCustomSection(sectionToDelete.id)}
+                variant="danger"
+                className="flex-1"
+              >
+                Delete
+              </Button>
+              <Button
+                onClick={() => setSectionToDelete(null)}
+                variant="ghost"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </Dialog>
 
         <Dialog
           isOpen={showCustomModal}

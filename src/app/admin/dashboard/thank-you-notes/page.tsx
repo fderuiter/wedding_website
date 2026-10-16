@@ -56,6 +56,25 @@ export default function ThankYouNotesPage() {
   const [editSentAt, setEditSentAt] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const handleExportCsv = () => {
+    const params = new URLSearchParams();
+    if (statusFilter !== 'All') {
+      params.set('status', statusFilter);
+    }
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    }
+    const query = params.toString();
+    const url = query ? `/api/admin/thank-you-notes/export?${query}` : '/api/admin/thank-you-notes/export';
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', '');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -226,6 +245,9 @@ export default function ThankYouNotesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="secondary" onClick={handleExportCsv}>
+            Export CSV
+          </Button>
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>
             Back to Registry
           </Button>
@@ -317,7 +339,7 @@ export default function ThankYouNotesPage() {
 
         {/* Status Filter Tabs */}
         <div
-          role="group"
+          role="tablist"
           aria-label="Filter contributors by thank-you status"
           className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700 self-start md:self-auto overflow-x-auto max-w-full"
         >
@@ -325,6 +347,8 @@ export default function ThankYouNotesPage() {
             <button
               key={tab}
               type="button"
+              role="tab"
+              aria-selected={statusFilter === tab}
               onClick={() => setStatusFilter(tab)}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                 statusFilter === tab

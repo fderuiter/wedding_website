@@ -2050,6 +2050,17 @@
         }
       }
     },
+    "/api/admin/thank-you-notes/export": {
+      "get": {
+        "summary": "GET /api/admin/thank-you-notes/export",
+        "description": "Endpoint for /api/admin/thank-you-notes/export",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/thank-you-notes": {
       "get": {
         "summary": "GET /api/admin/thank-you-notes",
@@ -2141,6 +2152,35 @@
                 },
                 "required": [
                   "passcode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/guest/photos/upload": {
+      "post": {
+        "summary": "POST /api/guest/photos/upload",
+        "description": "Endpoint for /api/guest/photos/upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "file": {}
+                },
+                "required": [
+                  "file"
                 ],
                 "additionalProperties": false
               }
@@ -2281,6 +2321,35 @@
                   "url",
                   "altText",
                   "isDecorative"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/photos/upload": {
+      "post": {
+        "summary": "POST /api/photos/upload",
+        "description": "Endpoint for /api/photos/upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "file": {}
+                },
+                "required": [
+                  "file"
                 ],
                 "additionalProperties": false
               }

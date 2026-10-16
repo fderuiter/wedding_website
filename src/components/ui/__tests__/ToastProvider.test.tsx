@@ -51,6 +51,52 @@ describe('ToastProvider', () => {
     expect(alertToast).toHaveTextContent('Error notification');
   });
 
+  test('applies CSS custom property styles for background, text color, and border radius', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Info'));
+    const statusToast = screen.getByRole('status');
+    expect(statusToast).toHaveStyle({
+      backgroundColor: 'var(--toast-info-bg)',
+      color: 'var(--toast-info-text)',
+      borderRadius: 'var(--toast-radius)',
+    });
+
+    fireEvent.click(screen.getByText('Add Error'));
+    const alertToast = screen.getByRole('alert');
+    expect(alertToast).toHaveStyle({
+      backgroundColor: 'var(--toast-error-bg)',
+      color: 'var(--toast-error-text)',
+      borderRadius: 'var(--toast-radius)',
+    });
+
+    fireEvent.click(screen.getByText('Add Success'));
+    const toasts = screen.getAllByRole('status');
+    const successToast = toasts.find(t => t.textContent?.includes('Success notification'));
+    expect(successToast).toHaveStyle({
+      backgroundColor: 'var(--toast-success-bg)',
+      color: 'var(--toast-success-text)',
+      borderRadius: 'var(--toast-radius)',
+    });
+  });
+
+  test('applies --toast-close-hover-bg to close button hover state', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Info'));
+    const closeButton = screen.getByRole('button', { name: /close notification/i });
+    expect(closeButton).toBeInTheDocument();
+    expect(closeButton.className).toContain('hover:bg-[var(--toast-close-hover-bg)]');
+  });
+
   test('auto-dismisses toasts after 5000ms', () => {
     render(
       <ToastProvider>

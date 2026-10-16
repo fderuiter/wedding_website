@@ -44,6 +44,7 @@ export const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ico'];
 export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/png': ['.png'],
+  'image/webp': ['.webp'],
   'image/x-icon': ['.ico'],
   'image/vnd.microsoft.icon': ['.ico'],
 };
@@ -51,9 +52,30 @@ export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
 export const MIME_TO_NORMALIZED_EXT: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
+  'image/webp': '.webp',
   'image/x-icon': '.ico',
   'image/vnd.microsoft.icon': '.ico',
 };
+
+export const MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024;
+export const GUEST_PHOTO_ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+export const GUEST_PHOTO_ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+
+export const GuestPhotoUploadSchema = z.object({
+  file: z.any()
+    .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
+    .refine((file) => file?.size <= MAX_GUEST_PHOTO_SIZE, { message: 'File size exceeds 10MB limit' })
+    .refine((file) => GUEST_PHOTO_ACCEPTED_TYPES.includes(file?.type), { message: 'Invalid file format. Only JPEG, PNG, and WebP images are allowed' })
+    .refine((file) => {
+      const ext = getFileExtension(file?.name);
+      return GUEST_PHOTO_ALLOWED_EXTENSIONS.includes(ext);
+    }, { message: 'Invalid file extension. Only JPEG, PNG, and WebP images are allowed' })
+    .refine((file) => {
+      const ext = getFileExtension(file?.name);
+      const allowedExts = MIME_TO_EXTENSIONS[file?.type] || [];
+      return allowedExts.includes(ext);
+    }, { message: 'File extension does not match the declared MIME type' })
+});
 
 export function getFileExtension(filename?: string | null): string {
   if (!filename || typeof filename !== 'string') return '';
