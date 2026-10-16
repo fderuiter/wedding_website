@@ -1,22 +1,23 @@
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'file:./test.db';
-process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'build-time-static-pass';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy';
+process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
 
 import { Project, SyntaxKind } from 'ts-morph';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import * as validationUtils from '../src/utils/validation.js';
-import * as registrySchemas from '../src/features/registry/schemas.js';
-import * as attractionSchemas from '../src/features/attractions/schemas.js';
-import * as weddingPartySchemas from '../src/features/wedding-party/schemas.js';
-import * as contentSchemas from '../src/features/content/schemas.js';
-import * as mediaSchemas from '../src/features/media/schemas.js';
-import * as seatingSchemas from '../src/features/seating/schemas.js';
-import * as backupValidationSchemas from '../src/utils/backupValidation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootPath = path.resolve(__dirname, '..');
+
+const validationUtils = await import('../src/utils/validation.js');
+const registrySchemas = await import('../src/features/registry/schemas.js');
+const attractionSchemas = await import('../src/features/attractions/schemas.js');
+const weddingPartySchemas = await import('../src/features/wedding-party/schemas.js');
+const contentSchemas = await import('../src/features/content/schemas.js');
+const mediaSchemas = await import('../src/features/media/schemas.js');
+const seatingSchemas = await import('../src/features/seating/schemas.js');
+const backupValidationSchemas = await import('../src/utils/backupValidation.js');
 
 const ALL_SCHEMAS: Record<string, any> = {
   ...validationUtils,
