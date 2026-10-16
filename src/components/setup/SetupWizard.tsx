@@ -48,8 +48,8 @@ function SetupWizardContent() {
   const [isAttractionsModalOpen, setIsAttractionsModalOpen] = useState(false);
 
   // Content Counts
-  const { data: partyMembers = [] } = useAdminWeddingParty();
-  const { data: attractions = [] } = useAdminAttractions();
+  const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
+  const { data: attractions = [] } = useAdminAttractions({ enabled: isAuthenticated });
   
   // Config state
   const [partner1Name, setPartner1Name] = useState('');
