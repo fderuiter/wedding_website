@@ -43,7 +43,22 @@ jest.mock('next/server', () => {
     }
 
     async json() {
-      return JSON.parse(this.bodyContent);
+      if (typeof this.bodyContent === 'string') {
+        return JSON.parse(this.bodyContent);
+      }
+      if (this.bodyContent && typeof (this.bodyContent as any).getReader === 'function') {
+        const reader = (this.bodyContent as any).getReader();
+        const decoder = new TextDecoder();
+        let result = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          result += decoder.decode(value, { stream: true });
+        }
+        result += decoder.decode();
+        return JSON.parse(result);
+      }
+      return this.bodyContent;
     }
   }
 

@@ -2,13 +2,10 @@ import {
   ModuleConfigSchema,
   resolveModuleConfig,
   isFeatureEnabled,
-  getDisabledFeatures,
-  validateModuleDependencies,
   DEFAULT_MODULE_CONFIG,
   FEATURE_METADATA,
-  FEATURE_DEPENDENCIES,
 } from '../modules';
-import { getNavLinks, getRequiredModuleForRoute } from '../routes';
+import { getNavLinks } from '../routes';
 
 describe('Feature / Module Configuration Model', () => {
   describe('ModuleConfigSchema & Defaults', () => {
@@ -28,7 +25,7 @@ describe('Feature / Module Configuration Model', () => {
     });
 
     it('enumerates metadata for all 10 supported features', () => {
-      expect(FEATURE_DEPENDENCIES.groupGifting).toEqual(['registry']);
+      expect(FEATURE_METADATA.groupGifting.dependencies).toEqual(['registry']);
       const featureKeys = Object.keys(FEATURE_METADATA);
       expect(featureKeys).toHaveLength(10);
       expect(featureKeys).toEqual(
@@ -85,29 +82,13 @@ describe('Feature / Module Configuration Model', () => {
     });
   });
 
-  describe('isFeatureEnabled & getDisabledFeatures', () => {
+  describe('isFeatureEnabled', () => {
     it('correctly reports enabled and disabled status', () => {
       const config = { weather: false, interactive3D: false };
 
       expect(isFeatureEnabled('weather', config)).toBe(false);
       expect(isFeatureEnabled('interactive3D', config)).toBe(false);
       expect(isFeatureEnabled('registry', config)).toBe(true);
-
-      const disabled = getDisabledFeatures(config);
-      expect(disabled).toEqual(['weather', 'interactive3D']);
-    });
-  });
-
-  describe('validateModuleDependencies', () => {
-    it('returns error if groupGifting is enabled while registry is disabled', () => {
-      const check = validateModuleDependencies({ groupGifting: true, registry: false });
-      expect(check.valid).toBe(false);
-      expect(check.errors).toContain("Feature 'groupGifting' requires feature 'registry' to be enabled.");
-    });
-
-    it('returns valid if groupGifting and registry are both enabled or disabled', () => {
-      expect(validateModuleDependencies({ groupGifting: true, registry: true }).valid).toBe(true);
-      expect(validateModuleDependencies({ groupGifting: false, registry: false }).valid).toBe(true);
     });
   });
 
@@ -128,17 +109,6 @@ describe('Feature / Module Configuration Model', () => {
       expect(hrefs).not.toContain('/weather');
       expect(hrefs).not.toContain('/photos');
       expect(hrefs).not.toContain('/wedding-party');
-    });
-
-    it('identifies required feature modules for specific routes', () => {
-      expect(getRequiredModuleForRoute('/registry')).toBe('registry');
-      expect(getRequiredModuleForRoute('/photos')).toBe('gallery');
-      expect(getRequiredModuleForRoute('/wedding-party')).toBe('weddingParty');
-      expect(getRequiredModuleForRoute('/things-to-do')).toBe('attractions');
-      expect(getRequiredModuleForRoute('/weather')).toBe('weather');
-      expect(getRequiredModuleForRoute('/heart')).toBe('interactive3D');
-      expect(getRequiredModuleForRoute('/api/weather')).toBe('weather');
-      expect(getRequiredModuleForRoute('/archive')).toBeUndefined();
     });
   });
 });

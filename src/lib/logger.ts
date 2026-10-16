@@ -9,7 +9,7 @@ const LEVELS: Record<LogLevel, number> = {
 
 const SENSITIVE_KEYS = /password|passcode|secret|cookie|authorization|token|bearer|database_url/i;
 
-export function redactLogData(data: any, depth = 0): any {
+function redactLogData(data: any, depth = 0): any {
   if (depth > 5 || data === null || data === undefined) return data;
 
   if (typeof data === 'string') {

@@ -56,9 +56,13 @@ export default function AdminPreviewLayout({
       if (draftType === 'wedding-party') entityType = 'WeddingPartyMember';
       if (draftType === 'attractions') entityType = 'Attraction';
       
-      apiClient.get<any[]>(`/api/admin/versions?entityType=${entityType}&entityId=${entityId}`)
+      apiClient.get<any>(`/api/admin/versions?entityType=${entityType}&entityId=${entityId}`)
         .then(data => {
-          if (Array.isArray(data)) setVersions(data);
+          if (Array.isArray(data)) {
+            setVersions(data);
+          } else if (data && Array.isArray(data.items)) {
+            setVersions(data.items);
+          }
         })
         .catch(console.error);
     }
