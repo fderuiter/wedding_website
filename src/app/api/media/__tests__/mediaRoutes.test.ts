@@ -35,41 +35,99 @@ describe('Media API Routes Integration Tests', () => {
   describe('GET /api/media', () => {
     test('is publicly accessible (allows anonymous access)', async () => {
       mockIsAdminRequest.mockResolvedValue(false); // Not admin
-      mockMediaRepository.getAllMedia.mockResolvedValue([]);
+      mockMediaRepository.getAllMedia.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+      });
 
       const req = new NextRequest('http://localhost/api/media');
       const res = await GET(req);
       
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body).toEqual({ success: true, data: [] });
-      expect(mockMediaRepository.getAllMedia).toHaveBeenCalled();
+      expect(body).toEqual({
+        success: true,
+        data: {
+          data: [],
+          total: 0,
+          page: 1,
+          limit: 20,
+          totalPages: 0,
+        },
+      });
+      expect(mockMediaRepository.getAllMedia).toHaveBeenCalledWith({ page: undefined, limit: undefined });
     });
 
-    test('returns empty lists successfully', async () => {
-      mockMediaRepository.getAllMedia.mockResolvedValue([]);
+    test('returns empty lists successfully with metadata envelope', async () => {
+      mockMediaRepository.getAllMedia.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+      });
 
       const req = new NextRequest('http://localhost/api/media');
       const res = await GET(req);
 
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.data).toEqual([]);
+      expect(body.data).toEqual({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+      });
     });
 
-    test('returns list of media records successfully', async () => {
+    test('returns list of media records successfully with metadata envelope', async () => {
       const mockMediaList = [
         { id: 'm1', url: 'https://example.com/img1.jpg', altText: 'Image 1', isDecorative: false, createdAt: new Date(), updatedAt: new Date() },
         { id: 'm2', url: 'https://example.com/img2.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }
       ];
-      mockMediaRepository.getAllMedia.mockResolvedValue(mockMediaList);
+      mockMediaRepository.getAllMedia.mockResolvedValue({
+        data: mockMediaList,
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
 
       const req = new NextRequest('http://localhost/api/media');
       const res = await GET(req);
 
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.data).toEqual(mockMediaList);
+      expect(body.data).toEqual({
+        data: mockMediaList,
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+    });
+
+    test('parses custom page and limit query parameters and passes them to repository', async () => {
+      mockMediaRepository.getAllMedia.mockResolvedValue({
+        data: [],
+        total: 50,
+        page: 2,
+        limit: 10,
+        totalPages: 5,
+      });
+
+      const req = new NextRequest('http://localhost/api/media?page=2&limit=10');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      expect(mockMediaRepository.getAllMedia).toHaveBeenCalledWith({ page: 2, limit: 10 });
+      const body = await res.json();
+      expect(body.data.page).toBe(2);
+      expect(body.data.limit).toBe(10);
     });
   });
 

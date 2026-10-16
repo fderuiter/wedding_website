@@ -14,15 +14,32 @@ export default function MediaDashboardPage() {
   const [currentMedia, setCurrentMedia] = useState<Partial<MediaDTO>>({});
   const [isEditing, setIsEditing] = useState(false);
 
-  useEffect(() => {
-    fetchMedia();
-  }, []);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const fetchMedia = async () => {
+  useEffect(() => {
+    fetchMedia(page);
+  }, [page]);
+
+  const fetchMedia = async (targetPage = page) => {
     try {
       setLoading(true);
-      const data = await apiClient.get('/api/media');
-      setMedia(data);
+      const res = await apiClient.get(`/api/media?page=${targetPage}&limit=${limit}`);
+      if (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data)) {
+        setMedia(res.data);
+        setTotal(res.total ?? 0);
+        setTotalPages(res.totalPages ?? 1);
+        const resPage = res.page ?? targetPage;
+        if (resPage !== page) {
+          setPage(resPage);
+        }
+      } else if (Array.isArray(res)) {
+        setMedia(res);
+        setTotal(res.length);
+        setTotalPages(1);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -46,7 +63,7 @@ export default function MediaDashboardPage() {
         await apiClient.post('/api/media', currentMedia);
       }
       setIsEditing(false);
-      fetchMedia();
+      fetchMedia(page);
     } catch (e) {
       console.error(e);
     }
@@ -56,7 +73,11 @@ export default function MediaDashboardPage() {
     if (!confirm('Delete this media? It may break references.')) return;
     try {
       await apiClient.delete(`/api/media/${id}`);
-      fetchMedia();
+      if (media.length === 1 && page > 1) {
+        setPage(p => p - 1);
+      } else {
+        fetchMedia(page);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -143,6 +164,28 @@ export default function MediaDashboardPage() {
               ))}
             </div>
           )}
+
+          <div className="flex justify-between items-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700" data-testid="media-pagination-controls">
+            <Button
+              variant="secondary"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              aria-label="Previous page"
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-gray-600 dark:text-gray-300">
+              Page {page} of {totalPages || 1} ({total} items)
+            </span>
+            <Button
+              variant="secondary"
+              disabled={page >= totalPages || totalPages === 0 || loading}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              aria-label="Next page"
+            >
+              Next
+            </Button>
+          </div>
         </>
       )}
     </div>
