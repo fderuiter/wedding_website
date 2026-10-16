@@ -29,7 +29,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
           boxShadow: 'var(--card-shadow, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1))',
           ...style,
         }}
-        className={cn('w-full border p-[var(--card-padding)] rounded-[var(--radius-card)]', className)}
+        className={cn('max-w-md w-full border p-[var(--card-padding)] rounded-[var(--radius-card)]', className)}
         {...props}
       />
     );
