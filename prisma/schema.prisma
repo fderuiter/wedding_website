@@ -131,6 +131,7 @@ model Contributor {
   email          String?
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
+  message        String?
   date           DateTime      @default(now())
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
@@ -198,5 +199,6 @@ model SnapshotVersion {
   author     String   @default("Admin")
   createdAt  DateTime @default(now())
 
+  @@index([entityType, entityId, createdAt(sort: Desc)])
   @@index([createdAt])
 }

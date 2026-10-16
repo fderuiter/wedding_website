@@ -4,6 +4,12 @@ import React, { useState, useRef } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
 
+interface ActiveDropTarget {
+  type: 'table' | 'seat';
+  tableId: string;
+  seatNumber?: number;
+}
+
 interface FloorplanCanvasProps {
   tables: SeatingTableDTO[];
   selectedTableId: string | null;
@@ -12,6 +18,7 @@ interface FloorplanCanvasProps {
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
   onUnassignGuest: (guestId: string) => void;
   searchQuery?: string;
+  onAddTable?: () => void;
 }
 
 export function FloorplanCanvas({
@@ -22,10 +29,12 @@ export function FloorplanCanvas({
   onDropGuestOnTable,
   onUnassignGuest,
   searchQuery,
+  onAddTable,
 }: FloorplanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
 
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
   const isSearching = normalizedQuery.length > 0;
@@ -127,15 +136,74 @@ export function FloorplanCanvas({
     }
   };
 
-  // HTML5 Drag and Drop for Guest Cards onto Table
-  const handleDragOver = (e: React.DragEvent) => {
+  // HTML5 Drag and Drop Handlers for Dropzones
+  const handleTableDragEnter = (e: React.DragEvent, tableId: string) => {
     e.preventDefault();
+    e.stopPropagation();
+    setActiveDropTarget({ type: 'table', tableId });
+  };
+
+  const handleTableDragOver = (e: React.DragEvent, tableId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
+    if (!activeDropTarget || activeDropTarget.type !== 'table' || activeDropTarget.tableId !== tableId) {
+      setActiveDropTarget({ type: 'table', tableId });
+    }
+  };
+
+  const handleTableDragLeave = (e: React.DragEvent, tableId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) {
+      return;
+    }
+    setActiveDropTarget((prev) => (prev?.tableId === tableId ? null : prev));
+  };
+
+  const handleSeatDragEnter = (e: React.DragEvent, tableId: string, seatNumber: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveDropTarget({ type: 'seat', tableId, seatNumber });
+  };
+
+  const handleSeatDragOver = (e: React.DragEvent, tableId: string, seatNumber: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (
+      !activeDropTarget ||
+      activeDropTarget.type !== 'seat' ||
+      activeDropTarget.tableId !== tableId ||
+      activeDropTarget.seatNumber !== seatNumber
+    ) {
+      setActiveDropTarget({ type: 'seat', tableId, seatNumber });
+    }
+  };
+
+  const handleSeatDragLeave = (e: React.DragEvent, tableId: string, seatNumber: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) {
+      return;
+    }
+    if (
+      e.relatedTarget &&
+      (e.currentTarget.parentElement?.contains(e.relatedTarget as Node) ||
+        (e.relatedTarget as HTMLElement).closest?.(`[data-table-id="${tableId}"]`))
+    ) {
+      setActiveDropTarget({ type: 'table', tableId });
+    } else {
+      setActiveDropTarget((prev) =>
+        prev?.tableId === tableId && prev?.seatNumber === seatNumber ? null : prev
+      );
+    }
   };
 
   const handleDropOnTable = (e: React.DragEvent, tableId: string, seatNumber?: number) => {
     e.preventDefault();
     e.stopPropagation();
+    setActiveDropTarget(null);
     const guestId = e.dataTransfer.getData('text/plain');
     if (guestId) {
       onDropGuestOnTable(guestId, tableId, seatNumber);
@@ -157,6 +225,10 @@ export function FloorplanCanvas({
     for (let i = 1; i <= capacity; i++) {
       const assignedGuest = assignedGuests.find((g) => g.seatNumber === i) || assignedGuests[i - 1];
       const isMatch = assignedGuest ? isGuestMatch(assignedGuest) : false;
+      const isSeatDropTarget =
+        activeDropTarget?.tableId === table.id &&
+        activeDropTarget?.type === 'seat' &&
+        activeDropTarget?.seatNumber === i;
 
       let seatX = 0;
       let seatY = 0;
@@ -199,11 +271,14 @@ export function FloorplanCanvas({
               : `Seat ${i}: Empty`
           }
           onKeyDown={(e) => handleSeatKeyDown(e, assignedGuest?.id)}
-          onDragOver={handleDragOver}
+          onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
+          onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
+          onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
           onDoubleClick={() => assignedGuest && onUnassignGuest(assignedGuest.id)}
           data-testid={isMatch ? 'matching-seat' : undefined}
           data-is-search-match={isMatch ? 'true' : 'false'}
+          data-is-drop-target={isSeatDropTarget ? 'true' : undefined}
           title={
             assignedGuest
               ? isMatch
@@ -212,13 +287,15 @@ export function FloorplanCanvas({
               : `Seat ${i}: Empty (Drop guest here)`
           }
           className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
-            assignedGuest
-              ? isMatch
-                ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
-                : isSearching
-                  ? 'opacity-60 shadow-sm'
-                  : 'shadow-sm hover:scale-110'
-              : 'hover:border-primary hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]'
+            isSeatDropTarget
+              ? 'scale-125 bg-primary/20 border-primary ring-2 ring-primary z-30 font-bold shadow-lg'
+              : assignedGuest
+                ? isMatch
+                  ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
+                  : isSearching
+                    ? 'opacity-60 shadow-sm'
+                    : 'shadow-sm hover:scale-110'
+                : 'hover:border-primary hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]'
           }`}
           style={
             assignedGuest
@@ -258,11 +335,73 @@ export function FloorplanCanvas({
     return seats;
   };
 
+  // Zero-state view when no tables exist
+  if (tables.length === 0) {
+    return (
+      <div
+        ref={canvasRef}
+        className="relative w-full h-[650px] rounded-xl overflow-hidden shadow-inner select-none flex flex-col items-center justify-center p-6 text-center print:border-none print:bg-[var(--print-bg)]"
+        style={{
+          backgroundColor: 'var(--canvas-bg, #f8fafc)',
+          border: 'var(--canvas-border, 2px dashed #cbd5e1)',
+          backgroundImage: 'radial-gradient(circle, var(--canvas-grid-dot, #cbd5e1) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+        aria-label="Interactive 2D Reception Floorplan Canvas"
+        role="region"
+      >
+        <div className="max-w-md flex flex-col items-center justify-center p-8 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-primary/10 dark:bg-primary/20 text-primary flex items-center justify-center mb-1">
+            <svg
+              className="w-8 h-8"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+              data-testid="empty-floorplan-icon"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+            No Tables Created Yet
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm">
+            Get started by adding your first reception table to the floorplan. You can configure table shape, capacity, and position.
+          </p>
+          {onAddTable && (
+            <button
+              type="button"
+              onClick={onAddTable}
+              className="px-4 py-2 text-xs font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add First Table
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={canvasRef}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
+      onDragLeave={(e) => {
+        if (!e.relatedTarget || !e.currentTarget.contains(e.relatedTarget as Node)) {
+          setActiveDropTarget(null);
+        }
+      }}
+      onDragEnd={() => setActiveDropTarget(null)}
       onClick={() => onSelectTable(null)}
       className="relative w-full h-[650px] rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
       style={{
@@ -303,20 +442,29 @@ export function FloorplanCanvas({
         const isSelected = selectedTableId === table.id;
         const isOverCapacity = assignedCount > table.capacity;
         const hasMatchingGuest = isSearching && (table.invitationCodes || []).some(isGuestMatch);
+        const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
 
         return (
           <div
             key={table.id}
+            data-table-id={table.id}
+            data-is-drop-target={isTableDropTarget ? 'true' : undefined}
             onMouseDown={(e) => handleTableMouseDown(e, table)}
             onClick={(e) => {
               e.stopPropagation();
               onSelectTable(table.id);
             }}
             onKeyDown={(e) => handleTableKeyDown(e, table)}
-            onDragOver={handleDragOver}
+            onDragEnter={(e) => handleTableDragEnter(e, table.id)}
+            onDragOver={(e) => handleTableDragOver(e, table.id)}
+            onDragLeave={(e) => handleTableDragLeave(e, table.id)}
             onDrop={(e) => handleDropOnTable(e, table.id)}
             className={`absolute cursor-move transition-all transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
-              isSelected ? 'ring-4 ring-primary ring-offset-2 z-20' : 'z-10'
+              isTableDropTarget
+                ? 'ring-4 ring-primary border-primary shadow-xl shadow-primary/20 scale-[1.03] z-30'
+                : isSelected
+                  ? 'ring-4 ring-primary ring-offset-2 z-20'
+                  : 'z-10'
             } ${
               hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''
             }`}
@@ -335,14 +483,16 @@ export function FloorplanCanvas({
             <div
               className={`w-full h-full border-2 flex flex-col items-center justify-center p-2 text-center shadow-md relative transition-colors ${
                 table.shape === 'round' ? 'rounded-full' : ''
-              }`}
+              } ${isTableDropTarget ? 'border-primary' : ''}`}
               style={{
                 backgroundColor: isOverCapacity
                   ? 'var(--floorplan-status-overcapacity-bg, #fef2f2)'
                   : 'var(--floorplan-table-bg, #ffffff)',
-                borderColor: isOverCapacity
-                  ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
-                  : 'var(--floorplan-table-border, #d1d5db)',
+                borderColor: isTableDropTarget
+                  ? 'var(--color-primary, #B91C1C)'
+                  : isOverCapacity
+                    ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
+                    : 'var(--floorplan-table-border, #d1d5db)',
                 borderRadius: table.shape === 'round'
                   ? '9999px'
                   : 'var(--floorplan-table-radius, 0.75rem)',
@@ -394,3 +544,4 @@ export function FloorplanCanvas({
     </div>
   );
 }
+

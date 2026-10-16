@@ -210,7 +210,7 @@ class RegistryRepository implements IRegistryRepository {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; amount: number; code?: string }
+    contribution: { name: string; amount: number; code?: string; message?: string | null }
   ) {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
@@ -268,6 +268,8 @@ class RegistryRepository implements IRegistryRepository {
       const newTotalCents = contributedCents + contributionCents;
       const newTotal = newTotalCents / 100;
 
+      const messageToSave = contribution.message && contribution.message.trim() ? contribution.message.trim() : null;
+
       const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
         data: {
@@ -277,6 +279,7 @@ class RegistryRepository implements IRegistryRepository {
             create: {
               name: finalName,
               amount: contribution.amount,
+              message: messageToSave,
               date: new Date(),
               ...(invitationCodeId ? { invitationCodeId } : {})
             }

@@ -4,6 +4,7 @@ export {
   AppConfigSchema,
   RawUpdateAppConfigSchema,
   UpdateAppConfigSchema,
+  toAppConfigDbPayload,
   FAQNodeSchema,
   LogisticsNodeSchema,
   ScheduleNodeSchema,

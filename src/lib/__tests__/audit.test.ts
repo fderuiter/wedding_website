@@ -3,7 +3,7 @@
  */
 
 import { reviveDates } from '@/app/api/admin/maintenance/import/route';
-import { createBatchAuditSnapshots, pruneSnapshotsBulk } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots, pruneSnapshotsBulk } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 
 jest.mock('@/lib/prisma', () => ({
@@ -139,6 +139,47 @@ describe('High-Throughput Safe Backup Import Utilities', () => {
 
       expect(mockPrisma.snapshotVersion.findMany).toHaveBeenCalled();
       expect(mockPrisma.snapshotVersion.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createAuditSnapshot - Inline Hot Path Audit Creation', () => {
+    it('creates a snapshot without firing background pruning operations', async () => {
+      mockPrisma.snapshotVersion.create.mockResolvedValue({ id: 'snap-1' });
+
+      await createAuditSnapshot('RegistryItem', 'item-123', { name: 'Gift' }, 'Admin');
+
+      expect(mockPrisma.snapshotVersion.create).toHaveBeenCalledWith({
+        data: {
+          entityType: 'RegistryItem',
+          entityId: 'item-123',
+          data: { name: 'Gift' },
+          author: 'Admin',
+        },
+      });
+
+      // Verify no background pruning queries were triggered
+      expect(mockPrisma.snapshotVersion.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.snapshotVersion.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('uses provided transaction client when passed', async () => {
+      const mockTx = {
+        snapshotVersion: {
+          create: jest.fn().mockResolvedValue({ id: 'snap-tx' }),
+        },
+      };
+
+      await createAuditSnapshot('RegistryItem', 'item-456', { name: 'Gift Tx' }, 'User', mockTx);
+
+      expect(mockTx.snapshotVersion.create).toHaveBeenCalledWith({
+        data: {
+          entityType: 'RegistryItem',
+          entityId: 'item-456',
+          data: { name: 'Gift Tx' },
+          author: 'User',
+        },
+      });
+      expect(mockPrisma.snapshotVersion.create).not.toHaveBeenCalled();
     });
   });
 
