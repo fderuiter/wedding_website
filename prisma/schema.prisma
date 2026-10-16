@@ -33,6 +33,9 @@ model AppConfig {
   seoDescription   String   @default("")
   faviconUrl       String   @default("/assets/favicon.png")
   ogImageUrl       String   @default("/images/sunset-embrace.jpg")
+  brandMonogram    String?
+  brandLogoUrl     String?
+  brandLogoAlt     String?
   seoKeywords      String   @default("{{partner1Name}} and {{partner2Name}}'s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception")
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")

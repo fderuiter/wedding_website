@@ -435,6 +435,9 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `seoDescription` | `string` | Configuration field for seoDescription |
 | `faviconUrl` | `string` | Configuration field for faviconUrl |
 | `ogImageUrl` | `string` | Configuration field for ogImageUrl |
+| `brandMonogram` | `optional` | Configuration field for brandMonogram |
+| `brandLogoUrl` | `optional` | Configuration field for brandLogoUrl |
+| `brandLogoAlt` | `optional` | Configuration field for brandLogoAlt |
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
 | `colorPrimary` | `default` | Configuration field for colorPrimary |
 | `colorSecondary` | `default` | Configuration field for colorSecondary |

@@ -47,6 +47,9 @@ export const APP_DEFAULTS: LocalAppConfig = {
   seoDescription: '',
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/placeholder.png',
+  brandMonogram: undefined,
+  brandLogoUrl: undefined,
+  brandLogoAlt: undefined,
   seoKeywords: '',
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
@@ -124,6 +127,9 @@ export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   }
   if (process.env.SITE_SEO_TITLE !== undefined) overrides.seoTitle = process.env.SITE_SEO_TITLE;
   if (process.env.SITE_SEO_DESCRIPTION !== undefined) overrides.seoDescription = process.env.SITE_SEO_DESCRIPTION;
+  if (process.env.SITE_BRAND_MONOGRAM !== undefined) overrides.brandMonogram = process.env.SITE_BRAND_MONOGRAM;
+  if (process.env.SITE_BRAND_LOGO_URL !== undefined) overrides.brandLogoUrl = process.env.SITE_BRAND_LOGO_URL;
+  if (process.env.SITE_BRAND_LOGO_ALT !== undefined) overrides.brandLogoAlt = process.env.SITE_BRAND_LOGO_ALT;
 
   return overrides;
 }

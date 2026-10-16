@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
 import { ThemeSelector } from '../ui/ThemeSelector';
+import { deriveBrandMonogram } from '@/features/content';
 
 /**
  * @interface NavbarProps
@@ -72,6 +73,13 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
       ? [...regularLinks, ...homeNavLinks, ...adminLinks] 
       : [...baseLinks];
 
+  const brandLogoUrl = config.brandLogoUrl;
+  const partner1 = config.partner1Name || config.brideName || '';
+  const partner2 = config.partner2Name || config.groomName || '';
+  const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
+  const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
+  const monogram = deriveBrandMonogram(config);
+
   return (
     <>
       <header
@@ -80,9 +88,20 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
       >
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex-shrink-0">
-              <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
-                A & F
+            <div className="flex-shrink-0 flex items-center h-16">
+              <Link
+                href="/"
+                className="flex items-center text-2xl font-bold text-gray-800 dark:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
+              >
+                {brandLogoUrl ? (
+                  <img
+                    src={brandLogoUrl}
+                    alt={brandLogoAlt}
+                    className="h-10 max-h-12 w-auto object-contain"
+                  />
+                ) : (
+                  <span>{monogram}</span>
+                )}
               </Link>
             </div>
             <div className="hidden md:block">

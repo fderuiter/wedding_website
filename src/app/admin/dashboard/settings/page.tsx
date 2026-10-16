@@ -567,6 +567,64 @@ export default function AdminSettingsPage() {
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <h2 className="text-xl font-semibold mb-4">Branding & Assets</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormGroup>
+                <Label>Brand Monogram</Label>
+                <Input
+                  type="text"
+                  name="brandMonogram"
+                  value={localConfig.brandMonogram || ''}
+                  onChange={handleChange}
+                  placeholder="e.g. A & F (leave blank for automatic derivation)"
+                />
+                <FormMessage>Custom monogram text displayed in navigation when no custom logo image is provided.</FormMessage>
+              </FormGroup>
+              <FormGroup>
+                <Label>Brand Logo Alt Text</Label>
+                <Input
+                  type="text"
+                  name="brandLogoAlt"
+                  value={localConfig.brandLogoAlt || ''}
+                  onChange={handleChange}
+                  placeholder="e.g. Wedding Logo"
+                />
+                <FormMessage>Accessibility text for screen readers when displaying custom brand logo image.</FormMessage>
+              </FormGroup>
+            </div>
+            <FormGroup>
+              <Label>Brand Logo Image (Header Navigation)</Label>
+              <div className="flex flex-col space-y-2">
+                <Input
+                  type="text"
+                  name="brandLogoUrl"
+                  value={localConfig.brandLogoUrl || ''}
+                  onChange={handleChange}
+                  placeholder="https://... or /images/logo.png"
+                />
+                <div className="flex items-center gap-4">
+                  <Input
+                    type="file"
+                    accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg"
+                    onChange={(e) => handleUpload(e, 'brandLogoUrl')}
+                    className="file:pt-1"
+                  />
+                  {localConfig.brandLogoUrl && (
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={localConfig.brandLogoUrl}
+                        alt="Brand logo preview"
+                        className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
+                      />
+                      <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.brandLogoUrl}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </FormGroup>
+          </section>
+
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormGroup>

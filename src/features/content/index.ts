@@ -4,6 +4,7 @@ export {
   AppConfigSchema,
   RawUpdateAppConfigSchema,
   UpdateAppConfigSchema,
+  deriveBrandMonogram,
   FAQNodeSchema,
   LogisticsNodeSchema,
   ScheduleNodeSchema,

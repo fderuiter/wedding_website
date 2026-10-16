@@ -36,10 +36,15 @@ function serializeOptions(options: Intl.DateTimeFormatOptions): string {
   return str;
 }
 
+let defaultNumberFormatFn: NumberFormatFn | null = null;
+
 function getNumberFormatFn(
   locale: string,
   currency: string
 ): NumberFormatFn {
+  if (locale === 'en-US' && currency === 'USD' && defaultNumberFormatFn) {
+    return defaultNumberFormatFn;
+  }
   const key = `${locale}:${currency}`;
   let formatFn = numberFormatFnCache.get(key);
   if (!formatFn) {
@@ -56,7 +61,44 @@ function getNumberFormatFn(
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    formatFn = formatter.format.bind(formatter);
+    const numberCache = new Map<number | bigint, string>();
+    if (locale === 'en-US' && currency === 'USD') {
+      formatFn = (val: number | bigint) => {
+        if (typeof val === 'number' && Number.isInteger(val) && val >= 0) {
+          if (val < 1000) {
+            return '$' + val + '.00';
+          }
+          if (val < 1000000) {
+            const th = (val / 1000) | 0;
+            const rem = val % 1000;
+            const remStr = rem < 10 ? '00' + rem : rem < 100 ? '0' + rem : '' + rem;
+            return '$' + th + ',' + remStr + '.00';
+          }
+        }
+        let cached = numberCache.get(val);
+        if (cached === undefined) {
+          if (numberCache.size >= 10000) {
+            numberCache.clear();
+          }
+          cached = formatter.format(val);
+          numberCache.set(val, cached);
+        }
+        return cached;
+      };
+      defaultNumberFormatFn = formatFn;
+    } else {
+      formatFn = (val: number | bigint) => {
+        let cached = numberCache.get(val);
+        if (cached === undefined) {
+          if (numberCache.size >= 10000) {
+            numberCache.clear();
+          }
+          cached = formatter.format(val);
+          numberCache.set(val, cached);
+        }
+        return cached;
+      };
+    }
     numberFormatCache.set(key, formatter);
     numberFormatFnCache.set(key, formatFn);
   }
@@ -67,13 +109,11 @@ function getDateTimeFormatFn(
   locale: string,
   options: Intl.DateTimeFormatOptions
 ): DateTimeFormatFn {
-  if (options && typeof options === 'object') {
-    const localeMap = optionsLocaleCache.get(options);
-    if (localeMap) {
-      const existing = localeMap.get(locale);
-      if (existing) {
-        return existing;
-      }
+  let localeMap = options && typeof options === 'object' ? optionsLocaleCache.get(options) : undefined;
+  if (localeMap) {
+    const existing = localeMap.get(locale);
+    if (existing) {
+      return existing;
     }
   }
 
@@ -89,13 +129,23 @@ function getDateTimeFormatFn(
       }
     }
     const formatter = new Intl.DateTimeFormat(locale, options);
-    formatFn = formatter.format.bind(formatter);
+    let lastTime: number | null = null;
+    let lastResult = '';
+    formatFn = (d?: Date | number) => {
+      if (d === undefined) return formatter.format();
+      const t = typeof d === 'number' ? d : d.getTime();
+      if (t === lastTime) {
+        return lastResult;
+      }
+      lastTime = t;
+      lastResult = formatter.format(d);
+      return lastResult;
+    };
     dateTimeFormatCache.set(key, formatter);
     dateTimeFormatFnCache.set(key, formatFn);
   }
 
   if (options && typeof options === 'object') {
-    let localeMap = optionsLocaleCache.get(options);
     if (!localeMap) {
       localeMap = new Map<string, DateTimeFormatFn>();
       optionsLocaleCache.set(options, localeMap);
@@ -113,11 +163,31 @@ function getDateTimeFormatFn(
  * @param locale The locale (default: 'en-US' if no global configuration exists).
  * @returns Formatted currency string.
  */
+const FAST_USD_CACHE: string[] = (() => {
+  const cache = new Array<string>(10000);
+  for (let i = 0; i < 1000; i++) {
+    cache[i] = '$' + i + '.00';
+  }
+  for (let i = 1000; i < 10000; i++) {
+    const th = (i / 1000) | 0;
+    const rem = i % 1000;
+    const remStr = rem < 10 ? '00' + rem : rem < 100 ? '0' + rem : '' + rem;
+    cache[i] = '$' + th + ',' + remStr + '.00';
+  }
+  return cache;
+})();
+
 export function formatCurrency(
   value: number | string,
   currency: string = 'USD',
   locale: string = 'en-US'
 ): string {
+  if (locale === 'en-US' && currency === 'USD' && typeof value === 'number' && value >= 0 && value < 10000 && (value | 0) === value) {
+    if (!defaultNumberFormatFn) {
+      getNumberFormatFn(locale, currency);
+    }
+    return FAST_USD_CACHE[value];
+  }
   if (typeof value === 'string') {
     const num = Number(value);
     if (num !== num) {
@@ -151,13 +221,15 @@ export function formatDate(
   if (time !== time) {
     return String(date);
   }
-  return getDateTimeFormatFn(locale, options)(d);
+  const fn = (typeof options === 'object' && options !== null ? optionsLocaleCache.get(options)?.get(locale) : undefined) || getDateTimeFormatFn(locale, options);
+  return fn(d);
 }
 
 /**
  * Clears the internal Intl caches. Useful for test isolation.
  */
 export function clearIntlCaches(): void {
+  defaultNumberFormatFn = null;
   numberFormatCache.clear();
   numberFormatFnCache.clear();
   dateTimeFormatCache.clear();

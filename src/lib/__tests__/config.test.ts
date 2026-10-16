@@ -146,6 +146,9 @@ describe('Configuration System Layers & Precedence', () => {
     process.env.SITE_GROOM_NAME = 'Bob';
     process.env.SITE_VENUE_NAME = 'Sunset Gardens';
     process.env.SITE_SHOW_COUNTDOWN = 'false';
+    process.env.SITE_BRAND_MONOGRAM = 'A & B';
+    process.env.SITE_BRAND_LOGO_URL = '/images/tenant-logo.svg';
+    process.env.SITE_BRAND_LOGO_ALT = 'Tenant Brand Logo';
 
     const overrides = getEnvConfigOverrides();
 
@@ -153,6 +156,9 @@ describe('Configuration System Layers & Precedence', () => {
     expect(overrides.groomName).toBe('Bob');
     expect(overrides.venueName).toBe('Sunset Gardens');
     expect(overrides.showCountdown).toBe(false);
+    expect(overrides.brandMonogram).toBe('A & B');
+    expect(overrides.brandLogoUrl).toBe('/images/tenant-logo.svg');
+    expect(overrides.brandLogoAlt).toBe('Tenant Brand Logo');
   });
 
   it('getAppConfig applies deterministic precedence (Env Overrides > DB Config > Application Defaults)', async () => {

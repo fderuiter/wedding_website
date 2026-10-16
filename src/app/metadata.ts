@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { getAppConfig } from '@/lib/config';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
 import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
+import { deriveBrandMonogram } from '@/features/content';
 
 function interpolateKeywords(templateStr: string, config: any): string[] {
   if (!templateStr) return [];
@@ -28,6 +29,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const partner1 = config.partner1Name || config.brideName || '';
   const partner2 = config.partner2Name || config.groomName || '';
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : '';
+  const monogram = deriveBrandMonogram(config);
+  const brandIdentity = config.brandMonogram || couplesNames || monogram;
 
   const rawOgImageUrl = config.ogImageUrl || '/api/og';
   const ogImageUrl = rawOgImageUrl === '/images/placeholder.png' ? '/api/og' : rawOgImageUrl;
@@ -80,9 +83,9 @@ export async function generateMetadata(): Promise<Metadata> {
     url: siteConfig.ogImage,
     width: dims?.width || 1200,
     height: dims?.height || 630,
-    alt: partner1 && partner2
+    alt: config.brandLogoAlt || (partner1 && partner2
       ? `A photo for ${partner1} and ${partner2}'s wedding.`
-      : 'Wedding website cover photo.',
+      : 'Wedding website cover photo.'),
   };
 
   return {
@@ -92,9 +95,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: siteConfig.description,
     keywords: dynamicKeywords,
-    authors: [{ name: couplesNames, url: config.baseUrl }],
-    creator: couplesNames,
-    publisher: couplesNames,
+    authors: [{ name: brandIdentity, url: config.baseUrl }],
+    creator: brandIdentity,
+    publisher: brandIdentity,
     icons: {
       icon: siteConfig.favicon,
       shortcut: siteConfig.favicon,
