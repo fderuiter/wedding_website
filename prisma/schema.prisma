@@ -198,5 +198,6 @@ model SnapshotVersion {
   author     String   @default("Admin")
   createdAt  DateTime @default(now())
 
+  @@index([entityType, entityId, createdAt(sort: Desc)])
   @@index([createdAt])
 }
