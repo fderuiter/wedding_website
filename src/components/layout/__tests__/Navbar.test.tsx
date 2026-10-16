@@ -13,12 +13,14 @@ jest.mock('../../ui/ThemeSelector', () => ({
 }));
 
 const mockConfig = {
+  id: 'global',
   brideName: 'Alice',
   groomName: 'Bob',
   partner1Name: 'Alice',
   partner2Name: 'Bob',
   weddingDate: '2026-06-20',
   baseUrl: 'http://localhost:3000',
+  modules: {},
   features: [
     { id: 'story', type: 'story', title: 'Our Story', visible: true },
     { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
@@ -26,6 +28,53 @@ const mockConfig = {
     { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
   ],
 } as any;
+
+describe('Navbar Component Brand Rendering', () => {
+  const baseConfig: any = {
+    id: 'global',
+    partner1Name: 'Alice',
+    partner2Name: 'Bob',
+    baseUrl: 'https://example.com',
+    modules: {},
+    features: [],
+  };
+
+  const defaultProps = {
+    isAdmin: false,
+    handleLogout: jest.fn(),
+    headerRef: React.createRef<HTMLElement>(),
+  };
+
+  it('renders computed monogram derived from partner names when no custom logo is set', () => {
+    render(<Navbar {...defaultProps} config={{ ...baseConfig, partner1Name: 'Alice', partner2Name: 'Bob' }} />);
+
+    expect(screen.getByText('A & B')).toBeInTheDocument();
+  });
+
+  it('renders explicit brandMonogram when provided', () => {
+    render(<Navbar {...defaultProps} config={{ ...baseConfig, brandMonogram: 'C & D' }} />);
+
+    expect(screen.getByText('C & D')).toBeInTheDocument();
+  });
+
+  it('renders custom brand logo image when brandLogoUrl is provided', () => {
+    render(
+      <Navbar
+        {...defaultProps}
+        config={{
+          ...baseConfig,
+          brandLogoUrl: '/images/tenant-logo.png',
+          brandLogoAlt: 'Custom Brand Logo',
+        }}
+      />
+    );
+
+    const logoImg = screen.getByRole('img', { name: 'Custom Brand Logo' });
+    expect(logoImg).toBeInTheDocument();
+    expect(logoImg).toHaveAttribute('src', '/images/tenant-logo.png');
+    expect(screen.queryByText('A & B')).not.toBeInTheDocument();
+  });
+});
 
 describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', () => {
   let headerRef: React.RefObject<HTMLElement | null>;
@@ -46,10 +95,10 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
       />
     );
 
-    const brandLink = screen.getByText('A & F');
-    expect(brandLink).toHaveClass('text-[var(--color-primary-text)]');
-    expect(brandLink).not.toHaveClass('text-gray-800');
-    expect(brandLink).not.toHaveClass('dark:text-white');
+    const brandLink = screen.getByText('A & B');
+    expect(brandLink.closest('a')).toHaveClass('text-[var(--color-primary-text)]');
+    expect(brandLink.closest('a')).not.toHaveClass('text-gray-800');
+    expect(brandLink.closest('a')).not.toHaveClass('dark:text-white');
   });
 
   it('renders admin mode controls without hardcoded text-white and text-gray-700 classes', () => {
@@ -81,7 +130,6 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
       />
     );
 
-    const nav = screen.getByRole('navigation', { name: 'Global Navigation' });
     const homeLink = screen.getByRole('link', { name: 'Home' });
     const detailsLink = screen.getByRole('link', { name: 'Wedding Day Details' });
 
@@ -166,7 +214,6 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     const toggleButton = screen.getByRole('button', { name: /open main menu/i });
     fireEvent.click(toggleButton);
 
-    const mobileNav = screen.getByRole('navigation', { name: 'Mobile Navigation' });
     const accommodationsMobileLinks = screen.getAllByRole('link', { name: 'Accommodations' });
 
     // Both desktop and mobile navigation links matching active section have aria-current="page"

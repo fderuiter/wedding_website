@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, ThemeTokensSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -659,6 +659,74 @@ describe('Content Node Schema Validation', () => {
         expect(appConfigResult.data.fontBody).toBe('Lora, sans-serif');
         expect(appConfigResult.data.fontMono).toBe('var(--font-mono)');
       }
+    });
+
+    it('validates brandMonogram, brandLogoUrl, and brandLogoAlt in RawUpdateAppConfigSchema', () => {
+      const basePayload = {
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        baseUrl: 'https://example.com',
+        weddingDate: '2026-12-31',
+      };
+
+      const validResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        brandMonogram: 'C & D',
+        brandLogoUrl: '/images/custom-logo.png',
+        brandLogoAlt: 'Custom Brand Logo',
+      });
+      expect(validResult.success).toBe(true);
+
+      const invalidLogoUrlResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        brandLogoUrl: 'javascript:alert("xss")',
+      });
+      expect(invalidLogoUrlResult.success).toBe(false);
+
+      const invalidProtocolRelativeResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        brandLogoUrl: '//malicious.com/logo.png',
+      });
+      expect(invalidProtocolRelativeResult.success).toBe(false);
+    });
+  });
+
+  describe('deriveBrandMonogram', () => {
+    it('returns explicit brandMonogram when configured', () => {
+      expect(deriveBrandMonogram({ brandMonogram: 'X & Y', partner1Name: 'Alice', partner2Name: 'Bob' })).toBe('X & Y');
+    });
+
+    it('derives monogram initials from partner1Name and partner2Name', () => {
+      expect(deriveBrandMonogram({ partner1Name: 'Alice', partner2Name: 'Bob' })).toBe('A & B');
+      expect(deriveBrandMonogram({ partner1Name: 'charlie', partner2Name: 'david' })).toBe('C & D');
+    });
+
+    it('derives monogram initials from legacy brideName and groomName', () => {
+      expect(deriveBrandMonogram({ brideName: 'Emily', groomName: 'Frank' })).toBe('E & F');
+    });
+
+    it('handles single partner name', () => {
+      expect(deriveBrandMonogram({ partner1Name: 'Zoe' })).toBe('Z');
+    });
+
+    it('falls back to default when config or partner names are missing', () => {
+      expect(deriveBrandMonogram(null)).toBe('A & F');
+      expect(deriveBrandMonogram({})).toBe('A & F');
     });
   });
 });

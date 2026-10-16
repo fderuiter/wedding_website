@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "brandMonogram" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "brandLogoUrl" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "brandLogoAlt" TEXT;
