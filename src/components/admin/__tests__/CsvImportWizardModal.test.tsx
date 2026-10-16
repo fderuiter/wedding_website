@@ -45,6 +45,40 @@ describe('CsvImportWizardModal Component', () => {
     expect(screen.queryByText('Import Guest Invitation Codes')).not.toBeInTheDocument();
   });
 
+  test('renders Download Sample CSV Template button in Step 1 and triggers Blob creation and URL cleanup when clicked', () => {
+    const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-url');
+    const mockRevokeObjectURL = jest.fn();
+
+    const originalCreateObjectURL = window.URL.createObjectURL;
+    const originalRevokeObjectURL = window.URL.revokeObjectURL;
+
+    window.URL.createObjectURL = mockCreateObjectURL;
+    window.URL.revokeObjectURL = mockRevokeObjectURL;
+
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    try {
+      renderModal(true);
+
+      const downloadBtn = screen.getByRole('button', { name: /Download Sample CSV Template/i });
+      expect(downloadBtn).toBeInTheDocument();
+
+      fireEvent.click(downloadBtn);
+
+      expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+      const createdBlob = mockCreateObjectURL.mock.calls[0][0];
+      expect(createdBlob).toBeInstanceOf(Blob);
+      expect(createdBlob.type).toContain('text/csv');
+
+      expect(clickSpy).toHaveBeenCalled();
+      expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/mock-url');
+    } finally {
+      window.URL.createObjectURL = originalCreateObjectURL;
+      window.URL.revokeObjectURL = originalRevokeObjectURL;
+      clickSpy.mockRestore();
+    }
+  });
+
   test('full multi-column wizard workflow with CSV upload, mapping, editing, and batch commit', async () => {
     renderModal(true);
 

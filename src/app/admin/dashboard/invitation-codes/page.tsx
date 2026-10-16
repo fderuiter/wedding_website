@@ -10,6 +10,35 @@ import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { generateCsvContent } from '@/utils/csv';
 
+export function getAttendanceStatus(item: { used: boolean; extraFields?: Record<string, any> | null }): 'attending' | 'declined' | 'pending' {
+  const rawVal = item.extraFields?.attendanceStatus ??
+    item.extraFields?.rsvpStatus ??
+    item.extraFields?.attendance ??
+    item.extraFields?.rsvp ??
+    item.extraFields?.attending ??
+    item.extraFields?.status;
+
+  if (rawVal !== undefined && rawVal !== null) {
+    if (typeof rawVal === 'boolean') {
+      return rawVal ? 'attending' : 'declined';
+    }
+    if (typeof rawVal === 'string') {
+      const val = rawVal.trim().toLowerCase();
+      if (['attending', 'accepted', 'yes', 'confirmed', 'true'].includes(val)) {
+        return 'attending';
+      }
+      if (['declined', 'no', 'rejected', 'false'].includes(val)) {
+        return 'declined';
+      }
+      if (['pending'].includes(val)) {
+        return 'pending';
+      }
+    }
+  }
+
+  return item.used ? 'attending' : 'pending';
+}
+
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
   const { confirm, addToast } = useToast();
@@ -29,6 +58,7 @@ export default function InvitationCodesDashboardPage() {
   const [newCode, setNewCode] = useState({ guestName: '', code: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'attending' | 'declined' | 'pending'>('all');
 
   const counts = useMemo(() => {
     return {
@@ -38,11 +68,25 @@ export default function InvitationCodesDashboardPage() {
     };
   }, [codes]);
 
+  const attendanceCounts = useMemo(() => {
+    return {
+      all: codes.length,
+      attending: codes.filter((c) => getAttendanceStatus(c) === 'attending').length,
+      declined: codes.filter((c) => getAttendanceStatus(c) === 'declined').length,
+      pending: codes.filter((c) => getAttendanceStatus(c) === 'pending').length,
+    };
+  }, [codes]);
+
   const filteredCodes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return codes.filter((item) => {
       if (statusFilter === 'redeemed' && !item.used) return false;
       if (statusFilter === 'unused' && item.used) return false;
+
+      if (attendanceFilter !== 'all') {
+        const attendanceStatus = getAttendanceStatus(item);
+        if (attendanceFilter !== attendanceStatus) return false;
+      }
 
       if (!query) return true;
 
@@ -52,7 +96,7 @@ export default function InvitationCodesDashboardPage() {
 
       return matchesName || matchesCode || matchesEmail;
     });
-  }, [codes, searchQuery, statusFilter]);
+  }, [codes, searchQuery, statusFilter, attendanceFilter]);
 
   const handleSave = async () => {
     if (!newCode.guestName.trim()) {
@@ -171,7 +215,7 @@ export default function InvitationCodesDashboardPage() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-4 mb-6 items-stretch sm:items-center justify-between">
+      <div className="flex flex-col gap-4 mb-6">
         <FormGroup className="relative flex-1 max-w-md space-y-0">
           <Input
             type="text"
@@ -182,40 +226,99 @@ export default function InvitationCodesDashboardPage() {
             className="w-full"
           />
         </FormGroup>
-        <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              statusFilter === 'all'
-                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            All ({counts.all})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('redeemed')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              statusFilter === 'redeemed'
-                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            Redeemed ({counts.redeemed})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('unused')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              statusFilter === 'unused'
-                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            Unused ({counts.unused})
-          </button>
+
+        <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
+          {/* Redemption Status Tab Group */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
+            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  statusFilter === 'all'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All ({counts.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('redeemed')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  statusFilter === 'redeemed'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Redeemed ({counts.redeemed})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('unused')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  statusFilter === 'unused'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Unused ({counts.unused})
+              </button>
+            </div>
+          </div>
+
+          {/* RSVP Attendance Status Tab Group */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendance:</span>
+            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setAttendanceFilter('all')}
+                aria-label={`All attendance (${attendanceCounts.all})`}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  attendanceFilter === 'all'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All ({attendanceCounts.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAttendanceFilter('attending')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  attendanceFilter === 'attending'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Attending ({attendanceCounts.attending})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAttendanceFilter('declined')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  attendanceFilter === 'declined'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Declined ({attendanceCounts.declined})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAttendanceFilter('pending')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  attendanceFilter === 'pending'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Pending ({attendanceCounts.pending})
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -227,8 +330,22 @@ export default function InvitationCodesDashboardPage() {
               <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
                 Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
               </div>
-              <div className="text-xs mt-1 text-gray-500 dark:text-gray-400">
-                Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span>
+              <div className="text-xs mt-1 text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4">
+                <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+                <span>
+                  RSVP:{' '}
+                  <span
+                    className={
+                      getAttendanceStatus(item) === 'attending'
+                        ? 'text-green-600 font-semibold'
+                        : getAttendanceStatus(item) === 'declined'
+                          ? 'text-red-600 font-semibold'
+                          : 'text-amber-600 font-semibold'
+                    }
+                  >
+                    {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
+                  </span>
+                </span>
               </div>
             </div>
             <div>

@@ -34,8 +34,8 @@ export function ThemeSelector({ className = '' }: ThemeSelectorProps) {
             title={`Switch to ${opt.label} theme`}
             className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
               isActive
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                ? 'bg-white dark:bg-gray-700 text-primary dark:text-primary-text font-bold shadow-sm border border-gray-200/50 dark:border-gray-600/50'
+                : 'text-gray-600 dark:text-gray-400 hover:text-primary dark:hover:text-primary-text'
             }`}
           >
             <Icon name={opt.icon} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
