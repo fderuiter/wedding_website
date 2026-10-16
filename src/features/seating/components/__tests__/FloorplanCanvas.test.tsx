@@ -162,5 +162,134 @@ describe('FloorplanCanvas component', () => {
 
     expect(onAddTableMock).toHaveBeenCalledTimes(1);
   });
+
+  describe('Keyboard accessibility', () => {
+    it('includes focus ring classes on table containers and seat circles', () => {
+      render(<FloorplanCanvas {...defaultProps} />);
+
+      const headTableContainer = screen.getByLabelText(/Head Table/i);
+      expect(headTableContainer.className).toContain('focus:outline-none');
+      expect(headTableContainer.className).toContain('focus:ring-2');
+      expect(headTableContainer.className).toContain('focus:ring-primary');
+
+      const seat1 = screen.getByLabelText('Seat 1: John Doe');
+      expect(seat1.className).toContain('focus:outline-none');
+      expect(seat1.className).toContain('focus:ring-2');
+      expect(seat1.className).toContain('focus:ring-primary');
+    });
+
+    it('selects a table when Enter or Space key is pressed', () => {
+      const onSelectTable = jest.fn();
+      render(<FloorplanCanvas {...defaultProps} onSelectTable={onSelectTable} />);
+
+      const headTable = screen.getByLabelText(/Head Table/i);
+
+      fireEvent.keyDown(headTable, { key: 'Enter' });
+      expect(onSelectTable).toHaveBeenCalledWith('table-1');
+
+      fireEvent.keyDown(headTable, { key: ' ' });
+      expect(onSelectTable).toHaveBeenCalledWith('table-1');
+    });
+
+    it('moves table position in 10px steps on Arrow keys', () => {
+      const onUpdateTablePosition = jest.fn();
+      render(<FloorplanCanvas {...defaultProps} onUpdateTablePosition={onUpdateTablePosition} />);
+
+      const headTable = screen.getByLabelText(/Head Table/i); // initial x: 100, y: 100
+
+      fireEvent.keyDown(headTable, { key: 'ArrowRight' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 110, 100);
+
+      fireEvent.keyDown(headTable, { key: 'ArrowLeft' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 90, 100);
+
+      fireEvent.keyDown(headTable, { key: 'ArrowDown' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 110);
+
+      fireEvent.keyDown(headTable, { key: 'ArrowUp' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 90);
+    });
+
+    it('moves table position in 50px steps when holding Shift with Arrow keys', () => {
+      const onUpdateTablePosition = jest.fn();
+      render(<FloorplanCanvas {...defaultProps} onUpdateTablePosition={onUpdateTablePosition} />);
+
+      const headTable = screen.getByLabelText(/Head Table/i);
+
+      fireEvent.keyDown(headTable, { key: 'ArrowRight', shiftKey: true });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 150, 100);
+
+      fireEvent.keyDown(headTable, { key: 'ArrowUp', shiftKey: true });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 50);
+    });
+
+    it('clamps table position within canvas boundaries when moving via Arrow keys', () => {
+      const edgeTable: SeatingTableDTO = {
+        id: 'table-edge',
+        name: 'Edge Table',
+        shape: 'rectangle',
+        capacity: 2,
+        x: 5,
+        y: 5,
+        width: 120,
+        height: 120,
+      };
+
+      const onUpdateTablePosition = jest.fn();
+      render(<FloorplanCanvas {...defaultProps} tables={[edgeTable]} onUpdateTablePosition={onUpdateTablePosition} />);
+
+      const tableElement = screen.getByLabelText(/Edge Table/i);
+
+      // Moving left by 10px from x=5 should clamp to 0
+      fireEvent.keyDown(tableElement, { key: 'ArrowLeft' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-edge', 0, 5);
+
+      // Moving up by 10px from y=5 should clamp to 0
+      fireEvent.keyDown(tableElement, { key: 'ArrowUp' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-edge', 5, 0);
+    });
+
+    it('renders seat elements with correct tabIndex, role, and aria-labels', () => {
+      render(<FloorplanCanvas {...defaultProps} />);
+
+      const assignedSeat = screen.getByLabelText('Seat 1: John Doe');
+      expect(assignedSeat).toHaveAttribute('tabIndex', '0');
+      expect(assignedSeat).toHaveAttribute('role', 'button');
+
+      const emptySeat = screen.getByLabelText('Seat 2: Empty');
+      expect(emptySeat).toHaveAttribute('tabIndex', '0');
+      expect(emptySeat).toHaveAttribute('role', 'button');
+    });
+
+    it('unassigns guest when Delete or Backspace key is pressed on focused assigned seat', () => {
+      const onUnassignGuest = jest.fn();
+      render(<FloorplanCanvas {...defaultProps} onUnassignGuest={onUnassignGuest} />);
+
+      const assignedSeat = screen.getByLabelText('Seat 1: John Doe');
+
+      fireEvent.keyDown(assignedSeat, { key: 'Delete' });
+      expect(onUnassignGuest).toHaveBeenCalledWith('guest-1');
+
+      fireEvent.keyDown(assignedSeat, { key: 'Backspace' });
+      expect(onUnassignGuest).toHaveBeenCalledWith('guest-1');
+    });
+
+    it('stops event propagation on seat keydown to prevent table handler trigger', () => {
+      const onSelectTable = jest.fn();
+      const onUnassignGuest = jest.fn();
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          onSelectTable={onSelectTable}
+          onUnassignGuest={onUnassignGuest}
+        />
+      );
+
+      const assignedSeat = screen.getByLabelText('Seat 1: John Doe');
+      fireEvent.keyDown(assignedSeat, { key: 'Enter' });
+
+      expect(onSelectTable).not.toHaveBeenCalled();
+    });
+  });
 });
 

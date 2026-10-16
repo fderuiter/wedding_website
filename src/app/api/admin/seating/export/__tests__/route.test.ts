@@ -244,4 +244,37 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     const csvText = await res.text();
     expect(csvText).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code\n');
   });
+
+  it('executes seatingTable and invitationCode database queries concurrently', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    let resolveTables!: (value: any) => void;
+    let resolveGuests!: (value: any) => void;
+
+    const tablesPromise = new Promise((resolve) => {
+      resolveTables = resolve;
+    });
+    const guestsPromise = new Promise((resolve) => {
+      resolveGuests = resolve;
+    });
+
+    mockPrisma.seatingTable.findMany.mockReturnValue(tablesPromise as any);
+    mockPrisma.invitationCode.findMany.mockReturnValue(guestsPromise as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/seating/export');
+    const responsePromise = GET(req);
+
+    // Yield execution to allow middleware async steps (rateLimit, isAdminRequest) to complete
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Both findMany calls should be triggered concurrently before either promise resolves
+    expect(mockPrisma.seatingTable.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.invitationCode.findMany).toHaveBeenCalledTimes(1);
+
+    resolveTables([]);
+    resolveGuests([]);
+
+    const res = await responsePromise;
+    expect(res.status).toBe(200);
+  });
 });

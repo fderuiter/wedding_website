@@ -4,11 +4,6 @@ import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
 import { AttractionSchema } from '@/features/attractions/schemas';
 import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry/schemas';
 
-// Helper for formatted Zod error output
-export function formatZodError(error: z.ZodError): string {
-  return error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-}
-
 export interface PathDiagnostic {
   path: string;
   message: string;
