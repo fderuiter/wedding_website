@@ -194,6 +194,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       let updated = 0;
       const seenBatchCodes = new Set<string>();
       const allKnownCodes = new Set<string>(dbCodeMap.keys());
+      const toCreate: any[] = [];
+      const toUpdate: { id: string; data: any }[] = [];
 
       for (let i = 0; i < records.length; i++) {
         const row = records[i];
@@ -259,10 +261,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
               if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
-              await tx.invitationCode.update({
-                where: { id: existingRecord.id },
-                data: updateData
-              });
+              toUpdate.push({ id: existingRecord.id, data: updateData });
               updated++;
             }
             continue;
@@ -291,34 +290,48 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
             if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
-            await tx.invitationCode.update({
-              where: { id: existingRecord.id },
-              data: updateData
-            });
+            toUpdate.push({ id: existingRecord.id, data: updateData });
             updated++;
           }
         } else {
-          await tx.invitationCode.create({
-            data: {
-              guestName,
-              code,
-              email: rowEmail,
-              addressLine1: rowAddressLine1,
-              addressLine2: rowAddressLine2,
-              city: rowCity,
-              state: rowState,
-              zipCode: rowZipCode,
-              country: rowCountry,
-              dietaryNotes: rowDietaryNotes,
-              plusOneAllocations: rowPlusOne,
-              plusOneFirstName: rowPlusOneFirstName,
-              plusOneLastName: rowPlusOneLastName,
-              extraFields: rowExtraFields ?? undefined,
-              used: false
-            }
+          toCreate.push({
+            guestName,
+            code,
+            email: rowEmail,
+            addressLine1: rowAddressLine1,
+            addressLine2: rowAddressLine2,
+            city: rowCity,
+            state: rowState,
+            zipCode: rowZipCode,
+            country: rowCountry,
+            dietaryNotes: rowDietaryNotes,
+            plusOneAllocations: rowPlusOne,
+            plusOneFirstName: rowPlusOneFirstName,
+            plusOneLastName: rowPlusOneLastName,
+            extraFields: rowExtraFields ?? undefined,
+            used: false
           });
           imported++;
         }
+      }
+
+      if (toCreate.length > 0) {
+        await tx.invitationCode.createMany({
+          data: toCreate
+        });
+      }
+
+      const UPDATE_CHUNK_SIZE = 50;
+      for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK_SIZE) {
+        const chunk = toUpdate.slice(i, i + UPDATE_CHUNK_SIZE);
+        await Promise.all(
+          chunk.map((item) =>
+            tx.invitationCode.update({
+              where: { id: item.id },
+              data: item.data
+            })
+          )
+        );
       }
 
       await createAuditSnapshot(

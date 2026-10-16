@@ -18,6 +18,21 @@ export default function SeatingChartAdminPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Helper to sync tables' nested invitationCodes with allGuests state
+  const syncTablesWithGuests = (
+    tablesList: SeatingTableDTO[],
+    guestsList: InvitationCodeDTO[]
+  ): SeatingTableDTO[] => {
+    return tablesList.map((t) => {
+      const assigned = guestsList.filter((g) => g.tableId === t.id);
+      assigned.sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+      return {
+        ...t,
+        invitationCodes: assigned,
+      };
+    });
+  };
+
   // Fetch tables & invitation codes
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -35,8 +50,11 @@ export default function SeatingChartAdminPage() {
       const tablesData = await tablesRes.json();
       const guestsData = await guestsRes.json();
 
-      setTables(Array.isArray(tablesData) ? tablesData : []);
-      setAllGuests(Array.isArray(guestsData) ? guestsData : []);
+      const rawTables = Array.isArray(tablesData) ? tablesData : [];
+      const rawGuests = Array.isArray(guestsData) ? guestsData : [];
+
+      setAllGuests(rawGuests);
+      setTables(syncTablesWithGuests(rawTables, rawGuests));
     } catch (err: any) {
       setErrorMsg(err.message || 'An error occurred while loading data.');
     } finally {
@@ -88,6 +106,13 @@ export default function SeatingChartAdminPage() {
           body: JSON.stringify(tableData),
         });
         if (!res.ok) throw new Error('Failed to update table');
+        const updatedTable: SeatingTableDTO = await res.json();
+        setTables((prev) => {
+          const nextTables = prev.map((t) =>
+            t.id === updatedTable.id ? { ...t, ...updatedTable } : t
+          );
+          return syncTablesWithGuests(nextTables, allGuests);
+        });
       } else {
         // Create new table with default offset coordinates
         const defaultX = (tables.length % 4) * 180 + 40;
@@ -107,27 +132,45 @@ export default function SeatingChartAdminPage() {
           }),
         });
         if (!res.ok) throw new Error('Failed to create table');
+        const createdTable: SeatingTableDTO = await res.json();
+        setTables((prev) =>
+          syncTablesWithGuests([...prev, { ...createdTable, invitationCodes: [] }], allGuests)
+        );
       }
-      await fetchData();
     } catch (err: any) {
       alert(err.message || 'Error saving table');
     }
   };
 
   const handleDeleteTable = async (tableId: string) => {
+    const previousTables = tables;
+    const previousGuests = allGuests;
+
+    // Optimistically remove table and unassign affected guests in local memory
+    const nextGuests = allGuests.map((g) =>
+      g.tableId === tableId ? { ...g, tableId: null, seatNumber: null } : g
+    );
+    const nextTables = tables.filter((t) => t.id !== tableId);
+
+    setAllGuests(nextGuests);
+    setTables(syncTablesWithGuests(nextTables, nextGuests));
+    setSelectedTableId(null);
+
     try {
       const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete table');
-      setSelectedTableId(null);
-      await fetchData();
     } catch (err: any) {
+      setAllGuests(previousGuests);
+      setTables(previousTables);
       alert(err.message || 'Error deleting table');
     }
   };
 
   const handleUpdateTablePosition = async (tableId: string, x: number, y: number) => {
+    const previousTables = tables;
+
     // Optimistic update local state
     setTables((prev) =>
       prev.map((t) => (t.id === tableId ? { ...t, x, y } : t))
@@ -135,57 +178,81 @@ export default function SeatingChartAdminPage() {
 
     // Persist position update
     try {
-      await fetch(`/api/admin/seating-tables/${tableId}`, {
+      const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ x, y }),
       });
+      if (!res.ok) throw new Error('Failed to update table position');
     } catch (e) {
       // Revert if error
-      fetchData();
+      setTables(previousTables);
     }
   };
 
   // Seat assignment handlers
   const handleAssignGuestToTable = async (
     guestId: string,
-    tableId: string,
-    seatNumber?: number
+    tableId: string | null,
+    seatNumber?: number | null
   ) => {
+    const previousGuests = allGuests;
+    const previousTables = tables;
+
+    const targetTableId = tableId || null;
+    const targetSeatNumber = targetTableId ? (seatNumber ?? null) : null;
+
+    // Optimistically update local guest state, accounting for seat swap side-effects
+    const optimisticGuests = allGuests.map((g) => {
+      if (g.id === guestId) {
+        return { ...g, tableId: targetTableId, seatNumber: targetSeatNumber };
+      }
+      if (
+        targetTableId &&
+        targetSeatNumber &&
+        g.tableId === targetTableId &&
+        g.seatNumber === targetSeatNumber
+      ) {
+        return { ...g, seatNumber: null };
+      }
+      return g;
+    });
+
+    setAllGuests(optimisticGuests);
+    setTables(syncTablesWithGuests(tables, optimisticGuests));
+
     try {
       const res = await fetch('/api/admin/seating/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitationCodeId: guestId,
-          tableId,
-          seatNumber,
+          tableId: targetTableId,
+          seatNumber: targetSeatNumber,
         }),
       });
 
       if (!res.ok) throw new Error('Failed to assign guest seat');
-      await fetchData();
+
+      const returnedGuest: InvitationCodeDTO = await res.json();
+      if (returnedGuest && returnedGuest.id) {
+        setAllGuests((currentGuests) => {
+          const mergedGuests = currentGuests.map((g) =>
+            g.id === returnedGuest.id ? { ...g, ...returnedGuest } : g
+          );
+          setTables((currentTables) => syncTablesWithGuests(currentTables, mergedGuests));
+          return mergedGuests;
+        });
+      }
     } catch (err: any) {
+      setAllGuests(previousGuests);
+      setTables(previousTables);
       alert(err.message || 'Error assigning guest seat');
     }
   };
 
   const handleUnassignGuest = async (guestId: string) => {
-    try {
-      const res = await fetch('/api/admin/seating/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invitationCodeId: guestId,
-          tableId: null,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to unassign guest');
-      await fetchData();
-    } catch (err: any) {
-      alert(err.message || 'Error unassigning guest');
-    }
+    await handleAssignGuestToTable(guestId, null);
   };
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
@@ -331,6 +398,7 @@ export default function SeatingChartAdminPage() {
               onDropGuestOnTable={handleAssignGuestToTable}
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
+              onAddTable={handleCreateTable}
             />
 
             {/* Selected Table Inspector Bar */}

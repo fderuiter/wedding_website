@@ -107,23 +107,46 @@ export interface ComponentTokens {
   '--card-spring-stiffness': string;
   '--card-spring-damping': string;
 
+  '--motion-duration-fast': string;
+  '--motion-duration-normal': string;
+  '--motion-duration-slow': string;
+  '--motion-ease-default': string;
+  '--motion-spring-stiffness': string;
+  '--motion-spring-damping': string;
+  '--motion-tilt-max-deg': string;
+
+  '--shadow-sm': string;
+  '--shadow-md': string;
+  '--shadow-lg': string;
+  '--shadow-overlay': string;
+
   darkTokens?: Partial<Omit<ComponentTokens, 'darkTokens'>>;
 }
 
 const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
+  '--container-bg': '#111827',
+  '--card-bg': '#1f2937',
+  '--card-border': '#374151',
+  '--heading-color': '#f9fafb',
   '--btn-outline-bg': 'transparent',
   '--btn-outline-text': '#f9fafb',
-  '--btn-outline-border': '#4b5563',
+  '--btn-outline-border': '#9ca3af',
   '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.1)',
   '--btn-ghost-bg': 'transparent',
   '--btn-ghost-text': '#f9fafb',
   '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
+  '--btn-focus-ring': '#f9fafb',
   '--dialog-bg': '#18181b',
   '--dialog-border-color': '#27272a',
   '--dialog-title-color': '#f9fafb',
   '--dialog-desc-color': '#a1a1aa',
   '--dialog-shadow': '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
   '--dialog-backdrop': 'rgba(0, 0, 0, 0.75)',
+  '--input-bg': '#18181b',
+  '--input-border': '#3f3f46',
+  '--input-focus-ring': '#f9fafb',
+  '--form-label-text': '#f9fafb',
+  '--form-message-text': '#a1a1aa',
   '--schedule-card-bg': '#18181b',
   '--schedule-card-border': '#27272a',
   '--schedule-filter-bg': '#27272a',
@@ -131,6 +154,10 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--schedule-filter-hover-bg': '#3f3f46',
   '--schedule-tag-bg': '#27272a',
   '--schedule-tag-text': '#e4e4e7',
+  '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.4)',
+  '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5)',
+  '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
+  '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6)',
   '--canvas-bg': '#111827',
   '--canvas-grid-dot': '#374151',
   '--canvas-border': '2px dashed #374151',
@@ -249,20 +276,43 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--card-spring-stiffness': '300',
     '--card-spring-damping': '20',
 
+    '--motion-duration-fast': '0.15s',
+    '--motion-duration-normal': '0.2s',
+    '--motion-duration-slow': '0.8s',
+    '--motion-ease-default': 'cubic-bezier(0.4, 0, 0.2, 1)',
+    '--motion-spring-stiffness': '300',
+    '--motion-spring-damping': '20',
+    '--motion-tilt-max-deg': '10deg',
+
+    '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+    '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+    '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+
     darkTokens: {
+      '--container-bg': '#111827',
+      '--card-bg': '#1f2937',
+      '--card-border': '#374151',
+      '--heading-color': '#f9fafb',
       '--btn-outline-bg': 'transparent',
       '--btn-outline-text': '#f9fafb',
-      '--btn-outline-border': '#4b5563',
+      '--btn-outline-border': '#9ca3af',
       '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.1)',
       '--btn-ghost-bg': 'transparent',
       '--btn-ghost-text': '#f9fafb',
       '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
+      '--btn-focus-ring': '#f9fafb',
       '--dialog-bg': '#1f2937',
       '--dialog-border-color': '#374151',
       '--dialog-title-color': '#f9fafb',
       '--dialog-desc-color': '#9ca3af',
       '--dialog-shadow': '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
       '--dialog-backdrop': 'rgba(0, 0, 0, 0.75)',
+      '--input-bg': '#1f2937',
+      '--input-border': '#4b5563',
+      '--input-focus-ring': '#f9fafb',
+      '--form-label-text': '#f9fafb',
+      '--form-message-text': '#9ca3af',
       '--schedule-card-bg': '#1f2937',
       '--schedule-card-border': '#374151',
       '--schedule-filter-bg': '#374151',
@@ -387,20 +437,43 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--card-spring-stiffness': '400',
     '--card-spring-damping': '25',
 
+    '--motion-duration-fast': '0.1s',
+    '--motion-duration-normal': '0.15s',
+    '--motion-duration-slow': '0.5s',
+    '--motion-ease-default': 'cubic-bezier(0.16, 1, 0.3, 1)',
+    '--motion-spring-stiffness': '400',
+    '--motion-spring-damping': '25',
+    '--motion-tilt-max-deg': '12deg',
+
+    '--shadow-sm': '0 1px 3px 0 rgba(0, 0, 0, 0.08)',
+    '--shadow-md': '0 10px 15px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -4px rgba(0, 0, 0, 0.08)',
+    '--shadow-lg': '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
+    '--shadow-overlay': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+
     darkTokens: {
+      '--container-bg': '#020617',
+      '--card-bg': '#0f172a',
+      '--card-border': '#1e293b',
+      '--heading-color': '#f8fafc',
       '--btn-outline-bg': 'transparent',
-      '--btn-outline-text': 'var(--color-primary, #B91C1C)',
-      '--btn-outline-border': 'var(--color-primary, #B91C1C)',
-      '--btn-outline-hover-bg': 'color-mix(in srgb, var(--color-primary, #B91C1C) 20%, transparent)',
+      '--btn-outline-text': '#f8fafc',
+      '--btn-outline-border': '#94a3b8',
+      '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.1)',
       '--btn-ghost-bg': 'transparent',
       '--btn-ghost-text': '#f8fafc',
       '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
+      '--btn-focus-ring': '#38bdf8',
       '--dialog-bg': '#0f172a',
       '--dialog-border-color': '#1e293b',
       '--dialog-title-color': '#f8fafc',
       '--dialog-desc-color': '#94a3b8',
       '--dialog-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
       '--dialog-backdrop': 'rgba(2, 6, 23, 0.8)',
+      '--input-bg': '#0f172a',
+      '--input-border': '#334155',
+      '--input-focus-ring': '#38bdf8',
+      '--form-label-text': '#f8fafc',
+      '--form-message-text': '#94a3b8',
       '--schedule-card-bg': '#0f172a',
       '--schedule-card-border': '#1e293b',
       '--schedule-filter-bg': '#1e293b',
@@ -525,20 +598,43 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--card-spring-stiffness': '250',
     '--card-spring-damping': '18',
 
+    '--motion-duration-fast': '0.25s',
+    '--motion-duration-normal': '0.35s',
+    '--motion-duration-slow': '1.0s',
+    '--motion-ease-default': 'cubic-bezier(0.25, 1, 0.5, 1)',
+    '--motion-spring-stiffness': '180',
+    '--motion-spring-damping': '14',
+    '--motion-tilt-max-deg': '8deg',
+
+    '--shadow-sm': '0 2px 8px -2px rgba(225, 175, 185, 0.3)',
+    '--shadow-md': '0 8px 20px -4px rgba(225, 175, 185, 0.35)',
+    '--shadow-lg': '0 20px 30px -10px rgba(225, 175, 185, 0.35)',
+    '--shadow-overlay': '0 25px 35px -10px rgba(225, 175, 185, 0.45)',
+
     darkTokens: {
+      '--container-bg': '#180910',
+      '--card-bg': '#231118',
+      '--card-border': '#4a1d2f',
+      '--heading-color': '#fdf2f8',
       '--btn-outline-bg': 'transparent',
-      '--btn-outline-text': 'var(--color-primary, #B91C1C)',
-      '--btn-outline-border': 'color-mix(in srgb, var(--color-primary, #B91C1C) 50%, #fce7f3)',
-      '--btn-outline-hover-bg': 'color-mix(in srgb, var(--color-primary, #B91C1C) 18%, transparent)',
+      '--btn-outline-text': '#fdf2f8',
+      '--btn-outline-border': '#f472b6',
+      '--btn-outline-hover-bg': 'rgba(244, 114, 182, 0.15)',
       '--btn-ghost-bg': 'transparent',
       '--btn-ghost-text': '#fdf2f8',
       '--btn-ghost-hover-bg': 'rgba(244, 114, 182, 0.15)',
+      '--btn-focus-ring': '#f472b6',
       '--dialog-bg': '#231118',
       '--dialog-border-color': '#4a1d2f',
       '--dialog-title-color': '#fdf2f8',
       '--dialog-desc-color': '#fbcfe8',
       '--dialog-shadow': '0 20px 30px -10px rgba(0, 0, 0, 0.6)',
       '--dialog-backdrop': 'rgba(20, 5, 12, 0.8)',
+      '--input-bg': '#231118',
+      '--input-border': '#4a1d2f',
+      '--input-focus-ring': '#f472b6',
+      '--form-label-text': '#fdf2f8',
+      '--form-message-text': '#fbcfe8',
       '--schedule-card-bg': '#231118',
       '--schedule-card-border': '#4a1d2f',
       '--schedule-filter-bg': '#3b1827',
@@ -664,20 +760,43 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--card-spring-stiffness': '200',
     '--card-spring-damping': '30',
 
+    '--motion-duration-fast': '0.08s',
+    '--motion-duration-normal': '0.12s',
+    '--motion-duration-slow': '0.3s',
+    '--motion-ease-default': 'linear',
+    '--motion-spring-stiffness': '500',
+    '--motion-spring-damping': '35',
+    '--motion-tilt-max-deg': '4deg',
+
+    '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.04)',
+    '--shadow-md': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+    '--shadow-lg': '0 2px 5px 0 rgba(0, 0, 0, 0.1)',
+    '--shadow-overlay': '0 4px 12px 0 rgba(0, 0, 0, 0.15)',
+
     darkTokens: {
+      '--container-bg': '#09090b',
+      '--card-bg': '#18181b',
+      '--card-border': '#27272a',
+      '--heading-color': '#f4f4f5',
       '--btn-outline-bg': 'transparent',
       '--btn-outline-text': '#f4f4f5',
-      '--btn-outline-border': '#52525b',
+      '--btn-outline-border': '#a1a1aa',
       '--btn-outline-hover-bg': 'rgba(255, 255, 255, 0.08)',
       '--btn-ghost-bg': 'transparent',
       '--btn-ghost-text': '#f4f4f5',
       '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.08)',
+      '--btn-focus-ring': '#f4f4f5',
       '--dialog-bg': '#18181b',
       '--dialog-border-color': '#27272a',
       '--dialog-title-color': '#f4f4f5',
       '--dialog-desc-color': '#a1a1aa',
       '--dialog-shadow': '0 1px 3px 0 rgba(0, 0, 0, 0.5)',
       '--dialog-backdrop': 'rgba(0, 0, 0, 0.7)',
+      '--input-bg': '#18181b',
+      '--input-border': '#3f3f46',
+      '--input-focus-ring': '#f4f4f5',
+      '--form-label-text': '#f4f4f5',
+      '--form-message-text': '#a1a1aa',
       '--schedule-card-bg': '#18181b',
       '--schedule-card-border': '#27272a',
       '--schedule-filter-bg': '#27272a',
@@ -717,13 +836,13 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-secondary-text': '#ffffff',
     '--btn-secondary-hover-bg': 'color-mix(in srgb, var(--color-secondary, #B45309) 92%, #000000)',
     '--btn-secondary-border': '#000000',
-    '--btn-outline-bg': '#ffffff',
+    '--btn-outline-bg': 'transparent',
     '--btn-outline-text': '#000000',
     '--btn-outline-border': '#000000',
-    '--btn-outline-hover-bg': '#f4f4f5',
+    '--btn-outline-hover-bg': 'rgba(0, 0, 0, 0.06)',
     '--btn-ghost-bg': 'transparent',
     '--btn-ghost-text': '#000000',
-    '--btn-ghost-hover-bg': '#f4f4f5',
+    '--btn-ghost-hover-bg': 'rgba(0, 0, 0, 0.06)',
     '--btn-danger-bg': '#b91c1c',
     '--btn-danger-text': '#ffffff',
     '--btn-danger-hover-bg': '#991b1b',
@@ -734,35 +853,35 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--dialog-backdrop': 'rgba(0, 0, 0, 0.7)',
     '--dialog-border-color': '#000000',
     '--dialog-title-color': '#000000',
-    '--dialog-desc-color': '#3f3f46',
+    '--dialog-desc-color': '#44403c',
 
     '--input-bg': '#fcfbf9',
     '--input-border': '#000000',
     '--input-focus-ring': '#000000',
     '--input-radius': '0.125rem',
     '--input-error-border': '#b91c1c',
-    '--input-error-focus-ring': '#000000',
+    '--input-error-focus-ring': '#b91c1c',
     '--input-success-border': '#15803d',
-    '--input-success-focus-ring': '#000000',
-    '--input-warning-border': '#a16207',
-    '--input-warning-focus-ring': '#000000',
+    '--input-success-focus-ring': '#15803d',
+    '--input-warning-border': '#b45309',
+    '--input-warning-focus-ring': '#b45309',
     '--form-label-text': '#000000',
-    '--form-message-text': '#3f3f46',
+    '--form-message-text': '#44403c',
     '--form-error-text': '#b91c1c',
     '--form-success-text': '#15803d',
-    '--form-warning-text': '#a16207',
+    '--form-warning-text': '#b45309',
 
     '--schedule-card-bg': '#fcfbf9',
     '--schedule-card-border': '#000000',
     '--schedule-card-radius': '0.125rem',
-    '--schedule-filter-bg': '#f4f4f5',
+    '--schedule-filter-bg': '#e7e5e4',
     '--schedule-filter-text': '#000000',
-    '--schedule-filter-hover-bg': '#e4e4e7',
+    '--schedule-filter-hover-bg': '#d6d3d1',
     '--schedule-filter-active-bg': '#000000',
     '--schedule-filter-active-text': '#ffffff',
     '--schedule-node-bg': 'var(--color-primary, #B91C1C)',
     '--schedule-node-border': '#000000',
-    '--schedule-tag-bg': '#e4e4e7',
+    '--schedule-tag-bg': '#e7e5e4',
     '--schedule-tag-text': '#000000',
 
     '--toast-success-bg': '#15803d',
@@ -805,7 +924,24 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--card-spring-stiffness': '500',
     '--card-spring-damping': '15',
 
+    '--motion-duration-fast': '0.12s',
+    '--motion-duration-normal': '0.22s',
+    '--motion-duration-slow': '0.6s',
+    '--motion-ease-default': 'cubic-bezier(0.2, 0, 0, 1)',
+    '--motion-spring-stiffness': '350',
+    '--motion-spring-damping': '22',
+    '--motion-tilt-max-deg': '15deg',
+
+    '--shadow-sm': '2px 2px 0px 0px rgba(0,0,0,0.9)',
+    '--shadow-md': '3px 3px 0px 0px rgba(0,0,0,0.9)',
+    '--shadow-lg': '4px 4px 0px 0px rgba(0,0,0,0.9)',
+    '--shadow-overlay': '6px 6px 0px 0px rgba(0,0,0,0.9)',
+
     darkTokens: {
+      '--container-bg': '#0c0a09',
+      '--card-bg': '#1c1917',
+      '--card-border': '#ffffff',
+      '--heading-color': '#ffffff',
       '--btn-primary-border': '#ffffff',
       '--btn-secondary-border': '#ffffff',
       '--btn-outline-bg': '#1c1917',
@@ -822,6 +958,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--dialog-desc-color': '#d6d3d1',
       '--dialog-shadow': '4px 4px 0px 0px rgba(255,255,255,0.9)',
       '--dialog-backdrop': 'rgba(0, 0, 0, 0.85)',
+      '--input-bg': '#1c1917',
+      '--input-border': '#ffffff',
+      '--input-focus-ring': '#ffffff',
+      '--form-label-text': '#ffffff',
+      '--form-message-text': '#d6d3d1',
       '--schedule-card-bg': '#1c1917',
       '--schedule-card-border': '#ffffff',
       '--schedule-filter-bg': '#292524',
@@ -832,6 +973,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-node-border': '#ffffff',
       '--schedule-tag-bg': '#292524',
       '--schedule-tag-text': '#ffffff',
+      '--shadow-sm': '2px 2px 0px 0px rgba(255,255,255,0.9)',
+      '--shadow-md': '3px 3px 0px 0px rgba(255,255,255,0.9)',
+      '--shadow-lg': '4px 4px 0px 0px rgba(255,255,255,0.9)',
+      '--shadow-overlay': '6px 6px 0px 0px rgba(255,255,255,0.9)',
       '--canvas-bg': '#1c1917',
       '--canvas-grid-dot': '#44403c',
       '--canvas-border': '2px solid #ffffff',
@@ -850,6 +995,24 @@ export const DEFAULT_THEME_PRESET: ThemePreset = 'classic';
 
 export function isThemePreset(value: unknown): value is ThemePreset {
   return typeof value === 'string' && THEME_PRESET_KEYS.includes(value as ThemePreset);
+}
+
+export function parseMotionEasing(easing?: string): any {
+  if (!easing) return 'easeInOut';
+  if (easing === 'ease-in-out') return 'easeInOut';
+  if (easing === 'ease-in') return 'easeIn';
+  if (easing === 'ease-out') return 'easeOut';
+
+  const cubicMatch = easing.match(/cubic-bezier\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/i);
+  if (cubicMatch) {
+    return [
+      parseFloat(cubicMatch[1]),
+      parseFloat(cubicMatch[2]),
+      parseFloat(cubicMatch[3]),
+      parseFloat(cubicMatch[4]),
+    ];
+  }
+  return easing;
 }
 
 export function getPresetTokens(

@@ -510,7 +510,12 @@ export function CsvImportWizardModal({
       title={
         <div className="flex items-center justify-between">
           <span className="font-extrabold text-xl text-primary">Import Guest Invitation Codes</span>
-          <span className="text-xs font-semibold px-2.5 py-1 bg-gray-100 dark:bg-zinc-800 rounded-full text-gray-600 dark:text-zinc-300">
+          <span
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="text-xs font-semibold px-2.5 py-1 bg-gray-100 dark:bg-zinc-800 rounded-full text-gray-600 dark:text-zinc-300"
+          >
             Step {step} of 4
           </span>
         </div>
@@ -519,15 +524,45 @@ export function CsvImportWizardModal({
     >
       <div className="space-y-6">
         {/* Step Indicator */}
-        <div className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">
-          <span className={step >= 1 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>1. Upload File</span>
-          <span>&rarr;</span>
-          <span className={step >= 2 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>2. Map Columns</span>
-          <span>&rarr;</span>
-          <span className={step >= 3 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>3. Review & Validate</span>
-          <span>&rarr;</span>
-          <span className={step === 4 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}>4. Complete</span>
-        </div>
+        <nav aria-label="Import progress">
+          <ol className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">
+            <li>
+              <span
+                aria-current={step === 1 ? 'step' : undefined}
+                className={step >= 1 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                1. Upload File
+              </span>
+            </li>
+            <span aria-hidden="true">&rarr;</span>
+            <li>
+              <span
+                aria-current={step === 2 ? 'step' : undefined}
+                className={step >= 2 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                2. Map Columns
+              </span>
+            </li>
+            <span aria-hidden="true">&rarr;</span>
+            <li>
+              <span
+                aria-current={step === 3 ? 'step' : undefined}
+                className={step >= 3 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                3. Review & Validate
+              </span>
+            </li>
+            <span aria-hidden="true">&rarr;</span>
+            <li>
+              <span
+                aria-current={step === 4 ? 'step' : undefined}
+                className={step === 4 ? 'text-primary font-bold' : 'text-gray-500 dark:text-zinc-400'}
+              >
+                4. Complete
+              </span>
+            </li>
+          </ol>
+        </nav>
 
         {/* Step 1: File Upload */}
         {step === 1 && (

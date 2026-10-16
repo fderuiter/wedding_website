@@ -1528,20 +1528,16 @@
                     ]
                   },
                   "layoutContainerMaxWidth": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutGridGap": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutCardPadding": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutBorderRadius": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1745,20 +1741,16 @@
                     ]
                   },
                   "layoutContainerMaxWidth": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutGridGap": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutCardPadding": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutBorderRadius": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1973,20 +1965,16 @@
                     ]
                   },
                   "layoutContainerMaxWidth": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutGridGap": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutCardPadding": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutBorderRadius": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -2748,6 +2736,17 @@
                   },
                   "code": {
                     "type": "string"
+                  },
+                  "message": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
