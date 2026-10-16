@@ -121,4 +121,26 @@ describe('ThingsToDoMap', () => {
       { padding: [50, 50] }
     );
   });
+
+  it('renders Google Maps directions fallback in popup when custom directions is missing', () => {
+    const attractionNoDirections = [
+      {
+        id: '3',
+        name: 'Test Spot',
+        description: 'A spot',
+        category: 'activity',
+        directions: '',
+        latitude: 45.0,
+        longitude: -90.0,
+      },
+    ] as any;
+
+    render(<ThingsToDoMap attractions={attractionNoDirections} />);
+
+    const directionsLink = screen.getByText('Directions').closest('a');
+    expect(directionsLink).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/dir/?api=1&destination=45,-90'
+    );
+  });
 });

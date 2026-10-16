@@ -38,19 +38,34 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
     triggerRef.current?.focus();
   });
 
-  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+  const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      }
+    }
+  };
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
       const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]');
-      if (!buttons) return;
+      if (!buttons || buttons.length === 0) return;
       const index = Array.from(buttons).indexOf(document.activeElement as Element);
       let nextIndex = 0;
-      if (e.key === 'ArrowDown') {
+      if (e.key === 'Home') {
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        nextIndex = buttons.length - 1;
+      } else if (e.key === 'ArrowDown') {
         nextIndex = index + 1 < buttons.length ? index + 1 : 0;
-      } else {
+      } else if (e.key === 'ArrowUp') {
         nextIndex = index - 1 >= 0 ? index - 1 : buttons.length - 1;
       }
-      (buttons[nextIndex] as HTMLElement).focus();
+      if (buttons[nextIndex]) {
+        (buttons[nextIndex] as HTMLElement).focus();
+      }
     }
   };
 
@@ -93,7 +108,9 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
           id={menuId}
           aria-haspopup="true"
           aria-expanded={isOpen}
+          aria-controls="add-to-calendar-menu"
           onClick={handleToggle}
+          onKeyDown={handleTriggerKeyDown}
         >
           Add to Calendar
         </button>
@@ -101,6 +118,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
 
       {isOpen && (
         <div
+          id="add-to-calendar-menu"
           ref={overlayRef}
           className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 ring-1 ring-black/5 z-10"
         >
@@ -109,7 +127,7 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
               <button
                 key={calendar}
                 type="button"
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700 focus:text-gray-900 dark:focus:text-white transition-colors"
+                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus:bg-gray-100 dark:focus:bg-gray-700 focus:text-gray-900 dark:focus:text-white transition-colors"
                 role="menuitem"
                 onClick={() => handleCalendarLink(calendar)}
                 onKeyDown={handleMenuKeyDown}

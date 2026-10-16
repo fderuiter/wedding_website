@@ -92,19 +92,37 @@ export default async function PhotosPage() {
       )}
 
       <ErrorBoundary title="Gallery Error" message="Could not render photo gallery widget.">
-        <div className="pa-gallery-player-widget" style={{width: '100%', height: '480px', display: 'none'}}
+        <div
+          className="pa-gallery-player-widget"
+          style={{ width: '100%', height: '480px', display: 'none' }}
           data-link="https://photos.google.com/share/AF1QipMnse1_Xznr2_loPvSR-McR3niH6WtH8lURPwInB0bvBUzrEcZj2kyhtq4ptCArwg?key=MHdQcFk2aUpwYXJnNHNnTllPRmZ1c0JxbEVHQWpn"
           data-title="Wedding Pics (Good ones) · Friday, Oct 10 📸"
-          data-description="Shared album · Tap to view!">
+          data-description="Shared album · Tap to view!"
+          role="region"
+          aria-label="Google Photos Gallery Embed"
+        >
           {urls.map((url, i) => (
-            <object key={i} data={url} type="image/jpeg"></object>
+            <object
+              key={i}
+              data={url}
+              type="image/jpeg"
+              role="img"
+              aria-label={`Wedding photo ${i + 1}`}
+              title={`Wedding photo ${i + 1}`}
+            >
+              Wedding photo {i + 1}
+            </object>
           ))}
         </div>
       </ErrorBoundary>
 
       <div className="flex justify-center mt-12">
-        <Link href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
-          target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl">
+        <Link
+          href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+        >
           View Full Album
           <Icon name="Camera" className="w-5 h-5" />
         </Link>

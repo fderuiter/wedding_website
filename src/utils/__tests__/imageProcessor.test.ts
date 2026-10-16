@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { sanitizeImage } from '../imageProcessor';
+import { processImageWorkerBuffer } from '../imageProcessorWorker';
 
 // Helper to create a File object with polyfilled arrayBuffer() for environments where it is missing (like Jest's JSDOM/Node environment).
 function createTestFile(buffer: Uint8Array, name: string, type: string): File {
@@ -21,7 +22,7 @@ async function getFileArrayBuffer(file: File): Promise<ArrayBuffer> {
   return new Promise<ArrayBuffer>((resolve) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.readAsArrayBuffer(file as any);
+    reader.readAsArrayBuffer(file as unknown as Blob);
   });
 }
 
@@ -135,5 +136,25 @@ describe('imageProcessor - sanitizeImage', () => {
     const originalFile = createTestFile(corruptBytes, 'photo.jpg', 'image/jpeg');
 
     await expect(sanitizeImage(originalFile)).rejects.toThrow('Image sanitization failed');
+  });
+
+  describe('imageProcessorWorker module', () => {
+    it('should process image buffer in worker module directly', async () => {
+      const originalBuffer = await sharp({
+        create: {
+          width: 30,
+          height: 30,
+          channels: 3,
+          background: { r: 100, g: 100, b: 100 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const resultUint8Array = await processImageWorkerBuffer(originalBuffer);
+      const meta = await sharp(Buffer.from(resultUint8Array)).metadata();
+      expect(meta.width).toBe(30);
+      expect(meta.height).toBe(30);
+    });
   });
 });

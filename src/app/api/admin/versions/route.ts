@@ -53,19 +53,60 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   const entityType = url.searchParams.get('entityType');
   const entityId = url.searchParams.get('entityId');
 
+  const rawPage = url.searchParams.get('page');
+  const rawLimit = url.searchParams.get('limit');
+
+  let page = 1;
+  if (rawPage !== null && rawPage !== '') {
+    const parsedPage = parseInt(rawPage, 10);
+    if (!isNaN(parsedPage) && parsedPage >= 1) {
+      page = parsedPage;
+    }
+  }
+
+  let limit = 50;
+  if (rawLimit !== null && rawLimit !== '') {
+    const parsedLimit = parseInt(rawLimit, 10);
+    if (!isNaN(parsedLimit) && parsedLimit >= 1) {
+      limit = Math.min(parsedLimit, 100);
+    }
+  }
+
+  const skip = (page - 1) * limit;
+  const take = limit;
+
   const where: any = {};
   if (entityType) where.entityType = entityType;
   if (entityId) where.entityId = entityId;
 
-  const versions = await prisma.snapshotVersion.findMany({
-    where,
-    orderBy: { createdAt: 'desc' }
-  });
+  const [total, versions] = await Promise.all([
+    prisma.snapshotVersion.count({ where }),
+    prisma.snapshotVersion.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take,
+      skip,
+    }),
+  ]);
 
   const sanitizedVersions = versions.map(v => ({
     ...v,
     data: sanitizeSnapshotData(v.data, v.entityType)
   }));
 
-  return NextResponse.json(sanitizedVersions);
+  const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
+
+  return NextResponse.json({
+    items: sanitizedVersions,
+    pagination: {
+      total,
+      totalCount: total,
+      page,
+      currentPage: page,
+      limit,
+      pageSize: limit,
+      totalPages,
+      isPaginated: true,
+    },
+  });
 });

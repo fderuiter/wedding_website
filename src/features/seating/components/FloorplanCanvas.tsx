@@ -77,6 +77,56 @@ export function FloorplanCanvas({
     setDraggingTableId(null);
   };
 
+  // Handle table keyboard navigation & repositioning
+  const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSelectTable(table.id);
+      return;
+    }
+
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      const step = e.shiftKey ? 50 : 10;
+      let dx = 0;
+      let dy = 0;
+      if (e.key === 'ArrowLeft') dx = -step;
+      if (e.key === 'ArrowRight') dx = step;
+      if (e.key === 'ArrowUp') dy = -step;
+      if (e.key === 'ArrowDown') dy = step;
+
+      const tableWidth = table.width || 120;
+      const tableHeight = table.height || 120;
+
+      let canvasWidth = 800;
+      let canvasHeight = 650;
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        canvasWidth = rect.width || canvasRef.current.clientWidth || 800;
+        canvasHeight = rect.height || canvasRef.current.clientHeight || 650;
+      }
+
+      const maxX = Math.max(0, canvasWidth - tableWidth);
+      const maxY = Math.max(0, canvasHeight - tableHeight);
+
+      const newX = Math.max(0, Math.min(maxX, table.x + dx));
+      const newY = Math.max(0, Math.min(maxY, table.y + dy));
+
+      onUpdateTablePosition(table.id, Math.round(newX), Math.round(newY));
+    }
+  };
+
+  // Handle seat circle keyboard events
+  const handleSeatKeyDown = (e: React.KeyboardEvent, assignedGuestId?: string) => {
+    e.stopPropagation();
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      if (assignedGuestId) {
+        onUnassignGuest(assignedGuestId);
+      }
+    }
+  };
+
   // HTML5 Drag and Drop for Guest Cards onto Table
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -141,6 +191,14 @@ export function FloorplanCanvas({
       seats.push(
         <div
           key={i}
+          tabIndex={0}
+          role="button"
+          aria-label={
+            assignedGuest
+              ? `Seat ${i}: ${assignedGuest.guestName}`
+              : `Seat ${i}: Empty`
+          }
+          onKeyDown={(e) => handleSeatKeyDown(e, assignedGuest?.id)}
           onDragOver={handleDragOver}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
           onDoubleClick={() => assignedGuest && onUnassignGuest(assignedGuest.id)}
@@ -153,7 +211,7 @@ export function FloorplanCanvas({
                 : `Seat ${i}: ${assignedGuest.guestName} (Double click to unassign)`
               : `Seat ${i}: Empty (Drop guest here)`
           }
-          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all ${
+          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
             assignedGuest
               ? isMatch
                 ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
@@ -254,9 +312,10 @@ export function FloorplanCanvas({
               e.stopPropagation();
               onSelectTable(table.id);
             }}
+            onKeyDown={(e) => handleTableKeyDown(e, table)}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDropOnTable(e, table.id)}
-            className={`absolute cursor-move transition-all transform hover:scale-[1.02] ${
+            className={`absolute cursor-move transition-all transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
               isSelected ? 'ring-4 ring-primary ring-offset-2 z-20' : 'z-10'
             } ${
               hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''

@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
-import type { IRegistryRepository } from './types';
+import type { IRegistryRepository, GetItemsOptions, PaginatedRegistryItems } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
 /**
@@ -13,21 +13,68 @@ class RegistryRepository implements IRegistryRepository {
   constructor(public client: any = prisma) {}
 
   /**
-   * Retrieves all registry items from the database.
-   * @param {object} [options] - Options for relation loading.
-   * @param {boolean} [options.includeContributors=false] - Whether to include relational contributor records.
-   * @returns {Promise<RegistryItemDTO[]>} A promise that resolves to an array of all registry items.
+   * Retrieves paginated registry items from the database with optional filtering.
+   * @param {GetItemsOptions} [options] - Options for pagination, relation loading, and filters.
+   * @returns {Promise<PaginatedRegistryItems>} A promise that resolves to paginated registry items with metadata.
    */
-  async getAllItems(options: { includeContributors?: boolean } = {}) {
-    const { includeContributors = false } = options;
+  async getAllItems(options: GetItemsOptions = {}): Promise<PaginatedRegistryItems> {
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      minPrice,
+      maxPrice,
+      includeContributors = false,
+    } = options;
+
+    const normalizedPage = Math.max(1, Math.floor(page || 1));
+    const normalizedLimit = Math.min(100, Math.max(1, Math.floor(limit || 20)));
+    const skip = (normalizedPage - 1) * normalizedLimit;
+    const take = normalizedLimit;
+
+    const where: any = {};
+    if (category && category.trim()) {
+      where.category = category.trim();
+    }
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      where.price = {};
+      if (minPrice !== undefined) {
+        where.price.gte = minPrice;
+      }
+      if (maxPrice !== undefined) {
+        where.price.lte = maxPrice;
+      }
+    }
+
     const include: { image: boolean; contributors?: boolean } = { image: true };
     if (includeContributors) {
       include.contributors = true;
     }
+
+    const queryWhere = Object.keys(where).length > 0 ? { where } : {};
+
+    const rawTotal = typeof this.client.registryItem?.count === 'function'
+      ? await this.client.registryItem.count(queryWhere)
+      : undefined;
+
     const items = await this.client.registryItem.findMany({
+      ...queryWhere,
       include,
+      skip,
+      take,
     });
-    return items.map((item: any) => RegistryItemSchema.parse(item));
+
+    const parsedItems = items.map((item: any) => RegistryItemSchema.parse(item));
+    const total = typeof rawTotal === 'number' ? rawTotal : parsedItems.length;
+    const totalPages = Math.ceil(total / normalizedLimit);
+
+    return {
+      items: parsedItems,
+      total,
+      page: normalizedPage,
+      limit: normalizedLimit,
+      totalPages,
+    };
   }
 
   /**
