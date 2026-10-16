@@ -366,6 +366,165 @@ function parseCsvLines(text: string): string[][] {
   return result;
 }
 
+export function validateSingleCsvRow(
+  r: Record<string, string>,
+  idx: number,
+  mapping: ColumnMappingOptions,
+  codeFrequency: Map<string, number>,
+  existingDbCodes: Set<string>,
+  mappedColsSet?: Set<string>
+): ParsedCsvRow {
+  const {
+    guestNameCol = '',
+    codeCol = '',
+    emailCol = '',
+    addressLine1Col = '',
+    addressLine2Col = '',
+    cityCol = '',
+    stateCol = '',
+    zipCodeCol = '',
+    countryCol = '',
+    dietaryNotesCol = '',
+    plusOneCol = '',
+    plusOneFirstNameCol = '',
+    plusOneLastNameCol = '',
+    extraCols,
+  } = mapping;
+
+  const mappedCols =
+    mappedColsSet ||
+    new Set(
+      [
+        guestNameCol,
+        codeCol,
+        emailCol,
+        addressLine1Col,
+        addressLine2Col,
+        cityCol,
+        stateCol,
+        zipCodeCol,
+        countryCol,
+        dietaryNotesCol,
+        plusOneCol,
+        plusOneFirstNameCol,
+        plusOneLastNameCol,
+      ].filter(Boolean)
+    );
+
+  const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
+  const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
+  const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
+  const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();
+  const addressLine2 = addressLine2Col ? (r[addressLine2Col] || '').trim() : (r['addressLine2'] || r['Address Line 2'] || '').trim();
+  const city = cityCol ? (r[cityCol] || '').trim() : (r['city'] || r['City'] || '').trim();
+  const state = stateCol ? (r[stateCol] || '').trim() : (r['state'] || r['State'] || '').trim();
+  const zipCode = zipCodeCol ? (r[zipCodeCol] || '').trim() : (r['zipCode'] || r['Zip Code'] || r['Zip'] || '').trim();
+  const country = countryCol ? (r[countryCol] || '').trim() : (r['country'] || r['Country'] || '').trim();
+  const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
+  const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
+  const plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
+  const plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
+
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!guestName) {
+    errors.push('Guest name is required.');
+  }
+
+  if (code) {
+    if ((codeFrequency.get(code) || 0) > 1) {
+      errors.push(`Duplicate code "${code}" within CSV file.`);
+    } else if (existingDbCodes.has(code)) {
+      warnings.push(`Code "${code}" already exists in database.`);
+    }
+  } else {
+    warnings.push('Blank code: Auto-generated 8-char code will be assigned.');
+  }
+
+  if (email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      errors.push('Invalid email format.');
+    }
+  }
+
+  if (addressLine1 && addressLine1.length > 150) {
+    errors.push('Address Line 1 must be under 150 characters.');
+  }
+  if (addressLine2 && addressLine2.length > 150) {
+    errors.push('Address Line 2 must be under 150 characters.');
+  }
+  if (city && city.length > 100) {
+    errors.push('City must be under 100 characters.');
+  }
+  if (state && state.length > 100) {
+    errors.push('State must be under 100 characters.');
+  }
+  if (zipCode && zipCode.length > 20) {
+    errors.push('Zip Code must be under 20 characters.');
+  }
+  if (country && country.length > 100) {
+    errors.push('Country must be under 100 characters.');
+  }
+
+  let plusOneAllocations: number | undefined = undefined;
+  if (rawPlusOne !== '') {
+    if (!/^\d+$/.test(rawPlusOne)) {
+      errors.push('Plus-one allocation must be a non-negative integer.');
+    } else {
+      plusOneAllocations = parseInt(rawPlusOne, 10);
+    }
+  }
+
+  if (plusOneFirstName && plusOneFirstName.length > 100) {
+    errors.push('Plus-one first name must be under 100 characters.');
+  }
+
+  if (plusOneLastName && plusOneLastName.length > 100) {
+    errors.push('Plus-one last name must be under 100 characters.');
+  }
+
+  // Collect extra fields
+  const extraFields: Record<string, string> = {};
+
+  if (extraCols && Array.isArray(extraCols)) {
+    extraCols.forEach((col) => {
+      if (r[col] !== undefined && r[col].trim() !== '') {
+        extraFields[col] = r[col].trim();
+      }
+    });
+  } else {
+    Object.keys(r).forEach((col) => {
+      if (!mappedCols.has(col) && r[col] !== undefined && r[col].trim() !== '') {
+        extraFields[col] = r[col].trim();
+      }
+    });
+  }
+
+  return {
+    rowIndex: idx + 1,
+    raw: r,
+    guestName,
+    code,
+    email: email || undefined,
+    addressLine1: addressLine1 || undefined,
+    addressLine2: addressLine2 || undefined,
+    city: city || undefined,
+    state: state || undefined,
+    zipCode: zipCode || undefined,
+    country: country || undefined,
+    dietaryNotes: dietaryNotes || undefined,
+    plusOneAllocations,
+    plusOneFirstName: plusOneFirstName || undefined,
+    plusOneLastName: plusOneLastName || undefined,
+    extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
 export function validateCsvRows(
   rows: Record<string, string>[],
   columnMappingOrGuestNameCol: string | ColumnMappingOptions,
@@ -400,7 +559,6 @@ export function validateCsvRows(
     plusOneCol = '',
     plusOneFirstNameCol = '',
     plusOneLastNameCol = '',
-    extraCols,
   } = mapping;
 
   const codeFrequency = new Map<string, number>();
@@ -413,84 +571,9 @@ export function validateCsvRows(
     }
   });
 
-  return rows.map((r, idx) => {
-    const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
-    const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
-    const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
-    const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();
-    const addressLine2 = addressLine2Col ? (r[addressLine2Col] || '').trim() : (r['addressLine2'] || r['Address Line 2'] || '').trim();
-    const city = cityCol ? (r[cityCol] || '').trim() : (r['city'] || r['City'] || '').trim();
-    const state = stateCol ? (r[stateCol] || '').trim() : (r['state'] || r['State'] || '').trim();
-    const zipCode = zipCodeCol ? (r[zipCodeCol] || '').trim() : (r['zipCode'] || r['Zip Code'] || r['Zip'] || '').trim();
-    const country = countryCol ? (r[countryCol] || '').trim() : (r['country'] || r['Country'] || '').trim();
-    const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
-    const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
-    const plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
-    const plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
-
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    if (!guestName) {
-      errors.push('Guest name is required.');
-    }
-
-    if (code) {
-      if ((codeFrequency.get(code) || 0) > 1) {
-        errors.push(`Duplicate code "${code}" within CSV file.`);
-      } else if (existingDbCodes.has(code)) {
-        warnings.push(`Code "${code}" already exists in database.`);
-      }
-    } else {
-      warnings.push('Blank code: Auto-generated 8-char code will be assigned.');
-    }
-
-    if (email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        errors.push('Invalid email format.');
-      }
-    }
-
-    if (addressLine1 && addressLine1.length > 150) {
-      errors.push('Address Line 1 must be under 150 characters.');
-    }
-    if (addressLine2 && addressLine2.length > 150) {
-      errors.push('Address Line 2 must be under 150 characters.');
-    }
-    if (city && city.length > 100) {
-      errors.push('City must be under 100 characters.');
-    }
-    if (state && state.length > 100) {
-      errors.push('State must be under 100 characters.');
-    }
-    if (zipCode && zipCode.length > 20) {
-      errors.push('Zip Code must be under 20 characters.');
-    }
-    if (country && country.length > 100) {
-      errors.push('Country must be under 100 characters.');
-    }
-
-    let plusOneAllocations: number | undefined = undefined;
-    if (rawPlusOne !== '') {
-      if (!/^\d+$/.test(rawPlusOne)) {
-        errors.push('Plus-one allocation must be a non-negative integer.');
-      } else {
-        plusOneAllocations = parseInt(rawPlusOne, 10);
-      }
-    }
-
-    if (plusOneFirstName && plusOneFirstName.length > 100) {
-      errors.push('Plus-one first name must be under 100 characters.');
-    }
-
-    if (plusOneLastName && plusOneLastName.length > 100) {
-      errors.push('Plus-one last name must be under 100 characters.');
-    }
-
-    // Collect extra fields
-    const extraFields: Record<string, string> = {};
-    const mappedCols = new Set([
+  // Hoisted column set creation
+  const mappedCols = new Set(
+    [
       guestNameCol,
       codeCol,
       emailCol,
@@ -504,44 +587,12 @@ export function validateCsvRows(
       plusOneCol,
       plusOneFirstNameCol,
       plusOneLastNameCol,
-    ].filter(Boolean));
+    ].filter(Boolean)
+  );
 
-    if (extraCols && Array.isArray(extraCols)) {
-      extraCols.forEach((col) => {
-        if (r[col] !== undefined && r[col].trim() !== '') {
-          extraFields[col] = r[col].trim();
-        }
-      });
-    } else {
-      Object.keys(r).forEach((col) => {
-        if (!mappedCols.has(col) && r[col] !== undefined && r[col].trim() !== '') {
-          extraFields[col] = r[col].trim();
-        }
-      });
-    }
-
-    return {
-      rowIndex: idx + 1,
-      raw: r,
-      guestName,
-      code,
-      email: email || undefined,
-      addressLine1: addressLine1 || undefined,
-      addressLine2: addressLine2 || undefined,
-      city: city || undefined,
-      state: state || undefined,
-      zipCode: zipCode || undefined,
-      country: country || undefined,
-      dietaryNotes: dietaryNotes || undefined,
-      plusOneAllocations,
-      plusOneFirstName: plusOneFirstName || undefined,
-      plusOneLastName: plusOneLastName || undefined,
-      extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
-      isValid: errors.length === 0,
-      errors,
-      warnings,
-    };
-  });
+  return rows.map((r, idx) =>
+    validateSingleCsvRow(r, idx, mapping, codeFrequency, existingDbCodes, mappedCols)
+  );
 }
 
 export function escapeCsvCell(val: unknown): string {
