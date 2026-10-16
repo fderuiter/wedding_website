@@ -13,6 +13,7 @@ export interface ThankYouContributorItem {
   id: string;
   name: string;
   email?: string | null;
+  message?: string | null;
   amount: number;
   date: string;
   thankYouStatus: 'Unsent' | 'Sent' | 'Not Needed' | string;
@@ -538,21 +539,37 @@ export default function ThankYouNotesPage() {
 
                     <TableCell className="max-w-xs">
                       {isEditing ? (
-                        <textarea
-                          aria-label={`Thank-you note message for ${item.name}`}
-                          rows={2}
-                          value={editNote}
-                          onChange={(e) => setEditNote(e.target.value)}
-                          placeholder="Add custom thank-you note draft..."
-                          className="w-full text-xs p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
-                        />
-                      ) : (
-                        <div className="text-xs text-gray-700 dark:text-gray-300 truncate max-w-xs">
-                          {item.thankYouNote ? (
-                            <span title={item.thankYouNote}>{item.thankYouNote}</span>
-                          ) : (
-                            <span className="text-gray-400 italic">No note added</span>
+                        <div className="space-y-1">
+                          {item.message && (
+                            <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
+                              <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                              <p className="italic">{item.message}</p>
+                            </div>
                           )}
+                          <textarea
+                            aria-label={`Thank-you note message for ${item.name}`}
+                            rows={2}
+                            value={editNote}
+                            onChange={(e) => setEditNote(e.target.value)}
+                            placeholder="Add custom thank-you note draft..."
+                            className="w-full text-xs p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1 max-w-xs">
+                          {item.message && (
+                            <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
+                              <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                              <p className="italic whitespace-pre-wrap">{item.message}</p>
+                            </div>
+                          )}
+                          <div className="truncate">
+                            {item.thankYouNote ? (
+                              <span title={item.thankYouNote}>{item.thankYouNote}</span>
+                            ) : (
+                              <span className="text-gray-400 italic">No note added</span>
+                            )}
+                          </div>
                         </div>
                       )}
                     </TableCell>
