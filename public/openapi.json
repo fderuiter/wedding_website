@@ -2209,6 +2209,35 @@
         }
       }
     },
+    "/api/guest/photos/upload": {
+      "post": {
+        "summary": "POST /api/guest/photos/upload",
+        "description": "Endpoint for /api/guest/photos/upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "file": {}
+                },
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "GET /api/health",
@@ -2336,6 +2365,35 @@
                   "url",
                   "altText",
                   "isDecorative"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/photos/upload": {
+      "post": {
+        "summary": "POST /api/photos/upload",
+        "description": "Endpoint for /api/photos/upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "file": {}
+                },
+                "required": [
+                  "file"
                 ],
                 "additionalProperties": false
               }
