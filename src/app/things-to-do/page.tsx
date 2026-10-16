@@ -41,7 +41,7 @@ export default async function ThingsToDoPage() {
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Things to Do in City
       </h1>
-      <ThingsToDoList attractions={attractions} />
+      <ThingsToDoList attractions={attractions} defaultCenter={[config.latitude, config.longitude]} />
     </div>
   );
 }

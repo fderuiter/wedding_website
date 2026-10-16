@@ -1,0 +1,176 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import SetupWizard from '../SetupWizard';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+jest.mock('@/hooks/admin/useAdminWeddingParty', () => ({
+  useAdminWeddingParty: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  }),
+}));
+
+jest.mock('@/hooks/admin/useAdminAttractions', () => ({
+  useAdminAttractions: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  }),
+}));
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
+describe('SetupWizard focus shifting and ARIA error linking', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('password authentication failure shifts focus, selects text, and sets ARIA error attributes', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: 'Invalid admin password.' }),
+      } as Response)
+    ) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    const passwordInput = screen.getByPlaceholderText('Admin Password') as HTMLInputElement;
+    const selectSpy = jest.spyOn(passwordInput, 'select');
+
+    fireEvent.change(passwordInput, { target: { value: 'wrongpassword' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Invalid admin password.')).toBeInTheDocument();
+      expect(passwordInput.getAttribute('aria-describedby')).toBeTruthy();
+    });
+
+    // Check focus shift
+    expect(document.activeElement).toBe(passwordInput);
+
+    // Check text selection
+    expect(selectSpy).toHaveBeenCalled();
+
+    // Check ARIA attributes
+    expect(passwordInput).toHaveAttribute('aria-invalid', 'true');
+    const describedBy = passwordInput.getAttribute('aria-describedby');
+
+    const errorMessage = document.getElementById(describedBy!);
+    expect(errorMessage).toBeInTheDocument();
+    expect(errorMessage).toHaveTextContent('Invalid admin password.');
+  });
+
+  test('site URL configuration error shifts focus and sets ARIA error attributes in Step 2', async () => {
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/setup')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Admin Login
+    const passInput = screen.getByPlaceholderText('Admin Password');
+    fireEvent.change(passInput, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Wait for Step 1 Essentials form
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+
+    // Fill form except site URL has a sample/default domain
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
+
+    const siteUrlInput = screen.getByLabelText(/Site URL/i) as HTMLInputElement;
+    fireEvent.change(siteUrlInput, { target: { value: 'https://wedding.example' } });
+
+    // Submit form with default URL
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Please use your own URL/i)).toBeInTheDocument();
+    });
+
+    // Check focus shift
+    expect(document.activeElement).toBe(siteUrlInput);
+
+    // Check ARIA attributes
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'true');
+    const describedBy = siteUrlInput.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+
+    const errorMessage = document.getElementById(describedBy!);
+    expect(errorMessage).toBeInTheDocument();
+    expect(errorMessage).toHaveTextContent(/Please use your own URL/i);
+  });
+
+  test('backend save error in Step 2 shifts focus to site URL input', async () => {
+    let callCount = 0;
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      callCount++;
+      if (callCount === 1) {
+        // First call: login succeeds
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      } else {
+        // Second call: config save fails
+        return Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({ error: 'Backend validation failed.' }),
+        } as Response);
+      }
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Admin Login
+    const passInput = screen.getByPlaceholderText('Admin Password');
+    fireEvent.change(passInput, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Wait for Step 1 Essentials form
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
+
+    const siteUrlInput = screen.getByLabelText(/Site URL/i) as HTMLInputElement;
+    fireEvent.change(siteUrlInput, { target: { value: 'https://validweddingurl.com' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Backend validation failed.')).toBeInTheDocument();
+    });
+
+    // Check focus shift
+    expect(document.activeElement).toBe(siteUrlInput);
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'true');
+  });
+});
