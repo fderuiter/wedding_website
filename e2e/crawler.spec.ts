@@ -189,110 +189,106 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       return ctx;
     };
 
-    const pageContext = await setupContext();
+    for (const route of START_ROUTES) {
+      const targetUrl = new URL(route, baseURL).toString();
+      if (visitedUrls.has(targetUrl)) continue;
 
-    try {
-      for (const route of START_ROUTES) {
-        const targetUrl = new URL(route, baseURL).toString();
-        if (visitedUrls.has(targetUrl)) continue;
+      console.log(`[Authenticated] Navigating to: ${targetUrl}`);
+      const pageContext = await setupContext();
+      const page = await pageContext.newPage();
 
-        console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        const page = await pageContext.newPage();
+      try {
+        const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        expect(response).not.toBeNull();
+        expect(response!.status()).toBe(200);
 
-        try {
-          const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-          expect(response).not.toBeNull();
-          expect(response!.status()).toBe(200);
+        // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
+        if (route !== '/admin/login') {
+          const currentUrl = new URL(page.url());
+          expect(currentUrl.pathname).not.toBe('/admin/login');
+        }
 
-          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-          if (route !== '/admin/login') {
-            const currentUrl = new URL(page.url());
-            expect(currentUrl.pathname).not.toBe('/admin/login');
-          }
+        // Check for generic application server or DB errors in page content
+        const content = await page.content();
+        expect(content).not.toContain('Internal Server Error');
+        expect(content).not.toContain('500 Error');
+        expect(content).not.toContain('An unhandled error occurred');
 
-          // Check for generic application server or DB errors in page content
-          const content = await page.content();
-          expect(content).not.toContain('Internal Server Error');
-          expect(content).not.toContain('500 Error');
-          expect(content).not.toContain('An unhandled error occurred');
+        visitedUrls.add(targetUrl);
 
-          visitedUrls.add(targetUrl);
+        // Parse and extract all anchor links from the navigated page in a single CDP call
+        const hrefs = await page.evaluate(() => 
+          Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+        );
+        console.log(`Found ${hrefs.length} anchor elements on ${route}`);
 
-          // Parse and extract all anchor links from the navigated page in a single CDP call
-          const hrefs = await page.evaluate(() => 
-            Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-          );
-          console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+        for (const href of hrefs) {
+          if (!href) continue;
 
-          for (const href of hrefs) {
-            if (!href) continue;
-
-            // Skip non-navigational links or fragments
-            if (
-              href.startsWith('#') ||
+          // Skip non-navigational links or fragments
+          if (
+            href.startsWith('#') ||
               href.startsWith('mailto:') ||
               href.startsWith('tel:') ||
               href.startsWith('javascript:') ||
               href.startsWith('data:') ||
               href.startsWith('vbscript:')
-            ) {
-              continue;
-            }
-
-            let resolvedUrl: URL;
-            try {
-              resolvedUrl = new URL(href, targetUrl);
-            } catch {
-              continue;
-            }
-
-            if (resolvedUrl.origin !== new URL(baseURL).origin) {
-              continue;
-            }
-
-            if (resolvedUrl.pathname.includes('/_next/')) {
-              continue;
-            }
-
-            let normalizedPath = resolvedUrl.pathname;
-            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-              normalizedPath = normalizedPath.slice(0, -1);
-            }
-
-            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-            checkedLinks.add(absoluteCheckUrl);
+          ) {
+            continue;
           }
-        } finally {
-          await page.close().catch(() => {});
-        }
-      }
 
-      console.log(`Checking ${checkedLinks.size} unique internal links...`);
-      const linksArray = Array.from(checkedLinks);
-      const batchSize = 5;
-      for (let i = 0; i < linksArray.length; i += batchSize) {
-        const batch = linksArray.slice(i, i + batchSize);
-        const batchResults = await Promise.all(
-          batch.map(async (absoluteCheckUrl) => {
-            console.log(`Checking link: ${absoluteCheckUrl}`);
-            const linkResponse = await fetch(absoluteCheckUrl, {
-              headers: {
-                Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-              },
-              signal: AbortSignal.timeout(15000),
-            });
-            const status = linkResponse.status;
-            await linkResponse.arrayBuffer();
-            return { absoluteCheckUrl, status };
-          })
-        );
+          let resolvedUrl: URL;
+          try {
+            resolvedUrl = new URL(href, targetUrl);
+          } catch {
+            continue;
+          }
 
-        for (const { absoluteCheckUrl, status } of batchResults) {
-          expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+          if (resolvedUrl.origin !== new URL(baseURL).origin) {
+            continue;
+          }
+
+          if (resolvedUrl.pathname.includes('/_next/')) {
+            continue;
+          }
+
+          let normalizedPath = resolvedUrl.pathname;
+          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+            normalizedPath = normalizedPath.slice(0, -1);
+          }
+
+          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+          checkedLinks.add(absoluteCheckUrl);
         }
+      } finally {
+        await page.close().catch(() => {});
+        await pageContext.close().catch(() => {});
       }
-    } finally {
-      await pageContext.close().catch(() => {});
+    }
+
+    console.log(`Checking ${checkedLinks.size} unique internal links...`);
+    const linksArray = Array.from(checkedLinks);
+    const batchSize = 5;
+    for (let i = 0; i < linksArray.length; i += batchSize) {
+      const batch = linksArray.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (absoluteCheckUrl) => {
+          console.log(`Checking link: ${absoluteCheckUrl}`);
+          const linkResponse = await fetch(absoluteCheckUrl, {
+            headers: {
+              Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+            },
+            signal: AbortSignal.timeout(15000),
+          });
+          const status = linkResponse.status;
+          await linkResponse.arrayBuffer();
+          return { absoluteCheckUrl, status };
+        })
+      );
+
+      for (const { absoluteCheckUrl, status } of batchResults) {
+        expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+      }
     }
   });
 
