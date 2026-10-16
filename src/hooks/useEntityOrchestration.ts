@@ -5,7 +5,7 @@ import { generateSecureUUID } from '@/utils/uuid';
 const EMPTY_ARRAY: readonly any[] = Object.freeze([]);
 
 interface UseEntityOrchestrationOptions {
-  queryKey: string[];
+  queryKey: (string | number)[];
   endpoint: string;
   entityName: string;
   apiClient: ApiClient;
@@ -29,7 +29,13 @@ export function useEntityOrchestration<T extends { id: string }>({
     refetch: fetchAll,
   } = useQuery<T[], Error>({
     queryKey,
-    queryFn: async () => apiClient.get<T[]>(endpoint),
+    queryFn: async () => {
+      const res = await apiClient.get<any>(endpoint);
+      if (res && typeof res === 'object' && Array.isArray(res.items)) {
+        return res.items as T[];
+      }
+      return (Array.isArray(res) ? res : []) as T[];
+    },
     enabled,
   });
 
