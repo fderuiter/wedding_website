@@ -245,7 +245,7 @@ function SetupWizardContent() {
                 />
                 {error && !isAuthenticated && <FormMessage role="alert">{error}</FormMessage>}
               </FormGroup>
-              <Button disabled={loading} variant="primary" className="w-full py-3">
+              <Button type="submit" disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? 'Authenticating...' : 'Continue'}
               </Button>
             </form>
@@ -325,7 +325,7 @@ function SetupWizardContent() {
                 />
               </div>
 
-              <Button disabled={loading} variant="primary" className="w-full py-3">
+              <Button type="submit" disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? 'Saving...' : 'Next Step'}
               </Button>
             </form>
