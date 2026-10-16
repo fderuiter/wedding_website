@@ -44,10 +44,3 @@ export function maskRegistryItem(item: any) {
   return result;
 }
 
-export function maskRegistryItems(items: any) {
-  if (!items) return items;
-  if (Array.isArray(items)) {
-    return items.map(maskRegistryItem);
-  }
-  return maskRegistryItem(items);
-}

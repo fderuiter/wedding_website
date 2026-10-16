@@ -165,7 +165,7 @@ export function parseCsvContent(text: string): CsvParseResult {
   };
 }
 
-export function parseCsvLines(text: string): string[][] {
+function parseCsvLines(text: string): string[][] {
   const result: string[][] = [];
   let currentRow: string[] = [];
   let currentField = '';
