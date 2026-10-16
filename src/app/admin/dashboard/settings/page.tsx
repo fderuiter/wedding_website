@@ -33,7 +33,7 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const containerRef = useRef<HTMLDivElement>(null);
-  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     if (value) {
@@ -156,25 +156,24 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
             filtered.map((tz, index) => {
               const isHighlighted = index === highlightedIndex;
               return (
-                <button
+                <div
                   key={tz}
                   ref={(el) => {
                     optionRefs.current[index] = el;
                   }}
                   id={`timezone-option-${index}`}
-                  type="button"
                   role="option"
                   aria-selected={isHighlighted}
                   onClick={() => handleSelect(tz)}
                   onMouseEnter={() => setHighlightedIndex(index)}
-                  className={`block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-zinc-200 focus:outline-none ${
+                  className={`block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-zinc-200 cursor-pointer ${
                     isHighlighted
                       ? 'bg-gray-100 dark:bg-zinc-700'
                       : 'hover:bg-gray-100 dark:hover:bg-zinc-700'
                   }`}
                 >
                   {tz}
-                </button>
+                </div>
               );
             })
           ) : (
