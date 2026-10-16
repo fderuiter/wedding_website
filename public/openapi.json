@@ -1347,6 +1347,39 @@
                     "type": "string",
                     "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
                   },
+                  "fontHeading": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fontBody": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fontMono": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "showCountdown": {
                     "type": "boolean"
                   },
@@ -1563,6 +1596,39 @@
                   "layoutBorderRadius": {
                     "type": "string",
                     "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "fontHeading": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fontBody": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fontMono": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1791,6 +1857,39 @@
                   "layoutBorderRadius": {
                     "type": "string",
                     "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                  },
+                  "fontHeading": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fontBody": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fontMono": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_\\-\\s,'\"\\(\\)]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "showCountdown": {
                     "type": "boolean"

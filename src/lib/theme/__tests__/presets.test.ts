@@ -23,6 +23,11 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--card-shadow']).toBeDefined();
       expect(tokens['--heading-color']).toBeDefined();
 
+      // Check typography tokens
+      expect(tokens['--font-heading']).toBeDefined();
+      expect(tokens['--font-body']).toBeDefined();
+      expect(tokens['--font-mono']).toBeDefined();
+
       // Check key button and dialog component CSS variables
       expect(tokens['--btn-radius']).toBeDefined();
       expect(tokens['--btn-font-weight']).toBeDefined();

@@ -11,6 +11,9 @@ function TestComponent() {
       <span data-testid="theme-primary">{theme.themePrimary}</span>
       <span data-testid="theme-secondary">{theme.themeSecondary}</span>
       <span data-testid="theme-preset">{theme.themePreset}</span>
+      <span data-testid="font-heading">{theme.fontHeading}</span>
+      <span data-testid="font-body">{theme.fontBody}</span>
+      <span data-testid="font-mono">{theme.fontMono}</span>
       <span data-testid="layout-container-max-w">{theme.layoutContainerMaxWidth}</span>
       <span data-testid="layout-grid-gap">{theme.layoutGridGap}</span>
       <span data-testid="layout-card-padding">{theme.layoutCardPadding}</span>
@@ -533,5 +536,45 @@ describe('ThemeProvider Theme Presets', () => {
     expect(cssText).toContain('.dark {');
     expect(cssText).toContain('--dialog-bg: #231118;');
     expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
+  });
+
+  it('outputs typography CSS variables matching active theme preset in dynamic style generator', () => {
+    const { getByTestId, container } = render(
+      <ThemeProvider config={{ themePreset: 'editorial' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('font-heading')).toHaveTextContent('var(--font-cinzel), Cinzel, Georgia, serif');
+    expect(getByTestId('font-body')).toHaveTextContent('var(--font-lora), Lora, Georgia, serif');
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+    expect(cssText).toContain('--font-heading: var(--font-cinzel), Cinzel, Georgia, serif;');
+    expect(cssText).toContain('--font-body: var(--font-lora), Lora, Georgia, serif;');
+    expect(cssText).toContain('--font-mono: var(--font-geist-mono), monospace;');
+  });
+
+  it('allows custom font token overrides and sanitizes unsafe font tokens', () => {
+    const { getByTestId, container } = render(
+      <ThemeProvider
+        config={{
+          themePreset: 'modern',
+          fontHeading: 'CustomFont, sans-serif',
+          fontBody: 'Unsafe; body { display: none }',
+        }}
+      >
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('font-heading')).toHaveTextContent('CustomFont, sans-serif');
+    // Malicious token should be rejected and fall back to modern preset font body
+    expect(getByTestId('font-body')).toHaveTextContent('var(--font-inter), Arial, Helvetica, sans-serif');
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+    expect(cssText).toContain('--font-heading: CustomFont, sans-serif;');
+    expect(cssText).not.toContain('body { display: none }');
   });
 });

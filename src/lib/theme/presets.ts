@@ -3,6 +3,10 @@ export type ThemePreset = 'classic' | 'modern' | 'romantic' | 'minimal' | 'edito
 export const THEME_PRESET_KEYS: ThemePreset[] = ['classic', 'modern', 'romantic', 'minimal', 'editorial'];
 
 export interface ComponentTokens {
+  '--font-heading': string;
+  '--font-body': string;
+  '--font-mono': string;
+
   '--container-bg': string;
   '--card-bg': string;
   '--card-border': string;
@@ -123,6 +127,9 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
   classic: {
+    '--font-heading': 'var(--font-playfair), Playfair Display, Georgia, serif',
+    '--font-body': 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
+    '--font-mono': 'var(--font-geist-mono), monospace',
     '--container-bg': 'var(--color-background, #fff1f2)',
     '--card-bg': '#ffffff',
     '--card-border': '#e5e7eb',
@@ -239,6 +246,9 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     },
   },
   modern: {
+    '--font-heading': 'var(--font-inter), Arial, Helvetica, sans-serif',
+    '--font-body': 'var(--font-inter), Arial, Helvetica, sans-serif',
+    '--font-mono': 'var(--font-geist-mono), monospace',
     '--container-bg': '#f8fafc',
     '--card-bg': '#ffffff',
     '--card-border': '#f1f5f9',
@@ -355,6 +365,9 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     },
   },
   romantic: {
+    '--font-heading': 'var(--font-cormorant), Cormorant Garamond, Georgia, serif',
+    '--font-body': 'var(--font-lato), Arial, Helvetica, sans-serif',
+    '--font-mono': 'var(--font-geist-mono), monospace',
     '--container-bg': '#fdf2f8',
     '--card-bg': '#fffafb',
     '--card-border': '#fce7f3',
@@ -472,6 +485,9 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     },
   },
   minimal: {
+    '--font-heading': 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
+    '--font-body': 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
+    '--font-mono': 'var(--font-geist-mono), monospace',
     '--container-bg': '#fafafa',
     '--card-bg': '#ffffff',
     '--card-border': '#e4e4e7',
@@ -591,6 +607,9 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     },
   },
   editorial: {
+    '--font-heading': 'var(--font-cinzel), Cinzel, Georgia, serif',
+    '--font-body': 'var(--font-lora), Lora, Georgia, serif',
+    '--font-mono': 'var(--font-geist-mono), monospace',
     '--container-bg': '#f5f5f4',
     '--card-bg': '#fcfbf9',
     '--card-border': '#000000',
