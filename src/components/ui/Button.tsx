@@ -13,15 +13,15 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variants = {
       primary:
-        'bg-[var(--btn-primary-bg,var(--color-primary,#B91C1C))] text-[var(--btn-primary-text,#ffffff)] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary,#B91C1C))] border border-[var(--btn-primary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-primary,#B91C1C))]',
+        'bg-[var(--btn-primary-bg,var(--color-primary,#B91C1C))] text-[var(--btn-primary-text,#ffffff)] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary,#B91C1C))] border border-[var(--btn-primary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
       secondary:
-        'bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-secondary,#B45309))]',
+        'bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-secondary,#B45309)))]',
       danger:
-        'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] focus-visible:ring-[var(--btn-danger-bg,#b91c1c)]',
+        'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] focus-visible:ring-[var(--btn-focus-ring,var(--color-error-text,#b91c1c))]',
       ghost:
-        'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,inherit)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]',
+        'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,var(--color-primary-text,inherit))] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
       outline:
-        'bg-[var(--btn-outline-bg,transparent)] text-[var(--btn-outline-text,inherit)] border border-[var(--btn-outline-border,#d1d5db)] hover:bg-[var(--btn-outline-hover-bg,rgba(0,0,0,0.05))]',
+        'bg-[var(--btn-outline-bg,transparent)] text-[var(--btn-outline-text,var(--color-primary-text,inherit))] border border-[var(--btn-outline-border,var(--color-surface-border,#d1d5db))] hover:bg-[var(--btn-outline-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
     };
 
     const sizes = {

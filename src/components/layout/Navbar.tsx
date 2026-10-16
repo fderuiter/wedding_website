@@ -76,12 +76,12 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     <>
       <header
         ref={headerRef}
-        className="fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-gray-200 dark:border-gray-700"
+        className="fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]"
       >
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex-shrink-0">
-              <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
+              <Link href="/" className="text-2xl font-bold text-[var(--color-primary-text)]">
                 A & F
               </Link>
             </div>
@@ -92,10 +92,10 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                     key={link.href}
                     href={link.href}
                     aria-current={pathname === link.href ? 'page' : undefined}
-                    className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                    className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
                       pathname === link.href
-                        ? 'text-white bg-primary'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
+                        : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
                     }`}
                   >
                     {link.label}
@@ -107,10 +107,10 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               <ThemeSelector />
               {isAdmin && (
                 <div className="flex items-center">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Mode</span>
+                  <span className="text-sm font-medium text-[var(--color-primary-text)]">Admin Mode</span>
                   <button
                     onClick={handleLogout}
-                    className="ml-4 bg-primary hover:bg-primary text-white text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    className="ml-4 bg-[var(--btn-primary-bg,var(--color-primary))] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary))] text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
                   >
                     Logout
                   </button>
@@ -123,7 +123,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                 type="button"
                 aria-expanded={isMenuOpen}
                 aria-controls="mobile-menu"
-                className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 focus-visible:ring-white"
+                className="inline-flex items-center justify-center p-2 rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
               >
                 <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
                 {isMenuOpen ? (
@@ -143,7 +143,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         id="mobile-menu" 
         animationType="slide-down"
         layoutClassName="fixed top-16 bottom-0 left-0 right-0 z-40 flex flex-col justify-start"
-        className="w-full bg-white dark:bg-gray-800 shadow-xl border-b border-gray-200 dark:border-gray-700"
+        className="w-full bg-[var(--card-bg,#ffffff)] shadow-xl border-b border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)]"
       >
         <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
           {allLinks.map((link) => (
@@ -152,24 +152,24 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               href={link.href}
               onClick={() => setIsMenuOpen(false)}
               aria-current={pathname === link.href ? 'page' : undefined}
-              className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+              className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
                 pathname === link.href
-                  ? 'text-white bg-primary'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
+                  : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
               }`}
             >
               {link.label}
             </Link>
           ))}
-          <div className="pt-3 pb-2 px-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</span>
+          <div className="pt-3 pb-2 px-3 border-t border-[var(--color-surface-border,#e5e7eb)] flex justify-between items-center">
+            <span className="text-sm font-medium text-[var(--color-primary-text)]">Theme</span>
             <ThemeSelector />
           </div>
           {isAdmin && (
-            <div className="pt-4 pb-3 border-t border-gray-700">
+            <div className="pt-4 pb-3 border-t border-[var(--color-surface-border,#e5e7eb)]">
               <div className="flex items-center px-5">
                 <div className="ml-3">
-                  <div className="text-base font-medium leading-none text-gray-800 dark:text-white">Admin Mode</div>
+                  <div className="text-base font-medium leading-none text-[var(--color-primary-text)]">Admin Mode</div>
                 </div>
               </div>
               <div className="mt-3 px-2 space-y-1">
@@ -178,7 +178,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                     handleLogout();
                     setIsMenuOpen(false);
                   }}
-                  className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-400 hover:text-white hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                  className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
                 >
                   Logout
                 </button>

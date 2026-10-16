@@ -535,3 +535,57 @@ describe('ThemeProvider Theme Presets', () => {
     expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
   });
 });
+
+describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {
+  it('outputs calibrated contrast CSS variables for primary text, secondary text, error text, focus ring, and surface border', () => {
+    const { container } = render(
+      <ThemeProvider config={{ colorPrimary: '#B91C1C', colorSecondary: '#B45309' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem).not.toBeNull();
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('--color-primary-text:');
+    expect(cssText).toContain('--color-secondary-text:');
+    expect(cssText).toContain('--color-error-text:');
+    expect(cssText).toContain('--color-focus-ring:');
+    expect(cssText).toContain('--color-surface-border:');
+  });
+
+  it('includes container cascade surface rules covering gray, slate, zinc, stone, neutral families and data-surface attributes', () => {
+    const { container } = render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    // Check light container surface rules
+    expect(cssText).toContain('.bg-white');
+    expect(cssText).toContain('[data-surface="light"]');
+    expect(cssText).toContain('.bg-gray-50');
+    expect(cssText).toContain('.bg-slate-50');
+    expect(cssText).toContain('.bg-zinc-50');
+    expect(cssText).toContain('.bg-stone-50');
+    expect(cssText).toContain('.bg-neutral-50');
+
+    // Check dark container surface rules
+    expect(cssText).toContain('.bg-black');
+    expect(cssText).toContain('[data-surface="dark"]');
+    expect(cssText).toContain('.bg-gray-800');
+    expect(cssText).toContain('.bg-slate-800');
+    expect(cssText).toContain('.bg-zinc-800');
+    expect(cssText).toContain('.bg-stone-800');
+    expect(cssText).toContain('.bg-neutral-800');
+    expect(cssText).toContain('.dark .dark\\:bg-gray-800');
+    expect(cssText).toContain('.dark .dark\\:bg-slate-800');
+    expect(cssText).toContain('.dark .dark\\:bg-zinc-800');
+    expect(cssText).toContain('.dark .dark\\:bg-stone-800');
+    expect(cssText).toContain('.dark .dark\\:bg-neutral-800');
+  });
+});

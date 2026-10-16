@@ -158,14 +158,14 @@ test('Form components apply CSS custom properties for default and feedback state
   const checkbox = screen.getByTestId('checkbox');
   const message = screen.getByTestId('message');
 
-  expect(label.className).toContain('text-[var(--form-label-text,#111827)]');
-  expect(input.className).toContain('border-[var(--input-border,#d1d5db)]');
+  expect(label.className).toContain('text-[var(--form-label-text,var(--color-primary-text,#111827))]');
+  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
   expect(input.className).toContain('bg-[var(--input-bg,#ffffff)]');
   expect(input.style.borderRadius).toBe('var(--input-radius, 0.375rem)');
-  expect(textarea.className).toContain('border-[var(--input-border,#d1d5db)]');
-  expect(select.className).toContain('border-[var(--input-border,#d1d5db)]');
-  expect(checkbox.className).toContain('border-[var(--input-border,#d1d5db)]');
-  expect(message.className).toContain('text-[var(--form-message-text,#6b7280)]');
+  expect(textarea.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(select.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(checkbox.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(message.className).toContain('text-[var(--form-message-text,var(--color-secondary-text,#6b7280))]');
 
   // Rerender with error state
   rerender(
@@ -176,9 +176,9 @@ test('Form components apply CSS custom properties for default and feedback state
     </FormGroup>
   );
 
-  expect(screen.getByTestId('label').className).toContain('text-[var(--form-error-text,#dc2626)]');
-  expect(screen.getByTestId('input').className).toContain('border-[var(--input-error-border,#ef4444)]');
-  expect(screen.getByTestId('message').className).toContain('text-[var(--form-error-text,#dc2626)]');
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-error-text,var(--color-error-text,#dc2626))]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-error-text,var(--color-error-text,#dc2626))]');
 
   // Rerender with success state
   rerender(
