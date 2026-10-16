@@ -1,4 +1,4 @@
-import { createGoogleCalendarLink, createYahooCalendarLink, createIcsFile, formatScheduleEventToCalendarEvent } from '../calendar';
+import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, formatScheduleEventToCalendarEvent } from '../calendar';
 import { CalendarEvent } from '@/utils/calendar';
 
 const event: CalendarEvent = {
@@ -40,6 +40,22 @@ describe('calendar utils', () => {
       expect(url.searchParams.get('et')).toBe('20251225T110000');
       expect(url.searchParams.get('desc')).toBe(event.description);
       expect(url.searchParams.get('in_loc')).toBe(event.location);
+    });
+  });
+
+  describe('createOutlookCalendarLink', () => {
+    it('should create a valid Outlook Calendar link', () => {
+      const link = createOutlookCalendarLink(event);
+      const url = new URL(link);
+      expect(url.hostname).toBe('outlook.live.com');
+      expect(url.pathname).toBe('/calendar/0/deeplink/compose');
+      expect(url.searchParams.get('path')).toBe('/calendar/action/compose');
+      expect(url.searchParams.get('rru')).toBe('addevent');
+      expect(url.searchParams.get('subject')).toBe(event.name);
+      expect(url.searchParams.get('startdt')).toBe('2025-12-25T10:00:00');
+      expect(url.searchParams.get('enddt')).toBe('2025-12-25T11:00:00');
+      expect(url.searchParams.get('body')).toBe(event.description);
+      expect(url.searchParams.get('location')).toBe(event.location);
     });
   });
 

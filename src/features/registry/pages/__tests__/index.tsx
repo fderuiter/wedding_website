@@ -35,6 +35,8 @@ describe('RegistryPage', () => {
     setShowAvailableOnly: jest.fn(),
     searchQuery: '',
     setSearchQuery: jest.fn(),
+    sortOption: 'default',
+    setSortOption: jest.fn(),
     handleClearFilters: jest.fn(),
     selectedItem: null,
     isModalOpen: false,
@@ -131,6 +133,26 @@ describe('RegistryPage', () => {
 
     fireEvent.change(searchInput, { target: { value: 'espresso' } });
     expect(mockSetSearchQuery).toHaveBeenCalledWith('espresso');
+  });
+
+  it('renders sort select control and calls setSortOption on change', () => {
+    const mockSetSortOption = jest.fn();
+    mockUseRegistry.mockReturnValue({
+      ...defaultMockState,
+      setSortOption: mockSetSortOption,
+    } as any);
+
+    render(<RegistryPage />);
+
+    const sortSelect = screen.getByRole('combobox', { name: /sort gifts/i });
+    expect(sortSelect).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Default' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Price: Low to High' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Price: High to Low' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Most Wanted' })).toBeInTheDocument();
+
+    fireEvent.change(sortSelect, { target: { value: 'price-asc' } });
+    expect(mockSetSortOption).toHaveBeenCalledWith('price-asc');
   });
 
   it('renders clear search button when searchQuery is non-empty and resets search query on click', () => {

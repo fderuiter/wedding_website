@@ -13,7 +13,7 @@ import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
 import { useRegistry } from '../hooks/useRegistry';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Checkbox, Label, Input } from '@/components/ui/forms';
+import { FormGroup, Checkbox, Label, Input, Select } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
@@ -63,6 +63,8 @@ function RegistryPageContent() {
     setShowAvailableOnly,
     searchQuery = '',
     setSearchQuery,
+    sortOption,
+    setSortOption,
     handleClearFilters: clearFiltersFromHook,
     handleCardClick,
     handleCloseModal,
@@ -114,7 +116,10 @@ function RegistryPageContent() {
     if (setSearchQuery) {
       setSearchQuery('');
     }
-  }, [clearFiltersFromHook, setCategoryFilter, setPriceRange, minPrice, maxPrice, setShowGroupGiftsOnly, setShowAvailableOnly, setSearchQuery]);
+    if (setSortOption) {
+      setSortOption('default');
+    }
+  }, [clearFiltersFromHook, setCategoryFilter, setPriceRange, minPrice, maxPrice, setShowGroupGiftsOnly, setShowAvailableOnly, setSearchQuery, setSortOption]);
 
   const gridVariants = {
     hidden: { opacity: 0, y: 30 },
@@ -188,6 +193,22 @@ function RegistryPageContent() {
               value={priceRange}
               onChange={setPriceRange}
             />
+            <FormGroup className="flex items-center space-y-0 space-x-2">
+              <Label className="font-semibold text-sm whitespace-nowrap">
+                Sort by:
+              </Label>
+              <Select
+                value={sortOption}
+                onChange={(e) => setSortOption(e.target.value as any)}
+                aria-label="Sort gifts"
+                className="w-auto"
+              >
+                <option value="default">Default</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="price-desc">Price: High to Low</option>
+                <option value="most-wanted">Most Wanted</option>
+              </Select>
+            </FormGroup>
           </div>
           <div className="flex flex-wrap justify-center items-center gap-4 mt-4">
             <FormGroup className="flex items-center space-y-0 space-x-2">

@@ -134,4 +134,30 @@ describe('ThankYouNotesPage', () => {
     expect(screen.getByText('1 contributor record(s) selected')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark Selected as Sent' })).toBeInTheDocument();
   });
+
+  it('triggers download link when Export CSV button is clicked with active filter options', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    expect(exportBtn).toBeInTheDocument();
+
+    const appendChildSpy = jest.spyOn(document.body, 'appendChild');
+    const removeChildSpy = jest.spyOn(document.body, 'removeChild');
+
+    fireEvent.click(exportBtn);
+
+    expect(appendChildSpy).toHaveBeenCalled();
+    expect(removeChildSpy).toHaveBeenCalled();
+
+    appendChildSpy.mockRestore();
+    removeChildSpy.mockRestore();
+  });
 });
