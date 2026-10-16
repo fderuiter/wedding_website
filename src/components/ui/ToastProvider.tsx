@@ -108,12 +108,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
           <div
             key={toast.id}
             role={toast.type === 'error' ? 'alert' : 'status'}
-            className={`px-4 py-3 rounded shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto ${
-              toast.type === 'success' ? 'bg-green-600 text-white' :
-                toast.type === 'error' ? 'bg-red-600 text-white' :
-                  toast.type === 'confirm' ? 'bg-gray-800 text-white' :
-                    'bg-blue-600 text-white'
-            }`}
+            className="px-4 py-3 shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto"
+            style={{
+              backgroundColor: `var(--toast-${toast.type}-bg)`,
+              color: `var(--toast-${toast.type}-text)`,
+              borderRadius: 'var(--toast-radius)',
+            }}
           >
             <div className="flex justify-between items-center w-full">
               <span>{toast.message}</span>
@@ -122,7 +122,11 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                   variant="ghost"
                   size="sm"
                   onClick={() => removeToast(toast.id)} 
-                  className="ml-4 text-white hover:text-white dark:hover:text-white hover:bg-white/20 dark:hover:bg-white/20"
+                  className="ml-4 text-inherit hover:bg-[var(--toast-close-hover-bg)]"
+                  style={{
+                    color: 'inherit',
+                    '--btn-ghost-hover-bg': 'var(--toast-close-hover-bg)',
+                  } as React.CSSProperties}
                   aria-label="Close notification"
                 >
                   &times;

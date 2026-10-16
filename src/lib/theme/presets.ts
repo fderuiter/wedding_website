@@ -44,6 +44,17 @@ export interface ComponentTokens {
   '--schedule-node-border': string;
   '--schedule-tag-bg': string;
   '--schedule-tag-text': string;
+
+  '--toast-success-bg': string;
+  '--toast-success-text': string;
+  '--toast-error-bg': string;
+  '--toast-error-text': string;
+  '--toast-info-bg': string;
+  '--toast-info-text': string;
+  '--toast-confirm-bg': string;
+  '--toast-confirm-text': string;
+  '--toast-radius': string;
+  '--toast-close-hover-bg': string;
 }
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -89,6 +100,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f3f4f6',
     '--schedule-tag-text': '#374151',
+
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#1f2937',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.375rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
   modern: {
     '--btn-radius': '0.5rem',
@@ -132,6 +154,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f1f5f9',
     '--schedule-tag-text': '#0f172a',
+
+    '--toast-success-bg': '#047857',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#0369a1',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#0f172a',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.5rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
   romantic: {
     '--btn-radius': '9999px',
@@ -175,6 +208,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#fffafb',
     '--schedule-tag-bg': '#fce7f3',
     '--schedule-tag-text': '#9d174d',
+
+    '--toast-success-bg': '#047857',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#be123c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#831843',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '1rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
   minimal: {
     '--btn-radius': '0px',
@@ -218,6 +262,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f4f4f5',
     '--schedule-tag-text': '#18181b',
+
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#991b1b',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#18181b',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0px',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.15)',
   },
   editorial: {
     '--btn-radius': '0.125rem',
@@ -261,6 +316,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#000000',
     '--schedule-tag-bg': '#e4e4e7',
     '--schedule-tag-text': '#000000',
+
+    '--toast-success-bg': '#15803d',
+    '--toast-success-text': '#ffffff',
+    '--toast-error-bg': '#b91c1c',
+    '--toast-error-text': '#ffffff',
+    '--toast-info-bg': '#1d4ed8',
+    '--toast-info-text': '#ffffff',
+    '--toast-confirm-bg': '#000000',
+    '--toast-confirm-text': '#ffffff',
+    '--toast-radius': '0.125rem',
+    '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
   },
 };
 

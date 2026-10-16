@@ -41,6 +41,18 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--schedule-node-border']).toBeDefined();
       expect(tokens['--schedule-tag-bg']).toBeDefined();
       expect(tokens['--schedule-tag-text']).toBeDefined();
+
+      // Check toast feedback tokens
+      expect(tokens['--toast-success-bg']).toBeDefined();
+      expect(tokens['--toast-success-text']).toBeDefined();
+      expect(tokens['--toast-error-bg']).toBeDefined();
+      expect(tokens['--toast-error-text']).toBeDefined();
+      expect(tokens['--toast-info-bg']).toBeDefined();
+      expect(tokens['--toast-info-text']).toBeDefined();
+      expect(tokens['--toast-confirm-bg']).toBeDefined();
+      expect(tokens['--toast-confirm-text']).toBeDefined();
+      expect(tokens['--toast-radius']).toBeDefined();
+      expect(tokens['--toast-close-hover-bg']).toBeDefined();
     }
   });
 

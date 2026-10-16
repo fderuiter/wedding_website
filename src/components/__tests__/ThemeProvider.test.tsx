@@ -388,6 +388,9 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem).not.toBeNull();
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
     expect(styleElem?.textContent).toContain('--dialog-border-radius: 0.5rem;');
+    expect(styleElem?.textContent).toContain('--toast-radius: 0.375rem;');
+    expect(styleElem?.textContent).toContain('--toast-success-bg: #15803d;');
+    expect(styleElem?.textContent).toContain('--toast-error-bg: #b91c1c;');
   });
 
   it('injects romantic theme preset tokens when themePreset prop is romantic', () => {
