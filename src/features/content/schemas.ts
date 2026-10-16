@@ -90,7 +90,7 @@ const BaseContentNode = z.object({
 
 const isoTimestampRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
-export const CategoryColorSchema = z.object({
+const CategoryColorSchema = z.object({
   bg: z.string().optional(),
   text: z.string().optional(),
   border: z.string().optional(),

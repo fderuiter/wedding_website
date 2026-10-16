@@ -16,6 +16,13 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       const tokens = THEME_PRESETS[presetKey];
       expect(tokens).toBeDefined();
 
+      // Check layout surface tokens
+      expect(tokens['--container-bg']).toBeDefined();
+      expect(tokens['--card-bg']).toBeDefined();
+      expect(tokens['--card-border']).toBeDefined();
+      expect(tokens['--card-shadow']).toBeDefined();
+      expect(tokens['--heading-color']).toBeDefined();
+
       // Check key button and dialog component CSS variables
       expect(tokens['--btn-radius']).toBeDefined();
       expect(tokens['--btn-font-weight']).toBeDefined();
@@ -41,6 +48,13 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--schedule-node-border']).toBeDefined();
       expect(tokens['--schedule-tag-bg']).toBeDefined();
       expect(tokens['--schedule-tag-text']).toBeDefined();
+
+      // Check standardized print tokens
+      expect(tokens['--print-bg']).toBeDefined();
+      expect(tokens['--print-text']).toBeDefined();
+      expect(tokens['--print-border']).toBeDefined();
+      expect(tokens['--print-header-border']).toBeDefined();
+      expect(tokens['--print-badge-bg']).toBeDefined();
 
       // Check 3D and canvas tokens
       expect(tokens['--glow-color']).toBeDefined();

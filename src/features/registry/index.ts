@@ -8,7 +8,15 @@ export {
   ContributorSchema,
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
+  ThankYouStatusEnum,
+  BatchImportInvitationCodeItemSchema,
   translateSnapshotToActive,
+} from './schemas';
+export type {
+  ThankYouStatus,
+  UpdateThankYouNoteDTO,
+  BatchUpdateThankYouNotesDTO,
+  BatchImportInvitationCodesDTO,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
@@ -19,4 +27,6 @@ export { GET as registryGetItemsGET } from './api/get-items';
 export { GET as registryItemByIdGET, PUT as registryItemByIdPUT, DELETE as registryItemByIdDELETE } from './api/item-by-id';
 export { POST as registryScrapePOST } from './api/scrape';
 export { GuestSessionProvider, GuestSessionContext, useGuestSession } from './context/GuestSessionContext';
-export type { GuestSessionState, GuestSessionContextType } from './context/GuestSessionContext';
+export type { GuestSessionState, GuestSessionContextType, GuestSessionStatus } from './context/GuestSessionContext';
+export { SessionRecoveryModal } from './components/SessionRecoveryModal';
+export type { SessionRecoveryModalProps } from './components/SessionRecoveryModal';
