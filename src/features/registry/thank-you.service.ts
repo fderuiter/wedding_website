@@ -8,6 +8,8 @@ import { generateCsvContent } from '@/utils/csv';
 export interface ThankYouNotesFilterOptions {
   status?: string;
   search?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface ProgressMetrics {
@@ -19,48 +21,102 @@ export interface ProgressMetrics {
   completionPercentage: number;
 }
 
+export interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
 export class ThankYouService {
   constructor(private client: any = prisma) {}
 
   /**
-   * Retrieves all contributor thank-you records with filtering, search, and progress metrics.
+   * Retrieves contributor thank-you records with pagination, status/search filters pushed down to DB,
+   * and summary progress metrics computed via database aggregations.
    */
   async getThankYouNotes(options: ThankYouNotesFilterOptions = {}) {
     const { status, search } = options;
+    const page = Math.max(1, options.page ? Number(options.page) : 1);
+    const pageSize = Math.max(1, options.pageSize ? Number(options.pageSize) : 50);
+    const skip = (page - 1) * pageSize;
+    const take = pageSize;
 
-    // Fetch all contributors with registry item details
-    const allContributors = await this.client.contributor.findMany({
-      include: {
-        registryItem: {
-          select: {
-            id: true,
-            name: true,
-            category: true,
-          },
-        },
-      },
-      orderBy: {
-        date: 'desc',
-      },
-    });
+    const where: any = {};
 
-    // Calculate metrics over all recorded gift contributions
-    let sentCount = 0;
-    let unsentCount = 0;
-    let notNeededCount = 0;
-
-    for (const c of allContributors) {
-      const st = (c.thankYouStatus || 'Unsent').trim().toLowerCase();
-      if (st === 'sent') {
-        sentCount++;
-      } else if (st === 'not needed' || st === 'not_needed' || st === 'notneeded') {
-        notNeededCount++;
+    if (status && status.trim() && status.toLowerCase() !== 'all') {
+      const targetStatus = status.trim().toLowerCase().replace(/_/g, ' ');
+      if (targetStatus === 'sent') {
+        where.thankYouStatus = { equals: 'Sent', mode: 'insensitive' };
+      } else if (targetStatus === 'unsent') {
+        where.thankYouStatus = { equals: 'Unsent', mode: 'insensitive' };
+      } else if (targetStatus === 'not needed' || targetStatus === 'notneeded') {
+        where.thankYouStatus = {
+          in: ['Not Needed', 'not_needed', 'notneeded'],
+          mode: 'insensitive',
+        };
       } else {
-        unsentCount++;
+        where.thankYouStatus = { equals: status.trim(), mode: 'insensitive' };
       }
     }
 
-    const total = allContributors.length;
+    if (search && search.trim()) {
+      const query = search.trim();
+      where.OR = [
+        { name: { contains: query, mode: 'insensitive' } },
+        { registryItem: { name: { contains: query, mode: 'insensitive' } } },
+      ];
+    }
+
+    // Compute status progress aggregations, total matching filtered items, and paginated records concurrently
+    const [statusGroups, totalFilteredCount, rawContributors] = await Promise.all([
+      this.client.contributor.groupBy({
+        by: ['thankYouStatus'],
+        _count: { _all: true },
+      }),
+      this.client.contributor.count({ where }),
+      this.client.contributor.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          registryItem: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          },
+        },
+        orderBy: {
+          date: 'desc',
+        },
+      }),
+    ]);
+
+    // Calculate metrics over all recorded gift contributions from database aggregations
+    let sentCount = 0;
+    let unsentCount = 0;
+    let notNeededCount = 0;
+    let total = 0;
+
+    for (const group of statusGroups) {
+      const count =
+        typeof group._count === 'number'
+          ? group._count
+          : (group._count?._all ?? group._count?.id ?? group._count?.thankYouStatus ?? 0);
+      total += count;
+
+      const st = (group.thankYouStatus || 'Unsent').trim().toLowerCase().replace(/_/g, ' ');
+      if (st === 'sent') {
+        sentCount += count;
+      } else if (st === 'not needed' || st === 'notneeded') {
+        notNeededCount += count;
+      } else {
+        unsentCount += count;
+      }
+    }
+
     const thanked = sentCount + notNeededCount;
     const completionPercentage = total > 0 ? Math.round((thanked / total) * 100) : 0;
 
@@ -73,36 +129,20 @@ export class ThankYouService {
       completionPercentage,
     };
 
-    // Apply filtering
-    let filtered = allContributors;
+    // Schema validation operates ONLY on the paginated subset returned by the database
+    const items = rawContributors.map((c: any) => ContributorSchema.parse(c));
 
-    if (status && status.trim() && status.toLowerCase() !== 'all') {
-      const targetStatus = status.trim().toLowerCase().replace(/_/g, ' ');
-      filtered = filtered.filter((c: any) => {
-        const cStatus = (c.thankYouStatus || 'unsent').trim().toLowerCase().replace(/_/g, ' ');
-        if (targetStatus === 'unsent') return cStatus === 'unsent';
-        if (targetStatus === 'sent') return cStatus === 'sent';
-        if (targetStatus === 'not needed' || targetStatus === 'notneeded') {
-          return cStatus === 'not needed' || cStatus === 'notneeded';
-        }
-        return cStatus === targetStatus;
-      });
-    }
-
-    if (search && search.trim()) {
-      const query = search.trim().toLowerCase();
-      filtered = filtered.filter((c: any) => {
-        const contributorName = (c.name || '').toLowerCase();
-        const giftName = (c.registryItem?.name || '').toLowerCase();
-        return contributorName.includes(query) || giftName.includes(query);
-      });
-    }
-
-    const items = filtered.map((c: any) => ContributorSchema.parse(c));
+    const totalPages = Math.ceil(totalFilteredCount / pageSize) || 1;
 
     return {
       items,
       metrics,
+      pagination: {
+        page,
+        pageSize,
+        totalItems: totalFilteredCount,
+        totalPages,
+      },
     };
   }
 
@@ -230,11 +270,16 @@ export class ThankYouService {
    * Exports thank-you note records matching filter criteria as an RFC 4180 CSV string.
    */
   async exportThankYouNotesCsv(options: ThankYouNotesFilterOptions = {}): Promise<string> {
-    const { items } = await this.getThankYouNotes(options);
+    const { items } = await this.getThankYouNotes({
+      ...options,
+      page: options.page || 1,
+      pageSize: options.pageSize || 1000000,
+    });
 
     const headers = [
       'Contributor Name',
       'Email',
+      'Guest Message',
       'Gift Item',
       'Category',
       'Contribution Amount',
@@ -247,6 +292,7 @@ export class ThankYouService {
     const records = items.map((item: any) => ({
       'Contributor Name': item.name || '',
       'Email': item.email || '',
+      'Guest Message': item.message || '',
       'Gift Item': item.registryItem?.name || 'General Registry',
       'Category': item.registryItem?.category || '',
       'Contribution Amount': item.amount !== undefined && item.amount !== null ? item.amount : '',

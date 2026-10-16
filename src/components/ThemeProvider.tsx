@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ThemePreset,
   getPresetTokens,
@@ -64,6 +64,12 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const useTheme = () => useContext(ThemeContext);
 
+export {
+  contrastCache,
+  clearContrastCache,
+  optimizeContrast,
+} from '@/lib/theme/generator';
+
 function getSystemTheme(): ResolvedTheme {
   if (typeof window !== 'undefined' && window.matchMedia) {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -97,6 +103,7 @@ type ThemeProviderProps = {
     colorPrimary?: string;
     colorSecondary?: string;
     themePreset?: ThemePreset | string;
+    themeTokens?: Record<string, string>;
     layoutContainerMaxWidth?: string;
     layoutGridGap?: string;
     layoutCardPadding?: string;
@@ -114,6 +121,7 @@ export function ThemeProvider({
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
+    themeTokens: propConfig?.themeTokens || {},
     layoutContainerMaxWidth: sanitizeLayoutToken(propConfig?.layoutContainerMaxWidth, '64rem'),
     layoutGridGap: sanitizeLayoutToken(propConfig?.layoutGridGap, '1.5rem'),
     layoutCardPadding: sanitizeLayoutToken(propConfig?.layoutCardPadding, '2rem'),
@@ -231,6 +239,7 @@ export function ThemeProvider({
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
+        themeTokens: propConfig.themeTokens || {},
         layoutContainerMaxWidth: sanitizeLayoutToken(propConfig.layoutContainerMaxWidth, '64rem'),
         layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
         layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
@@ -252,6 +261,7 @@ export function ThemeProvider({
               colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
               colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
               themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
+              themeTokens: next.themeTokens || {},
               layoutContainerMaxWidth: sanitizeLayoutToken(next.layoutContainerMaxWidth, '64rem'),
               layoutGridGap: sanitizeLayoutToken(next.layoutGridGap, '1.5rem'),
               layoutCardPadding: sanitizeLayoutToken(next.layoutCardPadding, '2rem'),
@@ -309,17 +319,29 @@ export function ThemeProvider({
     });
   }, [config]);
 
-  const stylesString = generateDynamicStyles(
-    sanitizeColor(config?.colorPrimary, '#B91C1C'),
-    sanitizeColor(config?.colorSecondary, '#B45309'),
-    config?.themePreset,
-    {
-      containerMaxWidth: config?.layoutContainerMaxWidth,
-      gridGap: config?.layoutGridGap,
-      cardPadding: config?.layoutCardPadding,
-      borderRadius: config?.layoutBorderRadius,
-    }
-  );
+  const stylesString = useMemo(() => {
+    return generateDynamicStyles(
+      sanitizeColor(config.colorPrimary, '#B91C1C'),
+      sanitizeColor(config.colorSecondary, '#B45309'),
+      config.themePreset,
+      config.themeTokens,
+      {
+        containerMaxWidth: config.layoutContainerMaxWidth,
+        gridGap: config.layoutGridGap,
+        cardPadding: config.layoutCardPadding,
+        borderRadius: config.layoutBorderRadius,
+      }
+    );
+  }, [
+    config.colorPrimary,
+    config.colorSecondary,
+    config.themePreset,
+    config.themeTokens,
+    config.layoutContainerMaxWidth,
+    config.layoutGridGap,
+    config.layoutCardPadding,
+    config.layoutBorderRadius,
+  ]);
 
   const activePresetTokens = getPresetTokens(config?.themePreset);
   const parseTokenNum = (val: string | undefined, fallback: number): number => {

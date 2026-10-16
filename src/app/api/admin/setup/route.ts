@@ -4,13 +4,11 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AppConfigSchema, UpdateAppConfigSchema } from '@/features/content';
+import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 import { formatZodError } from '@/utils/validation';
-import { isAdminRequest, signAdminToken } from '@/core/auth/auth.server';
+import { isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
 import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
-
-const ADMIN_COOKIE = 'admin_auth';
 
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
@@ -64,13 +62,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     const exp = iat + 60 * 60 * 8 * 1000;
     const token = await signAdminToken({ isAdmin: true, iat, exp });
     const response = NextResponse.json({ success: true, initialized });
-    response.cookies.set(ADMIN_COOKIE, token, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 8,
-    });
+    setAdminAuthCookie(response, token);
     return response;
   }
 
@@ -99,6 +91,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     seoKeywords: body.seoKeywords ?? '',
     colorPrimary: body.colorPrimary ?? '#B91C1C',
     colorSecondary: body.colorSecondary ?? '#B45309',
+    themePreset: body.themePreset ?? 'classic',
+    themeTokens: body.themeTokens ?? {},
+    layoutContainerMaxWidth: body.layoutContainerMaxWidth,
+    layoutGridGap: body.layoutGridGap,
+    layoutCardPadding: body.layoutCardPadding,
+    layoutBorderRadius: body.layoutBorderRadius,
     timezone: body.timezone ?? 'America/Chicago',
     showCountdown: body.showCountdown ?? true,
     showAddToCalendar: body.showAddToCalendar ?? true,
@@ -111,67 +109,14 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const validData = parseResult.data;
   const targetId = 'global';
+  const dbPayload = toAppConfigDbPayload(validData);
 
   const updatedConfig = await prisma.appConfig.upsert({
     where: { id: targetId },
-    update: {
-      brideName: validData.brideName,
-      groomName: validData.groomName,
-      subdomain: validData.subdomain || null,
-      weddingDate: validData.weddingDate,
-      baseUrl: validData.baseUrl,
-      venueName: validData.venueName,
-      venueAddress: validData.venueAddress,
-      venueCity: validData.venueCity,
-      venueState: validData.venueState,
-      venueZip: validData.venueZip,
-      latitude: validData.latitude,
-      longitude: validData.longitude,
-      storyText: validData.storyText,
-      venueDescription: validData.venueDescription,
-      travelAdvice: validData.travelAdvice,
-      heroTitle: validData.heroTitle,
-      heroSubtitle: validData.heroSubtitle,
-      seoTitle: validData.seoTitle,
-      seoDescription: validData.seoDescription,
-      faviconUrl: validData.faviconUrl,
-      ogImageUrl: validData.ogImageUrl,
-      seoKeywords: validData.seoKeywords,
-      colorPrimary: validData.colorPrimary,
-      colorSecondary: validData.colorSecondary,
-      timezone: validData.timezone,
-      showCountdown: validData.showCountdown,
-      showAddToCalendar: validData.showAddToCalendar,
-    },
+    update: dbPayload,
     create: {
       id: targetId,
-      brideName: validData.brideName,
-      groomName: validData.groomName,
-      subdomain: validData.subdomain || null,
-      weddingDate: validData.weddingDate,
-      baseUrl: validData.baseUrl,
-      venueName: validData.venueName,
-      venueAddress: validData.venueAddress,
-      venueCity: validData.venueCity,
-      venueState: validData.venueState,
-      venueZip: validData.venueZip,
-      latitude: validData.latitude,
-      longitude: validData.longitude,
-      storyText: validData.storyText,
-      venueDescription: validData.venueDescription,
-      travelAdvice: validData.travelAdvice,
-      heroTitle: validData.heroTitle,
-      heroSubtitle: validData.heroSubtitle,
-      seoTitle: validData.seoTitle,
-      seoDescription: validData.seoDescription,
-      faviconUrl: validData.faviconUrl,
-      ogImageUrl: validData.ogImageUrl,
-      seoKeywords: validData.seoKeywords,
-      colorPrimary: validData.colorPrimary,
-      colorSecondary: validData.colorSecondary,
-      timezone: validData.timezone,
-      showCountdown: validData.showCountdown,
-      showAddToCalendar: validData.showAddToCalendar,
+      ...dbPayload,
     },
   });
 
@@ -198,12 +143,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     success: true,
     ...toPublicAppConfig(AppConfigSchema.parse(updatedConfig)),
   });
-  response.cookies.set(ADMIN_COOKIE, token, {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 8,
-  });
+  setAdminAuthCookie(response, token);
   return response;
 });

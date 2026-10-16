@@ -2,6 +2,7 @@ import {
   sanitizeColor,
   sanitizePreset,
   sanitizeLayoutToken,
+  sanitizeTokenValue,
   hexToRgb,
   rgbToHex,
   rgbToHsl,
@@ -34,6 +35,11 @@ describe('Theme Generator Utilities', () => {
       expect(sanitizeLayoutToken('100px', '64rem')).toBe('100px');
       expect(sanitizeLayoutToken('invalid token', '64rem')).toBe('64rem');
       expect(sanitizeLayoutToken(undefined, '1.5rem')).toBe('1.5rem');
+    });
+
+    it('sanitizes token values against CSS injection', () => {
+      expect(sanitizeTokenValue('red; background: blue')).toBe('red background: blue');
+      expect(sanitizeTokenValue(null)).toBe('');
     });
   });
 

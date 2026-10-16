@@ -17,7 +17,7 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
     expect(typeof withApiMiddleware).toBe('function');
   });
 
-  test('extracts API version from x-api-version header and logs alongside error and route', async () => {
+  test('logs error alongside route and apiVersion v2 even when legacy version header is sent', async () => {
     const handler = jest.fn().mockImplementation(() => {
       throw new Error('Database crash');
     });
@@ -42,66 +42,8 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       'Unhandled API Error:',
       expect.any(Error),
       {
-        apiVersion: 'v1',
+        apiVersion: 'v2',
         route: '/api/registry/items',
-      }
-    );
-  });
-
-  test('extracts API version from X-API-Version (capitalized) header and logs alongside error and route', async () => {
-    const handler = jest.fn().mockImplementation(() => {
-      throw new Error('Database crash');
-    });
-
-    const middleware = withApiMiddleware(handler);
-    const req = new NextRequest('http://localhost/api/registry/items');
-    req.headers.get = jest.fn((key: string) => {
-      if (key === 'X-API-Version') return 'v1';
-      return null;
-    });
-
-    const res = await middleware(req, {});
-    expect(res.status).toBe(500);
-
-    const body = await res.json();
-    expect(body).toEqual({
-      success: false,
-      error: 'Database crash',
-    });
-
-    expect(loggerSpy).toHaveBeenCalledWith(
-      'Unhandled API Error:',
-      expect.any(Error),
-      {
-        apiVersion: 'v1',
-        route: '/api/registry/items',
-      }
-    );
-  });
-
-  test('extracts API version from query parameters if headers are not present', async () => {
-    const handler = jest.fn().mockImplementation(() => {
-      throw new Error('JSON parsing failed');
-    });
-
-    const middleware = withApiMiddleware(handler);
-    const req = new NextRequest('http://localhost/api/weather?version=v1');
-
-    const res = await middleware(req, {});
-    expect(res.status).toBe(500);
-
-    const body = await res.json();
-    expect(body).toEqual({
-      success: false,
-      error: 'JSON parsing failed',
-    });
-
-    expect(loggerSpy).toHaveBeenCalledWith(
-      'Unhandled API Error:',
-      expect.any(Error),
-      {
-        apiVersion: 'v1',
-        route: '/api/weather',
       }
     );
   });

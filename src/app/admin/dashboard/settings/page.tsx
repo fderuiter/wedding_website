@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
+import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 
 interface SearchableTimezoneSelectProps {
   value: string;
@@ -205,6 +206,8 @@ export default function AdminSettingsPage() {
   } = useAdminSettings(selectedProfileId);
 
   const [localConfig, setLocalConfig] = useState<any>(null);
+  const [themeTokensText, setThemeTokensText] = useState('{}');
+  const [themeTokensError, setThemeTokensError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
   const [createError, setCreateError] = useState('');
@@ -212,8 +215,36 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     if (initialConfig) {
       setLocalConfig(initialConfig);
+      if (initialConfig.themeTokens) {
+        try {
+          const tokensObj = typeof initialConfig.themeTokens === 'string'
+            ? JSON.parse(initialConfig.themeTokens)
+            : initialConfig.themeTokens;
+          setThemeTokensText(JSON.stringify(tokensObj, null, 2));
+        } catch {
+          setThemeTokensText('{}');
+        }
+      } else {
+        setThemeTokensText('{}');
+      }
     }
   }, [initialConfig]);
+
+  const handleTokensChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    setThemeTokensText(text);
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        setThemeTokensError('');
+        setLocalConfig((prev: any) => ({ ...prev, themeTokens: parsed }));
+      } else {
+        setThemeTokensError('Theme tokens must be a JSON object mapping CSS variables to values.');
+      }
+    } catch {
+      setThemeTokensError('Invalid JSON format.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -446,48 +477,38 @@ export default function AdminSettingsPage() {
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">Theme Customization</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormGroup>
-                <Label>Primary Color (Hex)</Label>
-                <div className="flex gap-2">
-                  <Input 
-                    type="color" 
-                    name="colorPrimary" 
-                    value={localConfig.colorPrimary || '#B91C1C'} 
-                    onChange={handleChange} 
-                    className="w-12 h-10 p-1 rounded border cursor-pointer"
-                  />
-                  <Input 
-                    required 
-                    type="text" 
-                    name="colorPrimary" 
-                    value={localConfig.colorPrimary || '#B91C1C'} 
-                    onChange={handleChange} 
-                    placeholder="#B91C1C"
-                  />
-                </div>
-              </FormGroup>
-              <FormGroup>
-                <Label>Secondary Color (Hex)</Label>
-                <div className="flex gap-2">
-                  <Input 
-                    type="color" 
-                    name="colorSecondary" 
-                    value={localConfig.colorSecondary || '#B45309'} 
-                    onChange={handleChange} 
-                    className="w-12 h-10 p-1 rounded border cursor-pointer"
-                  />
-                  <Input 
-                    required 
-                    type="text" 
-                    name="colorSecondary" 
-                    value={localConfig.colorSecondary || '#B45309'} 
-                    onChange={handleChange} 
-                    placeholder="#B45309"
-                  />
-                </div>
-              </FormGroup>
-            </div>
+            <ThemeConfigurationPanel
+              values={{
+                colorPrimary: localConfig.colorPrimary,
+                colorSecondary: localConfig.colorSecondary,
+                themePreset: localConfig.themePreset,
+                layoutContainerMaxWidth: localConfig.layoutContainerMaxWidth,
+                layoutGridGap: localConfig.layoutGridGap,
+                layoutCardPadding: localConfig.layoutCardPadding,
+                layoutBorderRadius: localConfig.layoutBorderRadius,
+              }}
+              onChange={(updated) => {
+                setLocalConfig((prev: any) => ({
+                  ...prev,
+                  ...updated,
+                }));
+              }}
+            />
+            <FormGroup>
+              <Label>Custom CSS Theme Tokens (JSON)</Label>
+              <Textarea
+                value={themeTokensText}
+                onChange={handleTokensChange}
+                rows={5}
+                placeholder='{\n  "--btn-radius": "0.5rem",\n  "--card-bg": "#ffffff"\n}'
+                className="font-mono text-xs"
+              />
+              {themeTokensError ? (
+                <FormMessage role="alert">{themeTokensError}</FormMessage>
+              ) : (
+                <FormMessage>Provide custom CSS token overrides in JSON format. Keys must start with --.</FormMessage>
+              )}
+            </FormGroup>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">

@@ -38,6 +38,24 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         throw new Error('Validation Error: Plus-one allocation must be a non-negative integer.');
       }
     }
+    if (data.addressLine1 && typeof data.addressLine1 === 'string' && data.addressLine1.length > 150) {
+      throw new Error('Validation Error: Address Line 1 must be under 150 characters.');
+    }
+    if (data.addressLine2 && typeof data.addressLine2 === 'string' && data.addressLine2.length > 150) {
+      throw new Error('Validation Error: Address Line 2 must be under 150 characters.');
+    }
+    if (data.city && typeof data.city === 'string' && data.city.length > 100) {
+      throw new Error('Validation Error: City must be under 100 characters.');
+    }
+    if (data.state && typeof data.state === 'string' && data.state.length > 100) {
+      throw new Error('Validation Error: State must be under 100 characters.');
+    }
+    if (data.zipCode && typeof data.zipCode === 'string' && data.zipCode.length > 20) {
+      throw new Error('Validation Error: Zip Code must be under 20 characters.');
+    }
+    if (data.country && typeof data.country === 'string' && data.country.length > 100) {
+      throw new Error('Validation Error: Country must be under 100 characters.');
+    }
     if (data.plusOneFirstName !== undefined && data.plusOneFirstName !== null) {
       if (typeof data.plusOneFirstName !== 'string' || data.plusOneFirstName.length > 100) {
         throw new Error('Validation Error: Plus-one first name must be under 100 characters.');
@@ -97,6 +115,12 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       guestName: string;
       code?: string;
       email?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
       dietaryNotes?: string | null;
       plusOneAllocations?: number;
       plusOneFirstName?: string | null;
@@ -127,14 +151,32 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one count.`);
           }
         }
+        if (item.addressLine1 && typeof item.addressLine1 === 'string' && item.addressLine1.length > 150) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Address Line 1 must be under 150 characters.');
+        }
+        if (item.addressLine2 && typeof item.addressLine2 === 'string' && item.addressLine2.length > 150) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Address Line 2 must be under 150 characters.');
+        }
+        if (item.city && typeof item.city === 'string' && item.city.length > 100) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' City must be under 100 characters.');
+        }
+        if (item.state && typeof item.state === 'string' && item.state.length > 100) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' State must be under 100 characters.');
+        }
+        if (item.zipCode && typeof item.zipCode === 'string' && item.zipCode.length > 20) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Zip Code must be under 20 characters.');
+        }
+        if (item.country && typeof item.country === 'string' && item.country.length > 100) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Country must be under 100 characters.');
+        }
         if (item.plusOneFirstName !== undefined && item.plusOneFirstName !== null) {
           if (typeof item.plusOneFirstName !== 'string' || item.plusOneFirstName.length > 100) {
-            throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one first name.`);
+            throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one first name.');
           }
         }
         if (item.plusOneLastName !== undefined && item.plusOneLastName !== null) {
           if (typeof item.plusOneLastName !== 'string' || item.plusOneLastName.length > 100) {
-            throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one last name.`);
+            throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one last name.');
           }
         }
       }
@@ -152,6 +194,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       let updated = 0;
       const seenBatchCodes = new Set<string>();
       const allKnownCodes = new Set<string>(dbCodeMap.keys());
+      const toCreate: any[] = [];
+      const toUpdate: { id: string; data: any }[] = [];
 
       for (let i = 0; i < records.length; i++) {
         const row = records[i];
@@ -184,6 +228,12 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         }
 
         const rowEmail = row.email && typeof row.email === 'string' && row.email.trim() ? row.email.trim() : null;
+        const rowAddressLine1 = row.addressLine1 && typeof row.addressLine1 === 'string' && row.addressLine1.trim() ? row.addressLine1.trim() : null;
+        const rowAddressLine2 = row.addressLine2 && typeof row.addressLine2 === 'string' && row.addressLine2.trim() ? row.addressLine2.trim() : null;
+        const rowCity = row.city && typeof row.city === 'string' && row.city.trim() ? row.city.trim() : null;
+        const rowState = row.state && typeof row.state === 'string' && row.state.trim() ? row.state.trim() : null;
+        const rowZipCode = row.zipCode && typeof row.zipCode === 'string' && row.zipCode.trim() ? row.zipCode.trim() : null;
+        const rowCountry = row.country && typeof row.country === 'string' && row.country.trim() ? row.country.trim() : null;
         const rowDietaryNotes = row.dietaryNotes && typeof row.dietaryNotes === 'string' && row.dietaryNotes.trim() ? row.dietaryNotes.trim() : null;
         const rowPlusOne = typeof row.plusOneAllocations === 'number' ? row.plusOneAllocations : 0;
         const rowPlusOneFirstName = row.plusOneFirstName && typeof row.plusOneFirstName === 'string' && row.plusOneFirstName.trim() ? row.plusOneFirstName.trim() : null;
@@ -199,16 +249,19 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               const existingRecord = dbCodeMap.get(code)!;
               const updateData: any = { guestName };
               if (row.email !== undefined) updateData.email = rowEmail;
+              if (row.addressLine1 !== undefined) updateData.addressLine1 = rowAddressLine1;
+              if (row.addressLine2 !== undefined) updateData.addressLine2 = rowAddressLine2;
+              if (row.city !== undefined) updateData.city = rowCity;
+              if (row.state !== undefined) updateData.state = rowState;
+              if (row.zipCode !== undefined) updateData.zipCode = rowZipCode;
+              if (row.country !== undefined) updateData.country = rowCountry;
               if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
               if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
               if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
               if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
               if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
-              await tx.invitationCode.update({
-                where: { id: existingRecord.id },
-                data: updateData
-              });
+              toUpdate.push({ id: existingRecord.id, data: updateData });
               updated++;
             }
             continue;
@@ -225,34 +278,60 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             const existingRecord = dbCodeMap.get(code)!;
             const updateData: any = { guestName };
             if (row.email !== undefined) updateData.email = rowEmail;
+            if (row.addressLine1 !== undefined) updateData.addressLine1 = rowAddressLine1;
+            if (row.addressLine2 !== undefined) updateData.addressLine2 = rowAddressLine2;
+            if (row.city !== undefined) updateData.city = rowCity;
+            if (row.state !== undefined) updateData.state = rowState;
+            if (row.zipCode !== undefined) updateData.zipCode = rowZipCode;
+            if (row.country !== undefined) updateData.country = rowCountry;
             if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
             if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
             if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
             if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
             if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
-            await tx.invitationCode.update({
-              where: { id: existingRecord.id },
-              data: updateData
-            });
+            toUpdate.push({ id: existingRecord.id, data: updateData });
             updated++;
           }
         } else {
-          await tx.invitationCode.create({
-            data: {
-              guestName,
-              code,
-              email: rowEmail,
-              dietaryNotes: rowDietaryNotes,
-              plusOneAllocations: rowPlusOne,
-              plusOneFirstName: rowPlusOneFirstName,
-              plusOneLastName: rowPlusOneLastName,
-              extraFields: rowExtraFields ?? undefined,
-              used: false
-            }
+          toCreate.push({
+            guestName,
+            code,
+            email: rowEmail,
+            addressLine1: rowAddressLine1,
+            addressLine2: rowAddressLine2,
+            city: rowCity,
+            state: rowState,
+            zipCode: rowZipCode,
+            country: rowCountry,
+            dietaryNotes: rowDietaryNotes,
+            plusOneAllocations: rowPlusOne,
+            plusOneFirstName: rowPlusOneFirstName,
+            plusOneLastName: rowPlusOneLastName,
+            extraFields: rowExtraFields ?? undefined,
+            used: false
           });
           imported++;
         }
+      }
+
+      if (toCreate.length > 0) {
+        await tx.invitationCode.createMany({
+          data: toCreate
+        });
+      }
+
+      const UPDATE_CHUNK_SIZE = 50;
+      for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK_SIZE) {
+        const chunk = toUpdate.slice(i, i + UPDATE_CHUNK_SIZE);
+        await Promise.all(
+          chunk.map((item) =>
+            tx.invitationCode.update({
+              where: { id: item.id },
+              data: item.data
+            })
+          )
+        );
       }
 
       await createAuditSnapshot(

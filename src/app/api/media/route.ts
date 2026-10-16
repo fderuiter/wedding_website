@@ -6,13 +6,20 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { ApiError } from '@/utils/ApiError';
 
-export const GET = withApiMiddleware(async (_request: NextRequest) => {
+export const GET = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
-  const media = await mediaRepository.getAllMedia();
-  return NextResponse.json(media);
+  const url = request.nextUrl || (request.url ? new URL(request.url) : null);
+  const pageParam = url?.searchParams?.get('page');
+  const limitParam = url?.searchParams?.get('limit');
+
+  const page = pageParam !== null && pageParam !== undefined ? parseInt(pageParam, 10) : undefined;
+  const limit = limitParam !== null && limitParam !== undefined ? parseInt(limitParam, 10) : undefined;
+
+  const result = await mediaRepository.getAllMedia({ page, limit });
+  return NextResponse.json(result);
 });
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
