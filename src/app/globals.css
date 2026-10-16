@@ -40,6 +40,18 @@
   --print-header-border: #111827;
   --print-badge-bg: #F3F4F6;
 
+  --canvas-bg: #f8fafc;
+  --canvas-grid-dot: #cbd5e1;
+  --canvas-border: 2px dashed #cbd5e1;
+  --floorplan-table-bg: #ffffff;
+  --floorplan-table-border: #d1d5db;
+  --floorplan-table-radius: 0.75rem;
+  --floorplan-seat-assigned-bg: var(--color-primary, #B91C1C);
+  --floorplan-seat-assigned-text: #ffffff;
+  --floorplan-seat-unassigned-hover: #fef2f2;
+  --floorplan-status-overcapacity-bg: #fef2f2;
+  --floorplan-status-overcapacity-border: #ef4444;
+
   --background: var(--color-background);
   --foreground: var(--color-foreground);
   --header-h: var(--spacing-header); /* Height of sticky header */
@@ -63,6 +75,17 @@
   --dialog-border-color: var(--color-border);
   --dialog-title-color: var(--color-foreground);
   --dialog-desc-color: #9CA3AF;
+
+  --canvas-bg: #111827;
+  --canvas-grid-dot: #374151;
+  --canvas-border: 2px dashed #374151;
+  --floorplan-table-bg: #1f2937;
+  --floorplan-table-border: #374151;
+  --floorplan-seat-assigned-bg: var(--color-primary, #B91C1C);
+  --floorplan-seat-assigned-text: #ffffff;
+  --floorplan-seat-unassigned-hover: #374151;
+  --floorplan-status-overcapacity-bg: #450a0a;
+  --floorplan-status-overcapacity-border: #dc2626;
 
   --background: var(--color-background);
   --foreground: var(--color-foreground);
@@ -97,6 +120,12 @@ html:focus-within {
   html:focus-within {
     scroll-behavior: auto;
   }
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Prevent anchor targets from hiding under the sticky header */
@@ -124,7 +153,7 @@ a.skip-link:focus {
   background: white !important;
   padding: .5rem .75rem;
   border-radius: .375rem;
-  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  box-shadow: var(--shadow-sm, 0 2px 6px rgba(0,0,0,.15));
   outline: 2px solid #B91C1C !important;
   outline-offset: 2px;
 }
@@ -142,16 +171,17 @@ a.skip-link:focus {
 }
 
 .animate-pulse-scale {
-  animation: pulse-scale 14s infinite ease-in-out;
+  animation: pulse-scale var(--motion-duration-slow, 14s) infinite var(--motion-ease-default, ease-in-out);
 }
 @layer components {
   .btn-primary {
     @apply inline-flex justify-center items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
+    transition: all var(--motion-duration-normal, 0.2s) var(--motion-ease-default, ease-in-out);
   }
   
   .btn-secondary {
     @apply inline-flex justify-center items-center px-4 py-2 border-2 border-primary text-primary font-bold rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
-    transition: background-color 0.2s ease-in-out;
+    transition: background-color var(--motion-duration-normal, 0.2s) var(--motion-ease-default, ease-in-out);
   }
 
   .btn-secondary:hover {
@@ -172,7 +202,7 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
   background-color: #ffffff !important;
   padding: .5rem .75rem !important;
   border-radius: .375rem !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,.15) !important;
+  box-shadow: var(--shadow-sm, 0 2px 6px rgba(0,0,0,.15)) !important;
   outline-style: solid !important;
   outline-width: 2px !important;
   outline-color: #B91C1C !important;

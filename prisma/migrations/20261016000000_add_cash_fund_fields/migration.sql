@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "RegistryItem" ADD COLUMN IF NOT EXISTS "itemType" TEXT NOT NULL DEFAULT 'PHYSICAL';
+ALTER TABLE "RegistryItem" ADD COLUMN IF NOT EXISTS "paymentHandleType" TEXT;
+ALTER TABLE "RegistryItem" ADD COLUMN IF NOT EXISTS "paymentHandle" TEXT;
+ALTER TABLE "RegistryItem" ALTER COLUMN "quantity" SET DEFAULT 1;

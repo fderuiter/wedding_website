@@ -108,6 +108,10 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
         );
       }
 
+      response.headers.forEach((value, key) => {
+        finalResponse.headers.set(key, value);
+      });
+
       if (isLegacy) {
         finalResponse.headers.set('x-api-version', 'v1');
       } else {

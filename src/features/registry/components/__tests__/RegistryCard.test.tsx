@@ -33,6 +33,13 @@ describe('RegistryCard', () => {
     expect(img.getAttribute('src')).toContain('placeholder.png');
   });
 
+  it('renders cash fund badge tag when itemType is CASH_FUND', () => {
+    const cashFundItem: RegistryItem = { ...mockItem, itemType: 'CASH_FUND', category: 'Cash Fund' };
+    render(<RegistryCard item={cashFundItem} onClick={() => {}} />);
+
+    expect(screen.getByText('Cash Fund', { selector: 'span' })).toBeInTheDocument();
+  });
+
   it('renders claimed status when purchased', () => {
     const purchasedItem = { ...mockItem, purchased: true };
     render(<RegistryCard item={purchasedItem} onClick={() => {}} />);

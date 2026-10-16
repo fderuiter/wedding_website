@@ -37,6 +37,10 @@ model AppConfig {
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")
   themePreset      String   @default("classic")
+  layoutContainerMaxWidth String @default("64rem")
+  layoutGridGap           String @default("1.5rem")
+  layoutCardPadding       String @default("2rem")
+  layoutBorderRadius      String @default("1rem")
   features         Json     @default("[]")
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
@@ -101,6 +105,9 @@ model Attraction {
 
 model RegistryItem {
   id                String        @id @default(uuid())
+  itemType          String        @default("PHYSICAL")
+  paymentHandleType String?
+  paymentHandle     String?
   name              String
   description       String
   category          String
@@ -108,7 +115,7 @@ model RegistryItem {
   imageId           String
   image             Media         @relation(fields: [imageId], references: [id])
   vendorUrl         String?
-  quantity          Int
+  quantity          Int           @default(1)
   isGroupGift       Boolean       @default(false)
   purchased         Boolean       @default(false)
   purchaserName     String?
@@ -144,6 +151,8 @@ model InvitationCode {
   email              String?
   dietaryNotes       String?
   plusOneAllocations Int?          @default(0)
+  plusOneFirstName   String?
+  plusOneLastName    String?
   extraFields        Json?
   used               Boolean       @default(false)
   usedAt             DateTime?
@@ -188,4 +197,6 @@ model SnapshotVersion {
   data       Json // Full snapshot of the record at the time of save
   author     String   @default("Admin")
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

@@ -1,7 +1,6 @@
 /** @jest-environment node */
 
 import { POST } from '@/app/api/registry/scrape/route';
-import { parsePrice } from '../scrape';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
@@ -473,34 +472,6 @@ describe('POST /api/registry/scrape', () => {
     expect(body.data.name).toBe('Fallback Metadata Product');
     expect(body.data.description).toBe('Fallback description');
     expect(body.data.imageUrl).toBe('https://example.com/fallback.jpg');
-  });
-
-  describe('parsePrice helper unit tests', () => {
-    it('should sanitize currency strings with symbols and commas', () => {
-      expect(parsePrice('$1,299.99')).toBe(1299.99);
-      expect(parsePrice('29.99 USD')).toBe(29.99);
-      expect(parsePrice('£15.50')).toBe(15.5);
-      expect(parsePrice(' 49.99 ')).toBe(49.99);
-      expect(parsePrice('$0.99')).toBe(0.99);
-    });
-
-    it('should handle numeric input', () => {
-      expect(parsePrice(19.99)).toBe(19.99);
-      expect(parsePrice(100)).toBe(100);
-    });
-
-    it('should ignore malformed, zero, negative, or empty input', () => {
-      expect(parsePrice('0')).toBeUndefined();
-      expect(parsePrice(0)).toBeUndefined();
-      expect(parsePrice('$0.00')).toBeUndefined();
-      expect(parsePrice('-10.50')).toBeUndefined();
-      expect(parsePrice('Free')).toBeUndefined();
-      expect(parsePrice('N/A')).toBeUndefined();
-      expect(parsePrice('')).toBeUndefined();
-      expect(parsePrice(null)).toBeUndefined();
-      expect(parsePrice(undefined)).toBeUndefined();
-      expect(parsePrice(NaN)).toBeUndefined();
-    });
   });
 
   describe('Multi-tier price extraction in scrape API', () => {

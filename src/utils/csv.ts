@@ -6,6 +6,8 @@ export interface ParsedCsvRow {
   email?: string;
   dietaryNotes?: string;
   plusOneAllocations?: number;
+  plusOneFirstName?: string;
+  plusOneLastName?: string;
   extraFields?: Record<string, string>;
   isValid: boolean;
   errors: string[];
@@ -19,6 +21,8 @@ export interface CsvParseResult {
   suggestedEmailCol: string;
   suggestedDietaryNotesCol: string;
   suggestedPlusOneCol: string;
+  suggestedPlusOneFirstNameCol?: string;
+  suggestedPlusOneLastNameCol?: string;
   rows: Record<string, string>[];
 }
 
@@ -28,6 +32,8 @@ export interface ColumnMappingOptions {
   emailCol?: string;
   dietaryNotesCol?: string;
   plusOneCol?: string;
+  plusOneFirstNameCol?: string;
+  plusOneLastNameCol?: string;
   extraCols?: string[];
 }
 
@@ -49,6 +55,8 @@ export function parseCsvContent(text: string): CsvParseResult {
       suggestedEmailCol: '',
       suggestedDietaryNotesCol: '',
       suggestedPlusOneCol: '',
+      suggestedPlusOneFirstNameCol: '',
+      suggestedPlusOneLastNameCol: '',
       rows: [],
     };
   }
@@ -71,6 +79,8 @@ export function parseCsvContent(text: string): CsvParseResult {
   let suggestedEmailCol = '';
   let suggestedDietaryNotesCol = '';
   let suggestedPlusOneCol = '';
+  let suggestedPlusOneFirstNameCol = '';
+  let suggestedPlusOneLastNameCol = '';
 
   for (const h of headers) {
     const lower = h.toLowerCase().trim();
@@ -116,15 +126,44 @@ export function parseCsvContent(text: string): CsvParseResult {
         suggestedDietaryNotesCol = h;
       }
     }
+    if (!suggestedPlusOneFirstNameCol) {
+      if (
+        lower.includes('plus-one first name') ||
+        lower.includes('plus one first name') ||
+        lower.includes('plusone first name') ||
+        lower.includes('plus-one first') ||
+        lower.includes('plus one first') ||
+        lower.includes('companion first name') ||
+        lower.includes('guest 2 first name')
+      ) {
+        suggestedPlusOneFirstNameCol = h;
+      }
+    }
+    if (!suggestedPlusOneLastNameCol) {
+      if (
+        lower.includes('plus-one last name') ||
+        lower.includes('plus one last name') ||
+        lower.includes('plusone last name') ||
+        lower.includes('plus-one last') ||
+        lower.includes('plus one last') ||
+        lower.includes('companion last name') ||
+        lower.includes('guest 2 last name')
+      ) {
+        suggestedPlusOneLastNameCol = h;
+      }
+    }
     if (!suggestedPlusOneCol) {
       if (
-        lower.includes('plus one') ||
-        lower.includes('plus-one') ||
-        lower.includes('plusone') ||
-        lower.includes('+1') ||
-        lower.includes('guest count') ||
-        lower.includes('max guests') ||
-        lower.includes('allocations')
+        (lower.includes('plus one') ||
+          lower.includes('plus-one') ||
+          lower.includes('plusone') ||
+          lower.includes('+1') ||
+          lower.includes('guest count') ||
+          lower.includes('max guests') ||
+          lower.includes('allocations')) &&
+        !lower.includes('first') &&
+        !lower.includes('last') &&
+        !lower.includes('name')
       ) {
         suggestedPlusOneCol = h;
       }
@@ -161,8 +200,29 @@ export function parseCsvContent(text: string): CsvParseResult {
     suggestedEmailCol,
     suggestedDietaryNotesCol,
     suggestedPlusOneCol,
+    suggestedPlusOneFirstNameCol,
+    suggestedPlusOneLastNameCol,
     rows,
   };
+}
+
+export function parseInvitationCodesCsv(
+  text: string,
+  columnMapping?: ColumnMappingOptions,
+  existingDbCodes: Set<string> = new Set()
+): { parseResult: CsvParseResult; rows: ParsedCsvRow[] } {
+  const parseResult = parseCsvContent(text);
+  const mapping: ColumnMappingOptions = columnMapping || {
+    guestNameCol: parseResult.suggestedGuestNameCol,
+    codeCol: parseResult.suggestedCodeCol,
+    emailCol: parseResult.suggestedEmailCol,
+    dietaryNotesCol: parseResult.suggestedDietaryNotesCol,
+    plusOneCol: parseResult.suggestedPlusOneCol,
+    plusOneFirstNameCol: parseResult.suggestedPlusOneFirstNameCol,
+    plusOneLastNameCol: parseResult.suggestedPlusOneLastNameCol,
+  };
+  const rows = validateCsvRows(parseResult.rows, mapping, existingDbCodes);
+  return { parseResult, rows };
 }
 
 export function parseCsvLines(text: string): string[][] {
@@ -235,18 +295,32 @@ export function validateSingleCsvRow(
     emailCol = '',
     dietaryNotesCol = '',
     plusOneCol = '',
+    plusOneFirstNameCol = '',
+    plusOneLastNameCol = '',
     extraCols,
   } = mapping;
 
   const mappedCols =
     mappedColsSet ||
-    new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
+    new Set(
+      [
+        guestNameCol,
+        codeCol,
+        emailCol,
+        dietaryNotesCol,
+        plusOneCol,
+        plusOneFirstNameCol,
+        plusOneLastNameCol,
+      ].filter(Boolean)
+    );
 
   const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
   const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
   const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
   const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
   const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
+  const plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
+  const plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
 
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -281,6 +355,14 @@ export function validateSingleCsvRow(
     }
   }
 
+  if (plusOneFirstName && plusOneFirstName.length > 100) {
+    errors.push('Plus-one first name must be under 100 characters.');
+  }
+
+  if (plusOneLastName && plusOneLastName.length > 100) {
+    errors.push('Plus-one last name must be under 100 characters.');
+  }
+
   // Collect extra fields
   const extraFields: Record<string, string> = {};
 
@@ -306,6 +388,8 @@ export function validateSingleCsvRow(
     email: email || undefined,
     dietaryNotes: dietaryNotes || undefined,
     plusOneAllocations,
+    plusOneFirstName: plusOneFirstName || undefined,
+    plusOneLastName: plusOneLastName || undefined,
     extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
     isValid: errors.length === 0,
     errors,
@@ -339,6 +423,8 @@ export function validateCsvRows(
     emailCol = '',
     dietaryNotesCol = '',
     plusOneCol = '',
+    plusOneFirstNameCol = '',
+    plusOneLastNameCol = '',
   } = mapping;
 
   const codeFrequency = new Map<string, number>();
@@ -352,7 +438,17 @@ export function validateCsvRows(
   });
 
   // Hoisted column set creation
-  const mappedCols = new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
+  const mappedCols = new Set(
+    [
+      guestNameCol,
+      codeCol,
+      emailCol,
+      dietaryNotesCol,
+      plusOneCol,
+      plusOneFirstNameCol,
+      plusOneLastNameCol,
+    ].filter(Boolean)
+  );
 
   return rows.map((r, idx) =>
     validateSingleCsvRow(r, idx, mapping, codeFrequency, existingDbCodes, mappedCols)

@@ -1,5 +1,5 @@
 import { registryRepository } from './repository';
-import type { IRegistryRepository, RegistryItem } from './types';
+import type { IRegistryRepository, RegistryItem, GetItemsOptions, PaginatedRegistryItems } from './types';
 
 /**
  * Handles business logic for registry-related operations.
@@ -13,11 +13,11 @@ class RegistryService {
   }
 
   /**
-   * Retrieves all registry items.
-   * @param options - Optional query parameters, e.g. includeContributors.
-   * @returns A promise that resolves to an array of all registry items.
+   * Retrieves paginated registry items.
+   * @param options - Optional query parameters, e.g. pagination, filters, includeContributors.
+   * @returns A promise that resolves to paginated registry items with metadata.
    */
-  async getAllItems(options?: { includeContributors?: boolean }) {
+  async getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems> {
     return this.repository.getAllItems(options);
   }
 

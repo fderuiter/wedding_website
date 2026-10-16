@@ -22,11 +22,13 @@ describe('BackToTop', () => {
     Object.defineProperty(window, 'scrollY', { writable: true, value: 0 });
 
     render(<BackToTop />);
-    const button = screen.getByRole('button', { name: /back to top/i });
+    const button = screen.getByRole('button', { hidden: true });
 
     await waitFor(() => {
       expect(button).toHaveClass('opacity-0');
       expect(button).toHaveClass('pointer-events-none');
+      expect(button).toHaveAttribute('tabindex', '-1');
+      expect(button).toHaveAttribute('aria-hidden', 'true');
     });
     expect(button).toHaveAttribute('aria-label', 'Back to top');
 
@@ -35,6 +37,8 @@ describe('BackToTop', () => {
     await waitFor(() => {
       expect(button).toHaveClass('opacity-100');
       expect(button).toHaveClass('pointer-events-auto');
+      expect(button).toHaveAttribute('tabindex', '0');
+      expect(button).toHaveAttribute('aria-hidden', 'false');
     });
     expect(button).toHaveAttribute('aria-label', 'Back to top');
 
@@ -43,6 +47,8 @@ describe('BackToTop', () => {
     await waitFor(() => {
       expect(button).toHaveClass('opacity-0');
       expect(button).toHaveClass('pointer-events-none');
+      expect(button).toHaveAttribute('tabindex', '-1');
+      expect(button).toHaveAttribute('aria-hidden', 'true');
     });
     expect(button).toHaveAttribute('aria-label', 'Back to top');
   });
@@ -50,7 +56,7 @@ describe('BackToTop', () => {
   it('scrolls to top when clicked', async () => {
     window.scrollY = 700;
     render(<BackToTop />);
-    const button = screen.getByRole('button', { name: /back to top/i });
+    const button = screen.getByRole('button', { hidden: true });
 
     await waitFor(() => {
       expect(button).toHaveClass('opacity-100');
@@ -62,6 +68,49 @@ describe('BackToTop', () => {
       top: 0,
       behavior: 'smooth',
     });
+  });
+
+  it('scrolls to top on Enter or Space key press', async () => {
+    window.scrollY = 700;
+    render(<BackToTop />);
+    const button = screen.getByRole('button', { hidden: true });
+
+    await waitFor(() => {
+      expect(button).toHaveClass('opacity-100');
+    });
+
+    (window.scrollTo as jest.Mock).mockClear();
+    fireEvent.keyDown(button, { key: 'Enter' });
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: 'smooth',
+    });
+
+    (window.scrollTo as jest.Mock).mockClear();
+    fireEvent.keyDown(button, { key: ' ' });
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: 'smooth',
+    });
+  });
+
+  it('manages focus when main-content element is present', async () => {
+    const main = document.createElement('main');
+    main.id = 'main-content';
+    document.body.appendChild(main);
+
+    window.scrollY = 700;
+    render(<BackToTop />);
+    const button = screen.getByRole('button', { hidden: true });
+
+    await waitFor(() => {
+      expect(button).toHaveClass('opacity-100');
+    });
+
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(main);
+
+    document.body.removeChild(main);
   });
 
   it('cleans up scroll listener and animation frame on unmount', () => {

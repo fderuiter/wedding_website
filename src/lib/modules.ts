@@ -87,7 +87,7 @@ export const FEATURE_METADATA: Record<FeatureId, FeatureMetadata> = {
   },
 };
 
-export const FEATURE_DEPENDENCIES: Partial<Record<FeatureId, FeatureId[]>> = {
+const FEATURE_DEPENDENCIES: Partial<Record<FeatureId, FeatureId[]>> = {
   groupGifting: ['registry'],
 };
 
@@ -160,30 +160,4 @@ export function isFeatureEnabled(featureId: FeatureId, config?: unknown): boolea
   return Boolean(resolved[featureId]);
 }
 
-/**
- * Get a list of currently disabled feature module IDs.
- */
-export function getDisabledFeatures(config?: unknown): FeatureId[] {
-  const resolved = resolveModuleConfig(config);
-  return (Object.keys(FEATURE_METADATA) as FeatureId[]).filter(
-    (id) => !resolved[id]
-  );
-}
 
-/**
- * Validate proposed module config updates, returning error messages for any broken dependencies.
- */
-export function validateModuleDependencies(
-  proposed: Partial<ModuleConfig>
-): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
-  if (proposed.groupGifting === true && proposed.registry === false) {
-    errors.push("Feature 'groupGifting' requires feature 'registry' to be enabled.");
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
