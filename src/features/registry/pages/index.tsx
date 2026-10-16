@@ -13,7 +13,7 @@ import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
 import { useRegistry } from '../hooks/useRegistry';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Checkbox, Label, Select } from '@/components/ui/forms';
+import { FormGroup, Checkbox, Label, Input, Select } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
@@ -61,8 +61,11 @@ function RegistryPageContent() {
     setShowGroupGiftsOnly,
     showAvailableOnly,
     setShowAvailableOnly,
+    searchQuery = '',
+    setSearchQuery,
     sortOption,
     setSortOption,
+    handleClearFilters: clearFiltersFromHook,
     handleCardClick,
     handleCloseModal,
     handleEdit,
@@ -102,13 +105,21 @@ function RegistryPageContent() {
     }
   }, [visibleItems.length, filteredItems.length]);
 
-  const handleClearFilters = () => {
+  const handleClearFilters = useCallback(() => {
+    if (clearFiltersFromHook) {
+      clearFiltersFromHook();
+    }
     setCategoryFilter([]);
     setPriceRange([minPrice, maxPrice]);
     setShowGroupGiftsOnly(false);
     setShowAvailableOnly(false);
-    setSortOption('default');
-  };
+    if (setSearchQuery) {
+      setSearchQuery('');
+    }
+    if (setSortOption) {
+      setSortOption('default');
+    }
+  }, [clearFiltersFromHook, setCategoryFilter, setPriceRange, minPrice, maxPrice, setShowGroupGiftsOnly, setShowAvailableOnly, setSearchQuery, setSortOption]);
 
   const gridVariants = {
     hidden: { opacity: 0, y: 30 },
@@ -140,6 +151,36 @@ function RegistryPageContent() {
           aria-label="Registry Filters"
           role="navigation"
         >
+          <FormGroup className="w-full">
+            <Label htmlFor="registry-search-input" className="sr-only">
+              Search gifts
+            </Label>
+            <div className="relative flex items-center w-full">
+              <Icon
+                name="Search"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+              />
+              <Input
+                id="registry-search-input"
+                type="text"
+                placeholder="Search gifts by name or description..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery?.(e.target.value)}
+                className="pl-9 pr-9"
+                aria-label="Search gifts"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery?.('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-0.5"
+                  aria-label="Clear search query"
+                >
+                  <Icon name="X" className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </FormGroup>
           <div className="flex flex-col md:flex-row md:items-center gap-4">
             <CategoryFilter
               categories={categories}

@@ -68,7 +68,7 @@ describe('PrintableFloorplan component', () => {
     expect(headerElement.style.borderColor).toBe('var(--print-header-border, #111827)');
 
     // Table card style
-    const tableCards = rootContainer.querySelectorAll('div.break-inside-avoid');
+    const tableCards = rootContainer.querySelectorAll('article.break-inside-avoid');
     expect(tableCards.length).toBe(2);
     const firstTableCard = tableCards[0] as HTMLElement;
     expect(firstTableCard.style.borderColor).toBe('var(--print-border, #e5e7eb)');
@@ -82,5 +82,58 @@ describe('PrintableFloorplan component', () => {
     expect(badgeElement).toBeDefined();
     expect(badgeElement.style.backgroundColor).toBe('var(--print-badge-bg, #f3f4f6)');
     expect(badgeElement.style.borderColor).toBe('var(--print-border, #e5e7eb)');
+  });
+
+  it('renders main, section, and article landmarks with correct ARIA labelling', () => {
+    const { container } = render(
+      <PrintableFloorplan tables={mockTables} unassignedGuests={mockUnassignedGuests} />
+    );
+
+    // Main landmark
+    const mainLandmark = screen.getByRole('main');
+    expect(mainLandmark).toHaveAttribute('aria-labelledby', 'printable-roster-title');
+    const mainTitle = container.querySelector('#printable-roster-title');
+    expect(mainTitle).toHaveTextContent('Reception Seating Roster & Floorplan');
+
+    // Section landmarks
+    const regionLandmarks = screen.getAllByRole('region');
+    expect(regionLandmarks).toHaveLength(2);
+
+    const tablesSection = screen.getByRole('region', { name: 'Seating Table Assignments' });
+    expect(tablesSection).toHaveAttribute('aria-labelledby', 'tables-section-heading');
+
+    const unassignedSection = screen.getByRole('region', { name: /Unassigned Guests/i });
+    expect(unassignedSection).toHaveAttribute('aria-labelledby', 'unassigned-guests-heading');
+
+    // Article landmarks
+    const articles = screen.getAllByRole('article');
+    expect(articles).toHaveLength(2);
+    expect(articles[0]).toHaveAttribute('aria-labelledby', 'table-heading-table-1');
+    expect(articles[1]).toHaveAttribute('aria-labelledby', 'table-heading-table-2');
+  });
+
+  it('maintains a logical heading hierarchy (h1 -> h2 -> h3)', () => {
+    render(<PrintableFloorplan tables={mockTables} unassignedGuests={mockUnassignedGuests} />);
+
+    const h1Headings = screen.getAllByRole('heading', { level: 1 });
+    expect(h1Headings).toHaveLength(1);
+    expect(h1Headings[0]).toHaveTextContent('Reception Seating Roster & Floorplan');
+
+    const h2Headings = screen.getAllByRole('heading', { level: 2 });
+    expect(h2Headings).toHaveLength(2);
+    expect(h2Headings[0]).toHaveTextContent('Seating Table Assignments');
+    expect(h2Headings[1]).toHaveTextContent('Unassigned Guests (1)');
+
+    const h3Headings = screen.getAllByRole('heading', { level: 3 });
+    expect(h3Headings).toHaveLength(2);
+    expect(h3Headings[0]).toHaveTextContent('Head Table');
+    expect(h3Headings[1]).toHaveTextContent('Family Table');
+  });
+
+  it('omits unassigned guests section landmark when unassignedGuests is empty', () => {
+    render(<PrintableFloorplan tables={mockTables} unassignedGuests={[]} />);
+
+    expect(screen.queryByRole('region', { name: /Unassigned Guests/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unassigned Guests/i)).not.toBeInTheDocument();
   });
 });

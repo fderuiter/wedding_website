@@ -113,12 +113,12 @@ const ToastItem = ({ toast, onClose, duration = 5000 }: ToastItemProps) => {
       onMouseLeave={handleMouseLeave}
       onFocus={handleFocus}
       onBlur={handleBlur}
-      className={`px-4 py-3 rounded shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto focus:outline-none ${
-        toast.type === 'success' ? 'bg-green-600 text-white' :
-          toast.type === 'error' ? 'bg-red-600 text-white' :
-            toast.type === 'confirm' ? 'bg-gray-800 text-white' :
-              'bg-blue-600 text-white'
-      }`}
+      className="px-4 py-3 shadow-lg flex flex-col gap-2 min-w-[300px] pointer-events-auto focus:outline-none"
+      style={{
+        backgroundColor: `var(--toast-${toast.type}-bg)`,
+        color: `var(--toast-${toast.type}-text)`,
+        borderRadius: 'var(--toast-radius)',
+      }}
     >
       <div className="flex justify-between items-center w-full gap-2">
         <span>{toast.message}</span>
@@ -143,7 +143,11 @@ const ToastItem = ({ toast, onClose, duration = 5000 }: ToastItemProps) => {
               variant="ghost"
               size="sm"
               onClick={() => onClose(toast.id)} 
-              className="ml-2 text-white hover:text-white dark:hover:text-white hover:bg-white/20 dark:hover:bg-white/20"
+              className="ml-2 text-inherit hover:bg-[var(--toast-close-hover-bg)]"
+              style={{
+                color: 'inherit',
+                '--btn-ghost-hover-bg': 'var(--toast-close-hover-bg)',
+              } as React.CSSProperties}
               aria-label="Close notification"
             >
               &times;

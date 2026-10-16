@@ -8,19 +8,34 @@ interface UnassignedGuestPanelProps {
   unassignedGuests: InvitationCodeDTO[];
   tables: SeatingTableDTO[];
   onAssignGuestToTable: (guestId: string, tableId: string, seatNumber?: number) => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
 }
 
 export function UnassignedGuestPanel({
   unassignedGuests,
   tables,
   onAssignGuestToTable,
+  searchQuery,
+  onSearchQueryChange,
 }: UnassignedGuestPanelProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
 
+  const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
+
+  const handleSearchChange = (val: string) => {
+    if (onSearchQueryChange) {
+      onSearchQueryChange(val);
+    } else {
+      setInternalSearchTerm(val);
+    }
+  };
+
   const filteredGuests = unassignedGuests.filter((guest) => {
-    const term = searchTerm.toLowerCase();
+    const term = currentSearchQuery.trim().toLowerCase();
+    if (!term) return true;
     return (
       guest.guestName.toLowerCase().includes(term) ||
       guest.code.toLowerCase().includes(term)
@@ -63,8 +78,8 @@ export function UnassignedGuestPanel({
         <input
           id="unassigned-search"
           type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          value={currentSearchQuery}
+          onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Filter by guest name or code..."
           className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
         />
@@ -74,7 +89,9 @@ export function UnassignedGuestPanel({
       <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[500px]">
         {filteredGuests.length === 0 ? (
           <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-xs italic">
-            {searchTerm ? 'No guests match your filter.' : 'All guests have been assigned to tables!'}
+            {currentSearchQuery.trim()
+              ? `No unassigned guests match "${currentSearchQuery.trim()}".`
+              : 'All guests have been assigned to tables!'}
           </div>
         ) : (
           filteredGuests.map((guest) => (

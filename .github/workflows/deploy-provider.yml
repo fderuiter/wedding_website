@@ -54,12 +54,22 @@ on:
         required: false
       DATABASE_URL:
         required: false
+    outputs:
+      service_url:
+        description: 'Target deployment service URL'
+        value: ${{ jobs.deploy.outputs.service_url }}
+      is_dry_run:
+        description: 'Flag indicating if deployment ran in dry-run mode'
+        value: ${{ jobs.deploy.outputs.is_dry_run }}
 
 jobs:
   deploy:
     name: Deploy Release Artifact to Provider
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || 'production' }}
+    outputs:
+      service_url: ${{ steps.resolve-url.outputs.service_url }}
+      is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -79,6 +89,7 @@ jobs:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Execute Cloud Run Deployment
+        id: cloudrun
         if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
@@ -99,9 +110,26 @@ jobs:
         run: |
           echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for image tag: ${{ inputs.image_tag || 'latest' }}."
 
+      - name: Resolve Service URL Output
+        id: resolve-url
+        if: always()
+        run: |
+          URL="${{ steps.cloudrun.outputs.url }}"
+          IS_DRY_RUN="false"
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ] && [ -z "${{ secrets.DEPLOY_WEBHOOK_URL }}" ]; then
+            IS_DRY_RUN="true"
+          fi
+          if [ -z "$URL" ]; then
+            URL="${{ secrets.SERVICE_URL || 'http://127.0.0.1:3000' }}"
+          fi
+          echo "service_url=${URL}" >> $GITHUB_OUTPUT
+          echo "is_dry_run=${IS_DRY_RUN}" >> $GITHUB_OUTPUT
+          echo "Resolved deployment service URL: ${URL} (is_dry_run=${IS_DRY_RUN})"
+
       - name: Deployment Summary
         run: |
           echo "### 🚀 Provider Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Provider:** \`${{ inputs.provider || 'google-cloud-run' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Artifact Image URI:** \`${{ steps.resolve.outputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service URL:** \`${{ steps.resolve-url.outputs.service_url }}\`" >> $GITHUB_STEP_SUMMARY

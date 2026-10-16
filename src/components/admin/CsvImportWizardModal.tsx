@@ -5,6 +5,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import {
   parseCsvContent,
   validateCsvRows,
@@ -26,8 +27,44 @@ interface EditableRow {
   email: string;
   dietaryNotes: string;
   plusOneAllocations: string;
+  plusOneFirstName: string;
+  plusOneLastName: string;
   extraFields: Record<string, string>;
 }
+
+interface CsvImportPersistedState {
+  step: 1 | 2 | 3 | 4;
+  fileName: string;
+  csvHeaders: string[];
+  rawRows: Record<string, string>[];
+  guestNameCol: string;
+  codeCol: string;
+  emailCol: string;
+  dietaryNotesCol: string;
+  plusOneCol: string;
+  plusOneFirstNameCol: string;
+  plusOneLastNameCol: string;
+  selectedExtraCols: string[];
+  collisionStrategy: 'skip' | 'update' | 'reject';
+  editableRows: EditableRow[];
+}
+
+const initialCsvImportState: CsvImportPersistedState = {
+  step: 1,
+  fileName: '',
+  csvHeaders: [],
+  rawRows: [],
+  guestNameCol: '',
+  codeCol: '',
+  emailCol: '',
+  dietaryNotesCol: '',
+  plusOneCol: '',
+  plusOneFirstNameCol: '',
+  plusOneLastNameCol: '',
+  selectedExtraCols: [],
+  collisionStrategy: 'skip',
+  editableRows: [],
+};
 
 export function CsvImportWizardModal({
   isOpen,
@@ -37,23 +74,63 @@ export function CsvImportWizardModal({
 }: CsvImportWizardModalProps) {
   const { addToast } = useToast();
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [fileName, setFileName] = useState<string>('');
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
+  const [csvFormState, setCsvFormState, clearPersistedCsvState] = useFormPersist<CsvImportPersistedState>(
+    'csv_import_wizard_draft',
+    initialCsvImportState
+  );
 
-  // Column mapping states
-  const [guestNameCol, setGuestNameCol] = useState<string>('');
-  const [codeCol, setCodeCol] = useState<string>('');
-  const [emailCol, setEmailCol] = useState<string>('');
-  const [dietaryNotesCol, setDietaryNotesCol] = useState<string>('');
-  const [plusOneCol, setPlusOneCol] = useState<string>('');
-  const [selectedExtraCols, setSelectedExtraCols] = useState<string[]>([]);
+  const {
+    step,
+    fileName,
+    csvHeaders,
+    rawRows,
+    guestNameCol,
+    codeCol,
+    emailCol,
+    dietaryNotesCol,
+    plusOneCol,
+    plusOneFirstNameCol,
+    plusOneLastNameCol,
+    selectedExtraCols,
+    collisionStrategy,
+    editableRows,
+  } = csvFormState;
 
-  const [collisionStrategy, setCollisionStrategy] = useState<'skip' | 'update' | 'reject'>('skip');
+  const setStep = (val: 1 | 2 | 3 | 4 | ((prev: 1 | 2 | 3 | 4) => 1 | 2 | 3 | 4)) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      step: typeof val === 'function' ? val(prev.step) : val,
+    }));
+  };
 
-  // Editable row states for Step 3
-  const [editableRows, setEditableRows] = useState<EditableRow[]>([]);
+  const setFileName = (val: string) => setCsvFormState((prev) => ({ ...prev, fileName: val }));
+  const setCsvHeaders = (val: string[]) => setCsvFormState((prev) => ({ ...prev, csvHeaders: val }));
+  const setRawRows = (val: Record<string, string>[]) => setCsvFormState((prev) => ({ ...prev, rawRows: val }));
+  const setGuestNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, guestNameCol: val }));
+  const setCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, codeCol: val }));
+  const setEmailCol = (val: string) => setCsvFormState((prev) => ({ ...prev, emailCol: val }));
+  const setDietaryNotesCol = (val: string) => setCsvFormState((prev) => ({ ...prev, dietaryNotesCol: val }));
+  const setPlusOneCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneCol: val }));
+  const setPlusOneFirstNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneFirstNameCol: val }));
+  const setPlusOneLastNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneLastNameCol: val }));
+  const setSelectedExtraCols = (
+    val: string[] | ((prev: string[]) => string[])
+  ) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      selectedExtraCols: typeof val === 'function' ? val(prev.selectedExtraCols) : val,
+    }));
+  };
+  const setCollisionStrategy = (val: 'skip' | 'update' | 'reject') =>
+    setCsvFormState((prev) => ({ ...prev, collisionStrategy: val }));
+  const setEditableRows = (
+    val: EditableRow[] | ((prev: EditableRow[]) => EditableRow[])
+  ) => {
+    setCsvFormState((prev) => ({
+      ...prev,
+      editableRows: typeof val === 'function' ? val(prev.editableRows) : val,
+    }));
+  };
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [importSummary, setImportSummary] = useState<{
@@ -122,6 +199,8 @@ export function CsvImportWizardModal({
       setEmailCol(parsed.suggestedEmailCol || '');
       setDietaryNotesCol(parsed.suggestedDietaryNotesCol || '');
       setPlusOneCol(parsed.suggestedPlusOneCol || '');
+      setPlusOneFirstNameCol(parsed.suggestedPlusOneFirstNameCol || '');
+      setPlusOneLastNameCol(parsed.suggestedPlusOneLastNameCol || '');
 
       const mappedStandard = new Set(
         [
@@ -130,6 +209,8 @@ export function CsvImportWizardModal({
           parsed.suggestedEmailCol,
           parsed.suggestedDietaryNotesCol,
           parsed.suggestedPlusOneCol,
+          parsed.suggestedPlusOneFirstNameCol,
+          parsed.suggestedPlusOneLastNameCol,
         ].filter(Boolean)
       );
       setSelectedExtraCols(parsed.headers.filter((h) => !mappedStandard.has(h)));
@@ -159,6 +240,8 @@ export function CsvImportWizardModal({
         email: emailCol ? (r[emailCol] || '').trim() : '',
         dietaryNotes: dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : '',
         plusOneAllocations: plusOneCol ? (r[plusOneCol] || '').trim() : '0',
+        plusOneFirstName: plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : '',
+        plusOneLastName: plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : '',
         extraFields,
       };
     });
@@ -176,6 +259,8 @@ export function CsvImportWizardModal({
         EmailField: r.email,
         DietaryNotesField: r.dietaryNotes,
         PlusOneField: r.plusOneAllocations,
+        PlusOneFirstNameField: r.plusOneFirstName,
+        PlusOneLastNameField: r.plusOneLastName,
       };
       Object.entries(r.extraFields || {}).forEach(([k, v]) => {
         rowObj[k] = v;
@@ -191,6 +276,8 @@ export function CsvImportWizardModal({
         emailCol: 'EmailField',
         dietaryNotesCol: 'DietaryNotesField',
         plusOneCol: 'PlusOneField',
+        plusOneFirstNameCol: 'PlusOneFirstNameField',
+        plusOneLastNameCol: 'PlusOneLastNameField',
         extraCols: selectedExtraCols,
       },
       existingDbSet
@@ -202,7 +289,7 @@ export function CsvImportWizardModal({
 
   const handleCellEdit = (
     index: number,
-    field: 'guestName' | 'code' | 'email' | 'dietaryNotes' | 'plusOneAllocations',
+    field: 'guestName' | 'code' | 'email' | 'dietaryNotes' | 'plusOneAllocations' | 'plusOneFirstName' | 'plusOneLastName',
     value: string
   ) => {
     setEditableRows((prev) => {
@@ -257,6 +344,8 @@ export function CsvImportWizardModal({
           email: r.email || undefined,
           dietaryNotes: r.dietaryNotes || undefined,
           plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+          plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+          plusOneLastName: r.plusOneLastName.trim() || undefined,
           extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
         })),
         collisionStrategy,
@@ -290,25 +379,16 @@ export function CsvImportWizardModal({
   };
 
   const handleResetModal = () => {
-    setStep(1);
-    setFileName('');
-    setCsvHeaders([]);
-    setRawRows([]);
-    setGuestNameCol('');
-    setCodeCol('');
-    setEmailCol('');
-    setDietaryNotesCol('');
-    setPlusOneCol('');
-    setSelectedExtraCols([]);
-    setEditableRows([]);
+    clearPersistedCsvState();
+    setCsvFormState(initialCsvImportState);
     setImportSummary(null);
     onClose();
   };
 
   // Get unmapped headers for custom field checkbox selection
   const mappedStandardHeaders = useMemo(() => {
-    return new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
-  }, [guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol]);
+    return new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol, plusOneFirstNameCol, plusOneLastNameCol].filter(Boolean));
+  }, [guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol, plusOneFirstNameCol, plusOneLastNameCol]);
 
   const availableCustomHeaders = useMemo(() => {
     return csvHeaders.filter((h) => !mappedStandardHeaders.has(h));
@@ -459,7 +539,7 @@ export function CsvImportWizardModal({
                 </select>
               </FormGroup>
 
-              <FormGroup className="md:col-span-2">
+              <FormGroup>
                 <Label htmlFor="map-plus-ones">Plus-One Allocations Column (Optional)</Label>
                 <select
                   id="map-plus-ones"
@@ -468,6 +548,40 @@ export function CsvImportWizardModal({
                   className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Default to 0 --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-plus-one-first-name">Plus-One First Name Column (Optional)</Label>
+                <select
+                  id="map-plus-one-first-name"
+                  value={plusOneFirstNameCol}
+                  onChange={(e) => setPlusOneFirstNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-plus-one-last-name">Plus-One Last Name Column (Optional)</Label>
+                <select
+                  id="map-plus-one-last-name"
+                  value={plusOneLastNameCol}
+                  onChange={(e) => setPlusOneLastNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
                   {csvHeaders.map((h) => (
                     <option key={h} value={h}>
                       {h}
@@ -526,6 +640,16 @@ export function CsvImportWizardModal({
                         <strong>Plus-Ones:</strong> {r[plusOneCol] || '0'}
                       </span>
                     )}
+                    {plusOneFirstNameCol && (
+                      <span>
+                        <strong>Plus-One First:</strong> {r[plusOneFirstNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                      </span>
+                    )}
+                    {plusOneLastNameCol && (
+                      <span>
+                        <strong>Plus-One Last:</strong> {r[plusOneLastNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -581,6 +705,8 @@ export function CsvImportWizardModal({
                     <th scope="col" className="p-2 min-w-[120px]">Email</th>
                     <th scope="col" className="p-2 min-w-[120px]">Dietary Notes</th>
                     <th scope="col" className="p-2 w-16 text-center">Plus-Ones</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Plus-One First Name</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Plus-One Last Name</th>
                     <th scope="col" className="p-2 min-w-[130px]">Extra Attributes</th>
                     <th scope="col" className="p-2 min-w-[120px]">Validation Status</th>
                     <th scope="col" className="p-2 w-10 text-center">Action</th>
@@ -649,6 +775,26 @@ export function CsvImportWizardModal({
                         />
                       </td>
                       <td className="p-2">
+                        <input
+                          type="text"
+                          value={editableRows[idx]?.plusOneFirstName || ''}
+                          aria-label={`Plus-One First Name for row ${row.rowIndex}`}
+                          placeholder="Optional"
+                          onChange={(e) => handleCellEdit(idx, 'plusOneFirstName', e.target.value)}
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="text"
+                          value={editableRows[idx]?.plusOneLastName || ''}
+                          aria-label={`Plus-One Last Name for row ${row.rowIndex}`}
+                          placeholder="Optional"
+                          onChange={(e) => handleCellEdit(idx, 'plusOneLastName', e.target.value)}
+                          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700"
+                        />
+                      </td>
+                      <td className="p-2">
                         {Object.keys(editableRows[idx]?.extraFields || {}).length > 0 ? (
                           <div className="space-y-1">
                             {Object.entries(editableRows[idx].extraFields).map(([k, v]) => (
@@ -709,7 +855,7 @@ export function CsvImportWizardModal({
                   ))}
                   {editableRows.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="p-4 text-center text-gray-500">
+                      <td colSpan={11} className="p-4 text-center text-gray-500">
                         No rows remaining.
                       </td>
                     </tr>

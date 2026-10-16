@@ -159,7 +159,12 @@ export default function ContentDashboardPage() {
             <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Registry</Button>
             <Button onClick={() => { 
               setCurrentNode({ type: 'FAQ', tags: ['Homepage'] }); 
-              setDynamicData([{key: 'question', value: ''}, {key: 'answer', value: ''}]); 
+              setDynamicData([
+                {key: 'question', value: ''},
+                {key: 'answer', value: ''},
+                {key: 'category', value: ''},
+                {key: 'keywords', value: ''}
+              ]); 
               setIsEditing(true); 
             }}>Add New Content</Button>
           </div>
@@ -177,6 +182,53 @@ export default function ContentDashboardPage() {
                 <Label>Tags (comma separated)</Label>
                 <Input type="text" value={currentNode.tags?.join(', ') || ''} onChange={e => setCurrentNode({...currentNode, tags: e.target.value.split(',').map(t => t.trim())})} />
               </FormGroup>
+
+              {currentNode.type === 'FAQ' && (
+                <div className="grid sm:grid-cols-2 gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
+                  <FormGroup>
+                    <Label htmlFor="faq-category-input">FAQ Category</Label>
+                    <Input
+                      id="faq-category-input"
+                      type="text"
+                      placeholder="e.g. Travel, Venue, Dress Code"
+                      value={dynamicData.find(d => d.key === 'category')?.value || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDynamicData(prev => {
+                          const idx = prev.findIndex(d => d.key === 'category');
+                          if (idx >= 0) {
+                            const updated = [...prev];
+                            updated[idx] = { ...updated[idx], value: val };
+                            return updated;
+                          }
+                          return [...prev, { key: 'category', value: val }];
+                        });
+                      }}
+                    />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label htmlFor="faq-keywords-input">FAQ Keywords (comma separated)</Label>
+                    <Input
+                      id="faq-keywords-input"
+                      type="text"
+                      placeholder="e.g. shuttle, parking, attire"
+                      value={dynamicData.find(d => d.key === 'keywords')?.value || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDynamicData(prev => {
+                          const idx = prev.findIndex(d => d.key === 'keywords');
+                          if (idx >= 0) {
+                            const updated = [...prev];
+                            updated[idx] = { ...updated[idx], value: val };
+                            return updated;
+                          }
+                          return [...prev, { key: 'keywords', value: val }];
+                        });
+                      }}
+                    />
+                  </FormGroup>
+                </div>
+              )}
               
               <div>
                 <label className="block text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">Dynamic Data Fields</label>

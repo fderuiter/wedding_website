@@ -3,6 +3,7 @@ import { createAuditSnapshot } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ContributorSchema } from './schemas';
 import { ApiError } from '@/utils/ApiError';
+import { generateCsvContent } from '@/utils/csv';
 
 export interface ThankYouNotesFilterOptions {
   status?: string;
@@ -225,6 +226,39 @@ export class ThankYouService {
     };
 
     return executeInTransaction(this.client, runBatch);
+  }
+
+  /**
+   * Exports thank-you note records matching filter criteria as an RFC 4180 CSV string.
+   */
+  async exportThankYouNotesCsv(options: ThankYouNotesFilterOptions = {}): Promise<string> {
+    const { items } = await this.getThankYouNotes(options);
+
+    const headers = [
+      'Contributor Name',
+      'Email',
+      'Gift Item',
+      'Category',
+      'Contribution Amount',
+      'Contribution Date',
+      'Thank-You Status',
+      'Sent Date',
+      'Note Draft',
+    ];
+
+    const records = items.map((item: any) => ({
+      'Contributor Name': item.name || '',
+      'Email': item.email || '',
+      'Gift Item': item.registryItem?.name || 'General Registry',
+      'Category': item.registryItem?.category || '',
+      'Contribution Amount': item.amount !== undefined && item.amount !== null ? item.amount : '',
+      'Contribution Date': item.date ? item.date : '',
+      'Thank-You Status': item.thankYouStatus || 'Unsent',
+      'Sent Date': item.thankYouSentAt || '',
+      'Note Draft': item.thankYouNote || '',
+    }));
+
+    return generateCsvContent(records, headers);
   }
 }
 

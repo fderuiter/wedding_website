@@ -89,12 +89,17 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
 
       // Verify createItem was called with mapped properties
       expect(mockCreateItem).toHaveBeenCalledWith({
+        itemType: 'PHYSICAL',
+        paymentHandleType: undefined,
+        paymentHandle: undefined,
         name: 'Legacy Toaster',
         price: 99.99,
         quantity: 2,
         category: 'Kitchen',
         description: 'Cozy toast',
         imageUrl: '/images/toaster.png',
+        imageAlt: undefined,
+        imageDecorative: undefined,
         vendorUrl: 'https://example.com/toaster',
         isGroupGift: true,
       });
@@ -248,6 +253,9 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
       expect(prisma.registryItem.upsert).toHaveBeenCalledWith({
         where: { id: 'registry-item-1' },
         update: {
+          itemType: 'PHYSICAL',
+          paymentHandleType: null,
+          paymentHandle: null,
           name: 'Old Gold Ring',
           price: 500,
           quantity: 1,
@@ -262,6 +270,9 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         },
         create: {
           id: 'registry-item-1',
+          itemType: 'PHYSICAL',
+          paymentHandleType: null,
+          paymentHandle: null,
           name: 'Old Gold Ring',
           price: 500,
           quantity: 1,
