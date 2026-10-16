@@ -39,7 +39,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   const isClickable = !isClaimed && !isAdmin;
-  const cardClasses = `border border-primary dark:border-gray-700 rounded-[var(--radius-card)] overflow-hidden shadow-md transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-xl hover:scale-105' : ''}`;
+  const cardClasses = `border border-primary dark:border-gray-700 rounded-[var(--radius-card)] overflow-hidden shadow-[var(--shadow-md)] transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
   const { handleShare, copied } = useShareItem(item);
 
   const fundingPercentage = item.price > 0
@@ -61,7 +61,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
       {isClaimed && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-[var(--radius-card)]">
-          <span className="bg-primary bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-xl">
+          <span className="bg-primary bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-[var(--shadow-lg)]">
             {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
           </span>
         </div>
@@ -83,7 +83,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         <Button
           variant="ghost"
           size="sm"
-          className="absolute top-3 right-3 z-30 p-2 rounded-full bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 shadow-md backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-primary"
+          className="absolute top-3 right-3 z-30 p-2 rounded-full bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 shadow-[var(--shadow-sm)] backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-primary"
           onClick={handleShare}
           aria-label={`Share ${item.name}`}
           title={`Share ${item.name}`}

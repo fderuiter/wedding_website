@@ -75,13 +75,13 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   );
 
   return (
-    <div className="group bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 flex flex-col h-full">
+    <div className="group bg-white dark:bg-gray-800 rounded-xl shadow-[var(--shadow-lg)] overflow-hidden transform hover:scale-105 transition-transform duration-[var(--motion-duration-normal)] flex flex-col h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
       <div className="relative h-48 w-full">
         <MediaImage
           media={attraction.image}
           fallbackUrl="/images/placeholder.png"
           fallbackAlt={attraction.name}
-          className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-110"
+          className="object-cover w-full h-full transition-transform duration-[var(--motion-duration-normal)] group-hover:scale-110"
         />
       </div>
       <div className="p-6 flex flex-col flex-grow">

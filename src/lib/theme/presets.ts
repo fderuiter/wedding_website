@@ -73,6 +73,19 @@ export interface ComponentTokens {
   '--print-header-border': string;
   '--print-badge-bg': string;
 
+  '--motion-duration-fast': string;
+  '--motion-duration-normal': string;
+  '--motion-duration-slow': string;
+  '--motion-ease-default': string;
+  '--motion-spring-stiffness': string;
+  '--motion-spring-damping': string;
+  '--motion-tilt-max-deg': string;
+
+  '--shadow-sm': string;
+  '--shadow-md': string;
+  '--shadow-lg': string;
+  '--shadow-overlay': string;
+
   darkTokens?: Partial<Omit<ComponentTokens, 'darkTokens'>>;
 }
 
@@ -97,6 +110,10 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--schedule-filter-hover-bg': '#3f3f46',
   '--schedule-tag-bg': '#27272a',
   '--schedule-tag-text': '#e4e4e7',
+  '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.4)',
+  '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5)',
+  '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
+  '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6)',
 };
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -170,6 +187,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-border': '#e5e7eb',
     '--print-header-border': '#111827',
     '--print-badge-bg': '#f3f4f6',
+
+    '--motion-duration-fast': '0.15s',
+    '--motion-duration-normal': '0.2s',
+    '--motion-duration-slow': '0.8s',
+    '--motion-ease-default': 'cubic-bezier(0.4, 0, 0.2, 1)',
+    '--motion-spring-stiffness': '300',
+    '--motion-spring-damping': '20',
+    '--motion-tilt-max-deg': '10deg',
+
+    '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+    '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+    '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -265,6 +295,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#0f172a',
     '--print-badge-bg': '#f1f5f9',
 
+    '--motion-duration-fast': '0.1s',
+    '--motion-duration-normal': '0.15s',
+    '--motion-duration-slow': '0.5s',
+    '--motion-ease-default': 'cubic-bezier(0.16, 1, 0.3, 1)',
+    '--motion-spring-stiffness': '400',
+    '--motion-spring-damping': '25',
+    '--motion-tilt-max-deg': '12deg',
+
+    '--shadow-sm': '0 1px 3px 0 rgba(0, 0, 0, 0.08)',
+    '--shadow-md': '0 10px 15px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -4px rgba(0, 0, 0, 0.08)',
+    '--shadow-lg': '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
+    '--shadow-overlay': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+
     darkTokens: {
       '--btn-outline-bg': 'transparent',
       '--btn-outline-text': 'var(--color-primary, #B91C1C)',
@@ -358,6 +401,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-border': '#fbcfe8',
     '--print-header-border': '#9d174d',
     '--print-badge-bg': '#fce7f3',
+
+    '--motion-duration-fast': '0.25s',
+    '--motion-duration-normal': '0.35s',
+    '--motion-duration-slow': '1.0s',
+    '--motion-ease-default': 'cubic-bezier(0.25, 1, 0.5, 1)',
+    '--motion-spring-stiffness': '180',
+    '--motion-spring-damping': '14',
+    '--motion-tilt-max-deg': '8deg',
+
+    '--shadow-sm': '0 2px 8px -2px rgba(225, 175, 185, 0.3)',
+    '--shadow-md': '0 8px 20px -4px rgba(225, 175, 185, 0.35)',
+    '--shadow-lg': '0 20px 30px -10px rgba(225, 175, 185, 0.35)',
+    '--shadow-overlay': '0 25px 35px -10px rgba(225, 175, 185, 0.45)',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -453,6 +509,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-border': '#e4e4e7',
     '--print-header-border': '#18181b',
     '--print-badge-bg': '#f4f4f5',
+
+    '--motion-duration-fast': '0.08s',
+    '--motion-duration-normal': '0.12s',
+    '--motion-duration-slow': '0.3s',
+    '--motion-ease-default': 'linear',
+    '--motion-spring-stiffness': '500',
+    '--motion-spring-damping': '35',
+    '--motion-tilt-max-deg': '4deg',
+
+    '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.04)',
+    '--shadow-md': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+    '--shadow-lg': '0 2px 5px 0 rgba(0, 0, 0, 0.1)',
+    '--shadow-overlay': '0 4px 12px 0 rgba(0, 0, 0, 0.15)',
 
     darkTokens: {
       '--btn-outline-bg': 'transparent',
@@ -551,6 +620,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#000000',
     '--print-badge-bg': '#e4e4e7',
 
+    '--motion-duration-fast': '0.12s',
+    '--motion-duration-normal': '0.22s',
+    '--motion-duration-slow': '0.6s',
+    '--motion-ease-default': 'cubic-bezier(0.2, 0, 0, 1)',
+    '--motion-spring-stiffness': '350',
+    '--motion-spring-damping': '22',
+    '--motion-tilt-max-deg': '15deg',
+
+    '--shadow-sm': '2px 2px 0px 0px rgba(0,0,0,0.9)',
+    '--shadow-md': '3px 3px 0px 0px rgba(0,0,0,0.9)',
+    '--shadow-lg': '4px 4px 0px 0px rgba(0,0,0,0.9)',
+    '--shadow-overlay': '6px 6px 0px 0px rgba(0,0,0,0.9)',
+
     darkTokens: {
       '--btn-primary-border': '#ffffff',
       '--btn-secondary-border': '#ffffff',
@@ -578,6 +660,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-node-border': '#ffffff',
       '--schedule-tag-bg': '#292524',
       '--schedule-tag-text': '#ffffff',
+      '--shadow-sm': '2px 2px 0px 0px rgba(255,255,255,0.9)',
+      '--shadow-md': '3px 3px 0px 0px rgba(255,255,255,0.9)',
+      '--shadow-lg': '4px 4px 0px 0px rgba(255,255,255,0.9)',
+      '--shadow-overlay': '6px 6px 0px 0px rgba(255,255,255,0.9)',
     },
   },
 };
@@ -586,6 +672,24 @@ export const DEFAULT_THEME_PRESET: ThemePreset = 'classic';
 
 export function isThemePreset(value: unknown): value is ThemePreset {
   return typeof value === 'string' && THEME_PRESET_KEYS.includes(value as ThemePreset);
+}
+
+export function parseMotionEasing(easing?: string): any {
+  if (!easing) return 'easeInOut';
+  if (easing === 'ease-in-out') return 'easeInOut';
+  if (easing === 'ease-in') return 'easeIn';
+  if (easing === 'ease-out') return 'easeOut';
+
+  const cubicMatch = easing.match(/cubic-bezier\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/i);
+  if (cubicMatch) {
+    return [
+      parseFloat(cubicMatch[1]),
+      parseFloat(cubicMatch[2]),
+      parseFloat(cubicMatch[3]),
+      parseFloat(cubicMatch[4]),
+    ];
+  }
+  return easing;
 }
 
 export function getPresetTokens(

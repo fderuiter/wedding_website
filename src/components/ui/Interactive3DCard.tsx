@@ -3,6 +3,8 @@
 import React, { useRef, useEffect, useCallback, ElementType, ComponentPropsWithoutRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
+import { useTheme } from '../ThemeProvider';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { cn } from '@/utils/cn';
 
 const motionComponentCache = new Map<ElementType, any>();
@@ -62,16 +64,31 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
       [forwardedRef]
     );
 
+    const { themePreset } = useTheme();
+    const presetTokens = getPresetTokens(themePreset);
+    const stiffness = parseFloat(presetTokens['--motion-spring-stiffness']) || 300;
+    const damping = parseFloat(presetTokens['--motion-spring-damping']) || 20;
+    const tiltMaxDeg = parseFloat(presetTokens['--motion-tilt-max-deg']) || 10;
+
     const x = useMotionValue(0);
     const y = useMotionValue(0);
 
-    // Smooth the motion values using springs
-    const mouseXSpring = useSpring(x, { stiffness: 300, damping: 20 });
-    const mouseYSpring = useSpring(y, { stiffness: 300, damping: 20 });
+    // Smooth the motion values using springs driven by theme tokens
+    const mouseXSpring = useSpring(x, { stiffness, damping });
+    const mouseYSpring = useSpring(y, { stiffness, damping });
 
-    // Transform mouse position to rotation
-    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['10deg', '-10deg']);
-    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-10deg', '10deg']);
+    useEffect(() => {
+      if ((mouseXSpring as any).setOptions) {
+        (mouseXSpring as any).setOptions({ stiffness, damping });
+      }
+      if ((mouseYSpring as any).setOptions) {
+        (mouseYSpring as any).setOptions({ stiffness, damping });
+      }
+    }, [stiffness, damping, mouseXSpring, mouseYSpring]);
+
+    // Transform mouse position to rotation using theme tilt limit
+    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], [`${tiltMaxDeg}deg`, `-${tiltMaxDeg}deg`]);
+    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], [`-${tiltMaxDeg}deg`, `${tiltMaxDeg}deg`]);
 
     const Component = as || 'div';
     const isInteractive = Component === 'button' || Component === 'a';
