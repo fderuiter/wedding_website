@@ -70,9 +70,14 @@ beforeEach(() => {
   (global.fetch as unknown) = mockFetch;
   (window.fetch as unknown) = mockFetch;
   (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
-  mockFetch.mockResolvedValue({
-    ok: true,
-    json: async () => mockConfig,
+  mockFetch.mockImplementation((url: string) => {
+    if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+      if (url.includes('list=true')) {
+        return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockConfig });
+    }
+    return Promise.reject(new Error(`Unhandled: ${url}`));
   });
 });
 
@@ -90,9 +95,14 @@ describe('AdminSettingsPage - handleUpload', () => {
     (global.fetch as unknown) = mockFetch;
     (window.fetch as unknown) = mockFetch;
     (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => mockConfig,
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
+        return Promise.resolve({ ok: true, json: async () => mockConfig });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
     });
   });
 
@@ -168,7 +178,10 @@ describe('AdminSettingsPage - handleUpload', () => {
 
   it('updates faviconUrl in config state and shows success message on successful upload', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({ ok: true, json: async () => mockConfig });
       }
       if (url === '/api/admin/upload' && options?.method === 'POST') {
@@ -205,7 +218,10 @@ describe('AdminSettingsPage - handleUpload', () => {
 
   it('updates ogImageUrl in config state and shows success message on successful upload', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({ ok: true, json: async () => mockConfig });
       }
       if (url === '/api/admin/upload' && options?.method === 'POST') {
@@ -242,7 +258,10 @@ describe('AdminSettingsPage - handleUpload', () => {
 
   it('shows error message when upload API returns an error', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({ ok: true, json: async () => mockConfig });
       }
       if (url === '/api/admin/upload' && options?.method === 'POST') {
@@ -279,7 +298,10 @@ describe('AdminSettingsPage - handleUpload', () => {
 
   it('shows error message when upload fetch throws a network error', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({ ok: true, json: async () => mockConfig });
       }
       if (url === '/api/admin/upload' && options?.method === 'POST') {
@@ -316,7 +338,10 @@ describe('AdminSettingsPage - handleUpload', () => {
   it('sends the file as FormData to /api/admin/upload', async () => {
     let capturedFormData: FormData | null = null;
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({ ok: true, json: async () => mockConfig });
       }
       if (url === '/api/admin/upload' && options?.method === 'POST') {
@@ -365,7 +390,10 @@ describe('AdminSettingsPage - SEO keywords field', () => {
     jest.clearAllMocks();
     (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
     mockFetch.mockImplementation((url: string) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({ ok: true, json: async () => mockConfig });
       }
       return Promise.reject(new Error(`Unhandled: ${url}`));
@@ -416,7 +444,10 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
     jest.clearAllMocks();
     (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
     mockFetch.mockImplementation((url: string) => {
-      if (url === '/api/admin/settings') {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
         return Promise.resolve({
           ok: true,
           json: async () => ({ ...mockConfig, timezone: 'America/Chicago' }),
