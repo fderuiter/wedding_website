@@ -56,7 +56,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   useEffect(() => {
     if (isSessionVerified && sessionCode) {
       setInvitationCode(sessionCode);
-      setContributorName(sessionGuestName || '');
+      setContributorName((prev) => prev || sessionGuestName || '');
       setIsCodeLocked(true);
     }
   }, [isSessionVerified, sessionCode, sessionGuestName]);
