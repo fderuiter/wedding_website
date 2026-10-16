@@ -1,4 +1,5 @@
 import { GET } from '../route';
+import { GET as EXPORT_GET } from '../export/route';
 import { PATCH } from '../[id]/route';
 import { POST as BATCH_POST } from '../batch/route';
 import { NextRequest } from 'next/server';
@@ -9,6 +10,7 @@ jest.mock('@/features/registry/thank-you.service', () => ({
     getThankYouNotes: jest.fn(),
     updateThankYouNote: jest.fn(),
     batchUpdateThankYouNotes: jest.fn(),
+    exportThankYouNotesCsv: jest.fn(),
   },
 }));
 
@@ -129,6 +131,26 @@ describe('Thank-You Notes API Routes', () => {
 
       const res = await BATCH_POST(req);
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /api/admin/thank-you-notes/export', () => {
+    it('returns CSV file download response with correct headers', async () => {
+      const mockCsv = 'Contributor Name,Email\nJane Doe,jane@example.com\n';
+      (thankYouService.exportThankYouNotesCsv as jest.Mock).mockResolvedValue(mockCsv);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/export?status=Unsent&search=Jane');
+      const res = await EXPORT_GET(req);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/csv');
+      expect(res.headers.get('content-disposition')).toContain('attachment; filename="thank-you-notes-');
+      const body = await res.text();
+      expect(body).toBe(mockCsv);
+      expect(thankYouService.exportThankYouNotesCsv).toHaveBeenCalledWith({
+        status: 'Unsent',
+        search: 'Jane',
+      });
     });
   });
 });

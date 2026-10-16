@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { SeatingTableDTO } from '../schemas';
+import { InvitationCodeDTO } from '@/features/registry/schemas';
 
 interface FloorplanCanvasProps {
   tables: SeatingTableDTO[];
@@ -10,6 +11,7 @@ interface FloorplanCanvasProps {
   onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
   onUnassignGuest: (guestId: string) => void;
+  searchQuery?: string;
 }
 
 export function FloorplanCanvas({
@@ -19,10 +21,31 @@ export function FloorplanCanvas({
   onUpdateTablePosition,
   onDropGuestOnTable,
   onUnassignGuest,
+  searchQuery,
 }: FloorplanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
+  const isSearching = normalizedQuery.length > 0;
+
+  const isGuestMatch = (guest: InvitationCodeDTO) => {
+    if (!isSearching) return false;
+    return (
+      guest.guestName.toLowerCase().includes(normalizedQuery) ||
+      guest.code.toLowerCase().includes(normalizedQuery)
+    );
+  };
+
+  let totalSeatedMatches = 0;
+  if (isSearching) {
+    tables.forEach((t) => {
+      (t.invitationCodes || []).forEach((g) => {
+        if (isGuestMatch(g)) totalSeatedMatches++;
+      });
+    });
+  }
 
   // Handle table mouse drag
   const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
@@ -83,6 +106,7 @@ export function FloorplanCanvas({
 
     for (let i = 1; i <= capacity; i++) {
       const assignedGuest = assignedGuests.find((g) => g.seatNumber === i) || assignedGuests[i - 1];
+      const isMatch = assignedGuest ? isGuestMatch(assignedGuest) : false;
 
       let seatX = 0;
       let seatY = 0;
@@ -120,10 +144,22 @@ export function FloorplanCanvas({
           onDragOver={handleDragOver}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
           onDoubleClick={() => assignedGuest && onUnassignGuest(assignedGuest.id)}
-          title={assignedGuest ? `Seat ${i}: ${assignedGuest.guestName} (Double click to unassign)` : `Seat ${i}: Empty (Drop guest here)`}
+          data-testid={isMatch ? 'matching-seat' : undefined}
+          data-is-search-match={isMatch ? 'true' : 'false'}
+          title={
+            assignedGuest
+              ? isMatch
+                ? `Seat ${i}: ${assignedGuest.guestName} (Search Match! Double click to unassign)`
+                : `Seat ${i}: ${assignedGuest.guestName} (Double click to unassign)`
+              : `Seat ${i}: Empty (Drop guest here)`
+          }
           className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all ${
             assignedGuest
-              ? 'bg-primary text-white border-primary shadow-sm hover:scale-110'
+              ? isMatch
+                ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
+                : isSearching
+                  ? 'bg-primary/60 text-white/80 border-primary/60 shadow-sm opacity-60'
+                  : 'bg-primary text-white border-primary shadow-sm hover:scale-110'
               : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-dashed border-gray-400 hover:border-primary hover:bg-red-50'
           }`}
           style={{
@@ -162,7 +198,17 @@ export function FloorplanCanvas({
       {/* Canvas Header Banner */}
       <div className="absolute top-3 left-3 bg-white/90 dark:bg-gray-800/90 backdrop-blur border border-gray-200 dark:border-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 shadow-sm z-10 flex items-center gap-2">
         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-        Drag tables to arrange floorplan. Drag guests onto table seats to assign.
+        {isSearching ? (
+          totalSeatedMatches > 0 ? (
+            <span>
+              Searching &ldquo;{searchQuery}&rdquo;: <strong className="text-amber-600 dark:text-amber-400">{totalSeatedMatches} seated match{totalSeatedMatches === 1 ? '' : 'es'}</strong> highlighted on floorplan
+            </span>
+          ) : (
+            <span>Searching &ldquo;{searchQuery}&rdquo;: No matching seated guests on floorplan.</span>
+          )
+        ) : (
+          <span>Drag tables to arrange floorplan. Drag guests onto table seats to assign.</span>
+        )}
       </div>
 
       {tables.map((table) => {
@@ -170,6 +216,7 @@ export function FloorplanCanvas({
         const isSelected = selectedTableId === table.id;
         const isOverCapacity = assignedCount > table.capacity;
         const isFull = assignedCount === table.capacity;
+        const hasMatchingGuest = isSearching && (table.invitationCodes || []).some(isGuestMatch);
 
         return (
           <div
@@ -183,6 +230,8 @@ export function FloorplanCanvas({
             onDrop={(e) => handleDropOnTable(e, table.id)}
             className={`absolute cursor-move transition-all transform hover:scale-[1.02] ${
               isSelected ? 'ring-4 ring-primary ring-offset-2 z-20' : 'z-10'
+            } ${
+              hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''
             }`}
             style={{
               left: `${table.x}px`,
@@ -220,6 +269,16 @@ export function FloorplanCanvas({
               {isOverCapacity && (
                 <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce">
                   Over capacity!
+                </span>
+              )}
+
+              {/* Search Match Badge */}
+              {hasMatchingGuest && (
+                <span
+                  data-testid="table-search-match-badge"
+                  className="absolute -top-2 -left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 animate-pulse z-30"
+                >
+                  🔍 Match
                 </span>
               )}
             </div>
