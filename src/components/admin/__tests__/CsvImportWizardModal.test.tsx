@@ -214,4 +214,61 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByDisplayValue('Charlie Brown Jr.')).toBeInTheDocument();
     });
   });
+
+  test('renders accessible step progress navigation and status live region', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    // Verify nav and ol structure
+    const nav = screen.getByRole('navigation', { name: /Import progress/i });
+    expect(nav).toBeInTheDocument();
+
+    const ol = nav.querySelector('ol');
+    expect(ol).toBeInTheDocument();
+
+    // Verify header status live region
+    const statusBadge = screen.getByRole('status');
+    expect(statusBadge).toHaveAttribute('aria-live', 'polite');
+    expect(statusBadge).toHaveAttribute('aria-atomic', 'true');
+    expect(statusBadge).toHaveTextContent('Step 1 of 4');
+
+    // Verify aria-current="step" on Step 1 span
+    const step1Span = screen.getByText('1. Upload File');
+    expect(step1Span).toHaveAttribute('aria-current', 'step');
+
+    const step2Span = screen.getByText('2. Map Columns');
+    expect(step2Span).not.toHaveAttribute('aria-current');
+
+    const step3Span = screen.getByText('3. Review & Validate');
+    expect(step3Span).not.toHaveAttribute('aria-current');
+
+    const step4Span = screen.getByText('4. Complete');
+    expect(step4Span).not.toHaveAttribute('aria-current');
+
+    // Advance to Step 2
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(statusBadge).toHaveTextContent('Step 2 of 4');
+    });
+
+    // Step 1 no longer has aria-current, Step 2 now has aria-current="step"
+    expect(step1Span).not.toHaveAttribute('aria-current');
+    expect(step2Span).toHaveAttribute('aria-current', 'step');
+
+    // Advance to Step 3
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(statusBadge).toHaveTextContent('Step 3 of 4');
+    });
+
+    expect(step2Span).not.toHaveAttribute('aria-current');
+    expect(step3Span).toHaveAttribute('aria-current', 'step');
+  });
 });

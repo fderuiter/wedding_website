@@ -38,11 +38,28 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         throw new Error('Validation Error: Plus-one allocation must be a non-negative integer.');
       }
     }
+    if (data.plusOneFirstName !== undefined && data.plusOneFirstName !== null) {
+      if (typeof data.plusOneFirstName !== 'string' || data.plusOneFirstName.length > 100) {
+        throw new Error('Validation Error: Plus-one first name must be under 100 characters.');
+      }
+    }
+    if (data.plusOneLastName !== undefined && data.plusOneLastName !== null) {
+      if (typeof data.plusOneLastName !== 'string' || data.plusOneLastName.length > 100) {
+        throw new Error('Validation Error: Plus-one last name must be under 100 characters.');
+      }
+    }
   }
 
   protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
     const finalData = { ...data };
     const activeClient = client || this.repo.client;
+
+    if (finalData.plusOneFirstName !== undefined) {
+      finalData.plusOneFirstName = typeof finalData.plusOneFirstName === 'string' && finalData.plusOneFirstName.trim() ? finalData.plusOneFirstName.trim() : null;
+    }
+    if (finalData.plusOneLastName !== undefined) {
+      finalData.plusOneLastName = typeof finalData.plusOneLastName === 'string' && finalData.plusOneLastName.trim() ? finalData.plusOneLastName.trim() : null;
+    }
 
     if (!finalData.code || typeof finalData.code !== 'string' || finalData.code.trim() === '') {
       let uniqueCode = '';
@@ -82,6 +99,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       email?: string | null;
       dietaryNotes?: string | null;
       plusOneAllocations?: number;
+      plusOneFirstName?: string | null;
+      plusOneLastName?: string | null;
       extraFields?: Record<string, any> | null;
     }[],
     collisionStrategy: 'skip' | 'update' | 'reject' = 'skip',
@@ -106,6 +125,16 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         if (item.plusOneAllocations !== undefined && item.plusOneAllocations !== null) {
           if (!Number.isInteger(item.plusOneAllocations) || item.plusOneAllocations < 0) {
             throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one count.`);
+          }
+        }
+        if (item.plusOneFirstName !== undefined && item.plusOneFirstName !== null) {
+          if (typeof item.plusOneFirstName !== 'string' || item.plusOneFirstName.length > 100) {
+            throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one first name.`);
+          }
+        }
+        if (item.plusOneLastName !== undefined && item.plusOneLastName !== null) {
+          if (typeof item.plusOneLastName !== 'string' || item.plusOneLastName.length > 100) {
+            throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one last name.`);
           }
         }
       }
@@ -157,6 +186,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         const rowEmail = row.email && typeof row.email === 'string' && row.email.trim() ? row.email.trim() : null;
         const rowDietaryNotes = row.dietaryNotes && typeof row.dietaryNotes === 'string' && row.dietaryNotes.trim() ? row.dietaryNotes.trim() : null;
         const rowPlusOne = typeof row.plusOneAllocations === 'number' ? row.plusOneAllocations : 0;
+        const rowPlusOneFirstName = row.plusOneFirstName && typeof row.plusOneFirstName === 'string' && row.plusOneFirstName.trim() ? row.plusOneFirstName.trim() : null;
+        const rowPlusOneLastName = row.plusOneLastName && typeof row.plusOneLastName === 'string' && row.plusOneLastName.trim() ? row.plusOneLastName.trim() : null;
         const rowExtraFields = row.extraFields && typeof row.extraFields === 'object' && Object.keys(row.extraFields).length > 0 ? row.extraFields : null;
 
         if (existsInBatch) {
@@ -170,6 +201,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               if (row.email !== undefined) updateData.email = rowEmail;
               if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
               if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
+              if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
+              if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
               if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
               await tx.invitationCode.update({
@@ -194,6 +227,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             if (row.email !== undefined) updateData.email = rowEmail;
             if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
             if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
+            if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
+            if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
             if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
             await tx.invitationCode.update({
@@ -210,6 +245,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               email: rowEmail,
               dietaryNotes: rowDietaryNotes,
               plusOneAllocations: rowPlusOne,
+              plusOneFirstName: rowPlusOneFirstName,
+              plusOneLastName: rowPlusOneLastName,
               extraFields: rowExtraFields ?? undefined,
               used: false
             }

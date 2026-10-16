@@ -132,4 +132,51 @@ describe('AddToCalendar', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(document.activeElement).toBe(trigger);
   });
+
+  it('links trigger button to dropdown container with aria-controls', () => {
+    render(<AddToCalendar event={sampleEvent} />);
+    const trigger = screen.getByRole('button', { name: 'Add to Calendar' });
+    expect(trigger).toHaveAttribute('aria-controls', 'add-to-calendar-menu');
+
+    fireEvent.click(trigger);
+    const container = document.getElementById('add-to-calendar-menu');
+    expect(container).toBeInTheDocument();
+  });
+
+  it('opens menu when ArrowDown or ArrowUp key is pressed on closed trigger button', () => {
+    const { unmount } = render(<AddToCalendar event={sampleEvent} />);
+    const trigger = screen.getByRole('button', { name: 'Add to Calendar' });
+
+    // ArrowDown on closed trigger
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    unmount();
+
+    render(<AddToCalendar event={sampleEvent} />);
+    const trigger2 = screen.getByRole('button', { name: 'Add to Calendar' });
+
+    // ArrowUp on closed trigger
+    fireEvent.keyDown(trigger2, { key: 'ArrowUp' });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('navigates to first and last items using Home and End keys', () => {
+    render(<AddToCalendar event={sampleEvent} />);
+    fireEvent.click(screen.getByText('Add to Calendar'));
+
+    const googleButton = screen.getByText('Google');
+    const yahooButton = screen.getByText('Yahoo');
+
+    googleButton.focus();
+    expect(document.activeElement).toBe(googleButton);
+
+    // End key moves focus to last item (Yahoo)
+    fireEvent.keyDown(googleButton, { key: 'End' });
+    expect(document.activeElement).toBe(yahooButton);
+
+    // Home key moves focus to first item (Google)
+    fireEvent.keyDown(yahooButton, { key: 'Home' });
+    expect(document.activeElement).toBe(googleButton);
+  });
 });

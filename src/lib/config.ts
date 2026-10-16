@@ -82,7 +82,7 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
 /**
  * Extract site configuration overrides specified via environment variables (Layer 1 override).
  */
-export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
+function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   const overrides: Partial<LocalAppConfig> = {};
 
   if (process.env.SITE_PARTNER1_NAME) overrides.partner1Name = process.env.SITE_PARTNER1_NAME;

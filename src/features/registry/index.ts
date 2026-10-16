@@ -1,6 +1,6 @@
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
-export type { ProgressMetrics } from './thank-you.service';
+export type { ProgressMetrics, PaginationMeta, ThankYouNotesFilterOptions } from './thank-you.service';
 export type { RegistryItem } from './types';
 export {
   RegistryItemSchema,
@@ -8,7 +8,12 @@ export {
   ContributorSchema,
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
+  ItemTypeEnum,
+  BatchImportInvitationCodesSchema,
   translateSnapshotToActive,
+} from './schemas';
+export type {
+  ItemType,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';

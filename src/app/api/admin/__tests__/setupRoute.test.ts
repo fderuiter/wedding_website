@@ -233,6 +233,83 @@ describe('Setup API Route (/api/admin/setup)', () => {
       });
     });
 
+    test('uninitialized setup saves themePreset and layout tokens during configuration', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      const mockSavedConfig = {
+        id: 'global',
+        brideName: 'Alice',
+        groomName: 'Bob',
+        weddingDate: new Date('2026-06-20T16:00:00.000Z'),
+        baseUrl: 'https://ourwedding.com',
+        venueName: 'The Glasshouse',
+        venueAddress: '123 Main St',
+        venueCity: 'Seattle',
+        venueState: 'WA',
+        venueZip: '98101',
+        latitude: 47.6,
+        longitude: -122.3,
+        storyText: 'Our story...',
+        venueDescription: 'Venue description...',
+        travelAdvice: 'Fly to SEA',
+        heroTitle: 'We Tied the Knot!',
+        heroSubtitle: 'Welcome!',
+        seoTitle: 'Alice & Bob Wedding',
+        seoDescription: 'Join Alice and Bob',
+        faviconUrl: '/assets/favicon.png',
+        ogImageUrl: '/images/sunset.jpg',
+        seoKeywords: 'wedding, seattle',
+        colorPrimary: '#B91C1C',
+        colorSecondary: '#B45309',
+        themePreset: 'romantic',
+        layoutContainerMaxWidth: '70rem',
+        layoutGridGap: '2rem',
+        layoutCardPadding: '2.5rem',
+        layoutBorderRadius: '1.5rem',
+        timezone: 'America/Los_Angeles',
+        showCountdown: true,
+        showAddToCalendar: true,
+        features: '[]',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          brideName: 'Alice',
+          groomName: 'Bob',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://ourwedding.com',
+          venueName: 'The Glasshouse',
+          venueCity: 'Seattle',
+          venueState: 'WA',
+          themePreset: 'romantic',
+          layoutContainerMaxWidth: '70rem',
+          layoutGridGap: '2rem',
+          layoutCardPadding: '2.5rem',
+          layoutBorderRadius: '1.5rem',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            themePreset: 'romantic',
+            layoutContainerMaxWidth: '70rem',
+            layoutGridGap: '2rem',
+            layoutCardPadding: '2.5rem',
+            layoutBorderRadius: '1.5rem',
+          }),
+        })
+      );
+    });
+
     test('replay attack fails with 403 Forbidden once site is initialized and caller is unauthenticated', async () => {
       (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(initializedConfig);
 

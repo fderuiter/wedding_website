@@ -109,7 +109,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  const newId = data.id || `profile-${Math.random().toString(36).substr(2, 9)}`;
+  const newId = data.id || `profile-${Math.random().toString(36).slice(2, 11)}`;
 
   const parseResult = UpdateAppConfigSchema.safeParse({
     partner1Name: data.partner1Name ?? data.brideName ?? 'Partner 1',
@@ -137,6 +137,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     seoKeywords: data.seoKeywords ?? '',
     colorPrimary: data.colorPrimary ?? '#B91C1C',
     colorSecondary: data.colorSecondary ?? '#B45309',
+    themePreset: data.themePreset ?? 'classic',
+    layoutContainerMaxWidth: data.layoutContainerMaxWidth,
+    layoutGridGap: data.layoutGridGap,
+    layoutCardPadding: data.layoutCardPadding,
+    layoutBorderRadius: data.layoutBorderRadius,
     timezone: data.timezone ?? 'UTC',
     showCountdown: data.showCountdown ?? true,
     showAddToCalendar: data.showAddToCalendar ?? true,

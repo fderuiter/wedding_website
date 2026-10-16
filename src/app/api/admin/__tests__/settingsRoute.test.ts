@@ -234,6 +234,31 @@ describe('PUT /api/admin/settings', () => {
     );
   });
 
+  it('persists themePreset and layout tokens to database', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const req = makeAuthReq({
+      ...validConfigData,
+      themePreset: 'modern',
+      layoutContainerMaxWidth: '72rem',
+      layoutGridGap: '2rem',
+      layoutCardPadding: '2.5rem',
+      layoutBorderRadius: '0.5rem',
+    });
+    await PUT(req);
+
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          themePreset: 'modern',
+          layoutContainerMaxWidth: '72rem',
+          layoutGridGap: '2rem',
+          layoutCardPadding: '2.5rem',
+          layoutBorderRadius: '0.5rem',
+        }),
+      })
+    );
+  });
+
   it('persists all three new fields together', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({
@@ -586,6 +611,11 @@ describe('toAppConfigDbPayload mapper', () => {
       seoKeywords: 'wedding, austin',
       colorPrimary: '#123456',
       colorSecondary: '#654321',
+      themePreset: 'classic',
+      layoutContainerMaxWidth: '64rem',
+      layoutGridGap: '1.5rem',
+      layoutCardPadding: '2rem',
+      layoutBorderRadius: '1rem',
       timezone: 'America/Chicago',
       showCountdown: true,
       showAddToCalendar: true,
