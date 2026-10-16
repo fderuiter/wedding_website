@@ -241,13 +241,20 @@ describe('HeartPage', () => {
     expect(screen.getAllByText('SentinelB').length).toBeGreaterThan(0);
   });
 
-  it('renders 2D vector fallback when WebGL support is missing/disabled', async () => {
+  it('renders 2D vector fallback when WebGL support is missing/disabled with accessible markup', async () => {
     (window as any).__mockWebGLSupport = false;
 
     render(<HeartPage />);
 
     expect(await screen.findByTestId('webgl-fallback-container')).toBeInTheDocument();
-    expect(await screen.findByTestId('webgl-fallback-heart')).toBeInTheDocument();
+    const fallbackHeart = await screen.findByTestId('webgl-fallback-heart');
+    expect(fallbackHeart).toBeInTheDocument();
+    expect(fallbackHeart).toHaveAttribute('role', 'button');
+
+    const svg = fallbackHeart.querySelector('svg');
+    expect(svg).toHaveAttribute('aria-hidden', 'true');
+    expect(svg).toHaveAttribute('role', 'img');
+    expect(svg?.getAttribute('class')).toContain('motion-reduce:animate-none');
 
     expect(screen.getByText('Abbi')).toBeInTheDocument();
     expect(screen.getByText('Fred')).toBeInTheDocument();
@@ -255,7 +262,7 @@ describe('HeartPage', () => {
     delete (window as any).__mockWebGLSupport;
   });
 
-  it('supports dragging and keyboard movement in 2D WebGL fallback', async () => {
+  it('supports dragging and keyboard movement in 2D WebGL fallback with screen reader announcements', async () => {
     (window as any).__mockWebGLSupport = false;
     render(<HeartPage />);
 
@@ -282,9 +289,11 @@ describe('HeartPage', () => {
 
     fireEvent.keyDown(fallbackHeart, { key: 'ArrowDown' });
     expect(fallbackHeart.style.transform).toBe('translate(50px, 40px)');
+    expect(screen.getByRole('status')).toHaveTextContent('Moved down');
 
     fireEvent.keyDown(fallbackHeart, { key: 'ArrowRight' });
     expect(fallbackHeart.style.transform).toBe('translate(70px, 40px)');
+    expect(screen.getByRole('status')).toHaveTextContent('Moved right');
 
     delete (window as any).__mockWebGLSupport;
   });
