@@ -1,32 +1,49 @@
 import { ImageResponse } from 'next/og';
 import { getAppConfig } from '@/lib/config';
-import fs from 'fs';
+import { readFile } from 'fs/promises';
 import path from 'path';
 
 export const runtime = 'nodejs';
 
-let fontRegularBuffer: ArrayBuffer | null = null;
-let fontBoldBuffer: ArrayBuffer | null = null;
+interface FontBuffers {
+  fontRegularBuffer: ArrayBuffer | null;
+  fontBoldBuffer: ArrayBuffer | null;
+}
 
-function getFontBuffers() {
-  if (!fontRegularBuffer || !fontBoldBuffer) {
-    try {
-      const regPath = path.join(process.cwd(), 'assets', 'fonts', 'LiberationSans-Regular.ttf');
-      if (fs.existsSync(regPath)) {
-        const regFile = fs.readFileSync(regPath);
-        fontRegularBuffer = regFile.buffer.slice(regFile.byteOffset, regFile.byteOffset + regFile.byteLength);
+let fontBuffersPromise: Promise<FontBuffers> | null = null;
+
+function getFontBuffers(): Promise<FontBuffers> {
+  if (!fontBuffersPromise) {
+    fontBuffersPromise = (async () => {
+      let fontRegularBuffer: ArrayBuffer | null = null;
+      let fontBoldBuffer: ArrayBuffer | null = null;
+
+      try {
+        const regPath = path.join(process.cwd(), 'assets', 'fonts', 'LiberationSans-Regular.ttf');
+        const boldPath = path.join(process.cwd(), 'assets', 'fonts', 'LiberationSans-Bold.ttf');
+
+        const [regResult, boldResult] = await Promise.allSettled([
+          readFile(regPath),
+          readFile(boldPath),
+        ]);
+
+        if (regResult.status === 'fulfilled') {
+          const regFile = regResult.value;
+          fontRegularBuffer = regFile.buffer.slice(regFile.byteOffset, regFile.byteOffset + regFile.byteLength);
+        }
+
+        if (boldResult.status === 'fulfilled') {
+          const boldFile = boldResult.value;
+          fontBoldBuffer = boldFile.buffer.slice(boldFile.byteOffset, boldFile.byteOffset + boldFile.byteLength);
+        }
+      } catch {
+        // Fallback if fonts cannot be read
       }
 
-      const boldPath = path.join(process.cwd(), 'assets', 'fonts', 'LiberationSans-Bold.ttf');
-      if (fs.existsSync(boldPath)) {
-        const boldFile = fs.readFileSync(boldPath);
-        fontBoldBuffer = boldFile.buffer.slice(boldFile.byteOffset, boldFile.byteOffset + boldFile.byteLength);
-      }
-    } catch {
-      // Fallback if fonts cannot be read
-    }
+      return { fontRegularBuffer, fontBoldBuffer };
+    })();
   }
-  return { fontRegularBuffer, fontBoldBuffer };
+  return fontBuffersPromise;
 }
 
 export async function GET(request: Request) {
@@ -72,7 +89,7 @@ export async function GET(request: Request) {
   const venueParts = [config?.venueName, config?.venueCity, config?.venueState].filter(Boolean);
   const venueStr = venueParts.join(' • ');
 
-  const { fontRegularBuffer, fontBoldBuffer } = getFontBuffers();
+  const { fontRegularBuffer, fontBoldBuffer } = await getFontBuffers();
   const fonts: any[] = [];
 
   if (fontRegularBuffer) {

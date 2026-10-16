@@ -12,12 +12,13 @@ import { ApiError } from '@/utils/ApiError';
 export async function sanitizeImage(file: File): Promise<File> {
   const fileType = file.type;
 
-  // Only process standard JPEG and PNG files.
+  // Only process standard JPEG, PNG, and WebP files.
   // Skip unsupported formats like ICO.
   if (
     fileType !== 'image/jpeg' &&
     fileType !== 'image/jpg' &&
-    fileType !== 'image/png'
+    fileType !== 'image/png' &&
+    fileType !== 'image/webp'
   ) {
     logger.debug(`Skipping sanitization for non-supported format: ${fileType}`);
     return file;

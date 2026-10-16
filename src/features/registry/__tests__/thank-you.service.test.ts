@@ -14,6 +14,7 @@ describe('ThankYouService', () => {
       },
       snapshotVersion: {
         create: jest.fn().mockResolvedValue({ id: 'snapshot-1' }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
         findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
@@ -205,7 +206,21 @@ describe('ThankYouService', () => {
         where: { id: { in: ['c1', 'c2'] } },
         data: expect.objectContaining({ thankYouStatus: 'Sent' }),
       });
-      expect(mockPrisma.snapshotVersion.create).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.snapshotVersion.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            entityType: 'Contributor',
+            entityId: 'c1',
+            author: 'Admin',
+          }),
+          expect.objectContaining({
+            entityType: 'Contributor',
+            entityId: 'c2',
+            author: 'Admin',
+          }),
+        ]),
+      });
+      expect(mockPrisma.snapshotVersion.createMany).toHaveBeenCalledTimes(1);
     });
   });
 

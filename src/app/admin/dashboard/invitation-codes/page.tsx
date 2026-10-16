@@ -90,6 +90,8 @@ export default function InvitationCodesDashboardPage() {
     guestName: '',
     code: '',
     email: '',
+    plusOneFirstName: '',
+    plusOneLastName: '',
     addressLine1: '',
     addressLine2: '',
     city: '',
@@ -193,6 +195,8 @@ export default function InvitationCodesDashboardPage() {
       const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
       const matchesCode = item.code ? item.code.toLowerCase().includes(query) : false;
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
+      const matchesPlusOneFirstName = item.plusOneFirstName ? item.plusOneFirstName.toLowerCase().includes(query) : false;
+      const matchesPlusOneLastName = item.plusOneLastName ? item.plusOneLastName.toLowerCase().includes(query) : false;
       const matchesAddress = [item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country]
         .filter(Boolean)
         .join(' ')
@@ -200,7 +204,7 @@ export default function InvitationCodesDashboardPage() {
         .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
 
-      return matchesName || matchesCode || matchesEmail || matchesAddress || matchesDietary;
+      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName || matchesAddress || matchesDietary;
     });
   }, [codes, searchQuery, statusFilter, addressFilter, attendanceFilter, dietaryFilter]);
 
@@ -213,6 +217,8 @@ export default function InvitationCodesDashboardPage() {
       const payload: any = {
         guestName: newCode.guestName.trim(),
         code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
+        plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
+        plusOneLastName: newCode.plusOneLastName.trim() || undefined,
         used: false,
       };
       if (newCode.email.trim()) payload.email = newCode.email.trim();
@@ -228,6 +234,8 @@ export default function InvitationCodesDashboardPage() {
         guestName: '',
         code: '',
         email: '',
+        plusOneFirstName: '',
+        plusOneLastName: '',
         addressLine1: '',
         addressLine2: '',
         city: '',
@@ -235,6 +243,7 @@ export default function InvitationCodesDashboardPage() {
         zipCode: '',
         country: '',
       });
+
       setIsCreating(false);
       addToast('Invitation code created successfully.', 'success');
     } catch (e: any) {
@@ -267,6 +276,8 @@ export default function InvitationCodesDashboardPage() {
       'Guest Name': item.guestName || '',
       'Invitation Code': item.code || '',
       Email: item.email || '',
+      'Plus-One First Name': item.plusOneFirstName || '',
+      'Plus-One Last Name': item.plusOneLastName || '',
       'Address Line 1': item.addressLine1 || '',
       'Address Line 2': item.addressLine2 || '',
       City: item.city || '',
@@ -307,6 +318,8 @@ export default function InvitationCodesDashboardPage() {
               guestName: '',
               code: '',
               email: '',
+              plusOneFirstName: '',
+              plusOneLastName: '',
               addressLine1: '',
               addressLine2: '',
               city: '',
@@ -355,6 +368,24 @@ export default function InvitationCodesDashboardPage() {
                 placeholder="guest@example.com"
                 value={newCode.email}
                 onChange={e => setNewCode({ ...newCode, email: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One First Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Jane"
+                value={newCode.plusOneFirstName}
+                onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One Last Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith"
+                value={newCode.plusOneLastName}
+                onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
               />
             </FormGroup>
             <FormGroup>
@@ -632,12 +663,17 @@ export default function InvitationCodesDashboardPage() {
       </div>
 
       <div className="grid gap-4 pb-10" ref={containerRef}>
-        {filteredCodes.map(item => {
+        {filteredCodes.map((item) => {
           const hasAddress = isAddressComplete(item);
           return (
             <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="space-y-1">
                 <div className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</div>
+                {(item.plusOneFirstName || item.plusOneLastName) && (
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                  </div>
+                )}
                 <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
                   Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
                 </div>

@@ -101,6 +101,9 @@ model Attraction {
 
 model RegistryItem {
   id                String        @id @default(uuid())
+  itemType          String        @default("PHYSICAL")
+  paymentHandleType String?
+  paymentHandle     String?
   name              String
   description       String
   category          String
@@ -108,7 +111,7 @@ model RegistryItem {
   imageId           String
   image             Media         @relation(fields: [imageId], references: [id])
   vendorUrl         String?
-  quantity          Int
+  quantity          Int           @default(1)
   isGroupGift       Boolean       @default(false)
   purchased         Boolean       @default(false)
   purchaserName     String?
@@ -150,6 +153,8 @@ model InvitationCode {
   country            String?
   dietaryNotes       String?
   plusOneAllocations Int?          @default(0)
+  plusOneFirstName   String?
+  plusOneLastName    String?
   extraFields        Json?
   used               Boolean       @default(false)
   usedAt             DateTime?

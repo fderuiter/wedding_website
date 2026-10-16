@@ -67,9 +67,12 @@ export default async function RootLayout({
     --radius-card: ${borderRadius};
   }`;
 
+  const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
+
   return (
-    <html lang="en" className={`${initialHtmlClass} ${geist.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${initialHtmlClass} ${geist.variable}`}>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <style dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
       </head>
       <body

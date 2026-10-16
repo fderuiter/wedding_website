@@ -10,12 +10,15 @@ export {
   BatchUpdateThankYouNotesSchema,
   InvitationCodeSchema,
   GuestAddressUpdateSchema,
+  ItemTypeEnum,
+  BatchImportInvitationCodesSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
   InvitationCodeDTO,
   BatchImportInvitationCodesDTO,
   GuestAddressUpdateDTO,
+  ItemType,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';

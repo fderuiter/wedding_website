@@ -56,11 +56,28 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (data.country && typeof data.country === 'string' && data.country.length > 100) {
       throw new Error('Validation Error: Country must be under 100 characters.');
     }
+    if (data.plusOneFirstName !== undefined && data.plusOneFirstName !== null) {
+      if (typeof data.plusOneFirstName !== 'string' || data.plusOneFirstName.length > 100) {
+        throw new Error('Validation Error: Plus-one first name must be under 100 characters.');
+      }
+    }
+    if (data.plusOneLastName !== undefined && data.plusOneLastName !== null) {
+      if (typeof data.plusOneLastName !== 'string' || data.plusOneLastName.length > 100) {
+        throw new Error('Validation Error: Plus-one last name must be under 100 characters.');
+      }
+    }
   }
 
   protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
     const finalData = { ...data };
     const activeClient = client || this.repo.client;
+
+    if (finalData.plusOneFirstName !== undefined) {
+      finalData.plusOneFirstName = typeof finalData.plusOneFirstName === 'string' && finalData.plusOneFirstName.trim() ? finalData.plusOneFirstName.trim() : null;
+    }
+    if (finalData.plusOneLastName !== undefined) {
+      finalData.plusOneLastName = typeof finalData.plusOneLastName === 'string' && finalData.plusOneLastName.trim() ? finalData.plusOneLastName.trim() : null;
+    }
 
     if (!finalData.code || typeof finalData.code !== 'string' || finalData.code.trim() === '') {
       let uniqueCode = '';
@@ -106,6 +123,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       country?: string | null;
       dietaryNotes?: string | null;
       plusOneAllocations?: number;
+      plusOneFirstName?: string | null;
+      plusOneLastName?: string | null;
       extraFields?: Record<string, any> | null;
     }[],
     collisionStrategy: 'skip' | 'update' | 'reject' = 'skip',
@@ -133,22 +152,32 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           }
         }
         if (item.addressLine1 && typeof item.addressLine1 === 'string' && item.addressLine1.length > 150) {
-          throw new Error(`Validation Error: Row ${i + 1} Address Line 1 must be under 150 characters.`);
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Address Line 1 must be under 150 characters.');
         }
         if (item.addressLine2 && typeof item.addressLine2 === 'string' && item.addressLine2.length > 150) {
-          throw new Error(`Validation Error: Row ${i + 1} Address Line 2 must be under 150 characters.`);
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Address Line 2 must be under 150 characters.');
         }
         if (item.city && typeof item.city === 'string' && item.city.length > 100) {
-          throw new Error(`Validation Error: Row ${i + 1} City must be under 100 characters.`);
+          throw new Error('Validation Error: Row ' + (i + 1) + ' City must be under 100 characters.');
         }
         if (item.state && typeof item.state === 'string' && item.state.length > 100) {
-          throw new Error(`Validation Error: Row ${i + 1} State must be under 100 characters.`);
+          throw new Error('Validation Error: Row ' + (i + 1) + ' State must be under 100 characters.');
         }
         if (item.zipCode && typeof item.zipCode === 'string' && item.zipCode.length > 20) {
-          throw new Error(`Validation Error: Row ${i + 1} Zip Code must be under 20 characters.`);
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Zip Code must be under 20 characters.');
         }
         if (item.country && typeof item.country === 'string' && item.country.length > 100) {
-          throw new Error(`Validation Error: Row ${i + 1} Country must be under 100 characters.`);
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Country must be under 100 characters.');
+        }
+        if (item.plusOneFirstName !== undefined && item.plusOneFirstName !== null) {
+          if (typeof item.plusOneFirstName !== 'string' || item.plusOneFirstName.length > 100) {
+            throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one first name.');
+          }
+        }
+        if (item.plusOneLastName !== undefined && item.plusOneLastName !== null) {
+          if (typeof item.plusOneLastName !== 'string' || item.plusOneLastName.length > 100) {
+            throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one last name.');
+          }
         }
       }
 
@@ -205,6 +234,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         const rowCountry = row.country && typeof row.country === 'string' && row.country.trim() ? row.country.trim() : null;
         const rowDietaryNotes = row.dietaryNotes && typeof row.dietaryNotes === 'string' && row.dietaryNotes.trim() ? row.dietaryNotes.trim() : null;
         const rowPlusOne = typeof row.plusOneAllocations === 'number' ? row.plusOneAllocations : 0;
+        const rowPlusOneFirstName = row.plusOneFirstName && typeof row.plusOneFirstName === 'string' && row.plusOneFirstName.trim() ? row.plusOneFirstName.trim() : null;
+        const rowPlusOneLastName = row.plusOneLastName && typeof row.plusOneLastName === 'string' && row.plusOneLastName.trim() ? row.plusOneLastName.trim() : null;
         const rowExtraFields = row.extraFields && typeof row.extraFields === 'object' && Object.keys(row.extraFields).length > 0 ? row.extraFields : null;
 
         if (existsInBatch) {
@@ -224,6 +255,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               if (row.country !== undefined) updateData.country = rowCountry;
               if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
               if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
+              if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
+              if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
               if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
               await tx.invitationCode.update({
@@ -254,6 +287,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             if (row.country !== undefined) updateData.country = rowCountry;
             if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
             if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
+            if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
+            if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
             if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
             await tx.invitationCode.update({
@@ -276,6 +311,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               country: rowCountry,
               dietaryNotes: rowDietaryNotes,
               plusOneAllocations: rowPlusOne,
+              plusOneFirstName: rowPlusOneFirstName,
+              plusOneLastName: rowPlusOneLastName,
               extraFields: rowExtraFields ?? undefined,
               used: false
             }
