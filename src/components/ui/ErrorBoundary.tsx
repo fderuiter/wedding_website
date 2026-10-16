@@ -39,7 +39,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   public reset = () => {
-    this.props.onReset?.();
+    if (this.props.onReset) {
+      try {
+        this.props.onReset();
+      } catch (err) {
+        console.error('ErrorBoundary onReset callback error:', err);
+      }
+    }
     this.setState({ hasError: false, error: null });
   };
 

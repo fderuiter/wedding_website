@@ -45,8 +45,8 @@ const wrapper = (client: QueryClient) => {
 };
 
 const mockItems: RegistryItem[] = [
-  { id: '1', name: 'Item 1', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
-  { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', imageUrl: '', description: '' },
+  { id: '1', name: 'Coffee Maker', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: 'Brews fresh espresso and filter coffee' },
+  { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', imageUrl: '', description: 'High-speed blender for smoothies' },
   { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: true, amountContributed: 150, contributors: [], imageUrl: '', description: '' },
 ];
 
@@ -232,6 +232,110 @@ describe('useRegistry', () => {
 
     expect(result.current.filteredItems.length).toBe(2);
     expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '3']);
+  });
+
+  it('should filter items by search query matching item title / name', async () => {
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setSearchQuery('coffee');
+    });
+
+    expect(result.current.filteredItems.length).toBe(1);
+    expect(result.current.filteredItems[0].id).toBe('1');
+  });
+
+  it('should filter items by search query matching item description', async () => {
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setSearchQuery('smoothies');
+    });
+
+    expect(result.current.filteredItems.length).toBe(1);
+    expect(result.current.filteredItems[0].id).toBe('2');
+  });
+
+  it('should trim search whitespace and match case-insensitively', async () => {
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setSearchQuery('  ESPRESSO  ');
+    });
+
+    expect(result.current.filteredItems.length).toBe(1);
+    expect(result.current.filteredItems[0].id).toBe('1');
+  });
+
+  it('should reset search query when handleClearFilters is called', async () => {
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setSearchQuery('smoothies');
+      result.current.setShowGroupGiftsOnly(true);
+    });
+
+    expect(result.current.searchQuery).toBe('smoothies');
+    expect(result.current.filteredItems.length).toBe(0);
+
+    act(() => {
+      result.current.handleClearFilters();
+    });
+
+    expect(result.current.searchQuery).toBe('');
+    expect(result.current.showGroupGiftsOnly).toBe(false);
+    expect(result.current.filteredItems.length).toBe(3);
+  });
+
+  describe('sorting options', () => {
+    it('should default to original item order', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.sortOption).toBe('default');
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '2', '3']);
+    });
+
+    it('should sort items by price low to high (price-asc)', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.setSortOption('price-asc');
+      });
+
+      expect(result.current.sortOption).toBe('price-asc');
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['1', '2', '3']);
+    });
+
+    it('should sort items by price high to low (price-desc)', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.setSortOption('price-desc');
+      });
+
+      expect(result.current.sortOption).toBe('price-desc');
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['3', '2', '1']);
+    });
+
+    it('should sort items by most wanted (most-wanted)', async () => {
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      act(() => {
+        result.current.setSortOption('most-wanted');
+      });
+
+      expect(result.current.sortOption).toBe('most-wanted');
+      expect(result.current.filteredItems[0].id).toBe('3');
+      expect(result.current.filteredItems[0].amountContributed).toBe(150);
+    });
   });
 
   describe('URL query param synchronization', () => {

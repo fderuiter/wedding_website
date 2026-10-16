@@ -49,12 +49,42 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--schedule-tag-bg']).toBeDefined();
       expect(tokens['--schedule-tag-text']).toBeDefined();
 
+      // Check toast feedback tokens
+      expect(tokens['--toast-success-bg']).toBeDefined();
+      expect(tokens['--toast-success-text']).toBeDefined();
+      expect(tokens['--toast-error-bg']).toBeDefined();
+      expect(tokens['--toast-error-text']).toBeDefined();
+      expect(tokens['--toast-info-bg']).toBeDefined();
+      expect(tokens['--toast-info-text']).toBeDefined();
+      expect(tokens['--toast-confirm-bg']).toBeDefined();
+      expect(tokens['--toast-confirm-text']).toBeDefined();
+      expect(tokens['--toast-radius']).toBeDefined();
+      expect(tokens['--toast-close-hover-bg']).toBeDefined();
+
+      // Check dark tokens schema
+      expect(tokens.darkTokens).toBeDefined();
+      expect(tokens.darkTokens?.['--dialog-bg']).toBeDefined();
+      expect(tokens.darkTokens?.['--dialog-border-color']).toBeDefined();
+      expect(tokens.darkTokens?.['--btn-outline-border']).toBeDefined();
+
       // Check standardized print tokens
       expect(tokens['--print-bg']).toBeDefined();
       expect(tokens['--print-text']).toBeDefined();
       expect(tokens['--print-border']).toBeDefined();
       expect(tokens['--print-header-border']).toBeDefined();
       expect(tokens['--print-badge-bg']).toBeDefined();
+
+      // Check 3D and canvas tokens
+      expect(tokens['--glow-color']).toBeDefined();
+      expect(tokens['--glow-gradient']).toBeDefined();
+      expect(tokens['--particle-color']).toBeDefined();
+      expect(tokens['--3d-metalness']).toBeDefined();
+      expect(tokens['--3d-roughness']).toBeDefined();
+      expect(tokens['--3d-env-map-intensity']).toBeDefined();
+      expect(tokens['--card-perspective']).toBeDefined();
+      expect(tokens['--card-max-rotation']).toBeDefined();
+      expect(tokens['--card-spring-stiffness']).toBeDefined();
+      expect(tokens['--card-spring-damping']).toBeDefined();
     }
   });
 
@@ -86,5 +116,27 @@ describe('Theme Preset Catalog & Token Mapping', () => {
 
     const nullFallbackTokens = getPresetTokens(null);
     expect(nullFallbackTokens).toEqual(THEME_PRESETS[DEFAULT_THEME_PRESET]);
+  });
+
+  it('getPresetTokens returns resolved dark tokens when mode is dark', () => {
+    for (const presetKey of THEME_PRESET_KEYS) {
+      const lightTokens = getPresetTokens(presetKey, 'light');
+      const darkTokens = getPresetTokens(presetKey, 'dark');
+
+      // Check dark dialog background override
+      expect(darkTokens['--dialog-bg']).not.toEqual(lightTokens['--dialog-bg']);
+
+      // Layout tokens MUST remain shared between light and dark modes
+      expect(darkTokens['--btn-radius']).toEqual(lightTokens['--btn-radius']);
+      expect(darkTokens['--btn-font-weight']).toEqual(lightTokens['--btn-font-weight']);
+      expect(darkTokens['--dialog-border-radius']).toEqual(lightTokens['--dialog-border-radius']);
+      expect(darkTokens['--schedule-card-radius']).toEqual(lightTokens['--schedule-card-radius']);
+    }
+  });
+
+  it('getPresetTokens falls back to default dark tokens for missing dark properties or invalid presets', () => {
+    const darkFallback = getPresetTokens('invalid-preset', 'dark');
+    expect(darkFallback['--dialog-bg']).toBe('#1f2937'); // classic preset dark override
+    expect(darkFallback['--btn-radius']).toBe('0.375rem'); // classic base layout token
   });
 });

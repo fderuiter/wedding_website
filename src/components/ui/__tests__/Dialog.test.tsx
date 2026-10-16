@@ -51,5 +51,19 @@ describe('Dialog', () => {
     const alertdialog = getByRole('alertdialog');
     expect(alertdialog).toHaveAttribute('aria-modal', 'true');
   });
+
+  test('uses preset CSS variable bindings for background and border', () => {
+    const ref = React.createRef<HTMLDivElement>();
+    render(
+      <Dialog ref={ref} isOpen={true} onClose={() => {}}>
+        Content
+      </Dialog>
+    );
+
+    expect(ref.current).toHaveStyle({
+      backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
+      borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
+    });
+  });
 });
 

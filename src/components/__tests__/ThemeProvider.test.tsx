@@ -15,6 +15,13 @@ function TestComponent() {
       <span data-testid="layout-grid-gap">{theme.layoutGridGap}</span>
       <span data-testid="layout-card-padding">{theme.layoutCardPadding}</span>
       <span data-testid="layout-border-radius">{theme.layoutBorderRadius}</span>
+      <span data-testid="metalness">{theme.metalness}</span>
+      <span data-testid="roughness">{theme.roughness}</span>
+      <span data-testid="env-map-intensity">{theme.envMapIntensity}</span>
+      <span data-testid="card-perspective">{theme.cardPerspective}</span>
+      <span data-testid="card-max-rotation">{theme.cardMaxRotation}</span>
+      <span data-testid="card-spring-stiffness">{theme.cardSpringStiffness}</span>
+      <span data-testid="card-spring-damping">{theme.cardSpringDamping}</span>
     </div>
   );
 }
@@ -388,6 +395,9 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem).not.toBeNull();
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
     expect(styleElem?.textContent).toContain('--dialog-border-radius: 0.5rem;');
+    expect(styleElem?.textContent).toContain('--toast-radius: 0.375rem;');
+    expect(styleElem?.textContent).toContain('--toast-success-bg: #15803d;');
+    expect(styleElem?.textContent).toContain('--toast-error-bg: #b91c1c;');
     expect(styleElem?.textContent).toContain('--input-bg: #ffffff;');
     expect(styleElem?.textContent).toContain('--input-border: #d1d5db;');
     expect(styleElem?.textContent).toContain('--input-radius: 0.375rem;');
@@ -461,5 +471,67 @@ describe('ThemeProvider Theme Presets', () => {
     expect(getByTestId('theme-preset')).toHaveTextContent('classic');
     const styleElem = container.querySelector('#dynamic-theme-style');
     expect(styleElem?.textContent).toContain('--btn-radius: 0.375rem;');
+  });
+
+  it('exposes 3D material reflectance and card perspective tokens in context', () => {
+    const { getByTestId } = render(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('modern');
+    expect(getByTestId('metalness')).toHaveTextContent('0.8');
+    expect(getByTestId('roughness')).toHaveTextContent('0.15');
+    expect(getByTestId('env-map-intensity')).toHaveTextContent('1.5');
+    expect(getByTestId('card-perspective')).toHaveTextContent('1200');
+    expect(getByTestId('card-max-rotation')).toHaveTextContent('12');
+    expect(getByTestId('card-spring-stiffness')).toHaveTextContent('400');
+    expect(getByTestId('card-spring-damping')).toHaveTextContent('25');
+  });
+
+  it('correctly parses zero values for numerical theme tokens without falling back', () => {
+    // Test that zero value tokens like roughness 0 do not trigger falsy fallback values
+    const { getByTestId } = render(
+      <ThemeProvider config={{ themePreset: 'editorial' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(getByTestId('theme-preset')).toHaveTextContent('editorial');
+    expect(getByTestId('metalness')).toHaveTextContent('1');
+    expect(getByTestId('roughness')).toHaveTextContent('0.1');
+    expect(getByTestId('env-map-intensity')).toHaveTextContent('1.8');
+  });
+
+  it('injects dark preset tokens into .dark block in dynamic style element', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themePreset: 'modern' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    expect(styleElem).not.toBeNull();
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('.dark {');
+    expect(cssText).toContain('--dialog-bg: #0f172a;');
+    expect(cssText).toContain('--dialog-border-color: #1e293b;');
+  });
+
+  it('updates .dark block tokens when preset changes', () => {
+    const { container } = render(
+      <ThemeProvider config={{ themePreset: 'romantic' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    expect(cssText).toContain('.dark {');
+    expect(cssText).toContain('--dialog-bg: #231118;');
+    expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
   });
 });
