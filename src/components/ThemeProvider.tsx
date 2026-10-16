@@ -115,7 +115,6 @@ function sanitizeTokenValue(val: string | undefined | null): string {
   if (!val || typeof val !== 'string') return '';
   return val.replace(/[;{}<>\r\n]|\/\*|\*\//g, '');
 }
-}
 
 function hexToRgb(hex: string): RGB {
   const cleanHex = hex.replace(/^#/, '');
