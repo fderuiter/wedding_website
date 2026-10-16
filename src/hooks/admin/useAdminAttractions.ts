@@ -3,11 +3,12 @@ import type { AttractionDTO } from '@/features/attractions';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 
-export function useAdminAttractions() {
+export function useAdminAttractions(options?: { enabled?: boolean }) {
   return useEntityOrchestration<AttractionDTO>({
     queryKey: ['admin-attractions'],
     endpoint: '/api/admin/attractions',
     entityName: 'attraction',
     apiClient,
+    enabled: options?.enabled,
   });
 }
