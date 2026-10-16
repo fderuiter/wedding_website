@@ -174,10 +174,13 @@ describe('HeartPage', () => {
     expect(points.dataset.positionsLength).toBe(String(200 * 3));
   });
 
-  it('renders the Heart3D component with the names', () => {
+  it('renders the Heart3D component with the names and includes 3D canvas text in accessible aria-label', () => {
     render(<HeartPage />);
     expect(screen.getAllByText('Abbi').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Fred').length).toBeGreaterThan(0);
+    const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole.');
+    expect(wholeHeartBtn).toBeInTheDocument();
+    expect(wholeHeartBtn).toHaveAttribute('type', 'button');
   });
 
   it('breaks when colliding with force and reforms after a timeout', () => {
@@ -371,7 +374,7 @@ describe('HeartPage', () => {
     it('retains focus and shifts to left shard button when whole heart is broken', async () => {
       render(<HeartPage />);
       
-      const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart. Status: Whole.');
+      const wholeHeartBtn = screen.getByLabelText(/Interactive 3D Heart/);
       expect(wholeHeartBtn).toBeInTheDocument();
       
       // Simulate user focusing the whole heart button
@@ -386,7 +389,7 @@ describe('HeartPage', () => {
       });
       
       // Left shard button should now be focused
-      const leftShardBtn = screen.getByLabelText('Broken heart left segment.');
+      const leftShardBtn = screen.getByLabelText(/Broken heart left segment/);
       expect(leftShardBtn).toBeInTheDocument();
       expect(document.activeElement).toBe(leftShardBtn);
     });
@@ -395,13 +398,13 @@ describe('HeartPage', () => {
       render(<HeartPage />);
       
       // First shatter it to get the shards
-      const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart. Status: Whole.');
+      const wholeHeartBtn = screen.getByLabelText(/Interactive 3D Heart/);
       act(() => {
         wholeHeartBtn.focus();
         fireEvent.click(wholeHeartBtn);
       });
       
-      const leftShardBtn = screen.getByLabelText('Broken heart left segment.');
+      const leftShardBtn = screen.getByLabelText(/Broken heart left segment/);
       expect(leftShardBtn).toBeInTheDocument();
       expect(document.activeElement).toBe(leftShardBtn);
       
@@ -411,7 +414,7 @@ describe('HeartPage', () => {
       });
       
       // Whole heart button should now be focused again
-      const reconstructedBtn = screen.getByLabelText('Interactive 3D Heart. Status: Whole.');
+      const reconstructedBtn = screen.getByLabelText(/Interactive 3D Heart/);
       expect(reconstructedBtn).toBeInTheDocument();
       expect(document.activeElement).toBe(reconstructedBtn);
     });
@@ -434,7 +437,7 @@ describe('HeartPage', () => {
       });
       
       // Left shard should be mounted, but activeElement must STILL be the reset button (not hijacked)
-      const leftShardBtn = screen.getByLabelText('Broken heart left segment.');
+      const leftShardBtn = screen.getByLabelText(/Broken heart left segment/);
       expect(leftShardBtn).toBeInTheDocument();
       expect(document.activeElement).toBe(resetButton);
     });
