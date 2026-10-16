@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useCallback, ElementType, ComponentPropsWithoutRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
+import { useTheme } from '../ThemeProvider';
 import { cn } from '@/utils/cn';
 
 const motionComponentCache = new Map<ElementType, any>();
@@ -62,16 +63,23 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
       [forwardedRef]
     );
 
+    const {
+      cardPerspective = 1000,
+      cardMaxRotation = 10,
+      cardSpringStiffness = 300,
+      cardSpringDamping = 20,
+    } = useTheme();
+
     const x = useMotionValue(0);
     const y = useMotionValue(0);
 
     // Smooth the motion values using springs
-    const mouseXSpring = useSpring(x, { stiffness: 300, damping: 20 });
-    const mouseYSpring = useSpring(y, { stiffness: 300, damping: 20 });
+    const mouseXSpring = useSpring(x, { stiffness: cardSpringStiffness, damping: cardSpringDamping });
+    const mouseYSpring = useSpring(y, { stiffness: cardSpringStiffness, damping: cardSpringDamping });
 
     // Transform mouse position to rotation
-    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['10deg', '-10deg']);
-    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-10deg', '10deg']);
+    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], [`${cardMaxRotation}deg`, `-${cardMaxRotation}deg`]);
+    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], [`-${cardMaxRotation}deg`, `${cardMaxRotation}deg`]);
 
     const Component = as || 'div';
     const isInteractive = Component === 'button' || Component === 'a';
@@ -147,7 +155,7 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
         onBlur={handleBlur}
         style={{
           ...(reduceMotion ? {} : {
-            transformPerspective: 1000,
+            transformPerspective: cardPerspective,
             rotateX,
             rotateY,
             transformStyle: 'preserve-3d',

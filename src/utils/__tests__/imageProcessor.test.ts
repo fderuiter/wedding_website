@@ -93,6 +93,29 @@ describe('imageProcessor - sanitizeImage', () => {
     expect(sanitizedMeta.exif).toBeUndefined();
   });
 
+  it('should sanitize WebP images', async () => {
+    const originalBuffer = await sharp({
+      create: {
+        width: 60,
+        height: 60,
+        channels: 4,
+        background: { r: 0, g: 0, b: 255, alpha: 1 },
+      },
+    })
+      .webp()
+      .toBuffer();
+
+    const originalFile = createTestFile(new Uint8Array(originalBuffer), 'photo.webp', 'image/webp');
+
+    const sanitizedFile = await sanitizeImage(originalFile);
+    const sanitizedBuffer = Buffer.from(await getFileArrayBuffer(sanitizedFile));
+    const sanitizedMeta = await sharp(sanitizedBuffer).metadata();
+
+    expect(sanitizedMeta.width).toBe(60);
+    expect(sanitizedMeta.height).toBe(60);
+    expect(sanitizedMeta.format).toBe('webp');
+  });
+
   it('should ignore and bypass ICO files without modification', async () => {
     // Create a dummy buffer for ICO file
     const dummyIcoBytes = new Uint8Array([0, 0, 1, 0, 1, 0, 16, 16]);

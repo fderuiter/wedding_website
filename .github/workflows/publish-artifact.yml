@@ -33,6 +33,8 @@ permissions:
   contents: read
   packages: write
   security-events: write
+  id-token: write
+  attestations: write
 
 jobs:
   publish:
@@ -124,6 +126,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@c0744595e72338575084a4bf85ed76e1eb521ddf # v2.2.3
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Summary
         run: |

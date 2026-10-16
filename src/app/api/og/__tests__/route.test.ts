@@ -1,3 +1,4 @@
+import { ImageResponse } from 'next/og';
 import { GET } from '../route';
 
 jest.mock('next/og', () => {
@@ -32,6 +33,10 @@ jest.mock('@/lib/config', () => ({
 }));
 
 describe('/api/og route', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('renders an OpenGraph image with configured colors and couple names', async () => {
     const req = new Request('http://localhost:3000/api/og');
     const res = await GET(req);
@@ -42,6 +47,18 @@ describe('/api/og route', () => {
 
     const buffer = await res.arrayBuffer();
     expect(buffer.byteLength).toBeGreaterThan(0);
+
+    expect(ImageResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        width: 1200,
+        height: 630,
+        fonts: expect.arrayContaining([
+          expect.objectContaining({ name: 'LiberationSans', weight: 400 }),
+          expect.objectContaining({ name: 'LiberationSans', weight: 700 }),
+        ]),
+      })
+    );
   });
 
   it('supports query parameter overrides for custom previews', async () => {
@@ -54,5 +71,40 @@ describe('/api/og route', () => {
     const buffer = await res.arrayBuffer();
     expect(buffer.byteLength).toBeGreaterThan(0);
   });
+
+  it('passes loaded font buffers asynchronously to ImageResponse without error', async () => {
+    const req = new Request('http://localhost:3000/api/og');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const mockCalls = (ImageResponse as jest.Mock).mock.calls;
+    const lastCall = mockCalls[mockCalls.length - 1];
+    const options = lastCall[1];
+
+    expect(options.fonts).toBeDefined();
+    expect(options.fonts.length).toBe(2);
+    expect(options.fonts[0].name).toBe('LiberationSans');
+    expect(options.fonts[0].data.byteLength).toBeGreaterThan(0);
+  });
+
+  it('falls back gracefully when font files fail to load', async () => {
+    await jest.isolateModulesAsync(async () => {
+      jest.doMock('fs/promises', () => ({
+        readFile: jest.fn().mockRejectedValue(new Error('File not found')),
+      }));
+      const { GET: GETFallback } = await import('../route');
+
+      const req = new Request('http://localhost:3000/api/og');
+      const res = await GETFallback(req);
+
+      expect(res.status).toBe(200);
+      const mockCalls = (ImageResponse as jest.Mock).mock.calls;
+      const lastCall = mockCalls[mockCalls.length - 1];
+      const options = lastCall[1];
+
+      expect(options.fonts).toBeUndefined();
+    });
+  });
 });
+
 
