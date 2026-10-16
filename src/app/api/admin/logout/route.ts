@@ -1,19 +1,11 @@
 import { NextResponse } from 'next/server';
-import { env } from '@/env';
+import { setAdminAuthCookie } from '@/core/auth/auth.server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { AdminLogoutSchema } from '@/utils/validation';
-
-const ADMIN_COOKIE = 'admin_auth';
 
 export const POST = withApiMiddleware(async () => {
   AdminLogoutSchema.safeParse({});
   const response = NextResponse.json({ success: true });
-  response.cookies.set(ADMIN_COOKIE, '', {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
+  setAdminAuthCookie(response, '', 0);
   return response;
 });

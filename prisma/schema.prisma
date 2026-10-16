@@ -37,6 +37,10 @@ model AppConfig {
   colorPrimary     String   @default("#B91C1C")
   colorSecondary   String   @default("#B45309")
   themePreset      String   @default("classic")
+  layoutContainerMaxWidth String @default("64rem")
+  layoutGridGap           String @default("1.5rem")
+  layoutCardPadding       String @default("2rem")
+  layoutBorderRadius      String @default("1rem")
   features         Json     @default("[]")
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
@@ -127,6 +131,7 @@ model Contributor {
   email          String?
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
+  message        String?
   date           DateTime      @default(now())
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
@@ -145,8 +150,16 @@ model InvitationCode {
   code               String        @unique
   guestName          String
   email              String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  zipCode            String?
+  country            String?
   dietaryNotes       String?
   plusOneAllocations Int?          @default(0)
+  plusOneFirstName   String?
+  plusOneLastName    String?
   extraFields        Json?
   used               Boolean       @default(false)
   usedAt             DateTime?
@@ -191,4 +204,7 @@ model SnapshotVersion {
   data       Json // Full snapshot of the record at the time of save
   author     String   @default("Admin")
   createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([createdAt])
 }

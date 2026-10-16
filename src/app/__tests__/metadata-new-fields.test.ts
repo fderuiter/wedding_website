@@ -36,7 +36,7 @@ describe('generateMetadata - new SEO fields', () => {
 
   describe('faviconUrl from config', () => {
     it('uses faviconUrl from config for all icon fields', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 512, height: 512 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 512, height: 512 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         faviconUrl: '/custom/my-favicon.ico',
@@ -52,7 +52,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('falls back to /assets/favicon.png when faviconUrl is empty', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 32, height: 32 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 32, height: 32 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         faviconUrl: '',
@@ -70,7 +70,7 @@ describe('generateMetadata - new SEO fields', () => {
 
   describe('ogImageUrl handling', () => {
     it('prepends baseUrl when ogImageUrl is a relative path', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: '/images/my-og-image.jpg',
@@ -83,7 +83,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('uses ogImageUrl as-is when it is an absolute URL', async () => {
-      mockGetLocalImageDimensions.mockReturnValue(null);
+      mockGetLocalImageDimensions.mockResolvedValue(null);
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: 'https://cdn.example.com/og-image.jpg',
@@ -96,7 +96,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('uses actual image dimensions when file is readable', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 800, height: 400 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 800, height: 400 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: '/images/custom.jpg',
@@ -110,9 +110,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('falls back to 1200x630 when local image file cannot be read', async () => {
-      mockGetLocalImageDimensions.mockImplementation(() => {
-        return null;
-      });
+      mockGetLocalImageDimensions.mockResolvedValue(null);
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: '/images/nonexistent.jpg',
@@ -136,11 +134,11 @@ describe('generateMetadata - new SEO fields', () => {
 
       expect(ogImages[0].width).toBe(1200);
       expect(ogImages[0].height).toBe(630);
-      mockGetLocalImageDimensions.mockReturnValue(null);
+      mockGetLocalImageDimensions.mockResolvedValue(null);
     });
 
     it('falls back to default ogImageUrl when config ogImageUrl is empty', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1024, height: 768 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1024, height: 768 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: '',
@@ -154,7 +152,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('includes og image alt text with bride and groom names', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         brideName: 'Emma',
@@ -170,7 +168,7 @@ describe('generateMetadata - new SEO fields', () => {
 
   describe('seoKeywords interpolation', () => {
     it('interpolates template variables with config values', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         brideName: 'Alice',
@@ -189,7 +187,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('leaves unknown template variables as-is', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         seoKeywords: '{{brideName}} wedding, {{unknownVar}} keyword',
@@ -203,7 +201,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('returns empty keywords array when seoKeywords is empty string', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         seoKeywords: '',
@@ -215,7 +213,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('splits comma-separated keywords and trims whitespace', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         seoKeywords: '  wedding website , ceremony details ,  reception info  ',
@@ -227,7 +225,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('filters out empty keywords after splitting', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         seoKeywords: 'keyword one,,keyword two,  ,keyword three',
@@ -239,7 +237,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('handles empty seoKeywords when seoKeywords is not in config', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       const configWithoutKeywords = { ...baseConfig } as any;
       delete configWithoutKeywords.seoKeywords;
       mockGetAppConfig.mockResolvedValue({
@@ -257,7 +255,7 @@ describe('generateMetadata - new SEO fields', () => {
 
   describe('twitter card metadata', () => {
     it('uses absolute ogImageUrl in twitter images when ogImageUrl is relative', async () => {
-      mockGetLocalImageDimensions.mockReturnValue({ width: 1200, height: 630 });
+      mockGetLocalImageDimensions.mockResolvedValue({ width: 1200, height: 630 });
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: '/images/custom-og.jpg',
@@ -271,7 +269,7 @@ describe('generateMetadata - new SEO fields', () => {
     });
 
     it('uses ogImageUrl directly in twitter images when it is absolute', async () => {
-      mockGetLocalImageDimensions.mockReturnValue(null);
+      mockGetLocalImageDimensions.mockResolvedValue(null);
       mockGetAppConfig.mockResolvedValue({
         ...baseConfig,
         ogImageUrl: 'https://cdn.example.com/og.jpg',

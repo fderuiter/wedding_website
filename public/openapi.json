@@ -297,6 +297,120 @@
                             {}
                           ]
                         },
+                        "addressLine1": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 150
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "addressLine2": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 150
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "city": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "zipCode": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 20
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "country": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "dietaryNotes": {
                           "anyOf": [
                             {
@@ -319,6 +433,44 @@
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 9007199254740991
+                        },
+                        "plusOneFirstName": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "plusOneLastName": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "extraFields": {
                           "anyOf": [
@@ -1376,20 +1528,16 @@
                     ]
                   },
                   "layoutContainerMaxWidth": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutGridGap": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutCardPadding": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutBorderRadius": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1593,20 +1741,16 @@
                     ]
                   },
                   "layoutContainerMaxWidth": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutGridGap": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutCardPadding": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutBorderRadius": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -1821,20 +1965,16 @@
                     ]
                   },
                   "layoutContainerMaxWidth": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutGridGap": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutCardPadding": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "layoutBorderRadius": {
-                    "type": "string",
-                    "pattern": "^\\d+(\\.\\d+)?(px|rem|em|%|ch)$"
+                    "type": "string"
                   },
                   "showCountdown": {
                     "type": "boolean"
@@ -2177,6 +2317,157 @@
         }
       }
     },
+    "/api/guest/address": {
+      "get": {
+        "summary": "GET /api/guest/address",
+        "description": "Endpoint for /api/guest/address",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/guest/address",
+        "description": "Endpoint for /api/guest/address",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "addressLine1": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 150
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "addressLine2": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 150
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "city": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "zipCode": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 20
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "country": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/guest/login": {
       "post": {
         "summary": "POST /api/guest/login",
@@ -2445,6 +2736,17 @@
                   },
                   "code": {
                     "type": "string"
+                  },
+                  "message": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [

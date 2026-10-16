@@ -14,9 +14,25 @@ export default function SeatingChartAdminPage() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<SeatingTableDTO | null>(null);
+  const [assignSeatTarget, setAssignSeatTarget] = useState<{ tableId: string; seatNumber: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Helper to sync tables' nested invitationCodes with allGuests state
+  const syncTablesWithGuests = (
+    tablesList: SeatingTableDTO[],
+    guestsList: InvitationCodeDTO[]
+  ): SeatingTableDTO[] => {
+    return tablesList.map((t) => {
+      const assigned = guestsList.filter((g) => g.tableId === t.id);
+      assigned.sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+      return {
+        ...t,
+        invitationCodes: assigned,
+      };
+    });
+  };
 
   // Fetch tables & invitation codes
   const fetchData = useCallback(async () => {
@@ -35,8 +51,11 @@ export default function SeatingChartAdminPage() {
       const tablesData = await tablesRes.json();
       const guestsData = await guestsRes.json();
 
-      setTables(Array.isArray(tablesData) ? tablesData : []);
-      setAllGuests(Array.isArray(guestsData) ? guestsData : []);
+      const rawTables = Array.isArray(tablesData) ? tablesData : [];
+      const rawGuests = Array.isArray(guestsData) ? guestsData : [];
+
+      setAllGuests(rawGuests);
+      setTables(syncTablesWithGuests(rawTables, rawGuests));
     } catch (err: any) {
       setErrorMsg(err.message || 'An error occurred while loading data.');
     } finally {
@@ -88,6 +107,13 @@ export default function SeatingChartAdminPage() {
           body: JSON.stringify(tableData),
         });
         if (!res.ok) throw new Error('Failed to update table');
+        const updatedTable: SeatingTableDTO = await res.json();
+        setTables((prev) => {
+          const nextTables = prev.map((t) =>
+            t.id === updatedTable.id ? { ...t, ...updatedTable } : t
+          );
+          return syncTablesWithGuests(nextTables, allGuests);
+        });
       } else {
         // Create new table with default offset coordinates
         const defaultX = (tables.length % 4) * 180 + 40;
@@ -107,27 +133,45 @@ export default function SeatingChartAdminPage() {
           }),
         });
         if (!res.ok) throw new Error('Failed to create table');
+        const createdTable: SeatingTableDTO = await res.json();
+        setTables((prev) =>
+          syncTablesWithGuests([...prev, { ...createdTable, invitationCodes: [] }], allGuests)
+        );
       }
-      await fetchData();
     } catch (err: any) {
       alert(err.message || 'Error saving table');
     }
   };
 
   const handleDeleteTable = async (tableId: string) => {
+    const previousTables = tables;
+    const previousGuests = allGuests;
+
+    // Optimistically remove table and unassign affected guests in local memory
+    const nextGuests = allGuests.map((g) =>
+      g.tableId === tableId ? { ...g, tableId: null, seatNumber: null } : g
+    );
+    const nextTables = tables.filter((t) => t.id !== tableId);
+
+    setAllGuests(nextGuests);
+    setTables(syncTablesWithGuests(nextTables, nextGuests));
+    setSelectedTableId(null);
+
     try {
       const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete table');
-      setSelectedTableId(null);
-      await fetchData();
     } catch (err: any) {
+      setAllGuests(previousGuests);
+      setTables(previousTables);
       alert(err.message || 'Error deleting table');
     }
   };
 
   const handleUpdateTablePosition = async (tableId: string, x: number, y: number) => {
+    const previousTables = tables;
+
     // Optimistic update local state
     setTables((prev) =>
       prev.map((t) => (t.id === tableId ? { ...t, x, y } : t))
@@ -135,57 +179,81 @@ export default function SeatingChartAdminPage() {
 
     // Persist position update
     try {
-      await fetch(`/api/admin/seating-tables/${tableId}`, {
+      const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ x, y }),
       });
+      if (!res.ok) throw new Error('Failed to update table position');
     } catch (e) {
       // Revert if error
-      fetchData();
+      setTables(previousTables);
     }
   };
 
   // Seat assignment handlers
   const handleAssignGuestToTable = async (
     guestId: string,
-    tableId: string,
-    seatNumber?: number
+    tableId: string | null,
+    seatNumber?: number | null
   ) => {
+    const previousGuests = allGuests;
+    const previousTables = tables;
+
+    const targetTableId = tableId || null;
+    const targetSeatNumber = targetTableId ? (seatNumber ?? null) : null;
+
+    // Optimistically update local guest state, accounting for seat swap side-effects
+    const optimisticGuests = allGuests.map((g) => {
+      if (g.id === guestId) {
+        return { ...g, tableId: targetTableId, seatNumber: targetSeatNumber };
+      }
+      if (
+        targetTableId &&
+        targetSeatNumber &&
+        g.tableId === targetTableId &&
+        g.seatNumber === targetSeatNumber
+      ) {
+        return { ...g, seatNumber: null };
+      }
+      return g;
+    });
+
+    setAllGuests(optimisticGuests);
+    setTables(syncTablesWithGuests(tables, optimisticGuests));
+
     try {
       const res = await fetch('/api/admin/seating/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitationCodeId: guestId,
-          tableId,
-          seatNumber,
+          tableId: targetTableId,
+          seatNumber: targetSeatNumber,
         }),
       });
 
       if (!res.ok) throw new Error('Failed to assign guest seat');
-      await fetchData();
+
+      const returnedGuest: InvitationCodeDTO = await res.json();
+      if (returnedGuest && returnedGuest.id) {
+        setAllGuests((currentGuests) => {
+          const mergedGuests = currentGuests.map((g) =>
+            g.id === returnedGuest.id ? { ...g, ...returnedGuest } : g
+          );
+          setTables((currentTables) => syncTablesWithGuests(currentTables, mergedGuests));
+          return mergedGuests;
+        });
+      }
     } catch (err: any) {
+      setAllGuests(previousGuests);
+      setTables(previousTables);
       alert(err.message || 'Error assigning guest seat');
     }
   };
 
   const handleUnassignGuest = async (guestId: string) => {
-    try {
-      const res = await fetch('/api/admin/seating/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invitationCodeId: guestId,
-          tableId: null,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to unassign guest');
-      await fetchData();
-    } catch (err: any) {
-      alert(err.message || 'Error unassigning guest');
-    }
+    await handleAssignGuestToTable(guestId, null);
   };
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
@@ -331,6 +399,8 @@ export default function SeatingChartAdminPage() {
               onDropGuestOnTable={handleAssignGuestToTable}
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
+              onOpenSeatAssignModal={(tableId, seatNumber) => setAssignSeatTarget({ tableId, seatNumber })}
+              onAddTable={handleCreateTable}
             />
 
             {/* Selected Table Inspector Bar */}
@@ -394,6 +464,80 @@ export default function SeatingChartAdminPage() {
         onSave={handleSaveTable}
         onDelete={handleDeleteTable}
       />
+
+      {/* Target Seat Assignment Modal */}
+      {assignSeatTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 max-w-sm w-full shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              Assign Guest to {tables.find((t) => t.id === assignSeatTarget.tableId)?.name || 'Table'} (Seat {assignSeatTarget.seatNumber})
+            </h3>
+            {unassignedGuests.length === 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  All guests have already been assigned to tables.
+                </p>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAssignSeatTarget(null)}
+                    className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const guestId = formData.get('guestId') as string;
+                  if (guestId && assignSeatTarget) {
+                    handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
+                    setAssignSeatTarget(null);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Select Guest
+                  </label>
+                  <select
+                    id="modal-assign-guest"
+                    name="guestId"
+                    required
+                    defaultValue={unassignedGuests[0]?.id || ''}
+                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                  >
+                    {unassignedGuests.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.guestName} ({g.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAssignSeatTarget(null)}
+                    className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90"
+                  >
+                    Assign Guest
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

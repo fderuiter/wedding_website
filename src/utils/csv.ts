@@ -4,8 +4,16 @@ export interface ParsedCsvRow {
   guestName: string;
   code: string;
   email?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
   dietaryNotes?: string;
   plusOneAllocations?: number;
+  plusOneFirstName?: string;
+  plusOneLastName?: string;
   extraFields?: Record<string, string>;
   isValid: boolean;
   errors: string[];
@@ -17,8 +25,16 @@ export interface CsvParseResult {
   suggestedGuestNameCol: string;
   suggestedCodeCol: string;
   suggestedEmailCol: string;
+  suggestedAddressLine1Col: string;
+  suggestedAddressLine2Col: string;
+  suggestedCityCol: string;
+  suggestedStateCol: string;
+  suggestedZipCodeCol: string;
+  suggestedCountryCol: string;
   suggestedDietaryNotesCol: string;
   suggestedPlusOneCol: string;
+  suggestedPlusOneFirstNameCol?: string;
+  suggestedPlusOneLastNameCol?: string;
   rows: Record<string, string>[];
 }
 
@@ -26,8 +42,16 @@ export interface ColumnMappingOptions {
   guestNameCol: string;
   codeCol?: string;
   emailCol?: string;
+  addressLine1Col?: string;
+  addressLine2Col?: string;
+  cityCol?: string;
+  stateCol?: string;
+  zipCodeCol?: string;
+  countryCol?: string;
   dietaryNotesCol?: string;
   plusOneCol?: string;
+  plusOneFirstNameCol?: string;
+  plusOneLastNameCol?: string;
   extraCols?: string[];
 }
 
@@ -47,8 +71,16 @@ export function parseCsvContent(text: string): CsvParseResult {
       suggestedGuestNameCol: '',
       suggestedCodeCol: '',
       suggestedEmailCol: '',
+      suggestedAddressLine1Col: '',
+      suggestedAddressLine2Col: '',
+      suggestedCityCol: '',
+      suggestedStateCol: '',
+      suggestedZipCodeCol: '',
+      suggestedCountryCol: '',
       suggestedDietaryNotesCol: '',
       suggestedPlusOneCol: '',
+      suggestedPlusOneFirstNameCol: '',
+      suggestedPlusOneLastNameCol: '',
       rows: [],
     };
   }
@@ -69,8 +101,16 @@ export function parseCsvContent(text: string): CsvParseResult {
   let suggestedGuestNameCol = '';
   let suggestedCodeCol = '';
   let suggestedEmailCol = '';
+  let suggestedAddressLine1Col = '';
+  let suggestedAddressLine2Col = '';
+  let suggestedCityCol = '';
+  let suggestedStateCol = '';
+  let suggestedZipCodeCol = '';
+  let suggestedCountryCol = '';
   let suggestedDietaryNotesCol = '';
   let suggestedPlusOneCol = '';
+  let suggestedPlusOneFirstNameCol = '';
+  let suggestedPlusOneLastNameCol = '';
 
   for (const h of headers) {
     const lower = h.toLowerCase().trim();
@@ -104,6 +144,55 @@ export function parseCsvContent(text: string): CsvParseResult {
         suggestedEmailCol = h;
       }
     }
+    if (!suggestedAddressLine1Col) {
+      if (
+        lower.includes('address line 1') ||
+        lower.includes('address 1') ||
+        lower === 'address' ||
+        lower.includes('street address') ||
+        lower === 'street' ||
+        lower.includes('mailing address')
+      ) {
+        suggestedAddressLine1Col = h;
+      }
+    }
+    if (!suggestedAddressLine2Col) {
+      if (
+        lower.includes('address line 2') ||
+        lower.includes('address 2') ||
+        lower === 'suite' ||
+        lower === 'apt' ||
+        lower === 'apartment' ||
+        lower === 'unit'
+      ) {
+        suggestedAddressLine2Col = h;
+      }
+    }
+    if (!suggestedCityCol) {
+      if (lower === 'city' || lower === 'town' || lower.includes('city')) {
+        suggestedCityCol = h;
+      }
+    }
+    if (!suggestedStateCol) {
+      if (lower === 'state' || lower === 'province' || lower === 'region' || lower.includes('state')) {
+        suggestedStateCol = h;
+      }
+    }
+    if (!suggestedZipCodeCol) {
+      if (
+        lower.includes('zip') ||
+        lower.includes('postal') ||
+        lower === 'postcode' ||
+        lower === 'zipcode'
+      ) {
+        suggestedZipCodeCol = h;
+      }
+    }
+    if (!suggestedCountryCol) {
+      if (lower === 'country' || lower === 'nation' || lower.includes('country')) {
+        suggestedCountryCol = h;
+      }
+    }
     if (!suggestedDietaryNotesCol) {
       if (
         lower.includes('diet') ||
@@ -116,15 +205,44 @@ export function parseCsvContent(text: string): CsvParseResult {
         suggestedDietaryNotesCol = h;
       }
     }
+    if (!suggestedPlusOneFirstNameCol) {
+      if (
+        lower.includes('plus-one first name') ||
+        lower.includes('plus one first name') ||
+        lower.includes('plusone first name') ||
+        lower.includes('plus-one first') ||
+        lower.includes('plus one first') ||
+        lower.includes('companion first name') ||
+        lower.includes('guest 2 first name')
+      ) {
+        suggestedPlusOneFirstNameCol = h;
+      }
+    }
+    if (!suggestedPlusOneLastNameCol) {
+      if (
+        lower.includes('plus-one last name') ||
+        lower.includes('plus one last name') ||
+        lower.includes('plusone last name') ||
+        lower.includes('plus-one last') ||
+        lower.includes('plus one last') ||
+        lower.includes('companion last name') ||
+        lower.includes('guest 2 last name')
+      ) {
+        suggestedPlusOneLastNameCol = h;
+      }
+    }
     if (!suggestedPlusOneCol) {
       if (
-        lower.includes('plus one') ||
-        lower.includes('plus-one') ||
-        lower.includes('plusone') ||
-        lower.includes('+1') ||
-        lower.includes('guest count') ||
-        lower.includes('max guests') ||
-        lower.includes('allocations')
+        (lower.includes('plus one') ||
+          lower.includes('plus-one') ||
+          lower.includes('plusone') ||
+          lower.includes('+1') ||
+          lower.includes('guest count') ||
+          lower.includes('max guests') ||
+          lower.includes('allocations')) &&
+        !lower.includes('first') &&
+        !lower.includes('last') &&
+        !lower.includes('name')
       ) {
         suggestedPlusOneCol = h;
       }
@@ -159,13 +277,40 @@ export function parseCsvContent(text: string): CsvParseResult {
     suggestedGuestNameCol,
     suggestedCodeCol,
     suggestedEmailCol,
+    suggestedAddressLine1Col,
+    suggestedAddressLine2Col,
+    suggestedCityCol,
+    suggestedStateCol,
+    suggestedZipCodeCol,
+    suggestedCountryCol,
     suggestedDietaryNotesCol,
     suggestedPlusOneCol,
+    suggestedPlusOneFirstNameCol,
+    suggestedPlusOneLastNameCol,
     rows,
   };
 }
 
-export function parseCsvLines(text: string): string[][] {
+export function parseInvitationCodesCsv(
+  text: string,
+  columnMapping?: ColumnMappingOptions,
+  existingDbCodes: Set<string> = new Set()
+): { parseResult: CsvParseResult; rows: ParsedCsvRow[] } {
+  const parseResult = parseCsvContent(text);
+  const mapping: ColumnMappingOptions = columnMapping || {
+    guestNameCol: parseResult.suggestedGuestNameCol,
+    codeCol: parseResult.suggestedCodeCol,
+    emailCol: parseResult.suggestedEmailCol,
+    dietaryNotesCol: parseResult.suggestedDietaryNotesCol,
+    plusOneCol: parseResult.suggestedPlusOneCol,
+    plusOneFirstNameCol: parseResult.suggestedPlusOneFirstNameCol,
+    plusOneLastNameCol: parseResult.suggestedPlusOneLastNameCol,
+  };
+  const rows = validateCsvRows(parseResult.rows, mapping, existingDbCodes);
+  return { parseResult, rows };
+}
+
+function parseCsvLines(text: string): string[][] {
   const result: string[][] = [];
   let currentRow: string[] = [];
   let currentField = '';
@@ -245,8 +390,16 @@ export function validateCsvRows(
     guestNameCol,
     codeCol = '',
     emailCol = '',
+    addressLine1Col = '',
+    addressLine2Col = '',
+    cityCol = '',
+    stateCol = '',
+    zipCodeCol = '',
+    countryCol = '',
     dietaryNotesCol = '',
     plusOneCol = '',
+    plusOneFirstNameCol = '',
+    plusOneLastNameCol = '',
     extraCols,
   } = mapping;
 
@@ -264,8 +417,16 @@ export function validateCsvRows(
     const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
     const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
     const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
+    const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();
+    const addressLine2 = addressLine2Col ? (r[addressLine2Col] || '').trim() : (r['addressLine2'] || r['Address Line 2'] || '').trim();
+    const city = cityCol ? (r[cityCol] || '').trim() : (r['city'] || r['City'] || '').trim();
+    const state = stateCol ? (r[stateCol] || '').trim() : (r['state'] || r['State'] || '').trim();
+    const zipCode = zipCodeCol ? (r[zipCodeCol] || '').trim() : (r['zipCode'] || r['Zip Code'] || r['Zip'] || '').trim();
+    const country = countryCol ? (r[countryCol] || '').trim() : (r['country'] || r['Country'] || '').trim();
     const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
     const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
+    const plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
+    const plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
 
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -291,6 +452,25 @@ export function validateCsvRows(
       }
     }
 
+    if (addressLine1 && addressLine1.length > 150) {
+      errors.push('Address Line 1 must be under 150 characters.');
+    }
+    if (addressLine2 && addressLine2.length > 150) {
+      errors.push('Address Line 2 must be under 150 characters.');
+    }
+    if (city && city.length > 100) {
+      errors.push('City must be under 100 characters.');
+    }
+    if (state && state.length > 100) {
+      errors.push('State must be under 100 characters.');
+    }
+    if (zipCode && zipCode.length > 20) {
+      errors.push('Zip Code must be under 20 characters.');
+    }
+    if (country && country.length > 100) {
+      errors.push('Country must be under 100 characters.');
+    }
+
     let plusOneAllocations: number | undefined = undefined;
     if (rawPlusOne !== '') {
       if (!/^\d+$/.test(rawPlusOne)) {
@@ -300,9 +480,31 @@ export function validateCsvRows(
       }
     }
 
+    if (plusOneFirstName && plusOneFirstName.length > 100) {
+      errors.push('Plus-one first name must be under 100 characters.');
+    }
+
+    if (plusOneLastName && plusOneLastName.length > 100) {
+      errors.push('Plus-one last name must be under 100 characters.');
+    }
+
     // Collect extra fields
     const extraFields: Record<string, string> = {};
-    const mappedCols = new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
+    const mappedCols = new Set([
+      guestNameCol,
+      codeCol,
+      emailCol,
+      addressLine1Col,
+      addressLine2Col,
+      cityCol,
+      stateCol,
+      zipCodeCol,
+      countryCol,
+      dietaryNotesCol,
+      plusOneCol,
+      plusOneFirstNameCol,
+      plusOneLastNameCol,
+    ].filter(Boolean));
 
     if (extraCols && Array.isArray(extraCols)) {
       extraCols.forEach((col) => {
@@ -324,8 +526,16 @@ export function validateCsvRows(
       guestName,
       code,
       email: email || undefined,
+      addressLine1: addressLine1 || undefined,
+      addressLine2: addressLine2 || undefined,
+      city: city || undefined,
+      state: state || undefined,
+      zipCode: zipCode || undefined,
+      country: country || undefined,
       dietaryNotes: dietaryNotes || undefined,
       plusOneAllocations,
+      plusOneFirstName: plusOneFirstName || undefined,
+      plusOneLastName: plusOneLastName || undefined,
       extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
       isValid: errors.length === 0,
       errors,

@@ -12,10 +12,19 @@ import { formatDate } from '@/utils/intl';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
+import FaqAccordion from '@/components/faq/FaqAccordion';
 
 import { isFeatureEnabled } from '@/lib/modules';
+import { useTheme } from '@/components/ThemeProvider';
+import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
 
-const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.15 * i, duration: 0.8 } }) };
+function parseDurationSec(val?: string, fallback = 0.8): number {
+  if (!val) return fallback;
+  if (val.endsWith('ms')) return parseFloat(val) / 1000;
+  if (val.endsWith('s')) return parseFloat(val);
+  const parsed = parseFloat(val);
+  return isNaN(parsed) ? fallback : parsed;
+}
 
 /**
  * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.
@@ -30,6 +39,24 @@ const fadeUp = { hidden: { opacity: 0, y: 40 }, visible: (i: number) => ({ opaci
 export default function HomePageClient({ config: initialConfig, contentNodes: initialContentNodes = [] }: { config: PublicAppConfig, contentNodes?: ContentNodeDTO[] }) {
   const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
+  const { themePreset } = useTheme();
+  const presetTokens = getPresetTokens(themePreset);
+
+  const entranceDuration = parseDurationSec(presetTokens['--motion-duration-slow'], 0.8);
+  const entranceDelayStep = parseDurationSec(presetTokens['--motion-duration-fast'], 0.15);
+
+  const fadeUp = {
+    hidden: { opacity: 0, y: 40 },
+    visible: (i: number) => ({
+      opacity: 1,
+      y: 0,
+      transition: {
+        delay: entranceDelayStep * i,
+        duration: entranceDuration,
+        ease: parseMotionEasing(presetTokens['--motion-ease-default']),
+      },
+    }),
+  };
 
   useEffect(() => {
     // Only listen for messages if inside an iframe
@@ -50,9 +77,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
 
   const formattedDate = formatDate(config.weddingDate);
 
-  const faqs = contentNodes
-    .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
-    .map(n => n.data);
+  const faqNodes = contentNodes.filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ');
 
   const logisticsNodes = contentNodes
     .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
@@ -108,7 +133,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
           <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="text-center text-4xl font-bold text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
             <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
-              <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
+              <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
                 <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
                 <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                   <li>{detailsNode.ceremonyTime}</li>
@@ -116,7 +141,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                   <li>{config.venueCity}, {config.venueState}</li>
                 </ul>
               </div>
-              <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-lg transition-transform hover:scale-[1.02]">
+              <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
                 <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
                 <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                   <li>{detailsNode.receptionTime}</li>
@@ -158,7 +183,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             {travelNodes.length > 0 ? (
               travelNodes.map((node: any, i: number) => (
                 <Interactive3DCard as="button" type="button" key={i} className="mt-4 focus-visible:ring-4 focus-visible:ring-primary outline-none" tabIndex={0} aria-label={node.title || 'Travel details'}>
-                  <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-primary dark:border-primary h-full">
+                  <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-[var(--shadow-lg)] border border-primary dark:border-primary h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
                     {node.title && <h3 className="font-semibold text-xl mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
                     {node.description && <p className="text-lg [transform:translateZ(10px)]">{node.description}</p>}
                   </div>
@@ -173,19 +198,8 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       case 'faq':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary">{feature.title || 'Questions You Probably Have'}</h2>
-            <div className="space-y-4 text-left">
-              {faqs.length > 0 ? (
-                faqs.map((faq, i) => (
-                  <div key={i}>
-                    <h3 className="font-semibold text-lg">{faq.question}</h3>
-                    <p>{faq.answer}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-gray-500 dark:text-gray-400">No FAQs available yet.</div>
-              )}
-            </div>
+            <h2 className="text-center text-4xl font-bold text-primary mb-8">{feature.title || 'Questions You Probably Have'}</h2>
+            <FaqAccordion faqs={faqNodes} />
           </motion.section>
         );
       case 'custom':

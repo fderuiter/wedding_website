@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
@@ -81,22 +81,53 @@ export default function InvitationCodesDashboardPage() {
     error,
     create,
     remove,
+    removeBatch,
+    updateBatch,
     fetchAll,
   } = useAdminInvitationCodes();
 
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [newCode, setNewCode] = useState({ guestName: '', code: '' });
+  const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
+  const [newCode, setNewCode] = useState({
+    guestName: '',
+    code: '',
+    email: '',
+    plusOneFirstName: '',
+    plusOneLastName: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: '',
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
+  const [addressFilter, setAddressFilter] = useState<'all' | 'complete' | 'missing'>('all');
   const [dietaryFilter, setDietaryFilter] = useState<string>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'attending' | 'declined' | 'pending'>('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  // Guardrail: Reset selection state when active search query or filters change
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter, addressFilter]);
+
+  const isAddressComplete = (item: any) => {
+    return Boolean(item.addressLine1?.trim() && item.city?.trim() && item.zipCode?.trim());
+  };
 
   const counts = useMemo(() => {
+    const complete = codes.filter((c) => isAddressComplete(c)).length;
     return {
       all: codes.length,
       redeemed: codes.filter((c) => c.used).length,
       unused: codes.filter((c) => !c.used).length,
+      addressComplete: complete,
+      addressMissing: codes.length - complete,
     };
   }, [codes]);
 
@@ -155,6 +186,10 @@ export default function InvitationCodesDashboardPage() {
       if (statusFilter === 'redeemed' && !item.used) return false;
       if (statusFilter === 'unused' && item.used) return false;
 
+      const hasAddress = isAddressComplete(item);
+      if (addressFilter === 'complete' && !hasAddress) return false;
+      if (addressFilter === 'missing' && hasAddress) return false;
+
       if (attendanceFilter !== 'all') {
         const attendanceStatus = getAttendanceStatus(item);
         if (attendanceFilter !== attendanceStatus) return false;
@@ -171,11 +206,113 @@ export default function InvitationCodesDashboardPage() {
       const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
       const matchesCode = item.code ? item.code.toLowerCase().includes(query) : false;
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
+      const matchesPlusOneFirstName = item.plusOneFirstName ? item.plusOneFirstName.toLowerCase().includes(query) : false;
+      const matchesPlusOneLastName = item.plusOneLastName ? item.plusOneLastName.toLowerCase().includes(query) : false;
+      const matchesAddress = [item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
 
-      return matchesName || matchesCode || matchesEmail || matchesDietary;
+      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName || matchesAddress || matchesDietary;
     });
-  }, [codes, searchQuery, statusFilter, attendanceFilter, dietaryFilter]);
+  }, [codes, searchQuery, statusFilter, addressFilter, attendanceFilter, dietaryFilter]);
+
+  const allFilteredSelected = useMemo(() => {
+    if (filteredCodes.length === 0) return false;
+    return filteredCodes.every((item) => selectedIds.includes(item.id));
+  }, [filteredCodes, selectedIds]);
+
+  const isIndeterminate = useMemo(() => {
+    const selectedFilteredCount = filteredCodes.filter((item) => selectedIds.includes(item.id)).length;
+    return selectedFilteredCount > 0 && !allFilteredSelected;
+  }, [filteredCodes, selectedIds, allFilteredSelected]);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = isIndeterminate;
+    }
+  }, [isIndeterminate]);
+
+  const handleToggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const filteredIdSet = new Set(filteredCodes.map((c) => c.id));
+      setSelectedIds((prev) => prev.filter((id) => !filteredIdSet.has(id)));
+    } else {
+      const filteredIds = filteredCodes.map((c) => c.id);
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBatchMarkRedeemed = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await updateBatch(selectedIds, { used: true });
+      addToast(`Marked ${selectedIds.length} invitation code(s) as redeemed.`, 'success');
+      setSelectedIds([]);
+    } catch (e: any) {
+      addToast(e.message || 'Failed to update invitation codes.', 'error');
+    }
+  };
+
+  const handleBatchMarkUnused = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await updateBatch(selectedIds, { used: false });
+      addToast(`Marked ${selectedIds.length} invitation code(s) as unused.`, 'success');
+      setSelectedIds([]);
+    } catch (e: any) {
+      addToast(e.message || 'Failed to update invitation codes.', 'error');
+    }
+  };
+
+  const handleExportSelectedCsv = () => {
+    const selectedCodes = codes.filter((item) => selectedIds.includes(item.id));
+    if (selectedCodes.length === 0) {
+      addToast('No invitation codes selected for export.', 'info');
+      return;
+    }
+
+    const exportRecords = selectedCodes.map((item) => ({
+      'Guest Name': item.guestName || '',
+      'Invitation Code': item.code || '',
+      Email: item.email || '',
+      'Dietary Notes': item.dietaryNotes || '',
+      'Plus Ones': item.plusOneAllocations ?? 0,
+      Status: item.used ? 'Redeemed' : 'Unused',
+    }));
+
+    const csvText = generateCsvContent(exportRecords);
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `selected-invitation-codes-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${selectedCodes.length} selected invitation code(s) to CSV.`, 'success');
+  };
+
+  const handleConfirmBatchDelete = async () => {
+    const count = selectedIds.length;
+    try {
+      await removeBatch(selectedIds);
+      addToast(`Successfully deleted ${count} invitation code(s).`, 'success');
+      setSelectedIds([]);
+      setIsBatchDeleteModalOpen(false);
+    } catch (e: any) {
+      addToast(e.message || 'Failed to delete selected invitation codes.', 'error');
+    }
+  };
 
   const handleSave = async () => {
     if (!newCode.guestName.trim()) {
@@ -183,12 +320,36 @@ export default function InvitationCodesDashboardPage() {
       return;
     }
     try {
-      await create({
+      const payload: any = {
         guestName: newCode.guestName.trim(),
         code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
+        plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
+        plusOneLastName: newCode.plusOneLastName.trim() || undefined,
         used: false,
+      };
+      if (newCode.email.trim()) payload.email = newCode.email.trim();
+      if (newCode.addressLine1.trim()) payload.addressLine1 = newCode.addressLine1.trim();
+      if (newCode.addressLine2.trim()) payload.addressLine2 = newCode.addressLine2.trim();
+      if (newCode.city.trim()) payload.city = newCode.city.trim();
+      if (newCode.state.trim()) payload.state = newCode.state.trim();
+      if (newCode.zipCode.trim()) payload.zipCode = newCode.zipCode.trim();
+      if (newCode.country.trim()) payload.country = newCode.country.trim();
+
+      await create(payload);
+      setNewCode({
+        guestName: '',
+        code: '',
+        email: '',
+        plusOneFirstName: '',
+        plusOneLastName: '',
+        addressLine1: '',
+        addressLine2: '',
+        city: '',
+        state: '',
+        zipCode: '',
+        country: '',
       });
-      setNewCode({ guestName: '', code: '' });
+
       setIsCreating(false);
       addToast('Invitation code created successfully.', 'success');
     } catch (e: any) {
@@ -197,7 +358,7 @@ export default function InvitationCodesDashboardPage() {
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
-    const card = e.currentTarget.closest('.bg-white');
+    const card = e.currentTarget.closest('.bg-white, .dark\\:bg-gray-800');
     const isConfirmed = await confirm('Are you sure you want to delete this invitation code?');
     if (!isConfirmed) return;
     if (card) {
@@ -221,6 +382,14 @@ export default function InvitationCodesDashboardPage() {
       'Guest Name': item.guestName || '',
       'Invitation Code': item.code || '',
       Email: item.email || '',
+      'Plus-One First Name': item.plusOneFirstName || '',
+      'Plus-One Last Name': item.plusOneLastName || '',
+      'Address Line 1': item.addressLine1 || '',
+      'Address Line 2': item.addressLine2 || '',
+      City: item.city || '',
+      State: item.state || '',
+      'ZIP Code': item.zipCode || '',
+      Country: item.country || '',
       'Dietary Notes': item.dietaryNotes || '',
       'Plus Ones': item.plusOneAllocations ?? 0,
       Status: item.used ? 'Redeemed' : 'Unused',
@@ -243,7 +412,7 @@ export default function InvitationCodesDashboardPage() {
   if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
   return (
-    <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
+    <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto relative pb-28">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-extrabold text-primary">Pre-Authorized Guest Invitation Codes</h1>
         <div className="flex gap-4">
@@ -251,7 +420,19 @@ export default function InvitationCodesDashboardPage() {
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
           <Button onClick={() => {
-            setNewCode({ guestName: '', code: '' });
+            setNewCode({
+              guestName: '',
+              code: '',
+              email: '',
+              plusOneFirstName: '',
+              plusOneLastName: '',
+              addressLine1: '',
+              addressLine2: '',
+              city: '',
+              state: '',
+              zipCode: '',
+              country: '',
+            });
             setIsCreating(true);
           }}>Generate New Code</Button>
         </div>
@@ -284,6 +465,87 @@ export default function InvitationCodesDashboardPage() {
                 placeholder="e.g. JOHN123"
                 value={newCode.code}
                 onChange={e => setNewCode({ ...newCode, code: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Email (Optional)</Label>
+              <Input
+                type="email"
+                placeholder="guest@example.com"
+                value={newCode.email}
+                onChange={e => setNewCode({ ...newCode, email: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One First Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Jane"
+                value={newCode.plusOneFirstName}
+                onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One Last Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith"
+                value={newCode.plusOneLastName}
+                onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Address Line 1 (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="123 Main St"
+                value={newCode.addressLine1}
+                onChange={e => setNewCode({ ...newCode, addressLine1: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Address Line 2 (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="Apt 4B"
+                value={newCode.addressLine2}
+                onChange={e => setNewCode({ ...newCode, addressLine2: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>City (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="San Francisco"
+                value={newCode.city}
+                onChange={e => setNewCode({ ...newCode, city: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>State / Province (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="CA"
+                value={newCode.state}
+                onChange={e => setNewCode({ ...newCode, state: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>ZIP / Postal Code (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="94102"
+                value={newCode.zipCode}
+                onChange={e => setNewCode({ ...newCode, zipCode: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Country (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="United States"
+                value={newCode.country}
+                onChange={e => setNewCode({ ...newCode, country: e.target.value })}
               />
             </FormGroup>
           </div>
@@ -343,7 +605,7 @@ export default function InvitationCodesDashboardPage() {
           <FormGroup className="relative flex-1 max-w-md space-y-0">
             <Input
               type="text"
-              placeholder="Search by name, code, email, or dietary notes..."
+              placeholder="Search by name, code, email, address, or dietary notes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               aria-label="Search invitation codes"
@@ -375,11 +637,17 @@ export default function InvitationCodesDashboardPage() {
           {/* Redemption Status Tab Group */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
-            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+            <div
+              role="tablist"
+              aria-label="Filter invitation codes by status"
+              className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={statusFilter === 'all'}
                 onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === 'all'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -389,8 +657,10 @@ export default function InvitationCodesDashboardPage() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={statusFilter === 'redeemed'}
                 onClick={() => setStatusFilter('redeemed')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === 'redeemed'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -400,14 +670,56 @@ export default function InvitationCodesDashboardPage() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={statusFilter === 'unused'}
                 onClick={() => setStatusFilter('unused')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === 'unused'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 Unused ({counts.unused})
+              </button>
+            </div>
+          </div>
+
+          {/* Address Completion Filter */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address:</span>
+            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setAddressFilter('all')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  addressFilter === 'all'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All Addresses
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddressFilter('complete')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  addressFilter === 'complete'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Address Complete ({counts.addressComplete})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddressFilter('missing')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  addressFilter === 'missing'
+                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Address Missing ({counts.addressMissing})
               </button>
             </div>
           </div>
@@ -420,7 +732,7 @@ export default function InvitationCodesDashboardPage() {
                 type="button"
                 onClick={() => setAttendanceFilter('all')}
                 aria-label={`All attendance (${attendanceCounts.all})`}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'all'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -431,7 +743,7 @@ export default function InvitationCodesDashboardPage() {
               <button
                 type="button"
                 onClick={() => setAttendanceFilter('attending')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'attending'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -442,7 +754,7 @@ export default function InvitationCodesDashboardPage() {
               <button
                 type="button"
                 onClick={() => setAttendanceFilter('declined')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'declined'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -453,7 +765,7 @@ export default function InvitationCodesDashboardPage() {
               <button
                 type="button"
                 onClick={() => setAttendanceFilter('pending')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   attendanceFilter === 'pending'
                     ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -466,54 +778,178 @@ export default function InvitationCodesDashboardPage() {
         </div>
       </div>
 
+      {filteredCodes.length > 0 && (
+        <div className="flex items-center gap-3 mb-4 bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            id="select-all-filtered"
+            checked={allFilteredSelected}
+            onChange={handleToggleSelectAll}
+            aria-label="Select all filtered invitation codes"
+            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+          />
+          <label htmlFor="select-all-filtered" className="text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer">
+            Select All Filtered ({filteredCodes.length})
+          </label>
+        </div>
+      )}
+
       <div className="grid gap-4 pb-10" ref={containerRef}>
-        {filteredCodes.map(item => (
-          <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
-            <div>
-              <div className="font-bold text-lg">{item.guestName}</div>
-              <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-                Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
-              </div>
-              <div className="text-xs mt-1 text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4">
-                <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
-                <span>
-                  RSVP:{' '}
-                  <span
-                    className={
-                      getAttendanceStatus(item) === 'attending'
-                        ? 'text-green-600 font-semibold'
-                        : getAttendanceStatus(item) === 'declined'
-                          ? 'text-red-600 font-semibold'
-                          : 'text-amber-600 font-semibold'
-                    }
-                  >
-                    {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
-                  </span>
-                </span>
-              </div>
-              {item.dietaryNotes && item.dietaryNotes.trim() && (
-                <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
-                  <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+        {filteredCodes.map((item) => {
+          const hasAddress = isAddressComplete(item);
+          return (
+            <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-4 space-y-1">
+                <input
+                  type="checkbox"
+                  aria-label={`Select invitation code for ${item.guestName}`}
+                  checked={selectedIds.includes(item.id)}
+                  onChange={() => handleToggleSelectRow(item.id)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
+                />
+                <div>
+                  <div className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</div>
+                  {(item.plusOneFirstName || item.plusOneLastName) && (
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                    </div>
+                  )}
+                  <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
+                    Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+                  </div>
+
+                  {/* Mailing Address Display */}
+                  <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
+                    <span className="font-bold">Mailing Address: </span>
+                    {hasAddress ? (
+                      <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
+                        {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                      </span>
+                    ) : item.addressLine1 ? (
+                      <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
+                        Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+                    )}
+                  </div>
+
+                  <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
+                    <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+                    <span>
+                      RSVP:{' '}
+                      <span
+                        className={
+                          getAttendanceStatus(item) === 'attending'
+                            ? 'text-green-600 font-semibold'
+                            : getAttendanceStatus(item) === 'declined'
+                              ? 'text-red-600 font-semibold'
+                              : 'text-amber-600 font-semibold'
+                        }
+                      >
+                        {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
+                      </span>
+                    </span>
+                  </div>
+                  {item.dietaryNotes && item.dietaryNotes.trim() && (
+                    <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
+                      <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              <div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={`Delete code for ${item.guestName}`}
+                  onClick={(e) => handleDelete(item.id, e)}
+                >
+                  Delete
+                </Button>
+              </div>
             </div>
-            <div>
-              <Button
-                variant="danger"
-                size="sm"
-                aria-label={`Delete code for ${item.guestName}`}
-                onClick={(e) => handleDelete(item.id, e)}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
         {codes.length > 0 && filteredCodes.length === 0 && (
           <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
         )}
       </div>
+
+      {selectedIds.length > 0 && (
+        <div
+          role="region"
+          aria-label="Batch actions toolbar"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-3xl bg-gray-900 text-white dark:bg-gray-800 dark:text-white p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 text-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold px-2.5 py-1 bg-primary text-white rounded-lg text-xs tracking-wide uppercase">
+              {selectedIds.length} Selected
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={handleBatchMarkRedeemed}>
+              Mark as Redeemed
+            </Button>
+            <Button size="sm" variant="secondary" onClick={handleBatchMarkUnused}>
+              Mark as Unused
+            </Button>
+            <Button size="sm" variant="secondary" onClick={handleExportSelectedCsv}>
+              Export Selected CSV
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => setIsBatchDeleteModalOpen(true)}>
+              Delete Selected
+            </Button>
+            <Button size="sm" variant="ghost" className="text-gray-300 hover:text-white" onClick={() => setSelectedIds([])}>
+              Deselect All
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isBatchDeleteModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="batch-delete-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h2 id="batch-delete-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
+              Confirm Batch Deletion
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Are you sure you want to delete <span className="font-bold text-red-600 dark:text-red-400">{selectedIds.length}</span> selected invitation code(s)? This action cannot be undone.
+            </p>
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                Selected Guests:
+              </p>
+              <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
+                {codes
+                  .filter((c) => selectedIds.includes(c.id))
+                  .map((c) => (
+                    <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                      <span className="font-medium">{c.guestName}</span>
+                      <code className="text-xs font-mono text-gray-500 dark:text-gray-400">{c.code}</code>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setIsBatchDeleteModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleConfirmBatchDelete}>
+                Delete {selectedIds.length} Code(s)
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
