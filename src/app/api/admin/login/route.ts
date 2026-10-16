@@ -1,12 +1,10 @@
 import { AdminLoginSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
-import { signAdminToken } from '@/core/auth/auth.server';
+import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-
-const ADMIN_COOKIE = 'admin_auth';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const body = await req.json();
@@ -35,12 +33,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const token = await signAdminToken({ isAdmin: true, iat, exp });
 
   const response = NextResponse.json({ success: true });
-  response.cookies.set(ADMIN_COOKIE, token, {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 8,
-  });
+  setAdminAuthCookie(response, token);
   return response;
 });

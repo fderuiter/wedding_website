@@ -3,7 +3,7 @@ import { registryService } from '../service';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { sanitizeRegistryItems } from '../lib/masking';
-import { translateActiveToLegacy, RegistryQuerySchema, type RegistryQueryParams } from '../schemas';
+import { RegistryQuerySchema, type RegistryQueryParams } from '../schemas';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { ApiError } from '@/utils/ApiError';
@@ -64,5 +64,5 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   }
 
   return NextResponse.json(result);
-}, { translateActiveToLegacy });
+});
 
