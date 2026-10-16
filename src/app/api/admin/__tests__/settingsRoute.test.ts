@@ -50,6 +50,7 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { revalidatePath } from 'next/cache';
+import { UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
@@ -249,6 +250,31 @@ describe('PUT /api/admin/settings', () => {
         data: expect.objectContaining({
           themePreset: 'modern',
           themeTokens: customTokens,
+        }),
+      })
+    );
+  });
+
+  it('persists themePreset and layout tokens to database', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const req = makeAuthReq({
+      ...validConfigData,
+      themePreset: 'modern',
+      layoutContainerMaxWidth: '72rem',
+      layoutGridGap: '2rem',
+      layoutCardPadding: '2.5rem',
+      layoutBorderRadius: '0.5rem',
+    });
+    await PUT(req);
+
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          themePreset: 'modern',
+          layoutContainerMaxWidth: '72rem',
+          layoutGridGap: '2rem',
+          layoutCardPadding: '2.5rem',
+          layoutBorderRadius: '0.5rem',
         }),
       })
     );
@@ -539,5 +565,114 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
     const json = await res.json();
     expect(json.error).toMatch(/already in use/);
     mockFindUnique.mockRestore();
+  });
+});
+
+describe('toAppConfigDbPayload mapper', () => {
+  it('correctly maps validated UpdateAppConfigSchema outputs into standard DB payload structure', () => {
+    const rawData = {
+      partner1Name: 'Alex',
+      partner2Name: 'Jordan',
+      brideName: 'Alex',
+      groomName: 'Jordan',
+      weddingDate: '2026-09-15T12:00:00.000Z',
+      baseUrl: 'https://wedding.example',
+      venueName: 'Grand Hall',
+      venueAddress: '123 Main St',
+      venueCity: 'Austin',
+      venueState: 'TX',
+      venueZip: '78701',
+      latitude: 30.2672,
+      longitude: -97.7431,
+      storyText: 'Our story...',
+      venueDescription: 'Beautiful venue',
+      travelAdvice: 'Fly to AUS',
+      heroTitle: 'Welcome',
+      heroSubtitle: 'Join us',
+      seoTitle: 'Alex & Jordan Wedding',
+      seoDescription: 'Wedding details',
+      faviconUrl: '/favicon.ico',
+      ogImageUrl: '/og.jpg',
+      seoKeywords: 'wedding, austin',
+      colorPrimary: '#123456',
+      colorSecondary: '#654321',
+      timezone: 'America/Chicago',
+      showCountdown: true,
+      showAddToCalendar: true,
+      subdomain: '',
+    };
+
+    const parsed = UpdateAppConfigSchema.parse(rawData);
+    const dbPayload = toAppConfigDbPayload(parsed);
+
+    expect(dbPayload).toEqual({
+      partner1Name: 'Alex',
+      partner2Name: 'Jordan',
+      brideName: 'Alex',
+      groomName: 'Jordan',
+      subdomain: null,
+      weddingDate: new Date('2026-09-15T12:00:00.000Z'),
+      baseUrl: 'https://wedding.example',
+      venueName: 'Grand Hall',
+      venueAddress: '123 Main St',
+      venueCity: 'Austin',
+      venueState: 'TX',
+      venueZip: '78701',
+      latitude: 30.2672,
+      longitude: -97.7431,
+      storyText: 'Our story...',
+      venueDescription: 'Beautiful venue',
+      travelAdvice: 'Fly to AUS',
+      heroTitle: 'Welcome',
+      heroSubtitle: 'Join us',
+      seoTitle: 'Alex & Jordan Wedding',
+      seoDescription: 'Wedding details',
+      faviconUrl: '/favicon.ico',
+      ogImageUrl: '/og.jpg',
+      seoKeywords: 'wedding, austin',
+      colorPrimary: '#123456',
+      colorSecondary: '#654321',
+      themePreset: 'classic',
+      themeTokens: {},
+      layoutContainerMaxWidth: '64rem',
+      layoutGridGap: '1.5rem',
+      layoutCardPadding: '2rem',
+      layoutBorderRadius: '1rem',
+      timezone: 'America/Chicago',
+      showCountdown: true,
+      showAddToCalendar: true,
+    });
+  });
+
+  it('preserves non-empty subdomain when provided', () => {
+    const rawData = {
+      brideName: 'Alex',
+      groomName: 'Jordan',
+      weddingDate: '2026-09-15T12:00:00.000Z',
+      baseUrl: 'https://wedding.example',
+      venueName: 'Grand Hall',
+      venueAddress: '123 Main St',
+      venueCity: 'Austin',
+      venueState: 'TX',
+      venueZip: '78701',
+      latitude: 0,
+      longitude: 0,
+      storyText: '',
+      venueDescription: '',
+      travelAdvice: '',
+      heroTitle: '',
+      heroSubtitle: '',
+      seoTitle: '',
+      seoDescription: '',
+      faviconUrl: '',
+      ogImageUrl: '',
+      seoKeywords: '',
+      subdomain: 'alexjordan',
+    };
+
+    const parsed = UpdateAppConfigSchema.parse(rawData);
+    const dbPayload = toAppConfigDbPayload(parsed);
+
+    expect(dbPayload.subdomain).toBe('alexjordan');
   });
 });

@@ -11,5 +11,7 @@ export const GET = withApiMiddleware(async () => {
     throw new ApiError(404, "Feature 'weather' is disabled");
   }
   const data = await getWeatherForecast();
-  return NextResponse.json(data);
+  const response = NextResponse.json(data);
+  response.headers.set('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
+  return response;
 });

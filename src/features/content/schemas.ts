@@ -4,7 +4,10 @@ import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
-export const layoutTokenSchema = z.string().regex(layoutTokenRegex, 'Invalid CSS length unit format.');
+export const layoutTokenSchema = z.string().refine(
+  (val) => val === '' || layoutTokenRegex.test(val),
+  { message: 'Invalid CSS length unit format.' }
+);
 
 export const cssTokenKeyRegex = /^--[a-zA-Z0-9_-]+$/;
 
@@ -97,8 +100,58 @@ export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) =
     partner2Name,
     brideName: data.brideName ?? partner1Name,
     groomName: data.groomName ?? partner2Name,
+    layoutContainerMaxWidth: !data.layoutContainerMaxWidth || data.layoutContainerMaxWidth === '' ? '64rem' : data.layoutContainerMaxWidth,
+    layoutGridGap: !data.layoutGridGap || data.layoutGridGap === '' ? '1.5rem' : data.layoutGridGap,
+    layoutCardPadding: !data.layoutCardPadding || data.layoutCardPadding === '' ? '2rem' : data.layoutCardPadding,
+    layoutBorderRadius: !data.layoutBorderRadius || data.layoutBorderRadius === '' ? '1rem' : data.layoutBorderRadius,
   };
 });
+
+/**
+ * Map validated configuration data into the standard database payload structure for Prisma AppConfig operations.
+ *
+ * @param data - The validated data output from UpdateAppConfigSchema.
+ * @returns Object formatted for Prisma appConfig create, update, and upsert operations.
+ */
+export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>) {
+  return {
+    partner1Name: data.partner1Name,
+    partner2Name: data.partner2Name,
+    brideName: data.brideName,
+    groomName: data.groomName,
+    subdomain: data.subdomain || null,
+    weddingDate: data.weddingDate,
+    baseUrl: data.baseUrl,
+    venueName: data.venueName,
+    venueAddress: data.venueAddress,
+    venueCity: data.venueCity,
+    venueState: data.venueState,
+    venueZip: data.venueZip,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    storyText: data.storyText,
+    venueDescription: data.venueDescription,
+    travelAdvice: data.travelAdvice,
+    heroTitle: data.heroTitle,
+    heroSubtitle: data.heroSubtitle,
+    seoTitle: data.seoTitle,
+    seoDescription: data.seoDescription,
+    faviconUrl: data.faviconUrl,
+    ogImageUrl: data.ogImageUrl,
+    seoKeywords: data.seoKeywords,
+    colorPrimary: data.colorPrimary,
+    colorSecondary: data.colorSecondary,
+    themePreset: data.themePreset,
+    themeTokens: data.themeTokens,
+    layoutContainerMaxWidth: data.layoutContainerMaxWidth,
+    layoutGridGap: data.layoutGridGap,
+    layoutCardPadding: data.layoutCardPadding,
+    layoutBorderRadius: data.layoutBorderRadius,
+    timezone: data.timezone,
+    showCountdown: data.showCountdown,
+    showAddToCalendar: data.showAddToCalendar,
+  };
+}
 
 const BaseContentNode = z.object({
   id: z.string(),
@@ -197,7 +250,20 @@ export const FAQNodeSchema = BaseContentNode.extend({
   data: z.object({
     question: z.string().optional(),
     answer: z.string().optional(),
-  }),
+    category: z.string().optional(),
+    categoryTags: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return val;
+    }),
+    keywords: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return val;
+    }),
+  }).passthrough(),
 });
 
 export const LogisticsNodeSchema = BaseContentNode.extend({

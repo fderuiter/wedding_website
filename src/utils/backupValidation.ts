@@ -4,11 +4,6 @@ import { WeddingPartyMemberSchema } from '@/features/wedding-party/schemas';
 import { AttractionSchema } from '@/features/attractions/schemas';
 import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry/schemas';
 
-// Helper for formatted Zod error output
-export function formatZodError(error: z.ZodError): string {
-  return error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-}
-
 export interface PathDiagnostic {
   path: string;
   message: string;
@@ -171,6 +166,9 @@ const BackupRegistryItemSchema = z.object({
   quantity: RegistryItemSchema.shape.quantity,
 
   // Optional/Nullable fields
+  itemType: RegistryItemSchema.shape.itemType.optional(),
+  paymentHandleType: RegistryItemSchema.shape.paymentHandleType.nullable().optional(),
+  paymentHandle: RegistryItemSchema.shape.paymentHandle.nullable().optional(),
   vendorUrl: RegistryItemSchema.shape.vendorUrl.nullable().optional(),
   isGroupGift: RegistryItemSchema.shape.isGroupGift.optional(),
   purchased: RegistryItemSchema.shape.purchased.optional(),

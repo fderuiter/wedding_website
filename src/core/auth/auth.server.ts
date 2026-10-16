@@ -1,8 +1,44 @@
 import { cookies } from 'next/headers';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
+import {
+  base64urlEncode,
+  base64urlDecode,
+  base64urlDecodeToBytes,
+  hmacSha256,
+  timingSafeEqualJS,
+} from '@/utils/crypto';
 
-const ADMIN_COOKIE = 'admin_auth';
+export const ADMIN_COOKIE = 'admin_auth';
+
+/**
+ * Return default cookie options for admin authentication.
+ *
+ * @param maxAge - Optional cookie expiration in seconds (defaults to 8 hours: 28800 seconds).
+ * @returns Standard cookie options object.
+ */
+export function getAdminCookieOptions(maxAge: number = 60 * 60 * 8) {
+  return {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge,
+  };
+}
+
+/**
+ * Sets the admin authentication cookie on a response object.
+ *
+ * @param response - The NextResponse instance to set the cookie on.
+ * @param token - The token string to store.
+ * @param maxAge - Optional maxAge override in seconds.
+ * @returns The response instance.
+ */
+export function setAdminAuthCookie(response: NextResponse, token: string, maxAge?: number): NextResponse {
+  response.cookies.set(ADMIN_COOKIE, token, getAdminCookieOptions(maxAge));
+  return response;
+}
 
 /**
  * Resolve the admin signing secret used for token HMAC operations.
@@ -18,77 +54,6 @@ interface AdminTokenPayload {
   iat?: number;
   exp?: number;
   [key: string]: unknown;
-}
-
-function base64urlEncode(str: string): string {
-  const bytes = new TextEncoder().encode(str);
-  return base64urlEncodeBytes(bytes);
-}
-
-function base64urlEncodeBytes(bytes: Uint8Array): string {
-  let binString = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binString += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binString)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-function base64urlDecode(str: string): string {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const binString = atob(base64 + padding);
-  const bytes = new Uint8Array(binString.length);
-  for (let i = 0; i < binString.length; i++) {
-    bytes[i] = binString.charCodeAt(i);
-  }
-  return new TextDecoder().decode(bytes);
-}
-
-function base64urlDecodeToBytes(str: string): Uint8Array {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const binString = atob(base64 + padding);
-  const bytes = new Uint8Array(binString.length);
-  for (let i = 0; i < binString.length; i++) {
-    bytes[i] = binString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function hmacSha256(secret: string, data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
-  
-  const cryptoKey = await globalThis.crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await globalThis.crypto.subtle.sign(
-    'HMAC',
-    cryptoKey,
-    messageData
-  );
-  
-  return base64urlEncodeBytes(new Uint8Array(signature));
-}
-
-function timingSafeEqualJS(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.byteLength !== b.byteLength) {
-    return false;
-  }
-  let result = 0;
-  for (let i = 0; i < a.byteLength; i++) {
-    result |= a[i] ^ b[i];
-  }
-  return result === 0;
 }
 
 /**

@@ -84,7 +84,7 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
 /**
  * Extract site configuration overrides specified via environment variables (Layer 1 override).
  */
-export function getEnvConfigOverrides(): Partial<LocalAppConfig> {
+function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   const overrides: Partial<LocalAppConfig> = {};
 
   if (process.env.SITE_PARTNER1_NAME) overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
@@ -184,14 +184,6 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   }
 
   return sanitized as PublicAppConfig;
-}
-
-/**
- * Ensures baseline Logistics and FAQ content nodes exist in the database if configured.
- * Fresh installations start with a clean slate for content nodes.
- */
-async function bootstrapLogisticsNodes() {
-  // Unconfigured template start: no automatic personal defaults created.
 }
 
 async function getSubdomainFromHeaders(): Promise<string | null> {
@@ -300,7 +292,6 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
       dbConfig = AppConfigSchema.parse(rawDbConfig);
     }
 
-    await bootstrapLogisticsNodes();
   } catch (error) {
     if (process.env.NODE_ENV === 'production') {
       console.error('Database connection failed during configuration load:', error);

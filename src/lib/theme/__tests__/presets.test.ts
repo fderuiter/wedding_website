@@ -65,7 +65,14 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens.darkTokens).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-bg']).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-border-color']).toBeDefined();
+      expect(tokens.darkTokens?.['--dialog-title-color']).toBeDefined();
+      expect(tokens.darkTokens?.['--dialog-desc-color']).toBeDefined();
+      expect(tokens.darkTokens?.['--btn-focus-ring']).toBeDefined();
       expect(tokens.darkTokens?.['--btn-outline-border']).toBeDefined();
+      expect(tokens.darkTokens?.['--btn-outline-text']).toBeDefined();
+      expect(tokens.darkTokens?.['--container-bg']).toBeDefined();
+      expect(tokens.darkTokens?.['--card-bg']).toBeDefined();
+      expect(tokens.darkTokens?.['--card-border']).toBeDefined();
 
       // Check standardized print tokens
       expect(tokens['--print-bg']).toBeDefined();
@@ -73,6 +80,19 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--print-border']).toBeDefined();
       expect(tokens['--print-header-border']).toBeDefined();
       expect(tokens['--print-badge-bg']).toBeDefined();
+
+      // Check floorplan canvas tokens
+      expect(tokens['--canvas-bg']).toBeDefined();
+      expect(tokens['--canvas-grid-dot']).toBeDefined();
+      expect(tokens['--canvas-border']).toBeDefined();
+      expect(tokens['--floorplan-table-bg']).toBeDefined();
+      expect(tokens['--floorplan-table-border']).toBeDefined();
+      expect(tokens['--floorplan-table-radius']).toBeDefined();
+      expect(tokens['--floorplan-seat-assigned-bg']).toBeDefined();
+      expect(tokens['--floorplan-seat-assigned-text']).toBeDefined();
+      expect(tokens['--floorplan-seat-unassigned-hover']).toBeDefined();
+      expect(tokens['--floorplan-status-overcapacity-bg']).toBeDefined();
+      expect(tokens['--floorplan-status-overcapacity-border']).toBeDefined();
 
       // Check 3D and canvas tokens
       expect(tokens['--glow-color']).toBeDefined();
@@ -138,5 +158,44 @@ describe('Theme Preset Catalog & Token Mapping', () => {
     const darkFallback = getPresetTokens('invalid-preset', 'dark');
     expect(darkFallback['--dialog-bg']).toBe('#1f2937'); // classic preset dark override
     expect(darkFallback['--btn-radius']).toBe('0.375rem'); // classic base layout token
+  });
+
+  it('ensures all dark mode tokens achieve WCAG 2.1 AA compliant contrast ratios', () => {
+    function getLuminance(hex: string): number {
+      const cleanHex = hex.replace(/^#/, '');
+      const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+      const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+      const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+      const transform = (val: number) => (val <= 0.03928 ? val / 12.92 : Math.pow((val + 0.055) / 1.055, 2.4));
+      return 0.2126 * transform(r) + 0.7152 * transform(g) + 0.0722 * transform(b);
+    }
+
+    function getContrast(hex1: string, hex2: string): number {
+      const l1 = getLuminance(hex1);
+      const l2 = getLuminance(hex2);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    }
+
+    for (const presetKey of THEME_PRESET_KEYS) {
+      const darkTokens = getPresetTokens(presetKey, 'dark');
+
+      const dialogBg = darkTokens['--dialog-bg'];
+      const containerBg = darkTokens['--container-bg'];
+      const titleColor = darkTokens['--dialog-title-color'];
+      const descColor = darkTokens['--dialog-desc-color'];
+      const focusRing = darkTokens['--btn-focus-ring'];
+      const outlineBorder = darkTokens['--btn-outline-border'];
+      const outlineText = darkTokens['--btn-outline-text'];
+
+      // Text contrast against modal background must be at least 4.5:1
+      expect(getContrast(titleColor, dialogBg)).toBeGreaterThanOrEqual(4.5);
+      expect(getContrast(descColor, dialogBg)).toBeGreaterThanOrEqual(4.5);
+      expect(getContrast(outlineText, dialogBg)).toBeGreaterThanOrEqual(4.5);
+
+      // Focus ring and outline border contrast against modal/container backgrounds must be at least 3:1
+      expect(getContrast(focusRing, dialogBg)).toBeGreaterThanOrEqual(3.0);
+      expect(getContrast(outlineBorder, dialogBg)).toBeGreaterThanOrEqual(3.0);
+      expect(getContrast(outlineBorder, containerBg)).toBeGreaterThanOrEqual(3.0);
+    }
   });
 });

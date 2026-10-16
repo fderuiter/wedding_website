@@ -1,4 +1,4 @@
-import { toPublicAppConfig, isMultisiteEnabled, APP_DEFAULTS, getEnvConfigOverrides, getAppConfig } from '../config';
+import { toPublicAppConfig, isMultisiteEnabled, APP_DEFAULTS, getAppConfig } from '../config';
 import { prisma } from '../prisma';
 
 jest.mock('../prisma', () => ({
@@ -141,18 +141,52 @@ describe('Configuration System Layers & Precedence', () => {
     expect(APP_DEFAULTS.venueName).not.toContain('Plummer');
   });
 
-  it('getEnvConfigOverrides extracts SITE_* environment variable overrides', () => {
+  it('extracts SITE_* environment variable overrides via getAppConfig', async () => {
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      id: 'global',
+      brideName: 'Original Bride',
+      groomName: 'Original Groom',
+      weddingDate: new Date('2026-08-15T00:00:00.000Z'),
+      baseUrl: 'https://site.com',
+      venueName: 'Original Venue',
+      venueAddress: '123 Way',
+      venueCity: 'City',
+      venueState: 'CA',
+      venueZip: '90001',
+      latitude: 34.0522,
+      longitude: -118.2437,
+      storyText: 'Story',
+      venueDescription: 'Desc',
+      travelAdvice: 'Travel',
+      heroTitle: 'Hero',
+      heroSubtitle: 'Sub',
+      seoTitle: 'SEO Title',
+      seoDescription: 'SEO Desc',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/assets/og-image.jpg',
+      seoKeywords: 'keywords',
+      colorPrimary: '#123456',
+      colorSecondary: '#654321',
+      timezone: 'UTC',
+      showCountdown: true,
+      showAddToCalendar: true,
+      features: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      subdomain: null,
+    });
+
     process.env.SITE_BRIDE_NAME = 'Alice';
     process.env.SITE_GROOM_NAME = 'Bob';
     process.env.SITE_VENUE_NAME = 'Sunset Gardens';
     process.env.SITE_SHOW_COUNTDOWN = 'false';
 
-    const overrides = getEnvConfigOverrides();
+    const config = await getAppConfig('global');
 
-    expect(overrides.brideName).toBe('Alice');
-    expect(overrides.groomName).toBe('Bob');
-    expect(overrides.venueName).toBe('Sunset Gardens');
-    expect(overrides.showCountdown).toBe(false);
+    expect(config.brideName).toBe('Alice');
+    expect(config.groomName).toBe('Bob');
+    expect(config.venueName).toBe('Sunset Gardens');
+    expect(config.showCountdown).toBe(false);
   });
 
   it('getAppConfig applies deterministic precedence (Env Overrides > DB Config > Application Defaults)', async () => {

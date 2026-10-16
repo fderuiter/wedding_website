@@ -34,6 +34,31 @@ describe('Content Node Schema Validation', () => {
       expect(result.success).toBe(true);
     });
 
+    it('accepts FAQ node with category, categoryTags, and keywords', () => {
+      const extendedFAQ = {
+        id: 'faq-ext-1',
+        type: 'FAQ',
+        tags: ['homepage'],
+        data: {
+          question: 'Is there a shuttle service?',
+          answer: 'Yes, shuttles will run every 15 minutes.',
+          category: 'Travel',
+          categoryTags: ['Shuttle', 'Transport'],
+          keywords: ['bus', 'shuttle', 'timing'],
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = FAQNodeSchema.safeParse(extendedFAQ);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.data.category).toBe('Travel');
+        expect(result.data.data.categoryTags).toEqual(['Shuttle', 'Transport']);
+        expect(result.data.data.keywords).toEqual(['bus', 'shuttle', 'timing']);
+      }
+    });
+
     it('rejects FAQ node with mismatched type or invalid data structure', () => {
       const invalidTypeFAQ = {
         id: 'faq-3',

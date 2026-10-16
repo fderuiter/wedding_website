@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
+import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 
 interface SearchableTimezoneSelectProps {
   value: string;
@@ -476,63 +477,23 @@ export default function AdminSettingsPage() {
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
             <h2 className="text-xl font-semibold mb-4">Theme Customization</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormGroup>
-                <Label>Primary Color (Hex)</Label>
-                <div className="flex gap-2">
-                  <Input 
-                    type="color" 
-                    name="colorPrimary" 
-                    value={localConfig.colorPrimary || '#B91C1C'} 
-                    onChange={handleChange} 
-                    className="w-12 h-10 p-1 rounded border cursor-pointer"
-                  />
-                  <Input 
-                    required 
-                    type="text" 
-                    name="colorPrimary" 
-                    value={localConfig.colorPrimary || '#B91C1C'} 
-                    onChange={handleChange} 
-                    placeholder="#B91C1C"
-                  />
-                </div>
-              </FormGroup>
-              <FormGroup>
-                <Label>Secondary Color (Hex)</Label>
-                <div className="flex gap-2">
-                  <Input 
-                    type="color" 
-                    name="colorSecondary" 
-                    value={localConfig.colorSecondary || '#B45309'} 
-                    onChange={handleChange} 
-                    className="w-12 h-10 p-1 rounded border cursor-pointer"
-                  />
-                  <Input 
-                    required 
-                    type="text" 
-                    name="colorSecondary" 
-                    value={localConfig.colorSecondary || '#B45309'} 
-                    onChange={handleChange} 
-                    placeholder="#B45309"
-                  />
-                </div>
-              </FormGroup>
-              <FormGroup>
-                <Label>Theme Preset</Label>
-                <select
-                  name="themePreset"
-                  value={localConfig.themePreset || 'classic'}
-                  onChange={(e) => setLocalConfig((prev: any) => ({ ...prev, themePreset: e.target.value }))}
-                  className="w-full rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                >
-                  <option value="classic">Classic</option>
-                  <option value="modern">Modern</option>
-                  <option value="romantic">Romantic</option>
-                  <option value="minimal">Minimal</option>
-                  <option value="editorial">Editorial</option>
-                </select>
-              </FormGroup>
-            </div>
+            <ThemeConfigurationPanel
+              values={{
+                colorPrimary: localConfig.colorPrimary,
+                colorSecondary: localConfig.colorSecondary,
+                themePreset: localConfig.themePreset,
+                layoutContainerMaxWidth: localConfig.layoutContainerMaxWidth,
+                layoutGridGap: localConfig.layoutGridGap,
+                layoutCardPadding: localConfig.layoutCardPadding,
+                layoutBorderRadius: localConfig.layoutBorderRadius,
+              }}
+              onChange={(updated) => {
+                setLocalConfig((prev: any) => ({
+                  ...prev,
+                  ...updated,
+                }));
+              }}
+            />
             <FormGroup>
               <Label>Custom CSS Theme Tokens (JSON)</Label>
               <Textarea

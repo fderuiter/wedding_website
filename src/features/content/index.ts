@@ -7,6 +7,7 @@ export {
   ThemeTokensSchema,
   cssTokenKeyRegex,
   isValidCssTokenValue,
+  toAppConfigDbPayload,
   FAQNodeSchema,
   LogisticsNodeSchema,
   ScheduleNodeSchema,

@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
-import { RegistryItemBaseSchema, LegacyRegistryItemBaseSchema, translateLegacyToActive, translateActiveToLegacy } from '../schemas';
+import { RegistryItemBaseSchema } from '../schemas';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
@@ -31,9 +31,6 @@ import { ApiError } from '@/utils/ApiError';
  */
 export const POST = createValidatedRoute({
   schema: RegistryItemBaseSchema,
-  legacySchema: LegacyRegistryItemBaseSchema,
-  translateLegacy: translateLegacyToActive,
-  translateActiveToLegacy,
   handler: async (_request: NextRequest, { body }) => {
     const config = await getAppConfig();
     if (!isFeatureEnabled('registry', config.modules)) {
@@ -42,6 +39,9 @@ export const POST = createValidatedRoute({
     const newItemData = body;
 
     const newItem = await registryService.createItem({
+      itemType: newItemData.itemType,
+      paymentHandleType: newItemData.paymentHandleType,
+      paymentHandle: newItemData.paymentHandle,
       name: newItemData.name,
       description: newItemData.description || '',
       category: newItemData.category || 'Uncategorized',

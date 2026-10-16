@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InvitationCodesDashboardPage, { getAttendanceStatus } from '../invitation-codes/page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -74,6 +74,8 @@ const mockCodes = [
 describe('InvitationCodesDashboardPage', () => {
   const mockCreate = jest.fn();
   const mockRemove = jest.fn();
+  const mockRemoveBatch = jest.fn();
+  const mockUpdateBatch = jest.fn();
   const mockFetchAll = jest.fn();
 
   beforeEach(() => {
@@ -84,6 +86,8 @@ describe('InvitationCodesDashboardPage', () => {
       error: null,
       create: mockCreate,
       remove: mockRemove,
+      removeBatch: mockRemoveBatch,
+      updateBatch: mockUpdateBatch,
       fetchAll: mockFetchAll,
     });
   });
@@ -102,6 +106,8 @@ describe('InvitationCodesDashboardPage', () => {
       error: null,
       create: mockCreate,
       remove: mockRemove,
+      removeBatch: mockRemoveBatch,
+      updateBatch: mockUpdateBatch,
       fetchAll: mockFetchAll,
     });
 
@@ -116,6 +122,8 @@ describe('InvitationCodesDashboardPage', () => {
       error: new Error('Failed to fetch codes'),
       create: mockCreate,
       remove: mockRemove,
+      removeBatch: mockRemoveBatch,
+      updateBatch: mockUpdateBatch,
       fetchAll: mockFetchAll,
     });
 
@@ -131,9 +139,16 @@ describe('InvitationCodesDashboardPage', () => {
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'All (5)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Redeemed (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Unused (4)' })).toBeInTheDocument();
+    const tabList = screen.getByRole('tablist', { name: 'Filter invitation codes by status' });
+    expect(tabList).toBeInTheDocument();
+
+    const allTab = screen.getByRole('tab', { name: 'All (5)' });
+    const redeemedTab = screen.getByRole('tab', { name: 'Redeemed (1)' });
+    const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
+
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
   });
 
   it('filters codes by text search query (guest name, code, email) with trim and case-insensitivity', () => {
@@ -163,34 +178,50 @@ describe('InvitationCodesDashboardPage', () => {
   it('filters codes by status filter tabs (All, Redeemed, Unused)', () => {
     renderComponent();
 
-    const redeemedTab = screen.getByRole('button', { name: 'Redeemed (1)' });
-    const unusedTab = screen.getByRole('button', { name: 'Unused (4)' });
-    const allTab = screen.getByRole('button', { name: 'All (5)' });
+    expect(screen.getByRole('tablist', { name: 'Filter invitation codes by status' })).toBeInTheDocument();
+
+    const redeemedTab = screen.getByRole('tab', { name: 'Redeemed (1)' });
+    const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
+    const allTab = screen.getByRole('tab', { name: 'All (5)' });
+
+    // Initial state
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
 
     // Click Redeemed tab
     fireEvent.click(redeemedTab);
     expect(screen.queryByText('Alice Smith')).not.toBeInTheDocument();
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
+    expect(allTab).toHaveAttribute('aria-selected', 'false');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'true');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
 
     // Click Unused tab
     fireEvent.click(unusedTab);
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
     expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(allTab).toHaveAttribute('aria-selected', 'false');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'true');
 
     // Click All tab
     fireEvent.click(allTab);
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
     expect(screen.getByText('Bob Jones')).toBeInTheDocument();
     expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(redeemedTab).toHaveAttribute('aria-selected', 'false');
+    expect(unusedTab).toHaveAttribute('aria-selected', 'false');
   });
 
   it('combines text search and status filter tab', () => {
     renderComponent();
 
     const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
-    const unusedTab = screen.getByRole('button', { name: 'Unused (4)' });
+    const unusedTab = screen.getByRole('tab', { name: 'Unused (4)' });
 
     // Switch to Unused tab
     fireEvent.click(unusedTab);
@@ -377,7 +408,7 @@ describe('InvitationCodesDashboardPage', () => {
     renderComponent();
 
     const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
-    const redeemedTab = screen.getByRole('button', { name: 'Redeemed (2)' });
+    const redeemedTab = screen.getByRole('tab', { name: 'Redeemed (2)' });
     const declinedTab = screen.getByRole('button', { name: 'Declined (1)' });
 
     // Select Redeemed filter and Declined filter -> Bob Jones
@@ -408,6 +439,8 @@ describe('InvitationCodesDashboardPage', () => {
       error: null,
       create: mockCreate,
       remove: mockRemove,
+      removeBatch: mockRemoveBatch,
+      updateBatch: mockUpdateBatch,
       fetchAll: mockFetchAll,
     });
 
@@ -517,6 +550,8 @@ describe('InvitationCodesDashboardPage', () => {
       error: null,
       create: mockCreate,
       remove: mockRemove,
+      removeBatch: mockRemoveBatch,
+      updateBatch: mockUpdateBatch,
       fetchAll: mockFetchAll,
     });
 
@@ -529,5 +564,159 @@ describe('InvitationCodesDashboardPage', () => {
     expect(mockCreateObjectURL).not.toHaveBeenCalled();
 
     window.URL.createObjectURL = originalCreateObjectURL;
+  });
+
+  describe('Bulk Selection and Floating Action Bar', () => {
+    it('updates selection count in floating toolbar as individual checkboxes are toggled', () => {
+      renderComponent();
+
+      expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
+
+      const aliceCheckbox = screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' });
+      const bobCheckbox = screen.getByRole('checkbox', { name: 'Select invitation code for Bob Jones' });
+
+      fireEvent.click(aliceCheckbox);
+      expect(screen.getByRole('region', { name: 'Batch actions toolbar' })).toBeInTheDocument();
+      expect(screen.getByText('1 Selected')).toBeInTheDocument();
+
+      fireEvent.click(bobCheckbox);
+      expect(screen.getByText('2 Selected')).toBeInTheDocument();
+
+      fireEvent.click(aliceCheckbox);
+      expect(screen.getByText('1 Selected')).toBeInTheDocument();
+
+      fireEvent.click(bobCheckbox);
+      expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
+    });
+
+    it('toggles Select All Filtered to check/uncheck all visible items and sets indeterminate state', () => {
+      renderComponent();
+
+      const selectAllCheckbox = screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' }) as HTMLInputElement;
+
+      // Select All
+      fireEvent.click(selectAllCheckbox);
+      expect(screen.getByText('5 Selected')).toBeInTheDocument();
+
+      // Deselect All via header checkbox
+      fireEvent.click(selectAllCheckbox);
+      expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
+
+      // Check one item -> indeterminate state check
+      const aliceCheckbox = screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' });
+      fireEvent.click(aliceCheckbox);
+      expect(selectAllCheckbox.indeterminate).toBe(true);
+
+      // Filter to Unused tab and select all filtered
+      const unusedTab = screen.getByRole('tab', { name: /Unused/i });
+      fireEvent.click(unusedTab);
+
+      const selectAllFiltered = screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' });
+      fireEvent.click(selectAllFiltered);
+      expect(screen.getByText('4 Selected')).toBeInTheDocument();
+    });
+
+    it('resets selection state when search filter or status tab changes', () => {
+      renderComponent();
+
+      const aliceCheckbox = screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' });
+      fireEvent.click(aliceCheckbox);
+      expect(screen.getByText('1 Selected')).toBeInTheDocument();
+
+      // Change search query
+      const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
+      fireEvent.change(searchInput, { target: { value: 'Alice' } });
+      expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
+
+      // Select again and switch status filter tab
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      expect(screen.getByText('1 Selected')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('tab', { name: /Redeemed/i }));
+      expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
+    });
+
+    it('opens batch delete confirmation modal listing selected guest names preview and executes batch deletion', async () => {
+      mockRemoveBatch.mockResolvedValueOnce(true);
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Bob Jones' }));
+
+      // Click "Delete Selected" on toolbar
+      const deleteSelectedBtn = screen.getByRole('button', { name: 'Delete Selected' });
+      fireEvent.click(deleteSelectedBtn);
+
+      // Modal open
+      const modal = screen.getByRole('dialog', { name: 'Confirm Batch Deletion' });
+      expect(modal).toBeInTheDocument();
+      expect(within(modal).getByText('Alice Smith')).toBeInTheDocument();
+      expect(within(modal).getByText('Bob Jones')).toBeInTheDocument();
+
+      // Click Confirm Delete in modal
+      const confirmDeleteBtn = screen.getByRole('button', { name: 'Delete 2 Code(s)' });
+      fireEvent.click(confirmDeleteBtn);
+
+      await waitFor(() => {
+        expect(mockRemoveBatch).toHaveBeenCalledWith(['code-1', 'code-2']);
+        expect(screen.getByText('Successfully deleted 2 invitation code(s).')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
+    });
+
+    it('supports batch status updates (Mark as Redeemed / Mark as Unused)', async () => {
+      mockUpdateBatch.mockResolvedValue(true);
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Charlie Brown' }));
+
+      // Mark as Redeemed
+      fireEvent.click(screen.getByRole('button', { name: 'Mark as Redeemed' }));
+
+      await waitFor(() => {
+        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-1', 'code-3'], { used: true });
+        expect(screen.getByText('Marked 2 invitation code(s) as redeemed.')).toBeInTheDocument();
+      });
+
+      // Mark as Unused
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Bob Jones' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Mark as Unused' }));
+
+      await waitFor(() => {
+        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-2'], { used: false });
+        expect(screen.getByText('Marked 1 invitation code(s) as unused.')).toBeInTheDocument();
+      });
+    });
+
+    it('exports selected invitation codes to CSV', () => {
+      const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-selected-url');
+      const mockRevokeObjectURL = jest.fn();
+      const originalCreateObjectURL = window.URL.createObjectURL;
+      const originalRevokeObjectURL = window.URL.revokeObjectURL;
+
+      window.URL.createObjectURL = mockCreateObjectURL;
+      window.URL.revokeObjectURL = mockRevokeObjectURL;
+
+      const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Charlie Brown' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Export Selected CSV' }));
+
+      expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+      expect(mockAnchorClick).toHaveBeenCalledTimes(1);
+      expect(mockRevokeObjectURL).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Exported 2 selected invitation code(s) to CSV.')).toBeInTheDocument();
+
+      mockAnchorClick.mockRestore();
+      window.URL.createObjectURL = originalCreateObjectURL;
+      window.URL.revokeObjectURL = originalRevokeObjectURL;
+    });
   });
 });

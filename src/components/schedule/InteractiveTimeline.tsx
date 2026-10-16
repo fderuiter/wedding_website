@@ -287,7 +287,7 @@ export default function InteractiveTimeline({
                 aria-controls="timeline-events-panel"
                 tabIndex={isActive ? 0 : -1}
                 style={tabStyle}
-                className="px-5 py-2 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary shadow-sm hover:opacity-90"
+                className="px-5 py-2 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary shadow-[var(--shadow-sm)] hover:opacity-90"
                 onClick={() => setActiveCategory(cat)}
                 onKeyDown={(e) => handleKeyDown(e, index)}
               >
@@ -343,11 +343,12 @@ export default function InteractiveTimeline({
                   />
 
                   <div
-                    className="p-6 shadow-md transition-shadow hover:shadow-lg border"
+                    className="p-6 shadow-[var(--shadow-md)] transition-shadow hover:shadow-[var(--shadow-lg)] border"
                     style={{
                       backgroundColor: 'var(--schedule-card-bg)',
                       borderColor: 'var(--schedule-card-border)',
                       borderRadius: 'var(--schedule-card-radius)',
+                      boxShadow: 'var(--shadow-md)',
                     }}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
