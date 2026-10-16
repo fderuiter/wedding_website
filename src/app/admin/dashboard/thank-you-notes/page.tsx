@@ -339,7 +339,7 @@ export default function ThankYouNotesPage() {
 
         {/* Status Filter Tabs */}
         <div
-          role="group"
+          role="tablist"
           aria-label="Filter contributors by thank-you status"
           className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700 self-start md:self-auto overflow-x-auto max-w-full"
         >
@@ -347,6 +347,8 @@ export default function ThankYouNotesPage() {
             <button
               key={tab}
               type="button"
+              role="tab"
+              aria-selected={statusFilter === tab}
               onClick={() => setStatusFilter(tab)}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                 statusFilter === tab
