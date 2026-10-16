@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { RegistryItemBaseSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox, Select } from '@/components/ui/forms';
+import { useFormPersist } from '@/hooks/useFormPersist';
 
 /**
  * Props for the RegistryItemForm component.
@@ -37,6 +38,11 @@ const defaultValues: Partial<RegistryItem> = {
   paymentHandle: '',
 };
 
+interface RegistryItemFormPersistedState {
+  values: Partial<RegistryItem>;
+  scrapeUrl: string;
+}
+
 /**
  * @function RegistryItemForm
  * @description A form for adding or editing a registry item. It includes fields for physical items,
@@ -52,8 +58,37 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   isSubmitting = false,
   submitLabel,
 }) => {
-  const [values, setValues] = useState<Partial<RegistryItem>>({ ...defaultValues, ...initialValues });
-  const [scrapeUrl, setScrapeUrl] = useState('');
+  const storageKey =
+    mode === 'edit' && initialValues?.id
+      ? `registry_item_form_edit_${initialValues.id}`
+      : 'registry_item_form_add';
+
+  const [formState, setFormState, clearPersistedFormState] = useFormPersist<RegistryItemFormPersistedState>(
+    storageKey,
+    {
+      values: { ...defaultValues, ...initialValues },
+      scrapeUrl: '',
+    }
+  );
+
+  const { values, scrapeUrl } = formState;
+
+  const setValues = (
+    val: Partial<RegistryItem> | ((prev: Partial<RegistryItem>) => Partial<RegistryItem>)
+  ) => {
+    setFormState((prev) => ({
+      ...prev,
+      values: typeof val === 'function' ? val(prev.values) : val,
+    }));
+  };
+
+  const setScrapeUrl = (val: string | ((prev: string) => string)) => {
+    setFormState((prev) => ({
+      ...prev,
+      scrapeUrl: typeof val === 'function' ? val(prev.scrapeUrl) : val,
+    }));
+  };
+
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
   const [scrapeErrorDomain, setScrapeErrorDomain] = useState<'BLOCKED_BY_VENDOR' | 'URL_NOT_FOUND' | 'NETWORK_TIMEOUT' | null>(null);
@@ -224,6 +259,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     }
 
     await onSubmit(parseResult.data as Partial<RegistryItem>);
+    clearPersistedFormState();
   };
 
   return (

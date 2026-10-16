@@ -166,6 +166,30 @@ export function createYahooCalendarLink(event: CalendarEvent): string {
 }
 
 /**
+ * Creates a URL to add an event to Outlook.com Calendar.
+ * @param {CalendarEvent} event - The event object.
+ * @returns {string} The generated Outlook.com Calendar URL.
+ */
+export function createOutlookCalendarLink(event: CalendarEvent): string {
+  const formatIsoDateTime = (date: string, time: string) => {
+    return `${date}T${time}${time.length === 5 ? ':00' : ''}`;
+  };
+
+  const start = formatIsoDateTime(event.startDate, event.startTime);
+  const end = formatIsoDateTime(event.endDate, event.endTime);
+
+  return buildCalendarUrl('https://outlook.live.com/calendar/0/deeplink/compose', {
+    path: '/calendar/action/compose',
+    rru: 'addevent',
+    subject: event.name,
+    startdt: start,
+    enddt: end,
+    body: event.description,
+    location: event.location,
+  });
+}
+
+/**
  * Creates an ICS file string for an event.
  * ICS is a universal calendar file format compatible with Apple Calendar, Outlook, and others.
  * @param {CalendarEvent} event - The event object.

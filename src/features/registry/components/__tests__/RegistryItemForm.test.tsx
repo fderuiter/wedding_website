@@ -231,4 +231,37 @@ describe('RegistryItemForm', () => {
     fireEvent.click(screen.getByTestId('btn-apply-favicon-image'));
     expect(screen.getByLabelText(/Image URL/i)).toHaveValue('https://www.example.com/favicon.ico');
   });
+
+  it('persists draft attributes and scrapeUrl to sessionStorage and restores on remount', async () => {
+    window.sessionStorage.clear();
+
+    const { unmount } = render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Import from Product URL/i), {
+      target: { value: 'https://example.com/draft-product' },
+    });
+    fireEvent.change(screen.getByLabelText(/Item Name/i), {
+      target: { value: 'Espresso Machine' },
+    });
+    fireEvent.change(screen.getByLabelText(/Price/i), {
+      target: { value: '299.99' },
+    });
+
+    // Check sessionStorage
+    const saved = window.sessionStorage.getItem('registry_item_form_add');
+    expect(saved).not.toBeNull();
+    const parsed = JSON.parse(saved!);
+    expect(parsed.scrapeUrl).toBe('https://example.com/draft-product');
+    expect(parsed.values.name).toBe('Espresso Machine');
+    expect(parsed.values.price).toBe('299.99');
+
+    // Unmount and remount
+    unmount();
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    expect(screen.getByLabelText(/Import from Product URL/i)).toHaveValue('https://example.com/draft-product');
+    expect(screen.getByLabelText(/Item Name/i)).toHaveValue('Espresso Machine');
+    expect(screen.getByLabelText(/Price/i)).toHaveValue(299.99);
+  });
 });

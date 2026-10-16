@@ -48,10 +48,10 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
           className
         )}
         style={{
-          backgroundColor: 'var(--dialog-bg, #ffffff)',
+          backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
           borderRadius: 'var(--dialog-border-radius, 0.5rem)',
           boxShadow: 'var(--dialog-shadow, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1))',
-          borderColor: 'var(--dialog-border-color, #e5e7eb)',
+          borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
           ...style,
         }}
       >
@@ -64,7 +64,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         >
           {title && (
             <div
-              className="px-6 py-4 border-b border-[var(--dialog-border-color,#e5e7eb)] dark:border-zinc-800"
+              className="px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800"
               style={{ color: 'var(--dialog-title-color, inherit)' }}
             >
               {typeof title === 'string' ? (
@@ -80,7 +80,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
             <div
               className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
               id={finalDescId}
-              style={{ color: 'var(--dialog-desc-color, #6b7280)' }}
+              style={{ color: 'var(--dialog-desc-color, var(--color-muted-foreground, #6b7280))' }}
             >
               {description}
             </div>

@@ -25,6 +25,13 @@ type ThemeContextType = {
   layoutGridGap: string;
   layoutCardPadding: string;
   layoutBorderRadius: string;
+  metalness: number;
+  roughness: number;
+  envMapIntensity: number;
+  cardPerspective: number;
+  cardMaxRotation: number;
+  cardSpringStiffness: number;
+  cardSpringDamping: number;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -41,6 +48,13 @@ const ThemeContext = createContext<ThemeContextType>({
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
   layoutBorderRadius: '1rem',
+  metalness: 1,
+  roughness: 0.2,
+  envMapIntensity: 1.2,
+  cardPerspective: 1000,
+  cardMaxRotation: 10,
+  cardSpringStiffness: 300,
+  cardSpringDamping: 20,
 });
 
 export const useTheme = () => useContext(ThemeContext);
@@ -240,7 +254,8 @@ function generateDynamicStyles(
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
   const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
-  const presetTokens = getPresetTokens(preset);
+  const lightPresetTokens = getPresetTokens(preset, 'light');
+  const darkPresetTokens = getPresetTokens(preset, 'dark');
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
   const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
@@ -252,7 +267,13 @@ function generateDynamicStyles(
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
 
-  const presetCssRules = Object.entries(presetTokens)
+  const lightPresetCssRules = Object.entries(lightPresetTokens)
+    .filter(([key]) => key !== 'darkTokens')
+    .map(([key, value]) => `      ${key}: ${value};`)
+    .join('\n');
+
+  const darkPresetCssRules = Object.entries(darkPresetTokens)
+    .filter(([key]) => key !== 'darkTokens')
     .map(([key, value]) => `      ${key}: ${value};`)
     .join('\n');
 
@@ -262,7 +283,7 @@ function generateDynamicStyles(
       --color-secondary: ${safeSecondary};
       --color-primary-text: ${primaryTextDark};
       --color-secondary-text: ${secondaryTextDark};
-${presetCssRules}
+${lightPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
       --card-padding: ${safeCardPadding};
@@ -306,6 +327,7 @@ ${presetCssRules}
     }
 
     .dark {
+${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
       --card-padding: ${safeCardPadding};
@@ -555,8 +577,29 @@ export function ThemeProvider({
     }
   );
 
+  const activePresetTokens = getPresetTokens(config?.themePreset);
+  const parseTokenNum = (val: string | undefined, fallback: number): number => {
+    if (!val) return fallback;
+    const parsed = parseFloat(val);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  };
+  const metalness = parseTokenNum(activePresetTokens['--3d-metalness'], 1);
+  const roughness = parseTokenNum(activePresetTokens['--3d-roughness'], 0.2);
+  const envMapIntensity = parseTokenNum(activePresetTokens['--3d-env-map-intensity'], 1.2);
+  const cardPerspective = parseTokenNum(activePresetTokens['--card-perspective'], 1000);
+  const cardMaxRotation = parseTokenNum(activePresetTokens['--card-max-rotation'], 10);
+  const cardSpringStiffness = parseTokenNum(activePresetTokens['--card-spring-stiffness'], 300);
+  const cardSpringDamping = parseTokenNum(activePresetTokens['--card-spring-damping'], 20);
+
   const contextValue: ThemeContextType = {
     ...theme,
+    metalness,
+    roughness,
+    envMapIntensity,
+    cardPerspective,
+    cardMaxRotation,
+    cardSpringStiffness,
+    cardSpringDamping,
     themeMode,
     mode: themeMode,
     setThemeMode,

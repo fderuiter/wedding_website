@@ -98,6 +98,19 @@ describe('ThankYouNotesPage', () => {
       expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
     });
 
+    const tablist = screen.getByRole('tablist', { name: 'Filter contributors by thank-you status' });
+    expect(tablist).toBeInTheDocument();
+
+    const allTab = screen.getByRole('tab', { name: 'All' });
+    const unsentTab = screen.getByRole('tab', { name: 'Unsent' });
+    const sentTab = screen.getByRole('tab', { name: 'Sent' });
+    const notNeededTab = screen.getByRole('tab', { name: 'Not Needed' });
+
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(unsentTab).toHaveAttribute('aria-selected', 'false');
+    expect(sentTab).toHaveAttribute('aria-selected', 'false');
+    expect(notNeededTab).toHaveAttribute('aria-selected', 'false');
+
     const searchInput = screen.getByPlaceholderText('Search contributor name or gift item...');
     fireEvent.change(searchInput, { target: { value: 'Alice' } });
 
@@ -107,8 +120,10 @@ describe('ThankYouNotesPage', () => {
       );
     });
 
-    const unsentFilterBtn = screen.getByRole('button', { name: 'Unsent' });
-    fireEvent.click(unsentFilterBtn);
+    fireEvent.click(unsentTab);
+
+    expect(allTab).toHaveAttribute('aria-selected', 'false');
+    expect(unsentTab).toHaveAttribute('aria-selected', 'true');
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
@@ -133,5 +148,31 @@ describe('ThankYouNotesPage', () => {
 
     expect(screen.getByText('1 contributor record(s) selected')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark Selected as Sent' })).toBeInTheDocument();
+  });
+
+  it('triggers download link when Export CSV button is clicked with active filter options', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    expect(exportBtn).toBeInTheDocument();
+
+    const appendChildSpy = jest.spyOn(document.body, 'appendChild');
+    const removeChildSpy = jest.spyOn(document.body, 'removeChild');
+
+    fireEvent.click(exportBtn);
+
+    expect(appendChildSpy).toHaveBeenCalled();
+    expect(removeChildSpy).toHaveBeenCalled();
+
+    appendChildSpy.mockRestore();
+    removeChildSpy.mockRestore();
   });
 });
