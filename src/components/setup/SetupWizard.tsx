@@ -8,6 +8,7 @@ import { Container, Card, Heading } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 
@@ -33,9 +34,64 @@ function isDefaultUrl(url: string): boolean {
   }
 }
 
+interface SetupWizardPersistedState {
+  step: number;
+  partner1Name: string;
+  partner2Name: string;
+  weddingDate: string;
+  baseUrl: string;
+  venueName: string;
+  venueCity: string;
+  venueState: string;
+  timezone: string;
+}
+
+const initialSetupWizardState: SetupWizardPersistedState = {
+  step: 1,
+  partner1Name: '',
+  partner2Name: '',
+  weddingDate: '',
+  baseUrl: '',
+  venueName: '',
+  venueCity: '',
+  venueState: '',
+  timezone: 'America/Chicago',
+};
+
 function SetupWizardContent() {
-  
-  const [step, setStep] = useState(1);
+  const [wizardState, setWizardState, clearPersistedSetupState] = useFormPersist<SetupWizardPersistedState>(
+    'setup_wizard_draft',
+    initialSetupWizardState
+  );
+
+  const {
+    step,
+    partner1Name,
+    partner2Name,
+    weddingDate,
+    baseUrl,
+    venueName,
+    venueCity,
+    venueState,
+    timezone,
+  } = wizardState;
+
+  const setStep = (newStep: number | ((prev: number) => number)) => {
+    setWizardState((prev) => ({
+      ...prev,
+      step: typeof newStep === 'function' ? newStep(prev.step) : newStep,
+    }));
+  };
+
+  const setPartner1Name = (val: string) => setWizardState((prev) => ({ ...prev, partner1Name: val }));
+  const setPartner2Name = (val: string) => setWizardState((prev) => ({ ...prev, partner2Name: val }));
+  const setWeddingDate = (val: string) => setWizardState((prev) => ({ ...prev, weddingDate: val }));
+  const setBaseUrl = (val: string) => setWizardState((prev) => ({ ...prev, baseUrl: val }));
+  const setVenueName = (val: string) => setWizardState((prev) => ({ ...prev, venueName: val }));
+  const setVenueCity = (val: string) => setWizardState((prev) => ({ ...prev, venueCity: val }));
+  const setVenueState = (val: string) => setWizardState((prev) => ({ ...prev, venueState: val }));
+  const setTimezone = (val: string) => setWizardState((prev) => ({ ...prev, timezone: val }));
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
@@ -50,16 +106,6 @@ function SetupWizardContent() {
   // Content Counts
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
   const { data: attractions = [] } = useAdminAttractions({ enabled: isAuthenticated });
-  
-  // Config state
-  const [partner1Name, setPartner1Name] = useState('');
-  const [partner2Name, setPartner2Name] = useState('');
-  const [weddingDate, setWeddingDate] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [venueName, setVenueName] = useState('');
-  const [venueCity, setVenueCity] = useState('');
-  const [venueState, setVenueState] = useState('');
-  const [timezone, setTimezone] = useState('America/Chicago');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,6 +292,7 @@ function SetupWizardContent() {
             </div>
             <p className="mt-6 mb-4 text-sm text-gray-600">You can also do this later from the Admin Dashboard.</p>
             <Button onClick={() => {
+              clearPersistedSetupState();
               window.location.href = '/';
             }} variant="primary" className="w-full py-3">
               Finish Setup & View Site
