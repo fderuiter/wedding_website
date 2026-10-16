@@ -136,7 +136,12 @@ The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2, 3, and 4
 
 ### 2. Artifact Publication (`publish-artifact.yml`)
 - **Triggers**: Release pipeline, pushes to `main` or `v*` tags, manual `workflow_dispatch`.
-- **Permissions**: `packages: write` (for GitHub Container Registry).
+- **Permissions**: `packages: write` (for GitHub Container Registry), `security-events: write` (for uploading SARIF scan results to GitHub Code Scanning).
+- **Actions**:
+  - Compiles local container image prior to registry publication.
+  - Executes Trivy vulnerability scanning (`aquasecurity/trivy-action`) to block builds with `CRITICAL` or `HIGH` severity vulnerabilities.
+  - Uploads SARIF vulnerability reports (`trivy-results.sarif`) to GitHub Code Scanning via `github/codeql-action/upload-sarif`.
+  - Publishes multi-platform OCI container images (`linux/amd64`, `linux/arm64`) to registries upon scan success.
 - **Outputs**:
   - `image_uri`: Immutable URI (`ghcr.io/<owner>/<repo>:<sha>`).
   - `image_tag`: Immutable commit SHA or custom release tag.
