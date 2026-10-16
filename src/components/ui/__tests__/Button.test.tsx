@@ -16,5 +16,17 @@ describe('Button', () => {
     expect(container.firstChild).toHaveClass('custom-button-class');
     expect(container.firstChild).toHaveClass('inline-flex');
   });
+
+  test('applies CSS variable class bindings for outline and ghost variants', () => {
+    const { getByRole, rerender } = render(<Button variant="outline">Outline Button</Button>);
+    let button = getByRole('button');
+    expect(button).toHaveClass('bg-[var(--btn-outline-bg,transparent)]');
+    expect(button).toHaveClass('border-[var(--btn-outline-border,#d1d5db)]');
+
+    rerender(<Button variant="ghost">Ghost Button</Button>);
+    button = getByRole('button');
+    expect(button).toHaveClass('bg-[var(--btn-ghost-bg,transparent)]');
+    expect(button).toHaveClass('hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]');
+  });
 });
 

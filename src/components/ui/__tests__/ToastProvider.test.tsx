@@ -156,4 +156,127 @@ describe('ToastProvider', () => {
 
     clearTimeoutSpy.mockRestore();
   });
+
+  test('renders error toasts in aria-live="assertive" region and info/success in aria-live="polite" region', () => {
+    const { container } = render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Info'));
+    fireEvent.click(screen.getByText('Add Success'));
+    fireEvent.click(screen.getByText('Add Error'));
+
+    const assertiveContainer = container.querySelector('[aria-live="assertive"]');
+    const politeContainer = container.querySelector('[aria-live="polite"]');
+
+    expect(assertiveContainer).toBeInTheDocument();
+    expect(politeContainer).toBeInTheDocument();
+
+    expect(assertiveContainer).toHaveTextContent('Error notification');
+    expect(assertiveContainer).not.toHaveTextContent('Info notification');
+
+    expect(politeContainer).toHaveTextContent('Info notification');
+    expect(politeContainer).toHaveTextContent('Success notification');
+    expect(politeContainer).not.toHaveTextContent('Error notification');
+  });
+
+  test('pauses timer on hover and resumes with remaining duration on mouse leave', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Info'));
+    const toast = screen.getByRole('status');
+
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(toast).toBeInTheDocument();
+
+    fireEvent.mouseEnter(toast);
+
+    act(() => {
+      jest.advanceTimersByTime(10000);
+    });
+    expect(toast).toBeInTheDocument();
+
+    fireEvent.mouseLeave(toast);
+
+    act(() => {
+      jest.advanceTimersByTime(2900);
+    });
+    expect(toast).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  test('pauses timer on focus and resumes with remaining duration on blur', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Info'));
+    const toast = screen.getByRole('status');
+    const closeButton = screen.getByRole('button', { name: /close notification/i });
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    fireEvent.focus(closeButton);
+
+    act(() => {
+      jest.advanceTimersByTime(10000);
+    });
+    expect(toast).toBeInTheDocument();
+
+    fireEvent.blur(toast, { relatedTarget: null });
+
+    act(() => {
+      jest.advanceTimersByTime(3900);
+    });
+    expect(toast).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  test('keeps timer paused when both hover and focus occur until both end', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Info'));
+    const toast = screen.getByRole('status');
+
+    fireEvent.mouseEnter(toast);
+    fireEvent.focus(toast);
+
+    fireEvent.mouseLeave(toast);
+
+    act(() => {
+      jest.advanceTimersByTime(10000);
+    });
+    expect(toast).toBeInTheDocument();
+
+    fireEvent.blur(toast, { relatedTarget: null });
+
+    act(() => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });
