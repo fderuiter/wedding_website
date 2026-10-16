@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ThemePreset,
   getPresetTokens,
@@ -193,51 +193,70 @@ function getContrastRatio(color1: RGB, color2: RGB): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5): string {
+export const contrastCache = new Map<string, string>();
+
+export function clearContrastCache(): void {
+  contrastCache.clear();
+}
+
+export function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5): string {
+  const cacheKey = `${baseHex.toLowerCase()}:${bgHex.toLowerCase()}:${minRatio}`;
+  if (contrastCache.has(cacheKey)) {
+    return contrastCache.get(cacheKey)!;
+  }
+
+  let computedHex = baseHex;
   try {
     const baseRgb = hexToRgb(baseHex);
     const bgRgb = hexToRgb(bgHex);
     
     if (getContrastRatio(baseRgb, bgRgb) >= minRatio) {
-      return baseHex;
-    }
-    
-    const bgLuminance = getLuminance(bgRgb);
-    const { h, s, l } = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
-    
-    const isLightBg = bgLuminance > 0.5;
-    let currentL = l;
-    let bestHex = baseHex;
-    const step = 0.01; 
-
-    if (isLightBg) {
-      while (currentL > 0) {
-        currentL -= step;
-        if (currentL < 0) currentL = 0;
-        const testRgb = hslToRgb(h, s, currentL);
-        const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
-        if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
-          return testHex;
-        }
-        bestHex = testHex;
-      }
+      computedHex = baseHex;
     } else {
-      while (currentL < 1) {
-        currentL += step;
-        if (currentL > 1) currentL = 1;
-        const testRgb = hslToRgb(h, s, currentL);
-        const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
-        if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
-          return testHex;
+      const bgLuminance = getLuminance(bgRgb);
+      const { h, s, l } = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
+      
+      const isLightBg = bgLuminance > 0.5;
+      let currentL = l;
+      let bestHex = baseHex;
+      const step = 0.01; 
+
+      if (isLightBg) {
+        while (currentL > 0) {
+          currentL -= step;
+          if (currentL < 0) currentL = 0;
+          const testRgb = hslToRgb(h, s, currentL);
+          const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
+          if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
+            bestHex = testHex;
+            break;
+          }
+          bestHex = testHex;
         }
-        bestHex = testHex;
+      } else {
+        while (currentL < 1) {
+          currentL += step;
+          if (currentL > 1) currentL = 1;
+          const testRgb = hslToRgb(h, s, currentL);
+          const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
+          if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
+            bestHex = testHex;
+            break;
+          }
+          bestHex = testHex;
+        }
       }
+      computedHex = bestHex;
     }
-    
-    return bestHex;
   } catch {
-    return baseHex;
+    computedHex = baseHex;
   }
+
+  if (contrastCache.size >= 1000) {
+    contrastCache.clear();
+  }
+  contrastCache.set(cacheKey, computedHex);
+  return computedHex;
 }
 
 function generateDynamicStyles(
@@ -565,17 +584,27 @@ export function ThemeProvider({
     });
   }, [config]);
 
-  const stylesString = generateDynamicStyles(
-    sanitizeColor(config?.colorPrimary, '#B91C1C'),
-    sanitizeColor(config?.colorSecondary, '#B45309'),
-    config?.themePreset,
-    {
-      containerMaxWidth: config?.layoutContainerMaxWidth,
-      gridGap: config?.layoutGridGap,
-      cardPadding: config?.layoutCardPadding,
-      borderRadius: config?.layoutBorderRadius,
-    }
-  );
+  const stylesString = useMemo(() => {
+    return generateDynamicStyles(
+      sanitizeColor(config.colorPrimary, '#B91C1C'),
+      sanitizeColor(config.colorSecondary, '#B45309'),
+      config.themePreset,
+      {
+        containerMaxWidth: config.layoutContainerMaxWidth,
+        gridGap: config.layoutGridGap,
+        cardPadding: config.layoutCardPadding,
+        borderRadius: config.layoutBorderRadius,
+      }
+    );
+  }, [
+    config.colorPrimary,
+    config.colorSecondary,
+    config.themePreset,
+    config.layoutContainerMaxWidth,
+    config.layoutGridGap,
+    config.layoutCardPadding,
+    config.layoutBorderRadius,
+  ]);
 
   const activePresetTokens = getPresetTokens(config?.themePreset);
   const parseTokenNum = (val: string | undefined, fallback: number): number => {

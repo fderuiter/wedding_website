@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { ThemeProvider, useTheme } from '../ThemeProvider';
+import { ThemeProvider, useTheme, optimizeContrast, contrastCache, clearContrastCache } from '../ThemeProvider';
 
 // Helper component to display theme values
 function TestComponent() {
@@ -533,5 +533,55 @@ describe('ThemeProvider Theme Presets', () => {
     expect(cssText).toContain('.dark {');
     expect(cssText).toContain('--dialog-bg: #231118;');
     expect(cssText).toContain('--dialog-border-color: #4a1d2f;');
+  });
+});
+
+describe('optimizeContrast In-Memory Cache', () => {
+  beforeEach(() => {
+    clearContrastCache();
+  });
+
+  it('stores optimized contrast calculation results in cache map', () => {
+    expect(contrastCache.size).toBe(0);
+    const result1 = optimizeContrast('#B91C1C', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+    expect(contrastCache.get('#b91c1c:#ffffff:4.5')).toBe(result1);
+  });
+
+  it('returns cached results on repeated calls with identical parameters', () => {
+    const firstCall = optimizeContrast('#B45309', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    // Call again with same parameters
+    const secondCall = optimizeContrast('#B45309', '#FFFFFF', 4.5);
+    expect(secondCall).toBe(firstCall);
+    expect(contrastCache.size).toBe(1);
+  });
+
+  it('normalizes case in hex strings for cache key lookups', () => {
+    const resultUpper = optimizeContrast('#AABBCC', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    const resultLower = optimizeContrast('#aabbcc', '#ffffff', 4.5);
+    expect(resultLower).toBe(resultUpper);
+    expect(contrastCache.size).toBe(1);
+  });
+
+  it('clears cache when clearContrastCache is called', () => {
+    optimizeContrast('#123456', '#FFFFFF', 4.5);
+    expect(contrastCache.size).toBe(1);
+
+    clearContrastCache();
+    expect(contrastCache.size).toBe(0);
+  });
+
+  it('caps cache size to prevent unbounded memory growth', () => {
+    clearContrastCache();
+    // Fill cache up to 1005 items
+    for (let i = 0; i < 1005; i++) {
+      const hex = '#' + i.toString(16).padStart(6, '0');
+      optimizeContrast(hex, '#FFFFFF', 4.5);
+    }
+    expect(contrastCache.size).toBeLessThanOrEqual(1000);
   });
 });
