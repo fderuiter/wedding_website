@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
@@ -32,7 +33,7 @@ function isDefaultUrl(url: string): boolean {
   }
 }
 
-export default function SetupWizard() {
+function SetupWizardContent() {
   
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -265,3 +266,14 @@ export default function SetupWizard() {
     </main>
   );
 }
+
+export default function SetupWizard() {
+  const [queryClient] = useState(() => new QueryClient());
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SetupWizardContent />
+    </QueryClientProvider>
+  );
+}
+
