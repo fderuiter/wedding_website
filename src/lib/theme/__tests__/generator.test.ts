@@ -85,7 +85,7 @@ describe('Theme Generator Utilities', () => {
 
   describe('generateDynamicStyles', () => {
     it('generates complete CSS variables, preset tokens, and dark mode selectors', () => {
-      const css = generateDynamicStyles('#B91C1C', '#B45309', 'modern', {
+      const css = generateDynamicStyles('#B91C1C', '#B45309', 'modern', undefined, {
         containerMaxWidth: '80rem',
         gridGap: '2rem',
         cardPadding: '2.5rem',
@@ -97,7 +97,7 @@ describe('Theme Generator Utilities', () => {
       expect(css).toContain('--color-secondary: #B45309;');
       expect(css).toContain('--btn-radius: 0.5rem;'); // modern preset token
       expect(css).toContain('--container-max-w: 80rem;');
-      expect(css).toContain('html:not(.dark) {');
+      expect(css).toContain('html:not(.dark)');
       expect(css).toContain('.dark {');
       expect(css).toContain('--dialog-bg: #0f172a;'); // modern preset dark token
     });

@@ -76,7 +76,7 @@ describe('RootLayout Server Component Cookie Hydration', () => {
     expect(cssText).toContain('--color-primary:');
     expect(cssText).toContain('--btn-radius:');
     expect(cssText).toContain('--dialog-bg:');
-    expect(cssText).toContain('html:not(.dark) {');
+    expect(cssText).toContain('html:not(.dark)');
     expect(cssText).toContain('.dark {');
   });
 });
