@@ -1,5 +1,6 @@
 import { ImportBackupSchema } from '@/utils/validation';
-import { DatabaseBackupSchema, formatZodError } from '@/utils/backupValidation';
+import { DatabaseBackupSchema, formatZodError, reviveDates } from '@/utils/backupValidation';
+export { reviveDates };
 import { z } from 'zod';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -7,48 +8,6 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { pruneSnapshotsBulk } from '@/lib/audit';
 import { logger } from '@/lib/logger';
-
-export function reviveDates(root: any): any {
-  if (root === null || root === undefined) return root;
-  if (typeof root === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(root)) {
-    return new Date(root);
-  }
-  if (typeof root !== 'object') {
-    return root;
-  }
-
-  const stack: any[] = [root];
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-
-    if (current === null || typeof current !== 'object') {
-      continue;
-    }
-
-    if (Array.isArray(current)) {
-      for (let i = 0; i < current.length; i++) {
-        const val = current[i];
-        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(val)) {
-          current[i] = new Date(val);
-        } else if (val !== null && typeof val === 'object') {
-          stack.push(val);
-        }
-      }
-    } else {
-      for (const key of Object.keys(current)) {
-        const val = current[key];
-        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(val)) {
-          current[key] = new Date(val);
-        } else if (val !== null && typeof val === 'object') {
-          stack.push(val);
-        }
-      }
-    }
-  }
-
-  return root;
-}
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const rawData = await request.json();
