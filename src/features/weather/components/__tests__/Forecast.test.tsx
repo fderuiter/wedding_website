@@ -156,4 +156,34 @@ describe('Forecast Component', () => {
     expect(icons.length).toBeGreaterThan(0);
     expect(icons[0].getAttribute('style')).toContain('var(--scale-factor, 1)');
   });
+
+  it('renders seasonal climate badge and live forecast availability date when isLiveForecast is false', async () => {
+    const mockSeasonalData = {
+      isLiveForecast: false,
+      liveForecastAvailableDate: '2026-06-04',
+      daily: {
+        time: ['2026-06-20'],
+        weathercode: [1],
+        temperature_2m_max: [72],
+        temperature_2m_min: [55],
+        apparent_temperature_max: [70],
+        precipitation_probability_max: [15],
+        wind_speed_10m_max: [8],
+      },
+    };
+
+    server.use(
+      http.get('/api/weather', () => {
+        return HttpResponse.json(mockSeasonalData);
+      })
+    );
+
+    render(<Forecast />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('seasonal-badge')).toBeInTheDocument();
+      expect(screen.getByText(/Seasonal Climate Averages/i)).toBeInTheDocument();
+      expect(screen.getByText(/2026-06-04/i)).toBeInTheDocument();
+    });
+  });
 });

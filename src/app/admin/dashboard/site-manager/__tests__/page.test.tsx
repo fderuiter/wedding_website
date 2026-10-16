@@ -1,7 +1,24 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import SiteManagerPage from '../page';
+
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    motion: new Proxy({}, {
+      get: (_target, tag) => {
+        const Component = React.forwardRef(({ children, ...props }: any, ref: any) => {
+          return React.createElement(tag as string, { ref, ...props }, children);
+        });
+        Component.displayName = `MotionComponent_${String(tag)}`;
+        return Component;
+      },
+    }),
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  };
+});
 
 // Mock next/dynamic to load DragDropContainer synchronously in test environment
 jest.mock('next/dynamic', () => {
@@ -48,13 +65,15 @@ const mockFeatures = [
 const mockSaveFeatures = jest.fn().mockResolvedValue(true);
 const mockAddToast = jest.fn();
 
+const useAdminFeaturesMock = jest.fn(() => ({
+  features: mockFeatures,
+  loading: false,
+  error: null,
+  saveFeatures: mockSaveFeatures,
+}));
+
 jest.mock('@/hooks/admin/useAdminFeatures', () => ({
-  useAdminFeatures: () => ({
-    features: mockFeatures,
-    loading: false,
-    error: null,
-    saveFeatures: mockSaveFeatures,
-  }),
+  useAdminFeatures: () => useAdminFeaturesMock(),
 }));
 
 jest.mock('@/components/ui/ToastProvider', () => ({
@@ -157,5 +176,109 @@ describe('SiteManagerPage and DragDropContainer', () => {
 
     const liveRegion = screen.getByRole('status');
     expect(liveRegion).toHaveTextContent('Moved Wedding Day Details up to position 1 of 2');
+  });
+
+  it('does not render Delete button for standard built-in sections', () => {
+    render(<SiteManagerPage />);
+    expect(screen.queryByRole('button', { name: /Delete/i })).not.toBeInTheDocument();
+  });
+
+  it('renders Delete button for custom sections and opens confirmation modal on click', () => {
+    useAdminFeaturesMock.mockReturnValue({
+      features: [
+        { id: 'story', type: 'story', title: 'Our Story', visible: true },
+        { id: 'custom-1', type: 'custom', title: 'Health & Safety', visible: true },
+      ],
+      loading: false,
+      error: null,
+      saveFeatures: mockSaveFeatures,
+    });
+
+    render(<SiteManagerPage />);
+
+    const deleteBtn = screen.getByRole('button', { name: 'Delete Health & Safety' });
+    expect(deleteBtn).toBeInTheDocument();
+
+    fireEvent.click(deleteBtn);
+
+    expect(screen.getByRole('heading', { name: 'Delete Custom Section' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Are you sure you want to delete the section "Health & Safety"?/)
+    ).toBeInTheDocument();
+  });
+
+  it('cancels deletion when Cancel button in confirmation modal is clicked', () => {
+    useAdminFeaturesMock.mockReturnValue({
+      features: [
+        { id: 'story', type: 'story', title: 'Our Story', visible: true },
+        { id: 'custom-1', type: 'custom', title: 'Health & Safety', visible: true },
+      ],
+      loading: false,
+      error: null,
+      saveFeatures: mockSaveFeatures,
+    });
+
+    render(<SiteManagerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Health & Safety' }));
+
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
+    fireEvent.click(cancelBtn);
+
+    expect(screen.queryByRole('heading', { name: 'Delete Custom Section' })).not.toBeInTheDocument();
+    expect(mockSaveFeatures).not.toHaveBeenCalled();
+  });
+
+  it('confirms deletion when Delete button in modal is clicked and displays toast', async () => {
+    useAdminFeaturesMock.mockReturnValue({
+      features: [
+        { id: 'story', type: 'story', title: 'Our Story', visible: true },
+        { id: 'custom-1', type: 'custom', title: 'Health & Safety', visible: true },
+      ],
+      loading: false,
+      error: null,
+      saveFeatures: mockSaveFeatures,
+    });
+
+    render(<SiteManagerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Health & Safety' }));
+
+    const modalDeleteBtn = screen.getByRole('button', { name: 'Delete' });
+    fireEvent.click(modalDeleteBtn);
+
+    expect(mockSaveFeatures).toHaveBeenCalledWith([
+      { id: 'story', type: 'story', title: 'Our Story', visible: true },
+    ]);
+    await waitFor(() => {
+      expect(mockAddToast).toHaveBeenCalledWith('Section deleted', 'success');
+    });
+  });
+
+  it('stops propagation on Delete button click to prevent drag triggers', () => {
+    const parentClickSpy = jest.fn();
+    const mockOnDeleteSection = jest.fn();
+    const DragDropContainer = require('../components/DragDropContainer').default;
+
+    const customFeatures = [
+      { id: 'custom-1', type: 'custom', title: 'Health & Safety', visible: true },
+    ];
+
+    render(
+      <div onClick={parentClickSpy}>
+        <DragDropContainer
+          features={customFeatures}
+          saveFeatures={mockSaveFeatures}
+          toggleVisibility={jest.fn()}
+          onDeleteSection={mockOnDeleteSection}
+        />
+      </div>
+    );
+
+    const deleteBtn = screen.getByRole('button', { name: 'Delete Health & Safety' });
+    fireEvent.click(deleteBtn);
+
+    expect(parentClickSpy).not.toHaveBeenCalled();
+    expect(mockOnDeleteSection).toHaveBeenCalledWith('custom-1');
   });
 });
