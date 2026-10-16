@@ -22,19 +22,20 @@ interface SeatingExportRecord extends Record<string, unknown> {
 }
 
 export const GET = withApiMiddleware(async (_request: NextRequest) => {
-  const tables = await prisma.seatingTable.findMany({
-    include: {
-      invitationCodes: {
-        orderBy: { seatNumber: 'asc' },
+  const [tables, unassignedGuests] = await Promise.all([
+    prisma.seatingTable.findMany({
+      include: {
+        invitationCodes: {
+          orderBy: { seatNumber: 'asc' },
+        },
       },
-    },
-    orderBy: { name: 'asc' },
-  });
-
-  const unassignedGuests = await prisma.invitationCode.findMany({
-    where: { tableId: null },
-    orderBy: { guestName: 'asc' },
-  });
+      orderBy: { name: 'asc' },
+    }),
+    prisma.invitationCode.findMany({
+      where: { tableId: null },
+      orderBy: { guestName: 'asc' },
+    }),
+  ]);
 
   const exportRecords: SeatingExportRecord[] = [];
 
