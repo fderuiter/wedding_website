@@ -92,6 +92,10 @@ export function withApiMiddleware(handler: RouteHandler) {
         );
       }
 
+      response.headers.forEach((value, key) => {
+        finalResponse.headers.set(key, value);
+      });
+
       finalResponse.headers.set('x-api-version', 'v2');
 
       // Copy cookies from original response if it was a NextResponse

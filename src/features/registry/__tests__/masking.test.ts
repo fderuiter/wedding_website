@@ -1,4 +1,4 @@
-import { maskRegistryItem, maskRegistryItems, sanitizeRegistryItem, sanitizeRegistryItems } from '../lib/masking';
+import { maskRegistryItem, sanitizeRegistryItem, sanitizeRegistryItems } from '../lib/masking';
 
 describe('Registry Payload Masking and Sanitization', () => {
   const sampleItem = {
@@ -62,16 +62,6 @@ describe('Registry Payload Masking and Sanitization', () => {
       amount: 100,
       date: '2026-08-04T13:00:00.000Z',
     });
-  });
-
-  test('maskRegistryItems handles arrays and single objects correctly', () => {
-    const maskedList = maskRegistryItems([sampleItem]);
-    expect(Array.isArray(maskedList)).toBe(true);
-    expect(maskedList[0].purchaserName).toBe('Anonymous');
-
-    const maskedSingle = maskRegistryItems(sampleItem);
-    expect(Array.isArray(maskedSingle)).toBe(false);
-    expect(maskedSingle.purchaserName).toBe('Anonymous');
   });
 
   test('sanitizeRegistryItems handles arrays and single objects correctly', () => {

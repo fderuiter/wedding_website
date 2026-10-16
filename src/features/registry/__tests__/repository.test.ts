@@ -10,6 +10,7 @@ jest.mock('@/lib/prisma', () => ({
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      count: jest.fn(),
     },
     media: {
       create: jest.fn(),
@@ -55,24 +56,96 @@ describe('RegistryRepository', () => {
       const itemWithoutRel = { ...mockRegistryItem };
       delete (itemWithoutRel as any).contributors;
       (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([itemWithoutRel]);
-      const items = await registryRepository.getAllItems();
-      expect(items).toEqual([mockRegistryItem]);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(1);
+
+      const res = await registryRepository.getAllItems();
+      expect(res).toEqual({
+        items: [mockRegistryItem],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
           image: true,
         },
+        skip: 0,
+        take: 20,
       });
     });
 
     it('should include contributors when includeContributors option is true', async () => {
       (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
-      const items = await registryRepository.getAllItems({ includeContributors: true });
-      expect(items).toEqual([mockRegistryItem]);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(1);
+
+      const res = await registryRepository.getAllItems({ includeContributors: true });
+      expect(res).toEqual({
+        items: [mockRegistryItem],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: {
           image: true,
           contributors: true,
         },
+        skip: 0,
+        take: 20,
+      });
+    });
+
+    it('should enforce hard maximum limit of 100 items per request', async () => {
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(150);
+
+      const res = await registryRepository.getAllItems({ page: 1, limit: 500 });
+      expect(res.limit).toBe(100);
+      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+        include: { image: true },
+        skip: 0,
+        take: 100,
+      });
+    });
+
+    it('should apply page offset correctly', async () => {
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(50);
+
+      const res = await registryRepository.getAllItems({ page: 3, limit: 10 });
+      expect(res.page).toBe(3);
+      expect(res.limit).toBe(10);
+      expect(res.totalPages).toBe(5);
+      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+        include: { image: true },
+        skip: 20,
+        take: 10,
+      });
+    });
+
+    it('should apply category and price range filters in Prisma query', async () => {
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(1);
+
+      await registryRepository.getAllItems({
+        category: 'Kitchen',
+        minPrice: 50,
+        maxPrice: 200,
+      });
+
+      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+        where: {
+          category: 'Kitchen',
+          price: {
+            gte: 50,
+            lte: 200,
+          },
+        },
+        include: { image: true },
+        skip: 0,
+        take: 20,
       });
     });
   });

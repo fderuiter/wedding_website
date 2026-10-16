@@ -197,4 +197,6 @@ model SnapshotVersion {
   data       Json // Full snapshot of the record at the time of save
   author     String   @default("Admin")
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

@@ -14,6 +14,7 @@ jest.mock('@/lib/prisma', () => ({
       findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
+      count: jest.fn(),
     },
     appConfig: {
       upsert: jest.fn(),
@@ -82,6 +83,7 @@ describe('GET /api/admin/versions', () => {
         createdAt: new Date(),
       },
     ];
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(2);
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(mockVersions);
 
     const req = new NextRequest('http://localhost/api/admin/versions?entityType=AppConfig&entityId=global', { method: 'GET' });
@@ -90,12 +92,14 @@ describe('GET /api/admin/versions', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
-    expect(json.data[0].data.sanitized).toBe(true);
-    expect(json.data[1].data).toEqual({ text: 'Hello' });
+    expect(json.data.items[0].data.sanitized).toBe(true);
+    expect(json.data.items[1].data).toEqual({ text: 'Hello' });
 
     expect(mockPrisma.snapshotVersion.findMany).toHaveBeenCalledWith({
       where: { entityType: 'AppConfig', entityId: 'global' },
       orderBy: { createdAt: 'desc' },
+      take: 50,
+      skip: 0,
     });
   });
 
@@ -122,6 +126,7 @@ describe('GET /api/admin/versions', () => {
         createdAt: new Date(),
       },
     ];
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(2);
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(mockVersions);
 
     const req = new NextRequest('http://localhost/api/admin/versions', { method: 'GET' });
@@ -131,13 +136,94 @@ describe('GET /api/admin/versions', () => {
     const json = await res.json();
     expect(json.success).toBe(true);
 
-    const contribData = json.data[0].data;
+    const contribData = json.data.items[0].data;
     expect(contribData.email).not.toBe('john.doe@example.com');
     expect(contribData.email).toContain('***');
 
-    const regData = json.data[1].data;
+    const regData = json.data.items[1].data;
     expect(regData.contributors[0].email).not.toBe('jane.smith@example.com');
     expect(regData.contributors[0].email).toContain('***');
+  });
+
+  it('defaults to limit 50 and page 1 with take 50 and skip 0', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(120);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest('http://localhost/api/admin/versions', { method: 'GET' });
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.pagination).toEqual({
+      total: 120,
+      totalCount: 120,
+      page: 1,
+      currentPage: 1,
+      limit: 50,
+      pageSize: 50,
+      totalPages: 3,
+      isPaginated: true,
+    });
+
+    expect(mockPrisma.snapshotVersion.findMany).toHaveBeenCalledWith({
+      where: {},
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      skip: 0,
+    });
+  });
+
+  it('clamps limit to 100 when limit=200 is specified', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(150);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest('http://localhost/api/admin/versions?limit=200', { method: 'GET' });
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.pagination.limit).toBe(100);
+
+    expect(mockPrisma.snapshotVersion.findMany).toHaveBeenCalledWith({
+      where: {},
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      skip: 0,
+    });
+  });
+
+  it('computes correct skip and take for custom page and limit', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(60);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest('http://localhost/api/admin/versions?page=2&limit=20', { method: 'GET' });
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.pagination).toEqual({
+      total: 60,
+      totalCount: 60,
+      page: 2,
+      currentPage: 2,
+      limit: 20,
+      pageSize: 20,
+      totalPages: 3,
+      isPaginated: true,
+    });
+
+    expect(mockPrisma.snapshotVersion.findMany).toHaveBeenCalledWith({
+      where: {},
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      skip: 20,
+    });
   });
 });
 

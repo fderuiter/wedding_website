@@ -3,6 +3,16 @@ import { z } from 'zod';
 import { createMediaAssociationSchema } from '@/features/media/schemas';
 import { createLaxUrlSchema } from '@/utils/validation';
 
+export const RegistryQuerySchema = z.object({
+  page: z.coerce.number().int({ message: 'Page must be an integer.' }).min(1, 'Page must be at least 1.').default(1),
+  limit: z.coerce.number().int({ message: 'Limit must be an integer.' }).min(1, 'Limit must be at least 1.').max(100, 'Limit cannot exceed 100.').default(20),
+  category: z.string().optional(),
+  minPrice: z.coerce.number({ message: 'minPrice must be a number.' }).min(0, 'minPrice must be non-negative.').optional(),
+  maxPrice: z.coerce.number({ message: 'maxPrice must be a number.' }).min(0, 'maxPrice must be non-negative.').optional(),
+});
+
+export type RegistryQueryParams = z.infer<typeof RegistryQuerySchema>;
+
 export const ContributorSchema = z.object({
   id: z.string().optional(),
   name: z.string(),

@@ -398,6 +398,7 @@ export default function SeatingChartAdminPage() {
               onDropGuestOnTable={handleAssignGuestToTable}
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
+              onAddTable={handleCreateTable}
             />
 
             {/* Selected Table Inspector Bar */}
