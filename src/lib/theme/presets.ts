@@ -44,6 +44,12 @@ export interface ComponentTokens {
   '--schedule-node-border': string;
   '--schedule-tag-bg': string;
   '--schedule-tag-text': string;
+
+  '--print-bg': string;
+  '--print-text': string;
+  '--print-border': string;
+  '--print-header-border': string;
+  '--print-badge-bg': string;
 }
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -89,6 +95,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f3f4f6',
     '--schedule-tag-text': '#374151',
+
+    '--print-bg': '#ffffff',
+    '--print-text': '#111827',
+    '--print-border': '#e5e7eb',
+    '--print-header-border': '#111827',
+    '--print-badge-bg': '#f3f4f6',
   },
   modern: {
     '--btn-radius': '0.5rem',
@@ -132,6 +144,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f1f5f9',
     '--schedule-tag-text': '#0f172a',
+
+    '--print-bg': '#ffffff',
+    '--print-text': '#0f172a',
+    '--print-border': '#cbd5e1',
+    '--print-header-border': '#0f172a',
+    '--print-badge-bg': '#f1f5f9',
   },
   romantic: {
     '--btn-radius': '9999px',
@@ -175,6 +193,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#fffafb',
     '--schedule-tag-bg': '#fce7f3',
     '--schedule-tag-text': '#9d174d',
+
+    '--print-bg': '#fffafb',
+    '--print-text': '#831843',
+    '--print-border': '#fbcfe8',
+    '--print-header-border': '#9d174d',
+    '--print-badge-bg': '#fce7f3',
   },
   minimal: {
     '--btn-radius': '0px',
@@ -218,6 +242,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#ffffff',
     '--schedule-tag-bg': '#f4f4f5',
     '--schedule-tag-text': '#18181b',
+
+    '--print-bg': '#ffffff',
+    '--print-text': '#18181b',
+    '--print-border': '#e4e4e7',
+    '--print-header-border': '#18181b',
+    '--print-badge-bg': '#f4f4f5',
   },
   editorial: {
     '--btn-radius': '0.125rem',
@@ -261,6 +291,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--schedule-node-border': '#000000',
     '--schedule-tag-bg': '#e4e4e7',
     '--schedule-tag-text': '#000000',
+
+    '--print-bg': '#fcfbf9',
+    '--print-text': '#000000',
+    '--print-border': '#000000',
+    '--print-header-border': '#000000',
+    '--print-badge-bg': '#e4e4e7',
   },
 };
 
