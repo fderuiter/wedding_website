@@ -9,6 +9,7 @@ import { CategoryFilter } from '@/components/ui/CategoryFilter';
 
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
+  defaultCenter?: [number, number];
 }
 
 const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
@@ -16,7 +17,7 @@ const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
   loading: () => <div className="bg-gray-200 dark:bg-gray-800 animate-pulse w-full h-full" />,
 });
 
-const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions }) => {
+const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions, defaultCenter }) => {
   const [attractions, setAttractions] = useState(initialAttractions);
 
   const {
@@ -50,7 +51,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" style={{ minHeight: '600px' }}>
         <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden">
-          <ThingsToDoMap attractions={filteredAttractions} />
+          <ThingsToDoMap attractions={filteredAttractions} defaultCenter={defaultCenter} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.map((attraction) => (

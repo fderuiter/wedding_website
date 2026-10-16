@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
@@ -42,6 +42,7 @@ function SetupWizardContent() {
   // Login
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // Content Management Modals
   const [isWeddingPartyModalOpen, setIsWeddingPartyModalOpen] = useState(false);
@@ -60,6 +61,7 @@ function SetupWizardContent() {
   const [venueCity, setVenueCity] = useState('');
   const [venueState, setVenueState] = useState('');
   const [timezone, setTimezone] = useState('America/Chicago');
+  const siteUrlInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,9 +79,13 @@ function SetupWizardContent() {
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error || 'Invalid admin password.');
+        passwordInputRef.current?.focus();
+        passwordInputRef.current?.select();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to log in.');
+      passwordInputRef.current?.focus();
+      passwordInputRef.current?.select();
     } finally {
       setLoading(false);
     }
@@ -91,12 +97,14 @@ function SetupWizardContent() {
       new URL(baseUrl);
       if (isDefaultUrl(baseUrl)) {
         setError('Please use your own URL, not a sample or default domain.');
+        siteUrlInputRef.current?.focus();
         return;
       }
     } catch (err) {
       // If it's not a valid URL, it will fail backend validation anyway.
       // But we can also set an error here.
       setError('Please enter a valid URL.');
+      siteUrlInputRef.current?.focus();
       return;
     }
 
@@ -133,9 +141,11 @@ function SetupWizardContent() {
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error || 'Failed to save configuration.');
+        siteUrlInputRef.current?.focus();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to save config.');
+      siteUrlInputRef.current?.focus();
     } finally {
       setLoading(false);
     }
@@ -149,9 +159,10 @@ function SetupWizardContent() {
             <Heading className="mb-4">Welcome to Your Wedding Site!</Heading>
             <p className="mb-4 text-gray-700">Please enter the admin password configured in your environment to begin setup.</p>
             <form onSubmit={handleLogin} className="space-y-4">
-              <FormGroup>
+              <FormGroup state={error && !isAuthenticated ? 'error' : 'default'}>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
                 <Input
+                  ref={passwordInputRef}
                   id="adminPassword"
                   type="password"
                   placeholder="Admin Password"
@@ -159,8 +170,8 @@ function SetupWizardContent() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
+                {error && !isAuthenticated && <FormMessage role="alert">{error}</FormMessage>}
               </FormGroup>
-              {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
               <Button disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? 'Authenticating...' : 'Continue'}
               </Button>
@@ -195,18 +206,21 @@ function SetupWizardContent() {
                   <Input id="timezone" type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. America/Chicago" required />
                 </FormGroup>
               </div>
-              <FormGroup state={isDefaultUrl(baseUrl) ? 'error' : 'default'}>
+              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && isAuthenticated && step === 2) ? 'error' : 'default'}>
                 <Label htmlFor="siteUrl">Site URL (e.g. https://ourwedding.com)</Label>
                 <Input 
+                  ref={siteUrlInputRef}
                   id="siteUrl" 
                   type="url" 
                   value={baseUrl} 
                   onChange={(e) => setBaseUrl(e.target.value)} 
                   required 
-                  aria-invalid={isDefaultUrl(baseUrl) ? 'true' : 'false'}
-                  aria-describedby={isDefaultUrl(baseUrl) ? 'siteUrl-error' : undefined}
                 />
-                {isDefaultUrl(baseUrl) && <FormMessage id="siteUrl-error" role="alert">Please use your own URL.</FormMessage>}
+                {isDefaultUrl(baseUrl) ? (
+                  <FormMessage role="alert">Please use your own URL.</FormMessage>
+                ) : (error && isAuthenticated && step === 2) ? (
+                  <FormMessage role="alert">{error}</FormMessage>
+                ) : null}
               </FormGroup>
               <div className="grid grid-cols-3 gap-4">
                 <FormGroup className="col-span-3 md:col-span-1">
@@ -222,7 +236,6 @@ function SetupWizardContent() {
                   <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} required />
                 </FormGroup>
               </div>
-              {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
               <Button disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? 'Saving...' : 'Next Step'}
               </Button>
