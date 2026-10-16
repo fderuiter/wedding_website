@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, deriveBrandMonogram, ThemeTokensSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -578,6 +578,86 @@ describe('Content Node Schema Validation', () => {
         expect(result.data.layoutCardPadding).toBe('2.2rem' ? result.data.layoutCardPadding : '2rem');
         expect(result.data.layoutCardPadding).toBe('2rem');
         expect(result.data.layoutBorderRadius).toBe('1rem');
+      }
+    });
+
+    it('validates font token overrides in fontTokenSchema, RawUpdateAppConfigSchema and AppConfigSchema', () => {
+      expect(fontTokenSchema.safeParse('Playfair Display, serif').success).toBe(true);
+      expect(fontTokenSchema.safeParse('var(--font-heading)').success).toBe(true);
+      expect(fontTokenSchema.safeParse(null).success).toBe(true);
+      expect(fontTokenSchema.safeParse(undefined).success).toBe(true);
+      expect(fontTokenSchema.safeParse('').success).toBe(true);
+
+      // Malicious/invalid font token values containing semicolons, angle brackets, or curly braces
+      expect(fontTokenSchema.safeParse('Playfair; body { display: none }').success).toBe(false);
+      expect(fontTokenSchema.safeParse('<script>alert("xss")</script>').success).toBe(false);
+      expect(fontTokenSchema.safeParse('font-family: Arial;').success).toBe(false);
+
+      const basePayload = {
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        baseUrl: 'https://example.com',
+        weddingDate: '2026-12-31',
+      };
+
+      const rawResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        fontHeading: 'Cinzel, serif',
+        fontBody: 'Lora, sans-serif',
+        fontMono: 'var(--font-mono)',
+      });
+      expect(rawResult.success).toBe(true);
+
+      const fullConfig = {
+        id: 'cfg-font',
+        weddingDate: new Date(),
+        baseUrl: 'https://example.com',
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        features: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        fontHeading: 'Cinzel, serif',
+        fontBody: 'Lora, sans-serif',
+        fontMono: 'var(--font-mono)',
+      };
+
+      const appConfigResult = AppConfigSchema.safeParse(fullConfig);
+      expect(appConfigResult.success).toBe(true);
+      if (appConfigResult.success) {
+        expect(appConfigResult.data.fontHeading).toBe('Cinzel, serif');
+        expect(appConfigResult.data.fontBody).toBe('Lora, sans-serif');
+        expect(appConfigResult.data.fontMono).toBe('var(--font-mono)');
       }
     });
 

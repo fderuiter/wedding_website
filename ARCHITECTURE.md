@@ -451,6 +451,9 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `layoutGridGap` | `default` | Configuration field for layoutGridGap |
 | `layoutCardPadding` | `default` | Configuration field for layoutCardPadding |
 | `layoutBorderRadius` | `default` | Configuration field for layoutBorderRadius |
+| `fontHeading` | `optional` | Configuration field for fontHeading |
+| `fontBody` | `optional` | Configuration field for fontBody |
+| `fontMono` | `optional` | Configuration field for fontMono |
 | `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
