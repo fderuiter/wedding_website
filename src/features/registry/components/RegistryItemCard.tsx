@@ -5,7 +5,7 @@ import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
 import { ContributionSchema } from '../schemas';
-import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { apiClient } from '@/lib/apiClient';
@@ -17,12 +17,12 @@ import { useGuestSession } from '../context/GuestSessionContext';
  * @description Defines the props for the RegistryItemCard component.
  * @property {RegistryItem} item - The registry item to be displayed in the card.
  * @property {() => void} onClose - Callback function to close the card.
- * @property {(itemId: string, contributorName: string, amount: number, code?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
+ * @property {(itemId: string, contributorName: string, amount: number, code?: string, message?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
  */
 interface RegistryItemCardProps {
   item: RegistryItem;
   onClose: () => void;
-  onContribute: (itemId: string, contributorName: string, amount: number, code?: string) => Promise<void>;
+  onContribute: (itemId: string, contributorName: string, amount: number, code?: string, message?: string) => Promise<void>;
 }
 
 /**
@@ -43,6 +43,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
 
   const [contributorName, setContributorName] = useState('');
   const [amount, setAmount] = useState<number | string>('');
+  const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,6 +106,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       name: contributorName,
       amount: rawAmount,
       code: invitationCode || undefined,
+      message: message || undefined,
     });
 
     if (!result.success) {
@@ -124,8 +126,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
     }
     setIsSubmitting(true);
     try {
-      if (validData.code !== undefined) {
-        await onContribute(item.id, validData.name, finalAmount, validData.code);
+      if (validData.code !== undefined || validData.message !== undefined) {
+        await onContribute(
+          item.id,
+          validData.name,
+          finalAmount,
+          validData.code || undefined,
+          validData.message || undefined
+        );
       } else {
         await onContribute(item.id, validData.name, finalAmount);
       }
@@ -316,6 +324,19 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               />
             </FormGroup>
           )}
+          <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+            <Label>
+              Personal Message (Optional)
+            </Label>
+            <Textarea
+              placeholder="Warm wishes for the couple..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              disabled={isSubmitting}
+              maxLength={1000}
+              rows={3}
+            />
+          </FormGroup>
           {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
           <Button
             type="submit"

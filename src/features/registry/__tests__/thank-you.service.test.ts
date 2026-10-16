@@ -368,7 +368,7 @@ describe('ThankYouService', () => {
       const csv = await service.exportThankYouNotesCsv();
 
       expect(csv).toContain(
-        'Contributor Name,Email,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft'
       );
       expect(csv).toContain('Alice Johnson');
       expect(csv).toContain('alice@example.com');
@@ -412,7 +412,7 @@ describe('ThankYouService', () => {
       const csv = await service.exportThankYouNotesCsv();
 
       expect(csv).toBe(
-        'Contributor Name,Email,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft\n'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft\n'
       );
     });
   });

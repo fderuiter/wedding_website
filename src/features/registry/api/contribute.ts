@@ -22,7 +22,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, name, amount, code } = parseResult.data;
+  const { itemId, name, amount, code, message } = parseResult.data;
 
   if (!isFeatureEnabled('groupGifting', config.modules)) {
     const item = await registryService.getItemById(itemId);
@@ -46,6 +46,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     name,
     amount,
     code: finalCode,
+    message,
   });
 
   const isAdmin = await isAdminRequest(request);

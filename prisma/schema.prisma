@@ -131,6 +131,7 @@ model Contributor {
   email          String?
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
+  message        String?
   date           DateTime      @default(now())
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
