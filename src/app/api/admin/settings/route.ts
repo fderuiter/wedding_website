@@ -139,7 +139,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  const newId = data.id || `profile-${Math.random().toString(36).substr(2, 9)}`;
+  const newId = data.id || `profile-${Math.random().toString(36).slice(2, 11)}`;
 
   const parseResult = UpdateAppConfigSchema.safeParse({
     partner1Name: data.partner1Name ?? data.brideName ?? 'Partner 1',

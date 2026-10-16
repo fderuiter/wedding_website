@@ -1,6 +1,13 @@
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { env } from '@/env';
+import {
+  base64urlEncode,
+  base64urlDecode,
+  base64urlDecodeToBytes,
+  hmacSha256,
+  timingSafeEqualJS,
+} from '@/utils/crypto';
 
 export const GUEST_INVITE_COOKIE = 'guest_invite_session';
 
@@ -13,77 +20,6 @@ export interface GuestInviteSessionPayload {
 
 async function getSecret(): Promise<string> {
   return env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026';
-}
-
-function base64urlEncodeBytes(bytes: Uint8Array): string {
-  let binString = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binString += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binString)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-function base64urlEncode(str: string): string {
-  const bytes = new TextEncoder().encode(str);
-  return base64urlEncodeBytes(bytes);
-}
-
-function base64urlDecode(str: string): string {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const binString = atob(base64 + padding);
-  const bytes = new Uint8Array(binString.length);
-  for (let i = 0; i < binString.length; i++) {
-    bytes[i] = binString.charCodeAt(i);
-  }
-  return new TextDecoder().decode(bytes);
-}
-
-function base64urlDecodeToBytes(str: string): Uint8Array {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const binString = atob(base64 + padding);
-  const bytes = new Uint8Array(binString.length);
-  for (let i = 0; i < binString.length; i++) {
-    bytes[i] = binString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function hmacSha256(secret: string, data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
-  
-  const cryptoKey = await globalThis.crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await globalThis.crypto.subtle.sign(
-    'HMAC',
-    cryptoKey,
-    messageData
-  );
-  
-  return base64urlEncodeBytes(new Uint8Array(signature));
-}
-
-function timingSafeEqualJS(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.byteLength !== b.byteLength) {
-    return false;
-  }
-  let result = 0;
-  for (let i = 0; i < a.byteLength; i++) {
-    result |= a[i] ^ b[i];
-  }
-  return result === 0;
 }
 
 /**
