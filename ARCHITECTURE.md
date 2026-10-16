@@ -113,6 +113,7 @@ flowchart LR
     node_api_admin_versions_id["[id]"]
     node_api_admin_versions_id_restore["restore"]
     node_api_guest["guest"]
+    node_api_guest_address["address"]
     node_api_guest_login["login"]
     node_api_health["health"]
     node_api_media["media"]
@@ -179,6 +180,7 @@ flowchart LR
     node_api_admin_versions --> node_api_admin_versions_id
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
     node_api --> node_api_guest
+    node_api_guest --> node_api_guest_address
     node_api_guest --> node_api_guest_login
     node_api --> node_api_health
     node_api --> node_api_media
@@ -238,6 +240,7 @@ flowchart LR
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
+    class node_api_guest_address api;
     class node_api_guest_login api;
     class node_api_health api;
     class node_api_media api;
@@ -251,6 +254,7 @@ flowchart LR
     class node_api_registry_validatecode api;
     class node_api_weather api;
     class node_archive page;
+    class node_guest page;
     class node_guest_login page;
     class node_heart page;
     class node_photos page;

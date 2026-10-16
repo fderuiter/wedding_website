@@ -4,6 +4,12 @@ export interface ParsedCsvRow {
   guestName: string;
   code: string;
   email?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
   dietaryNotes?: string;
   plusOneAllocations?: number;
   extraFields?: Record<string, string>;
@@ -17,6 +23,12 @@ export interface CsvParseResult {
   suggestedGuestNameCol: string;
   suggestedCodeCol: string;
   suggestedEmailCol: string;
+  suggestedAddressLine1Col: string;
+  suggestedAddressLine2Col: string;
+  suggestedCityCol: string;
+  suggestedStateCol: string;
+  suggestedZipCodeCol: string;
+  suggestedCountryCol: string;
   suggestedDietaryNotesCol: string;
   suggestedPlusOneCol: string;
   rows: Record<string, string>[];
@@ -26,6 +38,12 @@ export interface ColumnMappingOptions {
   guestNameCol: string;
   codeCol?: string;
   emailCol?: string;
+  addressLine1Col?: string;
+  addressLine2Col?: string;
+  cityCol?: string;
+  stateCol?: string;
+  zipCodeCol?: string;
+  countryCol?: string;
   dietaryNotesCol?: string;
   plusOneCol?: string;
   extraCols?: string[];
@@ -47,6 +65,12 @@ export function parseCsvContent(text: string): CsvParseResult {
       suggestedGuestNameCol: '',
       suggestedCodeCol: '',
       suggestedEmailCol: '',
+      suggestedAddressLine1Col: '',
+      suggestedAddressLine2Col: '',
+      suggestedCityCol: '',
+      suggestedStateCol: '',
+      suggestedZipCodeCol: '',
+      suggestedCountryCol: '',
       suggestedDietaryNotesCol: '',
       suggestedPlusOneCol: '',
       rows: [],
@@ -69,6 +93,12 @@ export function parseCsvContent(text: string): CsvParseResult {
   let suggestedGuestNameCol = '';
   let suggestedCodeCol = '';
   let suggestedEmailCol = '';
+  let suggestedAddressLine1Col = '';
+  let suggestedAddressLine2Col = '';
+  let suggestedCityCol = '';
+  let suggestedStateCol = '';
+  let suggestedZipCodeCol = '';
+  let suggestedCountryCol = '';
   let suggestedDietaryNotesCol = '';
   let suggestedPlusOneCol = '';
 
@@ -102,6 +132,55 @@ export function parseCsvContent(text: string): CsvParseResult {
         lower.includes('mail address')
       ) {
         suggestedEmailCol = h;
+      }
+    }
+    if (!suggestedAddressLine1Col) {
+      if (
+        lower.includes('address line 1') ||
+        lower.includes('address 1') ||
+        lower === 'address' ||
+        lower.includes('street address') ||
+        lower === 'street' ||
+        lower.includes('mailing address')
+      ) {
+        suggestedAddressLine1Col = h;
+      }
+    }
+    if (!suggestedAddressLine2Col) {
+      if (
+        lower.includes('address line 2') ||
+        lower.includes('address 2') ||
+        lower === 'suite' ||
+        lower === 'apt' ||
+        lower === 'apartment' ||
+        lower === 'unit'
+      ) {
+        suggestedAddressLine2Col = h;
+      }
+    }
+    if (!suggestedCityCol) {
+      if (lower === 'city' || lower === 'town' || lower.includes('city')) {
+        suggestedCityCol = h;
+      }
+    }
+    if (!suggestedStateCol) {
+      if (lower === 'state' || lower === 'province' || lower === 'region' || lower.includes('state')) {
+        suggestedStateCol = h;
+      }
+    }
+    if (!suggestedZipCodeCol) {
+      if (
+        lower.includes('zip') ||
+        lower.includes('postal') ||
+        lower === 'postcode' ||
+        lower === 'zipcode'
+      ) {
+        suggestedZipCodeCol = h;
+      }
+    }
+    if (!suggestedCountryCol) {
+      if (lower === 'country' || lower === 'nation' || lower.includes('country')) {
+        suggestedCountryCol = h;
       }
     }
     if (!suggestedDietaryNotesCol) {
@@ -159,6 +238,12 @@ export function parseCsvContent(text: string): CsvParseResult {
     suggestedGuestNameCol,
     suggestedCodeCol,
     suggestedEmailCol,
+    suggestedAddressLine1Col,
+    suggestedAddressLine2Col,
+    suggestedCityCol,
+    suggestedStateCol,
+    suggestedZipCodeCol,
+    suggestedCountryCol,
     suggestedDietaryNotesCol,
     suggestedPlusOneCol,
     rows,
@@ -245,6 +330,12 @@ export function validateCsvRows(
     guestNameCol,
     codeCol = '',
     emailCol = '',
+    addressLine1Col = '',
+    addressLine2Col = '',
+    cityCol = '',
+    stateCol = '',
+    zipCodeCol = '',
+    countryCol = '',
     dietaryNotesCol = '',
     plusOneCol = '',
     extraCols,
@@ -264,6 +355,12 @@ export function validateCsvRows(
     const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
     const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
     const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
+    const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();
+    const addressLine2 = addressLine2Col ? (r[addressLine2Col] || '').trim() : (r['addressLine2'] || r['Address Line 2'] || '').trim();
+    const city = cityCol ? (r[cityCol] || '').trim() : (r['city'] || r['City'] || '').trim();
+    const state = stateCol ? (r[stateCol] || '').trim() : (r['state'] || r['State'] || '').trim();
+    const zipCode = zipCodeCol ? (r[zipCodeCol] || '').trim() : (r['zipCode'] || r['Zip Code'] || r['Zip'] || '').trim();
+    const country = countryCol ? (r[countryCol] || '').trim() : (r['country'] || r['Country'] || '').trim();
     const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
     const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
 
@@ -291,6 +388,25 @@ export function validateCsvRows(
       }
     }
 
+    if (addressLine1 && addressLine1.length > 150) {
+      errors.push('Address Line 1 must be under 150 characters.');
+    }
+    if (addressLine2 && addressLine2.length > 150) {
+      errors.push('Address Line 2 must be under 150 characters.');
+    }
+    if (city && city.length > 100) {
+      errors.push('City must be under 100 characters.');
+    }
+    if (state && state.length > 100) {
+      errors.push('State must be under 100 characters.');
+    }
+    if (zipCode && zipCode.length > 20) {
+      errors.push('Zip Code must be under 20 characters.');
+    }
+    if (country && country.length > 100) {
+      errors.push('Country must be under 100 characters.');
+    }
+
     let plusOneAllocations: number | undefined = undefined;
     if (rawPlusOne !== '') {
       if (!/^\d+$/.test(rawPlusOne)) {
@@ -302,7 +418,19 @@ export function validateCsvRows(
 
     // Collect extra fields
     const extraFields: Record<string, string> = {};
-    const mappedCols = new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
+    const mappedCols = new Set([
+      guestNameCol,
+      codeCol,
+      emailCol,
+      addressLine1Col,
+      addressLine2Col,
+      cityCol,
+      stateCol,
+      zipCodeCol,
+      countryCol,
+      dietaryNotesCol,
+      plusOneCol,
+    ].filter(Boolean));
 
     if (extraCols && Array.isArray(extraCols)) {
       extraCols.forEach((col) => {
@@ -324,6 +452,12 @@ export function validateCsvRows(
       guestName,
       code,
       email: email || undefined,
+      addressLine1: addressLine1 || undefined,
+      addressLine2: addressLine2 || undefined,
+      city: city || undefined,
+      state: state || undefined,
+      zipCode: zipCode || undefined,
+      country: country || undefined,
       dietaryNotes: dietaryNotes || undefined,
       plusOneAllocations,
       extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,

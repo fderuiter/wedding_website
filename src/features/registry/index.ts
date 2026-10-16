@@ -9,14 +9,18 @@ export {
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
   ThankYouStatusEnum,
+  InvitationCodeSchema,
   BatchImportInvitationCodeItemSchema,
+  GuestAddressUpdateSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
   ThankYouStatus,
   UpdateThankYouNoteDTO,
   BatchUpdateThankYouNotesDTO,
+  InvitationCodeDTO,
   BatchImportInvitationCodesDTO,
+  GuestAddressUpdateDTO,
 } from './schemas';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
