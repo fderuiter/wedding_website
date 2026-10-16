@@ -2,6 +2,7 @@ import {
   parseCsvContent,
   parseCsvLines,
   validateCsvRows,
+  validateSingleCsvRow,
   generateCsvContent,
   escapeCsvCell,
   generateSampleCsvTemplate,
@@ -212,6 +213,59 @@ describe('CSV Parser Utility', () => {
       expect(parsed.rows[0]['Email']).toBe('jane.doe@example.com');
       expect(parsed.rows[0]['Dietary Notes']).toBe('Vegetarian');
       expect(parsed.rows[0]['Plus-One Allocations']).toBe('1');
+    });
+  });
+
+  describe('validateSingleCsvRow & Hoisted Set Allocations', () => {
+    it('validates a single CSV row correctly using provided frequency map and DB set', () => {
+      const row = {
+        'Guest Name': 'Alice Smith',
+        Code: 'ALICE1',
+        Email: 'alice@example.com',
+      };
+      const freqMap = new Map([['ALICE1', 1]]);
+      const dbCodes = new Set<string>();
+
+      const result = validateSingleCsvRow(
+        row,
+        0,
+        { guestNameCol: 'Guest Name', codeCol: 'Code', emailCol: 'Email' },
+        freqMap,
+        dbCodes
+      );
+
+      expect(result.isValid).toBe(true);
+      expect(result.guestName).toBe('Alice Smith');
+      expect(result.code).toBe('ALICE1');
+      expect(result.email).toBe('alice@example.com');
+    });
+
+    it('allocates hoisted column Set only once per batch instead of per-row', () => {
+      let setConstructorCount = 0;
+      const OriginalSet = global.Set;
+
+      // Spy on Set construction during validateCsvRows execution
+      const SetSpy = jest.fn().mockImplementation(function (this: unknown, iterable?: Iterable<unknown>) {
+        setConstructorCount++;
+        return new OriginalSet(iterable);
+      });
+      (global as unknown as { Set: typeof Set }).Set = SetSpy as unknown as typeof Set;
+
+      try {
+        const rows = Array.from({ length: 100 }, (_, i) => ({
+          'Guest Name': `Guest ${i}`,
+          Code: `CODE${i}`,
+        }));
+
+        setConstructorCount = 0;
+        validateCsvRows(rows, { guestNameCol: 'Guest Name', codeCol: 'Code' }, new OriginalSet());
+
+        // For 100 rows, column mapping Set must be allocated exactly 1 time per batch call, not 100 times!
+        // (Note: existingDbCodes is also passed or constructed once as default parameter)
+        expect(setConstructorCount).toBeLessThanOrEqual(2);
+      } finally {
+        global.Set = OriginalSet;
+      }
     });
   });
 });

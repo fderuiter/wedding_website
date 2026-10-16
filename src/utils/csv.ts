@@ -221,6 +221,98 @@ export function parseCsvLines(text: string): string[][] {
   return result;
 }
 
+export function validateSingleCsvRow(
+  r: Record<string, string>,
+  idx: number,
+  mapping: ColumnMappingOptions,
+  codeFrequency: Map<string, number>,
+  existingDbCodes: Set<string>,
+  mappedColsSet?: Set<string>
+): ParsedCsvRow {
+  const {
+    guestNameCol = '',
+    codeCol = '',
+    emailCol = '',
+    dietaryNotesCol = '',
+    plusOneCol = '',
+    extraCols,
+  } = mapping;
+
+  const mappedCols =
+    mappedColsSet ||
+    new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
+
+  const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
+  const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
+  const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
+  const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
+  const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
+
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!guestName) {
+    errors.push('Guest name is required.');
+  }
+
+  if (code) {
+    if ((codeFrequency.get(code) || 0) > 1) {
+      errors.push(`Duplicate code "${code}" within CSV file.`);
+    } else if (existingDbCodes.has(code)) {
+      warnings.push(`Code "${code}" already exists in database.`);
+    }
+  } else {
+    warnings.push('Blank code: Auto-generated 8-char code will be assigned.');
+  }
+
+  if (email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      errors.push('Invalid email format.');
+    }
+  }
+
+  let plusOneAllocations: number | undefined = undefined;
+  if (rawPlusOne !== '') {
+    if (!/^\d+$/.test(rawPlusOne)) {
+      errors.push('Plus-one allocation must be a non-negative integer.');
+    } else {
+      plusOneAllocations = parseInt(rawPlusOne, 10);
+    }
+  }
+
+  // Collect extra fields
+  const extraFields: Record<string, string> = {};
+
+  if (extraCols && Array.isArray(extraCols)) {
+    extraCols.forEach((col) => {
+      if (r[col] !== undefined && r[col].trim() !== '') {
+        extraFields[col] = r[col].trim();
+      }
+    });
+  } else {
+    Object.keys(r).forEach((col) => {
+      if (!mappedCols.has(col) && r[col] !== undefined && r[col].trim() !== '') {
+        extraFields[col] = r[col].trim();
+      }
+    });
+  }
+
+  return {
+    rowIndex: idx + 1,
+    raw: r,
+    guestName,
+    code,
+    email: email || undefined,
+    dietaryNotes: dietaryNotes || undefined,
+    plusOneAllocations,
+    extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
 export function validateCsvRows(
   rows: Record<string, string>[],
   columnMappingOrGuestNameCol: string | ColumnMappingOptions,
@@ -247,7 +339,6 @@ export function validateCsvRows(
     emailCol = '',
     dietaryNotesCol = '',
     plusOneCol = '',
-    extraCols,
   } = mapping;
 
   const codeFrequency = new Map<string, number>();
@@ -260,78 +351,12 @@ export function validateCsvRows(
     }
   });
 
-  return rows.map((r, idx) => {
-    const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
-    const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
-    const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
-    const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
-    const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
+  // Hoisted column set creation
+  const mappedCols = new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
 
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    if (!guestName) {
-      errors.push('Guest name is required.');
-    }
-
-    if (code) {
-      if ((codeFrequency.get(code) || 0) > 1) {
-        errors.push(`Duplicate code "${code}" within CSV file.`);
-      } else if (existingDbCodes.has(code)) {
-        warnings.push(`Code "${code}" already exists in database.`);
-      }
-    } else {
-      warnings.push('Blank code: Auto-generated 8-char code will be assigned.');
-    }
-
-    if (email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        errors.push('Invalid email format.');
-      }
-    }
-
-    let plusOneAllocations: number | undefined = undefined;
-    if (rawPlusOne !== '') {
-      if (!/^\d+$/.test(rawPlusOne)) {
-        errors.push('Plus-one allocation must be a non-negative integer.');
-      } else {
-        plusOneAllocations = parseInt(rawPlusOne, 10);
-      }
-    }
-
-    // Collect extra fields
-    const extraFields: Record<string, string> = {};
-    const mappedCols = new Set([guestNameCol, codeCol, emailCol, dietaryNotesCol, plusOneCol].filter(Boolean));
-
-    if (extraCols && Array.isArray(extraCols)) {
-      extraCols.forEach((col) => {
-        if (r[col] !== undefined && r[col].trim() !== '') {
-          extraFields[col] = r[col].trim();
-        }
-      });
-    } else {
-      Object.keys(r).forEach((col) => {
-        if (!mappedCols.has(col) && r[col] !== undefined && r[col].trim() !== '') {
-          extraFields[col] = r[col].trim();
-        }
-      });
-    }
-
-    return {
-      rowIndex: idx + 1,
-      raw: r,
-      guestName,
-      code,
-      email: email || undefined,
-      dietaryNotes: dietaryNotes || undefined,
-      plusOneAllocations,
-      extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
-      isValid: errors.length === 0,
-      errors,
-      warnings,
-    };
-  });
+  return rows.map((r, idx) =>
+    validateSingleCsvRow(r, idx, mapping, codeFrequency, existingDbCodes, mappedCols)
+  );
 }
 
 export function escapeCsvCell(val: unknown): string {
