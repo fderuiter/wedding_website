@@ -138,3 +138,71 @@ test('Dynamic transition of FormMessage unmounting and mounting', () => {
   fireEvent.click(btnMount);
   expect(input).toHaveAttribute('aria-describedby');
 });
+
+test('Form components apply CSS custom properties for default and feedback states', () => {
+  const { rerender } = render(
+    <FormGroup state="default">
+      <Label data-testid="label">Field Label</Label>
+      <Input data-testid="input" />
+      <Textarea data-testid="textarea" />
+      <Select data-testid="select" />
+      <Checkbox data-testid="checkbox" />
+      <FormMessage data-testid="message">Default message</FormMessage>
+    </FormGroup>
+  );
+
+  const label = screen.getByTestId('label');
+  const input = screen.getByTestId('input');
+  const textarea = screen.getByTestId('textarea');
+  const select = screen.getByTestId('select');
+  const checkbox = screen.getByTestId('checkbox');
+  const message = screen.getByTestId('message');
+
+  expect(label.className).toContain('text-[var(--form-label-text,#111827)]');
+  expect(input.className).toContain('border-[var(--input-border,#d1d5db)]');
+  expect(input.className).toContain('bg-[var(--input-bg,#ffffff)]');
+  expect(input.style.borderRadius).toBe('var(--input-radius, 0.375rem)');
+  expect(textarea.className).toContain('border-[var(--input-border,#d1d5db)]');
+  expect(select.className).toContain('border-[var(--input-border,#d1d5db)]');
+  expect(checkbox.className).toContain('border-[var(--input-border,#d1d5db)]');
+  expect(message.className).toContain('text-[var(--form-message-text,#6b7280)]');
+
+  // Rerender with error state
+  rerender(
+    <FormGroup state="error">
+      <Label data-testid="label">Field Label</Label>
+      <Input data-testid="input" />
+      <FormMessage data-testid="message">Error message</FormMessage>
+    </FormGroup>
+  );
+
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-error-text,#dc2626)]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-error-border,#ef4444)]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-error-text,#dc2626)]');
+
+  // Rerender with success state
+  rerender(
+    <FormGroup state="success">
+      <Label data-testid="label">Field Label</Label>
+      <Input data-testid="input" />
+      <FormMessage data-testid="message">Success message</FormMessage>
+    </FormGroup>
+  );
+
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-success-text,#16a34a)]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-success-border,#22c55e)]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-success-text,#16a34a)]');
+
+  // Rerender with warning state
+  rerender(
+    <FormGroup state="warning">
+      <Label data-testid="label">Field Label</Label>
+      <Input data-testid="input" />
+      <FormMessage data-testid="message">Warning message</FormMessage>
+    </FormGroup>
+  );
+
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-warning-border,#f59e0b)]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
+});
