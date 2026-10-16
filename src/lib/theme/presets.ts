@@ -84,6 +84,18 @@ export interface ComponentTokens {
   '--print-header-border': string;
   '--print-badge-bg': string;
 
+  '--canvas-bg': string;
+  '--canvas-grid-dot': string;
+  '--canvas-border': string;
+  '--floorplan-table-bg': string;
+  '--floorplan-table-border': string;
+  '--floorplan-table-radius': string;
+  '--floorplan-seat-assigned-bg': string;
+  '--floorplan-seat-assigned-text': string;
+  '--floorplan-seat-unassigned-hover': string;
+  '--floorplan-status-overcapacity-bg': string;
+  '--floorplan-status-overcapacity-border': string;
+
   '--glow-color': string;
   '--glow-gradient': string;
   '--particle-color': string;
@@ -119,6 +131,16 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--schedule-filter-hover-bg': '#3f3f46',
   '--schedule-tag-bg': '#27272a',
   '--schedule-tag-text': '#e4e4e7',
+  '--canvas-bg': '#111827',
+  '--canvas-grid-dot': '#374151',
+  '--canvas-border': '2px dashed #374151',
+  '--floorplan-table-bg': '#1f2937',
+  '--floorplan-table-border': '#374151',
+  '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+  '--floorplan-seat-assigned-text': '#ffffff',
+  '--floorplan-seat-unassigned-hover': '#374151',
+  '--floorplan-status-overcapacity-bg': '#450a0a',
+  '--floorplan-status-overcapacity-border': '#dc2626',
 };
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -204,6 +226,18 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#111827',
     '--print-badge-bg': '#f3f4f6',
 
+    '--canvas-bg': '#f8fafc',
+    '--canvas-grid-dot': '#cbd5e1',
+    '--canvas-border': '2px dashed #cbd5e1',
+    '--floorplan-table-bg': '#ffffff',
+    '--floorplan-table-border': '#d1d5db',
+    '--floorplan-table-radius': '0.75rem',
+    '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+    '--floorplan-seat-assigned-text': '#ffffff',
+    '--floorplan-seat-unassigned-hover': '#fef2f2',
+    '--floorplan-status-overcapacity-bg': '#fef2f2',
+    '--floorplan-status-overcapacity-border': '#ef4444',
+
     '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent)',
     '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 6%, transparent), transparent)',
     '--particle-color': 'var(--color-accent, #D4AF37)',
@@ -236,6 +270,16 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-filter-hover-bg': '#4b5563',
       '--schedule-tag-bg': '#374151',
       '--schedule-tag-text': '#f9fafb',
+      '--canvas-bg': '#111827',
+      '--canvas-grid-dot': '#374151',
+      '--canvas-border': '2px dashed #374151',
+      '--floorplan-table-bg': '#1f2937',
+      '--floorplan-table-border': '#374151',
+      '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+      '--floorplan-seat-assigned-text': '#ffffff',
+      '--floorplan-seat-unassigned-hover': '#374151',
+      '--floorplan-status-overcapacity-bg': '#450a0a',
+      '--floorplan-status-overcapacity-border': '#dc2626',
     },
   },
   modern: {
@@ -320,6 +364,18 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#0f172a',
     '--print-badge-bg': '#f1f5f9',
 
+    '--canvas-bg': '#f8fafc',
+    '--canvas-grid-dot': '#cbd5e1',
+    '--canvas-border': '1px solid #cbd5e1',
+    '--floorplan-table-bg': '#ffffff',
+    '--floorplan-table-border': '#cbd5e1',
+    '--floorplan-table-radius': '0.75rem',
+    '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+    '--floorplan-seat-assigned-text': '#ffffff',
+    '--floorplan-seat-unassigned-hover': '#f1f5f9',
+    '--floorplan-status-overcapacity-bg': '#fff1f2',
+    '--floorplan-status-overcapacity-border': '#f43f5e',
+
     '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent)',
     '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 8%, transparent), transparent)',
     '--particle-color': 'var(--color-accent, #3B82F6)',
@@ -352,6 +408,16 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-filter-hover-bg': '#334155',
       '--schedule-tag-bg': '#1e293b',
       '--schedule-tag-text': '#f8fafc',
+      '--canvas-bg': '#0f172a',
+      '--canvas-grid-dot': '#334155',
+      '--canvas-border': '1px solid #1e293b',
+      '--floorplan-table-bg': '#0f172a',
+      '--floorplan-table-border': '#1e293b',
+      '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+      '--floorplan-seat-assigned-text': '#ffffff',
+      '--floorplan-seat-unassigned-hover': '#1e293b',
+      '--floorplan-status-overcapacity-bg': '#4c0519',
+      '--floorplan-status-overcapacity-border': '#f43f5e',
     },
   },
   romantic: {
@@ -436,6 +502,18 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#9d174d',
     '--print-badge-bg': '#fce7f3',
 
+    '--canvas-bg': '#fdf2f8',
+    '--canvas-grid-dot': '#fbcfe8',
+    '--canvas-border': '2px dashed #fce7f3',
+    '--floorplan-table-bg': '#fffafb',
+    '--floorplan-table-border': '#fce7f3',
+    '--floorplan-table-radius': '1.25rem',
+    '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+    '--floorplan-seat-assigned-text': '#ffffff',
+    '--floorplan-seat-unassigned-hover': '#fbcfe8',
+    '--floorplan-status-overcapacity-bg': '#ffe4e6',
+    '--floorplan-status-overcapacity-border': '#f43f5e',
+
     '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent)',
     '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 10%, transparent), transparent)',
     '--particle-color': 'var(--color-accent, #F472B6)',
@@ -469,6 +547,16 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-node-border': '#231118',
       '--schedule-tag-bg': '#3b1827',
       '--schedule-tag-text': '#fbcfe8',
+      '--canvas-bg': '#231118',
+      '--canvas-grid-dot': '#4a1d2f',
+      '--canvas-border': '2px dashed #4a1d2f',
+      '--floorplan-table-bg': '#231118',
+      '--floorplan-table-border': '#4a1d2f',
+      '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+      '--floorplan-seat-assigned-text': '#ffffff',
+      '--floorplan-seat-unassigned-hover': '#3b1827',
+      '--floorplan-status-overcapacity-bg': '#4c0519',
+      '--floorplan-status-overcapacity-border': '#f43f5e',
     },
   },
   minimal: {
@@ -553,6 +641,18 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#18181b',
     '--print-badge-bg': '#f4f4f5',
 
+    '--canvas-bg': '#fafafa',
+    '--canvas-grid-dot': '#d4d4d8',
+    '--canvas-border': '1px solid #e4e4e7',
+    '--floorplan-table-bg': '#ffffff',
+    '--floorplan-table-border': '#e4e4e7',
+    '--floorplan-table-radius': '0px',
+    '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+    '--floorplan-seat-assigned-text': '#ffffff',
+    '--floorplan-seat-unassigned-hover': '#f4f4f5',
+    '--floorplan-status-overcapacity-bg': '#fef2f2',
+    '--floorplan-status-overcapacity-border': '#dc2626',
+
     '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent)',
     '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 4%, transparent), transparent)',
     '--particle-color': 'var(--color-accent, #71717A)',
@@ -588,6 +688,16 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-node-border': '#18181b',
       '--schedule-tag-bg': '#27272a',
       '--schedule-tag-text': '#f4f4f5',
+      '--canvas-bg': '#18181b',
+      '--canvas-grid-dot': '#3f3f46',
+      '--canvas-border': '1px solid #27272a',
+      '--floorplan-table-bg': '#18181b',
+      '--floorplan-table-border': '#27272a',
+      '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+      '--floorplan-seat-assigned-text': '#ffffff',
+      '--floorplan-seat-unassigned-hover': '#27272a',
+      '--floorplan-status-overcapacity-bg': '#450a0a',
+      '--floorplan-status-overcapacity-border': '#dc2626',
     },
   },
   editorial: {
@@ -672,6 +782,18 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--print-header-border': '#000000',
     '--print-badge-bg': '#e4e4e7',
 
+    '--canvas-bg': '#f5f5f4',
+    '--canvas-grid-dot': '#a1a1aa',
+    '--canvas-border': '2px solid #000000',
+    '--floorplan-table-bg': '#fcfbf9',
+    '--floorplan-table-border': '#000000',
+    '--floorplan-table-radius': '0.125rem',
+    '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+    '--floorplan-seat-assigned-text': '#ffffff',
+    '--floorplan-seat-unassigned-hover': '#e4e4e7',
+    '--floorplan-status-overcapacity-bg': '#fef2f2',
+    '--floorplan-status-overcapacity-border': '#b91c1c',
+
     '--glow-color': 'color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent)',
     '--glow-gradient': 'radial-gradient(800px circle at 50% 50%, color-mix(in srgb, var(--color-primary, #B91C1C) 12%, transparent), transparent)',
     '--particle-color': 'var(--color-accent, #000000)',
@@ -710,6 +832,16 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--schedule-node-border': '#ffffff',
       '--schedule-tag-bg': '#292524',
       '--schedule-tag-text': '#ffffff',
+      '--canvas-bg': '#1c1917',
+      '--canvas-grid-dot': '#44403c',
+      '--canvas-border': '2px solid #ffffff',
+      '--floorplan-table-bg': '#1c1917',
+      '--floorplan-table-border': '#ffffff',
+      '--floorplan-seat-assigned-bg': 'var(--color-primary, #B91C1C)',
+      '--floorplan-seat-assigned-text': '#ffffff',
+      '--floorplan-seat-unassigned-hover': '#292524',
+      '--floorplan-status-overcapacity-bg': '#450a0a',
+      '--floorplan-status-overcapacity-border': '#ef4444',
     },
   },
 };

@@ -93,7 +93,19 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       </div>
       <div className="p-[var(--card-padding)] pb-16 relative z-20 flex flex-col gap-2">
         <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
-        <p className="text-base text-gray-600 dark:text-gray-300 mb-1 font-medium">{item.category}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-base text-gray-600 dark:text-gray-300 font-medium">{item.category}</p>
+          {item.itemType === 'CASH_FUND' && (
+            <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold px-2 py-0.5 rounded-full">
+              Cash Fund
+            </span>
+          )}
+          {item.itemType === 'EXPERIENCE_FUND' && (
+            <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-2 py-0.5 rounded-full">
+              Experience Fund
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">{formatCurrency(item.price)}</p>
         {item.isGroupGift && !isClaimed && (
           <div className="mt-1 flex flex-col gap-1">

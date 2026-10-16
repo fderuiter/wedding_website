@@ -8,14 +8,15 @@ export {
   ContributorSchema,
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
-  ThankYouStatusEnum,
+  ItemTypeEnum,
   BatchImportInvitationCodeItemSchema,
+  BatchImportInvitationCodesSchema,
   GuestRsvpSchema,
   PlusOneResponseSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
-  ThankYouStatus,
+  ItemType,
   UpdateThankYouNoteDTO,
   BatchUpdateThankYouNotesDTO,
   BatchImportInvitationCodesDTO,

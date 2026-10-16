@@ -107,7 +107,7 @@ export default function InvitationCodesDashboardPage() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [newCode, setNewCode] = useState({ guestName: '', code: '' });
+  const [newCode, setNewCode] = useState({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
   const [dietaryFilter, setDietaryFilter] = useState<string>('all');
@@ -242,9 +242,11 @@ export default function InvitationCodesDashboardPage() {
       const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
       const matchesCode = item.code ? item.code.toLowerCase().includes(query) : false;
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
+      const matchesPlusOneFirstName = item.plusOneFirstName ? item.plusOneFirstName.toLowerCase().includes(query) : false;
+      const matchesPlusOneLastName = item.plusOneLastName ? item.plusOneLastName.toLowerCase().includes(query) : false;
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
 
-      return matchesName || matchesCode || matchesEmail || matchesDietary;
+      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName || matchesDietary;
     });
   }, [codes, searchQuery, statusFilter, attendanceFilter, dietaryFilter]);
 
@@ -257,9 +259,11 @@ export default function InvitationCodesDashboardPage() {
       await create({
         guestName: newCode.guestName.trim(),
         code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
+        plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
+        plusOneLastName: newCode.plusOneLastName.trim() || undefined,
         used: false,
       });
-      setNewCode({ guestName: '', code: '' });
+      setNewCode({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
       setIsCreating(false);
       addToast('Invitation code created successfully.', 'success');
     } catch (e: unknown) {
@@ -303,6 +307,8 @@ export default function InvitationCodesDashboardPage() {
         'Guest Name': item.guestName || '',
         'Invitation Code': item.code || '',
         Email: item.email || '',
+        'Plus-One First Name': item.plusOneFirstName || '',
+        'Plus-One Last Name': item.plusOneLastName || '',
         'Code Status': item.used ? 'Redeemed' : 'Unused',
         'RSVP Status': item.rsvpStatus ? (item.rsvpStatus.charAt(0).toUpperCase() + item.rsvpStatus.slice(1)) : 'Pending',
         'Meal Selection': item.mealSelection || 'Not Specified',
@@ -337,7 +343,7 @@ export default function InvitationCodesDashboardPage() {
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
           <Button onClick={() => {
-            setNewCode({ guestName: '', code: '' });
+            setNewCode({ guestName: '', code: '', plusOneFirstName: '', plusOneLastName: '' });
             setIsCreating(true);
           }}>Generate New Code</Button>
         </div>
@@ -370,6 +376,24 @@ export default function InvitationCodesDashboardPage() {
                 placeholder="e.g. JOHN123"
                 value={newCode.code}
                 onChange={e => setNewCode({ ...newCode, code: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One First Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Jane"
+                value={newCode.plusOneFirstName}
+                onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Plus-One Last Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith"
+                value={newCode.plusOneLastName}
+                onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
               />
             </FormGroup>
           </div>
@@ -628,6 +652,12 @@ export default function InvitationCodesDashboardPage() {
                     </span>
                   )}
                 </div>
+
+                {(item.plusOneFirstName || item.plusOneLastName) && (
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                  </div>
+                )}
 
                 <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-4 gap-y-1">
                   <span>

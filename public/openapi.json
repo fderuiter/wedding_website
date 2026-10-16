@@ -320,6 +320,44 @@
                           "minimum": 0,
                           "maximum": 9007199254740991
                         },
+                        "plusOneFirstName": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "plusOneLastName": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "extraFields": {
                           "anyOf": [
                             {
@@ -929,9 +967,53 @@
                           "maxLength": 255
                         },
                         "quantity": {
+                          "default": 1,
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
+                        },
+                        "itemType": {
+                          "default": "PHYSICAL",
+                          "type": "string",
+                          "enum": [
+                            "PHYSICAL",
+                            "CASH_FUND",
+                            "EXPERIENCE_FUND"
+                          ]
+                        },
+                        "paymentHandleType": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "paymentHandle": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "vendorUrl": {
                           "anyOf": [
@@ -2198,6 +2280,35 @@
         }
       }
     },
+    "/api/guest/photos/upload": {
+      "post": {
+        "summary": "POST /api/guest/photos/upload",
+        "description": "Endpoint for /api/guest/photos/upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "file": {}
+                },
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/guest/rsvp": {
       "post": {
         "summary": "POST /api/guest/rsvp",
@@ -2446,6 +2557,35 @@
         }
       }
     },
+    "/api/photos/upload": {
+      "post": {
+        "summary": "POST /api/photos/upload",
+        "description": "Endpoint for /api/photos/upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "file": {}
+                },
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/ready": {
       "get": {
         "summary": "GET /api/ready",
@@ -2544,6 +2684,15 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
+                  "itemType": {
+                    "default": "PHYSICAL",
+                    "type": "string",
+                    "enum": [
+                      "PHYSICAL",
+                      "CASH_FUND",
+                      "EXPERIENCE_FUND"
+                    ]
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1,
@@ -2554,6 +2703,7 @@
                     "exclusiveMinimum": 0
                   },
                   "quantity": {
+                    "default": 1,
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991
@@ -2595,6 +2745,44 @@
                     ]
                   },
                   "isGroupGift": {},
+                  "paymentHandleType": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "paymentHandle": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
                   "imageId": {
                     "anyOf": [
                       {
@@ -2681,6 +2869,7 @@
                   }
                 },
                 "required": [
+                  "itemType",
                   "name",
                   "price",
                   "quantity",
@@ -2739,6 +2928,15 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
+                  "itemType": {
+                    "default": "PHYSICAL",
+                    "type": "string",
+                    "enum": [
+                      "PHYSICAL",
+                      "CASH_FUND",
+                      "EXPERIENCE_FUND"
+                    ]
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1,
@@ -2749,6 +2947,7 @@
                     "exclusiveMinimum": 0
                   },
                   "quantity": {
+                    "default": 1,
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991
@@ -2790,6 +2989,44 @@
                     ]
                   },
                   "isGroupGift": {},
+                  "paymentHandleType": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "paymentHandle": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
                   "imageId": {
                     "anyOf": [
                       {
@@ -2876,6 +3113,7 @@
                   }
                 },
                 "required": [
+                  "itemType",
                   "name",
                   "price",
                   "quantity",
