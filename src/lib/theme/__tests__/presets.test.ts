@@ -60,6 +60,13 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--toast-confirm-text']).toBeDefined();
       expect(tokens['--toast-radius']).toBeDefined();
       expect(tokens['--toast-close-hover-bg']).toBeDefined();
+
+      // Check standardized print tokens
+      expect(tokens['--print-bg']).toBeDefined();
+      expect(tokens['--print-text']).toBeDefined();
+      expect(tokens['--print-border']).toBeDefined();
+      expect(tokens['--print-header-border']).toBeDefined();
+      expect(tokens['--print-badge-bg']).toBeDefined();
     }
   });
 

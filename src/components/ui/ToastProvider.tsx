@@ -6,17 +6,23 @@ import { generateSecureUUID } from '@/utils/uuid';
 
 type ToastType = 'success' | 'error' | 'info' | 'confirm';
 
-interface Toast {
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface Toast {
   id: string;
   message: string;
   type: ToastType;
   onConfirm?: () => void;
   onCancel?: () => void;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
   toasts: Toast[];
-  addToast: (message: string, type?: ToastType) => void;
+  addToast: (message: string, type?: ToastType, onConfirm?: () => void, onCancel?: () => void, action?: ToastAction) => void;
   removeToast: (id: string) => void;
   confirm: (message: string) => Promise<boolean>;
 }
@@ -36,9 +42,15 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, type: ToastType = 'info', onConfirm?: () => void, onCancel?: () => void) => {
+  const addToast = useCallback((
+    message: string,
+    type: ToastType = 'info',
+    onConfirm?: () => void,
+    onCancel?: () => void,
+    action?: ToastAction
+  ) => {
     const id = generateSecureUUID();
-    setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel }]);
+    setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel, action }]);
     if (type !== 'confirm') {
       const timer = setTimeout(() => {
         timersRef.current.delete(id);
@@ -115,23 +127,40 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
               borderRadius: 'var(--toast-radius)',
             }}
           >
-            <div className="flex justify-between items-center w-full">
+            <div className="flex justify-between items-center w-full gap-2">
               <span>{toast.message}</span>
-              {toast.type !== 'confirm' && (
-                <Button 
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeToast(toast.id)} 
-                  className="ml-4 text-inherit hover:bg-[var(--toast-close-hover-bg)]"
-                  style={{
-                    color: 'inherit',
-                    '--btn-ghost-hover-bg': 'var(--toast-close-hover-bg)',
-                  } as React.CSSProperties}
-                  aria-label="Close notification"
-                >
-                  &times;
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {toast.action && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toast.action?.onClick();
+                      removeToast(toast.id);
+                    }}
+                    className="text-xs px-2.5 py-1 bg-white/20 text-white hover:bg-white/30 border-white/40 focus:ring-1 focus:ring-white"
+                  >
+                    {toast.action.label}
+                  </Button>
+                )}
+                {toast.type !== 'confirm' && (
+                  <Button 
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeToast(toast.id)} 
+                    className="ml-2 text-inherit hover:bg-[var(--toast-close-hover-bg)]"
+                    style={{
+                      color: 'inherit',
+                      '--btn-ghost-hover-bg': 'var(--toast-close-hover-bg)',
+                    } as React.CSSProperties}
+                    aria-label="Close notification"
+                  >
+                    &times;
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         ))}
