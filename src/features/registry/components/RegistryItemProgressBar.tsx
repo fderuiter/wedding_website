@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { formatCurrency } from '@/utils/intl';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
@@ -57,7 +57,7 @@ const RegistryItemProgressBar: React.FC<RegistryItemProgressBarProps> = ({ contr
         className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full"
         initial={{ width: 0 }}
         animate={{ width: `${percent}%` }}
-        transition={{ duration, ease: parseMotionEasing(presetTokens['--motion-ease-default']) }}
+        transition={{ duration, ease: 'easeInOut' }}
       />
     </div>
   );
