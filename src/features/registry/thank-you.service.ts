@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ContributorSchema } from './schemas';
 import { ApiError } from '@/utils/ApiError';
@@ -218,9 +218,7 @@ export class ThankYouService {
         },
       });
 
-      for (const record of updatedRecords) {
-        await createAuditSnapshot('Contributor', record.id, record, author, txClient);
-      }
+      await createBatchAuditSnapshots('Contributor', updatedRecords, author, txClient);
 
       return updatedRecords.map((r: any) => ContributorSchema.parse(r));
     };
