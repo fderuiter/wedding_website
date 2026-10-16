@@ -9,11 +9,13 @@ export {
   UpdateThankYouNoteSchema,
   BatchUpdateThankYouNotesSchema,
   ThankYouStatusEnum,
+  ItemTypeEnum,
   BatchImportInvitationCodeItemSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
   ThankYouStatus,
+  ItemType,
   UpdateThankYouNoteDTO,
   BatchUpdateThankYouNotesDTO,
   BatchImportInvitationCodesDTO,

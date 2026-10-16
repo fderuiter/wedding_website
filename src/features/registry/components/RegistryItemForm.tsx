@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
 import { RegistryItemBaseSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
-import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox } from '@/components/ui/forms';
+import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox, Select } from '@/components/ui/forms';
 
 /**
  * Props for the RegistryItemForm component.
@@ -24,6 +24,7 @@ interface RegistryItemFormProps {
 }
 
 const defaultValues: Partial<RegistryItem> = {
+  itemType: 'PHYSICAL',
   name: '',
   description: '',
   category: '',
@@ -32,12 +33,14 @@ const defaultValues: Partial<RegistryItem> = {
   vendorUrl: '',
   quantity: 1,
   isGroupGift: false,
+  paymentHandleType: '',
+  paymentHandle: '',
 };
 
 /**
  * @function RegistryItemForm
- * @description A form for adding or editing a registry item. It includes fields for all
- * item properties and a web scraper to pre-fill data from a URL.
+ * @description A form for adding or editing a registry item. It includes fields for physical items,
+ * cash funds, and experience funds, with conditional scraper support for physical products.
  *
  * @param {RegistryItemFormProps} props - The props for the component.
  * @returns {JSX.Element} The rendered registry item form.
@@ -63,12 +66,31 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   const priceInputRef = useRef<HTMLInputElement>(null);
   const imageUrlInputRef = useRef<HTMLInputElement>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type, checked } = e.target as HTMLInputElement;
-    setValues((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+  const isFund = values.itemType === 'CASH_FUND' || values.itemType === 'EXPERIENCE_FUND';
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    const checked = (e.target as HTMLInputElement).checked;
+
+    setValues((prev) => {
+      const updated = {
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+      };
+
+      if (name === 'itemType') {
+        const newItemType = value as 'PHYSICAL' | 'CASH_FUND' | 'EXPERIENCE_FUND';
+        if (newItemType === 'CASH_FUND' || newItemType === 'EXPERIENCE_FUND') {
+          updated.isGroupGift = true;
+          updated.quantity = 1;
+          if (!updated.category || updated.category === 'Uncategorized') {
+            updated.category = newItemType === 'CASH_FUND' ? 'Cash Fund' : 'Honeymoon & Experiences';
+          }
+        }
+      }
+
+      return updated;
+    });
   };
 
   const handleApplyFallbackImage = (imgUrl: string) => {
@@ -88,6 +110,8 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
   const handleScrape = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isFund) return; // Bypass scraper for cash or experience funds
+
     setScrapeLoading(true);
     setScrapeError(null);
     setScrapeErrorDomain(null);
@@ -180,9 +204,17 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     e.preventDefault();
     setFormError(null);
 
+    const currentItemType = values.itemType || 'PHYSICAL';
+    const fundType = currentItemType === 'CASH_FUND' || currentItemType === 'EXPERIENCE_FUND';
+
     const dataToValidate = {
       ...values,
-      isGroupGift: !!values.isGroupGift,
+      itemType: currentItemType,
+      quantity: fundType ? 1 : (values.quantity ?? 1),
+      isGroupGift: fundType ? true : !!values.isGroupGift,
+      vendorUrl: fundType ? (values.vendorUrl || undefined) : values.vendorUrl,
+      paymentHandleType: values.paymentHandleType || undefined,
+      paymentHandle: values.paymentHandle || undefined,
     };
 
     const parseResult = RegistryItemBaseSchema.safeParse(dataToValidate);
@@ -196,7 +228,21 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="form">
-      {mode === 'add' && (
+      <FormGroup className="col-span-1 md:col-span-2">
+        <Label>Item Type <span className="text-red-500">*</span></Label>
+        <Select
+          name="itemType"
+          value={values.itemType || 'PHYSICAL'}
+          onChange={handleChange}
+          required
+        >
+          <option value="PHYSICAL">Physical Item</option>
+          <option value="CASH_FUND">Cash Fund</option>
+          <option value="EXPERIENCE_FUND">Experience Fund</option>
+        </Select>
+      </FormGroup>
+
+      {mode === 'add' && !isFund && (
         <div className="col-span-1 md:col-span-2 mb-2">
           <FormGroup state={scrapeError ? 'error' : scrapeWarning ? 'warning' : 'default'}>
             <Label>Import from Product URL:</Label>
@@ -271,22 +317,60 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
           </FormGroup>
         </div>
       )}
+
       <FormGroup>
         <Label>Item Name <span className="text-red-500">*</span></Label>
         <Input ref={nameInputRef} type="text" name="name" value={values.name || ''} onChange={handleChange} required aria-required="true" />
       </FormGroup>
+
       <FormGroup>
         <Label>Category <span className="text-red-500">*</span></Label>
         <Input ref={categoryInputRef} type="text" name="category" value={values.category || ''} onChange={handleChange} required aria-required="true" />
       </FormGroup>
+
       <FormGroup>
-        <Label>Price ($) <span className="text-red-500">*</span></Label>
+        <Label>{isFund ? 'Target Goal Amount ($)' : 'Price ($)'} <span className="text-red-500">*</span></Label>
         <Input ref={priceInputRef} type="number" name="price" value={values.price ?? ''} onChange={handleChange} step="0.01" required aria-required="true" />
       </FormGroup>
-      <FormGroup>
-        <Label>Quantity <span className="text-red-500">*</span></Label>
-        <Input type="number" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required aria-required="true" />
-      </FormGroup>
+
+      {!isFund && (
+        <FormGroup>
+          <Label>Quantity <span className="text-red-500">*</span></Label>
+          <Input type="number" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required aria-required="true" />
+        </FormGroup>
+      )}
+
+      {isFund && (
+        <>
+          <FormGroup>
+            <Label>Payment Service / Handle Type:</Label>
+            <Select
+              name="paymentHandleType"
+              value={values.paymentHandleType || ''}
+              onChange={handleChange}
+            >
+              <option value="">Select Payment Service...</option>
+              <option value="Venmo">Venmo</option>
+              <option value="PayPal">PayPal</option>
+              <option value="Cash App">Cash App</option>
+              <option value="Zelle">Zelle</option>
+              <option value="Custom">Custom / Other</option>
+            </Select>
+          </FormGroup>
+
+          <FormGroup>
+            <Label>Payment Handle / Username:</Label>
+            <Input
+              type="text"
+              name="paymentHandle"
+              value={values.paymentHandle || ''}
+              onChange={handleChange}
+              placeholder="e.g. @couple-username or paypal.me/handle"
+            />
+          </FormGroup>
+        </>
+      )}
+
       <FormGroup>
         <div className="flex items-center justify-between mb-1">
           <Label>Image URL:</Label>
@@ -303,30 +387,40 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
         </div>
         <Input ref={imageUrlInputRef} type="url" name="imageUrl" value={values.imageUrl || (values.image as any)?.url || ''} onChange={handleChange} placeholder="https://..." />
       </FormGroup>
+
       <FormGroup>
         <Label>Image Alt Text:</Label>
         <Input type="text" name="imageAlt" value={values.imageAlt || (values.image as any)?.altText || ''} onChange={handleChange} placeholder="A descriptive text for screen readers..." disabled={!!(values.imageDecorative || (values.image as any)?.isDecorative)} />
       </FormGroup>
+
       <FormGroup>
         <div className="flex items-center mt-8">
           <Checkbox name="imageDecorative" checked={values.imageDecorative || (values.image as any)?.isDecorative || false} onChange={handleChange} />
           <Label className="ml-2 font-normal">Decorative (no alt text)</Label>
         </div>
       </FormGroup>
-      <FormGroup>
-        <Label>Vendor/Product URL:</Label>
-        <Input type="url" name="vendorUrl" value={values.vendorUrl || ''} onChange={handleChange} placeholder="https://..." />
-      </FormGroup>
+
+      {!isFund && (
+        <FormGroup>
+          <Label>Vendor/Product URL:</Label>
+          <Input type="url" name="vendorUrl" value={values.vendorUrl || ''} onChange={handleChange} placeholder="https://..." />
+        </FormGroup>
+      )}
+
       <FormGroup className="col-span-1 md:col-span-2">
         <Label>Description:</Label>
         <Textarea name="description" value={values.description || ''} onChange={handleChange} rows={3} />
       </FormGroup>
-      <FormGroup className="col-span-1 md:col-span-2">
-        <div className="flex items-center">
-          <Checkbox name="isGroupGift" checked={!!values.isGroupGift} onChange={handleChange} />
-          <Label className="ml-2 font-normal">Allow Group Gifting?</Label>
-        </div>
-      </FormGroup>
+
+      {!isFund && (
+        <FormGroup className="col-span-1 md:col-span-2">
+          <div className="flex items-center">
+            <Checkbox name="isGroupGift" checked={!!values.isGroupGift} onChange={handleChange} />
+            <Label className="ml-2 font-normal">Allow Group Gifting?</Label>
+          </div>
+        </FormGroup>
+      )}
+
       <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
         <Button type="submit" variant="primary" className="w-full mt-2 flex items-center justify-center" disabled={isSubmitting} aria-busy={isSubmitting}>
