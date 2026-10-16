@@ -44,6 +44,9 @@ jobs:
       - name: Validate Prisma Schema
         run: npm run check:prisma
 
+      - name: Secret Scanning
+        run: npm run check:secrets
+
       - name: TypeScript Typecheck
         run: npm run typecheck
 

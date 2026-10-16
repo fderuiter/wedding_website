@@ -27,7 +27,8 @@
   ],
   "github-actions": false,
   "ignore": ["next-env.d.ts", ".next/**"],
-  "ignoreDependencies": ["tailwindcss", "lint-staged"],
+  "ignoreDependencies": ["tailwindcss", "lint-staged", "@secretlint/cli", "@secretlint/secretlint-rule-preset-recommend"],
+  "ignoreBinaries": ["secretlint"],
   "ignoreUnresolved": ["./.next/dev/types/routes.d.ts", ".next/dev/types/routes.d.ts"],
   "rules": {
     "files": "error",

@@ -11,6 +11,7 @@ const steps: Step[] = [
   { name: 'Check Third-Party Action Pin Commit SHAs', command: 'npm run check:action-pins' },
   { name: 'Check Documentation Relative Links', command: 'npx tsx scripts/check-doc-links.ts' },
   { name: 'Validate Prisma Schema', command: 'npx tsx scripts/check-prisma-schema.ts' },
+  { name: 'Secret Scanning', command: 'npm run check:secrets' },
   { name: 'TypeScript Typecheck', command: 'npm run typecheck' },
   { name: 'ESLint Code Linting', command: 'npm run lint' },
   { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },

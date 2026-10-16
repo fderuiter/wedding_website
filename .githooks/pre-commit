@@ -2,7 +2,21 @@
 
 import { spawnSync } from 'child_process';
 
-// 1. Run lint-staged to filter staged files and apply ESLint auto-fixes
+// 1. Run secretlint on staged files
+console.log('Running secretlint on staged files...');
+const gitStagedResult = spawnSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], { encoding: 'utf-8' });
+if (gitStagedResult.status === 0) {
+  const stagedFiles = gitStagedResult.stdout.trim().split('\n').filter(Boolean);
+  if (stagedFiles.length > 0) {
+    const secretlintResult = spawnSync('npx', ['secretlint', ...stagedFiles], { stdio: 'inherit', shell: true });
+    if (secretlintResult.status !== 0) {
+      console.error('\n❌ Pre-commit check failed: Secretlint detected potential secrets in staged files.');
+      process.exit(secretlintResult.status ?? 1);
+    }
+  }
+}
+
+// 2. Run lint-staged to filter staged files and apply ESLint auto-fixes
 console.log('Running lint-staged...');
 const lintStagedResult = spawnSync('npx', ['lint-staged'], { stdio: 'inherit', shell: true });
 
@@ -11,7 +25,7 @@ if (lintStagedResult.status !== 0) {
   process.exit(lintStagedResult.status ?? 1);
 }
 
-// 2. Run TypeScript type check
+// 3. Run TypeScript type check
 console.log('Running TypeScript type check...');
 const tscResult = spawnSync('npm', ['run', 'type-check'], { stdio: 'inherit', shell: true });
 
@@ -20,7 +34,7 @@ if (tscResult.status !== 0) {
   process.exit(tscResult.status ?? 1);
 }
 
-// 3. Run Knip dead-code analysis
+// 4. Run Knip dead-code analysis
 console.log('Running Knip dead-code analysis...');
 const knipResult = spawnSync('npm', ['run', 'lint:unused'], { stdio: 'inherit', shell: true });
 
