@@ -16,6 +16,21 @@ function generateAdminCookieValue() {
   return `${data}.${signature}`;
 }
 
+function generateGuestCookieValue() {
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const payload = {
+    guest: true,
+    iat: Date.now(),
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
+
 test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
   test('displays pre-flight summary card for valid backup and diagnostic error panel for invalid backup', async ({
     page,
@@ -23,19 +38,23 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
   }) => {
     test.setTimeout(60000);
 
-    // Set admin cookie
+    const baseURL = 'http://127.0.0.1:3000';
+
+    // Set admin and guest cookies using URL property matching repository pattern
     await context.addCookies([
       {
         name: 'admin_auth',
         value: generateAdminCookieValue(),
-        domain: '127.0.0.1',
-        path: '/',
-        httpOnly: true,
-        sameSite: 'Lax',
+        url: baseURL,
+      },
+      {
+        name: 'guest_auth',
+        value: generateGuestCookieValue(),
+        url: baseURL,
       },
     ]);
 
-    await page.goto('http://127.0.0.1:3000/admin/dashboard/maintenance', { waitUntil: 'load' });
+    await page.goto('/admin/dashboard/maintenance', { waitUntil: 'load' });
 
     // 1. Valid backup test
     const validBackup = {
