@@ -41,18 +41,27 @@ export const ContributionSchema = z.object({
   code: z.string().trim().optional(),
 }, { message: 'Invalid request body.' });
 
+export const ItemTypeEnum = z.enum(['PHYSICAL', 'CASH_FUND', 'EXPERIENCE_FUND']);
+export type ItemType = z.infer<typeof ItemTypeEnum>;
+
 export const RegistryItemBaseSchema = z.object({
+  itemType: ItemTypeEnum.optional().default('PHYSICAL'),
   name: z.string({ message: 'Item name is required and must be under 255 characters.' }).trim().min(1, 'Item name is required and must be under 255 characters.').max(255, 'Item name is required and must be under 255 characters.'),
   price: z.coerce.number({ message: 'Price must be a positive number.' }).positive('Price must be a positive number.'),
-  quantity: z.coerce.number({ message: 'Quantity must be a positive integer.' }).int('Quantity must be a positive integer.').positive('Quantity must be a positive integer.'),
+  quantity: z.coerce.number({ message: 'Quantity must be a positive integer.' }).int('Quantity must be a positive integer.').positive('Quantity must be a positive integer.').optional().default(1),
   category: z.string({ message: 'Category is required and must be under 255 characters.' }).trim().min(1, 'Category is required and must be under 255 characters.').max(255, 'Category is required and must be under 255 characters.'),
   description: z.string().max(2000, 'Description must be under 2000 characters.').optional().or(z.literal('')),
   vendorUrl: createLaxUrlSchema('Vendor URL'),
   isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
+  paymentHandleType: z.string().max(100, 'Payment handle type must be under 100 characters.').optional().nullable().or(z.literal('')),
+  paymentHandle: z.string().max(255, 'Payment handle must be under 255 characters.').optional().nullable().or(z.literal('')),
 }, { message: 'Invalid request body.' }).merge(createMediaAssociationSchema('image'));
 
 export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   id: z.string(),
+  itemType: ItemTypeEnum.default('PHYSICAL'),
+  paymentHandleType: z.string().nullable().optional(),
+  paymentHandle: z.string().nullable().optional(),
   purchased: z.boolean().default(false),
   purchaserName: z.string().nullable().optional(),
   amountContributed: z.coerce.number().default(0),
@@ -74,6 +83,7 @@ export const LegacyRegistryItemBaseSchema = z.object({
 
 export function translateLegacyToActive(legacyData: any) {
   return {
+    itemType: 'PHYSICAL' as const,
     name: legacyData.legacy_name,
     price: legacyData.legacy_price,
     quantity: legacyData.legacy_quantity,
@@ -131,6 +141,9 @@ export function translateActiveToLegacy(activeData: any): any {
 export function translateSnapshotToActive(snapshotData: any) {
   if (!snapshotData) return null;
   return {
+    itemType: snapshotData.itemType ?? 'PHYSICAL',
+    paymentHandleType: snapshotData.paymentHandleType ?? null,
+    paymentHandle: snapshotData.paymentHandle ?? null,
     name: snapshotData.name ?? snapshotData.legacy_name ?? snapshotData.title ?? snapshotData.itemName ?? '',
     description: snapshotData.description ?? snapshotData.legacy_description ?? snapshotData.details ?? '',
     category: snapshotData.category ?? snapshotData.legacy_category ?? snapshotData.group ?? 'Uncategorized',
