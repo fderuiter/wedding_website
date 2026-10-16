@@ -94,7 +94,6 @@ jest.mock('@/core/auth/auth.server', () => ({
 
 jest.mock('@/lib/routes', () => ({
   isProtectedRoute: jest.fn().mockReturnValue(false),
-  getRequiredModuleForRoute: jest.fn().mockReturnValue(undefined),
   getNavLinks: jest.fn().mockReturnValue([]),
 }));
 
