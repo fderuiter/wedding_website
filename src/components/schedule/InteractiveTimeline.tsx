@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import type { ContentNodeDTO } from '@/features/content/schemas';
 import AddToCalendar from '@/components/AddToCalendar';
+import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 
 interface CategoryColorStyle {
@@ -238,128 +239,136 @@ export default function InteractiveTimeline({
         </div>
       )}
 
-      {/* Timeline Event Cards */}
-      <div className="relative border-l-2 border-primary/30 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10">
-        {filteredEvents.map((event) => {
-          const calendarEvent = formatScheduleEventToCalendarEvent(
-            {
-              title: event.title,
-              startTime: event.startTime,
-              endTime: event.endTime,
-              locationName: event.locationName,
-              attireRules: event.attireRules,
-              description: event.description,
-            },
-            undefined,
-            timezone
-          );
+      {/* Timeline Event Cards or EmptyState */}
+      {filteredEvents.length === 0 ? (
+        <EmptyState
+          message={`No schedule events found for "${activeCategory}".`}
+          onAction={() => setActiveCategory('All')}
+          actionLabel="Clear filter"
+        />
+      ) : (
+        <div className="relative border-l-2 border-primary/30 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10">
+          {filteredEvents.map((event) => {
+            const calendarEvent = formatScheduleEventToCalendarEvent(
+              {
+                title: event.title,
+                startTime: event.startTime,
+                endTime: event.endTime,
+                locationName: event.locationName,
+                attireRules: event.attireRules,
+                description: event.description,
+              },
+              undefined,
+              timezone
+            );
 
-          const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, timezone);
-          const dateHeaderStr = formatDateHeader(event.startTime, timezone);
+            const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, timezone);
+            const dateHeaderStr = formatDateHeader(event.startTime, timezone);
 
-          return (
-            <div key={event.id} className="relative group">
-              {/* Timeline Visual Time-Slot Node/Badge */}
-              <div
-                className="absolute -left-[31px] sm:-left-[47px] top-1.5 h-5 w-5 rounded-full border-4 shadow"
-                style={{
-                  backgroundColor: 'var(--schedule-node-bg)',
-                  borderColor: 'var(--schedule-node-border)',
-                }}
-                aria-hidden="true"
-              />
-
-              <div
-                className="p-6 shadow-md transition-shadow hover:shadow-lg border"
-                style={{
-                  backgroundColor: 'var(--schedule-card-bg)',
-                  borderColor: 'var(--schedule-card-border)',
-                  borderRadius: 'var(--schedule-card-radius)',
-                }}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
-                  <div>
-                    {dateHeaderStr && (
-                      <p className="text-xs uppercase tracking-wider font-semibold text-primary mb-1">
-                        {dateHeaderStr}
-                      </p>
-                    )}
-                    <h3 className="text-2xl font-bold">{event.title}</h3>
-                  </div>
-
-                  {/* Time-Slot Indicator */}
-                  {timeSlotStr && (
-                    <span
-                      className="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold"
-                      style={{
-                        backgroundColor: 'var(--schedule-tag-bg)',
-                        color: 'var(--schedule-tag-text)',
-                      }}
-                    >
-                      <time dateTime={event.startTime}>{timeSlotStr}</time>
-                    </span>
-                  )}
-                </div>
-
-                {/* Category Tags */}
-                {event.categoryTags.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {event.categoryTags.map((tag) => {
-                      const tagColor = event.categoryColors?.[tag] || globalCategoryColors[tag] || globalCategoryColors[tag.toLowerCase()];
-                      const tagBg = tagColor?.bg || tagColor?.accent || tagColor?.color || 'var(--schedule-tag-bg)';
-                      const tagText = tagColor?.text || 'var(--schedule-tag-text)';
-                      const tagBorder = tagColor?.border ? `1px solid ${tagColor.border}` : undefined;
-
-                      return (
-                        <span
-                          key={tag}
-                          className="inline-block px-2.5 py-0.5 text-xs font-medium rounded border border-transparent"
-                          style={{
-                            backgroundColor: tagBg,
-                            color: tagText,
-                            border: tagBorder,
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Event Details */}
-                <div className="space-y-2 text-sm opacity-90 mb-6">
-                  {event.locationName && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold">Location:</span>
-                      <span>{event.locationName}</span>
-                    </div>
-                  )}
-
-                  {event.attireRules && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold">Attire:</span>
-                      <span>{event.attireRules}</span>
-                    </div>
-                  )}
-
-                  {event.description && <p className="pt-2 opacity-80">{event.description}</p>}
-                </div>
-
-                {/* Per-Event Calendar Export Dropdown */}
+            return (
+              <div key={event.id} className="relative group">
+                {/* Timeline Visual Time-Slot Node/Badge */}
                 <div
-                  className="pt-2 border-t"
+                  className="absolute -left-[31px] sm:-left-[47px] top-1.5 h-5 w-5 rounded-full border-4 shadow"
                   style={{
+                    backgroundColor: 'var(--schedule-node-bg)',
+                    borderColor: 'var(--schedule-node-border)',
+                  }}
+                  aria-hidden="true"
+                />
+
+                <div
+                  className="p-6 shadow-md transition-shadow hover:shadow-lg border"
+                  style={{
+                    backgroundColor: 'var(--schedule-card-bg)',
                     borderColor: 'var(--schedule-card-border)',
+                    borderRadius: 'var(--schedule-card-radius)',
                   }}
                 >
-                  <AddToCalendar event={calendarEvent} />
+                  <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
+                    <div>
+                      {dateHeaderStr && (
+                        <p className="text-xs uppercase tracking-wider font-semibold text-primary mb-1">
+                          {dateHeaderStr}
+                        </p>
+                      )}
+                      <h3 className="text-2xl font-bold">{event.title}</h3>
+                    </div>
+
+                    {/* Time-Slot Indicator */}
+                    {timeSlotStr && (
+                      <span
+                        className="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold"
+                        style={{
+                          backgroundColor: 'var(--schedule-tag-bg)',
+                          color: 'var(--schedule-tag-text)',
+                        }}
+                      >
+                        <time dateTime={event.startTime}>{timeSlotStr}</time>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Category Tags */}
+                  {event.categoryTags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {event.categoryTags.map((tag) => {
+                        const tagColor = event.categoryColors?.[tag] || globalCategoryColors[tag] || globalCategoryColors[tag.toLowerCase()];
+                        const tagBg = tagColor?.bg || tagColor?.accent || tagColor?.color || 'var(--schedule-tag-bg)';
+                        const tagText = tagColor?.text || 'var(--schedule-tag-text)';
+                        const tagBorder = tagColor?.border ? `1px solid ${tagColor.border}` : undefined;
+
+                        return (
+                          <span
+                            key={tag}
+                            className="inline-block px-2.5 py-0.5 text-xs font-medium rounded border border-transparent"
+                            style={{
+                              backgroundColor: tagBg,
+                              color: tagText,
+                              border: tagBorder,
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Event Details */}
+                  <div className="space-y-2 text-sm opacity-90 mb-6">
+                    {event.locationName && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">Location:</span>
+                        <span>{event.locationName}</span>
+                      </div>
+                    )}
+
+                    {event.attireRules && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">Attire:</span>
+                        <span>{event.attireRules}</span>
+                      </div>
+                    )}
+
+                    {event.description && <p className="pt-2 opacity-80">{event.description}</p>}
+                  </div>
+
+                  {/* Per-Event Calendar Export Dropdown */}
+                  <div
+                    className="pt-2 border-t"
+                    style={{
+                      borderColor: 'var(--schedule-card-border)',
+                    }}
+                  >
+                    <AddToCalendar event={calendarEvent} />
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
