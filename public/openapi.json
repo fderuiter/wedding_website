@@ -472,6 +472,56 @@
                             }
                           ]
                         },
+                        "householdName": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "partyGroup": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "partyTags": {
+                          "default": [],
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {}
+                          ]
+                        },
                         "extraFields": {
                           "anyOf": [
                             {
@@ -488,7 +538,8 @@
                         }
                       },
                       "required": [
-                        "guestName"
+                        "guestName",
+                        "partyTags"
                       ],
                       "additionalProperties": false
                     }
@@ -2599,6 +2650,17 @@
       "patch": {
         "summary": "PATCH /api/admin/thank-you-notes/batch",
         "description": "Endpoint for /api/admin/thank-you-notes/batch",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/thank-you-notes/export-labels": {
+      "get": {
+        "summary": "GET /api/admin/thank-you-notes/export-labels",
+        "description": "Endpoint for /api/admin/thank-you-notes/export-labels",
         "responses": {
           "200": {
             "description": "Successful response"

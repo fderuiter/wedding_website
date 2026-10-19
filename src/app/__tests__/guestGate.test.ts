@@ -175,7 +175,8 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.status).toBe(401);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toBe('Incorrect passcode.');
+      expect(data.error).toContain('Incorrect passcode');
+      expect(data.helpPrompt).toBeDefined();
     });
 
     it('returns 200 and sets cookie for correct passcode', async () => {

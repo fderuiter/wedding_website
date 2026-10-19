@@ -36,6 +36,9 @@ interface EditableRow {
   plusOneAllocations: string;
   plusOneFirstName: string;
   plusOneLastName: string;
+  householdName: string;
+  partyGroup: string;
+  partyTags: string;
   extraFields: Record<string, string>;
 }
 
@@ -57,6 +60,9 @@ interface CsvImportPersistedState {
   plusOneCol: string;
   plusOneFirstNameCol: string;
   plusOneLastNameCol: string;
+  householdNameCol: string;
+  partyGroupCol: string;
+  partyTagsCol: string;
   selectedExtraCols: string[];
   collisionStrategy: 'skip' | 'update' | 'reject';
   editableRows: EditableRow[];
@@ -80,6 +86,9 @@ const initialCsvImportState: CsvImportPersistedState = {
   plusOneCol: '',
   plusOneFirstNameCol: '',
   plusOneLastNameCol: '',
+  householdNameCol: '',
+  partyGroupCol: '',
+  partyTagsCol: '',
   selectedExtraCols: [],
   collisionStrategy: 'skip',
   editableRows: [],
@@ -99,6 +108,9 @@ const EDITABLE_MAPPING: ColumnMappingOptions = {
   plusOneCol: 'PlusOneField',
   plusOneFirstNameCol: 'PlusOneFirstNameField',
   plusOneLastNameCol: 'PlusOneLastNameField',
+  householdNameCol: 'HouseholdNameField',
+  partyGroupCol: 'PartyGroupField',
+  partyTagsCol: 'PartyTagsField',
 };
 
 const HOISTED_EDITABLE_MAPPED_COLS = new Set([
@@ -115,6 +127,9 @@ const HOISTED_EDITABLE_MAPPED_COLS = new Set([
   'PlusOneField',
   'PlusOneFirstNameField',
   'PlusOneLastNameField',
+  'HouseholdNameField',
+  'PartyGroupField',
+  'PartyTagsField',
 ]);
 
 function toRowRecord(r: EditableRow): Record<string, string> {
@@ -132,6 +147,9 @@ function toRowRecord(r: EditableRow): Record<string, string> {
     PlusOneField: r.plusOneAllocations,
     PlusOneFirstNameField: r.plusOneFirstName,
     PlusOneLastNameField: r.plusOneLastName,
+    HouseholdNameField: r.householdName,
+    PartyGroupField: r.partyGroup,
+    PartyTagsField: r.partyTags,
   };
   if (r.extraFields) {
     Object.entries(r.extraFields).forEach(([k, v]) => {
@@ -181,7 +199,10 @@ interface EditableTableRowProps {
       | 'dietaryNotes'
       | 'plusOneAllocations'
       | 'plusOneFirstName'
-      | 'plusOneLastName',
+      | 'plusOneLastName'
+      | 'householdName'
+      | 'partyGroup'
+      | 'partyTags',
     value: string
   ) => void;
   onExtraFieldEdit: (index: number, key: string, value: string) => void;
@@ -337,6 +358,36 @@ const EditableTableRow = React.memo(function EditableTableRow({
         />
       </td>
       <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.householdName || ''}
+          aria-label={`Household Name for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'householdName', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.partyGroup || ''}
+          aria-label={`Party Group for row ${row.rowIndex}`}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'partyGroup', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
+        <input
+          type="text"
+          value={editableRow?.partyTags || ''}
+          aria-label={`Party Tags for row ${row.rowIndex}`}
+          placeholder="Comma-separated"
+          onChange={(e) => onCellEdit(index, 'partyTags', e.target.value)}
+          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+        />
+      </td>
+      <td className="p-2">
         {Object.keys(editableRow?.extraFields || {}).length > 0 ? (
           <div className="space-y-1">
             {Object.entries(editableRow.extraFields).map(([k, v]) => (
@@ -428,6 +479,9 @@ export function CsvImportWizardModal({
     plusOneCol,
     plusOneFirstNameCol,
     plusOneLastNameCol,
+    householdNameCol,
+    partyGroupCol,
+    partyTagsCol,
     selectedExtraCols,
     collisionStrategy,
     editableRows,
@@ -456,6 +510,9 @@ export function CsvImportWizardModal({
   const setPlusOneCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneCol: val }));
   const setPlusOneFirstNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneFirstNameCol: val }));
   const setPlusOneLastNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneLastNameCol: val }));
+  const setHouseholdNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, householdNameCol: val }));
+  const setPartyGroupCol = (val: string) => setCsvFormState((prev) => ({ ...prev, partyGroupCol: val }));
+  const setPartyTagsCol = (val: string) => setCsvFormState((prev) => ({ ...prev, partyTagsCol: val }));
   const setSelectedExtraCols = (
     val: string[] | ((prev: string[]) => string[])
   ) => {
@@ -550,6 +607,9 @@ export function CsvImportWizardModal({
       setPlusOneCol(parsed.suggestedPlusOneCol || '');
       setPlusOneFirstNameCol(parsed.suggestedPlusOneFirstNameCol || '');
       setPlusOneLastNameCol(parsed.suggestedPlusOneLastNameCol || '');
+      setHouseholdNameCol(parsed.suggestedHouseholdNameCol || '');
+      setPartyGroupCol(parsed.suggestedPartyGroupCol || '');
+      setPartyTagsCol(parsed.suggestedPartyTagsCol || '');
 
       const mappedStandard = new Set(
         [
@@ -566,6 +626,9 @@ export function CsvImportWizardModal({
           parsed.suggestedPlusOneCol,
           parsed.suggestedPlusOneFirstNameCol,
           parsed.suggestedPlusOneLastNameCol,
+          parsed.suggestedHouseholdNameCol,
+          parsed.suggestedPartyGroupCol,
+          parsed.suggestedPartyTagsCol,
         ].filter(Boolean)
       );
       setSelectedExtraCols(parsed.headers.filter((h) => !mappedStandard.has(h)));
@@ -603,6 +666,9 @@ export function CsvImportWizardModal({
         plusOneAllocations: plusOneCol ? (r[plusOneCol] || '').trim() : '0',
         plusOneFirstName: plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : '',
         plusOneLastName: plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : '',
+        householdName: householdNameCol ? (r[householdNameCol] || '').trim() : '',
+        partyGroup: partyGroupCol ? (r[partyGroupCol] || '').trim() : '',
+        partyTags: partyTagsCol ? (r[partyTagsCol] || '').trim() : '',
         extraFields,
       };
     });
@@ -654,7 +720,10 @@ export function CsvImportWizardModal({
       | 'dietaryNotes'
       | 'plusOneAllocations'
       | 'plusOneFirstName'
-      | 'plusOneLastName',
+      | 'plusOneLastName'
+      | 'householdName'
+      | 'partyGroup'
+      | 'partyTags',
     value: string
   ) => {
     const updatedValue = field === 'code' ? value.toUpperCase() : value;
@@ -852,6 +921,9 @@ export function CsvImportWizardModal({
           plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
           plusOneFirstName: r.plusOneFirstName.trim() || undefined,
           plusOneLastName: r.plusOneLastName.trim() || undefined,
+          householdName: r.householdName.trim() || undefined,
+          partyGroup: r.partyGroup.trim() || undefined,
+          partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
           extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
         })),
         collisionStrategy,
@@ -908,6 +980,9 @@ export function CsvImportWizardModal({
         plusOneCol,
         plusOneFirstNameCol,
         plusOneLastNameCol,
+        householdNameCol,
+        partyGroupCol,
+        partyTagsCol,
       ].filter(Boolean)
     );
   }, [
@@ -924,6 +999,9 @@ export function CsvImportWizardModal({
     plusOneCol,
     plusOneFirstNameCol,
     plusOneLastNameCol,
+    householdNameCol,
+    partyGroupCol,
+    partyTagsCol,
   ]);
 
   const availableCustomHeaders = useMemo(() => {
@@ -1262,6 +1340,57 @@ export function CsvImportWizardModal({
                   ))}
                 </select>
               </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-household-name">Household Name Column (Optional)</Label>
+                <select
+                  id="map-household-name"
+                  value={householdNameCol}
+                  onChange={(e) => setHouseholdNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-party-group">Party Side / Group Column (Optional)</Label>
+                <select
+                  id="map-party-group"
+                  value={partyGroupCol}
+                  onChange={(e) => setPartyGroupCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-party-tags">Party Tags Column (Optional)</Label>
+                <select
+                  id="map-party-tags"
+                  value={partyTagsCol}
+                  onChange={(e) => setPartyTagsCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
             </div>
 
             {/* Custom Extra Headers Section */}
@@ -1386,6 +1515,9 @@ export function CsvImportWizardModal({
                     <th scope="col" className="p-2 w-16 text-center">Plus-Ones</th>
                     <th scope="col" className="p-2 min-w-[120px]">Plus-One First Name</th>
                     <th scope="col" className="p-2 min-w-[120px]">Plus-One Last Name</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Household Name</th>
+                    <th scope="col" className="p-2 min-w-[110px]">Party Group</th>
+                    <th scope="col" className="p-2 min-w-[130px]">Party Tags</th>
                     <th scope="col" className="p-2 min-w-[130px]">Extra Attributes</th>
                     <th scope="col" className="p-2 min-w-[120px]">Validation Status</th>
                     <th scope="col" className="p-2 w-10 text-center">Action</th>
@@ -1405,7 +1537,7 @@ export function CsvImportWizardModal({
                   ))}
                   {editableRows.length === 0 && (
                     <tr>
-                      <td colSpan={17} className="p-4 text-center text-gray-500">
+                      <td colSpan={20} className="p-4 text-center text-gray-500">
                         No rows remaining.
                       </td>
                     </tr>

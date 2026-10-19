@@ -78,7 +78,9 @@ export default function SeatingChartAdminPage() {
     ? allGuests.filter(
       (g) =>
         g.guestName.toLowerCase().includes(normalizedQuery) ||
-          g.code.toLowerCase().includes(normalizedQuery)
+        g.code.toLowerCase().includes(normalizedQuery) ||
+        (g.householdName && g.householdName.toLowerCase().includes(normalizedQuery)) ||
+        (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)))
     )
     : [];
 
@@ -432,6 +434,16 @@ export default function SeatingChartAdminPage() {
                           className="inline-flex items-center gap-1 text-[11px] bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-700 dark:text-gray-200"
                         >
                           Seat {guest.seatNumber || '?'}: {guest.guestName}
+                          {guest.householdName && (
+                            <span className="text-[9px] text-purple-600 dark:text-purple-300 font-semibold ml-0.5">
+                              (🏠 {guest.householdName})
+                            </span>
+                          )}
+                          {guest.partyTags && guest.partyTags.length > 0 && (
+                            <span className="text-[9px] text-blue-600 dark:text-blue-300 ml-0.5">
+                              [{guest.partyTags.join(', ')}]
+                            </span>
+                          )}
                           <button
                             onClick={() => handleUnassignGuest(guest.id)}
                             className="text-gray-400 hover:text-red-600 font-bold ml-1"
