@@ -64,7 +64,7 @@ describe('BaseService Enhancements', () => {
       });
       expect(mockRepo.findMany).toHaveBeenCalledWith({
         include: { relation: true, anotherRelation: true },
-        orderBy: { createdAt: 'desc', updatedAt: 'asc' },
+        orderBy: [{ updatedAt: 'asc' }, { createdAt: 'desc' }],
       });
     });
 

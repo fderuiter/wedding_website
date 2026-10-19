@@ -30,10 +30,17 @@ export class BaseService<T extends { id: string }> {
           merged.orderBy = this.defaultQueryArgs.orderBy;
         }
       } else {
-        merged.orderBy = {
-          ...this.defaultQueryArgs.orderBy,
-          ...args.orderBy,
-        };
+        const defaultKeys = Object.keys(this.defaultQueryArgs.orderBy);
+        const argKeys = Object.keys(args.orderBy);
+        const hasOverlap = argKeys.some(k => defaultKeys.includes(k));
+        if (hasOverlap) {
+          merged.orderBy = {
+            ...this.defaultQueryArgs.orderBy,
+            ...args.orderBy,
+          };
+        } else {
+          merged.orderBy = [args.orderBy, this.defaultQueryArgs.orderBy];
+        }
       }
     }
 
