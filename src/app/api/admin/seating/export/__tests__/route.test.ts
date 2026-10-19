@@ -24,17 +24,24 @@ jest.mock('next/server', () => {
       return {
         status: init?.status || 200,
         headers: headers,
-        json: () => Promise.resolve(body),
-        text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
+        json: () => Promise.resolve(typeof body === 'string' ? JSON.parse(body) : body),
+        text: () =>
+          Promise.resolve(
+            typeof body === 'string'
+              ? body
+              : body instanceof Uint8Array || Buffer.isBuffer(body)
+                ? Buffer.from(body).toString('utf-8')
+                : JSON.stringify(body)
+          ),
         cookies: cookies,
       };
     });
 
     status: number;
     headers: Headers;
-    bodyContent: string;
+    bodyContent: any;
 
-    constructor(body: string, init?: any) {
+    constructor(body: any, init?: any) {
       this.bodyContent = body;
       this.status = init?.status || 200;
       this.headers = new Headers();
@@ -46,11 +53,17 @@ jest.mock('next/server', () => {
     }
 
     json() {
-      return Promise.resolve(JSON.parse(this.bodyContent));
+      return Promise.resolve(typeof this.bodyContent === 'string' ? JSON.parse(this.bodyContent) : this.bodyContent);
     }
 
     text() {
-      return Promise.resolve(this.bodyContent);
+      return Promise.resolve(
+        typeof this.bodyContent === 'string'
+          ? this.bodyContent
+          : this.bodyContent instanceof Uint8Array || Buffer.isBuffer(this.bodyContent)
+            ? Buffer.from(this.bodyContent).toString('utf-8')
+            : JSON.stringify(this.bodyContent)
+      );
     }
   }
 
@@ -107,6 +120,16 @@ jest.mock('@/lib/prisma', () => ({
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
+}));
+
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    partner1Name: 'Alex',
+    partner2Name: 'Taylor',
+    brideName: 'Alex',
+    groomName: 'Taylor',
+    weddingDate: '2026-06-20',
+  }),
 }));
 
 import { GET } from '../route';
@@ -276,5 +299,53 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
 
     const res = await responsePromise;
     expect(res.status).toBe(200);
+  });
+
+  it('exports vector PDF document when format=pdf is specified', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't1',
+        name: 'Head Table',
+        shape: 'round',
+        capacity: 8,
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        invitationCodes: [
+          {
+            id: 'g1',
+            guestName: 'Jordan Lee',
+            code: 'JL100',
+            seatNumber: 1,
+            dietaryNotes: 'Vegan',
+          },
+        ],
+      },
+    ] as any);
+
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'g2',
+        guestName: 'Sam Rivera',
+        code: 'SR200',
+        seatNumber: null,
+        tableId: null,
+        dietaryNotes: null,
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/seating/export?format=pdf');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/pdf');
+    expect(res.headers.get('content-disposition')).toContain('attachment; filename="seating-chart.pdf"');
+
+    const pdfText = await res.text();
+    expect(pdfText.startsWith('%PDF-')).toBe(true);
   });
 });
