@@ -19,6 +19,7 @@ function generateGuestCookieValue() {
 test.describe('Guest Photos Empty State', () => {
   test('displays guest photos empty state container when no guest photos exist', async ({ context, page }) => {
     const guestCookieValue = generateGuestCookieValue();
+    await context.route(/googleusercontent\.com/, (route) => route.abort());
     await context.addCookies([
       {
         name: 'guest_auth',

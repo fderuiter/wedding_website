@@ -6,9 +6,10 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
   workers: 1,
+  retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
     command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
-    url: 'http://127.0.0.1:3000',
+    url: 'http://127.0.0.1:3000/api/ready',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
@@ -35,8 +36,7 @@ export default defineConfig({
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-software-rasterizer',
-        '--no-zygote',
-        '--js-flags=--max-old-space-size=4096',
+        '--js-flags=--max-old-space-size=4096 --expose-gc',
       ],
     },
   },
