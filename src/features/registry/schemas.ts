@@ -30,6 +30,18 @@ export const ContributorSchema = z.object({
     name: z.string(),
     category: z.string().optional(),
   }).nullable().optional(),
+  invitationCodeId: z.string().nullable().optional(),
+  invitationCode: z.object({
+    id: z.string().optional(),
+    code: z.string().optional(),
+    guestName: z.string().optional(),
+    addressLine1: z.string().nullable().optional(),
+    addressLine2: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
+    state: z.string().nullable().optional(),
+    zipCode: z.string().nullable().optional(),
+    country: z.string().nullable().optional(),
+  }).nullable().optional(),
 });
 
 export const UpdateThankYouNoteSchema = z.object({

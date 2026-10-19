@@ -25,6 +25,18 @@ export interface ThankYouContributorItem {
     name: string;
     category?: string;
   } | null;
+  invitationCodeId?: string | null;
+  invitationCode?: {
+    id?: string;
+    code?: string;
+    guestName?: string;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zipCode?: string | null;
+    country?: string | null;
+  } | null;
 }
 
 export type ThankYouMetrics = ProgressMetrics;
@@ -75,6 +87,8 @@ export default function ThankYouNotesPage() {
     setCurrentPage(1);
   };
 
+  const [isLabelDropdownOpen, setIsLabelDropdownOpen] = useState(false);
+
   const handleExportCsv = () => {
     const params = new URLSearchParams();
     if (statusFilter !== 'All') {
@@ -85,6 +99,27 @@ export default function ThankYouNotesPage() {
     }
     const query = params.toString();
     const url = query ? `/api/admin/thank-you-notes/export?${query}` : '/api/admin/thank-you-notes/export';
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', '');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportLabels = (template: 'avery_5160' | 'avery_5163') => {
+    setIsLabelDropdownOpen(false);
+    const params = new URLSearchParams();
+    params.set('template', template);
+    if (statusFilter !== 'All') {
+      params.set('status', statusFilter);
+    }
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    }
+    const query = params.toString();
+    const url = `/api/admin/thank-you-notes/export-labels?${query}`;
 
     const link = document.createElement('a');
     link.href = url;
@@ -268,10 +303,40 @@ export default function ThankYouNotesPage() {
             Track, draft, and organize thank-you notes for all your wedding gift contributors.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap relative">
           <Button variant="secondary" onClick={handleExportCsv}>
             Export CSV
           </Button>
+          <div className="relative inline-block text-left">
+            <Button
+              variant="secondary"
+              onClick={() => setIsLabelDropdownOpen((prev) => !prev)}
+              aria-expanded={isLabelDropdownOpen}
+              aria-haspopup="true"
+            >
+              Export Address Labels ▾
+            </Button>
+            {isLabelDropdownOpen && (
+              <div className="origin-top-right absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 border border-gray-200 dark:border-gray-700 py-1">
+                <button
+                  type="button"
+                  onClick={() => handleExportLabels('avery_5160')}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex flex-col"
+                >
+                  <span className="font-semibold">Avery 5160 PDF</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Standard Address Labels (30/sheet)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportLabels('avery_5163')}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex flex-col"
+                >
+                  <span className="font-semibold">Avery 5163 PDF</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Large Shipping Labels (10/sheet)</span>
+                </button>
+              </div>
+            )}
+          </div>
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>
             Back to Registry
           </Button>
@@ -487,6 +552,18 @@ export default function ThankYouNotesPage() {
                       <div>{item.name}</div>
                       {item.email && (
                         <div className="text-xs text-gray-500 font-normal">{item.email}</div>
+                      )}
+                      {item.invitationCode?.addressLine1 ? (
+                        <div
+                          className="text-[11px] text-gray-500 font-normal truncate max-w-xs mt-0.5"
+                          title={`${item.invitationCode.addressLine1}${item.invitationCode.city ? `, ${item.invitationCode.city}` : ''}`}
+                        >
+                          📍 {item.invitationCode.addressLine1}{item.invitationCode.city ? `, ${item.invitationCode.city}` : ''}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-gray-400 font-normal italic mt-0.5">
+                          No address on file
+                        </div>
                       )}
                     </TableCell>
 
