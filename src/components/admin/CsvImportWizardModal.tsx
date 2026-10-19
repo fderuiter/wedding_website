@@ -483,7 +483,7 @@ export function CsvImportWizardModal({
     updated: number;
   } | null>(null);
 
-  const existingDbSet = useMemo(() => new Set(existingCodes.map(c => c.toUpperCase())), [existingCodes]);
+  const existingDbSet = useMemo(() => new Set(existingCodes.filter(Boolean).map(c => c.toUpperCase())), [existingCodes]);
 
   const handleDownloadSample = () => {
     const sampleCsv = generateSampleCsvTemplate();

@@ -442,7 +442,7 @@ export default function InvitationCodesDashboardPage() {
         isOpen={isImporting}
         onClose={() => setIsImporting(false)}
         onImportComplete={() => fetchAll()}
-        existingCodes={codes.map((item) => item.code)}
+        existingCodes={codes.map((item) => item.code).filter((code): code is string => Boolean(code))}
       />
 
       {isCreating && (
