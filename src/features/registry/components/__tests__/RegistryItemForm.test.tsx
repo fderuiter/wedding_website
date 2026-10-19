@@ -264,4 +264,72 @@ describe('RegistryItemForm', () => {
     expect(screen.getByLabelText(/Item Name/i)).toHaveValue('Espresso Machine');
     expect(screen.getByLabelText(/Price/i)).toHaveValue(299.99);
   });
+
+  it('populates vendorUrl with scrapeUrl when scraping fails and vendorUrl is empty', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: () =>
+          Promise.resolve({
+            error: 'BLOCKED_BY_VENDOR: Access blocked.',
+            details: { errorDomain: 'BLOCKED_BY_VENDOR' },
+          }),
+      } as Response) as jest.Mock;
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    const scrapeUrlInput = screen.getByLabelText(/Import from Product URL/i);
+    const vendorUrlInput = screen.getByLabelText(/Vendor\/Product URL/i);
+
+    expect(vendorUrlInput).toHaveValue('');
+
+    fireEvent.change(scrapeUrlInput, {
+      target: { value: 'https://www.target.com/p/sample-item' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /import/i }));
+
+    await waitFor(() => {
+      expect(vendorUrlInput).toHaveValue('https://www.target.com/p/sample-item');
+    });
+    expect(scrapeUrlInput).toHaveValue('https://www.target.com/p/sample-item');
+    expect(
+      screen.getByText('Target blocks automated product imports. Please enter item details manually below.')
+    ).toBeInTheDocument();
+  });
+
+  it('does not overwrite vendorUrl when scraping fails if vendorUrl was already entered by user', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () =>
+          Promise.resolve({
+            error: 'URL_NOT_FOUND: Product page not found',
+            details: { errorDomain: 'URL_NOT_FOUND' },
+          }),
+      } as Response) as jest.Mock;
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} />);
+
+    const scrapeUrlInput = screen.getByLabelText(/Import from Product URL/i);
+    const vendorUrlInput = screen.getByLabelText(/Vendor\/Product URL/i);
+
+    fireEvent.change(vendorUrlInput, {
+      target: { value: 'https://custom-vendor.com/already-typed' },
+    });
+    fireEvent.change(scrapeUrlInput, {
+      target: { value: 'https://example.com/bad-link' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /import/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/product page could not be found/i)).toBeInTheDocument();
+    });
+    expect(vendorUrlInput).toHaveValue('https://custom-vendor.com/already-typed');
+  });
 });
