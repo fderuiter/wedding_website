@@ -31,6 +31,10 @@ function generateGuestCookieValue() {
   return `${data}.${signature}`;
 }
 
+function isDomainMatch(hostname: string, domain: string) {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
 const PUBLIC_UI_ROUTES = [
   '/',
   '/photos',
@@ -132,16 +136,16 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             return routeHandler.continue();
           }
 
-          if (url.hostname.includes('googleusercontent.com')) {
+          if (isDomainMatch(url.hostname, 'googleusercontent.com')) {
             return routeHandler.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg });
           }
-          if (url.hostname.includes('openstreetmap.org')) {
+          if (isDomainMatch(url.hostname, 'openstreetmap.org')) {
             return routeHandler.fulfill({ status: 200, contentType: 'image/png', body: transparentPng });
           }
-          if (url.hostname.includes('open-meteo.com')) {
+          if (isDomainMatch(url.hostname, 'open-meteo.com')) {
             return routeHandler.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
           }
-          if (url.hostname.includes('cdn.jsdelivr.net')) {
+          if (isDomainMatch(url.hostname, 'cdn.jsdelivr.net')) {
             return routeHandler.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
           }
 
