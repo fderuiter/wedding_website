@@ -101,6 +101,15 @@ export class ApiClient {
     });
   }
 
+  patch<T = any>(url: string, data?: any, options?: Omit<RequestInit, 'method' | 'body'>): Promise<T> {
+    const isFormData = data instanceof FormData;
+    return this.request<T>(url, {
+      ...options,
+      method: 'PATCH',
+      body: isFormData ? data : (data ? JSON.stringify(data) : undefined)
+    });
+  }
+
   delete<T = any>(url: string, options?: Omit<RequestInit, 'method' | 'body'>): Promise<T> {
     return this.request<T>(url, { ...options, method: 'DELETE' });
   }

@@ -42,8 +42,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     tags: ['gallery', 'guest-upload'],
     data: {
       url: storageResult.url,
-      isVisible: true,
+      isVisible: false,
+      status: 'PENDING',
       title: file.name || 'Guest Photo',
+      mediaId: media.id,
     },
   }, 'Guest');
 
@@ -56,6 +58,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         altText: media.altText,
         createdAt: media.createdAt,
         nodeId: photoNode.id,
+        status: 'PENDING',
+        isVisible: false,
+        message: 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
       },
     },
     { status: 201 }

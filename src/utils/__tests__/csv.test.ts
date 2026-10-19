@@ -232,12 +232,18 @@ describe('CSV Parser Utility', () => {
         'Guest Name',
         'Invitation Code',
         'Email',
+        'Household Name',
+        'Party Group',
+        'Party Tags',
         'Dietary Notes',
         'Plus-One Allocations',
       ]);
       expect(parsed.suggestedGuestNameCol).toBe('Guest Name');
       expect(parsed.suggestedCodeCol).toBe('Invitation Code');
       expect(parsed.suggestedEmailCol).toBe('Email');
+      expect(parsed.suggestedHouseholdNameCol).toBe('Household Name');
+      expect(parsed.suggestedPartyGroupCol).toBe('Party Group');
+      expect(parsed.suggestedPartyTagsCol).toBe('Party Tags');
       expect(parsed.suggestedDietaryNotesCol).toBe('Dietary Notes');
       expect(parsed.suggestedPlusOneCol).toBe('Plus-One Allocations');
 
@@ -245,8 +251,36 @@ describe('CSV Parser Utility', () => {
       expect(parsed.rows[0]['Guest Name']).toBe('Jane Doe');
       expect(parsed.rows[0]['Invitation Code']).toBe('WED2026-JANE');
       expect(parsed.rows[0]['Email']).toBe('jane.doe@example.com');
+      expect(parsed.rows[0]['Household Name']).toBe('Doe Family');
+      expect(parsed.rows[0]['Party Group']).toBe('Bride');
+      expect(parsed.rows[0]['Party Tags']).toBe('VIP, Rehearsal Dinner');
       expect(parsed.rows[0]['Dietary Notes']).toBe('Vegetarian');
       expect(parsed.rows[0]['Plus-One Allocations']).toBe('1');
+    });
+
+    it('parses party tags and household info in validateCsvRows', () => {
+      const rows = [
+        {
+          'Guest Name': 'Alice',
+          Code: 'A100',
+          Household: 'Smith Household',
+          Side: 'Bride Side',
+          Tags: 'VIP, Rehearsal Dinner, VIP',
+        },
+      ];
+
+      const validated = validateCsvRows(rows, {
+        guestNameCol: 'Guest Name',
+        codeCol: 'Code',
+        householdCol: 'Household',
+        partyGroupCol: 'Side',
+        partyTagsCol: 'Tags',
+      });
+
+      expect(validated[0].isValid).toBe(true);
+      expect(validated[0].householdName).toBe('Smith Household');
+      expect(validated[0].partyGroup).toBe('Bride Side');
+      expect(validated[0].partyTags).toEqual(['VIP', 'Rehearsal Dinner']);
     });
   });
 

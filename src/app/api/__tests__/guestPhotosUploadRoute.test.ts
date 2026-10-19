@@ -193,12 +193,21 @@ describe('POST /api/guest/photos/upload', () => {
       expect(json.data.url).toMatch(/^\/uploads\//);
       expect(json.data.id).toBe('media-123');
 
+      expect(json.data.status).toBe('PENDING');
+      expect(json.data.isVisible).toBe(false);
+
       expect(mockWriteFile).toHaveBeenCalledTimes(1);
       const { mediaRepository } = require('@/features/media');
       const { contentRepository } = require('@/features/content');
       expect(mediaRepository.createMedia).toHaveBeenCalledTimes(1);
       expect(contentRepository.createNode).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'Photo' }),
+        expect.objectContaining({
+          type: 'Photo',
+          data: expect.objectContaining({
+            status: 'PENDING',
+            isVisible: false,
+          }),
+        }),
         'Guest'
       );
     });
