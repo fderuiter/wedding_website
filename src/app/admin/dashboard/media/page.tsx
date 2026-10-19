@@ -7,6 +7,17 @@ import type { MediaDTO } from '@/features/media';
 import { MediaImage } from '@/components/MediaImage';
 import Dropzone from '@/components/Dropzone';
 import EmptyState from '@/components/EmptyState';
+import { Icon } from '@/components/ui/Icon';
+
+interface PendingPhoto {
+  id: string;
+  mediaId?: string;
+  url: string;
+  title?: string;
+  createdAt: string | Date;
+  status?: string;
+  data?: any;
+}
 
 export default function MediaDashboardPage() {
   const [media, setMedia] = useState<MediaDTO[]>([]);
@@ -16,6 +27,9 @@ export default function MediaDashboardPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [a11yNotice, setA11yNotice] = useState<string>('');
 
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
@@ -24,7 +38,23 @@ export default function MediaDashboardPage() {
 
   useEffect(() => {
     fetchMedia(page);
+    fetchPendingPhotos();
   }, [page]);
+
+  const fetchPendingPhotos = async () => {
+    try {
+      const res = await apiClient.get('/api/admin/photos/moderation');
+      if (res && res.photos && Array.isArray(res.photos)) {
+        setPendingPhotos(res.photos);
+      } else if (res && res.data && Array.isArray(res.data)) {
+        setPendingPhotos(res.data);
+      } else if (Array.isArray(res)) {
+        setPendingPhotos(res);
+      }
+    } catch (e) {
+      console.error('Failed to load pending photos:', e);
+    }
+  };
 
   const fetchMedia = async (targetPage = page) => {
     try {
@@ -47,6 +77,29 @@ export default function MediaDashboardPage() {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      await apiClient.patch('/api/admin/photos/moderation', { id, action: 'approve' });
+      setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
+      setA11yNotice('Photo approved successfully.');
+      fetchMedia(page);
+    } catch (e) {
+      console.error(e);
+      setA11yNotice('Failed to approve photo.');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    try {
+      await apiClient.patch('/api/admin/photos/moderation', { id, action: 'reject' });
+      setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
+      setA11yNotice('Photo rejected and removed.');
+    } catch (e) {
+      console.error(e);
+      setA11yNotice('Failed to reject photo.');
     }
   };
 
@@ -143,8 +196,17 @@ export default function MediaDashboardPage() {
 
   return (
     <div className="py-10 px-4 sm:px-6 max-w-7xl mx-auto">
+      <div role="status" aria-live="polite" className="sr-only" data-testid="moderation-announcer">
+        {a11yNotice}
+      </div>
+
       <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
-        <h1 className="text-3xl font-extrabold text-primary">Media Library</h1>
+        <div>
+          <h1 className="text-3xl font-extrabold text-primary">Media Library</h1>
+          <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
+            Manage photo gallery assets and inspect guest upload submissions.
+          </p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {selectedIds.length > 0 && (
@@ -167,11 +229,138 @@ export default function MediaDashboardPage() {
             Export All (.zip)
           </Button>
 
+          <Button
+            variant={drawerOpen ? 'primary' : 'outline'}
+            onClick={() => setDrawerOpen(!drawerOpen)}
+            aria-expanded={drawerOpen}
+            aria-controls="moderation-drawer"
+            data-testid="toggle-moderation-drawer"
+            className="relative flex items-center gap-2"
+          >
+            <Icon name="Camera" className="w-4 h-4" />
+            <span>Moderation Queue</span>
+            {pendingPhotos.length > 0 && (
+              <span
+                data-testid="pending-count-badge"
+                className="ml-1 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-stone-900"
+              >
+                {pendingPhotos.length}
+              </span>
+            )}
+          </Button>
+
           <Button onClick={() => { setCurrentMedia({ url: '', altText: '', isDecorative: false }); setIsEditing(true); }}>
             Add Media
           </Button>
         </div>
       </div>
+
+      {drawerOpen && (
+        <div
+          id="moderation-drawer"
+          role="region"
+          aria-label="Guest Photo Moderation Drawer"
+          data-testid="moderation-drawer"
+          className="mb-8 p-6 bg-stone-50 dark:bg-stone-900 border-2 border-amber-500/30 rounded-2xl shadow-lg transition-all"
+        >
+          <div className="flex justify-between items-center mb-6 pb-4 border-b border-stone-200 dark:border-stone-800">
+            <div>
+              <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                <Icon name="Camera" className="w-5 h-5 text-amber-500" />
+                <span>Guest Photo Moderation</span>
+              </h2>
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                Review and approve photos submitted by guests before public gallery rendering.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800" data-testid="pending-photo-counter">
+                {pendingPhotos.length} Pending
+              </span>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1 rounded-lg"
+                aria-label="Close moderation drawer"
+              >
+                <Icon name="X" className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {pendingPhotos.length === 0 ? (
+            <div className="text-center py-8" data-testid="empty-moderation-queue">
+              <Icon name="Check" className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-80" />
+              <p className="text-sm font-medium text-stone-700 dark:text-stone-300">
+                All caught up! No guest photos waiting for review.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="pending-photos-list">
+              {pendingPhotos.map((photo) => {
+                const photoData = photo.data || {};
+                const imageUrl = photo.url || photoData.url;
+                const title = photo.title || photoData.title || photoData.altText || 'Guest Photo';
+                const createdDate = photo.createdAt ? new Date(photo.createdAt).toLocaleString() : 'Recently';
+
+                return (
+                  <div
+                    key={photo.id}
+                    data-testid={`pending-photo-card-${photo.id}`}
+                    className="p-4 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-950 shadow-sm flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="relative h-40 w-full mb-3 overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800">
+                        <MediaImage
+                          media={{ id: photo.id, url: imageUrl, altText: title }}
+                          fallbackUrl="/images/placeholder.png"
+                          className="object-cover w-full h-full"
+                        />
+                        <span className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-500 text-stone-900 shadow">
+                          Pending
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate mb-1" title={title}>
+                        {title}
+                      </div>
+                      <div className="text-xs text-stone-500 dark:text-stone-400 mb-4 flex items-center gap-1">
+                        <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
+                        <span>Submitted {createdDate}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-3 border-t border-stone-100 dark:border-stone-900">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        data-testid={`approve-photo-${photo.id}`}
+                        onClick={() => handleApprove(photo.id)}
+                        className="flex-1 flex items-center justify-center gap-1 text-xs py-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        aria-label={`Approve photo ${title}`}
+                      >
+                        <Icon name="Check" className="w-3.5 h-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        data-testid={`reject-photo-${photo.id}`}
+                        onClick={() => handleReject(photo.id)}
+                        className="flex-1 flex items-center justify-center gap-1 text-xs py-2"
+                        aria-label={`Reject photo ${title}`}
+                      >
+                        <Icon name="X" className="w-3.5 h-3.5" />
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {isEditing && (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">

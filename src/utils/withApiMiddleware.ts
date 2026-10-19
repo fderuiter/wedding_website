@@ -77,7 +77,8 @@ export function withApiMiddleware(handler: RouteHandler) {
             { 
               success: false, 
               error: data.error || data.message || 'API Error',
-              ...(data.details ? { details: data.details } : {})
+              ...(data.details ? { details: data.details } : {}),
+              ...(data.helpPrompt ? { helpPrompt: data.helpPrompt } : {})
             },
             { status: response.status, headers: response.headers }
           );

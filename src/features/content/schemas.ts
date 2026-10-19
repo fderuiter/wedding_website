@@ -297,12 +297,34 @@ export const LogisticsNodeSchema = BaseContentNode.extend({
   }).passthrough(),
 });
 
+export const PhotoDataSchema = z.object({
+  url: z.string().optional(),
+  title: z.string().optional(),
+  altText: z.string().optional(),
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional().default('PENDING'),
+  isVisible: z.boolean().optional().default(false),
+  mediaId: z.string().optional(),
+}).passthrough();
+
+export const PhotoModerationSchema = z.object({
+  id: z.string().optional(),
+  nodeId: z.string().optional(),
+  photoId: z.string().optional(),
+  action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
+  status: z.enum(['APPROVED', 'REJECTED']).optional(),
+});
+
+export const PhotoNodeSchema = BaseContentNode.extend({
+  type: z.literal('Photo'),
+  data: PhotoDataSchema,
+});
+
 export const GenericNodeSchema = BaseContentNode.extend({
   type: z.string(),
   data: z.any(),
 });
 
-export const ContentNodeSchema = z.union([FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema]);
+export const ContentNodeSchema = z.union([FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, PhotoNodeSchema, GenericNodeSchema]);
 
 export type ContentNodeDTO = z.infer<typeof ContentNodeSchema>;
 

@@ -25,7 +25,14 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const expectedPasscode = env.GUEST_PASSCODE;
 
   if (!expectedPasscode || !safeComparePasscode(passcode, expectedPasscode)) {
-    return NextResponse.json({ success: false, error: 'Incorrect passcode.' }, { status: 401 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Incorrect passcode. Need help? Try using the host help drawer below for assistance.',
+        helpPrompt: 'Need help finding your passcode? Open the host help drawer below to view recovery instructions or contact your hosts.',
+      },
+      { status: 401 }
+    );
   }
 
   const iat = Date.now();

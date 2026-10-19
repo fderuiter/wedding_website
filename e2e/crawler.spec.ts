@@ -189,6 +189,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             try { resolvedUrl = new URL(href, targetUrl); } catch { continue; }
             if (resolvedUrl.origin !== new URL(baseURL).origin) continue;
             if (resolvedUrl.pathname.includes('/_next/')) continue;
+
             let normalizedPath = resolvedUrl.pathname;
             if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
               normalizedPath = normalizedPath.slice(0, -1);
