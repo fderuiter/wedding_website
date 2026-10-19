@@ -28,7 +28,12 @@ test.describe('UI Verification', () => {
         name: 'guest_auth',
         value: guestCookieValue,
         url: 'http://127.0.0.1:3000',
-      }
+      },
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://localhost:3000',
+      },
     ]);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });

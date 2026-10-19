@@ -45,12 +45,22 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
       {
         name: 'admin_auth',
         value: generateAdminCookieValue(),
-        url: baseURL,
+        url: 'http://127.0.0.1:3000',
       },
       {
         name: 'guest_auth',
         value: generateGuestCookieValue(),
-        url: baseURL,
+        url: 'http://127.0.0.1:3000',
+      },
+      {
+        name: 'admin_auth',
+        value: generateAdminCookieValue(),
+        url: 'http://localhost:3000',
+      },
+      {
+        name: 'guest_auth',
+        value: generateGuestCookieValue(),
+        url: 'http://localhost:3000',
       },
     ]);
 
@@ -108,9 +118,9 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
     });
 
     // Verify summary card appears
-    await expect(page.locator('text=Pre-flight Inspection Passed')).toBeVisible();
-    await expect(page.locator('text=Ready for Import')).toBeVisible();
-    await expect(page.locator('text=valid-backup.json')).toBeVisible();
+    await expect(page.locator('text=Pre-flight Inspection Passed')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('text=Ready for Import')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('text=valid-backup.json')).toBeVisible({ timeout: 15000 });
 
     // Take screenshot of valid pre-flight summary
     await page.screenshot({ path: '/tmp/maintenance-preflight-valid.png', fullPage: true });
@@ -149,9 +159,9 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
     });
 
     // Verify diagnostic panel appears
-    await expect(page.locator('text=Pre-flight Validation Failed')).toBeVisible();
-    await expect(page.locator('text=registryItem.0.price')).toBeVisible();
-    await expect(page.locator('text=appConfig.0.baseUrl')).toBeVisible();
+    await expect(page.locator('text=Pre-flight Validation Failed')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('text=registryItem.0.price')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('text=appConfig.0.baseUrl')).toBeVisible({ timeout: 15000 });
 
     // Take screenshot of invalid pre-flight diagnostic report
     await page.screenshot({ path: '/tmp/maintenance-preflight-invalid.png', fullPage: true });

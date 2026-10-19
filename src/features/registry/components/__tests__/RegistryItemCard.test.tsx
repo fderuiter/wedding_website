@@ -536,4 +536,133 @@ describe('RegistryItemCard Component', () => {
     });
   });
 
+  describe('Cash & Experience Fund Processing Fee Disclosure', () => {
+    it('displays fee notice banner and itemized calculation card for CASH_FUND items', () => {
+      const cashFundItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'cash-fund-fee-1',
+        name: 'Honeymoon Fund',
+        price: 500,
+        itemType: 'CASH_FUND',
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={cashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByText('Payment Processing Fee Notice')).toBeInTheDocument();
+      expect(screen.getByText('Standard Fee: 2.5%')).toBeInTheDocument();
+      expect(screen.getByText(/Base Contribution Amount:/i)).toBeInTheDocument();
+      expect(screen.getByText(/Estimated Card Processing Fee \(2\.5%\):/i)).toBeInTheDocument();
+      expect(screen.getByText(/Net Payout Received by Couple:/i)).toBeInTheDocument();
+    });
+
+    it('displays fee notice banner for EXPERIENCE_FUND items', () => {
+      const experienceFundItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'exp-fund-fee-1',
+        name: 'Cooking Class Experience',
+        price: 200,
+        itemType: 'EXPERIENCE_FUND',
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={experienceFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByText('Payment Processing Fee Notice')).toBeInTheDocument();
+      expect(screen.getByText('Standard Fee: 2.5%')).toBeInTheDocument();
+    });
+
+    it('dynamically recalculates base contribution, fee, and net payout upon user input', () => {
+      const cashFundItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'cash-fund-recalc',
+        name: 'House Downpayment Fund',
+        price: 1000,
+        itemType: 'CASH_FUND',
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={cashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
+      // Initially empty -> $0.00 base, -$0.00 fee, $0.00 net payout
+      expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0);
+
+      // Enter $100 -> Base: $100.00, Fee: -$2.50, Net: $97.50
+      fireEvent.change(amountInput, { target: { value: '100' } });
+
+      expect(screen.getByText('$100.00')).toBeInTheDocument();
+      expect(screen.getByText('-$2.50')).toBeInTheDocument();
+      expect(screen.getByText('$97.50')).toBeInTheDocument();
+
+      // Update to $200 -> Base: $200.00, Fee: -$5.00, Net: $195.00
+      fireEvent.change(amountInput, { target: { value: '200' } });
+
+      expect(screen.getByText('$200.00')).toBeInTheDocument();
+      expect(screen.getByText('-$5.00')).toBeInTheDocument();
+      expect(screen.getByText('$195.00')).toBeInTheDocument();
+    });
+
+    it('handles zero and invalid non-numeric amount inputs without errors or NaN displays', () => {
+      const cashFundItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'cash-fund-edge',
+        name: 'Travel Fund',
+        price: 500,
+        itemType: 'CASH_FUND',
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={cashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
+      // Enter 0
+      fireEvent.change(amountInput, { target: { value: '0' } });
+      expect(screen.queryByText(/NaN/i)).not.toBeInTheDocument();
+      expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0);
+
+      // Enter negative amount
+      fireEvent.change(amountInput, { target: { value: '-20' } });
+      expect(screen.queryByText(/NaN/i)).not.toBeInTheDocument();
+      expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0);
+    });
+
+    it('does NOT render fee notice banner for non-fund items (e.g. PHYSICAL)', () => {
+      const physicalItem: RegistryItem = {
+        ...mockSingleItem,
+        id: 'physical-gift-1',
+        name: 'Kitchen Blender',
+        price: 150,
+        itemType: 'PHYSICAL',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={physicalItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.queryByText('Payment Processing Fee Notice')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Estimated Card Processing Fee/i)).not.toBeInTheDocument();
+    });
+  });
+
 });

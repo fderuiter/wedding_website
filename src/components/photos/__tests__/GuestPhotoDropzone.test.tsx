@@ -155,4 +155,41 @@ describe('GuestPhotoDropzone', () => {
       expect(screen.getByTestId('upload-error-message')).toHaveTextContent('Corrupt image payload');
     });
   });
+
+  it('displays retry button for failed uploads and successfully retries when clicked', async () => {
+    // First upload attempt fails
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+
+    render(<GuestPhotoDropzone />);
+
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const validFile = new File(['valid photo data'], 'retry-me.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-error-badge')).toHaveTextContent('Failed');
+    });
+
+    // Locate retry button using button data-testid starting with retry-upload-
+    const retryButton = screen.getByTestId(/^retry-upload-/);
+    expect(retryButton).toBeInTheDocument();
+
+    // Mock successful retry attempt
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { id: 'media-retried', url: '/uploads/retry-me.jpg' },
+      }),
+    });
+
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-success-badge')).toHaveTextContent('Uploaded');
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
 });

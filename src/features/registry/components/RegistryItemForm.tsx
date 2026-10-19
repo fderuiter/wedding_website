@@ -226,6 +226,11 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
       setScrapeError(friendlyMessage);
 
+      setValues((prev) => ({
+        ...prev,
+        vendorUrl: prev.vendorUrl && prev.vendorUrl.trim() !== '' ? prev.vendorUrl : (scrapeUrl || ''),
+      }));
+
       // Focus on Item Name input so user can enter details manually
       setTimeout(() => {
         nameInputRef.current?.focus();

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
+import { generateSeatingChartPdf } from '@/features/seating/pdf.service';
+import { getAppConfig } from '@/lib/config';
 
 const HEADERS = [
   'Table Name',
@@ -21,7 +23,9 @@ interface SeatingExportRecord extends Record<string, unknown> {
   'Invitation Code': string;
 }
 
-export const GET = withApiMiddleware(async (_request: NextRequest) => {
+export const GET = withApiMiddleware(async (request: NextRequest) => {
+  const format = request?.url ? new URL(request.url).searchParams.get('format')?.toLowerCase() : null;
+
   const [tables, unassignedGuests] = await Promise.all([
     prisma.seatingTable.findMany({
       include: {
@@ -36,6 +40,43 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
       orderBy: { guestName: 'asc' },
     }),
   ]);
+
+  if (format === 'pdf') {
+    let siteTitle = 'Wedding Reception Seating Chart';
+    let weddingDateStr: string | undefined;
+
+    try {
+      const config = await getAppConfig();
+      const couple = [config.partner1Name || config.brideName, config.partner2Name || config.groomName]
+        .filter(Boolean)
+        .join(' & ');
+      if (couple) {
+        siteTitle = `${couple} - Seating Chart & Floorplan`;
+      }
+      if (config.weddingDate) {
+        weddingDateStr = new Date(config.weddingDate).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+      }
+    } catch {
+      // Fallback if config is unavailable
+    }
+
+    const pdfBuffer = await generateSeatingChartPdf(tables as any, unassignedGuests as any, {
+      siteTitle,
+      weddingDate: weddingDateStr,
+    });
+
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="seating-chart.pdf"',
+      },
+    });
+  }
 
   const exportRecords: SeatingExportRecord[] = [];
 
@@ -84,3 +125,4 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
     },
   });
 });
+
