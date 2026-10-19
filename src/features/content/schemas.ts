@@ -27,6 +27,9 @@ export const ThemeTokensSchema = z.record(
 
 export type ThemeTokensDTO = z.infer<typeof ThemeTokensSchema>;
 
+const fontTokenRegex = /^[a-zA-Z0-9_\-\s,'"\(\)]*$/;
+export const fontTokenSchema = z.string().regex(fontTokenRegex, 'Invalid font token format. Must only contain safe font-family characters.').nullable().optional();
+
 export const RawUpdateAppConfigSchema = z.object({
   partner1Name: z.string().optional(),
   partner2Name: z.string().optional(),
@@ -66,6 +69,9 @@ export const RawUpdateAppConfigSchema = z.object({
   layoutGridGap: layoutTokenSchema.optional(),
   layoutCardPadding: layoutTokenSchema.optional(),
   layoutBorderRadius: layoutTokenSchema.optional(),
+  fontHeading: fontTokenSchema,
+  fontBody: fontTokenSchema,
+  fontMono: fontTokenSchema,
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
   modules: ModuleConfigSchema.partial().optional(),
@@ -356,6 +362,9 @@ export const AppConfigSchema = z.object({
   layoutGridGap: layoutTokenSchema.optional().default('1.5rem'),
   layoutCardPadding: layoutTokenSchema.optional().default('2rem'),
   layoutBorderRadius: layoutTokenSchema.optional().default('1rem'),
+  fontHeading: fontTokenSchema,
+  fontBody: fontTokenSchema,
+  fontMono: fontTokenSchema,
   timezone: z.string().default('America/Chicago'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),

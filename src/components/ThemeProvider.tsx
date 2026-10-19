@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ThemePreset,
+  THEME_PRESETS,
   getPresetTokens,
   isThemePreset,
   DEFAULT_THEME_PRESET,
@@ -17,6 +18,9 @@ type ThemeContextType = {
   themeAccent: string;
   themeOutline: string;
   themePreset: ThemePreset;
+  fontHeading: string;
+  fontBody: string;
+  fontMono: string;
   themeMode: ThemeMode;
   mode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
@@ -40,6 +44,9 @@ const ThemeContext = createContext<ThemeContextType>({
   themeAccent: '#D4AF37',
   themeOutline: '#000000',
   themePreset: DEFAULT_THEME_PRESET,
+  fontHeading: THEME_PRESETS[DEFAULT_THEME_PRESET]['--font-heading'],
+  fontBody: THEME_PRESETS[DEFAULT_THEME_PRESET]['--font-body'],
+  fontMono: THEME_PRESETS[DEFAULT_THEME_PRESET]['--font-mono'],
   themeMode: 'system',
   mode: 'system',
   setThemeMode: () => {},
@@ -91,6 +98,15 @@ function sanitizePreset(preset: string | undefined | null, fallback: ThemePreset
 function sanitizeLayoutToken(token: string | undefined | null, fallback: string): string {
   if (token && layoutTokenRegex.test(token)) {
     return token;
+  }
+  return fallback;
+}
+
+const fontTokenRegex = /^[a-zA-Z0-9_\-\s,'"\(\)]+$/;
+
+function sanitizeFontToken(token: string | undefined | null, fallback: string): string {
+  if (token && fontTokenRegex.test(token) && !token.includes(';') && !token.includes('<') && !token.includes('>')) {
+    return token.trim();
   }
   return fallback;
 }
@@ -274,6 +290,11 @@ function generateDynamicStyles(
     gridGap?: string;
     cardPadding?: string;
     borderRadius?: string;
+  },
+  fontTokens?: {
+    fontHeading?: string | null;
+    fontBody?: string | null;
+    fontMono?: string | null;
   }
 ): string {
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
@@ -305,6 +326,10 @@ function generateDynamicStyles(
   const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
   const safeCardPadding = sanitizeLayoutToken(layoutTokens?.cardPadding, '2rem');
   const safeBorderRadius = sanitizeLayoutToken(layoutTokens?.borderRadius, '1rem');
+
+  const safeFontHeading = sanitizeFontToken(fontTokens?.fontHeading, lightPresetTokens['--font-heading']);
+  const safeFontBody = sanitizeFontToken(fontTokens?.fontBody, lightPresetTokens['--font-body']);
+  const safeFontMono = sanitizeFontToken(fontTokens?.fontMono, lightPresetTokens['--font-mono']);
 
   const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
   const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
@@ -341,6 +366,9 @@ function generateDynamicStyles(
       --color-focus-ring: ${focusRingDark};
       --color-surface-border: ${surfaceBorderDark};
 ${lightPresetCssRules}
+      --font-heading: ${safeFontHeading};
+      --font-body: ${safeFontBody};
+      --font-mono: ${safeFontMono};
       --floorplan-seat-assigned-text: ${seatAssignedTextDark};
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
@@ -510,14 +538,17 @@ function applyResolvedTheme(resolved: ResolvedTheme) {
 type ThemeProviderProps = {
   children: React.ReactNode;
   config?: {
-    colorPrimary?: string;
-    colorSecondary?: string;
-    themePreset?: ThemePreset | string;
+    colorPrimary?: string | null;
+    colorSecondary?: string | null;
+    themePreset?: ThemePreset | string | null;
     themeTokens?: Record<string, string>;
-    layoutContainerMaxWidth?: string;
-    layoutGridGap?: string;
-    layoutCardPadding?: string;
-    layoutBorderRadius?: string;
+    layoutContainerMaxWidth?: string | null;
+    layoutGridGap?: string | null;
+    layoutCardPadding?: string | null;
+    layoutBorderRadius?: string | null;
+    fontHeading?: string | null;
+    fontBody?: string | null;
+    fontMono?: string | null;
   };
   initialThemeMode?: ThemeMode;
 };
@@ -536,6 +567,9 @@ export function ThemeProvider({
     layoutGridGap: sanitizeLayoutToken(propConfig?.layoutGridGap, '1.5rem'),
     layoutCardPadding: sanitizeLayoutToken(propConfig?.layoutCardPadding, '2rem'),
     layoutBorderRadius: sanitizeLayoutToken(propConfig?.layoutBorderRadius, '1rem'),
+    fontHeading: propConfig?.fontHeading,
+    fontBody: propConfig?.fontBody,
+    fontMono: propConfig?.fontMono,
   }));
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(initialThemeMode);
@@ -654,6 +688,9 @@ export function ThemeProvider({
         layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
         layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
         layoutBorderRadius: sanitizeLayoutToken(propConfig.layoutBorderRadius, '1rem'),
+        fontHeading: propConfig.fontHeading,
+        fontBody: propConfig.fontBody,
+        fontMono: propConfig.fontMono,
       });
     }
   }, [propConfig]);
@@ -740,6 +777,11 @@ export function ThemeProvider({
         gridGap: config.layoutGridGap,
         cardPadding: config.layoutCardPadding,
         borderRadius: config.layoutBorderRadius,
+      },
+      {
+        fontHeading: config.fontHeading,
+        fontBody: config.fontBody,
+        fontMono: config.fontMono,
       }
     );
   }, [
@@ -751,9 +793,16 @@ export function ThemeProvider({
     config.layoutGridGap,
     config.layoutCardPadding,
     config.layoutBorderRadius,
+    config.fontHeading,
+    config.fontBody,
+    config.fontMono,
   ]);
 
   const activePresetTokens = getPresetTokens(config?.themePreset);
+  const fontHeading = sanitizeFontToken(config?.fontHeading, activePresetTokens['--font-heading']);
+  const fontBody = sanitizeFontToken(config?.fontBody, activePresetTokens['--font-body']);
+  const fontMono = sanitizeFontToken(config?.fontMono, activePresetTokens['--font-mono']);
+
   const parseTokenNum = (val: string | undefined, fallback: number): number => {
     if (!val) return fallback;
     const parsed = parseFloat(val);
@@ -769,6 +818,9 @@ export function ThemeProvider({
 
   const contextValue: ThemeContextType = {
     ...theme,
+    fontHeading,
+    fontBody,
+    fontMono,
     metalness,
     roughness,
     envMapIntensity,

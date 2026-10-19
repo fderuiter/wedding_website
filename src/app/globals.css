@@ -9,8 +9,10 @@
   --color-primary-light: #FCA5A5;
   --color-secondary-light: #FDE68A;
 
-  --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-  --font-mono: var(--font-geist-mono), monospace;
+  --font-sans: var(--font-body, var(--font-geist-sans), Arial, Helvetica, sans-serif);
+  --font-serif: var(--font-heading, var(--font-playfair), Georgia, serif);
+  --font-mono: var(--font-mono, var(--font-geist-mono), monospace);
+  --font-heading: var(--font-heading, var(--font-serif), var(--font-geist-sans), sans-serif);
 
   --spacing-header: 56px;
 
@@ -28,6 +30,10 @@
   --color-text-on-secondary: #171717;
   --color-primary-text: #B91C1C;
   --color-secondary-text: #B45309;
+
+  --font-heading: var(--font-playfair, Georgia, serif);
+  --font-body: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  --font-mono: var(--font-geist-mono, monospace);
 
   --dialog-bg: var(--color-background);
   --dialog-border-color: var(--color-border);
@@ -94,7 +100,11 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans);
+  font-family: var(--font-body, var(--font-sans));
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading, var(--font-serif), inherit);
 }
 
 input, textarea, select {
