@@ -100,6 +100,9 @@ flowchart LR
     node_api_admin_maintenance_export["export"]
     node_api_admin_maintenance_import["import"]
     node_api_admin_me["me"]
+    node_api_admin_photos["photos"]
+    node_api_admin_photos_id["[id]"]
+    node_api_admin_photos_moderation["moderation"]
     node_api_admin_seating["seating"]
     node_api_admin_seating_assign["assign"]
     node_api_admin_seating_export["export"]
@@ -109,6 +112,7 @@ flowchart LR
     node_api_admin_thankyounotes_id["[id]"]
     node_api_admin_thankyounotes_batch["batch"]
     node_api_admin_thankyounotes_export["export"]
+    node_api_admin_thankyounotes_exportlabels["export-labels"]
     node_api_admin_upload["upload"]
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
@@ -172,6 +176,9 @@ flowchart LR
     node_api_admin_maintenance --> node_api_admin_maintenance_export
     node_api_admin_maintenance --> node_api_admin_maintenance_import
     node_api_admin --> node_api_admin_me
+    node_api_admin --> node_api_admin_photos
+    node_api_admin_photos --> node_api_admin_photos_id
+    node_api_admin_photos --> node_api_admin_photos_moderation
     node_api_admin --> node_api_admin_seating
     node_api_admin_seating --> node_api_admin_seating_assign
     node_api_admin_seating --> node_api_admin_seating_export
@@ -181,6 +188,7 @@ flowchart LR
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_export
+    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_exportlabels
     node_api_admin --> node_api_admin_upload
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
@@ -240,6 +248,8 @@ flowchart LR
     class node_api_admin_maintenance_export api;
     class node_api_admin_maintenance_import api;
     class node_api_admin_me api;
+    class node_api_admin_photos_id api;
+    class node_api_admin_photos_moderation api;
     class node_api_admin_seating_assign api;
     class node_api_admin_seating_export api;
     class node_api_admin_settings api;
@@ -248,6 +258,7 @@ flowchart LR
     class node_api_admin_thankyounotes_id api;
     class node_api_admin_thankyounotes_batch api;
     class node_api_admin_thankyounotes_export api;
+    class node_api_admin_thankyounotes_exportlabels api;
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;

@@ -38,10 +38,11 @@ export function UnassignedGuestPanel({
   const filteredGuests = unassignedGuests.filter((guest) => {
     const term = currentSearchQuery.trim().toLowerCase();
     if (!term) return true;
-    return (
-      guest.guestName.toLowerCase().includes(term) ||
-      guest.code.toLowerCase().includes(term)
-    );
+    const matchesName = guest.guestName.toLowerCase().includes(term);
+    const matchesCode = guest.code.toLowerCase().includes(term);
+    const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
+    const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
+    return matchesName || matchesCode || matchesHousehold || matchesTags;
   });
 
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
@@ -109,13 +110,27 @@ export function UnassignedGuestPanel({
               className="group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing transition-all flex items-center justify-between shadow-xs hover:shadow-sm"
               role="listitem"
             >
-              <div className="min-w-0 pr-2">
-                <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">
-                  {guest.guestName}
+              <div className="min-w-0 pr-2 space-y-0.5">
+                <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1.5 flex-wrap">
+                  <span>{guest.guestName}</span>
+                  {guest.householdName && (
+                    <span className="text-[10px] px-1.5 py-0.2 font-normal rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-200" data-testid="unassigned-household-badge">
+                      🏠 {guest.householdName}
+                    </span>
+                  )}
                 </p>
                 <p className="text-[10px] font-mono text-gray-500 dark:text-gray-400">
                   Code: {guest.code}
                 </p>
+                {guest.partyTags && guest.partyTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {guest.partyTags.map((tag) => (
+                      <span key={tag} className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Assign button for quick/accessible assignment */}

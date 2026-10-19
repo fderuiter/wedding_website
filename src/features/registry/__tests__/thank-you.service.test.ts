@@ -416,4 +416,91 @@ describe('ThankYouService', () => {
       );
     });
   });
+
+  describe('exportThankYouNotesPdf', () => {
+    it('includes invitationCode address relation in Prisma findMany queries', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      await service.exportThankYouNotesPdf();
+
+      expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            invitationCode: expect.objectContaining({
+              select: expect.objectContaining({
+                addressLine1: true,
+                addressLine2: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+              }),
+            }),
+          }),
+        })
+      );
+    });
+
+    it('generates valid PDF binary buffer for Avery 5160 template with address data', async () => {
+      const sampleContributors = [
+        {
+          id: 'c1',
+          name: 'Jane Doe',
+          amount: 100,
+          date: new Date().toISOString(),
+          thankYouStatus: 'Unsent',
+          invitationCode: {
+            id: 'inv1',
+            code: 'GUEST123',
+            guestName: 'Jane Doe',
+            addressLine1: '123 Main St',
+            addressLine2: 'Apt 4B',
+            city: 'Austin',
+            state: 'TX',
+            zipCode: '78701',
+            country: 'USA',
+          },
+        },
+      ];
+
+      mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
+
+      const pdfBuffer = await service.exportThankYouNotesPdf({ template: 'avery_5160' });
+
+      expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+      expect(pdfBuffer.length).toBeGreaterThan(0);
+      expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+    });
+
+    it('generates valid PDF binary buffer for Avery 5163 template', async () => {
+      const sampleContributors = [
+        {
+          id: 'c1',
+          name: 'John Smith',
+          amount: 150,
+          date: new Date().toISOString(),
+          thankYouStatus: 'Unsent',
+          invitationCode: {
+            id: 'inv2',
+            code: 'GUEST456',
+            guestName: 'John Smith',
+            addressLine1: '456 Oak Ave',
+            addressLine2: null,
+            city: 'Seattle',
+            state: 'WA',
+            zipCode: '98101',
+            country: 'USA',
+          },
+        },
+      ];
+
+      mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
+
+      const pdfBuffer = await service.exportThankYouNotesPdf({ template: 'avery_5163' });
+
+      expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+      expect(pdfBuffer.length).toBeGreaterThan(0);
+      expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+    });
+  });
 });

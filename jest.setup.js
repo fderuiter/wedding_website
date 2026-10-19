@@ -3,6 +3,17 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import moduleModule from 'node:module';
+import { pathToFileURL } from 'node:url';
+
+// Patch module.createRequire to prevent JSDOM import.meta.url ('http://localhost/...') from crashing Node's createRequire
+const origCreateRequire = moduleModule.createRequire;
+moduleModule.createRequire = function (filename) {
+  if (typeof filename === 'string' && (filename.startsWith('http:') || filename.startsWith('https:'))) {
+    filename = pathToFileURL(path.join(process.cwd(), 'node_modules', 'pdfkit', 'js', 'pdfkit.js')).href;
+  }
+  return origCreateRequire.call(this, filename);
+};
 
 // Strict Test Environment Isolation: Ignore parent shell environment variables during Jest test execution
 (() => {
@@ -257,7 +268,19 @@ jest.mock('next/server', () => {
     }
 
     text() {
+      if (Buffer.isBuffer(this.bodyContent) || this.bodyContent instanceof Uint8Array) {
+        return Promise.resolve(Buffer.from(this.bodyContent).toString('utf-8'));
+      }
       return Promise.resolve(typeof this.bodyContent === 'string' ? this.bodyContent : JSON.stringify(this.bodyContent));
+    }
+
+    arrayBuffer() {
+      if (Buffer.isBuffer(this.bodyContent) || this.bodyContent instanceof Uint8Array) {
+        const buf = Buffer.from(this.bodyContent);
+        return Promise.resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+      }
+      const buf = Buffer.from(typeof this.bodyContent === 'string' ? this.bodyContent : JSON.stringify(this.bodyContent));
+      return Promise.resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
     }
   }
 

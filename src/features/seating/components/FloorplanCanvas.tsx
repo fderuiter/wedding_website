@@ -44,10 +44,11 @@ export function FloorplanCanvas({
 
   const isGuestMatch = (guest: InvitationCodeDTO) => {
     if (!isSearching) return false;
-    return (
-      guest.guestName.toLowerCase().includes(normalizedQuery) ||
-      guest.code.toLowerCase().includes(normalizedQuery)
-    );
+    const nameMatch = guest.guestName.toLowerCase().includes(normalizedQuery);
+    const codeMatch = guest.code.toLowerCase().includes(normalizedQuery);
+    const householdMatch = guest.householdName ? guest.householdName.toLowerCase().includes(normalizedQuery) : false;
+    const tagMatch = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)) : false;
+    return nameMatch || codeMatch || householdMatch || tagMatch;
   };
 
   let totalSeatedMatches = 0;

@@ -66,6 +66,21 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         throw new Error('Validation Error: Plus-one last name must be under 100 characters.');
       }
     }
+    if (data.householdName !== undefined && data.householdName !== null) {
+      if (typeof data.householdName !== 'string' || data.householdName.length > 100) {
+        throw new Error('Validation Error: Household name must be under 100 characters.');
+      }
+    }
+    if (data.partyGroup !== undefined && data.partyGroup !== null) {
+      if (typeof data.partyGroup !== 'string' || data.partyGroup.length > 100) {
+        throw new Error('Validation Error: Party group must be under 100 characters.');
+      }
+    }
+    if (data.partyTags !== undefined && data.partyTags !== null) {
+      if (!Array.isArray(data.partyTags)) {
+        throw new Error('Validation Error: Party tags must be an array of strings.');
+      }
+    }
   }
 
   protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
@@ -77,6 +92,19 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     }
     if (finalData.plusOneLastName !== undefined) {
       finalData.plusOneLastName = typeof finalData.plusOneLastName === 'string' && finalData.plusOneLastName.trim() ? finalData.plusOneLastName.trim() : null;
+    }
+    if (finalData.householdName !== undefined) {
+      finalData.householdName = typeof finalData.householdName === 'string' && finalData.householdName.trim() ? finalData.householdName.trim() : null;
+    }
+    if (finalData.partyGroup !== undefined) {
+      finalData.partyGroup = typeof finalData.partyGroup === 'string' && finalData.partyGroup.trim() ? finalData.partyGroup.trim() : null;
+    }
+    if (finalData.partyTags !== undefined) {
+      if (Array.isArray(finalData.partyTags)) {
+        finalData.partyTags = finalData.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
+      } else {
+        finalData.partyTags = [];
+      }
     }
 
     if (!finalData.code || typeof finalData.code !== 'string' || finalData.code.trim() === '') {
@@ -125,6 +153,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       plusOneAllocations?: number;
       plusOneFirstName?: string | null;
       plusOneLastName?: string | null;
+      householdName?: string | null;
+      partyGroup?: string | null;
+      partyTags?: string[] | string | null;
       extraFields?: Record<string, any> | null;
     }[],
     collisionStrategy: 'skip' | 'update' | 'reject' = 'skip',
@@ -178,6 +209,12 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           if (typeof item.plusOneLastName !== 'string' || item.plusOneLastName.length > 100) {
             throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one last name.');
           }
+        }
+        if (item.householdName && typeof item.householdName === 'string' && item.householdName.length > 100) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Household name must be under 100 characters.');
+        }
+        if (item.partyGroup && typeof item.partyGroup === 'string' && item.partyGroup.length > 100) {
+          throw new Error('Validation Error: Row ' + (i + 1) + ' Party group must be under 100 characters.');
         }
       }
 
@@ -238,6 +275,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         const rowPlusOne = typeof row.plusOneAllocations === 'number' ? row.plusOneAllocations : 0;
         const rowPlusOneFirstName = row.plusOneFirstName && typeof row.plusOneFirstName === 'string' && row.plusOneFirstName.trim() ? row.plusOneFirstName.trim() : null;
         const rowPlusOneLastName = row.plusOneLastName && typeof row.plusOneLastName === 'string' && row.plusOneLastName.trim() ? row.plusOneLastName.trim() : null;
+        const rowHouseholdName = row.householdName && typeof row.householdName === 'string' && row.householdName.trim() ? row.householdName.trim() : null;
+        const rowPartyGroup = row.partyGroup && typeof row.partyGroup === 'string' && row.partyGroup.trim() ? row.partyGroup.trim() : null;
+        let rowPartyTags: string[] = [];
+        if (Array.isArray(row.partyTags)) {
+          rowPartyTags = row.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
+        } else if (typeof row.partyTags === 'string' && row.partyTags.trim()) {
+          rowPartyTags = row.partyTags.split(',').map((t: string) => t.trim()).filter(Boolean);
+        }
         const rowExtraFields = row.extraFields && typeof row.extraFields === 'object' && Object.keys(row.extraFields).length > 0 ? row.extraFields : null;
 
         if (existsInBatch) {
@@ -259,6 +304,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
               if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
               if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
+              if (row.householdName !== undefined) updateData.householdName = rowHouseholdName;
+              if (row.partyGroup !== undefined) updateData.partyGroup = rowPartyGroup;
+              if (row.partyTags !== undefined) updateData.partyTags = rowPartyTags;
               if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
               toUpdate.push({ id: existingRecord.id, data: updateData });
@@ -288,6 +336,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
             if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
             if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
+            if (row.householdName !== undefined) updateData.householdName = rowHouseholdName;
+            if (row.partyGroup !== undefined) updateData.partyGroup = rowPartyGroup;
+            if (row.partyTags !== undefined) updateData.partyTags = rowPartyTags;
             if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
 
             toUpdate.push({ id: existingRecord.id, data: updateData });
@@ -308,6 +359,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             plusOneAllocations: rowPlusOne,
             plusOneFirstName: rowPlusOneFirstName,
             plusOneLastName: rowPlusOneLastName,
+            householdName: rowHouseholdName,
+            partyGroup: rowPartyGroup,
+            partyTags: rowPartyTags,
             extraFields: rowExtraFields ?? undefined,
             used: false
           });
@@ -349,6 +403,53 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         skipped,
         updated
       };
+    });
+  }
+
+  async batchUpdateTags(
+    ids: string[],
+    tags: string[],
+    action: 'add' | 'remove' | 'replace' = 'add',
+    author: string = 'Admin'
+  ) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error('Validation Error: IDs array cannot be empty.');
+    }
+    const cleanTags = (tags || []).map((t: string) => t.trim()).filter(Boolean);
+
+    return executeInTransaction(this.repo.client, async (tx: any) => {
+      const dbRecords = await tx.invitationCode.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, partyTags: true },
+      });
+
+      for (const record of dbRecords) {
+        let updatedTags: string[] = [];
+        const existingTags: string[] = record.partyTags || [];
+        if (action === 'replace') {
+          updatedTags = Array.from(new Set(cleanTags));
+        } else if (action === 'remove') {
+          const removeSet = new Set(cleanTags);
+          updatedTags = existingTags.filter(t => !removeSet.has(t));
+        } else {
+          updatedTags = Array.from(new Set([...existingTags, ...cleanTags]));
+        }
+
+        await tx.invitationCode.update({
+          where: { id: record.id },
+          data: { partyTags: updatedTags },
+        });
+      }
+
+      await createAuditSnapshot(
+        'InvitationCode',
+        'batch_update_tags',
+        { count: ids.length, action, tags: cleanTags },
+        author,
+        tx
+      );
+
+      return { success: true, count: dbRecords.length };
     });
   }
 }
