@@ -47,16 +47,12 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   ]);
   await context.addCookies(cookies);
 
-  // Warm up page connection
-  await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+  const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await context.route(/openstreetmap\.org/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+  await context.route(/open-meteo\.com/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
   // Go to invitation codes dashboard
-  try {
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'load', timeout: 30000 });
-  } catch {
-    await page.waitForTimeout(1000);
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'load', timeout: 30000 });
-  }
+  await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
 
   // Wait for page to finish loading data
   await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 15000 });

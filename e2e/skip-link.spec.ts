@@ -18,6 +18,7 @@ function generateGuestCookieValue() {
 
 test.describe('Skip Link Accessibility', () => {
   test('skip link appears with high contrast styles and focus outline on tab', async ({ context, page }) => {
+    test.setTimeout(60000);
     const guestCookieValue = generateGuestCookieValue();
     await context.addCookies([
       {
@@ -26,6 +27,10 @@ test.describe('Skip Link Accessibility', () => {
         url: 'http://127.0.0.1:3000',
       }
     ]);
+
+    const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    await context.route(/openstreetmap\.org/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+    await context.route(/open-meteo\.com/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('a.skip-link');

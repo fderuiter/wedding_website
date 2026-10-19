@@ -36,6 +36,10 @@ test.describe('UI Verification', () => {
       },
     ]);
 
+    const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    await context.route(/openstreetmap\.org/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+    await context.route(/open-meteo\.com/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+
     await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // The main content should be visible

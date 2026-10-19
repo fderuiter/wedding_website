@@ -39,8 +39,23 @@ export function useEntityOrchestration<T extends { id: string }>({
     enabled,
   });
 
+  const unwrapEntity = (res: any): T => {
+    if (res && typeof res === 'object') {
+      if ('data' in res && res.data && typeof res.data === 'object' && 'id' in res.data) {
+        return res.data as T;
+      }
+      if ('item' in res && res.item && typeof res.item === 'object' && 'id' in res.item) {
+        return res.item as T;
+      }
+    }
+    return res as T;
+  };
+
   const { mutateAsync: createItem } = useMutation({
-    mutationFn: async (payload: Partial<T>) => apiClient.post<T>(endpoint, payload),
+    mutationFn: async (payload: Partial<T>) => {
+      const res = await apiClient.post<any>(endpoint, payload);
+      return unwrapEntity(res);
+    },
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
@@ -54,7 +69,8 @@ export function useEntityOrchestration<T extends { id: string }>({
         queryClient.setQueryData(queryKey, context.previousData);
       }
     },
-    onSuccess: (newItem, _variables, context) => {
+    onSuccess: (rawItem, _variables, context) => {
+      const newItem = unwrapEntity(rawItem);
       queryClient.setQueryData<T[]>(queryKey, old => {
         if (!old || old.length === 0) return [newItem];
         const exists = old.some(item => item.id === context?.optimisticId || item.id === newItem.id);
@@ -70,7 +86,10 @@ export function useEntityOrchestration<T extends { id: string }>({
   });
 
   const { mutateAsync: updateItem } = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => apiClient.put<T>(`${endpoint}/${id}`, payload),
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => {
+      const res = await apiClient.put<any>(`${endpoint}/${id}`, payload);
+      return unwrapEntity(res);
+    },
     onMutate: async ({ id, payload }) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
@@ -86,7 +105,8 @@ export function useEntityOrchestration<T extends { id: string }>({
         queryClient.setQueryData(queryKey, context.previousData);
       }
     },
-    onSuccess: (updatedItem) => {
+    onSuccess: (rawItem) => {
+      const updatedItem = unwrapEntity(rawItem);
       queryClient.setQueryData<T[]>(queryKey, old =>
         old?.map(item => item.id === updatedItem.id ? updatedItem : item)
       );

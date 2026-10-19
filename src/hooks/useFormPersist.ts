@@ -48,6 +48,11 @@ export function useFormPersist<T>(
     return initialValues;
   });
 
+  const initialValuesRef = useRef(initialValues);
+  useEffect(() => {
+    initialValuesRef.current = initialValues;
+  });
+
   // Handle dynamic key changes
   const prevKeyRef = useRef(key);
   useEffect(() => {
@@ -59,25 +64,25 @@ export function useFormPersist<T>(
         if (saved !== null) {
           const parsed = JSON.parse(saved);
           if (
-            typeof initialValues === 'object' &&
-            initialValues !== null &&
-            !Array.isArray(initialValues) &&
+            typeof initialValuesRef.current === 'object' &&
+            initialValuesRef.current !== null &&
+            !Array.isArray(initialValuesRef.current) &&
             typeof parsed === 'object' &&
             parsed !== null &&
             !Array.isArray(parsed)
           ) {
-            setState({ ...initialValues, ...parsed });
+            setState({ ...initialValuesRef.current, ...parsed });
           } else {
             setState(parsed);
           }
         } else {
-          setState(initialValues);
+          setState(initialValuesRef.current);
         }
       } catch (err) {
         console.warn(`useFormPersist: Failed to read changed key "${key}" from sessionStorage:`, err);
       }
     }
-  }, [key, enabled, initialValues]);
+  }, [key, enabled]);
 
   // Sync state changes to sessionStorage with debouncing to prevent main-thread jank on large form state edits
   useEffect(() => {

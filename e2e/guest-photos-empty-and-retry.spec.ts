@@ -32,6 +32,9 @@ test.describe('Guest Photos Empty State', () => {
       },
     ]);
 
+    const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    await context.route(/googleusercontent\.com/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+
     await page.goto('/photos', { waitUntil: 'domcontentloaded' });
 
     // Verify empty state container is rendered

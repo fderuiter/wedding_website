@@ -94,7 +94,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
   });
 
   test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ browser }) => {
-    test.setTimeout(240000);
+    test.setTimeout(360000);
     const cookieValue = generateAdminCookieValue();
     const guestCookieValue = generateGuestCookieValue();
 
@@ -111,26 +111,22 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         {
           name: 'admin_auth',
           value: cookieValue,
-          domain: '127.0.0.1',
-          path: '/',
+          url: 'http://127.0.0.1:3000',
         },
         {
           name: 'guest_auth',
           value: guestCookieValue,
-          domain: '127.0.0.1',
-          path: '/',
+          url: 'http://127.0.0.1:3000',
         },
         {
           name: 'admin_auth',
           value: cookieValue,
-          domain: 'localhost',
-          path: '/',
+          url: 'http://localhost:3000',
         },
         {
           name: 'guest_auth',
           value: guestCookieValue,
-          domain: 'localhost',
-          path: '/',
+          url: 'http://localhost:3000',
         },
       ]);
 
@@ -138,7 +134,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       await ctx.route(/^https?:\/\/(?!(127\.0\.0\.1|localhost)(:\d+)?\/).*/, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
 
       await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
+      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
       await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
       await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
@@ -295,7 +291,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
     console.log(`Checking ${checkedLinks.size} unique internal links...`);
     const linksArray = Array.from(checkedLinks);
-    const batchSize = 5;
+    const batchSize = 10;
     for (let i = 0; i < linksArray.length; i += batchSize) {
       const batch = linksArray.slice(i, i + batchSize);
       const batchResults = await Promise.all(

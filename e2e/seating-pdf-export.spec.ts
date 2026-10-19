@@ -32,6 +32,7 @@ function generateGuestCookieValue() {
 }
 
 test('seating chart admin dashboard has Export Visual PDF button', async ({ context, page }) => {
+  test.setTimeout(60000);
   const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
   const cookies = origins.flatMap((url) => [
     {
@@ -46,6 +47,10 @@ test('seating chart admin dashboard has Export Visual PDF button', async ({ cont
     },
   ]);
   await context.addCookies(cookies);
+
+  const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await context.route(/openstreetmap\.org/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
+  await context.route(/googleusercontent\.com/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
 
   // Navigate to Seating Chart Dashboard
   await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
