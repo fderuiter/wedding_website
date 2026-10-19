@@ -2510,6 +2510,17 @@
         }
       }
     },
+    "/api/admin/thank-you-notes/export-labels": {
+      "get": {
+        "summary": "GET /api/admin/thank-you-notes/export-labels",
+        "description": "Endpoint for /api/admin/thank-you-notes/export-labels",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/thank-you-notes/export": {
       "get": {
         "summary": "GET /api/admin/thank-you-notes/export",

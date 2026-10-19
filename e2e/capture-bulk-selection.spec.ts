@@ -63,7 +63,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
-  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ });
+  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
   await countBtn.waitFor({ state: 'visible', timeout: 15000 });
   const countText = await countBtn.innerText();
   if (countText.includes('All (0)')) {
@@ -104,4 +104,3 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   await page.screenshot({ path: '/tmp/batch-delete-modal.png', fullPage: true });
 });
-

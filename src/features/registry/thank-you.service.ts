@@ -4,6 +4,7 @@ import { executeInTransaction } from '@/lib/transaction';
 import { ContributorSchema } from './schemas';
 import { ApiError } from '@/utils/ApiError';
 import { generateCsvContent } from '@/utils/csv';
+import { generatePdfLabelSheet, LabelTemplate } from '@/utils/pdfLabelGenerator';
 
 export interface ThankYouNotesFilterOptions {
   status?: string;
@@ -87,6 +88,19 @@ export class ThankYouService {
               category: true,
             },
           },
+          invitationCode: {
+            select: {
+              id: true,
+              code: true,
+              guestName: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              state: true,
+              zipCode: true,
+              country: true,
+            },
+          },
         },
         orderBy: {
           date: 'desc',
@@ -164,6 +178,19 @@ export class ThankYouService {
             category: true,
           },
         },
+        invitationCode: {
+          select: {
+            id: true,
+            code: true,
+            guestName: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            state: true,
+            zipCode: true,
+            country: true,
+          },
+        },
       },
     });
 
@@ -200,6 +227,19 @@ export class ThankYouService {
             id: true,
             name: true,
             category: true,
+          },
+        },
+        invitationCode: {
+          select: {
+            id: true,
+            code: true,
+            guestName: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            state: true,
+            zipCode: true,
+            country: true,
           },
         },
       },
@@ -255,6 +295,19 @@ export class ThankYouService {
               category: true,
             },
           },
+          invitationCode: {
+            select: {
+              id: true,
+              code: true,
+              guestName: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              state: true,
+              zipCode: true,
+              country: true,
+            },
+          },
         },
       });
 
@@ -303,6 +356,31 @@ export class ThankYouService {
     }));
 
     return generateCsvContent(records, headers);
+  }
+
+  /**
+   * Exports thank-you note contributor addresses matching filter criteria as a printable Avery PDF label sheet.
+   */
+  async exportThankYouNotesPdf(
+    options: ThankYouNotesFilterOptions & { template?: LabelTemplate } = {}
+  ): Promise<Buffer> {
+    const { items } = await this.getThankYouNotes({
+      ...options,
+      page: options.page || 1,
+      pageSize: options.pageSize || 1000000,
+    });
+
+    const template = options.template || 'avery_5160';
+    return generatePdfLabelSheet(items, template);
+  }
+
+  /**
+   * Alias for exportThankYouNotesPdf for backwards compatibility / alternate interface naming.
+   */
+  async exportThankYouNotesLabels(
+    options: ThankYouNotesFilterOptions & { template?: LabelTemplate } = {}
+  ): Promise<Buffer> {
+    return this.exportThankYouNotesPdf(options);
   }
 }
 
