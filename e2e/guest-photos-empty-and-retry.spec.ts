@@ -19,7 +19,9 @@ function generateGuestCookieValue() {
 test.describe('Guest Photos Empty State', () => {
   test('displays guest photos empty state container when no guest photos exist', async ({ context, page }) => {
     const guestCookieValue = generateGuestCookieValue();
-    await context.route(/googleusercontent\.com/, (route) => route.abort());
+    const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+    await context.route(/cdn\.jsdelivr\.net/, (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    await context.route(/googleusercontent\.com/, (route) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
     await context.addCookies([
       {
         name: 'guest_auth',
