@@ -472,6 +472,56 @@
                             }
                           ]
                         },
+                        "householdName": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "partyGroup": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "partyTags": {
+                          "default": [],
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {}
+                          ]
+                        },
                         "extraFields": {
                           "anyOf": [
                             {
@@ -488,7 +538,8 @@
                         }
                       },
                       "required": [
-                        "guestName"
+                        "guestName",
+                        "partyTags"
                       ],
                       "additionalProperties": false
                     }
@@ -1332,6 +1383,153 @@
       "get": {
         "summary": "GET /api/admin/me",
         "description": "Endpoint for /api/admin/me",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/photos/{id}": {
+      "patch": {
+        "summary": "PATCH /api/admin/photos/[id]",
+        "description": "Endpoint for /api/admin/photos/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "nodeId": {
+                    "type": "string"
+                  },
+                  "photoId": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject",
+                      "APPROVE",
+                      "REJECT"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVED",
+                      "REJECTED"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/admin/photos/[id]",
+        "description": "Endpoint for /api/admin/photos/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/photos/moderation": {
+      "get": {
+        "summary": "GET /api/admin/photos/moderation",
+        "description": "Endpoint for /api/admin/photos/moderation",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/admin/photos/moderation",
+        "description": "Endpoint for /api/admin/photos/moderation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "nodeId": {
+                    "type": "string"
+                  },
+                  "photoId": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject",
+                      "APPROVE",
+                      "REJECT"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVED",
+                      "REJECTED"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/admin/photos/moderation",
+        "description": "Endpoint for /api/admin/photos/moderation",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -2509,6 +2707,17 @@
       "patch": {
         "summary": "PATCH /api/admin/thank-you-notes/batch",
         "description": "Endpoint for /api/admin/thank-you-notes/batch",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/thank-you-notes/export-labels": {
+      "get": {
+        "summary": "GET /api/admin/thank-you-notes/export-labels",
+        "description": "Endpoint for /api/admin/thank-you-notes/export-labels",
         "responses": {
           "200": {
             "description": "Successful response"

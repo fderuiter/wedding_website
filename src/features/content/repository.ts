@@ -64,6 +64,38 @@ export class ContentRepository implements IContentRepository {
     });
   }
 
+  async getNodeById(id: string): Promise<ContentNodeDTO | null> {
+    const node = await this.client.contentNode.findUnique({
+      where: { id }
+    });
+    if (!node) return null;
+    return ContentNodeSchema.parse(node);
+  }
+
+  async updateNode(id: string, data: { tags?: string[]; data?: any }, author: string = 'System'): Promise<ContentNodeDTO> {
+    return executeInTransaction(this.client, async (tx) => {
+      const updated = await tx.contentNode.update({
+        where: { id },
+        data: {
+          ...(data.tags !== undefined ? { tags: data.tags } : {}),
+          ...(data.data !== undefined ? { data: data.data } : {}),
+        }
+      });
+      await createAuditSnapshot('ContentNode', updated.id, updated, author, tx);
+      return ContentNodeSchema.parse(updated);
+    });
+  }
+
+  async deleteNode(id: string, author: string = 'System'): Promise<void> {
+    return executeInTransaction(this.client, async (tx) => {
+      const node = await tx.contentNode.findUnique({ where: { id } });
+      if (node) {
+        await tx.contentNode.delete({ where: { id } });
+        await createAuditSnapshot('ContentNode', id, { deleted: true, previous: node }, author, tx);
+      }
+    });
+  }
+
 }
 
 export const contentRepository = new ContentRepository();

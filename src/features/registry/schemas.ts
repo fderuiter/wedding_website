@@ -30,6 +30,18 @@ export const ContributorSchema = z.object({
     name: z.string(),
     category: z.string().optional(),
   }).nullable().optional(),
+  invitationCodeId: z.string().nullable().optional(),
+  invitationCode: z.object({
+    id: z.string().optional(),
+    code: z.string().optional(),
+    guestName: z.string().optional(),
+    addressLine1: z.string().nullable().optional(),
+    addressLine2: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
+    state: z.string().nullable().optional(),
+    zipCode: z.string().nullable().optional(),
+    country: z.string().nullable().optional(),
+  }).nullable().optional(),
 });
 
 export const UpdateThankYouNoteSchema = z.object({
@@ -118,6 +130,9 @@ export const InvitationCodeSchema = z.object({
   plusOneAllocations: z.coerce.number().int().nonnegative().optional().default(0),
   plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').nullable().optional().or(z.literal('')),
   plusOneLastName: z.string().trim().max(100, 'Plus-one last name must be under 100 characters.').nullable().optional().or(z.literal('')),
+  householdName: z.string().trim().max(100, 'Household name must be under 100 characters.').nullable().optional().or(z.literal('')),
+  partyGroup: z.string().trim().max(100, 'Party group must be under 100 characters.').nullable().optional().or(z.literal('')),
+  partyTags: z.array(z.string().trim()).optional().default([]),
   extraFields: z.record(z.string(), z.any()).nullable().optional(),
   used: z.boolean().default(false),
   usedAt: z.union([z.string(), z.date()]).nullable().optional(),
@@ -148,6 +163,12 @@ const BatchImportInvitationCodeItemSchema = z.object({
   plusOneAllocations: z.coerce.number().int('Plus-one allocation must be an integer.').nonnegative('Plus-one allocation must be non-negative.').optional(),
   plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').optional().or(z.literal('')).nullable(),
   plusOneLastName: z.string().trim().max(100, 'Plus-one last name must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  householdName: z.string().trim().max(100, 'Household name must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  partyGroup: z.string().trim().max(100, 'Party group must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  partyTags: z.union([
+    z.array(z.string()),
+    z.string().transform(val => val.split(',').map(s => s.trim()).filter(Boolean))
+  ]).optional().default([]),
   extraFields: z.record(z.string(), z.any()).optional().nullable(),
 });
 

@@ -111,20 +111,31 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         {
           name: 'admin_auth',
           value: cookieValue,
-          url: baseURL,
+          domain: '127.0.0.1',
+          path: '/',
         },
         {
           name: 'guest_auth',
           value: guestCookieValue,
-          url: baseURL,
-        }
+          domain: '127.0.0.1',
+          path: '/',
+        },
+        {
+          name: 'admin_auth',
+          value: cookieValue,
+          domain: 'localhost',
+          path: '/',
+        },
+        {
+          name: 'guest_auth',
+          value: guestCookieValue,
+          domain: 'localhost',
+          path: '/',
+        },
       ]);
 
-      // Catch-all route handler for third-party requests registered first so specific mocks override it (Playwright evaluates route handlers in reverse registration order)
-      await ctx.route((url: any) => {
-        const host = url.host;
-        return host !== '127.0.0.1:3000' && host !== 'localhost:3000' && host !== '127.0.0.1' && host !== 'localhost';
-      }, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
+      // Catch-all route handler for third-party requests registered first so specific mocks override it
+      await ctx.route(/^https?:\/\/(?!(127\.0\.0\.1|localhost)(:\d+)?\/).*/, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
 
       await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
       await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
@@ -189,81 +200,97 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
       return ctx;
     };
 
-    for (const route of START_ROUTES) {
-      const targetUrl = new URL(route, baseURL).toString();
-      if (visitedUrls.has(targetUrl)) continue;
+    const pageContext = await setupContext();
 
-      console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-      const pageContext = await setupContext();
-      const page = await pageContext.newPage();
+    try {
+      for (const route of START_ROUTES) {
+        const targetUrl = new URL(route, baseURL).toString();
+        if (visitedUrls.has(targetUrl)) continue;
 
-      try {
-        const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-        expect(response).not.toBeNull();
-        expect(response!.status()).toBe(200);
+        console.log(`[Authenticated] Navigating to: ${targetUrl}`);
+        let response = null;
+        let page = await pageContext.newPage();
 
-        // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-        if (route !== '/admin/login') {
-          const currentUrl = new URL(page.url());
-          expect(currentUrl.pathname).not.toBe('/admin/login');
+        try {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+              if (response) break;
+            } catch (e: any) {
+              await page.close().catch(() => {});
+              if (attempt === 2) throw e;
+              await new Promise((r) => setTimeout(r, 1000));
+              page = await pageContext.newPage();
+            }
+          }
+          expect(response).not.toBeNull();
+          expect(response!.status()).toBe(200);
+
+          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
+          if (route !== '/admin/login') {
+            const currentUrl = new URL(page.url());
+            expect(currentUrl.pathname).not.toBe('/admin/login');
+          }
+
+          // Check for generic application server or DB errors in page content
+          const content = await page.content();
+          expect(content).not.toContain('Internal Server Error');
+          expect(content).not.toContain('500 Error');
+          expect(content).not.toContain('An unhandled error occurred');
+
+          visitedUrls.add(targetUrl);
+
+          // Parse and extract all anchor links from the navigated page in a single CDP call
+          const hrefs = await page.evaluate(() => 
+            Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+          );
+          console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+
+          for (const href of hrefs) {
+            if (!href) continue;
+
+            // Skip non-navigational links or fragments
+            if (
+              href.startsWith('#') ||
+                href.startsWith('mailto:') ||
+                href.startsWith('tel:') ||
+                href.startsWith('javascript:') ||
+                href.startsWith('data:') ||
+                href.startsWith('vbscript:')
+            ) {
+              continue;
+            }
+
+            let resolvedUrl: URL;
+            try {
+              resolvedUrl = new URL(href, targetUrl);
+            } catch {
+              continue;
+            }
+
+            if (resolvedUrl.origin !== new URL(baseURL).origin) {
+              continue;
+            }
+
+            if (resolvedUrl.pathname.includes('/_next/')) {
+              continue;
+            }
+
+            let normalizedPath = resolvedUrl.pathname;
+            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+              normalizedPath = normalizedPath.slice(0, -1);
+            }
+
+            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+            checkedLinks.add(absoluteCheckUrl);
+          }
+        } finally {
+          await page.close().catch(() => {});
         }
-
-        // Check for generic application server or DB errors in page content
-        const content = await page.content();
-        expect(content).not.toContain('Internal Server Error');
-        expect(content).not.toContain('500 Error');
-        expect(content).not.toContain('An unhandled error occurred');
-
-        visitedUrls.add(targetUrl);
-
-        // Parse and extract all anchor links from the navigated page in a single CDP call
-        const hrefs = await page.evaluate(() => 
-          Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-        );
-        console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-
-        for (const href of hrefs) {
-          if (!href) continue;
-
-          // Skip non-navigational links or fragments
-          if (
-            href.startsWith('#') ||
-              href.startsWith('mailto:') ||
-              href.startsWith('tel:') ||
-              href.startsWith('javascript:') ||
-              href.startsWith('data:') ||
-              href.startsWith('vbscript:')
-          ) {
-            continue;
-          }
-
-          let resolvedUrl: URL;
-          try {
-            resolvedUrl = new URL(href, targetUrl);
-          } catch {
-            continue;
-          }
-
-          if (resolvedUrl.origin !== new URL(baseURL).origin) {
-            continue;
-          }
-
-          if (resolvedUrl.pathname.includes('/_next/')) {
-            continue;
-          }
-
-          let normalizedPath = resolvedUrl.pathname;
-          if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-            normalizedPath = normalizedPath.slice(0, -1);
-          }
-
-          const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-          checkedLinks.add(absoluteCheckUrl);
-        }
-      } finally {
-        await page.close().catch(() => {});
-        await pageContext.close().catch(() => {});
       }
+    } finally {
+      await pageContext.unrouteAll().catch(() => {});
+      await pageContext.close().catch(() => {});
     }
 
     console.log(`Checking ${checkedLinks.size} unique internal links...`);

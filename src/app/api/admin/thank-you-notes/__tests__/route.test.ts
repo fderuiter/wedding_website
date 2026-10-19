@@ -1,5 +1,6 @@
 import { GET } from '../route';
 import { GET as EXPORT_GET } from '../export/route';
+import { GET as EXPORT_LABELS_GET } from '../export-labels/route';
 import { PATCH } from '../[id]/route';
 import { POST as BATCH_POST } from '../batch/route';
 import { NextRequest } from 'next/server';
@@ -11,6 +12,7 @@ jest.mock('@/features/registry/thank-you.service', () => ({
     updateThankYouNote: jest.fn(),
     batchUpdateThankYouNotes: jest.fn(),
     exportThankYouNotesCsv: jest.fn(),
+    exportThankYouNotesPdf: jest.fn(),
   },
 }));
 
@@ -169,6 +171,44 @@ describe('Thank-You Notes API Routes', () => {
       expect(thankYouService.exportThankYouNotesCsv).toHaveBeenCalledWith({
         status: 'Unsent',
         search: 'Jane',
+      });
+    });
+  });
+
+  describe('GET /api/admin/thank-you-notes/export-labels', () => {
+    it('returns PDF binary response with application/pdf headers and avery_5160 filename', async () => {
+      const mockPdfBuffer = Buffer.from('%PDF-1.5 test pdf content');
+      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockResolvedValue(mockPdfBuffer);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/export-labels?template=avery_5160&status=Unsent&search=Jane');
+      const res = await EXPORT_LABELS_GET(req);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('application/pdf');
+      expect(res.headers.get('content-disposition')).toContain('attachment; filename="thank-you-labels-avery_5160-');
+      const bodyText = await res.text();
+      expect(bodyText).toBe('%PDF-1.5 test pdf content');
+      expect(thankYouService.exportThankYouNotesPdf).toHaveBeenCalledWith({
+        status: 'Unsent',
+        search: 'Jane',
+        template: 'avery_5160',
+      });
+    });
+
+    it('handles avery_5163 template selection parameter', async () => {
+      const mockPdfBuffer = Buffer.from('%PDF-1.5 test pdf content');
+      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockResolvedValue(mockPdfBuffer);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/export-labels?template=avery_5163');
+      const res = await EXPORT_LABELS_GET(req);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('application/pdf');
+      expect(res.headers.get('content-disposition')).toContain('attachment; filename="thank-you-labels-avery_5163-');
+      expect(thankYouService.exportThankYouNotesPdf).toHaveBeenCalledWith({
+        status: undefined,
+        search: undefined,
+        template: 'avery_5163',
       });
     });
   });

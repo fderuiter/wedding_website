@@ -164,6 +164,9 @@ model InvitationCode {
   plusOneAllocations Int?          @default(0)
   plusOneFirstName   String?
   plusOneLastName    String?
+  householdName      String?
+  partyGroup         String?
+  partyTags          String[]      @default([])
   extraFields        Json?
   used               Boolean       @default(false)
   usedAt             DateTime?
@@ -176,6 +179,8 @@ model InvitationCode {
   contributors Contributor[]
   subEventAccesses SubEventAccess[]
   subEventRsvps    SubEventRsvp[]
+
+  @@index([partyTags], type: Gin)
 }
 
 model SeatingTable {

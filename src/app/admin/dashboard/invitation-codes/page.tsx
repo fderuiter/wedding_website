@@ -92,6 +92,12 @@ export default function InvitationCodesDashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
+  const [bulkHouseholdModalOpen, setBulkHouseholdModalOpen] = useState(false);
+  const [bulkHouseholdInput, setBulkHouseholdInput] = useState('');
+  const [bulkTagModalOpen, setBulkTagModalOpen] = useState(false);
+  const [bulkTagInput, setBulkTagInput] = useState('');
+  const [bulkTagAction, setBulkTagAction] = useState<'add' | 'remove'>('add');
+
   const [newCode, setNewCode] = useState({
     guestName: '',
     code: '',
@@ -104,12 +110,17 @@ export default function InvitationCodesDashboardPage() {
     state: '',
     zipCode: '',
     country: '',
+    householdName: '',
+    partyGroup: '',
+    partyTags: '',
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
   const [addressFilter, setAddressFilter] = useState<'all' | 'complete' | 'missing'>('all');
   const [dietaryFilter, setDietaryFilter] = useState<string>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'attending' | 'declined' | 'pending'>('all');
+  const [partyGroupFilter, setPartyGroupFilter] = useState<string>('all');
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [subEvents, setSubEvents] = useState<any[]>([]);
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
@@ -202,7 +213,25 @@ export default function InvitationCodesDashboardPage() {
   // Guardrail: Reset selection state when active search query or filters change
   useEffect(() => {
     setSelectedIds([]);
-  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter, addressFilter]);
+  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter, addressFilter, partyGroupFilter, selectedTagFilter]);
+
+  const allUniqueTags = useMemo(() => {
+    const set = new Set<string>();
+    codes.forEach((c) => {
+      (c.partyTags || []).forEach((t) => {
+        if (t.trim()) set.add(t.trim());
+      });
+    });
+    return Array.from(set).sort();
+  }, [codes]);
+
+  const allUniquePartyGroups = useMemo(() => {
+    const set = new Set<string>();
+    codes.forEach((c) => {
+      if (c.partyGroup?.trim()) set.add(c.partyGroup.trim());
+    });
+    return Array.from(set).sort();
+  }, [codes]);
 
   const isAddressComplete = (item: any) => {
     return Boolean(item.addressLine1?.trim() && item.city?.trim() && item.zipCode?.trim());
@@ -289,6 +318,14 @@ export default function InvitationCodesDashboardPage() {
         }
       }
 
+      if (partyGroupFilter !== 'all') {
+        if ((item.partyGroup || '') !== partyGroupFilter) return false;
+      }
+
+      if (selectedTagFilter) {
+        if (!item.partyTags || !item.partyTags.includes(selectedTagFilter)) return false;
+      }
+
       if (!query) return true;
 
       const matchesName = item.guestName ? item.guestName.toLowerCase().includes(query) : false;
@@ -302,10 +339,24 @@ export default function InvitationCodesDashboardPage() {
         .toLowerCase()
         .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
+      const matchesHousehold = item.householdName ? item.householdName.toLowerCase().includes(query) : false;
+      const matchesPartyGroup = item.partyGroup ? item.partyGroup.toLowerCase().includes(query) : false;
+      const matchesTags = item.partyTags ? item.partyTags.some((t) => t.toLowerCase().includes(query)) : false;
 
-      return matchesName || matchesCode || matchesEmail || matchesPlusOneFirstName || matchesPlusOneLastName || matchesAddress || matchesDietary;
+      return (
+        matchesName ||
+        matchesCode ||
+        matchesEmail ||
+        matchesPlusOneFirstName ||
+        matchesPlusOneLastName ||
+        matchesAddress ||
+        matchesDietary ||
+        matchesHousehold ||
+        matchesPartyGroup ||
+        matchesTags
+      );
     });
-  }, [codes, searchQuery, statusFilter, addressFilter, attendanceFilter, dietaryFilter]);
+  }, [codes, searchQuery, statusFilter, addressFilter, attendanceFilter, dietaryFilter, partyGroupFilter, selectedTagFilter]);
 
   const allFilteredSelected = useMemo(() => {
     if (filteredCodes.length === 0) return false;
@@ -372,6 +423,9 @@ export default function InvitationCodesDashboardPage() {
       'Guest Name': item.guestName || '',
       'Invitation Code': item.code || '',
       Email: item.email || '',
+      'Household Name': item.householdName || '',
+      'Party Group': item.partyGroup || '',
+      'Party Tags': (item.partyTags || []).join(', '),
       'Dietary Notes': item.dietaryNotes || '',
       'Plus Ones': item.plusOneAllocations ?? 0,
       Status: item.used ? 'Redeemed' : 'Unused',
@@ -402,6 +456,46 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
+  const handleBulkSetHousehold = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await updateBatch(selectedIds, { householdName: bulkHouseholdInput.trim() || null } as any);
+      addToast(`Updated household name for ${selectedIds.length} code(s).`, 'success');
+      setBulkHouseholdModalOpen(false);
+      setBulkHouseholdInput('');
+      setSelectedIds([]);
+    } catch (e: any) {
+      addToast(e.message || 'Failed to update household name.', 'error');
+    }
+  };
+
+  const handleBulkUpdateTags = async () => {
+    if (selectedIds.length === 0 || !bulkTagInput.trim()) return;
+    const tagToProcess = bulkTagInput.trim();
+    try {
+      const selectedCodes = codes.filter((c) => selectedIds.includes(c.id));
+      await Promise.all(
+        selectedCodes.map((c) => {
+          let currentTags = c.partyTags || [];
+          if (bulkTagAction === 'add') {
+            if (!currentTags.includes(tagToProcess)) {
+              currentTags = [...currentTags, tagToProcess];
+            }
+          } else {
+            currentTags = currentTags.filter((t) => t !== tagToProcess);
+          }
+          return updateBatch([c.id], { partyTags: currentTags } as any);
+        })
+      );
+      addToast(`Updated tags for ${selectedIds.length} code(s).`, 'success');
+      setBulkTagModalOpen(false);
+      setBulkTagInput('');
+      setSelectedIds([]);
+    } catch (e: any) {
+      addToast(e.message || 'Failed to update tags.', 'error');
+    }
+  };
+
   const handleSave = async () => {
     if (!newCode.guestName.trim()) {
       addToast('Guest name is required.', 'error');
@@ -413,6 +507,9 @@ export default function InvitationCodesDashboardPage() {
         code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
         plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
         plusOneLastName: newCode.plusOneLastName.trim() || undefined,
+        householdName: newCode.householdName.trim() || undefined,
+        partyGroup: newCode.partyGroup.trim() || undefined,
+        partyTags: newCode.partyTags ? newCode.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
         used: false,
       };
       if (newCode.email.trim()) payload.email = newCode.email.trim();
@@ -436,6 +533,9 @@ export default function InvitationCodesDashboardPage() {
         state: '',
         zipCode: '',
         country: '',
+        householdName: '',
+        partyGroup: '',
+        partyTags: '',
       });
 
       setIsCreating(false);
@@ -472,6 +572,9 @@ export default function InvitationCodesDashboardPage() {
       Email: item.email || '',
       'Plus-One First Name': item.plusOneFirstName || '',
       'Plus-One Last Name': item.plusOneLastName || '',
+      'Household Name': item.householdName || '',
+      'Party Group': item.partyGroup || '',
+      'Party Tags': (item.partyTags || []).join(', '),
       'Address Line 1': item.addressLine1 || '',
       'Address Line 2': item.addressLine2 || '',
       City: item.city || '',
@@ -521,6 +624,9 @@ export default function InvitationCodesDashboardPage() {
               state: '',
               zipCode: '',
               country: '',
+              householdName: '',
+              partyGroup: '',
+              partyTags: '',
             });
             setIsCreating(true);
           }}>Generate New Code</Button>
@@ -637,6 +743,33 @@ export default function InvitationCodesDashboardPage() {
                 onChange={e => setNewCode({ ...newCode, country: e.target.value })}
               />
             </FormGroup>
+            <FormGroup>
+              <Label>Household Name (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith Household"
+                value={newCode.householdName}
+                onChange={e => setNewCode({ ...newCode, householdName: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label>Party Side / Group (Optional)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Bride, Groom, Joint"
+                value={newCode.partyGroup}
+                onChange={e => setNewCode({ ...newCode, partyGroup: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup className="md:col-span-2">
+              <Label>Party Tags (Optional - comma-separated)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. VIP, Rehearsal Dinner, Family"
+                value={newCode.partyTags}
+                onChange={e => setNewCode({ ...newCode, partyTags: e.target.value })}
+              />
+            </FormGroup>
           </div>
           <div className="flex gap-4 mt-6">
             <Button onClick={handleSave} variant="primary">Generate</Button>
@@ -694,7 +827,7 @@ export default function InvitationCodesDashboardPage() {
           <FormGroup className="relative flex-1 max-w-md space-y-0">
             <Input
               type="text"
-              placeholder="Search by name, code, email, address, or dietary notes..."
+              placeholder="Search by name, code, email, household, tag..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               aria-label="Search invitation codes"
@@ -702,25 +835,81 @@ export default function InvitationCodesDashboardPage() {
             />
           </FormGroup>
 
-          <FormGroup className="w-full sm:w-auto space-y-0">
-            <Select
-              id="dietary-filter"
-              aria-label="Filter by dietary category"
-              value={dietaryFilter}
-              onChange={(e) => setDietaryFilter(e.target.value)}
-              className="w-full sm:w-auto"
-            >
-              <option value="all">All Dietary Categories</option>
-              <option value="has_restriction">Has Dietary Restriction</option>
-              <option value="gluten-free">Gluten-Free</option>
-              <option value="vegetarian">Vegetarian</option>
-              <option value="vegan">Vegan</option>
-              <option value="dairy-free">Dairy-Free</option>
-              <option value="nut-free">Nut-Free / Allergy</option>
-              <option value="other">Other Dietary Restrictions</option>
-            </Select>
-          </FormGroup>
+          <div className="flex flex-wrap gap-3 items-center">
+            <FormGroup className="w-full sm:w-auto space-y-0">
+              <Select
+                id="party-group-filter"
+                aria-label="Filter by party side or group"
+                value={partyGroupFilter}
+                onChange={(e) => setPartyGroupFilter(e.target.value)}
+                className="w-full sm:w-auto"
+              >
+                <option value="all">All Party Groups</option>
+                <option value="Bride">Bride</option>
+                <option value="Groom">Groom</option>
+                <option value="Joint">Joint</option>
+                {allUniquePartyGroups
+                  .filter((g) => !['Bride', 'Groom', 'Joint'].includes(g))
+                  .map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+              </Select>
+            </FormGroup>
+
+            <FormGroup className="w-full sm:w-auto space-y-0">
+              <Select
+                id="dietary-filter"
+                aria-label="Filter by dietary category"
+                value={dietaryFilter}
+                onChange={(e) => setDietaryFilter(e.target.value)}
+                className="w-full sm:w-auto"
+              >
+                <option value="all">All Dietary Categories</option>
+                <option value="has_restriction">Has Dietary Restriction</option>
+                <option value="gluten-free">Gluten-Free</option>
+                <option value="vegetarian">Vegetarian</option>
+                <option value="vegan">Vegan</option>
+                <option value="dairy-free">Dairy-Free</option>
+                <option value="nut-free">Nut-Free / Allergy</option>
+                <option value="other">Other Dietary Restrictions</option>
+              </Select>
+            </FormGroup>
+          </div>
         </div>
+
+        {/* Interactive Tag Filter Pills Bar */}
+        {allUniqueTags.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Party Tags:</span>
+            <button
+              type="button"
+              onClick={() => setSelectedTagFilter(null)}
+              className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+                selectedTagFilter === null
+                  ? 'bg-primary text-white font-bold'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+              }`}
+            >
+              All Tags
+            </button>
+            {allUniqueTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                className={`px-2.5 py-1 text-xs rounded-full transition-colors font-medium ${
+                  selectedTagFilter === tag
+                    ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-300'
+                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+                }`}
+              >
+                #{tag}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
           {/* Redemption Status Tab Group */}
@@ -898,7 +1087,25 @@ export default function InvitationCodesDashboardPage() {
                   className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
                 />
                 <div>
-                  <div className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
+                    {item.householdName && (
+                      <span
+                        className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
+                        data-testid="household-badge"
+                      >
+                        🏠 {item.householdName}
+                      </span>
+                    )}
+                    {item.partyGroup && (
+                      <span
+                        className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
+                        data-testid="party-group-badge"
+                      >
+                        👥 {item.partyGroup}
+                      </span>
+                    )}
+                  </div>
                   {(item.plusOneFirstName || item.plusOneLastName) && (
                     <div className="text-sm text-gray-600 dark:text-gray-300">
                       Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
@@ -907,6 +1114,21 @@ export default function InvitationCodesDashboardPage() {
                   <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
                     Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
                   </div>
+
+                  {/* Party Tags Display */}
+                  {item.partyTags && item.partyTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {item.partyTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+                          data-testid="party-tag-pill"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Mailing Address Display */}
                   <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
@@ -1017,6 +1239,12 @@ export default function InvitationCodesDashboardPage() {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setBulkHouseholdModalOpen(true)}>
+              Set Household
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setBulkTagModalOpen(true)}>
+              Manage Tags
+            </Button>
             <Button size="sm" variant="secondary" onClick={handleBatchMarkRedeemed}>
               Mark as Redeemed
             </Button>
@@ -1032,6 +1260,88 @@ export default function InvitationCodesDashboardPage() {
             <Button size="sm" variant="ghost" className="text-gray-300 hover:text-white" onClick={() => setSelectedIds([])}>
               Deselect All
             </Button>
+          </div>
+        </div>
+      )}
+
+      {bulkHouseholdModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Set Household Name ({selectedIds.length} Selected)
+            </h2>
+            <FormGroup>
+              <Label>Household Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith Household"
+                value={bulkHouseholdInput}
+                onChange={(e) => setBulkHouseholdInput(e.target.value)}
+              />
+            </FormGroup>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setBulkHouseholdModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleBulkSetHousehold}>
+                Apply Household Name
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkTagModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Manage Party Tags ({selectedIds.length} Selected)
+            </h2>
+            <div className="flex gap-4">
+              <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="radio"
+                  name="tagAction"
+                  checked={bulkTagAction === 'add'}
+                  onChange={() => setBulkTagAction('add')}
+                />
+                <span>Add Tag</span>
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="radio"
+                  name="tagAction"
+                  checked={bulkTagAction === 'remove'}
+                  onChange={() => setBulkTagAction('remove')}
+                />
+                <span>Remove Tag</span>
+              </label>
+            </div>
+            <FormGroup>
+              <Label>Tag Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. VIP"
+                value={bulkTagInput}
+                onChange={(e) => setBulkTagInput(e.target.value)}
+              />
+            </FormGroup>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setBulkTagModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleBulkUpdateTags}>
+                Apply Tag Changes
+              </Button>
+            </div>
           </div>
         </div>
       )}

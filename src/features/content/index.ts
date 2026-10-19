@@ -13,6 +13,9 @@ export {
   LogisticsNodeSchema,
   ScheduleNodeSchema,
   ScheduleDataSchema,
+  PhotoDataSchema,
+  PhotoModerationSchema,
+  PhotoNodeSchema,
   GenericNodeSchema,
   ContentNodeSchema,
 } from './schemas';
