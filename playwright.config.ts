@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
   workers: 1,
+  retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
     command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
     url: 'http://127.0.0.1:3000',
