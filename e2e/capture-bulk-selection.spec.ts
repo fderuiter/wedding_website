@@ -47,8 +47,16 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   ]);
   await context.addCookies(cookies);
 
+  // Warm up page connection
+  await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+
   // Go to invitation codes dashboard
-  await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
+  try {
+    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'load', timeout: 30000 });
+  } catch {
+    await page.waitForTimeout(1000);
+    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'load', timeout: 30000 });
+  }
 
   // Wait for page to finish loading data
   await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 15000 });

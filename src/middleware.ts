@@ -23,26 +23,14 @@ export async function middleware(request: NextRequest) {
   const isExcluded = 
     pathname === '/guest/login' ||
     pathname === '/api/guest/login' ||
+    pathname === '/admin/login' ||
+    pathname === '/api/admin/login' ||
     pathname === '/api/health' ||
     pathname === '/api/ready' ||
     pathname === '/robots.txt' ||
     pathname === '/favicon.ico' ||
     pathname.startsWith('/_next/') ||
     /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(pathname);
-
-  if (!isExcluded) {
-    const isGuest = await isGuestRequest(request);
-    const isAdmin = await isAdminRequest(request);
-
-    if (!isGuest && !isAdmin) {
-      if (pathname.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      const loginUrl = new URL('/guest/login', request.url);
-      loginUrl.searchParams.set('callbackUrl', pathname + request.nextUrl.search);
-      return NextResponse.redirect(loginUrl, { status: 303 });
-    }
-  }
 
   if (isProtectedRoute(pathname, method)) {
     const isAuth = await isAdminRequest(request);
@@ -56,6 +44,20 @@ export async function middleware(request: NextRequest) {
       // that breaks navigation, serving as a clean redirect.
       const url = new URL('/admin/login', request.url);
       return NextResponse.redirect(url, { status: 303 });
+    }
+  }
+
+  if (!isExcluded) {
+    const isGuest = await isGuestRequest(request);
+    const isAdmin = await isAdminRequest(request);
+
+    if (!isGuest && !isAdmin) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      const loginUrl = new URL('/guest/login', request.url);
+      loginUrl.searchParams.set('callbackUrl', pathname + request.nextUrl.search);
+      return NextResponse.redirect(loginUrl, { status: 303 });
     }
   }
 

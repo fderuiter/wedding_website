@@ -14,6 +14,9 @@ export interface ParsedCsvRow {
   plusOneAllocations?: number;
   plusOneFirstName?: string;
   plusOneLastName?: string;
+  householdName?: string;
+  partyGroup?: string;
+  partyTags?: string[];
   extraFields?: Record<string, string>;
   isValid: boolean;
   errors: string[];
@@ -35,6 +38,9 @@ export interface CsvParseResult {
   suggestedPlusOneCol: string;
   suggestedPlusOneFirstNameCol?: string;
   suggestedPlusOneLastNameCol?: string;
+  suggestedHouseholdNameCol?: string;
+  suggestedPartyGroupCol?: string;
+  suggestedPartyTagsCol?: string;
   rows: Record<string, string>[];
 }
 
@@ -52,6 +58,9 @@ export interface ColumnMappingOptions {
   plusOneCol?: string;
   plusOneFirstNameCol?: string;
   plusOneLastNameCol?: string;
+  householdNameCol?: string;
+  partyGroupCol?: string;
+  partyTagsCol?: string;
   extraCols?: string[];
 }
 
@@ -81,6 +90,9 @@ export function parseCsvContent(text: string): CsvParseResult {
       suggestedPlusOneCol: '',
       suggestedPlusOneFirstNameCol: '',
       suggestedPlusOneLastNameCol: '',
+      suggestedHouseholdNameCol: '',
+      suggestedPartyGroupCol: '',
+      suggestedPartyTagsCol: '',
       rows: [],
     };
   }
@@ -111,6 +123,9 @@ export function parseCsvContent(text: string): CsvParseResult {
   let suggestedPlusOneCol = '';
   let suggestedPlusOneFirstNameCol = '';
   let suggestedPlusOneLastNameCol = '';
+  let suggestedHouseholdNameCol = '';
+  let suggestedPartyGroupCol = '';
+  let suggestedPartyTagsCol = '';
 
   for (const h of headers) {
     const lower = h.toLowerCase().trim();
@@ -247,6 +262,36 @@ export function parseCsvContent(text: string): CsvParseResult {
         suggestedPlusOneCol = h;
       }
     }
+    if (!suggestedHouseholdNameCol) {
+      if (
+        lower.includes('household') ||
+        lower.includes('family name')
+      ) {
+        suggestedHouseholdNameCol = h;
+      }
+    }
+    if (!suggestedPartyGroupCol) {
+      if (
+        lower.includes('party group') ||
+        lower.includes('party side') ||
+        lower.includes('family side') ||
+        lower === 'side' ||
+        lower === 'party'
+      ) {
+        suggestedPartyGroupCol = h;
+      }
+    }
+    if (!suggestedPartyTagsCol) {
+      if (
+        lower.includes('party tags') ||
+        lower.includes('party tag') ||
+        lower === 'tags' ||
+        lower === 'tag' ||
+        lower.includes('guest tags')
+      ) {
+        suggestedPartyTagsCol = h;
+      }
+    }
   }
 
   // Fallback defaults if heuristics didn't match
@@ -287,6 +332,9 @@ export function parseCsvContent(text: string): CsvParseResult {
     suggestedPlusOneCol,
     suggestedPlusOneFirstNameCol,
     suggestedPlusOneLastNameCol,
+    suggestedHouseholdNameCol,
+    suggestedPartyGroupCol,
+    suggestedPartyTagsCol,
     rows,
   };
 }
@@ -388,6 +436,9 @@ export function validateSingleCsvRow(
     plusOneCol = '',
     plusOneFirstNameCol = '',
     plusOneLastNameCol = '',
+    householdNameCol = '',
+    partyGroupCol = '',
+    partyTagsCol = '',
     extraCols,
   } = mapping;
 
@@ -408,6 +459,9 @@ export function validateSingleCsvRow(
         plusOneCol,
         plusOneFirstNameCol,
         plusOneLastNameCol,
+        householdNameCol,
+        partyGroupCol,
+        partyTagsCol,
       ].filter(Boolean)
     );
 
@@ -424,6 +478,10 @@ export function validateSingleCsvRow(
   const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
   const plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
   const plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
+  const householdName = householdNameCol ? (r[householdNameCol] || '').trim() : (r['householdName'] || r['Household Name'] || r['Household'] || '').trim();
+  const partyGroup = partyGroupCol ? (r[partyGroupCol] || '').trim() : (r['partyGroup'] || r['Party Group'] || r['Party Side'] || r['Family Side'] || r['Side'] || '').trim();
+  const rawPartyTags = partyTagsCol ? (r[partyTagsCol] || '').trim() : (r['partyTags'] || r['Party Tags'] || r['Tags'] || '').trim();
+  const partyTags = rawPartyTags ? Array.from(new Set(rawPartyTags.split(',').map((t) => t.trim()).filter(Boolean))) : [];
 
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -485,6 +543,14 @@ export function validateSingleCsvRow(
     errors.push('Plus-one last name must be under 100 characters.');
   }
 
+  if (householdName && householdName.length > 100) {
+    errors.push('Household name must be under 100 characters.');
+  }
+
+  if (partyGroup && partyGroup.length > 100) {
+    errors.push('Party group must be under 100 characters.');
+  }
+
   // Collect extra fields
   const extraFields: Record<string, string> = {};
 
@@ -518,6 +584,9 @@ export function validateSingleCsvRow(
     plusOneAllocations,
     plusOneFirstName: plusOneFirstName || undefined,
     plusOneLastName: plusOneLastName || undefined,
+    householdName: householdName || undefined,
+    partyGroup: partyGroup || undefined,
+    partyTags: partyTags.length > 0 ? partyTags : undefined,
     extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
     isValid: errors.length === 0,
     errors,
@@ -559,6 +628,9 @@ export function validateCsvRows(
     plusOneCol = '',
     plusOneFirstNameCol = '',
     plusOneLastNameCol = '',
+    householdNameCol = '',
+    partyGroupCol = '',
+    partyTagsCol = '',
   } = mapping;
 
   const codeFrequency = new Map<string, number>();
@@ -587,6 +659,9 @@ export function validateCsvRows(
       plusOneCol,
       plusOneFirstNameCol,
       plusOneLastNameCol,
+      householdNameCol,
+      partyGroupCol,
+      partyTagsCol,
     ].filter(Boolean)
   );
 
@@ -641,6 +716,9 @@ export function generateSampleCsvTemplate(): string {
       'Guest Name': 'Jane Doe',
       'Invitation Code': 'WED2026-JANE',
       Email: 'jane.doe@example.com',
+      'Household Name': 'Doe Family',
+      'Party Group': 'Bride',
+      'Party Tags': 'VIP, Rehearsal Dinner',
       'Dietary Notes': 'Vegetarian',
       'Plus-One Allocations': 1,
     },
@@ -648,6 +726,9 @@ export function generateSampleCsvTemplate(): string {
       'Guest Name': 'John Smith',
       'Invitation Code': 'WED2026-JOHN',
       Email: 'john.smith@example.com',
+      'Household Name': 'Smith Family',
+      'Party Group': 'Groom',
+      'Party Tags': 'VIP',
       'Dietary Notes': 'None',
       'Plus-One Allocations': 0,
     },
@@ -655,6 +736,9 @@ export function generateSampleCsvTemplate(): string {
       'Guest Name': 'Alex Johnson',
       'Invitation Code': '',
       Email: 'alex.johnson@example.com',
+      'Household Name': 'Johnson Family',
+      'Party Group': 'Joint',
+      'Party Tags': 'Local',
       'Dietary Notes': 'Gluten-Free',
       'Plus-One Allocations': 2,
     },
@@ -664,6 +748,9 @@ export function generateSampleCsvTemplate(): string {
     'Guest Name',
     'Invitation Code',
     'Email',
+    'Household Name',
+    'Party Group',
+    'Party Tags',
     'Dietary Notes',
     'Plus-One Allocations',
   ]);

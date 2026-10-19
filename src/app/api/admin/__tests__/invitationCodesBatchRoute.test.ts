@@ -91,7 +91,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     const body = await res.json();
     expect(body).toEqual(mockResult);
     expect(mockServiceInstance.importBatch).toHaveBeenCalledWith(
-      payload.records,
+      payload.records.map((r) => ({ partyTags: [], ...r })),
       'skip',
       'Admin'
     );
