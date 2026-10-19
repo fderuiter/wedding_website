@@ -111,20 +111,31 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         {
           name: 'admin_auth',
           value: cookieValue,
-          url: baseURL,
+          domain: '127.0.0.1',
+          path: '/',
         },
         {
           name: 'guest_auth',
           value: guestCookieValue,
-          url: baseURL,
-        }
+          domain: '127.0.0.1',
+          path: '/',
+        },
+        {
+          name: 'admin_auth',
+          value: cookieValue,
+          domain: 'localhost',
+          path: '/',
+        },
+        {
+          name: 'guest_auth',
+          value: guestCookieValue,
+          domain: 'localhost',
+          path: '/',
+        },
       ]);
 
-      // Catch-all route handler for third-party requests registered first so specific mocks override it (Playwright evaluates route handlers in reverse registration order)
-      await ctx.route((url: any) => {
-        const host = url.host;
-        return host !== '127.0.0.1:3000' && host !== 'localhost:3000' && host !== '127.0.0.1' && host !== 'localhost';
-      }, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
+      // Catch-all route handler for third-party requests registered first so specific mocks override it
+      await ctx.route(/^https?:\/\/(?!(127\.0\.0\.1|localhost)(:\d+)?\/).*/, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
 
       await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
       await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
@@ -197,8 +208,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         if (visitedUrls.has(targetUrl)) continue;
 
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        let page = await pageContext.newPage();
         let response = null;
+        let page = await pageContext.newPage();
 
         try {
           for (let attempt = 0; attempt < 3; attempt++) {
@@ -278,6 +289,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         }
       }
     } finally {
+      await pageContext.unrouteAll().catch(() => {});
       await pageContext.close().catch(() => {});
     }
 

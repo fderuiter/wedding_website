@@ -39,12 +39,15 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
     { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://localhost:3000' },
   ]);
 
+  // Warm up page connection
+  await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+
   // Go to invitation codes dashboard
   try {
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
+    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'load', timeout: 30000 });
   } catch {
     await page.waitForTimeout(1000);
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
+    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'load', timeout: 30000 });
   }
 
   // Wait for page to finish loading data

@@ -54,7 +54,12 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
       },
     ]);
 
-    await page.goto('/admin/dashboard/maintenance', { waitUntil: 'load' });
+    try {
+      await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+    } catch {
+      await page.waitForTimeout(500);
+      await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+    }
 
     // 1. Valid backup test
     const validBackup = {
