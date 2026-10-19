@@ -293,9 +293,9 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                       </span>
                     )}
                     {item.status === 'success' && (
-                      <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium" data-testid="upload-success-badge">
+                      <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium" data-testid="upload-success-badge">
                         <Icon name="Check" className="w-3.5 h-3.5" />
-                        Uploaded
+                        Uploaded (Pending Review)
                       </span>
                     )}
                     {item.status === 'error' && (
@@ -322,6 +322,13 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                       style={{ width: `${item.progress}%` }}
                     />
                   </div>
+                )}
+
+                {item.status === 'success' && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300 font-medium bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 flex items-center gap-1.5" data-testid="upload-pending-notice">
+                    <Icon name="Info" className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.</span>
+                  </p>
                 )}
 
                 {item.status === 'error' && item.errorMessage && (

@@ -61,14 +61,99 @@ export class ContentService {
 
   async getPublicPhotos() {
     const nodes = await this.repo.getNodesByType('Photo');
-    // For ContentNodes, apply generic sorting by createdAt descending.
-    // If there is any visibility flag in data, enforce it.
+    // Public gallery endpoints return only photos with status APPROVED or isVisible true (excluding PENDING and REJECTED)
     return nodes
       .filter((node) => {
         const data = node.data as any;
-        return data?.isVisible !== false;
+        const status = data?.status;
+        const isVisible = data?.isVisible;
+
+        if (status === 'PENDING' || status === 'REJECTED') {
+          return false;
+        }
+
+        if (status === 'APPROVED') {
+          return isVisible !== false;
+        }
+
+        // Fallback for legacy photo nodes where status is undefined
+        return isVisible !== false;
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getPendingPhotos() {
+    const nodes = await this.repo.getNodesByType('Photo');
+    return nodes
+      .filter((node) => {
+        const data = node.data as any;
+        if (data?.status === 'PENDING') return true;
+        if (data?.status === undefined && data?.isVisible === false && node.tags?.includes('guest-upload')) return true;
+        return false;
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async moderatePhoto(nodeId: string, action: 'approve' | 'reject', author: string = 'Admin') {
+    let node: any = null;
+    if (typeof this.repo.getNodeById === 'function') {
+      node = await this.repo.getNodeById(nodeId);
+    } else {
+      const nodes = await this.repo.getNodesByType('Photo');
+      node = nodes.find((n) => n.id === nodeId);
+    }
+
+    if (!node) {
+      throw new Error(`Photo node with ID ${nodeId} not found`);
+    }
+
+    const data = (node.data as any) || {};
+
+    if (action === 'approve') {
+      const updatedData = {
+        ...data,
+        status: 'APPROVED',
+        isVisible: true,
+      };
+      if (typeof this.repo.updateNode === 'function') {
+        return await this.repo.updateNode(nodeId, { data: updatedData }, author);
+      }
+      return { ...node, data: updatedData };
+    } else if (action === 'reject') {
+      const updatedData = {
+        ...data,
+        status: 'REJECTED',
+        isVisible: false,
+      };
+
+      if (data.url) {
+        try {
+          const { getStorageProvider } = await import('@/utils/storage');
+          await getStorageProvider().delete(data.url);
+        } catch {
+          // Ignore storage cleanup failures
+        }
+      }
+
+      if (data.mediaId) {
+        try {
+          const { mediaRepository } = await import('@/features/media');
+          await mediaRepository.deleteMedia(data.mediaId);
+        } catch {
+          // Ignore media record cleanup failures
+        }
+      }
+
+      if (typeof this.repo.deleteNode === 'function') {
+        await this.repo.deleteNode(nodeId, author);
+        return { id: nodeId, deleted: true, status: 'REJECTED' };
+      } else if (typeof this.repo.updateNode === 'function') {
+        return await this.repo.updateNode(nodeId, { data: updatedData }, author);
+      }
+      return { ...node, data: updatedData };
+    } else {
+      throw new Error(`Invalid moderation action: ${action}`);
+    }
   }
 }
 
