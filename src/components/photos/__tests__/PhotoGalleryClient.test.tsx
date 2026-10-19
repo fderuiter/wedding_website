@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { PhotoGalleryClient } from '../PhotoGalleryClient';
 
+const originalFetch = global.fetch;
+
 describe('PhotoGalleryClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -11,8 +13,14 @@ describe('PhotoGalleryClient', () => {
       blob: jest.fn().mockResolvedValue(new Blob(['fake zip bytes'], { type: 'application/zip' })),
     } as unknown as Response);
 
-    window.URL.createObjectURL = jest.fn().mockReturnValue('blob:http://localhost/test');
-    window.URL.revokeObjectURL = jest.fn();
+    if (typeof window !== 'undefined' && window.URL) {
+      window.URL.createObjectURL = jest.fn().mockReturnValue('blob:http://localhost/test');
+      window.URL.revokeObjectURL = jest.fn();
+    }
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
   });
 
   it('renders export toolbar and export all guest photos button', () => {
@@ -80,5 +88,43 @@ describe('PhotoGalleryClient', () => {
         body: JSON.stringify({ ids: ['upload-1'] }),
       }));
     });
+  });
+
+  it('renders zero-state empty state when no guest photos exist', () => {
+    render(<PhotoGalleryClient initialPhotos={['/album/photo1.jpg', '/album/photo2.jpg']} />);
+
+    expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
+    expect(screen.getByTestId('guest-photos-empty-state')).toBeInTheDocument();
+    expect(screen.getByText('No guest photos yet')).toBeInTheDocument();
+    expect(screen.queryByTestId('guest-photos-grid')).not.toBeInTheDocument();
+  });
+
+  it('renders guest photo grid when guest photo is uploaded', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'guest-1',
+          url: '/uploads/guest-photo.jpg',
+          altText: 'Guest Memory',
+        },
+      }),
+    });
+
+    render(<PhotoGalleryClient initialPhotos={[]} />);
+
+    expect(screen.getByTestId('guest-photos-empty-state')).toBeInTheDocument();
+
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const validFile = new File(['guest image bytes'], 'guest.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-photos-grid')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('guest-photos-empty-state')).not.toBeInTheDocument();
   });
 });

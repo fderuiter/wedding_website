@@ -168,15 +168,15 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
       </div>
 
       {/* Guest Uploaded Photos Grid / Gallery Section */}
-      {guestPhotos.length > 0 && (
-        <section className="space-y-4" data-testid="guest-photos-section">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
-              <Icon name="Camera" className="w-6 h-6 text-primary" />
-              Guest Shared Photos ({guestPhotos.length})
-            </h2>
-          </div>
+      <section className="space-y-4" data-testid="guest-photos-section">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
+            <Icon name="Camera" className="w-6 h-6 text-primary" />
+            Guest Shared Photos{guestPhotos.length > 0 ? ` (${guestPhotos.length})` : ''}
+          </h2>
+        </div>
 
+        {guestPhotos.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4" data-testid="guest-photos-grid">
             {guestPhotos.map((photo, index) => {
               const isSelected = selectedUrls.has(photo.url);
@@ -220,8 +220,25 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
               );
             })}
           </div>
-        </section>
-      )}
+        ) : (
+          <div
+            data-testid="guest-photos-empty-state"
+            className="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/30 p-8 text-center flex flex-col items-center justify-center space-y-3"
+          >
+            <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
+              <Icon name="ImageOff" className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">
+                No guest photos yet
+              </h3>
+              <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm">
+                Be the first to share your favorite memories from the celebration using the upload section above!
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Lightbox Modal */}
       {selectedPhoto && (
