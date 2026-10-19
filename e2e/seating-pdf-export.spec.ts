@@ -1,23 +1,51 @@
 import { test, expect } from '@playwright/test';
+import crypto from 'crypto';
 
-test('seating chart admin dashboard has Export Visual PDF button', async ({ page }) => {
-  // Guest login if required
-  await page.goto('/guest/login', { waitUntil: 'domcontentloaded' });
-  const guestInput = page.locator('input[type="password"]');
-  if (await guestInput.isVisible()) {
-    await guestInput.fill('wedding2026');
-    await page.locator('button[type="submit"]').click();
-    await page.waitForTimeout(500);
-  }
+function generateAdminCookieValue() {
+  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
+  const payload = {
+    isAdmin: true,
+    iat: Date.now(),
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
 
-  // Admin login
-  await page.goto('/admin/login', { waitUntil: 'domcontentloaded' });
-  const adminInput = page.locator('#password');
-  if (await adminInput.isVisible()) {
-    await adminInput.fill('wedding123');
-    await page.locator('button[type="submit"]').click();
-    await page.waitForTimeout(1000);
-  }
+function generateGuestCookieValue() {
+  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const payload = {
+    guest: true,
+    iat: Date.now(),
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
+
+test('seating chart admin dashboard has Export Visual PDF button', async ({ context, page }) => {
+  const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
+  const cookies = origins.flatMap((url) => [
+    {
+      name: 'admin_auth',
+      value: generateAdminCookieValue(),
+      url,
+    },
+    {
+      name: 'guest_auth',
+      value: generateGuestCookieValue(),
+      url,
+    },
+  ]);
+  await context.addCookies(cookies);
 
   // Navigate to Seating Chart Dashboard
   await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
