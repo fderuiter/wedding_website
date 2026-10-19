@@ -19,6 +19,7 @@ export interface UploadStatus {
   status: 'pending' | 'uploading' | 'success' | 'error';
   errorMessage?: string;
   url?: string;
+  file?: File;
 }
 
 interface GuestPhotoDropzoneProps {
@@ -138,6 +139,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           progress: 0,
           status: 'error',
           errorMessage: validationError,
+          file,
         });
       } else {
         newStatuses.push({
@@ -146,6 +148,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           size: file.size,
           progress: 0,
           status: 'pending',
+          file,
         });
         validFilesToUpload.push({ file, id });
       }
@@ -157,6 +160,25 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       uploadFile(file, id);
     });
   }, [validateFile, uploadFile]);
+
+  const handleRetry = useCallback((uploadId: string) => {
+    const item = uploads.find((u) => u.id === uploadId);
+    if (!item || !item.file) return;
+
+    const validationError = validateFile(item.file);
+    if (validationError) {
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.id === uploadId
+            ? { ...u, status: 'error', progress: 0, errorMessage: validationError }
+            : u
+        )
+      );
+      return;
+    }
+
+    uploadFile(item.file, uploadId);
+  }, [uploads, validateFile, uploadFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -299,10 +321,23 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                       </span>
                     )}
                     {item.status === 'error' && (
-                      <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium" data-testid="upload-error-badge">
-                        <Icon name="AlertTriangle" className="w-3.5 h-3.5" />
-                        Failed
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium" data-testid="upload-error-badge">
+                          <Icon name="AlertTriangle" className="w-3.5 h-3.5" />
+                          Failed
+                        </span>
+                        {item.file && (
+                          <button
+                            type="button"
+                            onClick={() => handleRetry(item.id)}
+                            data-testid={`retry-upload-${item.id}`}
+                            className="text-xs px-2 py-0.5 rounded bg-red-100 hover:bg-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 font-medium transition-colors flex items-center gap-1"
+                          >
+                            <Icon name="RotateCw" className="w-3 h-3" />
+                            Retry
+                          </button>
+                        )}
+                      </div>
                     )}
                     <button
                       type="button"
