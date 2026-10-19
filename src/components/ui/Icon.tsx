@@ -43,6 +43,7 @@ export type IconName =
   | 'Truck'
   | 'UploadCloud'
   | 'Upload'
+  | 'Download'
   | 'Image';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
@@ -381,6 +382,14 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" x2="12" y1="3" y2="15" />
+        </svg>
+      );
+    case 'Download':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" x2="12" y1="15" y2="3" />
         </svg>
       );
     case 'Image':
