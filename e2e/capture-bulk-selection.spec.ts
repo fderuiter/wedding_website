@@ -32,12 +32,20 @@ function generateGuestCookieValue() {
 }
 
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
-  await context.addCookies([
-    { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://127.0.0.1:3000' },
-    { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://127.0.0.1:3000' },
-    { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://localhost:3000' },
-    { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://localhost:3000' },
+  const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
+  const cookies = origins.flatMap((url) => [
+    {
+      name: 'admin_auth',
+      value: generateAdminCookieValue(),
+      url,
+    },
+    {
+      name: 'guest_auth',
+      value: generateGuestCookieValue(),
+      url,
+    },
   ]);
+  await context.addCookies(cookies);
 
   // Go to invitation codes dashboard
   await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
@@ -88,3 +96,4 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   await page.screenshot({ path: '/tmp/batch-delete-modal.png', fullPage: true });
 });
+
