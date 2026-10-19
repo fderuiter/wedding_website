@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
+import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -86,6 +87,8 @@ export default function InvitationCodesDashboardPage() {
     fetchAll,
   } = useAdminInvitationCodes();
 
+  useAdminSubEvents();
+
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
@@ -108,6 +111,91 @@ export default function InvitationCodesDashboardPage() {
   const [dietaryFilter, setDietaryFilter] = useState<string>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'attending' | 'declined' | 'pending'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [subEvents, setSubEvents] = useState<any[]>([]);
+  const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
+  const [isSubEventModalOpen, setIsSubEventModalOpen] = useState(false);
+  const [newSubEvent, setNewSubEvent] = useState({
+    title: '',
+    description: '',
+    locationName: '',
+    category: '',
+    isPrivate: true,
+  });
+
+  const fetchSubEventsAndMatrix = async () => {
+    try {
+      const res = await fetch('/api/admin/sub-events/access');
+      if (res.ok) {
+        const json = await res.json();
+        const data = json.data || json;
+        if (data.subEvents) {
+          setSubEvents(data.subEvents);
+        }
+        if (data.invitationCodes) {
+          const map: Record<string, string[]> = {};
+          data.invitationCodes.forEach((c: any) => {
+            map[c.id] = c.allowedSubEventIds || [];
+          });
+          setAccessMatrix(map);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchSubEventsAndMatrix();
+  }, []);
+
+  const handleToggleSubEventAccess = async (invitationCodeId: string, subEventId: string, isAllowed: boolean) => {
+    const currentAllowed = accessMatrix[invitationCodeId] || [];
+    const updated = isAllowed
+      ? Array.from(new Set([...currentAllowed, subEventId]))
+      : currentAllowed.filter((id) => id !== subEventId);
+
+    setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: updated }));
+
+    try {
+      const res = await fetch('/api/admin/sub-events/access', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationCodeId, allowedSubEventIds: updated }),
+      });
+      if (!res.ok) throw new Error('Failed to update event permissions');
+      addToast('Sub-event permissions updated.', 'success');
+    } catch (e: any) {
+      addToast(e.message || 'Failed to update sub-event permissions.', 'error');
+      fetchSubEventsAndMatrix();
+    }
+  };
+
+  const handleCreateSubEvent = async () => {
+    if (!newSubEvent.title.trim()) {
+      addToast('Sub-event title is required.', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/sub-events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newSubEvent.title.trim(),
+          description: newSubEvent.description.trim() || undefined,
+          locationName: newSubEvent.locationName.trim() || undefined,
+          category: newSubEvent.category.trim() || undefined,
+          isPrivate: newSubEvent.isPrivate,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create sub-event.');
+      addToast('Sub-event created successfully.', 'success');
+      setNewSubEvent({ title: '', description: '', locationName: '', category: '', isPrivate: true });
+      setIsSubEventModalOpen(false);
+      fetchSubEventsAndMatrix();
+    } catch (e: any) {
+      addToast(e.message || 'Failed to create sub-event.', 'error');
+    }
+  };
 
   const selectAllRef = useRef<HTMLInputElement>(null);
 
@@ -417,6 +505,7 @@ export default function InvitationCodesDashboardPage() {
         <h1 className="text-3xl font-extrabold text-primary">Pre-Authorized Guest Invitation Codes</h1>
         <div className="flex gap-4">
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
+          <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
           <Button onClick={() => {
@@ -857,6 +946,43 @@ export default function InvitationCodesDashboardPage() {
                       <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
                     </div>
                   )}
+
+                  {/* Private Sub-Event Access Matrix Toggles */}
+                  <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                      Private Sub-Event Permissions:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {subEvents.length === 0 ? (
+                        <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+                      ) : (
+                        subEvents.map((evt) => {
+                          const isAllowed = (accessMatrix[item.id] || []).includes(evt.id);
+                          return (
+                            <label
+                              key={evt.id}
+                              className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
+                                isAllowed
+                                  ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
+                                  : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isAllowed}
+                                aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
+                                onChange={(e) => handleToggleSubEventAccess(item.id, evt.id, e.target.checked)}
+                                className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <span>
+                                {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -945,6 +1071,83 @@ export default function InvitationCodesDashboardPage() {
               </Button>
               <Button variant="danger" onClick={handleConfirmBatchDelete}>
                 Delete {selectedIds.length} Code(s)
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isSubEventModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sub-event-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h2 id="sub-event-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
+              Create Timeline Sub-Event
+            </h2>
+            <div className="space-y-3">
+              <FormGroup>
+                <Label>Event Title</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Rehearsal Dinner"
+                  value={newSubEvent.title}
+                  onChange={(e) => setNewSubEvent({ ...newSubEvent, title: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Description / Notes</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Invitation only dinner for bridal party"
+                  value={newSubEvent.description}
+                  onChange={(e) => setNewSubEvent({ ...newSubEvent, description: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Location</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Sunset Bistro"
+                  value={newSubEvent.locationName}
+                  onChange={(e) => setNewSubEvent({ ...newSubEvent, locationName: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Privacy Setting</Label>
+                <div className="flex items-center gap-4 pt-1">
+                  <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="isPrivate"
+                      checked={newSubEvent.isPrivate}
+                      onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: true })}
+                      className="text-primary focus:ring-primary"
+                    />
+                    <span className="font-semibold text-red-600 dark:text-red-400">Private Event</span> (Restricted)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="isPrivate"
+                      checked={!newSubEvent.isPrivate}
+                      onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: false })}
+                      className="text-primary focus:ring-primary"
+                    />
+                    <span className="font-semibold text-green-600 dark:text-green-400">Public Event</span> (Visible to all)
+                  </label>
+                </div>
+              </FormGroup>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setIsSubEventModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateSubEvent}>
+                Create Event
               </Button>
             </div>
           </div>

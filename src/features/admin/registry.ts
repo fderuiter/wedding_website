@@ -4,6 +4,7 @@ import { AttractionAdminService } from '@/features/attractions/admin.service';
 import { RegistryItemAdminService } from '@/features/registry/admin.service';
 import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
 import { SeatingTableAdminService } from '@/features/seating/admin.service';
+import { SubEventAdminService } from '@/features/sub-events/admin.service';
 
 const serviceMap: Record<string, any> = {
   [ContentNodeAdminService.ENTITY_KEY]: new ContentNodeAdminService(),
@@ -12,6 +13,7 @@ const serviceMap: Record<string, any> = {
   [RegistryItemAdminService.ENTITY_KEY]: new RegistryItemAdminService(),
   [InvitationCodeAdminService.ENTITY_KEY]: new InvitationCodeAdminService(),
   [SeatingTableAdminService.ENTITY_KEY]: new SeatingTableAdminService(),
+  [SubEventAdminService.ENTITY_KEY]: new SubEventAdminService(),
 };
 
 export async function getEntityService(entityKey: string) {
