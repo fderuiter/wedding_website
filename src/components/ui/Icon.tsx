@@ -43,7 +43,9 @@ export type IconName =
   | 'Truck'
   | 'UploadCloud'
   | 'Upload'
-  | 'Image';
+  | 'Image'
+  | 'RotateCw'
+  | 'ImageOff';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -389,6 +391,22 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
           <circle cx="9" cy="9" r="2" />
           <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+        </svg>
+      );
+    case 'RotateCw':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+          <path d="M21 3v5h-5" />
+        </svg>
+      );
+    case 'ImageOff':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <line x1="2" x2="22" y1="2" y2="22" />
+          <path d="M10.41 10.41a2 2 0 1 1-2.83-2.83" />
+          <line x1="13.5" x2="6" y1="13.5" y2="21" />
+          <rect width="18" height="18" x="3" y="3" rx="2" />
         </svg>
       );
     default:

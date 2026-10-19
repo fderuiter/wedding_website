@@ -45,10 +45,8 @@ export function useEntityOrchestration<T extends { id: string }>({
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
       const optimisticId = `temp-${generateSecureUUID()}`;
-      if (previousData) {
-        const optimisticItem = { id: optimisticId, ...payload } as unknown as T;
-        queryClient.setQueryData<T[]>(queryKey, old => [optimisticItem, ...(old || [])]);
-      }
+      const optimisticItem = { id: optimisticId, ...payload } as unknown as T;
+      queryClient.setQueryData<T[]>(queryKey, old => [optimisticItem, ...(old || [])]);
       return { previousData, optimisticId };
     },
     onError: (_err, _variables, context) => {
@@ -57,9 +55,14 @@ export function useEntityOrchestration<T extends { id: string }>({
       }
     },
     onSuccess: (newItem, _variables, context) => {
-      queryClient.setQueryData<T[]>(queryKey, old => 
-        old?.map(item => item.id === context?.optimisticId ? newItem : item)
-      );
+      queryClient.setQueryData<T[]>(queryKey, old => {
+        if (!old || old.length === 0) return [newItem];
+        const exists = old.some(item => item.id === context?.optimisticId || item.id === newItem.id);
+        if (exists) {
+          return old.map(item => (item.id === context?.optimisticId || item.id === newItem.id) ? newItem : item);
+        }
+        return [newItem, ...old];
+      });
     },
     meta: {
       successMessage: `Created ${entityName} successfully.`,
