@@ -4,16 +4,8 @@ import React, { useCallback } from 'react';
 import { useOverlay } from '@/hooks/useOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens } from '@/lib/theme/presets';
+import { getPresetTokens, parseDurationSec } from '@/lib/theme/presets';
 import { cn } from '@/utils/cn';
-
-function parseDurationSec(val?: string, fallback = 0.2): number {
-  if (!val) return fallback;
-  if (val.endsWith('ms')) return parseFloat(val) / 1000;
-  if (val.endsWith('s')) return parseFloat(val);
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? fallback : parsed;
-}
 
 export interface OverlayProps {
   isOpen: boolean;

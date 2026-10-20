@@ -1016,6 +1016,20 @@ export function isThemePreset(value: unknown): value is ThemePreset {
   return typeof value === 'string' && THEME_PRESET_KEYS.includes(value as ThemePreset);
 }
 
+export function parseDurationSec(val?: string, fallback = 0.8): number {
+  if (!val) return fallback;
+  if (val.endsWith('ms')) {
+    const num = parseFloat(val);
+    return isNaN(num) ? fallback : num / 1000;
+  }
+  if (val.endsWith('s')) {
+    const num = parseFloat(val);
+    return isNaN(num) ? fallback : num;
+  }
+  const num = parseFloat(val);
+  return isNaN(num) ? fallback : num;
+}
+
 export function parseMotionEasing(easing?: string): any {
   if (!easing) return 'easeInOut';
   if (easing === 'ease-in-out') return 'easeInOut';
