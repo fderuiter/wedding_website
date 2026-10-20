@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { SeatingTableDTO } from '@/features/seating/schemas';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
 import { FloorplanCanvas } from '@/features/seating/components/FloorplanCanvas';
@@ -19,20 +19,32 @@ export default function SeatingChartAdminPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Helper to sync tables' nested invitationCodes with allGuests state
-  const syncTablesWithGuests = (
-    tablesList: SeatingTableDTO[],
-    guestsList: InvitationCodeDTO[]
-  ): SeatingTableDTO[] => {
-    return tablesList.map((t) => {
-      const assigned = guestsList.filter((g) => g.tableId === t.id);
-      assigned.sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
-      return {
-        ...t,
-        invitationCodes: assigned,
-      };
-    });
-  };
+  // Helper to sync tables' nested invitationCodes with allGuests state in a single pass O(G + T)
+  const syncTablesWithGuests = useCallback(
+    (tablesList: SeatingTableDTO[], guestsList: InvitationCodeDTO[]): SeatingTableDTO[] => {
+      const guestsByTableMap = new Map<string, InvitationCodeDTO[]>();
+      for (const guest of guestsList) {
+        if (guest.tableId) {
+          const existing = guestsByTableMap.get(guest.tableId);
+          if (existing) {
+            existing.push(guest);
+          } else {
+            guestsByTableMap.set(guest.tableId, [guest]);
+          }
+        }
+      }
+
+      return tablesList.map((t) => {
+        const assigned = guestsByTableMap.get(t.id) ? [...guestsByTableMap.get(t.id)!] : [];
+        assigned.sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+        return {
+          ...t,
+          invitationCodes: assigned,
+        };
+      });
+    },
+    []
+  );
 
   // Fetch tables & invitation codes
   const fetchData = useCallback(async () => {
@@ -61,32 +73,50 @@ export default function SeatingChartAdminPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [syncTablesWithGuests]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Derive unassigned guests
-  const unassignedGuests = allGuests.filter((g) => !g.tableId);
+  // Derive unassigned guests with memoization
+  const unassignedGuests = useMemo(() => {
+    return allGuests.filter((g) => !g.tableId);
+  }, [allGuests]);
 
-  // Compute search matching stats
+  // Compute search matching stats with memoization
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const isSearching = normalizedQuery.length > 0;
 
-  const matchingGuests = isSearching
-    ? allGuests.filter(
+  const { matchingGuestCount, matchingUnassignedCount, matchingSeatedCount } = useMemo(() => {
+    if (!isSearching) {
+      return {
+        matchingGuests: [] as InvitationCodeDTO[],
+        matchingGuestCount: 0,
+        matchingUnassignedCount: 0,
+        matchingSeatedCount: 0,
+      };
+    }
+
+    const matches = allGuests.filter(
       (g) =>
         g.guestName.toLowerCase().includes(normalizedQuery) ||
         g.code.toLowerCase().includes(normalizedQuery) ||
         (g.householdName && g.householdName.toLowerCase().includes(normalizedQuery)) ||
         (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)))
-    )
-    : [];
+    );
 
-  const matchingGuestCount = matchingGuests.length;
-  const matchingUnassignedCount = matchingGuests.filter((g) => !g.tableId).length;
-  const matchingSeatedCount = matchingGuestCount - matchingUnassignedCount;
+    const totalCount = matches.length;
+    const unassignedCount = matches.filter((g) => !g.tableId).length;
+    const seatedCount = totalCount - unassignedCount;
+
+    return {
+      matchingGuests: matches,
+      matchingGuestCount: totalCount,
+      matchingUnassignedCount: unassignedCount,
+      matchingSeatedCount: seatedCount,
+    };
+  }, [allGuests, isSearching, normalizedQuery]);
 
   // Table CRUD handlers
   const handleCreateTable = () => {

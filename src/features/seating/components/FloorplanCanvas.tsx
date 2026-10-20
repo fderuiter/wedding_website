@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
 
@@ -42,23 +42,46 @@ export function FloorplanCanvas({
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
   const isSearching = normalizedQuery.length > 0;
 
-  const isGuestMatch = (guest: InvitationCodeDTO) => {
-    if (!isSearching) return false;
-    const nameMatch = guest.guestName.toLowerCase().includes(normalizedQuery);
-    const codeMatch = guest.code.toLowerCase().includes(normalizedQuery);
-    const householdMatch = guest.householdName ? guest.householdName.toLowerCase().includes(normalizedQuery) : false;
-    const tagMatch = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)) : false;
-    return nameMatch || codeMatch || householdMatch || tagMatch;
-  };
+  // Compute search match counts and lookup Sets with memoization
+  const { totalSeatedMatches, matchingGuestIds, matchingTableIds } = useMemo(() => {
+    if (!isSearching) {
+      return {
+        totalSeatedMatches: 0,
+        matchingGuestIds: new Set<string>(),
+        matchingTableIds: new Set<string>(),
+      };
+    }
 
-  let totalSeatedMatches = 0;
-  if (isSearching) {
-    tables.forEach((t) => {
-      (t.invitationCodes || []).forEach((g) => {
-        if (isGuestMatch(g)) totalSeatedMatches++;
-      });
-    });
-  }
+    let count = 0;
+    const guestIds = new Set<string>();
+    const tableIds = new Set<string>();
+
+    for (const table of tables) {
+      if (!table.invitationCodes) continue;
+      for (const guest of table.invitationCodes) {
+        const nameMatch = guest.guestName.toLowerCase().includes(normalizedQuery);
+        const codeMatch = guest.code.toLowerCase().includes(normalizedQuery);
+        const householdMatch = guest.householdName
+          ? guest.householdName.toLowerCase().includes(normalizedQuery)
+          : false;
+        const tagMatch = guest.partyTags
+          ? guest.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery))
+          : false;
+
+        if (nameMatch || codeMatch || householdMatch || tagMatch) {
+          count++;
+          guestIds.add(guest.id);
+          tableIds.add(table.id);
+        }
+      }
+    }
+
+    return {
+      totalSeatedMatches: count,
+      matchingGuestIds: guestIds,
+      matchingTableIds: tableIds,
+    };
+  }, [tables, isSearching, normalizedQuery]);
 
   // Handle table keyboard navigation & repositioning
   const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
@@ -242,7 +265,7 @@ export function FloorplanCanvas({
 
     for (let i = 1; i <= capacity; i++) {
       const assignedGuest = assignedGuests.find((g) => g.seatNumber === i) || assignedGuests[i - 1];
-      const isMatch = assignedGuest ? isGuestMatch(assignedGuest) : false;
+      const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =
         activeDropTarget?.tableId === table.id &&
         activeDropTarget?.type === 'seat' &&
@@ -473,7 +496,7 @@ export function FloorplanCanvas({
         const assignedCount = table.invitationCodes?.length || 0;
         const isSelected = selectedTableId === table.id;
         const isOverCapacity = assignedCount > table.capacity;
-        const hasMatchingGuest = isSearching && (table.invitationCodes || []).some(isGuestMatch);
+        const hasMatchingGuest = isSearching && matchingTableIds.has(table.id);
         const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
 
         return (
