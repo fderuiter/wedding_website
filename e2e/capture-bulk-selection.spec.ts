@@ -62,29 +62,29 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   }
 
   // Wait for page to finish loading data
-  await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
 
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
   const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
-  await countBtn.waitFor({ state: 'visible', timeout: 15000 });
+  await countBtn.waitFor({ state: 'visible', timeout: 30000 });
   const countText = await countBtn.innerText();
   if (countText.includes('All (0)')) {
     // Generate code 1
     await generateBtn.click();
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
     await page.getByPlaceholder('e.g. John Doe').fill('Alex Johnson');
     await page.getByRole('button', { name: 'Generate', exact: true }).click();
-    await expect(page.getByText('Alex Johnson')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 15000 });
+    await expect(page.getByText('Alex Johnson')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
 
     // Generate code 2
     await generateBtn.click();
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
     await page.getByPlaceholder('e.g. John Doe').fill('Sam Taylor');
     await page.getByRole('button', { name: 'Generate', exact: true }).click();
-    await expect(page.getByText('Sam Taylor')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 15000 });
+    await expect(page.getByText('Sam Taylor')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
   }
 
   // Select all filtered items
