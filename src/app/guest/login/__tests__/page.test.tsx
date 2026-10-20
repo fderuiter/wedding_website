@@ -1,8 +1,11 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestLoginPage from '../page';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ThemeProvider } from '@/components/ThemeProvider';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
@@ -31,8 +34,8 @@ describe('Guest Login Page with Help Drawer', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders login form and help trigger button', () => {
-    render(<GuestLoginPage />);
+  it('renders login form and help trigger button', async () => {
+    const { container } = render(<GuestLoginPage />);
 
     expect(screen.getByRole('heading', { name: /guest portal/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Enter passcode')).toBeInTheDocument();
@@ -41,10 +44,13 @@ describe('Guest Login Page with Help Drawer', () => {
     expect(helpTrigger).toBeInTheDocument();
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'false');
     expect(helpTrigger).toHaveAttribute('aria-controls', 'guest-help-drawer');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('opens help drawer when clicking help trigger and displays recovery instructions and host contact option', async () => {
-    render(<GuestLoginPage />);
+    const { container } = render(<GuestLoginPage />);
 
     const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
     fireEvent.click(helpTrigger);
@@ -62,6 +68,9 @@ describe('Guest Login Page with Help Drawer', () => {
     const contactBtn = screen.getByRole('link', { name: /contact host/i });
     expect(contactBtn).toBeInTheDocument();
     expect(contactBtn).toHaveAttribute('href', 'mailto:hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('uses configured contact email from ThemeProvider in mailto link', async () => {
