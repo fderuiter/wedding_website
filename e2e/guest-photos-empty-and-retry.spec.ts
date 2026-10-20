@@ -35,7 +35,16 @@ test.describe('Guest Photos Empty State', () => {
       },
     ]);
 
-    await page.goto('/photos', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/photos', { waitUntil: 'domcontentloaded' });
+    } catch (err: any) {
+      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+        page = await context.newPage();
+        await page.goto('/photos', { waitUntil: 'domcontentloaded' });
+      } else {
+        throw err;
+      }
+    }
 
     // Verify empty state container is rendered
     const emptyState = page.locator('[data-testid="guest-photos-empty-state"]');

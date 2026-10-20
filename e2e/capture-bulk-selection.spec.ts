@@ -54,6 +54,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
     await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
   } catch (err: any) {
     if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+      await context.addCookies(cookies).catch(() => {});
       page = await context.newPage();
       await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
     } else {

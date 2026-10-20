@@ -276,7 +276,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               }
 
               const linksArray = Array.from(linksToCheck);
-              const batchSize = 5;
+              const batchSize = 2;
               for (let i = 0; i < linksArray.length; i += batchSize) {
                 const batch = linksArray.slice(i, i + batchSize);
                 const batchResults = await Promise.all(
@@ -308,7 +308,20 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               ) {
                 console.log(`[Authenticated] Page crashed on ${route}, retrying on fresh page...`);
                 await page.close().catch(() => {});
-                page = await pageContext.newPage();
+                try {
+                  page = await pageContext.newPage();
+                } catch {
+                  try {
+                    pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+                    await pageContext.addCookies([
+                      { name: 'admin_auth', value: cookieValue, url: baseURL },
+                      { name: 'guest_auth', value: guestCookieValue, url: baseURL },
+                    ]);
+                    page = await pageContext.newPage();
+                  } catch {
+                    throw err;
+                  }
+                }
               } else {
                 throw err;
               }
