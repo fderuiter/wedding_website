@@ -81,7 +81,7 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
     if (media) {
       finalAlt = (media.altText && media.altText.trim() !== '')
         ? media.altText
-        : (typeof alt === 'string' && alt.trim() !== '')
+        : (alt !== undefined)
           ? alt
           : (fallbackAlt && fallbackAlt.trim() !== '')
             ? fallbackAlt

@@ -129,6 +129,14 @@ describe('MediaImage Component', () => {
       expect(getByRole('img')).toHaveAttribute('alt', 'Explicit Alt Prop');
     });
 
+    it('preserves explicit alt="" as decorative indicator when media is present but media.altText is missing or empty', () => {
+      const media = createMockMedia({ altText: null, isDecorative: false });
+      const { container } = render(<MediaImage media={media} alt="" />);
+      const img = container.querySelector('img');
+      expect(img).not.toBeNull();
+      expect(img).toHaveAttribute('alt', '');
+    });
+
     it('extracts humanized filename as alt when non-decorative media lacks altText and fallbackAlt', () => {
       const media = createMockMedia({ url: '/uploads/sunset-beach.jpg', altText: null, isDecorative: false });
       const { getByRole } = render(<MediaImage media={media} />);
