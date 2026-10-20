@@ -146,6 +146,16 @@ export async function generateSeatingChartPdf(
           const fillColor = isOverCapacity ? '#fef2f2' : '#ffffff';
           const strokeColor = isOverCapacity ? '#ef4444' : '#475569';
 
+          // Index assigned seats by explicit seat number for O(1) constant-time resolution
+          const seatMap = new Map<number, InvitationCodeDTO>();
+          if (table.invitationCodes) {
+            for (const guest of table.invitationCodes) {
+              if (guest.seatNumber != null && !seatMap.has(guest.seatNumber)) {
+                seatMap.set(guest.seatNumber, guest);
+              }
+            }
+          }
+
           if (isRound) {
             const radius = Math.min(tw, th) / 2;
             const cx = tx + tw / 2;
@@ -179,7 +189,7 @@ export async function generateSeatingChartPdf(
               const sx = cx + seatRadius * Math.cos(angle);
               const sy = cy + seatRadius * Math.sin(angle);
 
-              const guest = table.invitationCodes?.find((g) => g.seatNumber === i) || table.invitationCodes?.[i - 1];
+              const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
               const isSeated = !!guest;
 
               if (isSeated) {
@@ -237,7 +247,7 @@ export async function generateSeatingChartPdf(
                 sy = ty + th - (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
               }
 
-              const guest = table.invitationCodes?.find((g) => g.seatNumber === i) || table.invitationCodes?.[i - 1];
+              const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
               const isSeated = !!guest;
 
               if (isSeated) {
