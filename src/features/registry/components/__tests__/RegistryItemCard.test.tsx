@@ -645,6 +645,58 @@ describe('RegistryItemCard Component', () => {
       expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0);
     });
 
+    it('displays Direct Transfer Notice with 0% fee when a fund has a direct payment handle', () => {
+      const cashFundWithHandle: RegistryItem = {
+        ...mockGroupItem,
+        id: 'cash-fund-handle-1',
+        name: 'Honeymoon Direct Fund',
+        price: 500,
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happy-couple',
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={cashFundWithHandle} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByText('Direct Transfer Notice')).toBeInTheDocument();
+      expect(screen.getByText('Standard Fee: 0%')).toBeInTheDocument();
+      expect(screen.getByText(/Direct Transfer Fee \(0%\):/i)).toBeInTheDocument();
+      expect(screen.getByText(/Net Payout Received by Couple:/i)).toBeInTheDocument();
+      expect(screen.queryByText('Payment Processing Fee Notice')).not.toBeInTheDocument();
+      expect(screen.queryByText('Standard Fee: 2.5%')).not.toBeInTheDocument();
+    });
+
+    it('dynamically calculates 100% net payout and -$0.00 fee for direct transfer fund upon user input', () => {
+      const cashFundWithHandle: RegistryItem = {
+        ...mockGroupItem,
+        id: 'cash-fund-handle-recalc',
+        name: 'Travel Direct Fund',
+        price: 1000,
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Zelle',
+        paymentHandle: 'couple@example.com',
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={cashFundWithHandle} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
+      fireEvent.change(amountInput, { target: { value: '150' } });
+
+      expect(screen.getAllByText('$150.00')).toHaveLength(2); // Base contribution $150.00 & Net payout $150.00
+      expect(screen.getByText('-$0.00')).toBeInTheDocument();
+    });
+
     it('does NOT render fee notice banner for non-fund items (e.g. PHYSICAL)', () => {
       const physicalItem: RegistryItem = {
         ...mockSingleItem,
