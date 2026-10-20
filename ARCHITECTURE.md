@@ -467,6 +467,12 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `brandMonogram` | `optional` | Configuration field for brandMonogram |
 | `brandLogoUrl` | `optional` | Configuration field for brandLogoUrl |
 | `brandLogoAlt` | `optional` | Configuration field for brandLogoAlt |
+| `heroImageUrl` | `optional` | Configuration field for heroImageUrl |
+| `heroImageAlt` | `optional` | Configuration field for heroImageAlt |
+| `brandWatermarkUrl` | `optional` | Configuration field for brandWatermarkUrl |
+| `brandWatermarkAlt` | `optional` | Configuration field for brandWatermarkAlt |
+| `badgeGraphicUrl` | `optional` | Configuration field for badgeGraphicUrl |
+| `badgeGraphicAlt` | `optional` | Configuration field for badgeGraphicAlt |
 | `seoKeywords` | `string` | Configuration field for seoKeywords |
 | `colorPrimary` | `default` | Configuration field for colorPrimary |
 | `colorSecondary` | `default` | Configuration field for colorSecondary |
