@@ -4,6 +4,8 @@ import React, { useState, useRef, useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
 
+const EMPTY_SET = new Set<string>();
+
 interface ActiveDropTarget {
   type: 'table' | 'seat';
   tableId: string;
@@ -22,7 +24,7 @@ interface FloorplanCanvasProps {
   onAddTable?: () => void;
 }
 
-export function FloorplanCanvas({
+export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   tables,
   selectedTableId,
   onSelectTable,
@@ -47,8 +49,8 @@ export function FloorplanCanvas({
     if (!isSearching) {
       return {
         totalSeatedMatches: 0,
-        matchingGuestIds: new Set<string>(),
-        matchingTableIds: new Set<string>(),
+        matchingGuestIds: EMPTY_SET,
+        matchingTableIds: EMPTY_SET,
       };
     }
 
@@ -598,5 +600,5 @@ export function FloorplanCanvas({
       })}
     </div>
   );
-}
+});
 

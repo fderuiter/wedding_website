@@ -13,7 +13,7 @@ interface UnassignedGuestPanelProps {
   onSearchQueryChange?: (query: string) => void;
 }
 
-export function UnassignedGuestPanel({
+export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   unassignedGuests,
   tables,
   onAssignGuestToTable,
@@ -236,4 +236,4 @@ export function UnassignedGuestPanel({
       </Dialog>
     </div>
   );
-}
+});
