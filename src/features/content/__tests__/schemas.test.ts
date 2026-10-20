@@ -661,6 +661,81 @@ describe('Content Node Schema Validation', () => {
       }
     });
 
+    it('validates contactEmail in RawUpdateAppConfigSchema and AppConfigSchema', () => {
+      const basePayload = {
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        baseUrl: 'https://example.com',
+        weddingDate: '2026-12-31',
+      };
+
+      const validEmailResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        contactEmail: 'contact@wedding.example',
+      });
+      expect(validEmailResult.success).toBe(true);
+
+      const emptyEmailResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        contactEmail: '',
+      });
+      expect(emptyEmailResult.success).toBe(true);
+
+      const invalidEmailResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        contactEmail: 'invalid-email-address',
+      });
+      expect(invalidEmailResult.success).toBe(false);
+
+      const fullConfig = {
+        id: 'cfg-email',
+        weddingDate: new Date(),
+        baseUrl: 'https://example.com',
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 0,
+        longitude: 0,
+        storyText: 'Story',
+        venueDescription: 'Desc',
+        travelAdvice: 'Advice',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '',
+        ogImageUrl: '',
+        seoKeywords: '',
+        contactEmail: 'hosts@wedding.example',
+        features: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const appConfigResult = AppConfigSchema.safeParse(fullConfig);
+      expect(appConfigResult.success).toBe(true);
+      if (appConfigResult.success) {
+        expect(appConfigResult.data.contactEmail).toBe('hosts@wedding.example');
+      }
+    });
+
     it('validates brandMonogram, brandLogoUrl, and brandLogoAlt in RawUpdateAppConfigSchema', () => {
       const basePayload = {
         venueName: 'Venue',

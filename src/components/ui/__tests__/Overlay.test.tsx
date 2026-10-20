@@ -1,7 +1,10 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { Overlay } from '../Overlay';
+
+expect.extend(toHaveNoViolations);
 
 describe('Overlay', () => {
   test('Overlay renders without crashing', () => {
@@ -54,6 +57,18 @@ describe('Overlay', () => {
 
     const dialogs = getAllByRole('dialog');
     expect(dialogs).toHaveLength(1);
+  });
+
+  test('passes automated axe accessibility audits when open as a dialog', async () => {
+    const { container } = render(
+      <Overlay isOpen={true} onClose={() => {}} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <h2 id="dialog-title">Dialog Title</h2>
+        <p>Dialog body content</p>
+      </Overlay>
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
 

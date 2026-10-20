@@ -745,6 +745,9 @@
                         "seoDescription": {
                           "type": "string"
                         },
+                        "contactEmail": {
+                          "type": "string"
+                        },
                         "faviconUrl": {
                           "type": "string"
                         },
@@ -1697,6 +1700,9 @@
                   "seoDescription": {
                     "type": "string"
                   },
+                  "contactEmail": {
+                    "type": "string"
+                  },
                   "faviconUrl": {
                     "type": "string"
                   },
@@ -1983,6 +1989,9 @@
                     "type": "string"
                   },
                   "seoDescription": {
+                    "type": "string"
+                  },
+                  "contactEmail": {
                     "type": "string"
                   },
                   "faviconUrl": {
@@ -2282,6 +2291,9 @@
                     "type": "string"
                   },
                   "seoDescription": {
+                    "type": "string"
+                  },
+                  "contactEmail": {
                     "type": "string"
                   },
                   "faviconUrl": {
