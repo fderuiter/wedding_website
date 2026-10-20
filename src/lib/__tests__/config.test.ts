@@ -56,11 +56,29 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.groomName).toBe('John');
   });
 
-  it('toPublicAppConfig preserves faviconUrl in the public config', () => {
-    const config: any = { ...baseConfig, faviconUrl: '/uploads/custom-favicon.ico' };
-    const publicConfig = toPublicAppConfig(config);
+  it('applies SITE_HERO_IMAGE_URL, SITE_BRAND_WATERMARK_URL, and SITE_BADGE_GRAPHIC_URL environment variable overrides', async () => {
+    process.env.SITE_HERO_IMAGE_URL = 'https://cdn.example.com/hero.jpg';
+    process.env.SITE_HERO_IMAGE_ALT = 'Hero background';
+    process.env.SITE_BRAND_WATERMARK_URL = '/images/watermark.png';
+    process.env.SITE_BRAND_WATERMARK_ALT = 'Brand Watermark';
+    process.env.SITE_BADGE_GRAPHIC_URL = '/images/badge.png';
+    process.env.SITE_BADGE_GRAPHIC_ALT = 'Badge Graphic';
 
-    expect(publicConfig.faviconUrl).toBe('/uploads/custom-favicon.ico');
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      heroImageUrl: null,
+      brandWatermarkUrl: null,
+      badgeGraphicUrl: null,
+    });
+
+    const effectiveConfig = await getAppConfig('global');
+
+    expect(effectiveConfig.heroImageUrl).toBe('https://cdn.example.com/hero.jpg');
+    expect(effectiveConfig.heroImageAlt).toBe('Hero background');
+    expect(effectiveConfig.brandWatermarkUrl).toBe('/images/watermark.png');
+    expect(effectiveConfig.brandWatermarkAlt).toBe('Brand Watermark');
+    expect(effectiveConfig.badgeGraphicUrl).toBe('/images/badge.png');
+    expect(effectiveConfig.badgeGraphicAlt).toBe('Badge Graphic');
   });
 
   it('toPublicAppConfig preserves ogImageUrl in the public config', () => {

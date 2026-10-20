@@ -689,6 +689,12 @@ describe('Content Node Schema Validation', () => {
         brandMonogram: 'C & D',
         brandLogoUrl: '/images/custom-logo.png',
         brandLogoAlt: 'Custom Brand Logo',
+        heroImageUrl: '/images/hero.jpg',
+        heroImageAlt: 'Custom Hero Background',
+        brandWatermarkUrl: 'https://cdn.example.com/watermark.png',
+        brandWatermarkAlt: 'Brand Watermark Logo',
+        badgeGraphicUrl: '/images/badge.png',
+        badgeGraphicAlt: 'Badge Graphic',
       });
       expect(validResult.success).toBe(true);
 
@@ -697,6 +703,12 @@ describe('Content Node Schema Validation', () => {
         brandLogoUrl: 'javascript:alert("xss")',
       });
       expect(invalidLogoUrlResult.success).toBe(false);
+
+      const invalidHeroUrlResult = RawUpdateAppConfigSchema.safeParse({
+        ...basePayload,
+        heroImageUrl: 'javascript:alert("xss")',
+      });
+      expect(invalidHeroUrlResult.success).toBe(false);
 
       const invalidProtocolRelativeResult = RawUpdateAppConfigSchema.safeParse({
         ...basePayload,

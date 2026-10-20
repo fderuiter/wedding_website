@@ -33,7 +33,8 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
     }
   }
 
-  const url = hasError ? '/images/placeholder.png' : (safeOriginalUrl || '/images/placeholder.png');
+  const systemFallback = fallbackUrl || '/images/placeholder.png';
+  const url = hasError ? systemFallback : (safeOriginalUrl || systemFallback);
   
   if (!url) {
     return null; // Nothing to render

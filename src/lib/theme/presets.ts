@@ -124,6 +124,10 @@ export interface ComponentTokens {
   '--shadow-lg': string;
   '--shadow-overlay': string;
 
+  '--brand-hero-image'?: string;
+  '--brand-watermark-image'?: string;
+  '--brand-badge-graphic'?: string;
+
   darkTokens?: Partial<Omit<ComponentTokens, 'darkTokens'>>;
 }
 
@@ -296,6 +300,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
     '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
 
+    '--brand-hero-image': 'none',
+    '--brand-watermark-image': 'none',
+    '--brand-badge-graphic': 'none',
+
     darkTokens: {
       '--container-bg': '#111827',
       '--card-bg': '#1f2937',
@@ -459,6 +467,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 10px 15px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -4px rgba(0, 0, 0, 0.08)',
     '--shadow-lg': '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
     '--shadow-overlay': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+
+    '--brand-hero-image': 'none',
+    '--brand-watermark-image': 'none',
+    '--brand-badge-graphic': 'none',
 
     darkTokens: {
       '--container-bg': '#020617',
@@ -624,6 +636,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-lg': '0 20px 30px -10px rgba(225, 175, 185, 0.35)',
     '--shadow-overlay': '0 25px 35px -10px rgba(225, 175, 185, 0.45)',
 
+    '--brand-hero-image': 'none',
+    '--brand-watermark-image': 'none',
+    '--brand-badge-graphic': 'none',
+
     darkTokens: {
       '--container-bg': '#180910',
       '--card-bg': '#231118',
@@ -788,6 +804,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
     '--shadow-lg': '0 2px 5px 0 rgba(0, 0, 0, 0.1)',
     '--shadow-overlay': '0 4px 12px 0 rgba(0, 0, 0, 0.15)',
+
+    '--brand-hero-image': 'none',
+    '--brand-watermark-image': 'none',
+    '--brand-badge-graphic': 'none',
 
     darkTokens: {
       '--container-bg': '#09090b',
@@ -955,6 +975,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '3px 3px 0px 0px rgba(0,0,0,0.9)',
     '--shadow-lg': '4px 4px 0px 0px rgba(0,0,0,0.9)',
     '--shadow-overlay': '6px 6px 0px 0px rgba(0,0,0,0.9)',
+
+    '--brand-hero-image': 'none',
+    '--brand-watermark-image': 'none',
+    '--brand-badge-graphic': 'none',
 
     darkTokens: {
       '--container-bg': '#0c0a09',

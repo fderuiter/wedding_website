@@ -51,6 +51,12 @@ export const APP_DEFAULTS: LocalAppConfig = {
   brandMonogram: undefined,
   brandLogoUrl: undefined,
   brandLogoAlt: undefined,
+  heroImageUrl: undefined,
+  heroImageAlt: undefined,
+  brandWatermarkUrl: undefined,
+  brandWatermarkAlt: undefined,
+  badgeGraphicUrl: undefined,
+  badgeGraphicAlt: undefined,
   seoKeywords: '',
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
@@ -139,6 +145,12 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_BRAND_MONOGRAM !== undefined) overrides.brandMonogram = process.env.SITE_BRAND_MONOGRAM;
   if (process.env.SITE_BRAND_LOGO_URL !== undefined) overrides.brandLogoUrl = process.env.SITE_BRAND_LOGO_URL;
   if (process.env.SITE_BRAND_LOGO_ALT !== undefined) overrides.brandLogoAlt = process.env.SITE_BRAND_LOGO_ALT;
+  if (process.env.SITE_HERO_IMAGE_URL !== undefined) overrides.heroImageUrl = process.env.SITE_HERO_IMAGE_URL;
+  if (process.env.SITE_HERO_IMAGE_ALT !== undefined) overrides.heroImageAlt = process.env.SITE_HERO_IMAGE_ALT;
+  if (process.env.SITE_BRAND_WATERMARK_URL !== undefined) overrides.brandWatermarkUrl = process.env.SITE_BRAND_WATERMARK_URL;
+  if (process.env.SITE_BRAND_WATERMARK_ALT !== undefined) overrides.brandWatermarkAlt = process.env.SITE_BRAND_WATERMARK_ALT;
+  if (process.env.SITE_BADGE_GRAPHIC_URL !== undefined) overrides.badgeGraphicUrl = process.env.SITE_BADGE_GRAPHIC_URL;
+  if (process.env.SITE_BADGE_GRAPHIC_ALT !== undefined) overrides.badgeGraphicAlt = process.env.SITE_BADGE_GRAPHIC_ALT;
 
   return overrides;
 }
