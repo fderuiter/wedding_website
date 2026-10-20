@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
+import { Button } from '@/components/ui/Button';
 
 interface PhotoItem {
+  id?: string;
   url: string;
   title?: string;
   isGuestUpload?: boolean;
@@ -20,16 +22,95 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
     initialPhotos.map((url) => ({ url }))
   );
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleUploadSuccess = (uploaded: UploadedPhoto) => {
     setPhotos((prev) => [
       {
+        id: uploaded.id,
         url: uploaded.url,
         title: uploaded.altText || 'Guest Photo',
         isGuestUpload: true,
       },
       ...prev,
     ]);
+  };
+
+  const toggleSelect = (url: string) => {
+    setSelectedUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) {
+        next.delete(url);
+      } else {
+        next.add(url);
+      }
+      return next;
+    });
+  };
+
+  const guestPhotos = photos.filter((p) => p.isGuestUpload);
+  const allDisplayPhotos = photos;
+
+  const toggleSelectAll = () => {
+    if (selectedUrls.size === allDisplayPhotos.length) {
+      setSelectedUrls(new Set());
+    } else {
+      setSelectedUrls(new Set(allDisplayPhotos.map((p) => p.url)));
+    }
+  };
+
+  const handleDownload = async (url: string, bodyPayload?: object, filename = 'guest-photos.zip') => {
+    setIsExporting(true);
+    try {
+      let response: Response;
+      if (bodyPayload) {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload),
+        });
+      } else {
+        response = await fetch(url);
+      }
+
+      if (!response.ok) {
+        throw new Error(`Export failed with HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Failed to export photos archive:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const exportAllGuestPhotos = () => {
+    handleDownload('/api/media/export?tag=guest-upload', undefined, 'guest-photos.zip');
+  };
+
+  const exportSelectedPhotos = () => {
+    if (selectedUrls.size === 0) return;
+    const selectedList = Array.from(selectedUrls);
+    // Find matching photo items
+    const ids = photos
+      .filter((p) => selectedUrls.has(p.url) && p.id)
+      .map((p) => p.id!);
+
+    if (ids.length > 0) {
+      handleDownload('/api/media/export', { ids }, 'selected-photos.zip');
+    } else {
+      handleDownload('/api/media/export', { ids: selectedList }, 'selected-photos.zip');
+    }
   };
 
   return (
@@ -39,35 +120,105 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
         <GuestPhotoDropzone onUploadSuccess={handleUploadSuccess} />
       </section>
 
+      {/* Main Bulk Export Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/60 shadow-sm" data-testid="gallery-export-toolbar">
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={exportAllGuestPhotos}
+            disabled={isExporting}
+            variant="primary"
+            data-testid="export-all-guest-photos-btn"
+            className="flex items-center gap-2"
+          >
+            <Icon name="Download" className="w-4 h-4" />
+            {isExporting ? 'Preparing Archive...' : 'Export All Guest Photos (.zip)'}
+          </Button>
+
+          {selectedUrls.size > 0 && (
+            <Button
+              onClick={exportSelectedPhotos}
+              disabled={isExporting}
+              variant="secondary"
+              data-testid="export-selected-photos-btn"
+              className="flex items-center gap-2"
+            >
+              <Icon name="Download" className="w-4 h-4" />
+              Export Selected ({selectedUrls.size}) (.zip)
+            </Button>
+          )}
+        </div>
+
+        {allDisplayPhotos.length > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleSelectAll}
+              data-testid="toggle-select-all-photos-btn"
+            >
+              {selectedUrls.size === allDisplayPhotos.length ? 'Deselect All' : 'Select All Photos'}
+            </Button>
+            {selectedUrls.size > 0 && (
+              <span className="text-xs text-stone-500 dark:text-stone-400">
+                ({selectedUrls.size} of {allDisplayPhotos.length} selected)
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Guest Uploaded Photos Grid / Gallery Section */}
       <section className="space-y-4" data-testid="guest-photos-section">
-        <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
-          <Icon name="Camera" className="w-6 h-6 text-primary" />
-          Guest Shared Photos
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
+            <Icon name="Camera" className="w-6 h-6 text-primary" />
+            Guest Shared Photos{guestPhotos.length > 0 ? ` (${guestPhotos.length})` : ''}
+          </h2>
+        </div>
 
-        {photos.some((p) => p.isGuestUpload) ? (
+        {guestPhotos.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4" data-testid="guest-photos-grid">
-            {photos
-              .filter((p) => p.isGuestUpload)
-              .map((photo, index) => (
+            {guestPhotos.map((photo, index) => {
+              const isSelected = selectedUrls.has(photo.url);
+              return (
                 <div
                   key={index}
-                  onClick={() => setSelectedPhoto(photo.url)}
-                  className="group relative aspect-square rounded-2xl overflow-hidden cursor-pointer shadow-md border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 transition-transform hover:scale-[1.02]"
+                  className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer shadow-md border ${
+                    isSelected
+                      ? 'border-primary ring-2 ring-primary/50'
+                      : 'border-stone-200 dark:border-stone-800'
+                  } bg-stone-100 dark:bg-stone-900 transition-all hover:scale-[1.02]`}
                 >
-                  <MediaImage
-                    src={photo.url}
-                    alt={photo.title || `Guest photo ${index + 1}`}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
-                    <span className="text-xs font-medium text-white truncate">
-                      {photo.title || 'Guest Photo'}
-                    </span>
+                  {/* Selection Checkbox */}
+                  <div
+                    className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(photo.url)}
+                      aria-label={`Select guest photo ${index + 1}`}
+                      data-testid={`photo-checkbox-${index}`}
+                      className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
+                    />
+                  </div>
+
+                  <div onClick={() => setSelectedPhoto(photo.url)} className="w-full h-full">
+                    <MediaImage
+                      src={photo.url}
+                      alt={photo.title || `Guest photo ${index + 1}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                      <span className="text-xs font-medium text-white truncate">
+                        {photo.title || 'Guest Photo'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
+              );
+            })}
           </div>
         ) : (
           <div
@@ -89,7 +240,7 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
         )}
       </section>
 
-      {/* Fullscreen Photo Lightbox Modal */}
+      {/* Lightbox Modal */}
       {selectedPhoto && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"

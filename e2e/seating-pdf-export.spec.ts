@@ -48,7 +48,16 @@ test('seating chart admin dashboard has Export Visual PDF button', async ({ cont
   await context.addCookies(cookies);
 
   // Navigate to Seating Chart Dashboard
-  await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+  try {
+    await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+  } catch (err: any) {
+    if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+      page = await context.newPage();
+      await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+    } else {
+      throw err;
+    }
+  }
 
   // Verify dashboard header and PDF export button
   const pdfExportBtn = page.getByRole('link', { name: 'Export Visual PDF' });

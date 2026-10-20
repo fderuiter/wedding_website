@@ -31,6 +31,10 @@ function generateGuestCookieValue() {
   return `${data}.${signature}`;
 }
 
+function isDomainMatch(hostname: string, domain: string) {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
 const PUBLIC_UI_ROUTES = [
   '/',
   '/photos',
@@ -48,6 +52,9 @@ const PROTECTED_UI_ROUTES = [
 ];
 
 const START_ROUTES = [...PUBLIC_UI_ROUTES, ...PROTECTED_UI_ROUTES];
+
+const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
 
 test.describe('Dynamic Route Crawler & Link Audit', () => {
 
@@ -93,95 +100,79 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
     }
   });
 
-  test('Authenticated admin should successfully render all routes and find no broken internal links', async ({ browser }) => {
-    test.setTimeout(240000);
-    const cookieValue = generateAdminCookieValue();
-    const guestCookieValue = generateGuestCookieValue();
+  for (const route of START_ROUTES) {
+    test(`Authenticated admin should successfully render route ${route} and verify internal links`, async ({ browser }) => {
+      test.setTimeout(60000);
+      const cookieValue = generateAdminCookieValue();
+      const guestCookieValue = generateGuestCookieValue();
+      const baseURL = 'http://127.0.0.1:3000';
 
-    const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-    const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+      const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+      try {
+        await pageContext.addCookies([
+          {
+            name: 'admin_auth',
+            value: cookieValue,
+            url: baseURL,
+          },
+          {
+            name: 'guest_auth',
+            value: guestCookieValue,
+            url: baseURL,
+          }
+        ]);
 
-    const visitedUrls = new Set<string>();
-    const checkedLinks = new Set<string>();
-    const baseURL = 'http://127.0.0.1:3000';
+        await pageContext.route('**/*', async (routeHandler, request) => {
+          const urlStr = request.url();
+          let url: URL;
+          try {
+            url = new URL(urlStr);
+          } catch {
+            return routeHandler.continue();
+          }
 
-    const setupContext = async () => {
-      const ctx = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-      await ctx.addCookies([
-        {
-          name: 'admin_auth',
-          value: cookieValue,
-          domain: '127.0.0.1',
-          path: '/',
-        },
-        {
-          name: 'guest_auth',
-          value: guestCookieValue,
-          domain: '127.0.0.1',
-          path: '/',
-        },
-        {
-          name: 'admin_auth',
-          value: cookieValue,
-          domain: 'localhost',
-          path: '/',
-        },
-        {
-          name: 'guest_auth',
-          value: guestCookieValue,
-          domain: 'localhost',
-          path: '/',
-        },
-      ]);
+          const host = url.host;
+          if (host === '127.0.0.1:3000' || host === 'localhost:3000' || host === '127.0.0.1' || host === 'localhost') {
+            return routeHandler.continue();
+          }
 
-      // Catch-all route handler for third-party requests registered first so specific mocks override it
-      await ctx.route(/^https?:\/\/(?!(127\.0\.0\.1|localhost)(:\d+)?\/).*/, (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: '' }));
+          if (isDomainMatch(url.hostname, 'googleusercontent.com')) {
+            return routeHandler.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg });
+          }
+          if (isDomainMatch(url.hostname, 'openstreetmap.org')) {
+            return routeHandler.fulfill({ status: 200, contentType: 'image/png', body: transparentPng });
+          }
+          if (isDomainMatch(url.hostname, 'open-meteo.com')) {
+            return routeHandler.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+          }
+          if (isDomainMatch(url.hostname, 'cdn.jsdelivr.net')) {
+            return routeHandler.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
+          }
 
-      await ctx.route(/cdn\.jsdelivr\.net/, (route: any) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
-      await ctx.route(/googleusercontent\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
-      await ctx.route(/openstreetmap\.org/, (route: any) => route.fulfill({ status: 200, contentType: 'image/png', body: transparentPng }));
-      await ctx.route(/open-meteo\.com/, (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+          return routeHandler.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+        });
 
-      await ctx.route('**/api/weather', async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          json: {
-            daily: {
-              time: ['2025-10-10'],
-              weathercode: [0],
-              temperature_2m_max: [75],
-              temperature_2m_min: [55],
-              apparent_temperature_max: [75],
-              precipitation_probability_max: [0],
-              wind_speed_10m_max: [5],
+        await pageContext.route('**/api/weather', async (routeHandler: any) => {
+          await routeHandler.fulfill({
+            status: 200,
+            json: {
+              daily: {
+                time: ['2025-10-10'],
+                weathercode: [0],
+                temperature_2m_max: [75],
+                temperature_2m_min: [55],
+                apparent_temperature_max: [75],
+                precipitation_probability_max: [0],
+                wind_speed_10m_max: [5],
+              },
             },
-          },
+          });
         });
-      });
 
-      await ctx.route('**/api/registry/items/*', async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          json: {
-            id: '1',
-            name: 'Sample Item',
-            description: 'Sample description',
-            category: 'Home',
-            price: 100,
-            quantity: 1,
-            purchased: false,
-            isGroupGift: false,
-            amountContributed: 0,
-            contributors: [],
-          },
-        });
-      });
-
-      await ctx.route('**/api/registry/items', async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          json: [
-            {
+        await pageContext.route('**/api/registry/items/*', async (routeHandler: any) => {
+          await routeHandler.fulfill({
+            status: 200,
+            json: {
               id: '1',
               name: 'Sample Item',
               description: 'Sample description',
@@ -192,131 +183,144 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               isGroupGift: false,
               amountContributed: 0,
               contributors: [],
-            }
-          ],
+            },
+          });
         });
-      });
 
-      return ctx;
-    };
+        await pageContext.route('**/api/registry/items', async (routeHandler: any) => {
+          await routeHandler.fulfill({
+            status: 200,
+            json: [
+              {
+                id: '1',
+                name: 'Sample Item',
+                description: 'Sample description',
+                category: 'Home',
+                price: 100,
+                quantity: 1,
+                purchased: false,
+                isGroupGift: false,
+                amountContributed: 0,
+                contributors: [],
+              }
+            ],
+          });
+        });
 
-    const pageContext = await setupContext();
-
-    try {
-      for (const route of START_ROUTES) {
         const targetUrl = new URL(route, baseURL).toString();
-        if (visitedUrls.has(targetUrl)) continue;
-
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        let response = null;
         let page = await pageContext.newPage();
 
         try {
-          for (let attempt = 0; attempt < 3; attempt++) {
+          let attempt = 0;
+          let success = false;
+          while (attempt < 2 && !success) {
+            attempt++;
             try {
-              response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-              if (response) break;
-            } catch (e: any) {
-              await page.close().catch(() => {});
-              if (attempt === 2) throw e;
-              await new Promise((r) => setTimeout(r, 1000));
-              page = await pageContext.newPage();
+              const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+              expect(response).not.toBeNull();
+              expect(response!.status()).toBe(200);
+
+              if (route !== '/admin/login') {
+                const currentUrl = new URL(page.url());
+                expect(currentUrl.pathname).not.toBe('/admin/login');
+              }
+
+              const content = await page.content();
+              expect(content).not.toContain('Internal Server Error');
+              expect(content).not.toContain('500 Error');
+              expect(content).not.toContain('An unhandled error occurred');
+
+              const hrefs = await page.evaluate(() => 
+                Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+              );
+              console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+
+              const linksToCheck = new Set<string>();
+              for (const href of hrefs) {
+                if (!href) continue;
+
+                if (
+                  href.startsWith('#') ||
+                  href.startsWith('mailto:') ||
+                  href.startsWith('tel:') ||
+                  href.startsWith('javascript:') ||
+                  href.startsWith('data:') ||
+                  href.startsWith('vbscript:')
+                ) {
+                  continue;
+                }
+
+                let resolvedUrl: URL;
+                try {
+                  resolvedUrl = new URL(href, targetUrl);
+                } catch {
+                  continue;
+                }
+
+                if (resolvedUrl.origin !== new URL(baseURL).origin) {
+                  continue;
+                }
+
+                if (resolvedUrl.pathname.includes('/_next/')) {
+                  continue;
+                }
+
+                let normalizedPath = resolvedUrl.pathname;
+                if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+                  normalizedPath = normalizedPath.slice(0, -1);
+                }
+
+                const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+                linksToCheck.add(absoluteCheckUrl);
+              }
+
+              const linksArray = Array.from(linksToCheck);
+              const batchSize = 5;
+              for (let i = 0; i < linksArray.length; i += batchSize) {
+                const batch = linksArray.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                  batch.map(async (absoluteCheckUrl) => {
+                    const linkResponse = await fetch(absoluteCheckUrl, {
+                      headers: {
+                        Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+                      },
+                      signal: AbortSignal.timeout(15000),
+                    });
+                    const status = linkResponse.status;
+                    await linkResponse.arrayBuffer();
+                    return { absoluteCheckUrl, status };
+                  })
+                );
+
+                for (const { absoluteCheckUrl, status } of batchResults) {
+                  expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+                }
+              }
+
+              success = true;
+            } catch (err: any) {
+              if (
+                attempt < 2 &&
+                (err?.message?.includes('crashed') ||
+                 err?.message?.includes('closed') ||
+                 err?.message?.includes('net::ERR_ABORTED'))
+              ) {
+                console.log(`[Authenticated] Page crashed on ${route}, retrying on fresh page...`);
+                await page.close().catch(() => {});
+                page = await pageContext.newPage();
+              } else {
+                throw err;
+              }
             }
-          }
-          expect(response).not.toBeNull();
-          expect(response!.status()).toBe(200);
-
-          // Verify that the page loaded successfully as authenticated (i.e. did not redirect to login)
-          if (route !== '/admin/login') {
-            const currentUrl = new URL(page.url());
-            expect(currentUrl.pathname).not.toBe('/admin/login');
-          }
-
-          // Check for generic application server or DB errors in page content
-          const content = await page.content();
-          expect(content).not.toContain('Internal Server Error');
-          expect(content).not.toContain('500 Error');
-          expect(content).not.toContain('An unhandled error occurred');
-
-          visitedUrls.add(targetUrl);
-
-          // Parse and extract all anchor links from the navigated page in a single CDP call
-          const hrefs = await page.evaluate(() => 
-            Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-          );
-          console.log(`Found ${hrefs.length} anchor elements on ${route}`);
-
-          for (const href of hrefs) {
-            if (!href) continue;
-
-            // Skip non-navigational links or fragments
-            if (
-              href.startsWith('#') ||
-                href.startsWith('mailto:') ||
-                href.startsWith('tel:') ||
-                href.startsWith('javascript:') ||
-                href.startsWith('data:') ||
-                href.startsWith('vbscript:')
-            ) {
-              continue;
-            }
-
-            let resolvedUrl: URL;
-            try {
-              resolvedUrl = new URL(href, targetUrl);
-            } catch {
-              continue;
-            }
-
-            if (resolvedUrl.origin !== new URL(baseURL).origin) {
-              continue;
-            }
-
-            if (resolvedUrl.pathname.includes('/_next/')) {
-              continue;
-            }
-
-            let normalizedPath = resolvedUrl.pathname;
-            if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-              normalizedPath = normalizedPath.slice(0, -1);
-            }
-
-            const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-            checkedLinks.add(absoluteCheckUrl);
           }
         } finally {
+          await page.goto('about:blank').catch(() => {});
           await page.close().catch(() => {});
         }
+      } finally {
+        await pageContext.close().catch(() => {});
       }
-    } finally {
-      await pageContext.unrouteAll().catch(() => {});
-      await pageContext.close().catch(() => {});
-    }
-
-    console.log(`Checking ${checkedLinks.size} unique internal links...`);
-    const linksArray = Array.from(checkedLinks);
-    const batchSize = 5;
-    for (let i = 0; i < linksArray.length; i += batchSize) {
-      const batch = linksArray.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map(async (absoluteCheckUrl) => {
-          console.log(`Checking link: ${absoluteCheckUrl}`);
-          const linkResponse = await fetch(absoluteCheckUrl, {
-            headers: {
-              Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-            },
-            signal: AbortSignal.timeout(15000),
-          });
-          const status = linkResponse.status;
-          await linkResponse.arrayBuffer();
-          return { absoluteCheckUrl, status };
-        })
-      );
-
-      for (const { absoluteCheckUrl, status } of batchResults) {
-        expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
-      }
-    }
-  });
-
+    });
+  }
 });

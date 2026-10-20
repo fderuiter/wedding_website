@@ -3103,6 +3103,26 @@
         }
       }
     },
+    "/api/media/export": {
+      "get": {
+        "summary": "GET /api/media/export",
+        "description": "Endpoint for /api/media/export",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/media/export",
+        "description": "Endpoint for /api/media/export",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/media": {
       "get": {
         "summary": "GET /api/media",

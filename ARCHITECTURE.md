@@ -127,6 +127,7 @@ flowchart LR
     node_api_health["health"]
     node_api_media["media"]
     node_api_media_id["[id]"]
+    node_api_media_export["export"]
     node_api_photos["photos"]
     node_api_photos_upload["upload"]
     node_api_ready["ready"]
@@ -207,6 +208,7 @@ flowchart LR
     node_api --> node_api_health
     node_api --> node_api_media
     node_api_media --> node_api_media_id
+    node_api_media --> node_api_media_export
     node_api --> node_api_photos
     node_api_photos --> node_api_photos_upload
     node_api --> node_api_ready
@@ -277,6 +279,7 @@ flowchart LR
     class node_api_health api;
     class node_api_media api;
     class node_api_media_id api;
+    class node_api_media_export api;
     class node_api_photos_upload api;
     class node_api_ready api;
     class node_api_registry_contribute api;

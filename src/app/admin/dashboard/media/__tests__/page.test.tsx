@@ -186,4 +186,45 @@ describe('MediaDashboardPage', () => {
       expect(mockDelete).toHaveBeenCalledWith('/api/media/1');
     });
   });
+
+  it('allows multi-selection and triggering bulk zip export', async () => {
+    const existingMedia = [
+      { id: '1', url: '/uploads/ring.jpg', altText: 'Wedding Ring', isDecorative: false },
+      { id: '2', url: '/uploads/cake.jpg', altText: 'Wedding Cake', isDecorative: false },
+    ];
+    mockGet.mockResolvedValueOnce(existingMedia);
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      blob: jest.fn().mockResolvedValue(new Blob(['fake zip bytes'], { type: 'application/zip' })),
+    } as unknown as Response);
+
+    window.URL.createObjectURL = jest.fn().mockReturnValue('blob:http://localhost/test');
+    window.URL.revokeObjectURL = jest.fn();
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('/uploads/ring.jpg')).toBeInTheDocument();
+      expect(screen.getByText('/uploads/cake.jpg')).toBeInTheDocument();
+    });
+
+    const checkbox1 = screen.getByTestId('media-checkbox-1');
+    fireEvent.click(checkbox1);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('export-selected-admin-btn')).toBeInTheDocument();
+      expect(screen.getByText('Export Selected (1) (.zip)')).toBeInTheDocument();
+    });
+
+    const exportSelectedBtn = screen.getByTestId('export-selected-admin-btn');
+    fireEvent.click(exportSelectedBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/media/export', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ ids: ['1'] }),
+      }));
+    });
+  });
 });
