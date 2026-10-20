@@ -13,6 +13,7 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
 
 type ThemeContextType = {
+  contactEmail: string;
   themePrimary: string;
   themeSecondary: string;
   themeAccent: string;
@@ -39,6 +40,7 @@ type ThemeContextType = {
 };
 
 const ThemeContext = createContext<ThemeContextType>({
+  contactEmail: '',
   themePrimary: '#B91C1C',
   themeSecondary: '#B45309',
   themeAccent: '#D4AF37',
@@ -538,6 +540,7 @@ function applyResolvedTheme(resolved: ResolvedTheme) {
 type ThemeProviderProps = {
   children: React.ReactNode;
   config?: {
+    contactEmail?: string | null;
     colorPrimary?: string | null;
     colorSecondary?: string | null;
     themePreset?: ThemePreset | string | null;
@@ -559,6 +562,7 @@ export function ThemeProvider({
   initialThemeMode = 'system'
 }: ThemeProviderProps) {
   const [config, setConfig] = useState(() => ({
+    contactEmail: propConfig?.contactEmail || '',
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
@@ -680,6 +684,7 @@ export function ThemeProvider({
   useEffect(() => {
     if (propConfig) {
       setConfig({
+        contactEmail: propConfig.contactEmail || '',
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
@@ -817,6 +822,7 @@ export function ThemeProvider({
   const cardSpringDamping = parseTokenNum(activePresetTokens['--card-spring-damping'], 20);
 
   const contextValue: ThemeContextType = {
+    contactEmail: config.contactEmail || '',
     ...theme,
     fontHeading,
     fontBody,

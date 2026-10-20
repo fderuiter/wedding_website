@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import GuestLoginPage from '../page';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ThemeProvider } from '@/components/ThemeProvider';
 
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
@@ -60,7 +61,55 @@ describe('Guest Login Page with Help Drawer', () => {
 
     const contactBtn = screen.getByRole('link', { name: /contact host/i });
     expect(contactBtn).toBeInTheDocument();
-    expect(contactBtn).toHaveAttribute('href', expect.stringContaining('mailto:'));
+    expect(contactBtn).toHaveAttribute('href', 'mailto:hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+  });
+
+  it('uses configured contact email from ThemeProvider in mailto link', async () => {
+    render(
+      <ThemeProvider config={{ contactEmail: 'custom-hosts@wedding.example' }}>
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    const contactBtn = screen.getByRole('link', { name: /contact host/i });
+    expect(contactBtn).toHaveAttribute('href', 'mailto:custom-hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+  });
+
+  it('closes help drawer when pressing Escape key', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('restores focus to the trigger button when help drawer is closed', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    helpTrigger.focus();
+    expect(document.activeElement).toBe(helpTrigger);
+
+    fireEvent.click(helpTrigger);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(helpTrigger);
   });
 
   it('closes help drawer when clicking close button or dismiss button', async () => {
