@@ -462,6 +462,7 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `heroSubtitle` | `string` | Configuration field for heroSubtitle |
 | `seoTitle` | `string` | Configuration field for seoTitle |
 | `seoDescription` | `string` | Configuration field for seoDescription |
+| `contactEmail` | `default` | Configuration field for contactEmail |
 | `faviconUrl` | `string` | Configuration field for faviconUrl |
 | `ogImageUrl` | `string` | Configuration field for ogImageUrl |
 | `brandMonogram` | `optional` | Configuration field for brandMonogram |

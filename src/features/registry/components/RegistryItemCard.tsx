@@ -156,7 +156,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
     ? (typeof amount === 'number' ? amount : parseFloat(amount as string))
     : item.price;
   const baseContributionAmount = !isNaN(parsedContributionAmount) && parsedContributionAmount > 0 ? parsedContributionAmount : 0;
-  const estimatedProcessingFee = baseContributionAmount * 0.025;
+  const hasPaymentHandle = Boolean(item.paymentHandle && item.paymentHandle.trim());
+  const processingFeeRate = hasPaymentHandle ? 0 : 0.025;
+  const estimatedProcessingFee = baseContributionAmount * processingFeeRate;
   const netPayoutAmount = baseContributionAmount - estimatedProcessingFee;
 
   // XSS protection for the vendorUrl. Ensure it's a valid http(s) URL.
@@ -337,14 +339,16 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
                   <Icon name="Info" className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
-                  <span>Payment Processing Fee Notice</span>
+                  <span>{hasPaymentHandle ? 'Direct Transfer Notice' : 'Payment Processing Fee Notice'}</span>
                 </div>
                 <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">
-                  Standard Fee: 2.5%
+                  Standard Fee: {hasPaymentHandle ? '0%' : '2.5%'}
                 </span>
               </div>
               <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                Standard payment processor rates apply to online card transfers. Card transfer processing fee disclosures: processing fees (2.5%) cover third-party processor rates to ensure full transparency on the net contribution received by the couple.
+                {hasPaymentHandle
+                  ? 'Direct payment transfers via peer-to-peer payment handles incur zero processing fees, ensuring 100% of your gift reaches the couple directly.'
+                  : 'Standard payment processor rates apply to online card transfers. Card transfer processing fee disclosures: processing fees (2.5%) cover third-party processor rates to ensure full transparency on the net contribution received by the couple.'}
               </p>
               <div className="space-y-1.5 pt-2.5 border-t border-slate-200 dark:border-slate-700 text-xs">
                 <div className="flex justify-between text-gray-700 dark:text-gray-300">
@@ -352,7 +356,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                   <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-400">
-                  <span>Estimated Card Processing Fee (2.5%):</span>
+                  <span>{hasPaymentHandle ? 'Direct Transfer Fee (0%):' : 'Estimated Card Processing Fee (2.5%):'}</span>
                   <span>-{formatCurrency(estimatedProcessingFee)}</span>
                 </div>
                 <div className="flex justify-between text-primary font-bold pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 text-sm">

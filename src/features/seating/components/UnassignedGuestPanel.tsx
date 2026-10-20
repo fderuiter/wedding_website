@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
 import { SeatingTableDTO } from '../schemas';
@@ -13,7 +13,7 @@ interface UnassignedGuestPanelProps {
   onSearchQueryChange?: (query: string) => void;
 }
 
-export function UnassignedGuestPanel({
+export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   unassignedGuests,
   tables,
   onAssignGuestToTable,
@@ -35,15 +35,17 @@ export function UnassignedGuestPanel({
     }
   };
 
-  const filteredGuests = unassignedGuests.filter((guest) => {
+  const filteredGuests = useMemo(() => {
     const term = currentSearchQuery.trim().toLowerCase();
-    if (!term) return true;
-    const matchesName = guest.guestName.toLowerCase().includes(term);
-    const matchesCode = guest.code.toLowerCase().includes(term);
-    const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
-    const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
-    return matchesName || matchesCode || matchesHousehold || matchesTags;
-  });
+    if (!term) return unassignedGuests;
+    return unassignedGuests.filter((guest) => {
+      const matchesName = guest.guestName.toLowerCase().includes(term);
+      const matchesCode = guest.code.toLowerCase().includes(term);
+      const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
+      const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
+      return matchesName || matchesCode || matchesHousehold || matchesTags;
+    });
+  }, [unassignedGuests, currentSearchQuery]);
 
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
     e.dataTransfer.setData('text/plain', guestId);
@@ -234,4 +236,4 @@ export function UnassignedGuestPanel({
       </Dialog>
     </div>
   );
-}
+});

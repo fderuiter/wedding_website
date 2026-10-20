@@ -1,7 +1,11 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestLoginPage from '../page';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ThemeProvider } from '@/components/ThemeProvider';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
@@ -30,8 +34,8 @@ describe('Guest Login Page with Help Drawer', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders login form and help trigger button', () => {
-    render(<GuestLoginPage />);
+  it('renders login form and help trigger button', async () => {
+    const { container } = render(<GuestLoginPage />);
 
     expect(screen.getByRole('heading', { name: /guest portal/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Enter passcode')).toBeInTheDocument();
@@ -40,10 +44,13 @@ describe('Guest Login Page with Help Drawer', () => {
     expect(helpTrigger).toBeInTheDocument();
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'false');
     expect(helpTrigger).toHaveAttribute('aria-controls', 'guest-help-drawer');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('opens help drawer when clicking help trigger and displays recovery instructions and host contact option', async () => {
-    render(<GuestLoginPage />);
+    const { container } = render(<GuestLoginPage />);
 
     const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
     fireEvent.click(helpTrigger);
@@ -60,7 +67,112 @@ describe('Guest Login Page with Help Drawer', () => {
 
     const contactBtn = screen.getByRole('link', { name: /contact host/i });
     expect(contactBtn).toBeInTheDocument();
-    expect(contactBtn).toHaveAttribute('href', expect.stringContaining('mailto:'));
+    expect(contactBtn).toHaveAttribute('href', 'mailto:hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('uses configured contact email from ThemeProvider in mailto link', async () => {
+    render(
+      <ThemeProvider config={{ contactEmail: 'custom-hosts@wedding.example' }}>
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    const contactBtn = screen.getByRole('link', { name: /contact host/i });
+    expect(contactBtn).toHaveAttribute('href', 'mailto:custom-hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+  });
+
+  it('moves focus inside the dialog when opened', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it('traps focus within drawer controls on Tab and Shift+Tab', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
+    const gotItBtn = screen.getByRole('button', { name: /got it, thanks/i });
+
+    // Focus initial (close button)
+    expect(document.activeElement).toBe(closeBtn);
+
+    // Focus last element manually and press Tab
+    gotItBtn.focus();
+    expect(document.activeElement).toBe(gotItBtn);
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: false });
+    expect(document.activeElement).toBe(closeBtn);
+
+    // Press Shift+Tab on first element
+    closeBtn.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(gotItBtn);
+  });
+
+  it('closes help drawer when clicking backdrop and restores focus', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    helpTrigger.focus();
+    fireEvent.click(helpTrigger);
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+
+    // Click backdrop (dialog itself)
+    fireEvent.click(dialog);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(helpTrigger);
+  });
+
+  it('closes help drawer when pressing Escape key', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('restores focus to the trigger button when help drawer is closed', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    helpTrigger.focus();
+    expect(document.activeElement).toBe(helpTrigger);
+
+    fireEvent.click(helpTrigger);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(helpTrigger);
   });
 
   it('closes help drawer when clicking close button or dismiss button', async () => {

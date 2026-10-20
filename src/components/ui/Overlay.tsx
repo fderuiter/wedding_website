@@ -4,16 +4,8 @@ import React, { useCallback } from 'react';
 import { useOverlay } from '@/hooks/useOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens } from '@/lib/theme/presets';
+import { getPresetTokens, parseDurationSec } from '@/lib/theme/presets';
 import { cn } from '@/utils/cn';
-
-function parseDurationSec(val?: string, fallback = 0.2): number {
-  if (!val) return fallback;
-  if (val.endsWith('ms')) return parseFloat(val) / 1000;
-  if (val.endsWith('s')) return parseFloat(val);
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? fallback : parsed;
-}
 
 export interface OverlayProps {
   isOpen: boolean;
@@ -26,6 +18,8 @@ export interface OverlayProps {
   layoutClassName?: string;
   role?: string;
   'aria-modal'?: boolean | 'true' | 'false';
+  'aria-labelledby'?: string;
+  'aria-describedby'?: string;
 }
 
 export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
@@ -41,6 +35,8 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
       layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
       role,
       'aria-modal': ariaModal,
+      'aria-labelledby': ariaLabelledby,
+      'aria-describedby': ariaDescribedby,
     },
     ref
   ) => {
@@ -97,9 +93,11 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
             exit={{ opacity: 0 }}
             transition={{ duration: durationNormal }}
             onClick={handleBackdropClick}
-            aria-hidden={!isOpen}
+            aria-hidden={!isOpen ? true : undefined}
             role={role}
             aria-modal={ariaModal}
+            aria-labelledby={ariaLabelledby}
+            aria-describedby={ariaDescribedby}
           >
             <motion.div
               ref={setOverlayRef}

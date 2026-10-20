@@ -1,17 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens } from '@/lib/theme/presets';
+import { getPresetTokens, parseDurationSec } from '@/lib/theme/presets';
 import { formatCurrency } from '@/utils/intl';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-
-function parseDurationSec(val?: string, fallback = 0.8): number {
-  if (!val) return fallback;
-  if (val.endsWith('ms')) return parseFloat(val) / 1000;
-  if (val.endsWith('s')) return parseFloat(val);
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? fallback : parsed;
-}
 
 /**
  * @interface RegistryItemProgressBarProps

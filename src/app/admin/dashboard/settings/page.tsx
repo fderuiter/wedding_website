@@ -386,6 +386,11 @@ export default function AdminSettingsPage() {
                 <Label>Base URL</Label>
                 <Input required type="url" name="baseUrl" value={localConfig.baseUrl || ''} onChange={handleChange} />
               </FormGroup>
+              <FormGroup>
+                <Label>Host Contact Email</Label>
+                <Input type="email" name="contactEmail" value={localConfig.contactEmail || ''} onChange={handleChange} placeholder="e.g. hosts@wedding.example" />
+                <FormMessage>Host contact email address used across guest support touchpoints.</FormMessage>
+              </FormGroup>
               {isMultisite && selectedProfileId !== 'global' && (
                 <FormGroup>
                   <Label>Subdomain Identifier</Label>

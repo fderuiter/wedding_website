@@ -16,15 +16,7 @@ import FaqAccordion from '@/components/faq/FaqAccordion';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
-
-function parseDurationSec(val?: string, fallback = 0.8): number {
-  if (!val) return fallback;
-  if (val.endsWith('ms')) return parseFloat(val) / 1000;
-  if (val.endsWith('s')) return parseFloat(val);
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? fallback : parsed;
-}
+import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 
 /**
  * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.

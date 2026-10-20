@@ -7,15 +7,7 @@ import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
-
-function parseDurationSec(val?: string, fallback = 0.8): number {
-  if (!val) return fallback;
-  if (val.endsWith('ms')) return parseFloat(val) / 1000;
-  if (val.endsWith('s')) return parseFloat(val);
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? fallback : parsed;
-}
+import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 
 interface WeatherData {
   isLiveForecast?: boolean;

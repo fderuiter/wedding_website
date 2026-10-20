@@ -46,6 +46,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   heroSubtitle: '',
   seoTitle: '',
   seoDescription: '',
+  contactEmail: '',
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/placeholder.png',
   brandMonogram: undefined,
@@ -151,6 +152,7 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_BRAND_WATERMARK_ALT !== undefined) overrides.brandWatermarkAlt = process.env.SITE_BRAND_WATERMARK_ALT;
   if (process.env.SITE_BADGE_GRAPHIC_URL !== undefined) overrides.badgeGraphicUrl = process.env.SITE_BADGE_GRAPHIC_URL;
   if (process.env.SITE_BADGE_GRAPHIC_ALT !== undefined) overrides.badgeGraphicAlt = process.env.SITE_BADGE_GRAPHIC_ALT;
+  if (process.env.SITE_CONTACT_EMAIL !== undefined) overrides.contactEmail = process.env.SITE_CONTACT_EMAIL;
 
   return overrides;
 }
@@ -294,6 +296,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
           longitude: 0,
           venueDescription: '',
           seoDescription: '',
+          contactEmail: '',
           faviconUrl: '/assets/favicon.png',
           ogImageUrl: '/images/placeholder.png',
           seoKeywords: '',

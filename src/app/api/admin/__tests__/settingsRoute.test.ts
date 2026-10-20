@@ -78,6 +78,7 @@ const validConfigData = {
   heroSubtitle: 'Join us',
   seoTitle: 'Test Wedding',
   seoDescription: 'Test description',
+  contactEmail: '',
   faviconUrl: '/custom/favicon.ico',
   ogImageUrl: '/custom/og-image.jpg',
   seoKeywords: '{{brideName}} wedding, {{groomName}} wedding',
