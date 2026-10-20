@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import { axe } from 'jest-axe';
-import { MediaImage } from '../MediaImage';
+import { MediaImage, extractFilenameAsAlt } from '../MediaImage';
 import { createMockMedia } from '@/testing/factories/mediaFactory';
 
 describe('MediaImage Component', () => {
@@ -123,14 +123,66 @@ describe('MediaImage Component', () => {
       expect(img).toHaveAttribute('alt', 'Fallback Alt Text');
     });
 
+    it('uses explicit alt prop when media is present but media.altText is missing or empty', () => {
+      const media = createMockMedia({ altText: null, isDecorative: false });
+      const { getByRole } = render(<MediaImage media={media} alt="Explicit Alt Prop" />);
+      expect(getByRole('img')).toHaveAttribute('alt', 'Explicit Alt Prop');
+    });
+
+    it('extracts humanized filename as alt when non-decorative media lacks altText and fallbackAlt', () => {
+      const media = createMockMedia({ url: '/uploads/sunset-beach.jpg', altText: null, isDecorative: false });
+      const { getByRole } = render(<MediaImage media={media} />);
+      expect(getByRole('img')).toHaveAttribute('alt', 'sunset beach');
+    });
+
+    it('falls back to "Unlabelled image" when non-decorative media lacks altText, fallbackAlt, and extractable filename', () => {
+      const media = createMockMedia({ url: 'data:image/png;base64,iVBORw0KGgo...', altText: null, isDecorative: false });
+      const { getByRole } = render(<MediaImage media={media} />);
+      expect(getByRole('img')).toHaveAttribute('alt', 'Unlabelled image');
+    });
+
     it('uses explicit alt prop when media prop is not provided', () => {
       const { getByRole } = render(<MediaImage src="/images/sample.jpg" alt="Explicit Alt" />);
       expect(getByRole('img')).toHaveAttribute('alt', 'Explicit Alt');
     });
 
+    it('preserves explicit alt="" as decorative indicator when media prop is not provided', () => {
+      const { container } = render(<MediaImage src="/images/sample.jpg" alt="" />);
+      const img = container.querySelector('img');
+      expect(img).not.toBeNull();
+      expect(img).toHaveAttribute('alt', '');
+    });
+
     it('uses fallbackAlt when media prop and alt prop are not provided', () => {
       const { getByRole } = render(<MediaImage src="/images/sample.jpg" fallbackAlt="Fallback Only" />);
       expect(getByRole('img')).toHaveAttribute('alt', 'Fallback Only');
+    });
+
+    it('extracts humanized filename when media prop is omitted and no alt or fallbackAlt is provided', () => {
+      const { getByRole } = render(<MediaImage src="/uploads/reception-dance.png" />);
+      expect(getByRole('img')).toHaveAttribute('alt', 'reception dance');
+    });
+
+    it('falls back to "Unlabelled image" when media prop is omitted and src is data URI with no alt or fallbackAlt', () => {
+      const { getByRole } = render(<MediaImage src="data:image/png;base64,iVBORw0KGgo..." />);
+      expect(getByRole('img')).toHaveAttribute('alt', 'Unlabelled image');
+    });
+  });
+
+  describe('extractFilenameAsAlt Helper', () => {
+    it('returns undefined for empty, null, or undefined URLs', () => {
+      expect(extractFilenameAsAlt(undefined)).toBeUndefined();
+      expect(extractFilenameAsAlt('')).toBeUndefined();
+    });
+
+    it('returns undefined for data URIs', () => {
+      expect(extractFilenameAsAlt('data:image/png;base64,abc')).toBeUndefined();
+    });
+
+    it('strips query parameters, hashes, and extensions while converting separators to spaces', () => {
+      expect(extractFilenameAsAlt('/uploads/sunset-beach.jpg?v=123#top')).toBe('sunset beach');
+      expect(extractFilenameAsAlt('https://cdn.example.com/ceremony_groom-and-bride.png')).toBe('ceremony groom and bride');
+      expect(extractFilenameAsAlt('/images/beach%20sunset.jpeg')).toBe('beach sunset');
     });
   });
 

@@ -315,6 +315,7 @@ export default function MediaDashboardPage() {
                         <MediaImage
                           media={{ id: photo.id, url: imageUrl, altText: title }}
                           fallbackUrl="/images/placeholder.png"
+                          fallbackAlt="Unlabelled media asset"
                           className="object-cover w-full h-full"
                         />
                         <span className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-500 text-stone-900 shadow">
@@ -445,7 +446,7 @@ export default function MediaDashboardPage() {
                       </div>
 
                       <div className="relative h-32 w-full mb-4">
-                        <MediaImage media={m} fallbackUrl="/images/placeholder.png" className="object-cover w-full h-full rounded" />
+                        <MediaImage media={m} fallbackUrl="/images/placeholder.png" fallbackAlt="Unlabelled media asset" className="object-cover w-full h-full rounded" />
                       </div>
                       <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
                       <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
