@@ -17,6 +17,19 @@ import FaqAccordion from '@/components/faq/FaqAccordion';
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
+import { sanitizeUrl } from '@/utils/validation';
+import { MediaImage } from '@/components/MediaImage';
+
+function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
+  if (!rawUrl || typeof rawUrl !== 'string') return undefined;
+  let url = rawUrl.trim();
+  if (url === 'none') return undefined;
+  if (url.startsWith('url(') && url.endsWith(')')) {
+    url = url.slice(4, -1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  const safe = sanitizeUrl(url);
+  return safe ? `url("${safe}")` : undefined;
+}
 
 /**
  * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.
@@ -220,7 +233,10 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     description: config.heroSubtitle || 'Join us for our wedding!',
   };
 
-  const heroBgUrl = config.heroImageUrl || (presetTokens['--brand-hero-image'] && presetTokens['--brand-hero-image'] !== 'none' ? presetTokens['--brand-hero-image'] : undefined);
+  const rawHeroBgUrl = config.heroImageUrl || (presetTokens['--brand-hero-image'] && presetTokens['--brand-hero-image'] !== 'none' ? presetTokens['--brand-hero-image'] : undefined);
+  const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl);
+  const safeWatermarkUrl = sanitizeUrl(config.brandWatermarkUrl);
+  const safeBadgeUrl = sanitizeUrl(config.badgeGraphicUrl);
 
   return (
     <>
@@ -229,25 +245,25 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       >
         <div id="home-main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
-            {heroBgUrl && (
+            {safeHeroBgStyle && (
               <div
                 className="absolute inset-0 z-0 bg-cover bg-center opacity-25 pointer-events-none"
-                style={{ backgroundImage: heroBgUrl.startsWith('url(') ? heroBgUrl : `url("${heroBgUrl}")` }}
+                style={{ backgroundImage: safeHeroBgStyle }}
                 aria-hidden="true"
               />
             )}
-            {config.brandWatermarkUrl && (
-              <img
-                src={config.brandWatermarkUrl}
+            {safeWatermarkUrl && (
+              <MediaImage
+                src={safeWatermarkUrl}
                 alt={config.brandWatermarkAlt || ''}
                 aria-hidden={!config.brandWatermarkAlt}
                 className="absolute bottom-6 right-6 h-16 w-auto opacity-30 pointer-events-none object-contain z-0"
               />
             )}
             <div className="relative z-10 flex flex-col items-center justify-center max-w-4xl mx-auto">
-              {config.badgeGraphicUrl && (
-                <img
-                  src={config.badgeGraphicUrl}
+              {safeBadgeUrl && (
+                <MediaImage
+                  src={safeBadgeUrl}
                   alt={config.badgeGraphicAlt || ''}
                   aria-hidden={!config.badgeGraphicAlt}
                   className="mb-6 h-16 w-auto object-contain"
