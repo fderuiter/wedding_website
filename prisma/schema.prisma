@@ -177,6 +177,8 @@ model InvitationCode {
   updatedAt          DateTime      @updatedAt
 
   contributors Contributor[]
+  subEventAccesses SubEventAccess[]
+  subEventRsvps    SubEventRsvp[]
 
   @@index([partyTags], type: Gin)
 }
@@ -216,4 +218,47 @@ model SnapshotVersion {
 
   @@index([entityType, entityId, createdAt(sort: Desc)])
   @@index([createdAt])
+}
+
+model SubEvent {
+  id           String           @id @default(uuid())
+  title        String
+  description  String?          @default("")
+  startTime    DateTime?
+  endTime      DateTime?
+  locationName String?          @default("")
+  location     String?          @default("")
+  category     String?          @default("")
+  isPrivate    Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  accesses     SubEventAccess[]
+  rsvps        SubEventRsvp[]
+}
+
+model SubEventAccess {
+  id               String         @id @default(uuid())
+  subEventId       String
+  subEvent         SubEvent       @relation(fields: [subEventId], references: [id], onDelete: Cascade)
+  invitationCodeId String
+  invitationCode   InvitationCode @relation(fields: [invitationCodeId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+
+  @@unique([subEventId, invitationCodeId])
+}
+
+model SubEventRsvp {
+  id               String         @id @default(uuid())
+  subEventId       String
+  subEvent         SubEvent       @relation(fields: [subEventId], references: [id], onDelete: Cascade)
+  invitationCodeId String
+  invitationCode   InvitationCode @relation(fields: [invitationCodeId], references: [id], onDelete: Cascade)
+  status           String         @default("pending")
+  plusOneCount     Int            @default(0)
+  dietaryNotes     String?        @default("")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([subEventId, invitationCodeId])
 }

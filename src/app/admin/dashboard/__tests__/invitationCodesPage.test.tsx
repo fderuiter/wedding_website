@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import InvitationCodesDashboardPage, { getAttendanceStatus } from '../invitation-codes/page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
@@ -92,12 +93,24 @@ describe('InvitationCodesDashboardPage', () => {
     });
   });
 
-  const renderComponent = () =>
-    render(
-      <ToastProvider>
-        <InvitationCodesDashboardPage />
-      </ToastProvider>
+  const createTestQueryClient = () =>
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+  const renderComponent = () => {
+    const queryClient = createTestQueryClient();
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <InvitationCodesDashboardPage />
+        </ToastProvider>
+      </QueryClientProvider>
     );
+  };
 
   it('renders loading state', () => {
     (useAdminInvitationCodes as jest.Mock).mockReturnValue({

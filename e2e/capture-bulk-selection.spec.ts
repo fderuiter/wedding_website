@@ -32,6 +32,8 @@ function generateGuestCookieValue() {
 }
 
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
+  test.setTimeout(60000);
+
   const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
   const cookies = origins.flatMap((url) => [
     {

@@ -108,6 +108,8 @@ flowchart LR
     node_api_admin_seating_export["export"]
     node_api_admin_settings["settings"]
     node_api_admin_setup["setup"]
+    node_api_admin_subevents["sub-events"]
+    node_api_admin_subevents_access["access"]
     node_api_admin_thankyounotes["thank-you-notes"]
     node_api_admin_thankyounotes_id["[id]"]
     node_api_admin_thankyounotes_batch["batch"]
@@ -135,6 +137,8 @@ flowchart LR
     node_api_registry_scrape["scrape"]
     node_api_registry_session["session"]
     node_api_registry_validatecode["validate-code"]
+    node_api_rsvp["rsvp"]
+    node_api_schedule["schedule"]
     node_api_weather["weather"]
     node_archive["archive"]
     node_guest["guest"]
@@ -184,6 +188,8 @@ flowchart LR
     node_api_admin_seating --> node_api_admin_seating_export
     node_api_admin --> node_api_admin_settings
     node_api_admin --> node_api_admin_setup
+    node_api_admin --> node_api_admin_subevents
+    node_api_admin_subevents --> node_api_admin_subevents_access
     node_api_admin --> node_api_admin_thankyounotes
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
@@ -211,6 +217,8 @@ flowchart LR
     node_api_registry --> node_api_registry_scrape
     node_api_registry --> node_api_registry_session
     node_api_registry --> node_api_registry_validatecode
+    node_api --> node_api_rsvp
+    node_api --> node_api_schedule
     node_api --> node_api_weather
     App --> node_archive
     App --> node_guest
@@ -254,6 +262,7 @@ flowchart LR
     class node_api_admin_seating_export api;
     class node_api_admin_settings api;
     class node_api_admin_setup api;
+    class node_api_admin_subevents_access api;
     class node_api_admin_thankyounotes api;
     class node_api_admin_thankyounotes_id api;
     class node_api_admin_thankyounotes_batch api;
@@ -276,6 +285,8 @@ flowchart LR
     class node_api_registry_scrape api;
     class node_api_registry_session api;
     class node_api_registry_validatecode api;
+    class node_api_rsvp api;
+    class node_api_schedule api;
     class node_api_weather api;
     class node_archive page;
     class node_guest page;

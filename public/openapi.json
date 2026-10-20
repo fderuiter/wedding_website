@@ -2489,6 +2489,63 @@
         }
       }
     },
+    "/api/admin/sub-events/access": {
+      "get": {
+        "summary": "GET /api/admin/sub-events/access",
+        "description": "Endpoint for /api/admin/sub-events/access",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/admin/sub-events/access",
+        "description": "Endpoint for /api/admin/sub-events/access",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "invitationCodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "allowedSubEventIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "invitationCodeId",
+                  "allowedSubEventIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/admin/sub-events/access",
+        "description": "Endpoint for /api/admin/sub-events/access",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/thank-you-notes/{id}": {
       "patch": {
         "summary": "PATCH /api/admin/thank-you-notes/[id]",
@@ -3746,6 +3803,70 @@
       "get": {
         "summary": "GET /api/registry/validate-code",
         "description": "Endpoint for /api/registry/validate-code",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/rsvp": {
+      "post": {
+        "summary": "POST /api/rsvp",
+        "description": "Endpoint for /api/rsvp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "subEventId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "attending",
+                      "declined",
+                      "pending"
+                    ]
+                  },
+                  "plusOneCount": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "dietaryNotes": {
+                    "default": "",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "subEventId",
+                  "status",
+                  "plusOneCount",
+                  "dietaryNotes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/schedule": {
+      "get": {
+        "summary": "GET /api/schedule",
+        "description": "Endpoint for /api/schedule",
         "responses": {
           "200": {
             "description": "Successful response"
