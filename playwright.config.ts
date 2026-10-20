@@ -36,7 +36,6 @@ export default defineConfig({
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--disable-software-rasterizer',
         '--no-zygote',
         '--js-flags=--max-old-space-size=4096 --expose-gc',
       ],
