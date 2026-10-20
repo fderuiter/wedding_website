@@ -26,6 +26,8 @@ export interface OverlayProps {
   layoutClassName?: string;
   role?: string;
   'aria-modal'?: boolean | 'true' | 'false';
+  'aria-labelledby'?: string;
+  'aria-describedby'?: string;
 }
 
 export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
@@ -41,6 +43,8 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
       layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
       role,
       'aria-modal': ariaModal,
+      'aria-labelledby': ariaLabelledby,
+      'aria-describedby': ariaDescribedby,
     },
     ref
   ) => {
@@ -100,6 +104,8 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
             aria-hidden={!isOpen}
             role={role}
             aria-modal={ariaModal}
+            aria-labelledby={ariaLabelledby}
+            aria-describedby={ariaDescribedby}
           >
             <motion.div
               ref={setOverlayRef}

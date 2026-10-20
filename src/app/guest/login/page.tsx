@@ -144,6 +144,7 @@ function GuestLoginForm() {
         id="guest-help-drawer"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="help-drawer-title"
         layoutClassName="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
         className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-md border border-gray-100 dark:border-gray-700 space-y-5 text-gray-800 dark:text-gray-100 relative"
       >

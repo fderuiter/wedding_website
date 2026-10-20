@@ -78,6 +78,60 @@ describe('Guest Login Page with Help Drawer', () => {
     expect(contactBtn).toHaveAttribute('href', 'mailto:custom-hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
   });
 
+  it('moves focus inside the dialog when opened', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it('traps focus within drawer controls on Tab and Shift+Tab', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(helpTrigger);
+
+    const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
+    const gotItBtn = screen.getByRole('button', { name: /got it, thanks/i });
+
+    // Focus initial (close button)
+    expect(document.activeElement).toBe(closeBtn);
+
+    // Focus last element manually and press Tab
+    gotItBtn.focus();
+    expect(document.activeElement).toBe(gotItBtn);
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: false });
+    expect(document.activeElement).toBe(closeBtn);
+
+    // Press Shift+Tab on first element
+    closeBtn.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(gotItBtn);
+  });
+
+  it('closes help drawer when clicking backdrop and restores focus', async () => {
+    render(<GuestLoginPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    helpTrigger.focus();
+    fireEvent.click(helpTrigger);
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+
+    // Click backdrop (dialog itself)
+    fireEvent.click(dialog);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(helpTrigger);
+  });
+
   it('closes help drawer when pressing Escape key', async () => {
     render(<GuestLoginPage />);
 
