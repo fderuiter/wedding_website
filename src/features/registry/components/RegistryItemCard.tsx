@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { apiClient } from '@/lib/apiClient';
 import { useShareItem } from '../hooks/useShareItem';
 import { useGuestSession } from '../context/GuestSessionContext';
+import { getPaymentUrl } from '../utils/paymentUrls';
 
 /**
  * @interface RegistryItemCardProps
@@ -160,6 +162,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   const processingFeeRate = hasPaymentHandle ? 0 : 0.025;
   const estimatedProcessingFee = baseContributionAmount * processingFeeRate;
   const netPayoutAmount = baseContributionAmount - estimatedProcessingFee;
+  const paymentUrl = getPaymentUrl(item.paymentHandleType, item.paymentHandle);
 
   // XSS protection for the vendorUrl. Ensure it's a valid http(s) URL.
   const isVendorUrlSafe = item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
@@ -187,13 +190,41 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
         {item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND' ? 'Target Goal:' : 'Price:'} {formatCurrency(item.price)}
       </p>
       {item.paymentHandle && (
-        <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-900/60 rounded-md border border-gray-200 dark:border-gray-700">
-          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-            Send directly via {item.paymentHandleType || 'Payment App'}:
-          </p>
-          <p className="text-sm font-mono text-primary font-bold mt-0.5 select-all">
-            {item.paymentHandle}
-          </p>
+        <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-900/60 rounded-md border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+              Send directly via {item.paymentHandleType || 'Payment App'}:
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <span className="text-sm font-mono text-primary font-bold select-all">
+                {item.paymentHandle}
+              </span>
+              {paymentUrl && (
+                <a
+                  href={paymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                  aria-label={`Open payment link for ${item.paymentHandleType || 'Payment App'}`}
+                >
+                  <span>Open Link</span>
+                  <Icon name="ExternalLink" className="w-3.5 h-3.5" />
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              )}
+            </div>
+          </div>
+          {paymentUrl && (
+            <div className="flex flex-col items-center bg-white p-2 rounded border border-gray-200 dark:border-gray-700 shrink-0 self-center sm:self-auto">
+              <QRCodeCanvas
+                value={paymentUrl}
+                size={80}
+                level="M"
+                aria-label={`QR code to pay via ${item.paymentHandleType || 'Payment App'}`}
+              />
+              <span className="text-[10px] text-gray-500 mt-1 font-sans">Scan to Pay</span>
+            </div>
+          )}
         </div>
       )}
       {item.isGroupGift && (
