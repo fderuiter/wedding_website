@@ -34,6 +34,8 @@ const defaultValues: Partial<RegistryItem> = {
   vendorUrl: '',
   quantity: 1,
   isGroupGift: false,
+  isMostWanted: false,
+  displayOrder: 0,
   paymentHandleType: '',
   paymentHandle: '',
 };
@@ -252,6 +254,8 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       itemType: currentItemType,
       quantity: fundType ? 1 : (values.quantity ?? 1),
       isGroupGift: fundType ? true : !!values.isGroupGift,
+      isMostWanted: !!values.isMostWanted,
+      displayOrder: values.displayOrder ? Number(values.displayOrder) : 0,
       vendorUrl: fundType ? (values.vendorUrl || undefined) : values.vendorUrl,
       paymentHandleType: values.paymentHandleType || undefined,
       paymentHandle: values.paymentHandle || undefined,
@@ -461,6 +465,18 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
           </div>
         </FormGroup>
       )}
+
+      <FormGroup>
+        <div className="flex items-center mt-2">
+          <Checkbox name="isMostWanted" checked={!!values.isMostWanted} onChange={handleChange} />
+          <Label className="ml-2 font-normal">Mark as Most Wanted</Label>
+        </div>
+      </FormGroup>
+
+      <FormGroup>
+        <Label>Display Position / Order</Label>
+        <Input type="number" name="displayOrder" value={values.displayOrder ?? 0} onChange={handleChange} min={0} />
+      </FormGroup>
 
       <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}

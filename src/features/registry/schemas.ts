@@ -9,6 +9,8 @@ export const RegistryQuerySchema = z.object({
   category: z.string().optional(),
   minPrice: z.coerce.number({ message: 'minPrice must be a number.' }).min(0, 'minPrice must be non-negative.').optional(),
   maxPrice: z.coerce.number({ message: 'maxPrice must be a number.' }).min(0, 'maxPrice must be non-negative.').optional(),
+  sortBy: z.string().optional(),
+  sort: z.string().optional(),
 });
 
 export type RegistryQueryParams = z.infer<typeof RegistryQuerySchema>;
@@ -77,6 +79,8 @@ export const RegistryItemBaseSchema = z.object({
   description: z.string().max(2000, 'Description must be under 2000 characters.').optional().or(z.literal('')),
   vendorUrl: createLaxUrlSchema('Vendor URL'),
   isGroupGift: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true'),
+  isMostWanted: z.union([z.boolean(), z.literal('on'), z.literal('off'), z.string()]).optional().transform(v => v === true || v === 'on' || v === 'true').default(false),
+  displayOrder: z.coerce.number({ message: 'Display order must be an integer.' }).int('Display order must be an integer.').optional().default(0),
   paymentHandleType: z.string().max(100, 'Payment handle type must be under 100 characters.').optional().nullable().or(z.literal('')),
   paymentHandle: z.string().max(255, 'Payment handle must be under 255 characters.').optional().nullable().or(z.literal('')),
 }, { message: 'Invalid request body.' }).merge(createMediaAssociationSchema('image'));
@@ -86,6 +90,8 @@ export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   itemType: ItemTypeEnum.default('PHYSICAL'),
   paymentHandleType: z.string().nullable().optional(),
   paymentHandle: z.string().nullable().optional(),
+  isMostWanted: z.boolean().default(false),
+  displayOrder: z.number().int().default(0),
   purchased: z.boolean().default(false),
   purchaserName: z.string().nullable().optional(),
   amountContributed: z.coerce.number().default(0),
@@ -109,6 +115,8 @@ export function translateSnapshotToActive(snapshotData: any) {
     vendorUrl: snapshotData.vendorUrl ?? snapshotData.legacy_vendorUrl ?? null,
     quantity: snapshotData.quantity ?? snapshotData.legacy_quantity ?? snapshotData.qty ?? snapshotData.itemCount ?? 1,
     isGroupGift: snapshotData.isGroupGift ?? snapshotData.legacy_isGroupGift ?? false,
+    isMostWanted: snapshotData.isMostWanted ?? snapshotData.legacy_isMostWanted ?? false,
+    displayOrder: snapshotData.displayOrder ?? snapshotData.legacy_displayOrder ?? 0,
     purchased: snapshotData.purchased || false,
     purchaserName: snapshotData.purchaserName,
     amountContributed: snapshotData.amountContributed || 0,

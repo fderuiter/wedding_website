@@ -32,6 +32,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const category = searchParams.get('category') || undefined;
   const rawMinPrice = searchParams.get('minPrice');
   const rawMaxPrice = searchParams.get('maxPrice');
+  const sortBy = searchParams.get('sortBy') || searchParams.get('sort') || undefined;
 
   const queryPayload: Record<string, any> = {};
   if (rawPage !== null) queryPayload.page = rawPage;
@@ -39,6 +40,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   if (category !== undefined) queryPayload.category = category;
   if (rawMinPrice !== null) queryPayload.minPrice = rawMinPrice;
   if (rawMaxPrice !== null) queryPayload.maxPrice = rawMaxPrice;
+  if (sortBy !== undefined) queryPayload.sortBy = sortBy;
 
   const parseResult = RegistryQuerySchema.safeParse(queryPayload);
   if (!parseResult.success) {
@@ -47,7 +49,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const queryParams: RegistryQueryParams = parseResult.data;
-  const { page, limit, category: filterCategory, minPrice, maxPrice } = queryParams;
+  const { page, limit, category: filterCategory, minPrice, maxPrice, sortBy: parsedSortBy } = queryParams;
 
   const isAdmin = await isAdminRequest(req);
   const result = await registryService.getAllItems({
@@ -56,6 +58,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     category: filterCategory,
     minPrice,
     maxPrice,
+    sortBy: parsedSortBy,
     includeContributors: isAdmin,
   });
 

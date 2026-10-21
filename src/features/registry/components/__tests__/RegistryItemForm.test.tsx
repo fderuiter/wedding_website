@@ -46,6 +46,8 @@ describe('RegistryItemForm', () => {
       imageUrl: 'http://example.com/img.jpg',
       vendorUrl: 'http://vendor.com/item',
       isGroupGift: true,
+      isMostWanted: false,
+      displayOrder: 0,
       paymentHandleType: undefined,
       paymentHandle: undefined,
     });
@@ -82,6 +84,8 @@ describe('RegistryItemForm', () => {
       imageUrl: '',
       vendorUrl: '',
       isGroupGift: false,
+      isMostWanted: false,
+      displayOrder: 0,
       paymentHandleType: undefined,
       paymentHandle: undefined,
     });
@@ -112,12 +116,34 @@ describe('RegistryItemForm', () => {
       price: 2500,
       quantity: 1,
       isGroupGift: true,
+      isMostWanted: false,
+      displayOrder: 0,
       paymentHandleType: 'Venmo',
       paymentHandle: '@our-honeymoon',
       description: '',
       imageUrl: '',
       vendorUrl: undefined,
     });
+  });
+
+  it('supports toggling Mark as Most Wanted and setting Display Position / Order', async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    render(<RegistryItemForm mode="add" onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/Item Name/i), { target: { value: 'Espresso Machine' } });
+    fireEvent.change(screen.getByLabelText(/Price/), { target: { value: '500' } });
+    fireEvent.change(screen.getByLabelText(/Category/), { target: { value: 'Kitchen' } });
+    fireEvent.click(screen.getByLabelText(/Mark as Most Wanted/i));
+    fireEvent.change(screen.getByLabelText(/Display Position \/ Order/i), { target: { value: '3' } });
+
+    fireEvent.submit(screen.getByTestId('form'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Espresso Machine',
+      isMostWanted: true,
+      displayOrder: 3,
+    }));
   });
 
   it('populates fields with scraped data on success', async () => {

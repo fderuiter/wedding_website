@@ -33,6 +33,21 @@ describe('RegistryCard', () => {
     expect(img.getAttribute('src')).toContain('placeholder.png');
   });
 
+  it('renders Most Wanted badge when isMostWanted is true', () => {
+    const mostWantedItem: RegistryItem = { ...mockItem, isMostWanted: true };
+    render(<RegistryCard item={mostWantedItem} onClick={() => {}} />);
+
+    const badge = screen.getByTestId('most-wanted-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('Most Wanted');
+  });
+
+  it('does not render Most Wanted badge when isMostWanted is false or undefined', () => {
+    render(<RegistryCard item={mockItem} onClick={() => {}} />);
+
+    expect(screen.queryByTestId('most-wanted-badge')).not.toBeInTheDocument();
+  });
+
   it('renders cash fund badge tag when itemType is CASH_FUND', () => {
     const cashFundItem: RegistryItem = { ...mockItem, itemType: 'CASH_FUND', category: 'Cash Fund' };
     render(<RegistryCard item={cashFundItem} onClick={() => {}} />);

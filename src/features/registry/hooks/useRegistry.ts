@@ -220,6 +220,10 @@ export function useRegistry() {
     }
     if (sortOption === 'most-wanted') {
       return [...result].sort((a, b) => {
+        const mostWantedDiff = (b.isMostWanted ? 1 : 0) - (a.isMostWanted ? 1 : 0);
+        if (mostWantedDiff !== 0) return mostWantedDiff;
+        const orderDiff = (a.displayOrder ?? 0) - (b.displayOrder ?? 0);
+        if (orderDiff !== 0) return orderDiff;
         const diff = (b.amountContributed || 0) - (a.amountContributed || 0);
         if (diff !== 0) return diff;
         return (b.contributors?.length || 0) - (a.contributors?.length || 0);

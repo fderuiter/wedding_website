@@ -25,6 +25,7 @@ class RegistryRepository implements IRegistryRepository {
       minPrice,
       maxPrice,
       includeContributors = false,
+      sortBy,
     } = options;
 
     const normalizedPage = Math.max(1, Math.floor(page || 1));
@@ -46,6 +47,19 @@ class RegistryRepository implements IRegistryRepository {
       }
     }
 
+    let orderBy: any[] = [];
+    if (sortBy === 'price-asc') {
+      orderBy = [{ price: 'asc' }];
+    } else if (sortBy === 'price-desc') {
+      orderBy = [{ price: 'desc' }];
+    } else {
+      orderBy = [
+        { isMostWanted: 'desc' },
+        { displayOrder: 'asc' },
+        { createdAt: 'desc' },
+      ];
+    }
+
     const include: { image: boolean; contributors?: boolean } = { image: true };
     if (includeContributors) {
       include.contributors = true;
@@ -60,6 +74,7 @@ class RegistryRepository implements IRegistryRepository {
     const items = await this.client.registryItem.findMany({
       ...queryWhere,
       include,
+      orderBy,
       skip,
       take,
     });
@@ -139,6 +154,8 @@ class RegistryRepository implements IRegistryRepository {
         imageId: mediaId,
         vendorUrl: data.vendorUrl || null,
         isGroupGift: isFund ? true : (data.isGroupGift ?? false),
+        isMostWanted: data.isMostWanted ?? false,
+        displayOrder: data.displayOrder ?? 0,
         contributors: {
           create: []
         }

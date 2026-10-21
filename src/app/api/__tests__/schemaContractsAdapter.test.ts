@@ -104,6 +104,8 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
         imageDecorative: undefined,
         vendorUrl: 'https://example.com/toaster',
         isGroupGift: true,
+        isMostWanted: false,
+        displayOrder: 0,
       });
 
       const json = await res.json();
@@ -258,6 +260,8 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
           imageId: 'image-ring',
           vendorUrl: 'https://jewelry.example.com',
           isGroupGift: false,
+          isMostWanted: false,
+          displayOrder: 0,
           purchased: false,
           purchaserName: undefined,
           amountContributed: 0,
@@ -275,6 +279,8 @@ describe('Unified Schema Contracts and Adapter Middleware Tests', () => {
           imageId: 'image-ring',
           vendorUrl: 'https://jewelry.example.com',
           isGroupGift: false,
+          isMostWanted: false,
+          displayOrder: 0,
           purchased: false,
           purchaserName: undefined,
           amountContributed: 0,

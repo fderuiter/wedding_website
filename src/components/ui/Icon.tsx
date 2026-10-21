@@ -48,7 +48,8 @@ export type IconName =
   | 'Mail'
   | 'Image'
   | 'RotateCw'
-  | 'ImageOff';
+  | 'ImageOff'
+  | 'Star';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -433,6 +434,12 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
           <path d="M10.41 10.41a2 2 0 1 1-2.83-2.83" />
           <line x1="13.5" x2="6" y1="13.5" y2="21" />
           <rect width="18" height="18" x="3" y="3" rx="2" />
+        </svg>
+      );
+    case 'Star':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
       );
     default:

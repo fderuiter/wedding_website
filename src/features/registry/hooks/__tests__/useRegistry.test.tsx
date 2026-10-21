@@ -324,7 +324,18 @@ describe('useRegistry', () => {
       expect(result.current.filteredItems.map(i => i.id)).toEqual(['3', '2', '1']);
     });
 
-    it('should sort items by most wanted (most-wanted)', async () => {
+    it('should sort items by most wanted prioritizing isMostWanted flag and displayOrder', async () => {
+      const customItems: RegistryItem[] = [
+        { id: '1', name: 'Coffee Maker', category: 'Category A', price: 100, purchased: false, isGroupGift: false, isMostWanted: false, displayOrder: 1, amountContributed: 200, contributors: [], imageUrl: '', description: '' },
+        { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: false, isGroupGift: false, isMostWanted: true, displayOrder: 2, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
+        { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: false, isMostWanted: true, displayOrder: 1, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
+      ];
+      server.use(
+        http.get('/api/registry/items', () => {
+          return HttpResponse.json({ success: true, data: customItems });
+        })
+      );
+
       const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -333,8 +344,7 @@ describe('useRegistry', () => {
       });
 
       expect(result.current.sortOption).toBe('most-wanted');
-      expect(result.current.filteredItems[0].id).toBe('3');
-      expect(result.current.filteredItems[0].amountContributed).toBe(150);
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['3', '2', '1']);
     });
   });
 
