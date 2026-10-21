@@ -176,6 +176,37 @@ describe('ThankYouNotesPage', () => {
     removeChildSpy.mockRestore();
   });
 
+  it('triggers download link when Export Address Labels dropdown options are clicked', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const exportDropdownBtn = screen.getByRole('button', { name: /Export Address Labels/i });
+    expect(exportDropdownBtn).toBeInTheDocument();
+
+    fireEvent.click(exportDropdownBtn);
+
+    const avery5160Option = screen.getByText('Avery 5160 PDF');
+    expect(avery5160Option).toBeInTheDocument();
+
+    const appendChildSpy = jest.spyOn(document.body, 'appendChild');
+    const removeChildSpy = jest.spyOn(document.body, 'removeChild');
+
+    fireEvent.click(avery5160Option);
+
+    expect(appendChildSpy).toHaveBeenCalled();
+    expect(removeChildSpy).toHaveBeenCalled();
+
+    appendChildSpy.mockRestore();
+    removeChildSpy.mockRestore();
+  });
+
   it('renders pagination controls and triggers page navigation when clicked', async () => {
     (global.fetch as jest.Mock).mockImplementation((url: string) => {
       if (url.includes('/api/admin/thank-you-notes')) {

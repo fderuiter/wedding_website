@@ -502,5 +502,13 @@ describe('ThankYouService', () => {
       expect(pdfBuffer.length).toBeGreaterThan(0);
       expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
     });
+
+    it('provides exportThankYouNotesLabels alias for backwards compatibility', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      const pdfBuffer = await service.exportThankYouNotesLabels({ template: 'avery_5160' });
+
+      expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    });
   });
 });
