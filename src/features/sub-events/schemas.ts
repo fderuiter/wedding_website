@@ -35,3 +35,15 @@ export const UpdateSubEventAccessSchema = z.object({
 });
 
 export type UpdateSubEventAccessDTO = z.infer<typeof UpdateSubEventAccessSchema>;
+
+export const BatchUpdateSubEventAccessSchema = z.object({
+  invitationCodeIds: z.array(z.string()).optional(),
+  partyTags: z.array(z.string()).optional(),
+  partyGroups: z.array(z.string()).optional(),
+  householdName: z.union([z.string(), z.array(z.string())]).optional(),
+  subEventIds: z.array(z.string()).min(1, 'At least one subEventId is required.'),
+  action: z.enum(['grant', 'revoke', 'set']),
+});
+
+export type BatchUpdateSubEventAccessDTO = z.infer<typeof BatchUpdateSubEventAccessSchema>;
+

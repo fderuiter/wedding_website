@@ -7,6 +7,7 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/dashboard', label: 'Registry', featureId: 'registry' },
   { href: '/admin/dashboard/thank-you-notes', label: 'Thank-You Notes', featureId: 'registry' },
   { href: '/admin/dashboard/invitation-codes', label: 'Invitation Codes', featureId: 'registry' },
+  { href: '/admin/dashboard/sub-events', label: 'Sub-Events Matrix' },
   { href: '/admin/dashboard/seating-chart', label: 'Seating Chart' },
   { href: '/admin/dashboard/site-manager', label: 'Site Manager' },
   { href: '/admin/dashboard/wedding-party', label: 'Wedding Party', featureId: 'weddingParty' },

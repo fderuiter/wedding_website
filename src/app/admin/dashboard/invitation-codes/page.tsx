@@ -125,6 +125,9 @@ export default function InvitationCodesDashboardPage() {
   const [subEvents, setSubEvents] = useState<any[]>([]);
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
   const [isSubEventModalOpen, setIsSubEventModalOpen] = useState(false);
+  const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
+  const [bulkSubEventAction, setBulkSubEventAction] = useState<'grant' | 'revoke' | 'set'>('grant');
+  const [bulkSelectedSubEventIds, setBulkSelectedSubEventIds] = useState<string[]>([]);
   const [newSubEvent, setNewSubEvent] = useState({
     title: '',
     description: '',
@@ -132,6 +135,38 @@ export default function InvitationCodesDashboardPage() {
     category: '',
     isPrivate: true,
   });
+
+  const handleBatchSubEventAccess = async () => {
+    if (selectedIds.length === 0) return;
+    if (bulkSelectedSubEventIds.length === 0) {
+      addToast('Please select at least one sub-event.', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/sub-events/access/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invitationCodeIds: selectedIds,
+          subEventIds: bulkSelectedSubEventIds,
+          action: bulkSubEventAction,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to batch update sub-event access');
+      }
+
+      addToast(`Sub-event access batch updated for ${selectedIds.length} codes.`, 'success');
+      setBulkSubEventModalOpen(false);
+      setBulkSelectedSubEventIds([]);
+      fetchSubEventsAndMatrix();
+    } catch (e: any) {
+      addToast(e.message || 'Failed to batch update sub-event access.', 'error');
+    }
+  };
 
   const fetchSubEventsAndMatrix = async () => {
     try {
@@ -1245,6 +1280,9 @@ export default function InvitationCodesDashboardPage() {
             <Button size="sm" variant="secondary" onClick={() => setBulkTagModalOpen(true)}>
               Manage Tags
             </Button>
+            <Button size="sm" variant="secondary" onClick={() => setBulkSubEventModalOpen(true)}>
+              Sub-Event Access
+            </Button>
             <Button size="sm" variant="secondary" onClick={handleBatchMarkRedeemed}>
               Mark as Redeemed
             </Button>
@@ -1340,6 +1378,77 @@ export default function InvitationCodesDashboardPage() {
               </Button>
               <Button variant="primary" onClick={handleBulkUpdateTags}>
                 Apply Tag Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkSubEventModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Batch Sub-Event Access ({selectedIds.length} Guests Selected)
+            </h2>
+
+            <div>
+              <label className="block text-sm font-semibold mb-1">Action:</label>
+              <select
+                aria-label="Batch sub-event action"
+                value={bulkSubEventAction}
+                onChange={(e) => setBulkSubEventAction(e.target.value as any)}
+                className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600"
+              >
+                <option value="grant">Grant Access</option>
+                <option value="revoke">Revoke Access</option>
+                <option value="set">Set Access (Replace)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">Select Private Sub-Events:</label>
+              <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
+                {subEvents.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">No sub-events found.</p>
+                ) : (
+                  subEvents.map((se) => {
+                    const isChecked = bulkSelectedSubEventIds.includes(se.id);
+                    return (
+                      <label key={se.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setBulkSelectedSubEventIds([...bulkSelectedSubEventIds, se.id]);
+                            } else {
+                              setBulkSelectedSubEventIds(
+                                bulkSelectedSubEventIds.filter((id) => id !== se.id)
+                              );
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <span>
+                          {se.title} {se.isPrivate ? '(Private)' : '(Public)'}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setBulkSubEventModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleBatchSubEventAccess}>
+                Apply Batch Access
               </Button>
             </div>
           </div>
