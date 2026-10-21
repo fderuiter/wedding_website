@@ -27,7 +27,16 @@ test.describe('Skip Link Accessibility', () => {
       }
     ]);
 
-    await page.goto('/', { waitUntil: 'load' });
+    try {
+      await page.goto('/', { waitUntil: 'load' });
+    } catch (err: any) {
+      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+        page = await context.newPage();
+        await page.goto('/', { waitUntil: 'load' });
+      } else {
+        throw err;
+      }
+    }
     await page.waitForSelector('a.skip-link');
     await page.focus('body');
     await page.keyboard.press('Tab');

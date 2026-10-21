@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "heroImageUrl" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "heroImageAlt" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "brandWatermarkUrl" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "brandWatermarkAlt" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "badgeGraphicUrl" TEXT;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "badgeGraphicAlt" TEXT;
