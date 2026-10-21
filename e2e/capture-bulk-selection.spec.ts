@@ -64,13 +64,16 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   // Wait for page to finish loading data
   await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
+  await page.waitForLoadState('networkidle');
 
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
-  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
+  const noCodesMsg = page.getByText('No invitation codes found.');
+  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).first();
   await countBtn.waitFor({ state: 'visible', timeout: 30000 });
-  const countText = await countBtn.innerText();
-  if (countText.includes('All (0)')) {
+
+  const isEmpty = (await noCodesMsg.isVisible().catch(() => false)) || (await countBtn.innerText()).includes('All (0)');
+  if (isEmpty) {
     // Generate code 1
     await generateBtn.click();
     await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
