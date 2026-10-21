@@ -37,6 +37,7 @@ export default defineConfig({
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-zygote',
+        '--disable-site-isolation-trials',
         '--js-flags=--max-old-space-size=4096 --expose-gc',
       ],
     },

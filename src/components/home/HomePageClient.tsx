@@ -16,14 +16,19 @@ import FaqAccordion from '@/components/faq/FaqAccordion';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
-import { getPresetTokens, parseMotionEasing } from '@/lib/theme/presets';
+import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
+import { sanitizeUrl } from '@/utils/validation';
+import { MediaImage } from '@/components/MediaImage';
 
-function parseDurationSec(val?: string, fallback = 0.8): number {
-  if (!val) return fallback;
-  if (val.endsWith('ms')) return parseFloat(val) / 1000;
-  if (val.endsWith('s')) return parseFloat(val);
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? fallback : parsed;
+function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
+  if (!rawUrl || typeof rawUrl !== 'string') return undefined;
+  let url = rawUrl.trim();
+  if (url === 'none') return undefined;
+  if (url.startsWith('url(') && url.endsWith(')')) {
+    url = url.slice(4, -1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  const safe = sanitizeUrl(url);
+  return safe ? `url("${safe}")` : undefined;
 }
 
 /**
@@ -228,6 +233,11 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     description: config.heroSubtitle || 'Join us for our wedding!',
   };
 
+  const rawHeroBgUrl = config.heroImageUrl || (presetTokens['--brand-hero-image'] && presetTokens['--brand-hero-image'] !== 'none' ? presetTokens['--brand-hero-image'] : undefined);
+  const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl);
+  const safeWatermarkUrl = sanitizeUrl(config.brandWatermarkUrl);
+  const safeBadgeUrl = sanitizeUrl(config.badgeGraphicUrl);
+
   return (
     <>
       <div id="top" />
@@ -235,33 +245,58 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       >
         <div id="home-main">
           <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8">
-            <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
-              {config.heroTitle || 'We Tied the Knot!'}
-            </motion.h1>
-            <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
-              {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
-            </motion.p>
-            {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
-              <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
-                <Countdown targetDate={weddingDateObj.toISOString()} />
-              </motion.div>
+            {safeHeroBgStyle && (
+              <div
+                className="absolute inset-0 z-0 bg-cover bg-center opacity-25 pointer-events-none"
+                style={{ backgroundImage: safeHeroBgStyle }}
+                aria-hidden="true"
+              />
             )}
-            <motion.nav aria-label="Primary navigation" role="navigation" className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
-              <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
-                Our Story
-                <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
-              </a>
-              {isFeatureEnabled('gallery', config.modules) && (
-                <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
-                  View Photos
-                </Link>
+            {safeWatermarkUrl && (
+              <MediaImage
+                src={safeWatermarkUrl}
+                alt={config.brandWatermarkAlt || ''}
+                aria-hidden={!config.brandWatermarkAlt}
+                className="absolute bottom-6 right-6 h-16 w-auto opacity-30 pointer-events-none object-contain z-0"
+              />
+            )}
+            <div className="relative z-10 flex flex-col items-center justify-center max-w-4xl mx-auto">
+              {safeBadgeUrl && (
+                <MediaImage
+                  src={safeBadgeUrl}
+                  alt={config.badgeGraphicAlt || ''}
+                  aria-hidden={!config.badgeGraphicAlt}
+                  className="mb-6 h-16 w-auto object-contain"
+                />
               )}
-            </motion.nav>
-            {config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules) && (
-              <motion.div className="mt-8" variants={fadeUp} initial="hidden" animate="visible" custom={4}>
-                <AddToCalendar event={calendarEvent} />
-              </motion.div>
-            )}
+              <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+                {config.heroTitle || 'We Tied the Knot!'}
+              </motion.h1>
+              <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
+                {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
+              </motion.p>
+              {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
+                <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+                  <Countdown targetDate={weddingDateObj.toISOString()} />
+                </motion.div>
+              )}
+              <motion.nav aria-label="Primary navigation" role="navigation" className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>
+                <a href="#story" className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white visited:text-white shadow-lg transition hover:shadow-xl">
+                  Our Story
+                  <Icon name="ChevronDown" className="h-5 w-5 transition-transform group-hover:translate-y-1" />
+                </a>
+                {isFeatureEnabled('gallery', config.modules) && (
+                  <Link href="/photos" className="group inline-flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 px-8 py-3 text-gray-800 visited:text-gray-800 dark:text-gray-100 dark:visited:text-gray-100 shadow-lg transition hover:shadow-xl">
+                    View Photos
+                  </Link>
+                )}
+              </motion.nav>
+              {config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules) && (
+                <motion.div className="mt-8" variants={fadeUp} initial="hidden" animate="visible" custom={4}>
+                  <AddToCalendar event={calendarEvent} />
+                </motion.div>
+              )}
+            </div>
           </section>
 
           {features.map((feature, index) => renderSection(feature, index + 3))}

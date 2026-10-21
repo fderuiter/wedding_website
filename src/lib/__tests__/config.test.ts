@@ -56,11 +56,43 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.groomName).toBe('John');
   });
 
+  it('toPublicAppConfig preserves contactEmail in the public config', () => {
+    const config: any = { ...baseConfig, contactEmail: 'hosts@wedding.example' };
+    const publicConfig = toPublicAppConfig(config);
+
+    expect(publicConfig.contactEmail).toBe('hosts@wedding.example');
+  });
+
   it('toPublicAppConfig preserves faviconUrl in the public config', () => {
     const config: any = { ...baseConfig, faviconUrl: '/uploads/custom-favicon.ico' };
     const publicConfig = toPublicAppConfig(config);
 
     expect(publicConfig.faviconUrl).toBe('/uploads/custom-favicon.ico');
+  });
+
+  it('applies SITE_HERO_IMAGE_URL, SITE_BRAND_WATERMARK_URL, and SITE_BADGE_GRAPHIC_URL environment variable overrides', async () => {
+    process.env.SITE_HERO_IMAGE_URL = 'https://cdn.example.com/hero.jpg';
+    process.env.SITE_HERO_IMAGE_ALT = 'Hero background';
+    process.env.SITE_BRAND_WATERMARK_URL = '/images/watermark.png';
+    process.env.SITE_BRAND_WATERMARK_ALT = 'Brand Watermark';
+    process.env.SITE_BADGE_GRAPHIC_URL = '/images/badge.png';
+    process.env.SITE_BADGE_GRAPHIC_ALT = 'Badge Graphic';
+
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      heroImageUrl: null,
+      brandWatermarkUrl: null,
+      badgeGraphicUrl: null,
+    });
+
+    const effectiveConfig = await getAppConfig('global');
+
+    expect(effectiveConfig.heroImageUrl).toBe('https://cdn.example.com/hero.jpg');
+    expect(effectiveConfig.heroImageAlt).toBe('Hero background');
+    expect(effectiveConfig.brandWatermarkUrl).toBe('/images/watermark.png');
+    expect(effectiveConfig.brandWatermarkAlt).toBe('Brand Watermark');
+    expect(effectiveConfig.badgeGraphicUrl).toBe('/images/badge.png');
+    expect(effectiveConfig.badgeGraphicAlt).toBe('Badge Graphic');
   });
 
   it('toPublicAppConfig preserves ogImageUrl in the public config', () => {
@@ -131,6 +163,7 @@ describe('Configuration System Layers & Precedence', () => {
   });
 
   it('APP_DEFAULTS contains generic technical defaults with no personal wedding content', () => {
+    expect(APP_DEFAULTS.contactEmail).toBe('');
     expect(APP_DEFAULTS.brideName).toBe('');
     expect(APP_DEFAULTS.groomName).toBe('');
     expect(APP_DEFAULTS.venueName).toBe('');
@@ -179,6 +212,7 @@ describe('Configuration System Layers & Precedence', () => {
     process.env.SITE_BRIDE_NAME = 'Alice';
     process.env.SITE_GROOM_NAME = 'Bob';
     process.env.SITE_VENUE_NAME = 'Sunset Gardens';
+    process.env.SITE_CONTACT_EMAIL = 'custom-hosts@wedding.example';
     process.env.SITE_SHOW_COUNTDOWN = 'false';
     process.env.SITE_BRAND_MONOGRAM = 'A & B';
     process.env.SITE_BRAND_LOGO_URL = '/images/tenant-logo.svg';
@@ -189,6 +223,7 @@ describe('Configuration System Layers & Precedence', () => {
     expect(config.brideName).toBe('Alice');
     expect(config.groomName).toBe('Bob');
     expect(config.venueName).toBe('Sunset Gardens');
+    expect(config.contactEmail).toBe('custom-hosts@wedding.example');
     expect(config.showCountdown).toBe(false);
     expect(config.brandMonogram).toBe('A & B');
     expect(config.brandLogoUrl).toBe('/images/tenant-logo.svg');

@@ -52,6 +52,7 @@ test('seating chart admin dashboard has Export Visual PDF button', async ({ cont
     await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
   } catch (err: any) {
     if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+      await context.addCookies(cookies).catch(() => {});
       page = await context.newPage();
       await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
     } else {

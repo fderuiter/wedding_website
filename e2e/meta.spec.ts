@@ -27,7 +27,16 @@ test.describe('Metadata', () => {
       }
     ]);
 
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+    } catch (err: any) {
+      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+        page = await context.newPage();
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+      } else {
+        throw err;
+      }
+    }
 
     // Check title
     await expect(page).toHaveTitle(/Jane & John|Home|Wedding Website/);

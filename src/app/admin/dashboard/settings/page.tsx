@@ -386,6 +386,11 @@ export default function AdminSettingsPage() {
                 <Label>Base URL</Label>
                 <Input required type="url" name="baseUrl" value={localConfig.baseUrl || ''} onChange={handleChange} />
               </FormGroup>
+              <FormGroup>
+                <Label>Host Contact Email</Label>
+                <Input type="email" name="contactEmail" value={localConfig.contactEmail || ''} onChange={handleChange} placeholder="e.g. hosts@wedding.example" />
+                <FormMessage>Host contact email address used across guest support touchpoints.</FormMessage>
+              </FormGroup>
               {isMultisite && selectedProfileId !== 'global' && (
                 <FormGroup>
                   <Label>Subdomain Identifier</Label>
@@ -626,7 +631,7 @@ export default function AdminSettingsPage() {
                 <div className="flex items-center gap-4">
                   <Input
                     type="file"
-                    accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg"
+                    accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
                     onChange={(e) => handleUpload(e, 'brandLogoUrl')}
                     className="file:pt-1"
                   />
@@ -634,7 +639,7 @@ export default function AdminSettingsPage() {
                     <div className="flex items-center gap-2">
                       <img
                         src={localConfig.brandLogoUrl}
-                        alt="Brand logo preview"
+                        alt={localConfig.brandLogoAlt || 'Brand logo preview'}
                         className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
                       />
                       <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.brandLogoUrl}</span>
@@ -643,6 +648,147 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </FormGroup>
+
+            {/* Hero Visual */}
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormGroup>
+                  <Label>Hero Visual Alt Text</Label>
+                  <Input
+                    type="text"
+                    name="heroImageAlt"
+                    value={localConfig.heroImageAlt || ''}
+                    onChange={handleChange}
+                    placeholder="e.g. Hero background image"
+                  />
+                  <FormMessage>Accessibility description for hero visual background media.</FormMessage>
+                </FormGroup>
+              </div>
+              <FormGroup>
+                <Label>Hero Visual Background Image</Label>
+                <div className="flex flex-col space-y-2">
+                  <Input
+                    type="text"
+                    name="heroImageUrl"
+                    value={localConfig.heroImageUrl || ''}
+                    onChange={handleChange}
+                    placeholder="https://... or /images/hero.jpg"
+                  />
+                  <div className="flex items-center gap-4">
+                    <Input
+                      type="file"
+                      accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                      onChange={(e) => handleUpload(e, 'heroImageUrl')}
+                      className="file:pt-1"
+                    />
+                    {localConfig.heroImageUrl && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={localConfig.heroImageUrl}
+                          alt={localConfig.heroImageAlt || 'Hero visual preview'}
+                          className="h-12 w-20 object-cover bg-gray-100 dark:bg-gray-700 rounded p-1"
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.heroImageUrl}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </FormGroup>
+            </div>
+
+            {/* Brand Watermark */}
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormGroup>
+                  <Label>Brand Watermark Alt Text</Label>
+                  <Input
+                    type="text"
+                    name="brandWatermarkAlt"
+                    value={localConfig.brandWatermarkAlt || ''}
+                    onChange={handleChange}
+                    placeholder="e.g. Brand watermark logo"
+                  />
+                  <FormMessage>Accessibility description for brand watermark visual.</FormMessage>
+                </FormGroup>
+              </div>
+              <FormGroup>
+                <Label>Brand Watermark Graphic</Label>
+                <div className="flex flex-col space-y-2">
+                  <Input
+                    type="text"
+                    name="brandWatermarkUrl"
+                    value={localConfig.brandWatermarkUrl || ''}
+                    onChange={handleChange}
+                    placeholder="https://... or /images/watermark.png"
+                  />
+                  <div className="flex items-center gap-4">
+                    <Input
+                      type="file"
+                      accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                      onChange={(e) => handleUpload(e, 'brandWatermarkUrl')}
+                      className="file:pt-1"
+                    />
+                    {localConfig.brandWatermarkUrl && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={localConfig.brandWatermarkUrl}
+                          alt={localConfig.brandWatermarkAlt || 'Brand watermark preview'}
+                          className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.brandWatermarkUrl}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </FormGroup>
+            </div>
+
+            {/* Badge Graphic */}
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormGroup>
+                  <Label>Badge Graphic Alt Text</Label>
+                  <Input
+                    type="text"
+                    name="badgeGraphicAlt"
+                    value={localConfig.badgeGraphicAlt || ''}
+                    onChange={handleChange}
+                    placeholder="e.g. Special badge graphic"
+                  />
+                  <FormMessage>Accessibility description for badge graphic visual.</FormMessage>
+                </FormGroup>
+              </div>
+              <FormGroup>
+                <Label>Badge Graphic Image</Label>
+                <div className="flex flex-col space-y-2">
+                  <Input
+                    type="text"
+                    name="badgeGraphicUrl"
+                    value={localConfig.badgeGraphicUrl || ''}
+                    onChange={handleChange}
+                    placeholder="https://... or /images/badge.png"
+                  />
+                  <div className="flex items-center gap-4">
+                    <Input
+                      type="file"
+                      accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                      onChange={(e) => handleUpload(e, 'badgeGraphicUrl')}
+                      className="file:pt-1"
+                    />
+                    {localConfig.badgeGraphicUrl && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={localConfig.badgeGraphicUrl}
+                          alt={localConfig.badgeGraphicAlt || 'Badge graphic preview'}
+                          className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.badgeGraphicUrl}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </FormGroup>
+            </div>
           </section>
 
           <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">

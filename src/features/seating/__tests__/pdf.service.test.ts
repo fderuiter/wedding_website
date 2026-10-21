@@ -103,4 +103,57 @@ describe('pdf.service - generateSeatingChartPdf', () => {
     expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
     expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
   });
+
+  it('handles out-of-order explicit seat numbers and fallback guests without seat numbers', async () => {
+    const tableWithComplexSeats: SeatingTableDTO = {
+      id: 'table-complex',
+      name: 'Head Table',
+      shape: 'rectangular',
+      capacity: 10,
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 100,
+      rotation: 0,
+      invitationCodes: [
+        { id: 'g10', guestName: 'Explicit Seat 10', code: 'C10', seatNumber: 10 } as InvitationCodeDTO,
+        { id: 'g3', guestName: 'Explicit Seat 3', code: 'C3', seatNumber: 3 } as InvitationCodeDTO,
+        { id: 'gUnassignedSeat', guestName: 'Fallback Positional Guest', code: 'CFALLBACK' } as InvitationCodeDTO,
+      ],
+    };
+
+    const pdfBuffer = await generateSeatingChartPdf([tableWithComplexSeats], []);
+    expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+  });
+
+  it('renders large capacity tables efficiently with indexed seat lookup map', async () => {
+    const largeGuests: InvitationCodeDTO[] = Array.from({ length: 150 }, (_, idx) => ({
+      id: `g-${idx + 1}`,
+      guestName: `Guest ${idx + 1}`,
+      code: `CODE${idx + 1}`,
+      seatNumber: idx + 1,
+    })) as InvitationCodeDTO[];
+
+    const largeTable: SeatingTableDTO = {
+      id: 'table-large',
+      name: 'Grand Ballroom Table',
+      shape: 'round',
+      capacity: 150,
+      x: 0,
+      y: 0,
+      width: 500,
+      height: 500,
+      rotation: 0,
+      invitationCodes: largeGuests,
+    };
+
+    const startTime = Date.now();
+    const pdfBuffer = await generateSeatingChartPdf([largeTable], []);
+    const duration = Date.now() - startTime;
+
+    expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+    expect(duration).toBeLessThan(5000); // Should execute quickly in linear time
+  });
 });

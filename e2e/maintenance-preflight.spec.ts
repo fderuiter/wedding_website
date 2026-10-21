@@ -64,7 +64,22 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
       },
     ]);
 
-    await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+    } catch (err: any) {
+      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+        await context.addCookies([
+          { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://127.0.0.1:3000' },
+          { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://127.0.0.1:3000' },
+          { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://localhost:3000' },
+          { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://localhost:3000' },
+        ]).catch(() => {});
+        page = await context.newPage();
+        await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+      } else {
+        throw err;
+      }
+    }
 
     // 1. Valid backup test
     const validBackup = {
@@ -105,6 +120,7 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
     };
 
     const fileInput = page.locator('#backup-file-input');
+    await expect(fileInput).toBeAttached({ timeout: 15000 });
 
     await fileInput.setInputFiles({
       name: 'valid-backup.json',

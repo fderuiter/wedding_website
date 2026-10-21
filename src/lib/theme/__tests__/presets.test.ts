@@ -3,6 +3,7 @@ import {
   THEME_PRESET_KEYS,
   getPresetTokens,
   isThemePreset,
+  parseDurationSec,
   DEFAULT_THEME_PRESET,
   ThemePreset,
 } from '../presets';
@@ -202,5 +203,38 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(getContrast(outlineBorder, dialogBg)).toBeGreaterThanOrEqual(3.0);
       expect(getContrast(outlineBorder, containerBg)).toBeGreaterThanOrEqual(3.0);
     }
+  });
+
+  describe('parseDurationSec Utility', () => {
+    it('converts duration strings ending in "s" to numeric seconds', () => {
+      expect(parseDurationSec('0.8s')).toBe(0.8);
+      expect(parseDurationSec('1.5s')).toBe(1.5);
+      expect(parseDurationSec('0s')).toBe(0);
+    });
+
+    it('converts duration strings ending in "ms" to numeric seconds', () => {
+      expect(parseDurationSec('200ms')).toBe(0.2);
+      expect(parseDurationSec('1500ms')).toBe(1.5);
+      expect(parseDurationSec('0ms')).toBe(0);
+    });
+
+    it('returns fallback value when input is missing or undefined', () => {
+      expect(parseDurationSec(undefined)).toBe(0.8);
+      expect(parseDurationSec(undefined, 0.2)).toBe(0.2);
+      expect(parseDurationSec('')).toBe(0.8);
+      expect(parseDurationSec('', 0.15)).toBe(0.15);
+    });
+
+    it('parses unitless numeric strings correctly', () => {
+      expect(parseDurationSec('0.5')).toBe(0.5);
+      expect(parseDurationSec('2')).toBe(2);
+    });
+
+    it('returns fallback for invalid or non-numeric strings', () => {
+      expect(parseDurationSec('invalid')).toBe(0.8);
+      expect(parseDurationSec('abc', 0.5)).toBe(0.5);
+      expect(parseDurationSec('ms')).toBe(0.8);
+      expect(parseDurationSec('s', 0.2)).toBe(0.2);
+    });
   });
 });
