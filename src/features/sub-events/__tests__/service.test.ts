@@ -221,4 +221,116 @@ describe('SubEventService', () => {
       expect(result.allowedSubEventIds).toEqual(['se-1', 'se-2']);
     });
   });
+
+  describe('batchUpdateSubEventAccess', () => {
+    it('grants access for guests matched by partyTags in a single transaction', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        { id: 'inv-1' },
+        { id: 'inv-2' },
+      ]);
+      mockPrisma.subEventAccess.createMany.mockResolvedValue({ count: 2 });
+
+      const result = await service.batchUpdateSubEventAccess({
+        partyTags: ['Bridal Party'],
+        subEventIds: ['se-rehearsal'],
+        action: 'grant',
+      });
+
+      expect(mockPrisma.invitationCode.findMany).toHaveBeenCalledWith({
+        where: { OR: [{ partyTags: { hasSome: ['Bridal Party'] } }] },
+        select: { id: true },
+      });
+      expect(mockPrisma.subEventAccess.createMany).toHaveBeenCalledWith({
+        data: [
+          { subEventId: 'se-rehearsal', invitationCodeId: 'inv-1' },
+          { subEventId: 'se-rehearsal', invitationCodeId: 'inv-2' },
+        ],
+        skipDuplicates: true,
+      });
+      expect(result).toEqual({
+        success: true,
+        count: 2,
+        updatedCount: 2,
+        targetCodeCount: 2,
+        subEventIds: ['se-rehearsal'],
+        action: 'grant',
+      });
+    });
+
+    it('revokes access for specified invitationCodeIds', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        { id: 'inv-1' },
+      ]);
+      mockPrisma.subEventAccess.deleteMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.batchUpdateSubEventAccess({
+        invitationCodeIds: ['inv-1'],
+        subEventIds: ['se-1', 'se-2'],
+        action: 'revoke',
+      });
+
+      expect(mockPrisma.subEventAccess.deleteMany).toHaveBeenCalledWith({
+        where: {
+          invitationCodeId: { in: ['inv-1'] },
+          subEventId: { in: ['se-1', 'se-2'] },
+        },
+      });
+      expect(result.count).toBe(1);
+    });
+
+    it('sets access for guests matched by householdName and partyGroups', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        { id: 'inv-10' },
+      ]);
+      mockPrisma.subEventAccess.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.subEventAccess.createMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.batchUpdateSubEventAccess({
+        householdName: 'Smith Family',
+        partyGroups: ['VIP'],
+        subEventIds: ['se-brunch'],
+        action: 'set',
+      });
+
+      expect(mockPrisma.invitationCode.findMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { partyGroup: { in: ['VIP'] } },
+            { householdName: { in: ['Smith Family'] } },
+          ],
+        },
+        select: { id: true },
+      });
+      expect(mockPrisma.subEventAccess.deleteMany).toHaveBeenCalledWith({
+        where: {
+          invitationCodeId: { in: ['inv-10'] },
+          subEventId: { in: ['se-brunch'] },
+        },
+      });
+      expect(mockPrisma.subEventAccess.createMany).toHaveBeenCalledWith({
+        data: [{ subEventId: 'se-brunch', invitationCodeId: 'inv-10' }],
+        skipDuplicates: true,
+      });
+      expect(result.count).toBe(1);
+    });
+
+    it('returns zero updatedCount if no target invitation codes are found', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([]);
+
+      const result = await service.batchUpdateSubEventAccess({
+        partyTags: ['NonExistentTag'],
+        subEventIds: ['se-1'],
+        action: 'grant',
+      });
+
+      expect(result).toEqual({
+        success: true,
+        count: 0,
+        updatedCount: 0,
+        targetCodeCount: 0,
+        subEventIds: ['se-1'],
+        action: 'grant',
+      });
+    });
+  });
 });

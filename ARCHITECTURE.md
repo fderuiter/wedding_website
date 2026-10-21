@@ -84,6 +84,7 @@ flowchart LR
     node_admin_dashboard_seatingchart["seating-chart"]
     node_admin_dashboard_settings["settings"]
     node_admin_dashboard_sitemanager["site-manager"]
+    node_admin_dashboard_subevents["sub-events"]
     node_admin_dashboard_thankyounotes["thank-you-notes"]
     node_admin_dashboard_weddingparty["wedding-party"]
     node_admin_login["login"]
@@ -112,6 +113,7 @@ flowchart LR
     node_api_admin_setup["setup"]
     node_api_admin_subevents["sub-events"]
     node_api_admin_subevents_access["access"]
+    node_api_admin_subevents_access_batch["batch"]
     node_api_admin_thankyounotes["thank-you-notes"]
     node_api_admin_thankyounotes_id["[id]"]
     node_api_admin_thankyounotes_batch["batch"]
@@ -167,6 +169,7 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_seatingchart
     node_admin_dashboard --> node_admin_dashboard_settings
     node_admin_dashboard --> node_admin_dashboard_sitemanager
+    node_admin_dashboard --> node_admin_dashboard_subevents
     node_admin_dashboard --> node_admin_dashboard_thankyounotes
     node_admin_dashboard --> node_admin_dashboard_weddingparty
     node_admin --> node_admin_login
@@ -195,6 +198,7 @@ flowchart LR
     node_api_admin --> node_api_admin_setup
     node_api_admin --> node_api_admin_subevents
     node_api_admin_subevents --> node_api_admin_subevents_access
+    node_api_admin_subevents_access --> node_api_admin_subevents_access_batch
     node_api_admin --> node_api_admin_thankyounotes
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
     node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
@@ -250,6 +254,7 @@ flowchart LR
     class node_admin_dashboard_seatingchart page;
     class node_admin_dashboard_settings page;
     class node_admin_dashboard_sitemanager page;
+    class node_admin_dashboard_subevents page;
     class node_admin_dashboard_thankyounotes page;
     class node_admin_dashboard_weddingparty page;
     class node_admin_login page;
@@ -271,6 +276,7 @@ flowchart LR
     class node_api_admin_settings api;
     class node_api_admin_setup api;
     class node_api_admin_subevents_access api;
+    class node_api_admin_subevents_access_batch api;
     class node_api_admin_thankyounotes api;
     class node_api_admin_thankyounotes_id api;
     class node_api_admin_thankyounotes_batch api;

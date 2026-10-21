@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
-import { SubEventRsvpSubmissionItem } from './schemas';
+import { SubEventRsvpSubmissionItem, BatchUpdateSubEventAccessDTO } from './schemas';
 
 export interface ScheduleEventWithRsvp {
   id: string;
@@ -238,6 +238,109 @@ export class SubEventService {
   }
 
   /**
+   * Executes batch update for sub-event access based on target selectors and specified action.
+   */
+  async batchUpdateSubEventAccess(dto: BatchUpdateSubEventAccessDTO) {
+    const conditions: any[] = [];
+
+    if (dto.invitationCodeIds && dto.invitationCodeIds.length > 0) {
+      conditions.push({ id: { in: dto.invitationCodeIds } });
+    }
+
+    if (dto.partyTags && dto.partyTags.length > 0) {
+      conditions.push({ partyTags: { hasSome: dto.partyTags } });
+    }
+
+    if (dto.partyGroups && dto.partyGroups.length > 0) {
+      conditions.push({ partyGroup: { in: dto.partyGroups } });
+    }
+
+    if (dto.householdName) {
+      let names: string[] = [];
+      if (Array.isArray(dto.householdName)) {
+        names = dto.householdName.filter((n) => typeof n === 'string' && n.trim().length > 0);
+      } else if (typeof dto.householdName === 'string' && dto.householdName.trim()) {
+        names = [dto.householdName.trim()];
+      }
+      if (names.length > 0) {
+        conditions.push({ householdName: { in: names } });
+      }
+    }
+
+    let targetCodes: { id: string }[] = [];
+    if (conditions.length > 0) {
+      targetCodes = await this.client.invitationCode.findMany({
+        where: { OR: conditions },
+        select: { id: true },
+      });
+    }
+
+    const targetIds = Array.from(new Set(targetCodes.map((c: any) => c.id)));
+
+    if (targetIds.length === 0 || dto.subEventIds.length === 0) {
+      return {
+        success: true,
+        count: 0,
+        updatedCount: 0,
+        targetCodeCount: 0,
+        subEventIds: dto.subEventIds,
+        action: dto.action,
+      };
+    }
+
+    const { subEventIds, action } = dto;
+
+    const result = await this.client.$transaction(async (tx: any) => {
+      let count = 0;
+
+      if (action === 'grant') {
+        const pairs = subEventIds.flatMap((subEventId) =>
+          targetIds.map((invitationCodeId) => ({ subEventId, invitationCodeId }))
+        );
+        const res = await tx.subEventAccess.createMany({
+          data: pairs,
+          skipDuplicates: true,
+        });
+        count = res.count;
+      } else if (action === 'revoke') {
+        const res = await tx.subEventAccess.deleteMany({
+          where: {
+            invitationCodeId: { in: targetIds },
+            subEventId: { in: subEventIds },
+          },
+        });
+        count = res.count;
+      } else if (action === 'set') {
+        await tx.subEventAccess.deleteMany({
+          where: {
+            invitationCodeId: { in: targetIds },
+            subEventId: { in: subEventIds },
+          },
+        });
+        const pairs = subEventIds.flatMap((subEventId) =>
+          targetIds.map((invitationCodeId) => ({ subEventId, invitationCodeId }))
+        );
+        const res = await tx.subEventAccess.createMany({
+          data: pairs,
+          skipDuplicates: true,
+        });
+        count = res.count;
+      }
+
+      return { count };
+    });
+
+    return {
+      success: true,
+      count: result.count,
+      updatedCount: result.count,
+      targetCodeCount: targetIds.length,
+      subEventIds,
+      action,
+    };
+  }
+
+  /**
    * Retrieves the access matrix mapping between sub-events and invitation codes.
    */
   async getAccessMatrix() {
@@ -259,6 +362,9 @@ export class SubEventService {
         id: true,
         code: true,
         guestName: true,
+        householdName: true,
+        partyGroup: true,
+        partyTags: true,
         subEventAccesses: {
           select: {
             subEventId: true,
@@ -281,6 +387,9 @@ export class SubEventService {
         id: c.id,
         code: c.code,
         guestName: c.guestName,
+        householdName: c.householdName || null,
+        partyGroup: c.partyGroup || null,
+        partyTags: c.partyTags || [],
         allowedSubEventIds: c.subEventAccesses.map((a: any) => a.subEventId),
       })),
     };
