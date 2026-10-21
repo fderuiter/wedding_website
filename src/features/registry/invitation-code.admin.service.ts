@@ -1,6 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { InvitationCodeDTO } from './schemas';
+import { InvitationCodeDTO, DryRunValidatedRow, DryRunValidationSummary, DryRunValidationResponse } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 
@@ -404,6 +404,229 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         updated
       };
     });
+  }
+
+  async dryRunValidateBatch(
+    records: {
+      guestName: string;
+      code?: string;
+      email?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
+      dietaryNotes?: string | null;
+      plusOneAllocations?: number;
+      plusOneFirstName?: string | null;
+      plusOneLastName?: string | null;
+      householdName?: string | null;
+      partyGroup?: string | null;
+      partyTags?: string[] | string | null;
+      extraFields?: Record<string, any> | null;
+    }[],
+    collisionStrategy: 'skip' | 'update' | 'reject' = 'skip'
+  ): Promise<DryRunValidationResponse> {
+    if (!Array.isArray(records) || records.length === 0) {
+      throw new Error('Validation Error: Records array cannot be empty.');
+    }
+
+    const existingDbRecords = await this.repo.client.invitationCode.findMany({
+      select: { id: true, code: true, guestName: true },
+    });
+
+    const dbCodeMap = new Map<string, { id: string; guestName: string }>();
+    for (const rec of existingDbRecords) {
+      if (rec.code) {
+        dbCodeMap.set(rec.code.toUpperCase(), rec);
+      }
+    }
+
+    const batchCodeFreq = new Map<string, number>();
+    for (const r of records) {
+      if (r.code && typeof r.code === 'string' && r.code.trim()) {
+        const uppercaseCode = r.code.trim().toUpperCase();
+        batchCodeFreq.set(uppercaseCode, (batchCodeFreq.get(uppercaseCode) || 0) + 1);
+      }
+    }
+
+    const rows: DryRunValidatedRow[] = [];
+    let validCount = 0;
+    let invalidCount = 0;
+    let duplicateCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let createdCount = 0;
+
+    for (let i = 0; i < records.length; i++) {
+      const item = records[i];
+      const errors: string[] = [];
+      const warnings: string[] = [];
+
+      const guestName = (item.guestName || '').trim();
+      const code = item.code ? item.code.trim().toUpperCase() : '';
+      const email = item.email && typeof item.email === 'string' && item.email.trim() ? item.email.trim() : null;
+      const addressLine1 = item.addressLine1 && typeof item.addressLine1 === 'string' && item.addressLine1.trim() ? item.addressLine1.trim() : null;
+      const addressLine2 = item.addressLine2 && typeof item.addressLine2 === 'string' && item.addressLine2.trim() ? item.addressLine2.trim() : null;
+      const city = item.city && typeof item.city === 'string' && item.city.trim() ? item.city.trim() : null;
+      const state = item.state && typeof item.state === 'string' && item.state.trim() ? item.state.trim() : null;
+      const zipCode = item.zipCode && typeof item.zipCode === 'string' && item.zipCode.trim() ? item.zipCode.trim() : null;
+      const country = item.country && typeof item.country === 'string' && item.country.trim() ? item.country.trim() : null;
+      const dietaryNotes = item.dietaryNotes && typeof item.dietaryNotes === 'string' && item.dietaryNotes.trim() ? item.dietaryNotes.trim() : null;
+      const plusOneAllocations = typeof item.plusOneAllocations === 'number' ? item.plusOneAllocations : undefined;
+      const plusOneFirstName = item.plusOneFirstName && typeof item.plusOneFirstName === 'string' && item.plusOneFirstName.trim() ? item.plusOneFirstName.trim() : null;
+      const plusOneLastName = item.plusOneLastName && typeof item.plusOneLastName === 'string' && item.plusOneLastName.trim() ? item.plusOneLastName.trim() : null;
+      const householdName = item.householdName && typeof item.householdName === 'string' && item.householdName.trim() ? item.householdName.trim() : null;
+      const partyGroup = item.partyGroup && typeof item.partyGroup === 'string' && item.partyGroup.trim() ? item.partyGroup.trim() : null;
+
+      let partyTags: string[] = [];
+      if (Array.isArray(item.partyTags)) {
+        partyTags = item.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
+      } else if (typeof item.partyTags === 'string' && item.partyTags.trim()) {
+        partyTags = item.partyTags.split(',').map((t: string) => t.trim()).filter(Boolean);
+      }
+
+      const extraFields = item.extraFields && typeof item.extraFields === 'object' && Object.keys(item.extraFields).length > 0 ? item.extraFields : null;
+
+      if (!guestName) {
+        errors.push('Guest name is required.');
+      }
+      if (email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          errors.push('Invalid email format.');
+        }
+      }
+      if (plusOneAllocations !== undefined) {
+        if (!Number.isInteger(plusOneAllocations) || plusOneAllocations < 0) {
+          errors.push('Plus-one allocation must be a non-negative integer.');
+        }
+      }
+      if (addressLine1 && addressLine1.length > 150) {
+        errors.push('Address Line 1 must be under 150 characters.');
+      }
+      if (addressLine2 && addressLine2.length > 150) {
+        errors.push('Address Line 2 must be under 150 characters.');
+      }
+      if (city && city.length > 100) {
+        errors.push('City must be under 100 characters.');
+      }
+      if (state && state.length > 100) {
+        errors.push('State must be under 100 characters.');
+      }
+      if (zipCode && zipCode.length > 20) {
+        errors.push('Zip Code must be under 20 characters.');
+      }
+      if (country && country.length > 100) {
+        errors.push('Country must be under 100 characters.');
+      }
+      if (plusOneFirstName && plusOneFirstName.length > 100) {
+        errors.push('Plus-one first name must be under 100 characters.');
+      }
+      if (plusOneLastName && plusOneLastName.length > 100) {
+        errors.push('Plus-one last name must be under 100 characters.');
+      }
+      if (householdName && householdName.length > 100) {
+        errors.push('Household name must be under 100 characters.');
+      }
+      if (partyGroup && partyGroup.length > 100) {
+        errors.push('Party group must be under 100 characters.');
+      }
+
+      let isDuplicate = false;
+      let existingGuestName: string | null = null;
+      let actionOutcome: 'create' | 'update' | 'skip' | 'reject' | 'invalid' = 'create';
+
+      if (code) {
+        const isBatchDuplicate = (batchCodeFreq.get(code) || 0) > 1;
+        const existingInDb = dbCodeMap.get(code);
+
+        if (existingInDb) {
+          isDuplicate = true;
+          existingGuestName = existingInDb.guestName;
+          if (collisionStrategy === 'reject') {
+            errors.push(`Code "${code}" already exists in database (belongs to "${existingGuestName}").`);
+            actionOutcome = 'reject';
+          } else if (collisionStrategy === 'skip') {
+            warnings.push(`Code "${code}" already exists in database for guest "${existingGuestName}". Will be skipped.`);
+            actionOutcome = 'skip';
+          } else if (collisionStrategy === 'update') {
+            warnings.push(`Code "${code}" already exists in database for guest "${existingGuestName}". Will be updated.`);
+            actionOutcome = 'update';
+          }
+        } else if (isBatchDuplicate) {
+          isDuplicate = true;
+          errors.push(`Duplicate invitation code "${code}" within batch.`);
+          actionOutcome = 'invalid';
+        } else {
+          actionOutcome = 'create';
+        }
+      } else {
+        warnings.push('Blank code: Auto-generated code will be assigned.');
+        actionOutcome = 'create';
+      }
+
+      const isValid = errors.length === 0;
+      if (!isValid) {
+        if (actionOutcome !== 'reject') {
+          actionOutcome = 'invalid';
+        }
+        invalidCount++;
+      } else {
+        validCount++;
+        if (actionOutcome === 'create') createdCount++;
+        else if (actionOutcome === 'update') updatedCount++;
+        else if (actionOutcome === 'skip') skippedCount++;
+      }
+
+      if (isDuplicate) {
+        duplicateCount++;
+      }
+
+      rows.push({
+        rowIndex: i + 1,
+        guestName,
+        code,
+        email,
+        addressLine1,
+        addressLine2,
+        city,
+        state,
+        zipCode,
+        country,
+        dietaryNotes,
+        plusOneAllocations,
+        plusOneFirstName,
+        plusOneLastName,
+        householdName,
+        partyGroup,
+        partyTags,
+        extraFields,
+        isValid,
+        errors,
+        warnings,
+        isDuplicate,
+        existingGuestName,
+        actionOutcome,
+      });
+    }
+
+    const summary: DryRunValidationSummary = {
+      total: records.length,
+      validCount,
+      invalidCount,
+      duplicateCount,
+      updatedCount,
+      skippedCount,
+      createdCount,
+    };
+
+    return {
+      success: true,
+      summary,
+      rows,
+    };
   }
 
   async batchUpdateTags(

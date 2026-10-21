@@ -12,11 +12,16 @@ export {
   GuestAddressUpdateSchema,
   ItemTypeEnum,
   BatchImportInvitationCodesSchema,
+  DryRunValidateBatchSchema,
   translateSnapshotToActive,
 } from './schemas';
 export type {
   InvitationCodeDTO,
   BatchImportInvitationCodesDTO,
+  DryRunValidateBatchDTO,
+  DryRunValidatedRow,
+  DryRunValidationSummary,
+  DryRunValidationResponse,
   GuestAddressUpdateDTO,
   ItemType,
 } from './schemas';

@@ -14,6 +14,7 @@ import {
   ParsedCsvRow,
   ColumnMappingOptions,
 } from '@/utils/csv';
+import { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry/schemas';
 
 interface CsvImportWizardModalProps {
   isOpen: boolean;
@@ -180,8 +181,14 @@ function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: 
   return { parsed, freqMap };
 }
 
+type ExtendedParsedCsvRow = ParsedCsvRow & {
+  isDuplicate?: boolean;
+  existingGuestName?: string | null;
+  actionOutcome?: 'create' | 'update' | 'skip' | 'reject' | 'invalid';
+};
+
 interface EditableTableRowProps {
-  row: ParsedCsvRow;
+  row: ExtendedParsedCsvRow;
   editableRow: EditableRow;
   index: number;
   onCellEdit: (
@@ -220,11 +227,13 @@ const EditableTableRow = React.memo(function EditableTableRow({
   return (
     <tr
       className={
-        !row.isValid
+        !row.isValid || row.actionOutcome === 'invalid'
           ? 'bg-red-50/70 dark:bg-red-950/30 text-gray-900 dark:text-zinc-100'
-          : row.warnings.length > 0
-            ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
-            : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
+          : row.actionOutcome === 'update'
+            ? 'bg-blue-50/50 dark:bg-blue-950/20 text-gray-900 dark:text-zinc-100'
+            : row.warnings && row.warnings.length > 0
+              ? 'bg-amber-50/50 dark:bg-amber-950/20 text-gray-900 dark:text-zinc-100'
+              : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
       }
     >
       <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
@@ -410,21 +419,52 @@ const EditableTableRow = React.memo(function EditableTableRow({
         )}
       </td>
       <td className="p-2 space-y-1">
-        {row.isValid ? (
+        {/* Status Badge */}
+        {!row.isValid || row.actionOutcome === 'invalid' ? (
+          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200">
+            Invalid
+          </span>
+        ) : row.actionOutcome === 'update' ? (
+          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200">
+            Update
+          </span>
+        ) : row.actionOutcome === 'skip' ? (
+          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+            Skip
+          </span>
+        ) : row.actionOutcome === 'reject' ? (
+          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200">
+            Reject
+          </span>
+        ) : (
           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
             Valid
           </span>
-        ) : (
-          row.errors.map((err, ei) => (
-            <span
-              key={ei}
-              className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
-            >
-              ✕ {err}
-            </span>
-          ))
         )}
-        {row.warnings.map((warn, wi) => (
+
+        {/* Existing Guest Collision Indicator */}
+        {row.existingGuestName ? (
+          <span className="block text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+            Existing guest: {row.existingGuestName}
+          </span>
+        ) : row.isDuplicate ? (
+          <span className="block text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+            Duplicate code
+          </span>
+        ) : null}
+
+        {/* Error Messages */}
+        {row.errors && row.errors.map((err, ei) => (
+          <span
+            key={ei}
+            className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
+          >
+            ✕ {err}
+          </span>
+        ))}
+
+        {/* Warning Messages */}
+        {row.warnings && row.warnings.map((warn, wi) => (
           <span
             key={wi}
             className="block text-[10px] font-medium text-amber-600 dark:text-amber-400"
@@ -677,8 +717,13 @@ export function CsvImportWizardModal({
     setStep(3);
   };
 
+  // Dry-run server validation and status filter state
+  const [isValidating, setIsValidating] = useState<boolean>(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'invalid' | 'duplicate' | 'update' | 'skip'>('all');
+  const [serverSummary, setServerSummary] = useState<DryRunValidationSummary | null>(null);
+
   // Incremental row validation state
-  const [validatedRows, setValidatedRows] = useState<ParsedCsvRow[]>([]);
+  const [validatedRows, setValidatedRows] = useState<ExtendedParsedCsvRow[]>([]);
   const codeFrequencyRef = useRef<Map<string, number>>(new Map());
 
   const editableRowsRef = useRef(editableRows);
@@ -690,20 +735,143 @@ export function CsvImportWizardModal({
   const existingDbSetRef = useRef(existingDbSet);
   existingDbSetRef.current = existingDbSet;
 
-  // Synchronize full validation when step 3 is entered, row count changes, or mapping/DB set changes
-  useEffect(() => {
-    if (step === 3 && editableRows.length > 0) {
-      const { parsed, freqMap } = computeFullValidation(editableRows, selectedExtraCols, existingDbSet);
+  const runDryRunValidation = useCallback(
+    async (rows: EditableRow[], strategy: 'skip' | 'update' | 'reject') => {
+      if (rows.length === 0) {
+        setValidatedRows([]);
+        setServerSummary(null);
+        return;
+      }
+
+      setIsValidating(true);
+      try {
+        const payload = {
+          records: rows.map((r) => ({
+            guestName: r.guestName,
+            code: r.code || undefined,
+            email: r.email || undefined,
+            addressLine1: r.addressLine1 || undefined,
+            addressLine2: r.addressLine2 || undefined,
+            city: r.city || undefined,
+            state: r.state || undefined,
+            zipCode: r.zipCode || undefined,
+            country: r.country || undefined,
+            dietaryNotes: r.dietaryNotes || undefined,
+            plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+            plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+            plusOneLastName: r.plusOneLastName.trim() || undefined,
+            householdName: r.householdName.trim() || undefined,
+            partyGroup: r.partyGroup.trim() || undefined,
+            partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
+            extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
+          })),
+          collisionStrategy: strategy,
+        };
+
+        const res = await fetch('/api/admin/invitation-codes/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          const data: DryRunValidationResponse = await res.json();
+          if (data && data.success && data.summary && data.rows) {
+            setServerSummary(data.summary);
+            setValidatedRows(data.rows as ExtendedParsedCsvRow[]);
+            setIsValidating(false);
+            return;
+          }
+        }
+      } catch (_err) {
+        // Fallback to local computation if fetch is unhandled / unreachable
+      }
+
+      const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
       codeFrequencyRef.current = freqMap;
       setValidatedRows(parsed);
+      setServerSummary(null);
+      setIsValidating(false);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (step === 3 && editableRows.length > 0) {
+      runDryRunValidation(editableRows, collisionStrategy);
     } else if (step !== 3) {
       setValidatedRows([]);
+      setServerSummary(null);
       codeFrequencyRef.current.clear();
     }
-  }, [step, editableRows.length, selectedExtraCols, existingDbSet]);
+  }, [step, editableRows, collisionStrategy, runDryRunValidation]);
 
-  const validCount = useMemo(() => validatedRows.filter((r) => r.isValid).length, [validatedRows]);
-  const invalidCount = useMemo(() => validatedRows.filter((r) => !r.isValid).length, [validatedRows]);
+  const summary = useMemo(() => {
+    if (serverSummary) {
+      return serverSummary;
+    }
+    const total = editableRows.length;
+    const validCount = validatedRows.filter((r) => r.isValid).length;
+    const invalidCount = validatedRows.filter((r) => !r.isValid).length;
+    const duplicateCount = validatedRows.filter(
+      (r) =>
+        r.isDuplicate ||
+        r.existingGuestName ||
+        r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
+        r.errors?.some((e) => e.includes('Duplicate'))
+    ).length;
+    const updatedCount = validatedRows.filter(
+      (r) =>
+        r.actionOutcome === 'update' ||
+        (collisionStrategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
+    ).length;
+    const skippedCount = validatedRows.filter(
+      (r) =>
+        r.actionOutcome === 'skip' ||
+        (collisionStrategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
+    ).length;
+    const createdCount = validCount - updatedCount - skippedCount;
+    return {
+      total,
+      validCount,
+      invalidCount,
+      duplicateCount,
+      updatedCount,
+      skippedCount,
+      createdCount,
+    };
+  }, [serverSummary, editableRows.length, validatedRows, collisionStrategy]);
+
+  const filteredRows = useMemo(() => {
+    if (statusFilter === 'valid') {
+      return validatedRows.filter((r) => r.isValid);
+    }
+    if (statusFilter === 'invalid') {
+      return validatedRows.filter((r) => !r.isValid);
+    }
+    if (statusFilter === 'duplicate') {
+      return validatedRows.filter(
+        (r) =>
+          r.isDuplicate ||
+          r.existingGuestName ||
+          r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
+          r.errors?.some((e) => e.includes('Duplicate'))
+      );
+    }
+    if (statusFilter === 'update') {
+      return validatedRows.filter(
+        (r) => r.actionOutcome === 'update' || r.warnings?.some((w) => w.includes('Will be updated'))
+      );
+    }
+    if (statusFilter === 'skip') {
+      return validatedRows.filter(
+        (r) => r.actionOutcome === 'skip' || r.warnings?.some((w) => w.includes('Will be skipped'))
+      );
+    }
+    return validatedRows;
+  }, [validatedRows, statusFilter]);
+
+  const invalidCount = summary.invalidCount;
 
   const handleCellEdit = useCallback((
     index: number,
@@ -1469,32 +1637,79 @@ export function CsvImportWizardModal({
         {/* Step 3: Dry-Run Preview Table */}
         {step === 3 && (
           <div className="space-y-4 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 dark:bg-zinc-800/80 p-3 rounded-xl border border-gray-200 dark:border-zinc-700">
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <span className="text-gray-700 dark:text-zinc-200">Total: {editableRows.length}</span>
-                <span className="text-emerald-600 dark:text-emerald-400">Valid: {validCount}</span>
-                <span className={invalidCount > 0 ? 'text-red-600 font-bold' : 'text-gray-500'}>
-                  Invalid: {invalidCount}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50 dark:bg-zinc-800/80 p-3.5 rounded-xl border border-gray-200 dark:border-zinc-700">
+              <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold">
+                <span className="px-2.5 py-1 rounded bg-gray-200 dark:bg-zinc-700 text-gray-800 dark:text-zinc-200">
+                  Total: {summary.total}
                 </span>
+                <span className="px-2.5 py-1 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                  Valid: {summary.validCount}
+                </span>
+                <span className={`px-2.5 py-1 rounded ${summary.invalidCount > 0 ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 font-bold' : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400'}`}>
+                  Invalid: {summary.invalidCount}
+                </span>
+                <span className="px-2.5 py-1 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                  Duplicates: {summary.duplicateCount}
+                </span>
+                <span className="px-2.5 py-1 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+                  Updated: {summary.updatedCount}
+                </span>
+                {isValidating && (
+                  <span className="text-[11px] text-gray-500 italic animate-pulse">
+                    Validating...
+                  </span>
+                )}
               </div>
 
-              {/* Collision Strategy */}
-              <div className="flex items-center gap-2 text-xs">
-                <label htmlFor="collision-strategy" className="mb-0 text-gray-600 dark:text-zinc-300 font-medium">
-                  Duplicate Code Action:
-                </label>
-                <select
-                  id="collision-strategy"
-                  value={collisionStrategy}
-                  onChange={(e) => setCollisionStrategy(e.target.value as any)}
-                  className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="skip">Skip Duplicates</option>
-                  <option value="update">Update Existing Records</option>
-                  <option value="reject">Reject Batch on Duplicate</option>
-                </select>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                {/* Status Filter */}
+                <div className="flex items-center gap-1.5 font-medium">
+                  <label htmlFor="status-filter-select" className="text-gray-600 dark:text-zinc-300">
+                    Filter Status:
+                  </label>
+                  <select
+                    id="status-filter-select"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold text-gray-900 dark:text-zinc-100"
+                  >
+                    <option value="all">All Rows ({summary.total})</option>
+                    <option value="valid">Valid ({summary.validCount})</option>
+                    <option value="invalid">Invalid ({summary.invalidCount})</option>
+                    <option value="duplicate">Duplicates ({summary.duplicateCount})</option>
+                    <option value="update">Updates ({summary.updatedCount})</option>
+                    <option value="skip">Skipped ({summary.skippedCount})</option>
+                  </select>
+                </div>
+
+                {/* Collision Strategy */}
+                <div className="flex items-center gap-1.5 font-medium">
+                  <label htmlFor="collision-strategy" className="text-gray-600 dark:text-zinc-300">
+                    Duplicate Action:
+                  </label>
+                  <select
+                    id="collision-strategy"
+                    value={collisionStrategy}
+                    onChange={(e) => setCollisionStrategy(e.target.value as any)}
+                    className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold text-gray-900 dark:text-zinc-100"
+                  >
+                    <option value="skip">Skip Duplicates</option>
+                    <option value="update">Update Existing Records</option>
+                    <option value="reject">Reject Batch on Duplicate</option>
+                  </select>
+                </div>
               </div>
             </div>
+
+            {/* Error Banner when invalid rows exist */}
+            {summary.invalidCount > 0 && (
+              <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 p-2.5 rounded-lg text-xs font-semibold flex items-center gap-2">
+                <span>⚠️</span>
+                <span>
+                  Please fix or remove the {summary.invalidCount} invalid row(s) in the table before submitting the batch import.
+                </span>
+              </div>
+            )}
 
             {/* Interactive Preview Table */}
             <div className="max-h-80 overflow-auto border border-gray-200 dark:border-zinc-700 rounded-lg">
@@ -1519,26 +1734,29 @@ export function CsvImportWizardModal({
                     <th scope="col" className="p-2 min-w-[110px]">Party Group</th>
                     <th scope="col" className="p-2 min-w-[130px]">Party Tags</th>
                     <th scope="col" className="p-2 min-w-[130px]">Extra Attributes</th>
-                    <th scope="col" className="p-2 min-w-[120px]">Validation Status</th>
+                    <th scope="col" className="p-2 min-w-[140px]">Validation Status</th>
                     <th scope="col" className="p-2 w-10 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
-                  {validatedRows.map((row, idx) => (
-                    <EditableTableRow
-                      key={idx}
-                      row={row}
-                      editableRow={editableRows[idx]}
-                      index={idx}
-                      onCellEdit={handleCellEdit}
-                      onExtraFieldEdit={handleExtraFieldEdit}
-                      onDeleteRow={handleDeleteRow}
-                    />
-                  ))}
-                  {editableRows.length === 0 && (
+                  {filteredRows.map((row) => {
+                    const realIdx = row.rowIndex - 1;
+                    return (
+                      <EditableTableRow
+                        key={realIdx}
+                        row={row}
+                        editableRow={editableRows[realIdx]}
+                        index={realIdx}
+                        onCellEdit={handleCellEdit}
+                        onExtraFieldEdit={handleExtraFieldEdit}
+                        onDeleteRow={handleDeleteRow}
+                      />
+                    );
+                  })}
+                  {filteredRows.length === 0 && (
                     <tr>
                       <td colSpan={20} className="p-4 text-center text-gray-500">
-                        No rows remaining.
+                        {editableRows.length === 0 ? 'No rows remaining.' : 'No rows match the selected status filter.'}
                       </td>
                     </tr>
                   )}
@@ -1552,9 +1770,9 @@ export function CsvImportWizardModal({
               </Button>
               <Button
                 onClick={handleCommitBatch}
-                disabled={isSubmitting || editableRows.length === 0 || invalidCount > 0}
+                disabled={isSubmitting || isValidating || editableRows.length === 0 || summary.invalidCount > 0}
               >
-                {isSubmitting ? 'Importing Batch...' : `Commit Import (${validCount} rows)`}
+                {isSubmitting ? 'Importing Batch...' : `Commit Import (${summary.validCount} rows)`}
               </Button>
             </div>
           </div>

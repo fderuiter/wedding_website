@@ -321,4 +321,84 @@ describe('InvitationCodeAdminService', () => {
       );
     });
   });
+
+  describe('dryRunValidateBatch', () => {
+    it('returns dry-run validation response without mutating database', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'Existing Person' },
+      ]);
+
+      const records = [
+        { guestName: 'Alice Smith', code: 'EXISTING1', email: 'alice@example.com' },
+        { guestName: 'Bob Jones', code: 'BOB200' },
+        { guestName: '', code: 'BAD1' },
+      ];
+
+      const result = await service.dryRunValidateBatch(records, 'skip');
+
+      expect(result.success).toBe(true);
+      expect(result.summary).toEqual({
+        total: 3,
+        validCount: 2,
+        invalidCount: 1,
+        duplicateCount: 1,
+        updatedCount: 0,
+        skippedCount: 1,
+        createdCount: 1,
+      });
+
+      // Confirm DB mutation methods were never called
+      expect(mockPrismaClient.invitationCode.create).not.toHaveBeenCalled();
+      expect(mockPrismaClient.invitationCode.createMany).not.toHaveBeenCalled();
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+
+      // Row 1 checks: Collision with EXISTING1 -> existingGuestName = 'Existing Person'
+      expect(result.rows[0].isDuplicate).toBe(true);
+      expect(result.rows[0].existingGuestName).toBe('Existing Person');
+      expect(result.rows[0].actionOutcome).toBe('skip');
+      expect(result.rows[0].isValid).toBe(true);
+
+      // Row 2 checks: Valid new row
+      expect(result.rows[1].isDuplicate).toBe(false);
+      expect(result.rows[1].actionOutcome).toBe('create');
+      expect(result.rows[1].isValid).toBe(true);
+
+      // Row 3 checks: Invalid missing name
+      expect(result.rows[2].isValid).toBe(false);
+      expect(result.rows[2].errors).toContain('Guest name is required.');
+    });
+
+    it('reports reject outcome and error when collisionStrategy is reject and code exists', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'John Doe' },
+      ]);
+
+      const records = [{ guestName: 'Jane Smith', code: 'EXISTING1' }];
+
+      const result = await service.dryRunValidateBatch(records, 'reject');
+
+      expect(result.summary.invalidCount).toBe(1);
+      expect(result.rows[0].isValid).toBe(false);
+      expect(result.rows[0].existingGuestName).toBe('John Doe');
+      expect(result.rows[0].errors[0]).toContain('already exists in database (belongs to "John Doe")');
+      expect(result.rows[0].actionOutcome).toBe('reject');
+    });
+
+    it('reports update outcome when collisionStrategy is update and code exists', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'John Doe' },
+      ]);
+
+      const records = [{ guestName: 'Jane Smith Updated', code: 'EXISTING1' }];
+
+      const result = await service.dryRunValidateBatch(records, 'update');
+
+      expect(result.summary.validCount).toBe(1);
+      expect(result.summary.updatedCount).toBe(1);
+      expect(result.rows[0].isValid).toBe(true);
+      expect(result.rows[0].existingGuestName).toBe('John Doe');
+      expect(result.rows[0].actionOutcome).toBe('update');
+      expect(result.rows[0].warnings[0]).toContain('already exists in database for guest "John Doe". Will be updated.');
+    });
+  });
 });
