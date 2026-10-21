@@ -717,4 +717,115 @@ describe('RegistryItemCard Component', () => {
     });
   });
 
+  describe('QR Code & Payment Deep Links', () => {
+    it('renders QR code canvas and deep link for Venmo handle', () => {
+      const venmoItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'venmo-qr-1',
+        name: 'Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happy-couple',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={venmoItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const link = screen.getByRole('link', { name: /Open payment link for Venmo/i });
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute('href', 'https://venmo.com/u/happy-couple');
+
+      const qrCode = screen.getByLabelText(/QR code to pay via Venmo/i);
+      expect(qrCode).toBeInTheDocument();
+      expect(screen.getByText('Scan to Pay')).toBeInTheDocument();
+    });
+
+    it('renders QR code canvas and deep link for Cash App handle', () => {
+      const cashAppItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'cashapp-qr-1',
+        name: 'House Fund',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Cash App',
+        paymentHandle: '$happycouple',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={cashAppItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const link = screen.getByRole('link', { name: /Open payment link for Cash App/i });
+      expect(link).toHaveAttribute('href', 'https://cash.app/$happycouple');
+      expect(screen.getByLabelText(/QR code to pay via Cash App/i)).toBeInTheDocument();
+    });
+
+    it('renders QR code canvas and deep link for PayPal handle', () => {
+      const payPalItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'paypal-qr-1',
+        name: 'Dinner Fund',
+        itemType: 'EXPERIENCE_FUND',
+        paymentHandleType: 'PayPal',
+        paymentHandle: '@happycouple',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={payPalItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const link = screen.getByRole('link', { name: /Open payment link for PayPal/i });
+      expect(link).toHaveAttribute('href', 'https://paypal.me/happycouple');
+      expect(screen.getByLabelText(/QR code to pay via PayPal/i)).toBeInTheDocument();
+    });
+
+    it('renders QR code canvas and deep link for Zelle email handle', () => {
+      const zelleItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'zelle-qr-1',
+        name: 'Furniture Fund',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Zelle',
+        paymentHandle: 'couple@example.com',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={zelleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const link = screen.getByRole('link', { name: /Open payment link for Zelle/i });
+      expect(link.getAttribute('href')).toContain('mailto:couple@example.com');
+      expect(screen.getByLabelText(/QR code to pay via Zelle/i)).toBeInTheDocument();
+    });
+
+    it('does not render QR code or deep link when handle is not convertible to URL', () => {
+      const itemWithoutUrl: RegistryItem = {
+        ...mockGroupItem,
+        id: 'no-url-1',
+        name: 'Custom Gift',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Custom',
+        paymentHandle: 'unformatted-text-handle',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={itemWithoutUrl} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByText('Send directly via Custom:')).toBeInTheDocument();
+      expect(screen.getByText('unformatted-text-handle')).toBeInTheDocument();
+      expect(screen.queryByText('Open Link')).not.toBeInTheDocument();
+      expect(screen.queryByText('Scan to Pay')).not.toBeInTheDocument();
+    });
+  });
 });
