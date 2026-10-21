@@ -187,6 +187,56 @@ export const BatchImportInvitationCodesSchema = z.object({
 
 export type BatchImportInvitationCodesDTO = z.infer<typeof BatchImportInvitationCodesSchema>;
 
+export const DryRunValidateBatchSchema = z.object({
+  records: z.array(BatchImportInvitationCodeItemSchema).min(1, 'At least one record is required for batch import validation.'),
+  collisionStrategy: z.enum(['skip', 'update', 'reject']).default('skip'),
+});
+
+export type DryRunValidateBatchDTO = z.infer<typeof DryRunValidateBatchSchema>;
+
+export interface DryRunValidatedRow {
+  rowIndex: number;
+  guestName: string;
+  code: string;
+  email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
+  dietaryNotes?: string | null;
+  plusOneAllocations?: number;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+  householdName?: string | null;
+  partyGroup?: string | null;
+  partyTags?: string[];
+  extraFields?: Record<string, any> | null;
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  isDuplicate: boolean;
+  existingGuestName?: string | null;
+  actionOutcome: 'create' | 'update' | 'skip' | 'reject' | 'invalid';
+}
+
+export interface DryRunValidationSummary {
+  total: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  createdCount: number;
+}
+
+export interface DryRunValidationResponse {
+  success: boolean;
+  summary: DryRunValidationSummary;
+  rows: DryRunValidatedRow[];
+}
+
 export const GuestAddressUpdateSchema = z.object({
   code: z.string().trim().optional(),
   addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').optional().or(z.literal('')).nullable(),

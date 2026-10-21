@@ -371,4 +371,187 @@ describe('CsvImportWizardModal Component', () => {
     expect(step2Span).not.toHaveAttribute('aria-current');
     expect(step3Span).toHaveAttribute('aria-current', 'step');
   });
+
+  test('calls pre-flight dry-run validation endpoint, displays existing guest collision indicators, filters by status, and disables commit on invalid rows', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    // Upload CSV with valid row, duplicate DB code row, and invalid row
+    const csvContent =
+      'Guest Name,Invitation Code,Email\n' +
+      'Valid Guest,VALID100,valid@example.com\n' +
+      'Conflict Guest,EXISTING1,conflict@example.com\n' +
+      ',INVALID100,bad-email-format';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    // Mock dry-run validation endpoint response
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 3,
+          validCount: 2,
+          invalidCount: 1,
+          duplicateCount: 1,
+          updatedCount: 0,
+          skippedCount: 1,
+          createdCount: 1,
+        },
+        rows: [
+          {
+            rowIndex: 1,
+            guestName: 'Valid Guest',
+            code: 'VALID100',
+            email: 'valid@example.com',
+            isValid: true,
+            errors: [],
+            warnings: [],
+            isDuplicate: false,
+            actionOutcome: 'create',
+          },
+          {
+            rowIndex: 2,
+            guestName: 'Conflict Guest',
+            code: 'EXISTING1',
+            email: 'conflict@example.com',
+            isValid: true,
+            errors: [],
+            warnings: ['Code "EXISTING1" already exists for guest "John Doe". Will be skipped.'],
+            isDuplicate: true,
+            existingGuestName: 'John Doe',
+            actionOutcome: 'skip',
+          },
+          {
+            rowIndex: 3,
+            guestName: '',
+            code: 'INVALID100',
+            email: 'bad-email-format',
+            isValid: false,
+            errors: ['Guest name is required.', 'Invalid email format.'],
+            warnings: [],
+            isDuplicate: false,
+            actionOutcome: 'invalid',
+          },
+        ],
+      }),
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Guest Name')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    // Step 3: Verify pre-flight validation endpoint call and results
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/invitation-codes/validate',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+
+    // Verify header total counts
+    await waitFor(() => {
+      expect(screen.getByText(/Total: 3/i)).toBeInTheDocument();
+      expect(screen.getByText(/Valid: 2/i)).toBeInTheDocument();
+      expect(screen.getByText(/Invalid: 1/i)).toBeInTheDocument();
+      expect(screen.getByText(/Duplicates: 1/i)).toBeInTheDocument();
+    });
+
+    // Verify existing guest name collision indicator
+    expect(screen.getByText('Existing guest: John Doe')).toBeInTheDocument();
+
+    // Verify error banner when invalid rows exist
+    expect(screen.getByText(/Please fix or remove the 1 invalid row\(s\)/i)).toBeInTheDocument();
+
+    // Verify commit button is disabled while invalid rows exist
+    const commitBtn = screen.getByText(/Commit Import/i);
+    expect(commitBtn).toBeDisabled();
+
+    // Test Status Filter Select
+    const filterSelect = screen.getByLabelText(/Filter Status:/i) as HTMLSelectElement;
+    expect(filterSelect).toBeInTheDocument();
+
+    // Filter by 'Invalid'
+    fireEvent.change(filterSelect, { target: { value: 'invalid' } });
+
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue('Valid Guest')).not.toBeInTheDocument();
+      expect(screen.getByText(/✕ Guest name is required\./i)).toBeInTheDocument();
+    });
+
+    // Filter by 'Duplicates'
+    fireEvent.change(filterSelect, { target: { value: 'duplicate' } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Conflict Guest')).toBeInTheDocument();
+      expect(screen.getByText('Existing guest: John Doe')).toBeInTheDocument();
+    });
+
+    // Switch back to 'All Rows'
+    fireEvent.change(filterSelect, { target: { value: 'all' } });
+
+    // Remove the invalid row (row 3)
+    const deleteButtons = screen.getAllByTitle('Remove row');
+    expect(deleteButtons.length).toBe(3);
+
+    // Mock validate call for remaining 2 rows
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 2,
+          validCount: 2,
+          invalidCount: 0,
+          duplicateCount: 1,
+          updatedCount: 0,
+          skippedCount: 1,
+          createdCount: 1,
+        },
+        rows: [
+          {
+            rowIndex: 1,
+            guestName: 'Valid Guest',
+            code: 'VALID100',
+            email: 'valid@example.com',
+            isValid: true,
+            errors: [],
+            warnings: [],
+            isDuplicate: false,
+            actionOutcome: 'create',
+          },
+          {
+            rowIndex: 2,
+            guestName: 'Conflict Guest',
+            code: 'EXISTING1',
+            email: 'conflict@example.com',
+            isValid: true,
+            errors: [],
+            warnings: ['Code "EXISTING1" already exists for guest "John Doe". Will be skipped.'],
+            isDuplicate: true,
+            existingGuestName: 'John Doe',
+            actionOutcome: 'skip',
+          },
+        ],
+      }),
+    });
+
+    fireEvent.click(deleteButtons[2]);
+
+    // Invalid count is now 0, commit button becomes enabled
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid: 0/i)).toBeInTheDocument();
+      expect(commitBtn).not.toBeDisabled();
+    });
+  });
 });
