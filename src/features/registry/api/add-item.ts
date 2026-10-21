@@ -52,6 +52,8 @@ export const POST = createValidatedRoute({
       vendorUrl: newItemData.vendorUrl || null,
       quantity: newItemData.quantity,
       isGroupGift: newItemData.isGroupGift || false,
+      isMostWanted: newItemData.isMostWanted ?? false,
+      displayOrder: newItemData.displayOrder ?? 0,
     });
 
     return NextResponse.json({ message: 'Item added successfully', item: newItem }, { status: 201 });

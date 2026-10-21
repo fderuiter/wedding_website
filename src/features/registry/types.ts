@@ -9,6 +9,7 @@ export interface GetItemsOptions {
   minPrice?: number;
   maxPrice?: number;
   includeContributors?: boolean;
+  sortBy?: string;
 }
 
 export interface PaginatedRegistryItems {

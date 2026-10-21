@@ -128,6 +128,8 @@ model RegistryItem {
   vendorUrl         String?
   quantity          Int           @default(1)
   isGroupGift       Boolean       @default(false)
+  isMostWanted      Boolean       @default(false)
+  displayOrder      Int           @default(0)
   purchased         Boolean       @default(false)
   purchaserName     String?
   amountContributed Float         @default(0)

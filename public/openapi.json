@@ -1300,6 +1300,16 @@
                           ]
                         },
                         "isGroupGift": {},
+                        "isMostWanted": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "displayOrder": {
+                          "default": 0,
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
                         "purchased": {
                           "default": false,
                           "type": "boolean"
@@ -3661,6 +3671,15 @@
                     ]
                   },
                   "isGroupGift": {},
+                  "isMostWanted": {
+                    "default": false
+                  },
+                  "displayOrder": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "paymentHandleType": {
                     "anyOf": [
                       {
@@ -3790,7 +3809,9 @@
                   "price",
                   "quantity",
                   "category",
-                  "isGroupGift"
+                  "isGroupGift",
+                  "isMostWanted",
+                  "displayOrder"
                 ],
                 "additionalProperties": false
               }
@@ -3905,6 +3926,15 @@
                     ]
                   },
                   "isGroupGift": {},
+                  "isMostWanted": {
+                    "default": false
+                  },
+                  "displayOrder": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "paymentHandleType": {
                     "anyOf": [
                       {
@@ -4034,7 +4064,9 @@
                   "price",
                   "quantity",
                   "category",
-                  "isGroupGift"
+                  "isGroupGift",
+                  "isMostWanted",
+                  "displayOrder"
                 ],
                 "additionalProperties": false
               }

@@ -43,6 +43,8 @@ const mockRegistryItem: RegistryItem = {
   purchased: false,
   quantity: 1,
   isGroupGift: true,
+  isMostWanted: false,
+  displayOrder: 0,
   contributors: [],
 };
 
@@ -70,6 +72,11 @@ describe('RegistryRepository', () => {
         include: {
           image: true,
         },
+        orderBy: [
+          { isMostWanted: 'desc' },
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
         skip: 0,
         take: 20,
       });
@@ -92,6 +99,11 @@ describe('RegistryRepository', () => {
           image: true,
           contributors: true,
         },
+        orderBy: [
+          { isMostWanted: 'desc' },
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
         skip: 0,
         take: 20,
       });
@@ -105,6 +117,11 @@ describe('RegistryRepository', () => {
       expect(res.limit).toBe(100);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: { image: true },
+        orderBy: [
+          { isMostWanted: 'desc' },
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
         skip: 0,
         take: 100,
       });
@@ -120,6 +137,11 @@ describe('RegistryRepository', () => {
       expect(res.totalPages).toBe(5);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: { image: true },
+        orderBy: [
+          { isMostWanted: 'desc' },
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
         skip: 20,
         take: 10,
       });
@@ -144,6 +166,11 @@ describe('RegistryRepository', () => {
           },
         },
         include: { image: true },
+        orderBy: [
+          { isMostWanted: 'desc' },
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
         skip: 0,
         take: 20,
       });
@@ -219,6 +246,8 @@ describe('RegistryRepository', () => {
           imageId: 'media3',
           vendorUrl: null,
           isGroupGift: true,
+          isMostWanted: false,
+          displayOrder: 0,
           contributors: {
             create: [],
           },

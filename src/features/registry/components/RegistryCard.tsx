@@ -68,6 +68,15 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       )}
       {/* Display a placeholder if image path is invalid or missing */}
       <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-[var(--radius-card)]">
+        {item.isMostWanted && (
+          <span
+            className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-[var(--shadow-sm)] backdrop-blur-sm"
+            data-testid="most-wanted-badge"
+          >
+            <Icon name="Star" className="w-3.5 h-3.5 fill-current" />
+            Most Wanted
+          </span>
+        )}
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
