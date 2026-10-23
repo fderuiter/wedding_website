@@ -190,8 +190,246 @@ export function createOutlookCalendarLink(event: CalendarEvent): string {
 }
 
 /**
+ * Calculates the formatted UTC offset (+HHMM or -HHMM) for a given timezone ID using Intl API.
+ * Falls back to +0000 if timezone is invalid or unrecognized.
+ */
+function getUtcOffset(timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'longOffset',
+    }).formatToParts(new Date());
+
+    const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value;
+    if (!tzPart || tzPart === 'GMT' || tzPart === 'UTC') return '+0000';
+
+    const match = tzPart.match(/GMT([+-])(\d{1,2}):(\d{2})/);
+    if (match) {
+      const sign = match[1];
+      const hours = match[2].padStart(2, '0');
+      const minutes = match[3];
+      return `${sign}${hours}${minutes}`;
+    }
+  } catch {
+    // Unrecognized or invalid timezone string
+  }
+  return '+0000';
+}
+
+/**
+ * Generates RFC 5545 compliant VTIMEZONE component string for a given timezone ID.
+ * Supports standard timezones (e.g. America/New_York, UTC) and falls back gracefully to
+ * generic VTIMEZONE block definitions for unrecognized or custom timezones.
+ * @param {string} timeZone - The timezone string.
+ * @returns {string} Standard VTIMEZONE block string.
+ */
+export function buildVTimezoneBlock(timeZone: string): string {
+  const tz = timeZone.trim() || 'UTC';
+
+  // Standard pre-defined timezone blocks for well-known timezones
+  const knownBlocks: Record<string, string[]> = {
+    'America/New_York': [
+      'BEGIN:VTIMEZONE',
+      'TZID:America/New_York',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700308T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+      'TZOFFSETFROM:-0500',
+      'TZOFFSETTO:-0400',
+      'TZNAME:EDT',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701101T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+      'TZOFFSETFROM:-0400',
+      'TZOFFSETTO:-0500',
+      'TZNAME:EST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'America/Chicago': [
+      'BEGIN:VTIMEZONE',
+      'TZID:America/Chicago',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700308T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+      'TZOFFSETFROM:-0600',
+      'TZOFFSETTO:-0500',
+      'TZNAME:CDT',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701101T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+      'TZOFFSETFROM:-0500',
+      'TZOFFSETTO:-0600',
+      'TZNAME:CST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'America/Denver': [
+      'BEGIN:VTIMEZONE',
+      'TZID:America/Denver',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700308T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+      'TZOFFSETFROM:-0700',
+      'TZOFFSETTO:-0600',
+      'TZNAME:MDT',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701101T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+      'TZOFFSETFROM:-0600',
+      'TZOFFSETTO:-0700',
+      'TZNAME:MST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'America/Los_Angeles': [
+      'BEGIN:VTIMEZONE',
+      'TZID:America/Los_Angeles',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700308T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+      'TZOFFSETFROM:-0800',
+      'TZOFFSETTO:-0700',
+      'TZNAME:PDT',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701101T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+      'TZOFFSETFROM:-0700',
+      'TZOFFSETTO:-0800',
+      'TZNAME:PST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'America/Phoenix': [
+      'BEGIN:VTIMEZONE',
+      'TZID:America/Phoenix',
+      'BEGIN:STANDARD',
+      'DTSTART:19700101T000000',
+      'TZOFFSETFROM:-0700',
+      'TZOFFSETTO:-0700',
+      'TZNAME:MST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'America/Anchorage': [
+      'BEGIN:VTIMEZONE',
+      'TZID:America/Anchorage',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700308T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+      'TZOFFSETFROM:-0900',
+      'TZOFFSETTO:-0800',
+      'TZNAME:AKDT',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701101T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+      'TZOFFSETFROM:-0800',
+      'TZOFFSETTO:-0900',
+      'TZNAME:AKST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'Pacific/Honolulu': [
+      'BEGIN:VTIMEZONE',
+      'TZID:Pacific/Honolulu',
+      'BEGIN:STANDARD',
+      'DTSTART:19700101T000000',
+      'TZOFFSETFROM:-1000',
+      'TZOFFSETTO:-1000',
+      'TZNAME:HST',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'UTC': [
+      'BEGIN:VTIMEZONE',
+      'TZID:UTC',
+      'BEGIN:STANDARD',
+      'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0000',
+      'TZOFFSETTO:+0000',
+      'TZNAME:UTC',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'GMT': [
+      'BEGIN:VTIMEZONE',
+      'TZID:GMT',
+      'BEGIN:STANDARD',
+      'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0000',
+      'TZOFFSETTO:+0000',
+      'TZNAME:GMT',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'Europe/London': [
+      'BEGIN:VTIMEZONE',
+      'TZID:Europe/London',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700329T010000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU',
+      'TZOFFSETFROM:+0000',
+      'TZOFFSETTO:+0100',
+      'TZNAME:BST',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701025T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU',
+      'TZOFFSETFROM:+0100',
+      'TZOFFSETTO:+0000',
+      'TZNAME:GMT',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+    'Europe/Paris': [
+      'BEGIN:VTIMEZONE',
+      'TZID:Europe/Paris',
+      'BEGIN:DAYLIGHT',
+      'DTSTART:19700329T020000',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU',
+      'TZOFFSETFROM:+0100',
+      'TZOFFSETTO:+0200',
+      'TZNAME:CEST',
+      'END:DAYLIGHT',
+      'BEGIN:STANDARD',
+      'DTSTART:19701025T030000',
+      'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU',
+      'TZOFFSETFROM:+0200',
+      'TZOFFSETTO:+0100',
+      'TZNAME:CET',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ],
+  };
+
+  if (knownBlocks[tz]) {
+    return knownBlocks[tz].join('\r\n');
+  }
+
+  // Fallback: Dynamically calculate offset using Intl.DateTimeFormat or default to +0000
+  const offset = getUtcOffset(tz);
+  return [
+    'BEGIN:VTIMEZONE',
+    `TZID:${tz}`,
+    'BEGIN:STANDARD',
+    'DTSTART:19700101T000000',
+    `TZOFFSETFROM:${offset}`,
+    `TZOFFSETTO:${offset}`,
+    `TZNAME:${tz}`,
+    'END:STANDARD',
+    'END:VTIMEZONE',
+  ].join('\r\n');
+}
+
+/**
  * Creates an ICS file string for an event.
  * ICS is a universal calendar file format compatible with Apple Calendar, Outlook, and others.
+ * Prepends standard RFC 5545 VTIMEZONE block for full compatibility with Google Calendar and other calendar clients.
  * @param {CalendarEvent} event - The event object.
  * @returns {string} The generated ICS file content as a string.
  */
@@ -218,6 +456,9 @@ export function createIcsFile(event: CalendarEvent): string {
     icsContent = icsContent
       .replace('DTSTART:', `DTSTART;TZID=${event.timeZone}:`)
       .replace('DTEND:', `DTEND;TZID=${event.timeZone}:`);
+
+    const vtimezoneBlock = buildVTimezoneBlock(event.timeZone);
+    icsContent = icsContent.replace('BEGIN:VEVENT', `${vtimezoneBlock}\r\nBEGIN:VEVENT`);
   }
 
   return icsContent;
