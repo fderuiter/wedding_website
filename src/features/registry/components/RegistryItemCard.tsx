@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { QRCodeCanvas } from 'qrcode.react';
+import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -215,14 +215,20 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
             </div>
           </div>
           {paymentUrl && (
-            <div className="flex flex-col items-center bg-white p-2 rounded border border-gray-200 dark:border-gray-700 shrink-0 self-center sm:self-auto">
-              <QRCodeCanvas
+            <div
+              className="flex flex-col items-center p-2 rounded border shrink-0 self-center sm:self-auto"
+              style={{
+                backgroundColor: 'var(--card-bg, #ffffff)',
+                borderColor: 'var(--color-surface-border, #e5e7eb)',
+              }}
+            >
+              <ThemedQRCode
                 value={paymentUrl}
                 size={80}
                 level="M"
                 aria-label={`QR code to pay via ${item.paymentHandleType || 'Payment App'}`}
               />
-              <span className="text-[10px] text-gray-500 mt-1 font-sans">Scan to Pay</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 font-sans">Scan to Pay</span>
             </div>
           )}
         </div>
@@ -263,7 +269,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
           {copied ? 'Link Copied!' : 'Share Gift'}
         </Button>
       </div>
-      {!item.purchased ? (
+      {item.isSample ? (
+        <div className="mt-5 pt-4 border-t border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 rounded-lg text-amber-900 dark:text-amber-100 text-sm">
+          <span className="font-bold block mb-1">Demo / Sample Registry Item</span>
+          Sample items demonstrate registry formatting and layout. Real payments and guest contributions are disabled on sample items.
+        </div>
+      ) : !item.purchased ? (
         <form noValidate 
           className="mt-5 pt-4 border-t border-primary"
           onSubmit={(e) => { e.preventDefault(); handleContributeClick(); }}

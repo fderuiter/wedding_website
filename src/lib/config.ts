@@ -1,6 +1,6 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
-import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
+import { AppConfigSchema, PublicAppConfigDTO, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
@@ -67,6 +67,16 @@ export const APP_DEFAULTS: LocalAppConfig = {
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
   layoutBorderRadius: '1rem',
+  typographyScale: TypographyScaleSchema.parse({}),
+  spacingScale: SpacingScaleSchema.parse({}),
+  borderTreatment: BorderTreatmentSchema.parse({}),
+  brandDimensions: BrandDimensionsSchema.parse({}),
+  brandLogoWidth: '120px',
+  brandLogoHeight: '40px',
+  brandHeroHeight: '400px',
+  brandWatermarkWidth: '200px',
+  brandWatermarkOpacity: '0.1',
+  brandBadgeSize: '48px',
   timezone: 'UTC',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true,
@@ -324,7 +334,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   const envOverrides = getEnvConfigOverrides();
   const activePreset = envOverrides.themePreset || dbConfig?.themePreset || APP_DEFAULTS.themePreset;
   const presetTokens = getPresetTokens(activePreset, 'light');
-  const { darkTokens, ...cleanPresetTokens } = presetTokens as any;
+  const { darkTokens, serverExportTokens, ...cleanPresetTokens } = presetTokens as any;
 
   // Deterministic Precedence: Default Component Tokens < DB Stored Tokens < Env Overrides
   const mergedThemeTokens = {
@@ -333,6 +343,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
     ...((envOverrides as any)?.themeTokens || {}),
   };
   delete (mergedThemeTokens as any).darkTokens;
+  delete (mergedThemeTokens as any).serverExportTokens;
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
   const mergedConfig = {
