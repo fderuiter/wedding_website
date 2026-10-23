@@ -108,10 +108,47 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--3d-metalness']).toBeDefined();
       expect(tokens['--3d-roughness']).toBeDefined();
       expect(tokens['--3d-env-map-intensity']).toBeDefined();
+      expect(tokens['--3d-physics-accessibility-impulse']).toBeDefined();
+      expect(tokens['--3d-physics-drag-velocity-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-bump-impulse-y']).toBeDefined();
+      expect(tokens['--3d-physics-bump-impulse-random-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-break-force-threshold']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-left-x']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-left-y']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-left-z']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-right-x']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-right-y']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-right-z']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-torque-strength']).toBeDefined();
+      expect(tokens['--3d-physics-return-force-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-pulse-speed-dragging']).toBeDefined();
+      expect(tokens['--3d-physics-pulse-speed-idle']).toBeDefined();
+      expect(tokens['--3d-physics-pulse-scale-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-idle-rotation-speed']).toBeDefined();
+      expect(tokens['--3d-extrusion-depth']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-enabled']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-thickness']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-size']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-segments']).toBeDefined();
+      expect(tokens['--3d-light-ambient-intensity']).toBeDefined();
+      expect(tokens['--3d-light-directional-intensity']).toBeDefined();
+      expect(tokens['--glow-filter']).toBeDefined();
       expect(tokens['--card-perspective']).toBeDefined();
       expect(tokens['--card-max-rotation']).toBeDefined();
       expect(tokens['--card-spring-stiffness']).toBeDefined();
       expect(tokens['--card-spring-damping']).toBeDefined();
+
+      // Check non-color theme token scales
+      expect(tokens['--font-size-base']).toBeDefined();
+      expect(tokens['--font-weight-bold']).toBeDefined();
+      expect(tokens['--line-height-normal']).toBeDefined();
+      expect(tokens['--spacing-md']).toBeDefined();
+      expect(tokens['--border-radius-md']).toBeDefined();
+      expect(tokens['--border-width-thin']).toBeDefined();
+      expect(tokens['--border-style-default']).toBeDefined();
+      expect(tokens['--brand-logo-width']).toBeDefined();
+      expect(tokens['--brand-hero-height']).toBeDefined();
+      expect(tokens['--brand-watermark-opacity']).toBeDefined();
     }
   });
 

@@ -819,4 +819,63 @@ describe('Blocking Theme Script Execution', () => {
     expect(styleEl?.textContent).toContain('--dialog-bg: #0f172a;');
     expect(styleEl?.textContent).toContain('--btn-focus-ring: #38bdf8;');
   });
+
+  describe('3D Physics and Canvas Material Token Parsing', () => {
+    function ThreeDTestComponent() {
+      const { physics, extrusion, lighting, glowFilter } = useTheme();
+      return (
+        <div
+          data-testid="3d-theme-data"
+          data-break-threshold={physics.breakForceThreshold}
+          data-return-force={physics.returnForceMultiplier}
+          data-extrusion-depth={extrusion.depth}
+          data-bevel-enabled={String(extrusion.bevelEnabled)}
+          data-ambient-intensity={lighting.ambientIntensity}
+          data-glow-filter={glowFilter}
+        />
+      );
+    }
+
+    it('exposes default 3D tokens for classic preset', () => {
+      const { getByTestId } = render(
+        <ThemeProvider config={{ themePreset: 'classic' }}>
+          <ThreeDTestComponent />
+        </ThemeProvider>
+      );
+      const el = getByTestId('3d-theme-data');
+      expect(el.getAttribute('data-break-threshold')).toBe('200');
+      expect(el.getAttribute('data-return-force')).toBe('15');
+      expect(el.getAttribute('data-extrusion-depth')).toBe('1.3');
+      expect(el.getAttribute('data-bevel-enabled')).toBe('true');
+      expect(el.getAttribute('data-ambient-intensity')).toBe('0.8');
+      expect(el.getAttribute('data-glow-filter')).toContain('drop-shadow');
+    });
+
+    it('parses custom themeTokens overrides for physics and extrusion parameters', () => {
+      const { getByTestId } = render(
+        <ThemeProvider
+          config={{
+            themePreset: 'modern',
+            themeTokens: {
+              '--3d-physics-break-force-threshold': '350',
+              '--3d-physics-return-force-multiplier': '25',
+              '--3d-extrusion-depth': '2.0',
+              '--3d-extrusion-bevel-enabled': 'false',
+              '--3d-light-ambient-intensity': '1.5',
+              '--glow-filter': 'drop-shadow(0 0 20px #ff0055)',
+            },
+          }}
+        >
+          <ThreeDTestComponent />
+        </ThemeProvider>
+      );
+      const el = getByTestId('3d-theme-data');
+      expect(el.getAttribute('data-break-threshold')).toBe('350');
+      expect(el.getAttribute('data-return-force')).toBe('25');
+      expect(el.getAttribute('data-extrusion-depth')).toBe('2');
+      expect(el.getAttribute('data-bevel-enabled')).toBe('false');
+      expect(el.getAttribute('data-ambient-intensity')).toBe('1.5');
+      expect(el.getAttribute('data-glow-filter')).toBe('drop-shadow(0 0 20px #ff0055)');
+    });
+  });
 });

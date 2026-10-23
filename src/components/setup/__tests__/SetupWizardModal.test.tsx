@@ -106,7 +106,7 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
     fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam2026.com' } });
     fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
-    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
     fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
