@@ -29,6 +29,10 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+export const useOptionalToast = () => {
+  return useContext(ToastContext);
+};
+
 interface ToastItemProps {
   toast: Toast;
   onClose: (id: string) => void;

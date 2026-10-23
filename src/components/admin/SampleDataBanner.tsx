@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
-import { useToast } from '@/components/ui/ToastProvider';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 
 export function SampleDataBanner() {
   const [hasSampleData, setHasSampleData] = useState<boolean>(false);
   const [countsSummary, setCountsSummary] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
-  const { addToast, confirm } = useToast();
+  const toast = useOptionalToast();
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -37,9 +37,13 @@ export function SampleDataBanner() {
   }, [fetchStatus]);
 
   const handlePurge = async () => {
-    const confirmed = await confirm(
-      'Are you sure you want to purge all sample data? This will permanently delete demo items while preserving all custom entities.'
-    );
+    const confirmed = toast?.confirm
+      ? await toast.confirm(
+        'Are you sure you want to purge all sample data? This will permanently delete demo items while preserving all custom entities.'
+      )
+      : window.confirm(
+        'Are you sure you want to purge all sample data? This will permanently delete demo items while preserving all custom entities.'
+      );
     if (!confirmed) return;
 
     setLoading(true);
@@ -48,16 +52,17 @@ export function SampleDataBanner() {
         method: 'DELETE',
       });
       if (res.ok) {
-        addToast('All sample data has been successfully purged.', 'success');
+        if (toast?.addToast) toast.addToast('All sample data has been successfully purged.', 'success');
         setHasSampleData(false);
         // Refresh the page to reload dashboard tables with clean state
         window.location.reload();
       } else {
         const data = await res.json().catch(() => ({}));
-        addToast(data.error || 'Failed to purge sample data.', 'error');
+        if (toast?.addToast) toast.addToast(data.error || 'Failed to purge sample data.', 'error');
       }
-    } catch (err: any) {
-      addToast(err.message || 'Error purging sample data.', 'error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error purging sample data.';
+      if (toast?.addToast) toast.addToast(msg, 'error');
     } finally {
       setLoading(false);
     }

@@ -394,7 +394,7 @@ function SetupWizardContent() {
                 <FormMessage>{error}</FormMessage>
               )}
 
-              <div>
+              <FormGroup>
                 <Label className="font-semibold block mb-2">Starter Archetype Preset</Label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
@@ -422,9 +422,9 @@ function SetupWizardContent() {
                     );
                   })}
                 </div>
-              </div>
+              </FormGroup>
 
-              <div>
+              <FormGroup>
                 <div className="flex justify-between items-center mb-3">
                   <Label className="font-semibold">Sample Data Modules</Label>
                   <div className="space-x-2 text-xs">
@@ -447,47 +447,57 @@ function SetupWizardContent() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <Checkbox
-                      checked={selectedModules.includes('registry')}
-                      onChange={() => toggleModule('registry')}
-                    />
-                    <span className="text-sm font-medium">Registry Items & Cash Funds</span>
-                  </label>
+                  <FormGroup className="space-y-0">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <Checkbox
+                        checked={selectedModules.includes('registry')}
+                        onChange={() => toggleModule('registry')}
+                      />
+                      <span className="text-sm font-medium">Registry Items & Cash Funds</span>
+                    </label>
+                  </FormGroup>
 
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <Checkbox
-                      checked={selectedModules.includes('guests')}
-                      onChange={() => toggleModule('guests')}
-                    />
-                    <span className="text-sm font-medium">Guest List & Invitation Codes</span>
-                  </label>
+                  <FormGroup className="space-y-0">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <Checkbox
+                        checked={selectedModules.includes('guests')}
+                        onChange={() => toggleModule('guests')}
+                      />
+                      <span className="text-sm font-medium">Guest List & Invitation Codes</span>
+                    </label>
+                  </FormGroup>
 
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <Checkbox
-                      checked={selectedModules.includes('seating')}
-                      onChange={() => toggleModule('seating')}
-                    />
-                    <span className="text-sm font-medium">Seating Layout & Tables</span>
-                  </label>
+                  <FormGroup className="space-y-0">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <Checkbox
+                        checked={selectedModules.includes('seating')}
+                        onChange={() => toggleModule('seating')}
+                      />
+                      <span className="text-sm font-medium">Seating Layout & Tables</span>
+                    </label>
+                  </FormGroup>
 
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <Checkbox
-                      checked={selectedModules.includes('weddingParty')}
-                      onChange={() => toggleModule('weddingParty')}
-                    />
-                    <span className="text-sm font-medium">Wedding Party Members</span>
-                  </label>
+                  <FormGroup className="space-y-0">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <Checkbox
+                        checked={selectedModules.includes('weddingParty')}
+                        onChange={() => toggleModule('weddingParty')}
+                      />
+                      <span className="text-sm font-medium">Wedding Party Members</span>
+                    </label>
+                  </FormGroup>
 
-                  <label className="flex items-center space-x-3 cursor-pointer md:col-span-2">
-                    <Checkbox
-                      checked={selectedModules.includes('attractions')}
-                      onChange={() => toggleModule('attractions')}
-                    />
-                    <span className="text-sm font-medium">Local Attractions & Hotel Blocks</span>
-                  </label>
+                  <FormGroup className="space-y-0 md:col-span-2">
+                    <label className="flex items-center space-x-3 cursor-pointer md:col-span-2">
+                      <Checkbox
+                        checked={selectedModules.includes('attractions')}
+                        onChange={() => toggleModule('attractions')}
+                      />
+                      <span className="text-sm font-medium">Local Attractions & Hotel Blocks</span>
+                    </label>
+                  </FormGroup>
                 </div>
-              </div>
+              </FormGroup>
 
               <div className="flex gap-3">
                 <Button

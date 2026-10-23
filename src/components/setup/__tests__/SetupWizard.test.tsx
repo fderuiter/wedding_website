@@ -223,7 +223,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Step 2: Add Content')).toBeInTheDocument();
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument();
     });
 
     expect(savedPayload).toBeTruthy();
