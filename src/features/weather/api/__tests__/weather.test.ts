@@ -65,7 +65,7 @@ describe('Weather API Route', () => {
     expect(body.data.daily).toEqual(mockWeatherData.daily);
   });
 
-  it('should return seasonal climate fallback when date is beyond 16 days', async () => {
+  it('should query Open-Meteo Climate API with venue coordinates when date is beyond 16 days', async () => {
     const farDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const mockConfig = {
       ...APP_DEFAULTS,
@@ -77,11 +77,22 @@ describe('Weather API Route', () => {
     };
     mockGetAppConfig.mockResolvedValue(mockConfig as any);
 
-    let calledOpenMeteo = false;
+    let requestedUrl = '';
+    const mockClimateData = {
+      daily: {
+        time: [farDate.toISOString().split('T')[0]],
+        temperature_2m_max: [78.2],
+        temperature_2m_min: [58.4],
+        apparent_temperature_max: [76.5],
+        precipitation_sum: [0.1],
+        wind_speed_10m_max: [7.8],
+      },
+    };
+
     server.use(
-      http.get('https://api.open-meteo.com/v1/forecast', () => {
-        calledOpenMeteo = true;
-        return HttpResponse.json({});
+      http.get('https://climate-api.open-meteo.com/v1/climate', ({ request }) => {
+        requestedUrl = request.url;
+        return HttpResponse.json(mockClimateData);
       })
     );
 
@@ -92,10 +103,39 @@ describe('Weather API Route', () => {
       'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
     );
     const body = await response.json();
-    expect(calledOpenMeteo).toBe(false);
+    expect(requestedUrl).toContain('latitude=40.7128');
+    expect(requestedUrl).toContain('longitude=-74.006');
     expect(body.data.isLiveForecast).toBe(false);
     expect(body.data.liveForecastAvailableDate).toBeDefined();
-    expect(body.data.daily).toBeDefined();
+    expect(body.data.daily.temperature_2m_max[0]).toBe(78);
+    expect(body.data.daily.temperature_2m_min[0]).toBe(58);
+  });
+
+  it('should fall back to localized climate matrix when Open-Meteo Climate API fails for date > 16 days', async () => {
+    const farDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const mockConfig = {
+      ...APP_DEFAULTS,
+      weddingDate: farDate,
+      timezone: 'UTC',
+      latitude: 21.3069, // Tropical (Honolulu)
+      longitude: -157.8583,
+      modules: { weather: { enabled: true } },
+    };
+    mockGetAppConfig.mockResolvedValue(mockConfig as any);
+
+    server.use(
+      http.get('https://climate-api.open-meteo.com/v1/climate', () => {
+        return HttpResponse.error();
+      })
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.isLiveForecast).toBe(false);
+    expect(body.data.liveForecastAvailableDate).toBeDefined();
+    expect(body.data.daily.temperature_2m_max[0]).toBeGreaterThanOrEqual(80); // Tropical fallback temp
   });
 
   it('should prefer live forecast when date falls on day 16 boundary', async () => {
@@ -225,6 +265,31 @@ describe('Weather API Route', () => {
         next: { revalidate: 3600 },
       })
     );
+  });
+
+  describe('getLocalizedClimateFallback', () => {
+    const { getLocalizedClimateFallback } = require('@/features/weather/api/weather-proxy');
+
+    it('should return tropical matrix estimates for tropical latitudes in July', () => {
+      const fallback = getLocalizedClimateFallback(20.0, -157.0, '2027-07-15', '2027-06-29');
+      expect(fallback.isLiveForecast).toBe(false);
+      expect(fallback.daily.temperature_2m_max[0]).toBe(87);
+      expect(fallback.daily.temperature_2m_min[0]).toBe(74);
+    });
+
+    it('should invert seasons for southern hemisphere latitudes', () => {
+      // In January, southern hemisphere (Sydney: -33.86) has summer (July equivalent in Northern matrix -> high 90)
+      const fallback = getLocalizedClimateFallback(-33.86, 151.2, '2027-01-15', '2026-12-30');
+      expect(fallback.isLiveForecast).toBe(false);
+      expect(fallback.daily.temperature_2m_max[0]).toBe(90);
+    });
+
+    it('should return cool temperate matrix estimates for high northern latitudes in January', () => {
+      const fallback = getLocalizedClimateFallback(51.5, -0.12, '2027-01-15', '2026-12-30');
+      expect(fallback.isLiveForecast).toBe(false);
+      expect(fallback.daily.temperature_2m_max[0]).toBe(36);
+      expect(fallback.daily.temperature_2m_min[0]).toBe(25);
+    });
   });
 });
 
