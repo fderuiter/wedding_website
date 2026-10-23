@@ -179,6 +179,12 @@ html:focus-within {
   outline-offset: 3px;
 }
 
+/* Custom Leaflet Map Pin */
+.custom-map-pin {
+  background: transparent !important;
+  border: none !important;
+}
+
 /* Skip to content link */
 .skip-link {
   position: absolute;

@@ -67,6 +67,20 @@ describe('Broadcast API Routes', () => {
     expect(res.status).toBe(500);
   });
 
+  it('POST /api/admin/broadcast/send returns 500 with default message when error has no message', async () => {
+    (BroadcastService.sendBroadcast as jest.Mock).mockRejectedValueOnce({});
+    const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        channel: 'EMAIL',
+        body: 'Test',
+      }),
+    });
+
+    const res = await sendRoute(req);
+    expect(res.status).toBe(500);
+  });
+
   it('POST /api/admin/broadcast/preview returns preview object', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/preview', {
       method: 'POST',
@@ -110,12 +124,40 @@ describe('Broadcast API Routes', () => {
     expect(res.status).toBe(500);
   });
 
+  it('POST /api/admin/broadcast/preview returns 500 with default message when error has no message', async () => {
+    (BroadcastService.renderPreview as jest.Mock).mockRejectedValueOnce({});
+    const req = new NextRequest('http://localhost/api/admin/broadcast/preview', {
+      method: 'POST',
+      body: JSON.stringify({
+        channel: 'EMAIL',
+        body: 'Test',
+      }),
+    });
+
+    const res = await previewRoute(req);
+    expect(res.status).toBe(500);
+  });
+
   it('GET /api/admin/broadcast/history returns history array', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/history');
     const res = await historyRoute(req);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(Array.isArray(json.data)).toBe(true);
+  });
+
+  it('GET /api/admin/broadcast/history returns 500 when service fails', async () => {
+    (BroadcastService.getBroadcastHistory as jest.Mock).mockRejectedValueOnce(new Error('History error'));
+    const req = new NextRequest('http://localhost/api/admin/broadcast/history');
+    const res = await historyRoute(req);
+    expect(res.status).toBe(500);
+  });
+
+  it('GET /api/admin/broadcast/history returns 500 with default message when error has no message', async () => {
+    (BroadcastService.getBroadcastHistory as jest.Mock).mockRejectedValueOnce({});
+    const req = new NextRequest('http://localhost/api/admin/broadcast/history');
+    const res = await historyRoute(req);
+    expect(res.status).toBe(500);
   });
 
   it('POST /api/admin/broadcast/retry retries failed recipients', async () => {
@@ -146,6 +188,19 @@ describe('Broadcast API Routes', () => {
 
   it('POST /api/admin/broadcast/retry returns 500 when service throws', async () => {
     (BroadcastService.retryFailedRecipients as jest.Mock).mockRejectedValueOnce(new Error('Retry error'));
+    const req = new NextRequest('http://localhost/api/admin/broadcast/retry', {
+      method: 'POST',
+      body: JSON.stringify({
+        broadcastId: 'b1',
+      }),
+    });
+
+    const res = await retryRoute(req);
+    expect(res.status).toBe(500);
+  });
+
+  it('POST /api/admin/broadcast/retry returns 500 with default message when error has no message', async () => {
+    (BroadcastService.retryFailedRecipients as jest.Mock).mockRejectedValueOnce({});
     const req = new NextRequest('http://localhost/api/admin/broadcast/retry', {
       method: 'POST',
       body: JSON.stringify({

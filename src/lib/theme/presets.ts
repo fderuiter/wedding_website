@@ -178,6 +178,14 @@ export interface ComponentTokens {
   '--shadow-lg': string;
   '--shadow-overlay': string;
 
+  '--map-tile-url': string;
+  '--map-tile-url-dark': string;
+  '--map-tile-attribution': string;
+  '--map-tile-filter': string;
+  '--map-marker-pin-color': string;
+  '--map-marker-border-color': string;
+  '--map-marker-shadow-color': string;
+
   '--font-size-xs'?: string;
   '--font-size-sm'?: string;
   '--font-size-base'?: string;
@@ -267,11 +275,19 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--floorplan-seat-unassigned-hover': '#374151',
   '--floorplan-status-overcapacity-bg': '#450a0a',
   '--floorplan-status-overcapacity-border': '#dc2626',
+  '--map-tile-url': 'https://a.basemaps.cartocdn.com/dark_all',
+  '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+  '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+  '--map-tile-filter': 'none',
+  '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+  '--map-marker-border-color': '#1f2937',
+  '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
   '--print-bg': '#ffffff',
   '--print-text': '#111827',
   '--print-border': '#374151',
   '--print-header-border': '#111827',
   '--print-badge-bg': '#f3f4f6',
+
 };
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -472,6 +488,14 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    '--map-tile-url': 'https://a.basemaps.cartocdn.com/rastertiles/voyager',
+    '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+    '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+    '--map-tile-filter': 'none',
+    '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+    '--map-marker-border-color': '#ffffff',
+    '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.3)',
+
     serverExportTokens: {
       canvasBg: '#fff1f2',
       cardBg: '#ffffff',
@@ -531,11 +555,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#374151',
       '--floorplan-status-overcapacity-bg': '#450a0a',
       '--floorplan-status-overcapacity-border': '#dc2626',
+      '--map-tile-url': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+      '--map-tile-filter': 'none',
+      '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+      '--map-marker-border-color': '#1f2937',
+      '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
       '--print-bg': '#ffffff',
       '--print-text': '#111827',
       '--print-border': '#374151',
       '--print-header-border': '#111827',
       '--print-badge-bg': '#f3f4f6',
+
     },
   },
   modern: {
@@ -735,6 +767,14 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    '--map-tile-url': 'https://a.basemaps.cartocdn.com/rastertiles/voyager',
+    '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+    '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+    '--map-tile-filter': 'none',
+    '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+    '--map-marker-border-color': '#ffffff',
+    '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.3)',
+
     serverExportTokens: {
       canvasBg: '#f8fafc',
       cardBg: '#ffffff',
@@ -794,11 +834,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#1e293b',
       '--floorplan-status-overcapacity-bg': '#4c0519',
       '--floorplan-status-overcapacity-border': '#f43f5e',
+      '--map-tile-url': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+      '--map-tile-filter': 'none',
+      '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+      '--map-marker-border-color': '#0f172a',
+      '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
       '--print-bg': '#ffffff',
       '--print-text': '#0f172a',
       '--print-border': '#334155',
       '--print-header-border': '#0f172a',
       '--print-badge-bg': '#f1f5f9',
+
     },
   },
   romantic: {
@@ -998,6 +1046,14 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    '--map-tile-url': 'https://a.basemaps.cartocdn.com/rastertiles/voyager',
+    '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+    '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+    '--map-tile-filter': 'none',
+    '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+    '--map-marker-border-color': '#fffafb',
+    '--map-marker-shadow-color': 'rgba(225, 175, 185, 0.5)',
+
     serverExportTokens: {
       canvasBg: '#fdf2f8',
       cardBg: '#fffafb',
@@ -1058,11 +1114,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#3b1827',
       '--floorplan-status-overcapacity-bg': '#4c0519',
       '--floorplan-status-overcapacity-border': '#f43f5e',
+      '--map-tile-url': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+      '--map-tile-filter': 'none',
+      '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+      '--map-marker-border-color': '#231118',
+      '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
       '--print-bg': '#fffafb',
       '--print-text': '#831843',
       '--print-border': '#4a1d2f',
       '--print-header-border': '#831843',
       '--print-badge-bg': '#fce7f3',
+
     },
   },
   minimal: {
@@ -1262,6 +1326,14 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    '--map-tile-url': 'https://a.basemaps.cartocdn.com/rastertiles/voyager',
+    '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+    '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+    '--map-tile-filter': 'none',
+    '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+    '--map-marker-border-color': '#ffffff',
+    '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.2)',
+
     serverExportTokens: {
       canvasBg: '#fafafa',
       cardBg: '#ffffff',
@@ -1324,11 +1396,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#27272a',
       '--floorplan-status-overcapacity-bg': '#450a0a',
       '--floorplan-status-overcapacity-border': '#dc2626',
+      '--map-tile-url': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+      '--map-tile-filter': 'none',
+      '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+      '--map-marker-border-color': '#18181b',
+      '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
       '--print-bg': '#ffffff',
       '--print-text': '#09090b',
       '--print-border': '#27272a',
       '--print-header-border': '#09090b',
       '--print-badge-bg': '#f4f4f5',
+
     },
   },
   editorial: {
@@ -1528,6 +1608,14 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    '--map-tile-url': 'https://a.basemaps.cartocdn.com/rastertiles/voyager',
+    '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+    '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+    '--map-tile-filter': 'none',
+    '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+    '--map-marker-border-color': '#000000',
+    '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.9)',
+
     serverExportTokens: {
       canvasBg: '#f5f5f4',
       cardBg: '#fcfbf9',
@@ -1596,11 +1684,19 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#292524',
       '--floorplan-status-overcapacity-bg': '#450a0a',
       '--floorplan-status-overcapacity-border': '#ef4444',
+      '--map-tile-url': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-url-dark': 'https://a.basemaps.cartocdn.com/dark_all',
+      '--map-tile-attribution': '© OpenStreetMap contributors, © CARTO',
+      '--map-tile-filter': 'none',
+      '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
+      '--map-marker-border-color': '#ffffff',
+      '--map-marker-shadow-color': 'rgba(255, 255, 255, 0.8)',
       '--print-bg': '#ffffff',
       '--print-text': '#000000',
       '--print-border': '#000000',
       '--print-header-border': '#000000',
       '--print-badge-bg': '#e4e4e7',
+
     },
   },
 };

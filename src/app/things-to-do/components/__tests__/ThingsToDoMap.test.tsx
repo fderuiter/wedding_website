@@ -1,6 +1,11 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import ThingsToDoMap, { calculateBoundsAndCentroid } from '../ThingsToDoMap';
+import ThingsToDoMap, { calculateBoundsAndCentroid, createMapMarkerIcon } from '../ThingsToDoMap';
+import { useTheme } from '@/components/ThemeProvider';
+
+jest.mock('@/components/ThemeProvider', () => ({
+  useTheme: jest.fn(() => ({ resolvedTheme: 'dark' })),
+}));
 
 const attractions = [
   {
@@ -42,8 +47,12 @@ const mockMap = {
 
 jest.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children: React.ReactNode }) => <div data-testid="map-container">{children}</div>,
-  TileLayer: () => <div data-testid="tile-layer" />,
-  Marker: ({ children }: { children: React.ReactNode }) => <div data-testid="marker">{children}</div>,
+  TileLayer: ({ url, attribution }: { url: string; attribution: string }) => (
+    <div data-testid="tile-layer" data-url={url} data-attribution={attribution} />
+  ),
+  Marker: ({ children, icon }: { children: React.ReactNode; icon: any }) => (
+    <div data-testid="marker" data-icon-class={icon?.options?.className}>{children}</div>
+  ),
   Popup: ({ children }: { children: React.ReactNode }) => <div data-testid="popup">{children}</div>,
   useMap: () => mockMap,
 }));
@@ -83,19 +92,42 @@ describe('calculateBoundsAndCentroid helper', () => {
   });
 });
 
+describe('createMapMarkerIcon helper', () => {
+  it('creates an L.divIcon with 44x44 dimensions, role="img", and aria-label', () => {
+    const icon = createMapMarkerIcon('Test Landmark');
+    expect(icon.options.className).toBe('custom-map-pin');
+    expect(icon.options.iconSize).toEqual([44, 44]);
+    expect(icon.options.html).toContain('role="img"');
+    expect(icon.options.html).toContain('aria-label="Test Landmark"');
+    expect(icon.options.html).toContain('var(--map-marker-pin-color');
+    expect(icon.options.html).toContain('var(--map-marker-border-color');
+    expect(icon.options.html).toContain('var(--map-marker-shadow-color');
+  });
+});
+
 describe('ThingsToDoMap', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useTheme as jest.Mock).mockReturnValue({ resolvedTheme: 'dark' });
   });
 
-  it('renders the map and markers', () => {
+  it('renders the map with dark CartoDB tile URL when resolvedTheme is dark', () => {
     render(<ThingsToDoMap attractions={attractions} />);
 
     expect(screen.getByTestId('map-container')).toBeInTheDocument();
-    expect(screen.getByTestId('tile-layer')).toBeInTheDocument();
+    const tileLayer = screen.getByTestId('tile-layer');
+    expect(tileLayer).toHaveAttribute('data-url', 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
 
     const markers = screen.getAllByTestId('marker');
     expect(markers).toHaveLength(attractions.length);
+  });
+
+  it('renders light CartoDB tile URL when resolvedTheme is light', () => {
+    (useTheme as jest.Mock).mockReturnValue({ resolvedTheme: 'light' });
+    render(<ThingsToDoMap attractions={attractions} />);
+
+    const tileLayer = screen.getByTestId('tile-layer');
+    expect(tileLayer).toHaveAttribute('data-url', 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png');
   });
 
   it('falls back to defaultCenter setView when no attractions are provided', () => {

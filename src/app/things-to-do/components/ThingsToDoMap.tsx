@@ -4,19 +4,24 @@ import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import type { AttractionDTO } from '@/features/attractions';
 import { resolveDirectionsUrl } from '@/utils/maps';
+import { useTheme } from '@/components/ThemeProvider';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
-import shadow from 'leaflet/dist/images/marker-shadow.png';
 
-// Fix for default icon issue with webpack
-// We use local imports instead of unpkg URLs to ensure stability and version consistency.
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: typeof iconRetina === 'string' ? iconRetina : iconRetina.src || (iconRetina as any).default,
-  iconUrl: typeof icon === 'string' ? icon : icon.src || (icon as any).default,
-  shadowUrl: typeof shadow === 'string' ? shadow : shadow.src || (shadow as any).default,
-});
+function escapeHtml(str: string) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+export function createMapMarkerIcon(title: string) {
+  const safeTitle = escapeHtml(title);
+  return L.divIcon({
+    className: 'custom-map-pin',
+    html: `<div class="map-marker-wrapper" role="img" aria-label="${safeTitle}" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px var(--map-marker-shadow-color, rgba(0, 0, 0, 0.3)));"><path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26C32 7.163 24.837 0 16 0z" fill="var(--map-marker-pin-color, var(--color-primary, #B91C1C))" stroke="var(--map-marker-border-color, #ffffff)" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="var(--map-marker-border-color, #ffffff)"/></svg></div>`,
+    iconSize: [44, 44],
+    iconAnchor: [22, 44],
+    popupAnchor: [0, -42],
+  });
+}
 
 /**
  * Calculates geographic bounds and centroid from valid attraction coordinates.
@@ -125,22 +130,31 @@ interface ThingsToDoMapProps {
  * @returns {JSX.Element | null} The rendered ThingsToDoMap component, or null if on the server.
  */
 const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCenter = [0.0, 0.0] }) => {
+  const { resolvedTheme } = useTheme();
+
   if (typeof window === 'undefined') {
     return null;
   }
+
+  const tileUrl = resolvedTheme === 'dark'
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+
+  const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
   return (
     <MapContainer center={defaultCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
       <MapController attractions={attractions} defaultCenter={defaultCenter} />
       <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url={tileUrl}
+        attribution={tileAttribution}
       />
       {attractions.map((attraction) => {
         const directionsUrl = resolveDirectionsUrl(attraction);
+        const icon = createMapMarkerIcon(attraction.name);
 
         return (
-          <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]}>
+          <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]} icon={icon}>
             <Popup>
               <b>{attraction.name}</b>
               {directionsUrl && (
