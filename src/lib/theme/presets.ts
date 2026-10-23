@@ -167,6 +167,42 @@ export interface ComponentTokens {
   '--shadow-lg': string;
   '--shadow-overlay': string;
 
+  '--font-size-xs'?: string;
+  '--font-size-sm'?: string;
+  '--font-size-base'?: string;
+  '--font-size-lg'?: string;
+  '--font-size-xl'?: string;
+  '--font-size-2xl'?: string;
+  '--font-weight-normal'?: string;
+  '--font-weight-medium'?: string;
+  '--font-weight-bold'?: string;
+  '--line-height-tight'?: string;
+  '--line-height-normal'?: string;
+  '--line-height-relaxed'?: string;
+
+  '--spacing-xs'?: string;
+  '--spacing-sm'?: string;
+  '--spacing-md'?: string;
+  '--spacing-lg'?: string;
+  '--spacing-xl'?: string;
+  '--spacing-2xl'?: string;
+
+  '--border-radius-sm'?: string;
+  '--border-radius-md'?: string;
+  '--border-radius-lg'?: string;
+  '--border-radius-full'?: string;
+  '--border-width-thin'?: string;
+  '--border-width-medium'?: string;
+  '--border-width-thick'?: string;
+  '--border-style-default'?: string;
+
+  '--brand-logo-width'?: string;
+  '--brand-logo-height'?: string;
+  '--brand-hero-height'?: string;
+  '--brand-watermark-width'?: string;
+  '--brand-watermark-opacity'?: string;
+  '--brand-badge-size'?: string;
+
   '--brand-hero-image'?: string;
   '--brand-watermark-image'?: string;
   '--brand-badge-graphic'?: string;
@@ -368,6 +404,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
     '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
     '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1rem',
+    '--font-size-lg': '1.125rem',
+    '--font-size-xl': '1.25rem',
+    '--font-size-2xl': '1.5rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '500',
+    '--font-weight-bold': '700',
+    '--line-height-tight': '1.25',
+    '--line-height-normal': '1.5',
+    '--line-height-relaxed': '1.75',
+
+    '--spacing-xs': '0.25rem',
+    '--spacing-sm': '0.5rem',
+    '--spacing-md': '1rem',
+    '--spacing-lg': '1.5rem',
+    '--spacing-xl': '2rem',
+    '--spacing-2xl': '3rem',
+
+    '--border-radius-sm': '0.25rem',
+    '--border-radius-md': '0.375rem',
+    '--border-radius-lg': '0.5rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '4px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '120px',
+    '--brand-logo-height': '40px',
+    '--brand-hero-height': '400px',
+    '--brand-watermark-width': '200px',
+    '--brand-watermark-opacity': '0.1',
+    '--brand-badge-size': '48px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -580,6 +652,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-lg': '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
     '--shadow-overlay': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
 
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1rem',
+    '--font-size-lg': '1.25rem',
+    '--font-size-xl': '1.5rem',
+    '--font-size-2xl': '1.75rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '600',
+    '--font-weight-bold': '800',
+    '--line-height-tight': '1.2',
+    '--line-height-normal': '1.4',
+    '--line-height-relaxed': '1.6',
+
+    '--spacing-xs': '0.375rem',
+    '--spacing-sm': '0.75rem',
+    '--spacing-md': '1.25rem',
+    '--spacing-lg': '1.75rem',
+    '--spacing-xl': '2.5rem',
+    '--spacing-2xl': '3.5rem',
+
+    '--border-radius-sm': '0.375rem',
+    '--border-radius-md': '0.5rem',
+    '--border-radius-lg': '0.75rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '3px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '140px',
+    '--brand-logo-height': '45px',
+    '--brand-hero-height': '450px',
+    '--brand-watermark-width': '220px',
+    '--brand-watermark-opacity': '0.08',
+    '--brand-badge-size': '52px',
+
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
@@ -790,6 +898,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 8px 20px -4px rgba(225, 175, 185, 0.35)',
     '--shadow-lg': '0 20px 30px -10px rgba(225, 175, 185, 0.35)',
     '--shadow-overlay': '0 25px 35px -10px rgba(225, 175, 185, 0.45)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1.05rem',
+    '--font-size-lg': '1.2rem',
+    '--font-size-xl': '1.35rem',
+    '--font-size-2xl': '1.65rem',
+    '--font-weight-normal': '300',
+    '--font-weight-medium': '500',
+    '--font-weight-bold': '600',
+    '--line-height-tight': '1.3',
+    '--line-height-normal': '1.6',
+    '--line-height-relaxed': '1.8',
+
+    '--spacing-xs': '0.25rem',
+    '--spacing-sm': '0.5rem',
+    '--spacing-md': '1rem',
+    '--spacing-lg': '1.5rem',
+    '--spacing-xl': '2.25rem',
+    '--spacing-2xl': '3.25rem',
+
+    '--border-radius-sm': '0.5rem',
+    '--border-radius-md': '0.75rem',
+    '--border-radius-lg': '1.25rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '3px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '130px',
+    '--brand-logo-height': '42px',
+    '--brand-hero-height': '420px',
+    '--brand-watermark-width': '240px',
+    '--brand-watermark-opacity': '0.12',
+    '--brand-badge-size': '56px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -1002,6 +1146,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
     '--shadow-lg': '0 2px 5px 0 rgba(0, 0, 0, 0.1)',
     '--shadow-overlay': '0 4px 12px 0 rgba(0, 0, 0, 0.15)',
+
+    '--font-size-xs': '0.7rem',
+    '--font-size-sm': '0.8rem',
+    '--font-size-base': '0.95rem',
+    '--font-size-lg': '1.1rem',
+    '--font-size-xl': '1.25rem',
+    '--font-size-2xl': '1.4rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '500',
+    '--font-weight-bold': '600',
+    '--line-height-tight': '1.2',
+    '--line-height-normal': '1.45',
+    '--line-height-relaxed': '1.65',
+
+    '--spacing-xs': '0.2rem',
+    '--spacing-sm': '0.4rem',
+    '--spacing-md': '0.8rem',
+    '--spacing-lg': '1.2rem',
+    '--spacing-xl': '1.8rem',
+    '--spacing-2xl': '2.5rem',
+
+    '--border-radius-sm': '0px',
+    '--border-radius-md': '0px',
+    '--border-radius-lg': '0px',
+    '--border-radius-full': '0px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '1px',
+    '--border-width-thick': '2px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '100px',
+    '--brand-logo-height': '32px',
+    '--brand-hero-height': '360px',
+    '--brand-watermark-width': '180px',
+    '--brand-watermark-opacity': '0.05',
+    '--brand-badge-size': '40px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -1216,6 +1396,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '3px 3px 0px 0px rgba(0,0,0,0.9)',
     '--shadow-lg': '4px 4px 0px 0px rgba(0,0,0,0.9)',
     '--shadow-overlay': '6px 6px 0px 0px rgba(0,0,0,0.9)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1rem',
+    '--font-size-lg': '1.25rem',
+    '--font-size-xl': '1.6rem',
+    '--font-size-2xl': '2rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '600',
+    '--font-weight-bold': '700',
+    '--line-height-tight': '1.15',
+    '--line-height-normal': '1.4',
+    '--line-height-relaxed': '1.6',
+
+    '--spacing-xs': '0.25rem',
+    '--spacing-sm': '0.5rem',
+    '--spacing-md': '1rem',
+    '--spacing-lg': '1.5rem',
+    '--spacing-xl': '2.25rem',
+    '--spacing-2xl': '3.5rem',
+
+    '--border-radius-sm': '0.125rem',
+    '--border-radius-md': '0.125rem',
+    '--border-radius-lg': '0.25rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '4px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '150px',
+    '--brand-logo-height': '50px',
+    '--brand-hero-height': '480px',
+    '--brand-watermark-width': '250px',
+    '--brand-watermark-opacity': '0.15',
+    '--brand-badge-size': '60px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',

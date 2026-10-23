@@ -358,7 +358,8 @@ function generateDynamicStyles(
     fontHeading?: string | null;
     fontBody?: string | null;
     fontMono?: string | null;
-  }
+  },
+  nonColorTokens?: Record<string, string>
 ): string {
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
@@ -371,6 +372,15 @@ function generateDynamicStyles(
     for (const [k, v] of Object.entries(customTokens)) {
       if (k.startsWith('--')) {
         sanitizedCustomTokens[k] = sanitizeTokenValue(v);
+      }
+    }
+  }
+
+  if (nonColorTokens && typeof nonColorTokens === 'object') {
+    for (const [k, v] of Object.entries(nonColorTokens)) {
+      if (v && typeof v === 'string') {
+        const tokenKey = k.startsWith('--') ? k : `--${k.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+        sanitizedCustomTokens[tokenKey] = sanitizeTokenValue(v);
       }
     }
   }
@@ -606,6 +616,16 @@ type ThemeProviderProps = {
     colorSecondary?: string | null;
     themePreset?: ThemePreset | string | null;
     themeTokens?: Record<string, string>;
+    typographyScale?: Record<string, string> | null;
+    spacingScale?: Record<string, string> | null;
+    borderTreatment?: Record<string, string> | null;
+    brandDimensions?: Record<string, string> | null;
+    brandLogoWidth?: string | null;
+    brandLogoHeight?: string | null;
+    brandHeroHeight?: string | null;
+    brandWatermarkWidth?: string | null;
+    brandWatermarkOpacity?: string | null;
+    brandBadgeSize?: string | null;
     layoutContainerMaxWidth?: string | null;
     layoutGridGap?: string | null;
     layoutCardPadding?: string | null;
@@ -628,6 +648,16 @@ export function ThemeProvider({
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
     themeTokens: propConfig?.themeTokens || {},
+    typographyScale: propConfig?.typographyScale || {},
+    spacingScale: propConfig?.spacingScale || {},
+    borderTreatment: propConfig?.borderTreatment || {},
+    brandDimensions: propConfig?.brandDimensions || {},
+    brandLogoWidth: propConfig?.brandLogoWidth || null,
+    brandLogoHeight: propConfig?.brandLogoHeight || null,
+    brandHeroHeight: propConfig?.brandHeroHeight || null,
+    brandWatermarkWidth: propConfig?.brandWatermarkWidth || null,
+    brandWatermarkOpacity: propConfig?.brandWatermarkOpacity || null,
+    brandBadgeSize: propConfig?.brandBadgeSize || null,
     layoutContainerMaxWidth: sanitizeLayoutToken(propConfig?.layoutContainerMaxWidth, '64rem'),
     layoutGridGap: sanitizeLayoutToken(propConfig?.layoutGridGap, '1.5rem'),
     layoutCardPadding: sanitizeLayoutToken(propConfig?.layoutCardPadding, '2rem'),
@@ -750,6 +780,16 @@ export function ThemeProvider({
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
         themeTokens: propConfig.themeTokens || {},
+        typographyScale: propConfig.typographyScale || {},
+        spacingScale: propConfig.spacingScale || {},
+        borderTreatment: propConfig.borderTreatment || {},
+        brandDimensions: propConfig.brandDimensions || {},
+        brandLogoWidth: propConfig.brandLogoWidth || null,
+        brandLogoHeight: propConfig.brandLogoHeight || null,
+        brandHeroHeight: propConfig.brandHeroHeight || null,
+        brandWatermarkWidth: propConfig.brandWatermarkWidth || null,
+        brandWatermarkOpacity: propConfig.brandWatermarkOpacity || null,
+        brandBadgeSize: propConfig.brandBadgeSize || null,
         layoutContainerMaxWidth: sanitizeLayoutToken(propConfig.layoutContainerMaxWidth, '64rem'),
         layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
         layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
@@ -833,6 +873,19 @@ export function ThemeProvider({
   }, [config]);
 
   const stylesString = useMemo(() => {
+    const nonColorTokens: Record<string, string> = {
+      ...(config.typographyScale || {}),
+      ...(config.spacingScale || {}),
+      ...(config.borderTreatment || {}),
+      ...(config.brandDimensions || {}),
+    };
+    if (config.brandLogoWidth) nonColorTokens['--brand-logo-width'] = config.brandLogoWidth;
+    if (config.brandLogoHeight) nonColorTokens['--brand-logo-height'] = config.brandLogoHeight;
+    if (config.brandHeroHeight) nonColorTokens['--brand-hero-height'] = config.brandHeroHeight;
+    if (config.brandWatermarkWidth) nonColorTokens['--brand-watermark-width'] = config.brandWatermarkWidth;
+    if (config.brandWatermarkOpacity) nonColorTokens['--brand-watermark-opacity'] = config.brandWatermarkOpacity;
+    if (config.brandBadgeSize) nonColorTokens['--brand-badge-size'] = config.brandBadgeSize;
+
     return generateDynamicStyles(
       sanitizeColor(config.colorPrimary, '#B91C1C'),
       sanitizeColor(config.colorSecondary, '#B45309'),
@@ -848,13 +901,24 @@ export function ThemeProvider({
         fontHeading: config.fontHeading,
         fontBody: config.fontBody,
         fontMono: config.fontMono,
-      }
+      },
+      nonColorTokens
     );
   }, [
     config.colorPrimary,
     config.colorSecondary,
     config.themePreset,
     config.themeTokens,
+    config.typographyScale,
+    config.spacingScale,
+    config.borderTreatment,
+    config.brandDimensions,
+    config.brandLogoWidth,
+    config.brandLogoHeight,
+    config.brandHeroHeight,
+    config.brandWatermarkWidth,
+    config.brandWatermarkOpacity,
+    config.brandBadgeSize,
     config.layoutContainerMaxWidth,
     config.layoutGridGap,
     config.layoutCardPadding,
