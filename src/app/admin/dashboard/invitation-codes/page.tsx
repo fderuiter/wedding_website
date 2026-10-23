@@ -173,7 +173,7 @@ export default function InvitationCodesDashboardPage() {
 
   const fetchSubEventsAndMatrix = async () => {
     try {
-      const res = await fetch('/api/admin/sub-events/access');
+      const res = await fetch('/api/admin/sub-events/access?limit=100');
       if (res.ok) {
         const json = await res.json();
         const data = json.data || json;
