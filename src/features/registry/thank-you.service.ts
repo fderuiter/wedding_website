@@ -1,10 +1,11 @@
 import { prisma } from '@/lib/prisma';
+import { getAppConfig } from '@/lib/config';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ContributorSchema } from './schemas';
 import { ApiError } from '@/utils/ApiError';
 import { generateCsvContent } from '@/utils/csv';
-import { generatePdfLabelSheet, LabelTemplate } from '@/utils/pdfLabelGenerator';
+import { generatePdfLabelSheet, LabelTemplate, LabelThemeOptions } from '@/utils/pdfLabelGenerator';
 
 export interface ThankYouNotesFilterOptions {
   status?: string;
@@ -362,7 +363,7 @@ export class ThankYouService {
    * Exports thank-you note contributor addresses matching filter criteria as a printable Avery PDF label sheet.
    */
   async exportThankYouNotesPdf(
-    options: ThankYouNotesFilterOptions & { template?: LabelTemplate } = {}
+    options: ThankYouNotesFilterOptions & { template?: LabelTemplate; themeOptions?: LabelThemeOptions } = {}
   ): Promise<Buffer> {
     const { items } = await this.getThankYouNotes({
       ...options,
@@ -370,15 +371,32 @@ export class ThankYouService {
       pageSize: options.pageSize || 1000000,
     });
 
+    let resolvedThemeOptions: LabelThemeOptions = options.themeOptions || {};
+
+    if (!options.themeOptions) {
+      try {
+        const appConfig = await getAppConfig();
+        resolvedThemeOptions = {
+          fontHeading: appConfig.themeTokens?.['--font-heading'],
+          fontBody: appConfig.themeTokens?.['--font-body'],
+          textColor: appConfig.themeTokens?.['--print-text'],
+          primaryColor: appConfig.colorPrimary || appConfig.themeTokens?.['--heading-color'],
+          themeTokens: appConfig.themeTokens,
+        };
+      } catch {
+        resolvedThemeOptions = {};
+      }
+    }
+
     const template = options.template || 'avery_5160';
-    return generatePdfLabelSheet(items, template);
+    return generatePdfLabelSheet(items, template, resolvedThemeOptions);
   }
 
   /**
    * Alias for exportThankYouNotesPdf for backwards compatibility / alternate interface naming.
    */
   async exportThankYouNotesLabels(
-    options: ThankYouNotesFilterOptions & { template?: LabelTemplate } = {}
+    options: ThankYouNotesFilterOptions & { template?: LabelTemplate; themeOptions?: LabelThemeOptions } = {}
   ): Promise<Buffer> {
     return this.exportThankYouNotesPdf(options);
   }
