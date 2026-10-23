@@ -175,7 +175,14 @@ export default function WeddingPartyDashboardPage() {
               <div className="flex items-center gap-4">
                 {member.photo && <img src={(member.photo as any)?.url || '/images/placeholder.png'} alt={(member.photo as any)?.isDecorative ? '' : ((member.photo as any)?.altText || member.name)} className="w-16 h-16 rounded-full object-cover" />}
                 <div>
-                  <div className="font-bold text-lg">{member.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-lg">{member.name}</span>
+                    {member.isSample && (
+                      <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700">
+                        Sample
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm font-semibold text-primary">{member.role}</div>
                   <div className="text-sm mt-1 text-gray-700 dark:text-gray-300">
                     {member.bio}

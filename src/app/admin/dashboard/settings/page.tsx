@@ -497,6 +497,23 @@ export default function AdminSettingsPage() {
                 printBorder: localConfig.printBorder || localConfig.themeTokens?.['--print-border'],
                 printHeaderBorder: localConfig.printHeaderBorder || localConfig.themeTokens?.['--print-header-border'],
                 printBadgeBg: localConfig.printBadgeBg || localConfig.themeTokens?.['--print-badge-bg'],
+                fontSizeBase: localConfig.fontSizeBase,
+                fontSizeLg: localConfig.fontSizeLg,
+                fontWeightNormal: localConfig.fontWeightNormal,
+                spacingMd: localConfig.spacingMd,
+                borderRadiusSm: localConfig.borderRadiusSm,
+                borderWidthThin: localConfig.borderWidthThin,
+                borderStyleDefault: localConfig.borderStyleDefault,
+                brandLogoWidth: localConfig.brandLogoWidth,
+                brandLogoHeight: localConfig.brandLogoHeight,
+                brandHeroHeight: localConfig.brandHeroHeight,
+                brandWatermarkWidth: localConfig.brandWatermarkWidth,
+                brandWatermarkOpacity: localConfig.brandWatermarkOpacity,
+                brandBadgeSize: localConfig.brandBadgeSize,
+                typographyScale: localConfig.typographyScale,
+                spacingScale: localConfig.spacingScale,
+                borderTreatment: localConfig.borderTreatment,
+                brandDimensions: localConfig.brandDimensions,
               }}
               onChange={(updated) => {
                 setLocalConfig((prev: any) => {

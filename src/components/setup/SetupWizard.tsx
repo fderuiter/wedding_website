@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
+import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/forms';
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
 import { Container, Card, Heading } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,7 @@ import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { ThemePreset } from '@/lib/theme/presets';
+import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -46,6 +47,8 @@ interface SetupWizardPersistedState {
   venueCity: string;
   venueState: string;
   timezone: string;
+  sampleArchetype: ArchetypeId;
+  selectedModules: string[];
 }
 
 const initialSetupWizardState: SetupWizardPersistedState = {
@@ -58,6 +61,8 @@ const initialSetupWizardState: SetupWizardPersistedState = {
   venueCity: '',
   venueState: '',
   timezone: 'America/Chicago',
+  sampleArchetype: 'classic',
+  selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
 };
 
 function SetupWizardContent() {
@@ -76,6 +81,8 @@ function SetupWizardContent() {
     venueCity,
     venueState,
     timezone,
+    sampleArchetype,
+    selectedModules,
   } = wizardState;
 
   const setStep = (newStep: number | ((prev: number) => number)) => {
@@ -93,6 +100,18 @@ function SetupWizardContent() {
   const setVenueCity = (val: string) => setWizardState((prev) => ({ ...prev, venueCity: val }));
   const setVenueState = (val: string) => setWizardState((prev) => ({ ...prev, venueState: val }));
   const setTimezone = (val: string) => setWizardState((prev) => ({ ...prev, timezone: val }));
+  const setSampleArchetype = (archetype: ArchetypeId) => setWizardState((prev) => ({ ...prev, sampleArchetype: archetype }));
+  const setSelectedModules = (modules: string[]) => setWizardState((prev) => ({ ...prev, selectedModules: modules }));
+
+  const toggleModule = (moduleKey: string) => {
+    setWizardState((prev) => {
+      const current = prev.selectedModules || [];
+      const updated = current.includes(moduleKey)
+        ? current.filter((m) => m !== moduleKey)
+        : [...current, moduleKey];
+      return { ...prev, selectedModules: updated };
+    });
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -229,6 +248,35 @@ function SetupWizardContent() {
     }
   };
 
+  const handleSampleDataSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      if (selectedModules.length > 0) {
+        const res = await fetch('/api/admin/sample-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            archetype: sampleArchetype,
+            modules: selectedModules,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to generate sample data.');
+        }
+      } else {
+        await fetch('/api/admin/sample-data', { method: 'DELETE' });
+      }
+      setStep(4);
+    } catch (err: any) {
+      setError(err.message || 'Error configuring sample data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <main id="main-content" tabIndex={-1} className="min-h-screen py-12 flex flex-col justify-center items-center">
       <AccessibleStep isActive={!isAuthenticated || step === 1}>
@@ -341,9 +389,144 @@ function SetupWizardContent() {
 
       <AccessibleStep isActive={isAuthenticated && step === 3}>
         <Container>
+          <Card className="max-w-2xl">
+            <Heading className="mb-2">Step 3: Sample Data Selection</Heading>
+            <p className="mb-6 text-gray-700 dark:text-gray-300">
+              Populate your wedding site with sample records so you can explore features right away. You can clear or keep sample data anytime from the admin dashboard.
+            </p>
+
+            <form onSubmit={handleSampleDataSubmit} className="space-y-6">
+              {error && step === 3 && (
+                <FormMessage>{error}</FormMessage>
+              )}
+
+              <div>
+                <Label className="font-semibold block mb-2">Starter Archetype Preset</Label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
+                    const preset = ARCHETYPE_PRESETS[key];
+                    const isSelected = sampleArchetype === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          setSampleArchetype(key);
+                          setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions']);
+                        }}
+                        className={`p-4 rounded-xl border text-left transition ${
+                          isSelected
+                            ? 'border-primary bg-primary/10 ring-2 ring-primary'
+                            : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'
+                        }`}
+                      >
+                        <div className="font-bold text-sm text-primary">{preset.name}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                          {preset.description}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <Label className="font-semibold">Sample Data Modules</Label>
+                  <div className="space-x-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions'])}
+                      className="text-primary underline hover:opacity-80"
+                    >
+                      Select All
+                    </button>
+                    <span>|</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedModules([])}
+                      className="text-gray-500 underline hover:text-gray-700"
+                    >
+                      Deselect All (Start Blank)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <Checkbox
+                      checked={selectedModules.includes('registry')}
+                      onChange={() => toggleModule('registry')}
+                    />
+                    <span className="text-sm font-medium">Registry Items & Cash Funds</span>
+                  </label>
+
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <Checkbox
+                      checked={selectedModules.includes('guests')}
+                      onChange={() => toggleModule('guests')}
+                    />
+                    <span className="text-sm font-medium">Guest List & Invitation Codes</span>
+                  </label>
+
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <Checkbox
+                      checked={selectedModules.includes('seating')}
+                      onChange={() => toggleModule('seating')}
+                    />
+                    <span className="text-sm font-medium">Seating Layout & Tables</span>
+                  </label>
+
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <Checkbox
+                      checked={selectedModules.includes('weddingParty')}
+                      onChange={() => toggleModule('weddingParty')}
+                    />
+                    <span className="text-sm font-medium">Wedding Party Members</span>
+                  </label>
+
+                  <label className="flex items-center space-x-3 cursor-pointer md:col-span-2">
+                    <Checkbox
+                      checked={selectedModules.includes('attractions')}
+                      onChange={() => toggleModule('attractions')}
+                    />
+                    <span className="text-sm font-medium">Local Attractions & Hotel Blocks</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  variant="primary"
+                  className="flex-1 py-3"
+                >
+                  {loading ? 'Populating Sample Data...' : 'Populate Sample Data & Continue'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={loading}
+                  onClick={async () => {
+                    setSelectedModules([]);
+                    setStep(4);
+                  }}
+                  className="py-3 px-6"
+                >
+                  Skip
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </Container>
+      </AccessibleStep>
+
+      <AccessibleStep isActive={isAuthenticated && step === 4}>
+        <Container>
           <Card className="max-w-2xl text-center">
-            <Heading className="mb-4">Step 2: Add Content</Heading>
-            <p className="mb-6 text-gray-700">Great! Your core details are set. Now let&apos;s add some content like your wedding party and things to do in the area.</p>
+            <Heading className="mb-4">Step 4: Complete Setup</Heading>
+            <p className="mb-6 text-gray-700">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
             <div className="space-y-4">
               <Button onClick={() => setIsWeddingPartyModalOpen(true)} variant="secondary" className="w-full py-3">
                 Manage Wedding Party ({partyMembers.length} {partyMembers.length === 1 ? 'member' : 'members'})
@@ -352,12 +535,12 @@ function SetupWizardContent() {
                 Manage Attractions ({attractions.length} {attractions.length === 1 ? 'item' : 'items'})
               </Button>
             </div>
-            <p className="mt-6 mb-4 text-sm text-gray-600">You can also do this later from the Admin Dashboard.</p>
+            <p className="mt-6 mb-4 text-sm text-gray-600">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
             <Button onClick={() => {
               clearPersistedSetupState();
-              window.location.href = '/';
+              window.location.href = '/admin/dashboard';
             }} variant="primary" className="w-full py-3">
-              Finish Setup & View Site
+              Go to Admin Dashboard
             </Button>
           </Card>
         </Container>

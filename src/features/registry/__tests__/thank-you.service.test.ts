@@ -510,5 +510,22 @@ describe('ThankYouService', () => {
 
       expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
     });
+
+    it('passes explicit or resolved theme options during PDF label export', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      const pdfBuffer = await service.exportThankYouNotesPdf({
+        template: 'avery_5160',
+        themeOptions: {
+          fontHeading: 'Playfair Display, serif',
+          fontBody: 'Helvetica, sans-serif',
+          textColor: '#1f2937',
+          primaryColor: '#B91C1C',
+        },
+      });
+
+      expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+      expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+    });
   });
 });

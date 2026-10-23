@@ -2,10 +2,13 @@
 
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { ServerExportTokens, ThemePreset } from '@/lib/theme/presets';
 
 interface PrintableFloorplanProps {
   tables: SeatingTableDTO[];
   unassignedGuests: InvitationCodeDTO[];
+  preset?: ThemePreset | string | null;
+  tokens?: Partial<ServerExportTokens>;
 }
 
 export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorplanProps) {
