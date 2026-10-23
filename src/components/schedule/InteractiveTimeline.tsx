@@ -340,7 +340,7 @@ export default function InteractiveTimeline({
 
   return (
     <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
-      <h2 className="text-center text-4xl font-bold text-primary mb-8">{title}</h2>
+      <h2 className="text-center type-h2 text-primary mb-8">{title}</h2>
 
       {/* ARIA Live Status Region for Filter Updates */}
       {categories.length > 1 && (

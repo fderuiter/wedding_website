@@ -223,6 +223,28 @@ export default function SeatingChartAdminPage() {
     }
   };
 
+  const handleUpdateTableRotation = async (tableId: string, rotation: number) => {
+    const previousTables = tables;
+
+    // Optimistic update local state
+    setTables((prev) =>
+      prev.map((t) => (t.id === tableId ? { ...t, rotation } : t))
+    );
+
+    // Persist rotation update
+    try {
+      const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rotation }),
+      });
+      if (!res.ok) throw new Error('Failed to update table rotation');
+    } catch (e) {
+      // Revert if error
+      setTables(previousTables);
+    }
+  };
+
   // Seat assignment handlers
   const handleAssignGuestToTable = async (
     guestId: string,
@@ -439,6 +461,7 @@ export default function SeatingChartAdminPage() {
               selectedTableId={selectedTableId}
               onSelectTable={setSelectedTableId}
               onUpdateTablePosition={handleUpdateTablePosition}
+              onUpdateTableRotation={handleUpdateTableRotation}
               onDropGuestOnTable={handleAssignGuestToTable}
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
@@ -489,7 +512,36 @@ export default function SeatingChartAdminPage() {
                   )}
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = selectedTable.rotation || 0;
+                        const next = (current - 45 + 360) % 360;
+                        handleUpdateTableRotation(selectedTable.id, next);
+                      }}
+                      className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                      title="Rotate -45°"
+                    >
+                      -45°
+                    </button>
+                    <span className="px-1.5 font-mono text-xs font-bold text-primary">
+                      {selectedTable.rotation || 0}°
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = selectedTable.rotation || 0;
+                        const next = (current + 45) % 360;
+                        handleUpdateTableRotation(selectedTable.id, next);
+                      }}
+                      className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                      title="Rotate +45°"
+                    >
+                      +45°
+                    </button>
+                  </div>
                   <button
                     onClick={() => handleEditTable(selectedTable)}
                     className="px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"

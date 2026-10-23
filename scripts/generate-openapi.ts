@@ -19,6 +19,7 @@ const mediaSchemas = await import('../src/features/media/schemas.js');
 const seatingSchemas = await import('../src/features/seating/schemas.js');
 const subEventSchemas = await import('../src/features/sub-events/schemas.js');
 const backupValidationSchemas = await import('../src/utils/backupValidation.js');
+const sampleDataSchemas = await import('../src/app/api/admin/sample-data/route.js');
 
 const ALL_SCHEMAS: Record<string, any> = {
   ...validationUtils,
@@ -30,6 +31,7 @@ const ALL_SCHEMAS: Record<string, any> = {
   ...seatingSchemas,
   ...subEventSchemas,
   ...backupValidationSchemas,
+  ...sampleDataSchemas,
 };
 
 const project = new Project({ tsConfigFilePath: path.join(rootPath, 'tsconfig.json') });
