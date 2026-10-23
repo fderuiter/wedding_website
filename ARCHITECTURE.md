@@ -491,6 +491,16 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `colorSecondary` | `default` | Configuration field for colorSecondary |
 | `themePreset` | `default` | Configuration field for themePreset |
 | `themeTokens` | `default` | Configuration field for themeTokens |
+| `typographyScale` | `default` | Configuration field for typographyScale |
+| `spacingScale` | `default` | Configuration field for spacingScale |
+| `borderTreatment` | `default` | Configuration field for borderTreatment |
+| `brandDimensions` | `default` | Configuration field for brandDimensions |
+| `brandLogoWidth` | `default` | Configuration field for brandLogoWidth |
+| `brandLogoHeight` | `default` | Configuration field for brandLogoHeight |
+| `brandHeroHeight` | `default` | Configuration field for brandHeroHeight |
+| `brandWatermarkWidth` | `default` | Configuration field for brandWatermarkWidth |
+| `brandWatermarkOpacity` | `default` | Configuration field for brandWatermarkOpacity |
+| `brandBadgeSize` | `default` | Configuration field for brandBadgeSize |
 | `layoutContainerMaxWidth` | `default` | Configuration field for layoutContainerMaxWidth |
 | `layoutGridGap` | `default` | Configuration field for layoutGridGap |
 | `layoutCardPadding` | `default` | Configuration field for layoutCardPadding |
