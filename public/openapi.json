@@ -2288,6 +2288,67 @@
         }
       }
     },
+    "/api/admin/sample-data": {
+      "get": {
+        "summary": "GET /api/admin/sample-data",
+        "description": "Endpoint for /api/admin/sample-data",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/admin/sample-data",
+        "description": "Endpoint for /api/admin/sample-data",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "archetype": {
+                    "default": "classic",
+                    "type": "string",
+                    "enum": [
+                      "classic",
+                      "destination",
+                      "romantic"
+                    ]
+                  },
+                  "modules": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "archetype"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/admin/sample-data",
+        "description": "Endpoint for /api/admin/sample-data",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/seating/assign": {
       "post": {
         "summary": "POST /api/admin/seating/assign",
@@ -4507,16 +4568,33 @@
                           "isDecorative": {
                             "type": "boolean"
                           },
-                          "createdAt": {},
-                          "updatedAt": {}
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
                         },
                         "required": [
                           "id",
                           "url",
                           "altText",
                           "isDecorative",
-                          "createdAt",
-                          "updatedAt"
+                          "isSample"
                         ],
                         "additionalProperties": false
                       },
@@ -4762,16 +4840,33 @@
                           "isDecorative": {
                             "type": "boolean"
                           },
-                          "createdAt": {},
-                          "updatedAt": {}
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
                         },
                         "required": [
                           "id",
                           "url",
                           "altText",
                           "isDecorative",
-                          "createdAt",
-                          "updatedAt"
+                          "isSample"
                         ],
                         "additionalProperties": false
                       },

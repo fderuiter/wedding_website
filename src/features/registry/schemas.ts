@@ -95,6 +95,7 @@ export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   purchased: z.boolean().default(false),
   purchaserName: z.string().nullable().optional(),
   amountContributed: z.coerce.number().default(0),
+  isSample: z.boolean().default(false),
   contributors: z.array(ContributorSchema).default([]),
 });
 
@@ -146,6 +147,7 @@ export const InvitationCodeSchema = z.object({
   usedAt: z.union([z.string(), z.date()]).nullable().optional(),
   tableId: z.string().nullable().optional(),
   seatNumber: z.number().int().positive().nullable().optional(),
+  isSample: z.boolean().default(false),
   createdAt: z.union([z.string(), z.date()]).optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
 });

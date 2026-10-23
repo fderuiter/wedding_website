@@ -24,9 +24,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const { itemId, name, amount, code, message } = parseResult.data;
 
+  const targetItem = await registryService.getItemById(itemId);
+  if (targetItem && targetItem.isSample) {
+    throw new ApiError(400, 'Sample registry items do not accept contributions or payments.');
+  }
+
   if (!isFeatureEnabled('groupGifting', config.modules)) {
-    const item = await registryService.getItemById(itemId);
-    if (item && (item.isGroupGift || amount < item.price)) {
+    if (targetItem && (targetItem.isGroupGift || amount < targetItem.price)) {
       throw new ApiError(400, 'Group gifting is currently disabled.');
     }
   }
