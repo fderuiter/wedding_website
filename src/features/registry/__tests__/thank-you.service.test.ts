@@ -1,5 +1,29 @@
 import { ThankYouService } from '../thank-you.service';
 
+async function streamToText(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  const chunks: string[] = [];
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(decoder.decode(value, { stream: true }));
+  }
+  chunks.push(decoder.decode());
+  return chunks.join('');
+}
+
+async function streamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
 describe('ThankYouService', () => {
   let service: ThankYouService;
   let mockPrisma: any;
@@ -10,7 +34,7 @@ describe('ThankYouService', () => {
     mockPrisma = {
       contributor: {
         findMany: jest.fn().mockImplementation(async (args?: any) => {
-          if (!args || (!args.where && args.skip === undefined && args.take === undefined)) {
+          if (!args || (!args.where && args.skip === undefined && args.take === undefined && !args.cursor)) {
             return mockData;
           }
           let results = [...mockData];
@@ -33,9 +57,17 @@ describe('ThankYouService', () => {
                 (c.registryItem?.name || '').toLowerCase().includes(term)
             );
           }
-          const skip = args.skip ?? 0;
+          if (args.cursor?.id) {
+            const cursorIdx = results.findIndex((c) => c.id === args.cursor.id);
+            if (cursorIdx !== -1) {
+              const skip = args.skip ?? 0;
+              results = results.slice(cursorIdx + skip);
+            }
+          } else if (args.skip) {
+            results = results.slice(args.skip);
+          }
           const take = args.take ?? 50;
-          return results.slice(skip, skip + take);
+          return results.slice(0, take);
         }),
         count: jest.fn().mockImplementation(async (args?: any) => {
           let results = [...mockData];
@@ -365,7 +397,8 @@ describe('ThankYouService', () => {
 
       mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
 
-      const csv = await service.exportThankYouNotesCsv();
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
 
       expect(csv).toContain(
         'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft'
@@ -400,7 +433,8 @@ describe('ThankYouService', () => {
 
       mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
 
-      const csv = await service.exportThankYouNotesCsv({ status: 'Unsent' });
+      const stream = service.exportThankYouNotesCsv({ status: 'Unsent' });
+      const csv = await streamToText(stream);
 
       expect(csv).toContain('Bob Smith');
       expect(csv).not.toContain('Alice Johnson');
@@ -409,23 +443,52 @@ describe('ThankYouService', () => {
     it('returns empty CSV header row with trailing newline when no records match', async () => {
       mockPrisma.contributor.findMany.mockResolvedValue([]);
 
-      const csv = await service.exportThankYouNotesCsv();
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
 
       expect(csv).toBe(
         'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft\n'
       );
     });
-  });
 
-  describe('exportThankYouNotesPdf', () => {
-    it('includes invitationCode address relation in Prisma findMany queries', async () => {
-      mockPrisma.contributor.findMany.mockResolvedValue([]);
+    it('queries database in cursor-paginated chunks of 1000 for high-volume exports', async () => {
+      const largeDataset = Array.from({ length: 2500 }, (_, i) => ({
+        id: `c_${i + 1}`,
+        name: `Contributor ${i + 1}`,
+        email: `guest${i + 1}@example.com`,
+        amount: 50,
+        date: '2026-06-01T00:00:00.000Z',
+        thankYouStatus: 'Unsent',
+        registryItem: { id: 'item1', name: 'Registry Gift', category: 'General' },
+      }));
 
-      await service.exportThankYouNotesPdf();
+      mockPrisma.contributor.findMany.mockResolvedValue(largeDataset);
+
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
 
       expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          include: expect.objectContaining({
+          take: 1000,
+          orderBy: { id: 'asc' },
+          select: expect.any(Object),
+        })
+      );
+      expect(csv).toContain('Contributor 1');
+      expect(csv).toContain('Contributor 2500');
+    });
+  });
+
+  describe('exportThankYouNotesPdf', () => {
+    it('includes invitationCode address relation in Prisma findMany queries using explicit select', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([]);
+
+      const stream = service.exportThankYouNotesPdf();
+      await streamToBuffer(stream);
+
+      expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
             invitationCode: expect.objectContaining({
               select: expect.objectContaining({
                 addressLine1: true,
@@ -465,7 +528,8 @@ describe('ThankYouService', () => {
 
       mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
 
-      const pdfBuffer = await service.exportThankYouNotesPdf({ template: 'avery_5160' });
+      const stream = service.exportThankYouNotesPdf({ template: 'avery_5160' });
+      const pdfBuffer = await streamToBuffer(stream);
 
       expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
       expect(pdfBuffer.length).toBeGreaterThan(0);
@@ -496,7 +560,8 @@ describe('ThankYouService', () => {
 
       mockPrisma.contributor.findMany.mockResolvedValue(sampleContributors);
 
-      const pdfBuffer = await service.exportThankYouNotesPdf({ template: 'avery_5163' });
+      const stream = service.exportThankYouNotesPdf({ template: 'avery_5163' });
+      const pdfBuffer = await streamToBuffer(stream);
 
       expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
       expect(pdfBuffer.length).toBeGreaterThan(0);
@@ -506,7 +571,8 @@ describe('ThankYouService', () => {
     it('provides exportThankYouNotesLabels alias for backwards compatibility', async () => {
       mockPrisma.contributor.findMany.mockResolvedValue([]);
 
-      const pdfBuffer = await service.exportThankYouNotesLabels({ template: 'avery_5160' });
+      const stream = service.exportThankYouNotesLabels({ template: 'avery_5160' });
+      const pdfBuffer = await streamToBuffer(stream);
 
       expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
     });
@@ -514,7 +580,7 @@ describe('ThankYouService', () => {
     it('passes explicit or resolved theme options during PDF label export', async () => {
       mockPrisma.contributor.findMany.mockResolvedValue([]);
 
-      const pdfBuffer = await service.exportThankYouNotesPdf({
+      const stream = service.exportThankYouNotesPdf({
         template: 'avery_5160',
         themeOptions: {
           fontHeading: 'Playfair Display, serif',
@@ -523,6 +589,7 @@ describe('ThankYouService', () => {
           primaryColor: '#B91C1C',
         },
       });
+      const pdfBuffer = await streamToBuffer(stream);
 
       expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
       expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
