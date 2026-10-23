@@ -2,6 +2,24 @@ export type ThemePreset = 'classic' | 'modern' | 'romantic' | 'minimal' | 'edito
 
 export const THEME_PRESET_KEYS: ThemePreset[] = ['classic', 'modern', 'romantic', 'minimal', 'editorial'];
 
+export interface ServerExportTokens {
+  canvasBg: string;
+  cardBg: string;
+  colorPrimary: string;
+  colorSecondary: string;
+  textMuted: string;
+  borderAccent: string;
+  badgeBg: string;
+  badgeText: string;
+  fontHeading: string;
+  fontBody: string;
+  printBg: string;
+  printText: string;
+  printBorder: string;
+  printHeaderBorder: string;
+  printBadgeBg: string;
+}
+
 export interface ComponentTokens {
   '--font-heading': string;
   '--font-body': string;
@@ -153,6 +171,7 @@ export interface ComponentTokens {
   '--brand-watermark-image'?: string;
   '--brand-badge-graphic'?: string;
 
+  serverExportTokens?: ServerExportTokens;
   darkTokens?: Partial<Omit<ComponentTokens, 'darkTokens'>>;
 }
 
@@ -354,6 +373,24 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    serverExportTokens: {
+      canvasBg: '#fff1f2',
+      cardBg: '#ffffff',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      textMuted: '#4b5563',
+      borderAccent: '#B91C1C',
+      badgeBg: '#f3f4f6',
+      badgeText: '#B45309',
+      fontHeading: 'Playfair Display, Georgia, serif',
+      fontBody: 'Geist Sans, Arial, sans-serif',
+      printBg: '#ffffff',
+      printText: '#111827',
+      printBorder: '#e5e7eb',
+      printHeaderBorder: '#111827',
+      printBadgeBg: '#f3f4f6',
+    },
+
     darkTokens: {
       '--container-bg': '#111827',
       '--card-bg': '#1f2937',
@@ -546,6 +583,24 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
+
+    serverExportTokens: {
+      canvasBg: '#f8fafc',
+      cardBg: '#ffffff',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      textMuted: '#64748b',
+      borderAccent: '#cbd5e1',
+      badgeBg: '#f1f5f9',
+      badgeText: '#0f172a',
+      fontHeading: 'Inter, Arial, sans-serif',
+      fontBody: 'Inter, Arial, sans-serif',
+      printBg: '#ffffff',
+      printText: '#0f172a',
+      printBorder: '#cbd5e1',
+      printHeaderBorder: '#0f172a',
+      printBadgeBg: '#f1f5f9',
+    },
 
     darkTokens: {
       '--container-bg': '#020617',
@@ -740,6 +795,24 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    serverExportTokens: {
+      canvasBg: '#fdf2f8',
+      cardBg: '#fffafb',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      textMuted: '#9d174d',
+      borderAccent: '#fce7f3',
+      badgeBg: '#fce7f3',
+      badgeText: '#831843',
+      fontHeading: 'Cormorant Garamond, Georgia, serif',
+      fontBody: 'Lato, Arial, sans-serif',
+      printBg: '#fffafb',
+      printText: '#831843',
+      printBorder: '#fbcfe8',
+      printHeaderBorder: '#9d174d',
+      printBadgeBg: '#fce7f3',
+    },
+
     darkTokens: {
       '--container-bg': '#180910',
       '--card-bg': '#231118',
@@ -933,6 +1006,24 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
+
+    serverExportTokens: {
+      canvasBg: '#fafafa',
+      cardBg: '#ffffff',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      textMuted: '#71717a',
+      borderAccent: '#e4e4e7',
+      badgeBg: '#f4f4f5',
+      badgeText: '#18181b',
+      fontHeading: 'Geist Sans, Arial, sans-serif',
+      fontBody: 'Geist Sans, Arial, sans-serif',
+      printBg: '#ffffff',
+      printText: '#18181b',
+      printBorder: '#e4e4e7',
+      printHeaderBorder: '#18181b',
+      printBadgeBg: '#f4f4f5',
+    },
 
     darkTokens: {
       '--container-bg': '#09090b',
@@ -1130,6 +1221,24 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--brand-watermark-image': 'none',
     '--brand-badge-graphic': 'none',
 
+    serverExportTokens: {
+      canvasBg: '#f5f5f4',
+      cardBg: '#fcfbf9',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      textMuted: '#44403c',
+      borderAccent: '#000000',
+      badgeBg: '#e4e4e7',
+      badgeText: '#000000',
+      fontHeading: 'Cinzel, Georgia, serif',
+      fontBody: 'Lora, Georgia, serif',
+      printBg: '#fcfbf9',
+      printText: '#000000',
+      printBorder: '#000000',
+      printHeaderBorder: '#000000',
+      printBadgeBg: '#e4e4e7',
+    },
+
     darkTokens: {
       '--container-bg': '#0c0a09',
       '--card-bg': '#1c1917',
@@ -1238,4 +1347,100 @@ export function getPresetTokens(
   }
 
   return baseTokens;
+}
+
+function stripCssVar(val: unknown, fallback: string): string {
+  if (typeof val !== 'string' || !val) return fallback;
+  let str = val.trim();
+  let depth = 0;
+  const maxDepth = 10;
+
+  while (str.startsWith('var(') && str.endsWith(')') && depth < maxDepth) {
+    depth++;
+    const commaIdx = str.indexOf(',');
+    if (commaIdx === -1) {
+      break;
+    }
+    str = str.slice(commaIdx + 1, str.length - 1).trim();
+  }
+
+  if (!str || str.startsWith('var(')) {
+    return fallback;
+  }
+
+  return str;
+}
+
+export function getServerExportTokens(
+  presetKey?: string | null,
+  customTokens?: Record<string, any> | null,
+  overrides?: Record<string, any> | null
+): ServerExportTokens {
+  const selectedPreset = presetKey && isThemePreset(presetKey) ? presetKey : DEFAULT_THEME_PRESET;
+  const baseTokens = THEME_PRESETS[selectedPreset];
+  const baseExport: ServerExportTokens = baseTokens.serverExportTokens || {
+    canvasBg: '#fff1f2',
+    cardBg: '#ffffff',
+    colorPrimary: '#B91C1C',
+    colorSecondary: '#B45309',
+    textMuted: '#4b5563',
+    borderAccent: '#B91C1C',
+    badgeBg: '#f3f4f6',
+    badgeText: '#B45309',
+    fontHeading: 'Playfair Display, Georgia, serif',
+    fontBody: 'Geist Sans, Arial, sans-serif',
+    printBg: '#ffffff',
+    printText: '#111827',
+    printBorder: '#e5e7eb',
+    printHeaderBorder: '#111827',
+    printBadgeBg: '#f3f4f6',
+  };
+
+  const resolved: ServerExportTokens = { ...baseExport };
+
+  if (customTokens && typeof customTokens === 'object') {
+    if (customTokens.serverExportTokens && typeof customTokens.serverExportTokens === 'object') {
+      Object.assign(resolved, customTokens.serverExportTokens);
+    }
+    if (customTokens['--color-primary']) resolved.colorPrimary = stripCssVar(customTokens['--color-primary'], resolved.colorPrimary);
+    if (customTokens['--color-secondary']) resolved.colorSecondary = stripCssVar(customTokens['--color-secondary'], resolved.colorSecondary);
+    if (customTokens['--container-bg']) resolved.canvasBg = stripCssVar(customTokens['--container-bg'], resolved.canvasBg);
+    if (customTokens['--card-bg']) resolved.cardBg = stripCssVar(customTokens['--card-bg'], resolved.cardBg);
+    if (customTokens['--heading-color']) resolved.colorPrimary = stripCssVar(customTokens['--heading-color'], resolved.colorPrimary);
+    if (customTokens['--print-bg']) resolved.printBg = stripCssVar(customTokens['--print-bg'], resolved.printBg);
+    if (customTokens['--print-text']) resolved.printText = stripCssVar(customTokens['--print-text'], resolved.printText);
+    if (customTokens['--print-border']) resolved.printBorder = stripCssVar(customTokens['--print-border'], resolved.printBorder);
+    if (customTokens['--print-header-border']) resolved.printHeaderBorder = stripCssVar(customTokens['--print-header-border'], resolved.printHeaderBorder);
+    if (customTokens['--print-badge-bg']) resolved.printBadgeBg = stripCssVar(customTokens['--print-badge-bg'], resolved.printBadgeBg);
+    if (customTokens['--font-heading']) resolved.fontHeading = stripCssVar(customTokens['--font-heading'], resolved.fontHeading);
+    if (customTokens['--font-body']) resolved.fontBody = stripCssVar(customTokens['--font-body'], resolved.fontBody);
+  }
+
+  if (overrides && typeof overrides === 'object') {
+    const primary = overrides.primary || overrides.colorPrimary;
+    if (primary) resolved.colorPrimary = stripCssVar(primary, resolved.colorPrimary);
+
+    const secondary = overrides.secondary || overrides.colorSecondary;
+    if (secondary) resolved.colorSecondary = stripCssVar(secondary, resolved.colorSecondary);
+
+    if (overrides.canvasBg) resolved.canvasBg = stripCssVar(overrides.canvasBg, resolved.canvasBg);
+    if (overrides.cardBg) resolved.cardBg = stripCssVar(overrides.cardBg, resolved.cardBg);
+    if (overrides.textMuted) resolved.textMuted = stripCssVar(overrides.textMuted, resolved.textMuted);
+    if (overrides.borderAccent) resolved.borderAccent = stripCssVar(overrides.borderAccent, resolved.borderAccent);
+    if (overrides.badgeBg) resolved.badgeBg = stripCssVar(overrides.badgeBg, resolved.badgeBg);
+    if (overrides.badgeText) resolved.badgeText = stripCssVar(overrides.badgeText, resolved.badgeText);
+    if (overrides.fontHeading) resolved.fontHeading = stripCssVar(overrides.fontHeading, resolved.fontHeading);
+    if (overrides.fontBody) resolved.fontBody = stripCssVar(overrides.fontBody, resolved.fontBody);
+    if (overrides.printBg) resolved.printBg = stripCssVar(overrides.printBg, resolved.printBg);
+    if (overrides.printText) resolved.printText = stripCssVar(overrides.printText, resolved.printText);
+    if (overrides.printBorder) resolved.printBorder = stripCssVar(overrides.printBorder, resolved.printBorder);
+    if (overrides.printHeaderBorder) resolved.printHeaderBorder = stripCssVar(overrides.printHeaderBorder, resolved.printHeaderBorder);
+    if (overrides.printBadgeBg) resolved.printBadgeBg = stripCssVar(overrides.printBadgeBg, resolved.printBadgeBg);
+  }
+
+  (Object.keys(resolved) as Array<keyof ServerExportTokens>).forEach((key) => {
+    resolved[key] = stripCssVar(resolved[key], baseExport[key]);
+  });
+
+  return resolved;
 }

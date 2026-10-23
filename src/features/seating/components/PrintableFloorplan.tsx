@@ -2,25 +2,30 @@
 
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { getServerExportTokens, ServerExportTokens, ThemePreset } from '@/lib/theme/presets';
 
 interface PrintableFloorplanProps {
   tables: SeatingTableDTO[];
   unassignedGuests: InvitationCodeDTO[];
+  preset?: ThemePreset | string | null;
+  tokens?: Partial<ServerExportTokens>;
 }
 
-export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorplanProps) {
+export function PrintableFloorplan({ tables, unassignedGuests, preset, tokens }: PrintableFloorplanProps) {
+  const resolvedTokens = getServerExportTokens(preset, undefined, tokens);
+
   return (
     <main
       className="hidden print:block print:p-6 font-sans"
       aria-labelledby="printable-roster-title"
       style={{
-        backgroundColor: 'var(--print-bg, #ffffff)',
-        color: 'var(--print-text, #111827)',
+        backgroundColor: `var(--print-bg, ${resolvedTokens.printBg})`,
+        color: `var(--print-text, ${resolvedTokens.printText})`,
       }}
     >
       <div
         className="border-b-2 pb-4 mb-6 flex justify-between items-end"
-        style={{ borderColor: 'var(--print-header-border, #111827)' }}
+        style={{ borderColor: `var(--print-header-border, ${resolvedTokens.printHeaderBorder})` }}
       >
         <div>
           <h1 id="printable-roster-title" className="text-2xl font-bold uppercase tracking-wider">
@@ -45,14 +50,14 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
               className="border rounded-lg p-4 break-inside-avoid"
               aria-labelledby={`table-heading-${table.id}`}
               style={{
-                borderColor: 'var(--print-border, #e5e7eb)',
-                backgroundColor: 'var(--print-bg, #ffffff)',
+                borderColor: `var(--print-border, ${resolvedTokens.printBorder})`,
+                backgroundColor: `var(--print-bg, ${resolvedTokens.printBg})`,
                 borderRadius: 'var(--btn-radius, 0.5rem)',
               }}
             >
               <div
                 className="flex justify-between items-center border-b pb-2 mb-3"
-                style={{ borderColor: 'var(--print-header-border, #111827)' }}
+                style={{ borderColor: `var(--print-header-border, ${resolvedTokens.printHeaderBorder})` }}
               >
                 <h3 id={`table-heading-${table.id}`} className="font-bold text-base">
                   {table.name}
@@ -60,9 +65,9 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                 <span
                   className="text-xs font-mono px-2 py-0.5 rounded border"
                   style={{
-                    backgroundColor: 'var(--print-badge-bg, #f3f4f6)',
-                    borderColor: 'var(--print-border, #e5e7eb)',
-                    color: 'var(--print-text, #111827)',
+                    backgroundColor: `var(--print-badge-bg, ${resolvedTokens.printBadgeBg})`,
+                    borderColor: `var(--print-border, ${resolvedTokens.printBorder})`,
+                    color: `var(--print-text, ${resolvedTokens.printText})`,
                   }}
                 >
                   Shape: {table.shape} | Capacity: {table.capacity} | Seated: {table.invitationCodes?.length || 0}
@@ -75,7 +80,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                     <li
                       key={guest.id}
                       className="flex justify-between border-b border-dashed py-0.5"
-                      style={{ borderColor: 'var(--print-border, #e5e7eb)' }}
+                      style={{ borderColor: `var(--print-border, ${resolvedTokens.printBorder})` }}
                     >
                       <span className="font-medium">
                         Seat {guest.seatNumber || idx + 1}: {guest.guestName}
@@ -97,7 +102,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
         <section
           className="border-t-2 pt-4 break-before-auto"
           aria-labelledby="unassigned-guests-heading"
-          style={{ borderColor: 'var(--print-header-border, #111827)' }}
+          style={{ borderColor: `var(--print-header-border, ${resolvedTokens.printHeaderBorder})` }}
         >
           <h2 id="unassigned-guests-heading" className="text-sm font-bold uppercase mb-2">
             Unassigned Guests ({unassignedGuests.length})
@@ -108,8 +113,8 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                 key={guest.id}
                 className="p-1.5 border rounded flex justify-between"
                 style={{
-                  borderColor: 'var(--print-border, #e5e7eb)',
-                  backgroundColor: 'var(--print-badge-bg, #f3f4f6)',
+                  borderColor: `var(--print-border, ${resolvedTokens.printBorder})`,
+                  backgroundColor: `var(--print-badge-bg, ${resolvedTokens.printBadgeBg})`,
                 }}
               >
                 <span>{guest.guestName}</span>

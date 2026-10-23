@@ -324,7 +324,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   const envOverrides = getEnvConfigOverrides();
   const activePreset = envOverrides.themePreset || dbConfig?.themePreset || APP_DEFAULTS.themePreset;
   const presetTokens = getPresetTokens(activePreset, 'light');
-  const { darkTokens, ...cleanPresetTokens } = presetTokens as any;
+  const { darkTokens, serverExportTokens, ...cleanPresetTokens } = presetTokens as any;
 
   // Deterministic Precedence: Default Component Tokens < DB Stored Tokens < Env Overrides
   const mergedThemeTokens = {
@@ -333,6 +333,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
     ...((envOverrides as any)?.themeTokens || {}),
   };
   delete (mergedThemeTokens as any).darkTokens;
+  delete (mergedThemeTokens as any).serverExportTokens;
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
   const mergedConfig = {
