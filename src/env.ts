@@ -68,7 +68,14 @@ const isBuildTime = process.env.npm_lifecycle_event === 'build' ||
                     process.env.npm_lifecycle_event === 'db:seed' ||
                     process.env.NODE_ENV === 'test' ||
                     process.env.JEST_WORKER_ID !== undefined ||
-                    process.env.NEXT_RUNTIME === 'edge';
+                    process.env.NEXT_RUNTIME === 'edge' ||
+                    process.argv.some(arg => typeof arg === 'string' && (
+                      arg.includes('seed') ||
+                      arg.includes('generate-docs') ||
+                      arg.includes('generate-openapi') ||
+                      arg.includes('check-') ||
+                      arg.includes('verify-')
+                    ));
 
 // In production runtime, strictly require valid environment variables
 if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge' && !process.env.ADMIN_PASSWORD) {
