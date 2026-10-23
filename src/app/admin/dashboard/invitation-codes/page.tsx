@@ -1133,6 +1133,14 @@ export default function InvitationCodesDashboardPage() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
+                    {item.isSample && (
+                      <span
+                        className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
+                        data-testid="sample-guest-badge"
+                      >
+                        Sample
+                      </span>
+                    )}
                     {item.householdName && (
                       <span
                         className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"

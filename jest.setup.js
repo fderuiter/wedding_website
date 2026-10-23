@@ -6,6 +6,18 @@ import path from 'node:path';
 import moduleModule from 'node:module';
 import { pathToFileURL } from 'node:url';
 
+// Polyfill Promise.withResolvers for MSW interceptors in Jest VM
+if (typeof Promise.withResolvers !== 'function') {
+  Promise.withResolvers = function () {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
 // Patch module.createRequire to prevent JSDOM import.meta.url ('http://localhost/...') from crashing Node's createRequire
 const origCreateRequire = moduleModule.createRequire;
 moduleModule.createRequire = function (filename) {

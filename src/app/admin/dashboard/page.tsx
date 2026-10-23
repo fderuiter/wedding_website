@@ -79,7 +79,14 @@ export default function AdminDashboardPage() {
               <TableBody ref={desktopContainerRef}>
                 {(Array.isArray(items) ? items : []).map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-semibold">{item.name}</TableCell>
+                    <TableCell className="font-semibold">
+                      {item.name}
+                      {item.isSample && (
+                        <span className="ml-2 inline-flex items-center text-xs font-medium px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                          Sample
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>{formatCurrency(item.price)}</TableCell>
                     <TableCell>{item.purchased ? 'Yes' : 'No'}</TableCell>
                     <TableCell>
@@ -133,6 +140,9 @@ export default function AdminDashboardPage() {
                 <span className="text-sm font-semibold">{formatCurrency(item.price)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-xs mb-1">
+                {item.isSample && (
+                  <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700 font-medium">Sample</span>
+                )}
                 <span className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.purchased ? 'Claimed' : 'Available'}</span>
               </div>
               <div className="mb-2">

@@ -57,7 +57,7 @@ export class MediaRepository {
     };
   }
 
-  async createMedia(data: Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt'>, author: string = 'System') {
+  async createMedia(data: Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt' | 'isSample'> & { isSample?: boolean }, author: string = 'System') {
     return executeInTransaction(this.client, async (tx) => {
       const media = await tx.media.create({ data });
       await createAuditSnapshot('Media', media.id, media, author, tx);
@@ -65,7 +65,7 @@ export class MediaRepository {
     });
   }
 
-  async updateMedia(id: string, data: Partial<Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt'>>, author: string = 'System') {
+  async updateMedia(id: string, data: Partial<Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt' | 'isSample'> & { isSample?: boolean }>, author: string = 'System') {
     return executeInTransaction(this.client, async (tx) => {
       const media = await tx.media.update({ where: { id }, data });
       await createAuditSnapshot('Media', id, media, author, tx);

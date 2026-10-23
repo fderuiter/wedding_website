@@ -8,9 +8,39 @@ import {
   isThemePreset,
   DEFAULT_THEME_PRESET,
 } from '@/lib/theme/presets';
+import { PHYSICS_CONSTANTS } from '@/app/heart/constants';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
+
+export type ThemePhysics = {
+  accessibilityImpulse: number;
+  dragVelocityMultiplier: number;
+  bumpImpulseY: number;
+  bumpImpulseRandomMultiplier: number;
+  breakForceThreshold: number;
+  explosionImpulseLeft: { x: number; y: number; z: number };
+  explosionImpulseRight: { x: number; y: number; z: number };
+  explosionTorqueStrength: number;
+  returnForceMultiplier: number;
+  pulseSpeedDragging: number;
+  pulseSpeedIdle: number;
+  pulseScaleMultiplier: number;
+  idleRotationSpeed: number;
+};
+
+export type ThemeExtrusion = {
+  depth: number;
+  bevelEnabled: boolean;
+  bevelThickness: number;
+  bevelSize: number;
+  bevelSegments: number;
+};
+
+export type ThemeLighting = {
+  ambientIntensity: number;
+  directionalIntensity: number;
+};
 
 type ThemeContextType = {
   contactEmail: string;
@@ -37,6 +67,10 @@ type ThemeContextType = {
   cardMaxRotation: number;
   cardSpringStiffness: number;
   cardSpringDamping: number;
+  physics: ThemePhysics;
+  extrusion: ThemeExtrusion;
+  lighting: ThemeLighting;
+  glowFilter: string;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -64,6 +98,33 @@ const ThemeContext = createContext<ThemeContextType>({
   cardMaxRotation: 10,
   cardSpringStiffness: 300,
   cardSpringDamping: 20,
+  physics: {
+    accessibilityImpulse: PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE,
+    dragVelocityMultiplier: PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
+    bumpImpulseY: PHYSICS_CONSTANTS.BUMP_IMPULSE_Y,
+    bumpImpulseRandomMultiplier: PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER,
+    breakForceThreshold: PHYSICS_CONSTANTS.BREAK_FORCE_THRESHOLD,
+    explosionImpulseLeft: PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_LEFT,
+    explosionImpulseRight: PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_RIGHT,
+    explosionTorqueStrength: PHYSICS_CONSTANTS.EXPLOSION_TORQUE_STRENGTH,
+    returnForceMultiplier: PHYSICS_CONSTANTS.RETURN_FORCE_MULTIPLIER,
+    pulseSpeedDragging: PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING,
+    pulseSpeedIdle: PHYSICS_CONSTANTS.PULSE_SPEED_IDLE,
+    pulseScaleMultiplier: PHYSICS_CONSTANTS.PULSE_SCALE_MULTIPLIER,
+    idleRotationSpeed: PHYSICS_CONSTANTS.IDLE_ROTATION_SPEED,
+  },
+  extrusion: {
+    depth: 1.3,
+    bevelEnabled: true,
+    bevelThickness: 0.25,
+    bevelSize: 0.18,
+    bevelSegments: 4,
+  },
+  lighting: {
+    ambientIntensity: 0.8,
+    directionalIntensity: 1.6,
+  },
+  glowFilter: 'drop-shadow(0 0 10px var(--color-accent, #D4AF37))',
 });
 
 export const useTheme = () => useContext(ThemeContext);
@@ -867,7 +928,17 @@ export function ThemeProvider({
     config.fontMono,
   ]);
 
-  const activePresetTokens = getPresetTokens(config?.themePreset);
+  const themePreset = config?.themePreset;
+  const themeTokens = config?.themeTokens;
+
+  const activePresetTokens = useMemo(() => {
+    const base = getPresetTokens(themePreset);
+    if (themeTokens && typeof themeTokens === 'object') {
+      return { ...base, ...themeTokens };
+    }
+    return base;
+  }, [themePreset, themeTokens]);
+
   const fontHeading = sanitizeFontToken(config?.fontHeading, activePresetTokens['--font-heading']);
   const fontBody = sanitizeFontToken(config?.fontBody, activePresetTokens['--font-body']);
   const fontMono = sanitizeFontToken(config?.fontMono, activePresetTokens['--font-mono']);
@@ -877,6 +948,15 @@ export function ThemeProvider({
     const parsed = parseFloat(val);
     return Number.isNaN(parsed) ? fallback : parsed;
   };
+
+  const parseTokenBool = (val: string | undefined, fallback: boolean): boolean => {
+    if (!val) return fallback;
+    const clean = val.trim().toLowerCase();
+    if (clean === 'true') return true;
+    if (clean === 'false') return false;
+    return fallback;
+  };
+
   const metalness = parseTokenNum(activePresetTokens['--3d-metalness'], 1);
   const roughness = parseTokenNum(activePresetTokens['--3d-roughness'], 0.2);
   const envMapIntensity = parseTokenNum(activePresetTokens['--3d-env-map-intensity'], 1.2);
@@ -884,6 +964,47 @@ export function ThemeProvider({
   const cardMaxRotation = parseTokenNum(activePresetTokens['--card-max-rotation'], 10);
   const cardSpringStiffness = parseTokenNum(activePresetTokens['--card-spring-stiffness'], 300);
   const cardSpringDamping = parseTokenNum(activePresetTokens['--card-spring-damping'], 20);
+
+  const physics = useMemo<ThemePhysics>(() => ({
+    accessibilityImpulse: parseTokenNum(activePresetTokens['--3d-physics-accessibility-impulse'], PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE),
+    dragVelocityMultiplier: parseTokenNum(activePresetTokens['--3d-physics-drag-velocity-multiplier'], PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER),
+    bumpImpulseY: parseTokenNum(activePresetTokens['--3d-physics-bump-impulse-y'], PHYSICS_CONSTANTS.BUMP_IMPULSE_Y),
+    bumpImpulseRandomMultiplier: parseTokenNum(activePresetTokens['--3d-physics-bump-impulse-random-multiplier'], PHYSICS_CONSTANTS.BUMP_IMPULSE_RANDOM_MULTIPLIER),
+    breakForceThreshold: parseTokenNum(activePresetTokens['--3d-physics-break-force-threshold'], PHYSICS_CONSTANTS.BREAK_FORCE_THRESHOLD),
+    explosionImpulseLeft: {
+      x: parseTokenNum(activePresetTokens['--3d-physics-explosion-impulse-left-x'], PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_LEFT.x),
+      y: parseTokenNum(activePresetTokens['--3d-physics-explosion-impulse-left-y'], PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_LEFT.y),
+      z: parseTokenNum(activePresetTokens['--3d-physics-explosion-impulse-left-z'], PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_LEFT.z),
+    },
+    explosionImpulseRight: {
+      x: parseTokenNum(activePresetTokens['--3d-physics-explosion-impulse-right-x'], PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_RIGHT.x),
+      y: parseTokenNum(activePresetTokens['--3d-physics-explosion-impulse-right-y'], PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_RIGHT.y),
+      z: parseTokenNum(activePresetTokens['--3d-physics-explosion-impulse-right-z'], PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_RIGHT.z),
+    },
+    explosionTorqueStrength: parseTokenNum(activePresetTokens['--3d-physics-explosion-torque-strength'], PHYSICS_CONSTANTS.EXPLOSION_TORQUE_STRENGTH),
+    returnForceMultiplier: parseTokenNum(activePresetTokens['--3d-physics-return-force-multiplier'], PHYSICS_CONSTANTS.RETURN_FORCE_MULTIPLIER),
+    pulseSpeedDragging: parseTokenNum(activePresetTokens['--3d-physics-pulse-speed-dragging'], PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING),
+    pulseSpeedIdle: parseTokenNum(activePresetTokens['--3d-physics-pulse-speed-idle'], PHYSICS_CONSTANTS.PULSE_SPEED_IDLE),
+    pulseScaleMultiplier: parseTokenNum(activePresetTokens['--3d-physics-pulse-scale-multiplier'], PHYSICS_CONSTANTS.PULSE_SCALE_MULTIPLIER),
+    idleRotationSpeed: parseTokenNum(activePresetTokens['--3d-physics-idle-rotation-speed'], PHYSICS_CONSTANTS.IDLE_ROTATION_SPEED),
+  }), [activePresetTokens]);
+
+  const extrusion = useMemo<ThemeExtrusion>(() => ({
+    depth: parseTokenNum(activePresetTokens['--3d-extrusion-depth'], 1.3),
+    bevelEnabled: parseTokenBool(activePresetTokens['--3d-extrusion-bevel-enabled'], true),
+    bevelThickness: parseTokenNum(activePresetTokens['--3d-extrusion-bevel-thickness'], 0.25),
+    bevelSize: parseTokenNum(activePresetTokens['--3d-extrusion-bevel-size'], 0.18),
+    bevelSegments: parseTokenNum(activePresetTokens['--3d-extrusion-bevel-segments'], 4),
+  }), [activePresetTokens]);
+
+  const lighting = useMemo<ThemeLighting>(() => ({
+    ambientIntensity: parseTokenNum(activePresetTokens['--3d-light-ambient-intensity'], 0.8),
+    directionalIntensity: parseTokenNum(activePresetTokens['--3d-light-directional-intensity'], 1.6),
+  }), [activePresetTokens]);
+
+  const glowFilter = useMemo<string>(() => {
+    return sanitizeTokenValue(activePresetTokens['--glow-filter']) || 'drop-shadow(0 0 10px var(--color-accent, #D4AF37))';
+  }, [activePresetTokens]);
 
   const contextValue: ThemeContextType = {
     contactEmail: config.contactEmail || '',
@@ -898,6 +1019,10 @@ export function ThemeProvider({
     cardMaxRotation,
     cardSpringStiffness,
     cardSpringDamping,
+    physics,
+    extrusion,
+    lighting,
+    glowFilter,
     themeMode,
     mode: themeMode,
     setThemeMode,

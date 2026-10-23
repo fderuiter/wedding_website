@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { ContactForcePayload } from '@react-three/rapier';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 import { RapierRigidBody } from '@react-three/rapier';
-import { PHYSICS_CONSTANTS } from '../constants';
+import { useTheme } from '../../../components/ThemeProvider';
 
 const tempQuaternion = new THREE.Quaternion();
 const tempEuler = new THREE.Euler();
@@ -40,10 +40,11 @@ export function useHeartPhysics({
   setShowEasterEgg
 }: UseHeartPhysicsProps) {
 
+  const { physics } = useTheme();
   const wasInSecretSpot = useRef(false);
 
   const handleContactForce = (payload: ContactForcePayload) => {
-    if (!isBroken && payload.totalForceMagnitude > PHYSICS_CONSTANTS.BREAK_FORCE_THRESHOLD) {
+    if (!isBroken && payload.totalForceMagnitude > physics.breakForceThreshold) {
       breakHeart();
     }
   };
@@ -85,10 +86,10 @@ export function useHeartPhysics({
 
       // Apply explosion
       if (!reduceMotion) {
-        leftRb.applyImpulse(PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_LEFT, true);
-        rightRb.applyImpulse(PHYSICS_CONSTANTS.EXPLOSION_IMPULSE_RIGHT, true);
+        leftRb.applyImpulse(physics.explosionImpulseLeft, true);
+        rightRb.applyImpulse(physics.explosionImpulseRight, true);
 
-        const torqueStrength = PHYSICS_CONSTANTS.EXPLOSION_TORQUE_STRENGTH;
+        const torqueStrength = physics.explosionTorqueStrength;
         const leftTorque = {
           x: (Math.random() - 0.5) * torqueStrength,
           y: (Math.random() - 0.5) * torqueStrength,
@@ -126,7 +127,7 @@ export function useHeartPhysics({
       mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true);
       mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true);
     }
-  }, [isBroken, reduceMotion, mainRbRef, leftRbRef, rightRbRef]);
+  }, [isBroken, reduceMotion, mainRbRef, leftRbRef, rightRbRef, physics]);
 
   useFrame((state) => {
     if (mainRbRef.current && !isBroken) {
@@ -155,7 +156,7 @@ export function useHeartPhysics({
           if (typeof tempEuler.setFromQuaternion === 'function') {
             tempEuler.setFromQuaternion(tempQuaternion);
           }
-          tempEuler.y += PHYSICS_CONSTANTS.IDLE_ROTATION_SPEED;
+          tempEuler.y += physics.idleRotationSpeed;
           if (typeof tempQuaternion.setFromEuler === 'function') {
             tempQuaternion.setFromEuler(tempEuler);
           }
@@ -176,7 +177,7 @@ export function useHeartPhysics({
               tempVector.normalize();
             }
             if (typeof tempVector.multiplyScalar === 'function') {
-              tempVector.multiplyScalar(PHYSICS_CONSTANTS.RETURN_FORCE_MULTIPLIER);
+              tempVector.multiplyScalar(physics.returnForceMultiplier);
             }
             mainRbRef.current.addForce(tempVector, true);
           } else {
@@ -191,7 +192,7 @@ export function useHeartPhysics({
 
     if (!reduceMotion) {
       const t = state.clock.getElapsedTime();
-      const pulseScale = 1 + Math.sin(t * pulseSpeed) * PHYSICS_CONSTANTS.PULSE_SCALE_MULTIPLIER;
+      const pulseScale = 1 + Math.sin(t * pulseSpeed) * physics.pulseScaleMultiplier;
       if (groupRef.current) {
         groupRef.current.scale.set(pulseScale, pulseScale, pulseScale);
       }

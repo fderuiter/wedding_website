@@ -77,6 +77,14 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
             Most Wanted
           </span>
         )}
+        {item.isSample && (
+          <span
+            className={`absolute ${item.isMostWanted ? 'top-10 left-3' : 'top-3 left-3'} z-30 inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-[var(--shadow-xs)]`}
+            data-testid="sample-item-badge"
+          >
+            Sample
+          </span>
+        )}
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
