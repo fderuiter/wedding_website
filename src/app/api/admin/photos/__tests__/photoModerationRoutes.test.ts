@@ -82,6 +82,65 @@ describe('Admin Photo Moderation Routes', () => {
       expect(json.pendingCount).toBe(1);
       expect(json.photos).toEqual(mockPhotos);
     });
+
+    it('respects page and limit parameters on GET moderation queue', async () => {
+      const mockPhotos = [
+        { id: 'p2', title: 'Pending Photo 2', data: { status: 'PENDING', isVisible: false } },
+      ];
+      const mockResult: any = Object.assign([...mockPhotos], {
+        photos: mockPhotos,
+        total: 12,
+        page: 2,
+        limit: 5,
+        totalPages: 3,
+      });
+      (mockContentService.getPendingPhotos as jest.Mock).mockResolvedValueOnce(mockResult);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation?page=2&limit=5');
+      const res = await getModerationQueue(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(json.pendingCount).toBe(12);
+      expect(json.count).toBe(1);
+      expect(json.photos).toEqual(mockPhotos);
+      expect(json.pagination).toEqual({
+        page: 2,
+        limit: 5,
+        total: 12,
+        totalPages: 3,
+      });
+      expect(mockContentService.getPendingPhotos).toHaveBeenCalledWith({ page: 2, limit: 5 });
+    });
+
+    it('handles empty query parameters gracefully', async () => {
+      const mockPhotos = [
+        { id: 'p1', title: 'Pending Photo 1', data: { status: 'PENDING', isVisible: false } },
+      ];
+      (mockContentService.getPendingPhotos as jest.Mock).mockResolvedValueOnce({
+        photos: mockPhotos,
+        total: 1,
+        page: 1,
+        limit: 50,
+        totalPages: 1,
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation?page=&limit=');
+      const res = await getModerationQueue(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(json.pendingCount).toBe(1);
+      expect(json.pagination).toEqual({
+        page: 1,
+        limit: 50,
+        total: 1,
+        totalPages: 1,
+      });
+      expect(mockContentService.getPendingPhotos).toHaveBeenCalledWith({ page: undefined, limit: undefined });
+    });
   });
 
   describe('PATCH & POST /api/admin/photos/moderation', () => {
