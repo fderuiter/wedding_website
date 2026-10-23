@@ -701,9 +701,6 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing z-40"
                   onMouseDown={(e) => handleRotationMouseDown(e, table)}
                   title={`Rotate ${table.name} (drag mouse or press 'r', Alt+Arrows)`}
-                  aria-label={`Rotation handle for ${table.name}`}
-                  role="button"
-                  tabIndex={-1}
                 >
                   <button
                     type="button"
