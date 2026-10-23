@@ -634,6 +634,14 @@ export default function InvitationCodesDashboardPage() {
     addToast('Invitation codes exported successfully.', 'success');
   };
 
+  const handleCopyShareableLink = () => {
+    const url = `${window.location.origin}/guest/collect`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+    }
+    addToast('Shareable address collection link copied to clipboard!', 'success');
+  };
+
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Loading...</p></div>;
   if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
@@ -641,8 +649,9 @@ export default function InvitationCodesDashboardPage() {
     <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto relative pb-28">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-extrabold text-primary">Pre-Authorized Guest Invitation Codes</h1>
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap">
           <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
+          <Button variant="secondary" onClick={handleCopyShareableLink}>Copy Address Link</Button>
           <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
