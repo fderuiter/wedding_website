@@ -19,6 +19,59 @@ const PDFDocument = getPdfDocument();
 
 export type LabelTemplate = 'avery_5160' | 'avery_5163';
 
+export interface LabelThemeOptions {
+  fontFamily?: string;
+  fontHeading?: string;
+  fontBody?: string;
+  textColor?: string;
+  primaryColor?: string;
+  themeTokens?: Record<string, string>;
+}
+
+export function resolvePdfFont(fontInput?: string): 'Helvetica' | 'Times-Roman' | 'Courier' | string {
+  if (!fontInput || typeof fontInput !== 'string') {
+    return 'Helvetica';
+  }
+
+  const str = fontInput.toLowerCase();
+
+  if (str === 'times-roman' || str === 'times') return 'Times-Roman';
+  if (str === 'helvetica' || str === 'arial') return 'Helvetica';
+  if (str === 'courier') return 'Courier';
+
+  if (str.includes('monospace') || str.includes('mono') || str.includes('courier')) {
+    return 'Courier';
+  }
+
+  if (str.includes('sans-serif') || str.includes('sans') || str.includes('helvetica') || str.includes('arial') || str.includes('inter')) {
+    return 'Helvetica';
+  }
+
+  if (str.includes('serif') || str.includes('georgia') || str.includes('times') || str.includes('playfair') || str.includes('bodoni') || str.includes('cormorant') || str.includes('spectral')) {
+    return 'Times-Roman';
+  }
+
+  return 'Helvetica';
+}
+
+export function resolvePdfColor(colorInput?: string, fallback: string = '#111827'): string {
+  if (!colorInput || typeof colorInput !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = colorInput.trim();
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const hexMatch = trimmed.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})/);
+  if (hexMatch) {
+    return hexMatch[0];
+  }
+
+  return fallback;
+}
+
 interface LabelTemplateConfig {
   name: string;
   columns: number;
@@ -143,10 +196,35 @@ function formatAddressLines(data: AddressContributorInput): string[] {
 
 export function generatePdfLabelSheet(
   contributors: AddressContributorInput[],
-  template: LabelTemplate = 'avery_5160'
+  template: LabelTemplate = 'avery_5160',
+  themeOptions?: LabelThemeOptions
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const config = LABEL_TEMPLATES[template] || LABEL_TEMPLATES.avery_5160;
+
+    const headingFontInput =
+      themeOptions?.fontHeading ||
+      themeOptions?.themeTokens?.['--font-heading'];
+
+    const bodyFontInput =
+      themeOptions?.fontBody ||
+      themeOptions?.fontFamily ||
+      themeOptions?.themeTokens?.['--font-body'];
+
+    const resolvedBodyFont = resolvePdfFont(bodyFontInput);
+    const resolvedHeadingFont = resolvePdfFont(headingFontInput || bodyFontInput);
+
+    const textColorInput =
+      themeOptions?.textColor ||
+      themeOptions?.themeTokens?.['--print-text'];
+
+    const primaryColorInput =
+      themeOptions?.primaryColor ||
+      themeOptions?.themeTokens?.['--heading-color'] ||
+      themeOptions?.themeTokens?.['--btn-primary-bg'];
+
+    const resolvedTextColor = resolvePdfColor(textColorInput, '#111827');
+    const resolvedPrimaryColor = resolvePdfColor(primaryColorInput, resolvedTextColor);
 
     const doc = new PDFDocument({
       autoFirstPage: false,
@@ -161,7 +239,11 @@ export function generatePdfLabelSheet(
 
     if (contributors.length === 0) {
       doc.addPage();
-      doc.fontSize(10).text('No contributor records found for label export.', config.marginLeft, config.marginTop);
+      doc
+        .font(resolvedBodyFont)
+        .fontSize(10)
+        .fillColor(resolvedTextColor)
+        .text('No contributor records found for label export.', config.marginLeft, config.marginTop);
       doc.end();
       return;
     }
@@ -187,16 +269,26 @@ export function generatePdfLabelSheet(
 
           const lines = formatAddressLines(contributor);
 
-          doc.fontSize(config.fontSize);
           const lineHeight = config.fontSize + config.lineGap;
           const totalTextHeight = lines.length * lineHeight;
           const startY = Math.max(innerY, innerY + (innerHeight - totalTextHeight) / 2);
 
-          doc.text(lines.join('\n'), innerX, startY, {
-            width: innerWidth,
-            height: innerHeight,
-            align: 'left',
-            lineGap: config.lineGap,
+          lines.forEach((line, lineIdx) => {
+            const lineY = startY + lineIdx * lineHeight;
+            const isNameLine = lineIdx === 0;
+            const fontToUse = isNameLine ? resolvedHeadingFont : resolvedBodyFont;
+            const colorToUse = isNameLine ? resolvedPrimaryColor : resolvedTextColor;
+
+            doc
+              .font(fontToUse)
+              .fontSize(config.fontSize)
+              .fillColor(colorToUse)
+              .text(line, innerX, lineY, {
+                width: innerWidth,
+                height: lineHeight,
+                align: 'left',
+                lineBreak: false,
+              });
           });
         }
         if (itemIndex >= contributors.length) break;
