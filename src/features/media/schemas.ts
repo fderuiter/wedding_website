@@ -5,8 +5,9 @@ export const MediaSchema = z.object({
   url: z.string(),
   altText: z.string().nullable(),
   isDecorative: z.boolean(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+  isSample: z.boolean().optional().default(false),
+  createdAt: z.union([z.date(), z.string()]).optional(),
+  updatedAt: z.union([z.date(), z.string()]).optional(),
 });
 
 export type MediaDTO = z.infer<typeof MediaSchema>;

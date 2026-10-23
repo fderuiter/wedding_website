@@ -31,9 +31,9 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
         />
       </div>
       <div className="p-6">
-        <h3 className="text-2xl font-bold text-primary dark:text-primary mb-2">{member.name}</h3>
-        <p className="text-lg font-medium text-gray-600 dark:text-gray-300 mb-4">{member.role}</p>
-        <p className="text-base text-gray-700 dark:text-gray-400 mb-4">{member.bio}</p>
+        <h3 className="type-h3 text-primary dark:text-primary mb-2">{member.name}</h3>
+        <p className="type-body font-medium text-gray-600 dark:text-gray-300 mb-4">{member.role}</p>
+        <p className="type-body text-gray-700 dark:text-gray-400 mb-4">{member.bio}</p>
         {member.link && (
           <a
             href={member.link}

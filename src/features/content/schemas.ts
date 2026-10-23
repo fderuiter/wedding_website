@@ -30,6 +30,61 @@ export type ThemeTokensDTO = z.infer<typeof ThemeTokensSchema>;
 const fontTokenRegex = /^[a-zA-Z0-9_\-\s,'"\(\)]*$/;
 export const fontTokenSchema = z.string().regex(fontTokenRegex, 'Invalid font token format. Must only contain safe font-family characters.').nullable().optional();
 
+export const TypographyScaleSchema = z.object({
+  fontSizeXs: layoutTokenSchema.optional().default('0.75rem'),
+  fontSizeSm: layoutTokenSchema.optional().default('0.875rem'),
+  fontSizeBase: layoutTokenSchema.optional().default('1rem'),
+  fontSizeLg: layoutTokenSchema.optional().default('1.125rem'),
+  fontSizeXl: layoutTokenSchema.optional().default('1.25rem'),
+  fontSize2xl: layoutTokenSchema.optional().default('1.5rem'),
+  fontWeightNormal: z.string().optional().default('400'),
+  fontWeightMedium: z.string().optional().default('500'),
+  fontWeightBold: z.string().optional().default('700'),
+  lineHeightTight: z.string().optional().default('1.25'),
+  lineHeightNormal: z.string().optional().default('1.5'),
+  lineHeightRelaxed: z.string().optional().default('1.75'),
+});
+
+export type TypographyScaleDTO = z.infer<typeof TypographyScaleSchema>;
+
+export const SpacingScaleSchema = z.object({
+  spacingXs: layoutTokenSchema.optional().default('0.25rem'),
+  spacingSm: layoutTokenSchema.optional().default('0.5rem'),
+  spacingMd: layoutTokenSchema.optional().default('1rem'),
+  spacingLg: layoutTokenSchema.optional().default('1.5rem'),
+  spacingXl: layoutTokenSchema.optional().default('2rem'),
+  spacing2xl: layoutTokenSchema.optional().default('3rem'),
+  containerMaxWidth: layoutTokenSchema.optional().default('64rem'),
+  gridGap: layoutTokenSchema.optional().default('1.5rem'),
+  cardPadding: layoutTokenSchema.optional().default('2rem'),
+});
+
+export type SpacingScaleDTO = z.infer<typeof SpacingScaleSchema>;
+
+export const BorderTreatmentSchema = z.object({
+  borderRadiusSm: layoutTokenSchema.optional().default('0.25rem'),
+  borderRadiusMd: layoutTokenSchema.optional().default('0.5rem'),
+  borderRadiusLg: layoutTokenSchema.optional().default('1rem'),
+  borderRadiusFull: z.string().optional().default('9999px'),
+  borderWidthThin: layoutTokenSchema.optional().default('1px'),
+  borderWidthMedium: layoutTokenSchema.optional().default('2px'),
+  borderWidthThick: layoutTokenSchema.optional().default('4px'),
+  borderStyleDefault: z.string().optional().default('solid'),
+});
+
+export type BorderTreatmentDTO = z.infer<typeof BorderTreatmentSchema>;
+
+export const BrandDimensionsSchema = z.object({
+  logoWidth: layoutTokenSchema.optional().default('120px'),
+  logoHeight: layoutTokenSchema.optional().default('40px'),
+  heroHeight: layoutTokenSchema.optional().default('400px'),
+  watermarkWidth: layoutTokenSchema.optional().default('200px'),
+  watermarkOpacity: z.string().optional().default('0.1'),
+  badgeSize: layoutTokenSchema.optional().default('48px'),
+});
+
+export type BrandDimensionsDTO = z.infer<typeof BrandDimensionsSchema>;
+
 export const RawUpdateAppConfigSchema = z.object({
   partner1Name: z.string().optional(),
   partner2Name: z.string().optional(),
@@ -72,6 +127,16 @@ export const RawUpdateAppConfigSchema = z.object({
   colorSecondary: z.string().regex(hexColorRegex).optional(),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic'),
   themeTokens: ThemeTokensSchema.optional().default({}),
+  typographyScale: TypographyScaleSchema.optional().default(() => TypographyScaleSchema.parse({})),
+  spacingScale: SpacingScaleSchema.optional().default(() => SpacingScaleSchema.parse({})),
+  borderTreatment: BorderTreatmentSchema.optional().default(() => BorderTreatmentSchema.parse({})),
+  brandDimensions: BrandDimensionsSchema.optional().default(() => BrandDimensionsSchema.parse({})),
+  brandLogoWidth: layoutTokenSchema.optional(),
+  brandLogoHeight: layoutTokenSchema.optional(),
+  brandHeroHeight: layoutTokenSchema.optional(),
+  brandWatermarkWidth: layoutTokenSchema.optional(),
+  brandWatermarkOpacity: z.string().optional(),
+  brandBadgeSize: layoutTokenSchema.optional(),
   layoutContainerMaxWidth: layoutTokenSchema.optional(),
   layoutGridGap: layoutTokenSchema.optional(),
   layoutCardPadding: layoutTokenSchema.optional(),
@@ -438,6 +503,16 @@ export const AppConfigSchema = z.object({
     ThemeTokensSchema,
     z.record(z.string(), z.string())
   ]).pipe(ThemeTokensSchema).default({}),
+  typographyScale: TypographyScaleSchema.optional().default(() => TypographyScaleSchema.parse({})),
+  spacingScale: SpacingScaleSchema.optional().default(() => SpacingScaleSchema.parse({})),
+  borderTreatment: BorderTreatmentSchema.optional().default(() => BorderTreatmentSchema.parse({})),
+  brandDimensions: BrandDimensionsSchema.optional().default(() => BrandDimensionsSchema.parse({})),
+  brandLogoWidth: layoutTokenSchema.optional().default('120px'),
+  brandLogoHeight: layoutTokenSchema.optional().default('40px'),
+  brandHeroHeight: layoutTokenSchema.optional().default('400px'),
+  brandWatermarkWidth: layoutTokenSchema.optional().default('200px'),
+  brandWatermarkOpacity: z.string().optional().default('0.1'),
+  brandBadgeSize: layoutTokenSchema.optional().default('48px'),
   layoutContainerMaxWidth: layoutTokenSchema.optional().default('64rem'),
   layoutGridGap: layoutTokenSchema.optional().default('1.5rem'),
   layoutCardPadding: layoutTokenSchema.optional().default('2rem'),

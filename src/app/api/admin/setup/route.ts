@@ -10,6 +10,8 @@ import { isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/
 import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
+import { generateSampleData } from '@/lib/sampleData/generator';
+
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
   const initialized = isSiteInitialized(config);
@@ -137,6 +139,17 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       author: 'Admin (Setup)',
     },
   });
+
+  if (body.sampleArchetype !== undefined || body.sampleModules !== undefined) {
+    try {
+      await generateSampleData({
+        archetype: body.sampleArchetype,
+        modules: body.sampleModules,
+      });
+    } catch (sampleErr) {
+      console.error('Failed to generate sample data during setup:', sampleErr);
+    }
+  }
 
   try {
     revalidatePath('/', 'layout');

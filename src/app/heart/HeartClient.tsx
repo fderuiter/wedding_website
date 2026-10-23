@@ -16,7 +16,6 @@ import { Sparkles } from './components/Sparkles';
 import { Heart3D } from './components/Heart3D';
 import { ScreenBounds } from './components/ScreenBounds';
 import { useHeartPhysics } from './hooks/useHeartPhysics';
-import { PHYSICS_CONSTANTS } from './constants';
 
 /**
  * @function PhysicsHeart
@@ -59,11 +58,12 @@ function PhysicsHeart({
   const rightShardLabel = p2
     ? `Broken heart right segment: ${p2}.`
     : 'Broken heart right segment.';
+  const { physics } = useTheme();
   const heartRef = useRef<RapierRigidBody>(null!);
   const brokenHeartLeftRef = useRef<RapierRigidBody>(null!);
   const brokenHeartRightRef = useRef<RapierRigidBody>(null!);
   const groupRef = useRef<THREE.Group>(null!);
-  const [pulseSpeed, setPulseSpeed] = useState(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE);
+  const [pulseSpeed, setPulseSpeed] = useState(physics.pulseSpeedIdle);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const { size, viewport } = useThree();
 
@@ -99,22 +99,22 @@ function PhysicsHeart({
       onUp: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 0, y: PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: 0, y: physics.accessibilityImpulse, z: 0 }, true);
       },
       onDown: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 0, y: -PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: 0, y: -physics.accessibilityImpulse, z: 0 }, true);
       },
       onLeft: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: -PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, y: 0, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: -physics.accessibilityImpulse, y: 0, z: 0 }, true);
       },
       onRight: () => {
         if (!heartRef.current) return;
         if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: PHYSICS_CONSTANTS.ACCESSIBILITY_IMPULSE, y: 0, z: 0 }, true);
+        heartRef.current.applyImpulse({ x: physics.accessibilityImpulse, y: 0, z: 0 }, true);
       },
       onAction: (e: any) => {
         if (!heartRef.current) return;
@@ -124,7 +124,7 @@ function PhysicsHeart({
     },
     onDragStart: () => {
       if (!interacted) onInteract();
-      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_DRAGGING);
+      setPulseSpeed(physics.pulseSpeedDragging);
       if (heartRef.current) {
         heartRef.current.setBodyType(RigidBodyType.KinematicPositionBased, true);
       }
@@ -139,13 +139,13 @@ function PhysicsHeart({
       }
     },
     onDragEnd: ({ vx, vy }) => {
-      setPulseSpeed(PHYSICS_CONSTANTS.PULSE_SPEED_IDLE);
+      setPulseSpeed(physics.pulseSpeedIdle);
       if (heartRef.current) {
         heartRef.current.setBodyType(RigidBodyType.Dynamic, true);
         if (!reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
           heartRef.current.setLinvel({
-            x: vx * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
-            y: -vy * PHYSICS_CONSTANTS.DRAG_VELOCITY_MULTIPLIER,
+            x: vx * physics.dragVelocityMultiplier,
+            y: -vy * physics.dragVelocityMultiplier,
             z: 0
           }, true);
         }
@@ -357,6 +357,7 @@ function WebGLFallback({
   secondaryColor: string;
   accentColor: string;
 }) {
+  const { glowFilter } = useTheme();
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -455,7 +456,7 @@ function WebGLFallback({
           aria-hidden="true"
           role="img"
           className="animate-pulse motion-reduce:animate-none"
-          style={{ filter: `drop-shadow(0 0 10px ${accentColor})` }}
+          style={{ filter: glowFilter || `drop-shadow(0 0 10px ${accentColor})` }}
         >
           <path
             d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
@@ -524,7 +525,7 @@ function PerformanceTracker({
 export default function HeartClient({ partner1Name, partner2Name, brideName, groomName }: { partner1Name?: string; partner2Name?: string; brideName?: string; groomName?: string }) {
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
-  const { themePrimary, themeSecondary, themeAccent } = useTheme();
+  const { themePrimary, themeSecondary, themeAccent, lighting } = useTheme();
   const [interacted, setInteracted] = useState(false);
   const [scale, setScale] = useState(0.6);
   const [resetKey, setResetKey] = useState(0);
@@ -601,8 +602,8 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
         </Link>
       </div>
       <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
-        <ambientLight intensity={0.8} />
-        <directionalLight position={[5, 8, 5]} intensity={1.6} />
+        <ambientLight intensity={lighting?.ambientIntensity ?? 0.8} />
+        <directionalLight position={[5, 8, 5]} intensity={lighting?.directionalIntensity ?? 1.6} />
         <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
         <Suspense fallback={<Html>Loading…</Html>}>
           <Physics key={resetKey} gravity={[0, 0, 0]}>

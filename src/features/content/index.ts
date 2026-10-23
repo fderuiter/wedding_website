@@ -6,6 +6,10 @@ export {
   UpdateAppConfigSchema,
   deriveBrandMonogram,
   ThemeTokensSchema,
+  TypographyScaleSchema,
+  SpacingScaleSchema,
+  BorderTreatmentSchema,
+  BrandDimensionsSchema,
   cssTokenKeyRegex,
   isValidCssTokenValue,
   toAppConfigDbPayload,
@@ -23,6 +27,10 @@ export type {
   ContentNodeDTO,
   AppConfigDTO,
   ThemeTokensDTO,
+  TypographyScaleDTO,
+  SpacingScaleDTO,
+  BorderTreatmentDTO,
+  BrandDimensionsDTO,
 } from './schemas';
 export type { IContentRepository } from './types';
 

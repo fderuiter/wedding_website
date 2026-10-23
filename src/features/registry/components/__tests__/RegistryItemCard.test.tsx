@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
 import { RegistryItem, GuestSessionProvider } from '@/features/registry';
 import { apiClient } from '@/lib/apiClient';
@@ -826,6 +827,29 @@ describe('RegistryItemCard Component', () => {
       expect(screen.getByText('unformatted-text-handle')).toBeInTheDocument();
       expect(screen.queryByText('Open Link')).not.toBeInTheDocument();
       expect(screen.queryByText('Scan to Pay')).not.toBeInTheDocument();
+    });
+
+    it('integrates theme colors and preserves accessibility labels with ThemedQRCode', () => {
+      const venmoItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'themed-qr-test',
+        name: 'Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happy-couple',
+      };
+
+      render(
+        <ThemeProvider config={{ colorPrimary: '#B91C1C', themePreset: 'classic' }} initialThemeMode="light">
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard item={venmoItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          </Overlay>
+        </ThemeProvider>
+      );
+
+      const qrCode = screen.getByLabelText(/QR code to pay via Venmo/i);
+      expect(qrCode).toBeInTheDocument();
+      expect(screen.getByText('Scan to Pay')).toBeInTheDocument();
     });
   });
 });

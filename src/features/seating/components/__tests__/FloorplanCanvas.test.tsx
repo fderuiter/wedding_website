@@ -57,6 +57,7 @@ describe('FloorplanCanvas component', () => {
     selectedTableId: null,
     onSelectTable: jest.fn(),
     onUpdateTablePosition: jest.fn(),
+    onUpdateTableRotation: jest.fn(),
     onDropGuestOnTable: jest.fn(),
     onUnassignGuest: jest.fn(),
     onOpenSeatAssignModal: jest.fn(),
@@ -304,6 +305,137 @@ describe('FloorplanCanvas component', () => {
       fireEvent.keyDown(assignedSeat, { key: 'Enter' });
 
       expect(onSelectTable).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Rotation handles and angle controls', () => {
+    it('renders rotation handle and quick angle controls when a table is selected', () => {
+      render(<FloorplanCanvas {...defaultProps} selectedTableId="table-1" />);
+
+      expect(screen.getByTestId('rotation-handle')).toBeInTheDocument();
+      expect(screen.getByTestId('rotation-controls')).toBeInTheDocument();
+      expect(screen.getByTestId('table-rotation-display')).toHaveTextContent('0°');
+      expect(screen.getByRole('button', { name: /Rotate Head Table -45 degrees/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Rotate Head Table \+45 degrees/i })).toBeInTheDocument();
+    });
+
+    it('does not render rotation controls when no table is selected', () => {
+      render(<FloorplanCanvas {...defaultProps} selectedTableId={null} />);
+
+      expect(screen.queryByTestId('rotation-handle')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('rotation-controls')).not.toBeInTheDocument();
+    });
+
+    it('triggers onUpdateTableRotation callback when quick rotation buttons are clicked', () => {
+      const onUpdateTableRotation = jest.fn();
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          selectedTableId="table-1"
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const rotateMinus45Btn = screen.getByRole('button', { name: /Rotate Head Table -45 degrees/i });
+      fireEvent.click(rotateMinus45Btn);
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 315);
+
+      const rotatePlus45Btn = screen.getByRole('button', { name: /Rotate Head Table \+45 degrees/i });
+      fireEvent.click(rotatePlus45Btn);
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 45);
+    });
+
+    it('triggers onUpdateTableRotation callback on keyboard rotation shortcuts ("r", "Shift+r", "Alt+Arrows")', () => {
+      const onUpdateTableRotation = jest.fn();
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          selectedTableId="table-1"
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
+
+      // 'r' key rotates +45 degrees
+      fireEvent.keyDown(headTable, { key: 'r' });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 45);
+
+      // 'R' with shift rotates -45 degrees (0 - 45 = 315)
+      fireEvent.keyDown(headTable, { key: 'R', shiftKey: true });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 315);
+
+      // Alt + ArrowRight rotates +15 degrees
+      fireEvent.keyDown(headTable, { key: 'ArrowRight', altKey: true });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 15);
+
+      // Alt + ArrowLeft rotates -15 degrees (0 - 15 = 345)
+      fireEvent.keyDown(headTable, { key: 'ArrowLeft', altKey: true });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 345);
+
+      // Alt + Shift + ArrowRight rotates +45 degrees
+      fireEvent.keyDown(headTable, { key: 'ArrowRight', altKey: true, shiftKey: true });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 45);
+    });
+
+    it('calculates rotation angle on mouse drag on rotation handle', () => {
+      const onUpdateTableRotation = jest.fn();
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          selectedTableId="table-1"
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 800,
+        bottom: 650,
+        width: 800,
+        height: 650,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      const handleBtn = screen.getByRole('button', { name: /Rotate handle for Head Table/i });
+      fireEvent.mouseDown(handleBtn, { button: 0 });
+
+      // Mouse at (160, 220): table center is x=100+60=160, y=100+60=160
+      // Vector dx = 0, dy = 60 (pointing down, 180 degrees)
+      fireEvent.mouseMove(canvasElement, { clientX: 160, clientY: 220 });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 180);
+
+      // Mouse up ends rotation gesture
+      fireEvent.mouseUp(canvasElement);
+      fireEvent.mouseMove(canvasElement, { clientX: 200, clientY: 200 });
+      expect(onUpdateTableRotation).toHaveBeenCalledTimes(1);
+    });
+
+    it('normalizes rotation angles correctly to 0-359 degrees range', () => {
+      const rotatedTable: SeatingTableDTO = {
+        ...mockTables[0],
+        rotation: 350,
+      };
+
+      const onUpdateTableRotation = jest.fn();
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[rotatedTable]}
+          selectedTableId="table-1"
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
+
+      // 350 + 45 = 395 -> normalized to 35
+      fireEvent.keyDown(headTable, { key: 'r' });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 35);
     });
   });
 });

@@ -1,6 +1,58 @@
-import { generatePdfLabelSheet, AddressContributorInput } from '../pdfLabelGenerator';
+import {
+  generatePdfLabelSheet,
+  resolvePdfFont,
+  resolvePdfColor,
+  AddressContributorInput,
+} from '../pdfLabelGenerator';
 
 describe('pdfLabelGenerator', () => {
+  describe('resolvePdfFont', () => {
+    it('maps serif theme fonts to Times-Roman', () => {
+      expect(resolvePdfFont('var(--font-playfair), Playfair Display, Georgia, serif')).toBe('Times-Roman');
+      expect(resolvePdfFont('var(--font-cormorant), Cormorant Garamond, Georgia, serif')).toBe('Times-Roman');
+      expect(resolvePdfFont('var(--font-bodoni), Bodoni Moda, Georgia, serif')).toBe('Times-Roman');
+      expect(resolvePdfFont('serif')).toBe('Times-Roman');
+      expect(resolvePdfFont('Times-Roman')).toBe('Times-Roman');
+    });
+
+    it('maps sans-serif theme fonts to Helvetica', () => {
+      expect(resolvePdfFont('var(--font-inter), Inter, system-ui, sans-serif')).toBe('Helvetica');
+      expect(resolvePdfFont('var(--font-space-grotesk), Space Grotesk, sans-serif')).toBe('Helvetica');
+      expect(resolvePdfFont('var(--font-geist-sans), Arial, Helvetica, sans-serif')).toBe('Helvetica');
+      expect(resolvePdfFont('sans-serif')).toBe('Helvetica');
+      expect(resolvePdfFont('Helvetica')).toBe('Helvetica');
+    });
+
+    it('maps monospace theme fonts to Courier', () => {
+      expect(resolvePdfFont('var(--font-geist-mono), monospace')).toBe('Courier');
+      expect(resolvePdfFont('monospace')).toBe('Courier');
+      expect(resolvePdfFont('Courier')).toBe('Courier');
+    });
+
+    it('defaults to Helvetica when input is empty or missing', () => {
+      expect(resolvePdfFont(undefined)).toBe('Helvetica');
+      expect(resolvePdfFont('')).toBe('Helvetica');
+      expect(resolvePdfFont('custom-unknown-font')).toBe('Helvetica');
+    });
+  });
+
+  describe('resolvePdfColor', () => {
+    it('returns exact hex colors', () => {
+      expect(resolvePdfColor('#1f2937')).toBe('#1f2937');
+      expect(resolvePdfColor('#B91C1C')).toBe('#B91C1C');
+      expect(resolvePdfColor('#fff')).toBe('#fff');
+    });
+
+    it('extracts hex colors from CSS var fallback values', () => {
+      expect(resolvePdfColor('var(--color-primary, #b91c1c)')).toBe('#b91c1c');
+    });
+
+    it('falls back to default dark text token when input is invalid or missing', () => {
+      expect(resolvePdfColor(undefined, '#111827')).toBe('#111827');
+      expect(resolvePdfColor('invalid-color', '#111827')).toBe('#111827');
+    });
+  });
+
   it('generates a valid PDF buffer for Avery 5160 template with full address records', async () => {
     const contributors: AddressContributorInput[] = [
       {
@@ -125,6 +177,85 @@ describe('pdfLabelGenerator', () => {
     }));
 
     const buffer = await generatePdfLabelSheet(contributors, 'avery_5160');
+
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+  });
+
+  it('incorporates Classic serif/sans theme tokens and primary brand color', async () => {
+    const contributors: AddressContributorInput[] = [
+      {
+        name: 'Eleanor Vance',
+        invitationCode: {
+          addressLine1: '100 Hill House Rd',
+          city: 'Boston',
+          state: 'MA',
+          zipCode: '02108',
+        },
+      },
+    ];
+
+    const buffer = await generatePdfLabelSheet(contributors, 'avery_5160', {
+      fontHeading: 'var(--font-playfair), Playfair Display, Georgia, serif',
+      fontBody: 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
+      textColor: '#1f2937',
+      primaryColor: '#B91C1C',
+    });
+
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+  });
+
+  it('incorporates Romantic all-serif theme preset tokens', async () => {
+    const contributors: AddressContributorInput[] = [
+      {
+        name: 'Jane Bennet',
+        invitationCode: {
+          addressLine1: '12 Netherfield Park',
+          city: 'Hertfordshire',
+          state: 'UK',
+          zipCode: 'AL1 1AA',
+        },
+      },
+    ];
+
+    const buffer = await generatePdfLabelSheet(contributors, 'avery_5163', {
+      themeTokens: {
+        '--font-heading': 'var(--font-cormorant), Cormorant Garamond, Georgia, serif',
+        '--font-body': 'var(--font-alexandra), Alexandra, Georgia, serif',
+        '--print-text': '#1c1917',
+        '--heading-color': '#be123c',
+      },
+    });
+
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+  });
+
+  it('incorporates Modern all-sans-serif theme preset tokens', async () => {
+    const contributors: AddressContributorInput[] = [
+      {
+        name: 'Miles Davis',
+        invitationCode: {
+          addressLine1: '52 W 52nd St',
+          city: 'New York',
+          state: 'NY',
+          zipCode: '10019',
+        },
+      },
+    ];
+
+    const buffer = await generatePdfLabelSheet(contributors, 'avery_5160', {
+      themeTokens: {
+        '--font-heading': 'var(--font-inter), Inter, system-ui, sans-serif',
+        '--font-body': 'var(--font-inter), Inter, system-ui, sans-serif',
+        '--print-text': '#09090b',
+        '--heading-color': '#0284c7',
+      },
+    });
 
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(buffer.length).toBeGreaterThan(0);
