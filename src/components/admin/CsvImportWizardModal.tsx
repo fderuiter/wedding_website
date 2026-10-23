@@ -735,6 +735,16 @@ export function CsvImportWizardModal({
   const existingDbSetRef = useRef(existingDbSet);
   existingDbSetRef.current = existingDbSet;
 
+  // Refs for tracking validation debounce and cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingValidationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const inFlightValidationRef = useRef<Promise<void> | null>(null);
+  const prevStepRef = useRef<number | null>(null);
+  const prevStrategyRef = useRef<'skip' | 'update' | 'reject' | null>(null);
+
+  const collisionStrategyRef = useRef(collisionStrategy);
+  collisionStrategyRef.current = collisionStrategy;
+
   const runDryRunValidation = useCallback(
     async (rows: EditableRow[], strategy: 'skip' | 'update' | 'reject') => {
       if (rows.length === 0) {
@@ -742,6 +752,13 @@ export function CsvImportWizardModal({
         setServerSummary(null);
         return;
       }
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       setIsValidating(true);
       try {
@@ -772,10 +789,15 @@ export function CsvImportWizardModal({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+          signal: controller.signal,
         });
+
+        if (controller.signal.aborted) return;
 
         if (res.ok) {
           const data: DryRunValidationResponse = await res.json();
+          if (controller.signal.aborted) return;
+
           if (data && data.success && data.summary && data.rows) {
             setServerSummary(data.summary);
             setValidatedRows(data.rows as ExtendedParsedCsvRow[]);
@@ -783,9 +805,14 @@ export function CsvImportWizardModal({
             return;
           }
         }
-      } catch (_err) {
+      } catch (err: any) {
+        if (controller.signal.aborted || err?.name === 'AbortError') {
+          return;
+        }
         // Fallback to local computation if fetch is unhandled / unreachable
       }
+
+      if (controller.signal.aborted) return;
 
       const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
       codeFrequencyRef.current = freqMap;
@@ -796,15 +823,75 @@ export function CsvImportWizardModal({
     []
   );
 
+  const executeValidation = useCallback(
+    (rows: EditableRow[], strategy: 'skip' | 'update' | 'reject') => {
+      const promise = runDryRunValidation(rows, strategy);
+      inFlightValidationRef.current = promise;
+      promise.finally(() => {
+        if (inFlightValidationRef.current === promise) {
+          inFlightValidationRef.current = null;
+        }
+      });
+      return promise;
+    },
+    [runDryRunValidation]
+  );
+
   useEffect(() => {
     if (step === 3 && editableRows.length > 0) {
-      runDryRunValidation(editableRows, collisionStrategy);
+      const isInitialStep3 = prevStepRef.current !== 3;
+      const isStrategyChanged = prevStrategyRef.current !== collisionStrategy;
+
+      prevStepRef.current = step;
+      prevStrategyRef.current = collisionStrategy;
+
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
+      }
+
+      if (isInitialStep3 || isStrategyChanged) {
+        executeValidation(editableRows, collisionStrategy);
+      } else {
+        pendingValidationTimerRef.current = setTimeout(() => {
+          pendingValidationTimerRef.current = null;
+          executeValidation(editableRows, collisionStrategy);
+        }, 400);
+      }
     } else if (step !== 3) {
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      prevStepRef.current = step;
+      prevStrategyRef.current = collisionStrategy;
       setValidatedRows([]);
       setServerSummary(null);
       codeFrequencyRef.current.clear();
     }
-  }, [step, editableRows, collisionStrategy, runDryRunValidation]);
+
+    return () => {
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
+      }
+    };
+  }, [step, editableRows, collisionStrategy, executeValidation]);
+
+  const flushPendingValidation = useCallback(async () => {
+    if (pendingValidationTimerRef.current) {
+      clearTimeout(pendingValidationTimerRef.current);
+      pendingValidationTimerRef.current = null;
+      const promise = executeValidation(editableRowsRef.current, collisionStrategyRef.current);
+      await promise;
+    } else if (inFlightValidationRef.current) {
+      await inFlightValidationRef.current;
+    }
+  }, [executeValidation]);
 
   const summary = useMemo(() => {
     if (serverSummary) {
@@ -898,6 +985,8 @@ export function CsvImportWizardModal({
     const currentEditable = editableRowsRef.current;
     const oldRow = currentEditable[index];
 
+    setServerSummary(null);
+
     setEditableRows((prev) => {
       const next = [...prev];
       next[index] = {
@@ -977,6 +1066,8 @@ export function CsvImportWizardModal({
   const handleExtraFieldEdit = useCallback((index: number, key: string, value: string) => {
     const currentEditable = editableRowsRef.current;
 
+    setServerSummary(null);
+
     setEditableRows((prev) => {
       const next = [...prev];
       const updatedExtra = { ...next[index].extraFields, [key]: value };
@@ -1017,6 +1108,8 @@ export function CsvImportWizardModal({
     const currentEditable = editableRowsRef.current;
     const deletedRow = currentEditable[index];
     const deletedCode = (deletedRow?.code || '').trim().toUpperCase();
+
+    setServerSummary(null);
 
     const remainingEditable = currentEditable.filter((_, i) => i !== index);
     setEditableRows(remainingEditable);
@@ -1066,6 +1159,8 @@ export function CsvImportWizardModal({
       addToast('No records to import.', 'error');
       return;
     }
+
+    await flushPendingValidation();
 
     if (invalidCount > 0) {
       addToast('Please fix or remove invalid rows before submitting.', 'error');
