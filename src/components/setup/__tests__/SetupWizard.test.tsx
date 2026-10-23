@@ -98,7 +98,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
     fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
-    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
     fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
 
     const siteUrlInput = screen.getByLabelText(/Site URL/i) as HTMLInputElement;
@@ -157,7 +157,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
     fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
-    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
     fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
 
     const siteUrlInput = screen.getByLabelText(/Site URL/i) as HTMLInputElement;
@@ -208,7 +208,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
     fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
-    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
     fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
     fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
 

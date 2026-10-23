@@ -2580,6 +2580,274 @@
                       "type": "string"
                     }
                   },
+                  "typographyScale": {
+                    "default": {
+                      "fontSizeXs": "0.75rem",
+                      "fontSizeSm": "0.875rem",
+                      "fontSizeBase": "1rem",
+                      "fontSizeLg": "1.125rem",
+                      "fontSizeXl": "1.25rem",
+                      "fontSize2xl": "1.5rem",
+                      "fontWeightNormal": "400",
+                      "fontWeightMedium": "500",
+                      "fontWeightBold": "700",
+                      "lineHeightTight": "1.25",
+                      "lineHeightNormal": "1.5",
+                      "lineHeightRelaxed": "1.75"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "fontSizeXs": {
+                        "default": "0.75rem",
+                        "type": "string"
+                      },
+                      "fontSizeSm": {
+                        "default": "0.875rem",
+                        "type": "string"
+                      },
+                      "fontSizeBase": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "fontSizeLg": {
+                        "default": "1.125rem",
+                        "type": "string"
+                      },
+                      "fontSizeXl": {
+                        "default": "1.25rem",
+                        "type": "string"
+                      },
+                      "fontSize2xl": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "fontWeightNormal": {
+                        "default": "400",
+                        "type": "string"
+                      },
+                      "fontWeightMedium": {
+                        "default": "500",
+                        "type": "string"
+                      },
+                      "fontWeightBold": {
+                        "default": "700",
+                        "type": "string"
+                      },
+                      "lineHeightTight": {
+                        "default": "1.25",
+                        "type": "string"
+                      },
+                      "lineHeightNormal": {
+                        "default": "1.5",
+                        "type": "string"
+                      },
+                      "lineHeightRelaxed": {
+                        "default": "1.75",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fontSizeXs",
+                      "fontSizeSm",
+                      "fontSizeBase",
+                      "fontSizeLg",
+                      "fontSizeXl",
+                      "fontSize2xl",
+                      "fontWeightNormal",
+                      "fontWeightMedium",
+                      "fontWeightBold",
+                      "lineHeightTight",
+                      "lineHeightNormal",
+                      "lineHeightRelaxed"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "spacingScale": {
+                    "default": {
+                      "spacingXs": "0.25rem",
+                      "spacingSm": "0.5rem",
+                      "spacingMd": "1rem",
+                      "spacingLg": "1.5rem",
+                      "spacingXl": "2rem",
+                      "spacing2xl": "3rem",
+                      "containerMaxWidth": "64rem",
+                      "gridGap": "1.5rem",
+                      "cardPadding": "2rem"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "spacingXs": {
+                        "default": "0.25rem",
+                        "type": "string"
+                      },
+                      "spacingSm": {
+                        "default": "0.5rem",
+                        "type": "string"
+                      },
+                      "spacingMd": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "spacingLg": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "spacingXl": {
+                        "default": "2rem",
+                        "type": "string"
+                      },
+                      "spacing2xl": {
+                        "default": "3rem",
+                        "type": "string"
+                      },
+                      "containerMaxWidth": {
+                        "default": "64rem",
+                        "type": "string"
+                      },
+                      "gridGap": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "cardPadding": {
+                        "default": "2rem",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "spacingXs",
+                      "spacingSm",
+                      "spacingMd",
+                      "spacingLg",
+                      "spacingXl",
+                      "spacing2xl",
+                      "containerMaxWidth",
+                      "gridGap",
+                      "cardPadding"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "borderTreatment": {
+                    "default": {
+                      "borderRadiusSm": "0.25rem",
+                      "borderRadiusMd": "0.5rem",
+                      "borderRadiusLg": "1rem",
+                      "borderRadiusFull": "9999px",
+                      "borderWidthThin": "1px",
+                      "borderWidthMedium": "2px",
+                      "borderWidthThick": "4px",
+                      "borderStyleDefault": "solid"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "borderRadiusSm": {
+                        "default": "0.25rem",
+                        "type": "string"
+                      },
+                      "borderRadiusMd": {
+                        "default": "0.5rem",
+                        "type": "string"
+                      },
+                      "borderRadiusLg": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "borderRadiusFull": {
+                        "default": "9999px",
+                        "type": "string"
+                      },
+                      "borderWidthThin": {
+                        "default": "1px",
+                        "type": "string"
+                      },
+                      "borderWidthMedium": {
+                        "default": "2px",
+                        "type": "string"
+                      },
+                      "borderWidthThick": {
+                        "default": "4px",
+                        "type": "string"
+                      },
+                      "borderStyleDefault": {
+                        "default": "solid",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "borderRadiusSm",
+                      "borderRadiusMd",
+                      "borderRadiusLg",
+                      "borderRadiusFull",
+                      "borderWidthThin",
+                      "borderWidthMedium",
+                      "borderWidthThick",
+                      "borderStyleDefault"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "brandDimensions": {
+                    "default": {
+                      "logoWidth": "120px",
+                      "logoHeight": "40px",
+                      "heroHeight": "400px",
+                      "watermarkWidth": "200px",
+                      "watermarkOpacity": "0.1",
+                      "badgeSize": "48px"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "logoWidth": {
+                        "default": "120px",
+                        "type": "string"
+                      },
+                      "logoHeight": {
+                        "default": "40px",
+                        "type": "string"
+                      },
+                      "heroHeight": {
+                        "default": "400px",
+                        "type": "string"
+                      },
+                      "watermarkWidth": {
+                        "default": "200px",
+                        "type": "string"
+                      },
+                      "watermarkOpacity": {
+                        "default": "0.1",
+                        "type": "string"
+                      },
+                      "badgeSize": {
+                        "default": "48px",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "logoWidth",
+                      "logoHeight",
+                      "heroHeight",
+                      "watermarkWidth",
+                      "watermarkOpacity",
+                      "badgeSize"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "brandLogoWidth": {
+                    "type": "string"
+                  },
+                  "brandLogoHeight": {
+                    "type": "string"
+                  },
+                  "brandHeroHeight": {
+                    "type": "string"
+                  },
+                  "brandWatermarkWidth": {
+                    "type": "string"
+                  },
+                  "brandWatermarkOpacity": {
+                    "type": "string"
+                  },
+                  "brandBadgeSize": {
+                    "type": "string"
+                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -2702,7 +2970,11 @@
                   "ogImageUrl",
                   "seoKeywords",
                   "themePreset",
-                  "themeTokens"
+                  "themeTokens",
+                  "typographyScale",
+                  "spacingScale",
+                  "borderTreatment",
+                  "brandDimensions"
                 ],
                 "additionalProperties": {}
               }
@@ -2931,6 +3203,274 @@
                       "type": "string"
                     }
                   },
+                  "typographyScale": {
+                    "default": {
+                      "fontSizeXs": "0.75rem",
+                      "fontSizeSm": "0.875rem",
+                      "fontSizeBase": "1rem",
+                      "fontSizeLg": "1.125rem",
+                      "fontSizeXl": "1.25rem",
+                      "fontSize2xl": "1.5rem",
+                      "fontWeightNormal": "400",
+                      "fontWeightMedium": "500",
+                      "fontWeightBold": "700",
+                      "lineHeightTight": "1.25",
+                      "lineHeightNormal": "1.5",
+                      "lineHeightRelaxed": "1.75"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "fontSizeXs": {
+                        "default": "0.75rem",
+                        "type": "string"
+                      },
+                      "fontSizeSm": {
+                        "default": "0.875rem",
+                        "type": "string"
+                      },
+                      "fontSizeBase": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "fontSizeLg": {
+                        "default": "1.125rem",
+                        "type": "string"
+                      },
+                      "fontSizeXl": {
+                        "default": "1.25rem",
+                        "type": "string"
+                      },
+                      "fontSize2xl": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "fontWeightNormal": {
+                        "default": "400",
+                        "type": "string"
+                      },
+                      "fontWeightMedium": {
+                        "default": "500",
+                        "type": "string"
+                      },
+                      "fontWeightBold": {
+                        "default": "700",
+                        "type": "string"
+                      },
+                      "lineHeightTight": {
+                        "default": "1.25",
+                        "type": "string"
+                      },
+                      "lineHeightNormal": {
+                        "default": "1.5",
+                        "type": "string"
+                      },
+                      "lineHeightRelaxed": {
+                        "default": "1.75",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fontSizeXs",
+                      "fontSizeSm",
+                      "fontSizeBase",
+                      "fontSizeLg",
+                      "fontSizeXl",
+                      "fontSize2xl",
+                      "fontWeightNormal",
+                      "fontWeightMedium",
+                      "fontWeightBold",
+                      "lineHeightTight",
+                      "lineHeightNormal",
+                      "lineHeightRelaxed"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "spacingScale": {
+                    "default": {
+                      "spacingXs": "0.25rem",
+                      "spacingSm": "0.5rem",
+                      "spacingMd": "1rem",
+                      "spacingLg": "1.5rem",
+                      "spacingXl": "2rem",
+                      "spacing2xl": "3rem",
+                      "containerMaxWidth": "64rem",
+                      "gridGap": "1.5rem",
+                      "cardPadding": "2rem"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "spacingXs": {
+                        "default": "0.25rem",
+                        "type": "string"
+                      },
+                      "spacingSm": {
+                        "default": "0.5rem",
+                        "type": "string"
+                      },
+                      "spacingMd": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "spacingLg": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "spacingXl": {
+                        "default": "2rem",
+                        "type": "string"
+                      },
+                      "spacing2xl": {
+                        "default": "3rem",
+                        "type": "string"
+                      },
+                      "containerMaxWidth": {
+                        "default": "64rem",
+                        "type": "string"
+                      },
+                      "gridGap": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "cardPadding": {
+                        "default": "2rem",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "spacingXs",
+                      "spacingSm",
+                      "spacingMd",
+                      "spacingLg",
+                      "spacingXl",
+                      "spacing2xl",
+                      "containerMaxWidth",
+                      "gridGap",
+                      "cardPadding"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "borderTreatment": {
+                    "default": {
+                      "borderRadiusSm": "0.25rem",
+                      "borderRadiusMd": "0.5rem",
+                      "borderRadiusLg": "1rem",
+                      "borderRadiusFull": "9999px",
+                      "borderWidthThin": "1px",
+                      "borderWidthMedium": "2px",
+                      "borderWidthThick": "4px",
+                      "borderStyleDefault": "solid"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "borderRadiusSm": {
+                        "default": "0.25rem",
+                        "type": "string"
+                      },
+                      "borderRadiusMd": {
+                        "default": "0.5rem",
+                        "type": "string"
+                      },
+                      "borderRadiusLg": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "borderRadiusFull": {
+                        "default": "9999px",
+                        "type": "string"
+                      },
+                      "borderWidthThin": {
+                        "default": "1px",
+                        "type": "string"
+                      },
+                      "borderWidthMedium": {
+                        "default": "2px",
+                        "type": "string"
+                      },
+                      "borderWidthThick": {
+                        "default": "4px",
+                        "type": "string"
+                      },
+                      "borderStyleDefault": {
+                        "default": "solid",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "borderRadiusSm",
+                      "borderRadiusMd",
+                      "borderRadiusLg",
+                      "borderRadiusFull",
+                      "borderWidthThin",
+                      "borderWidthMedium",
+                      "borderWidthThick",
+                      "borderStyleDefault"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "brandDimensions": {
+                    "default": {
+                      "logoWidth": "120px",
+                      "logoHeight": "40px",
+                      "heroHeight": "400px",
+                      "watermarkWidth": "200px",
+                      "watermarkOpacity": "0.1",
+                      "badgeSize": "48px"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "logoWidth": {
+                        "default": "120px",
+                        "type": "string"
+                      },
+                      "logoHeight": {
+                        "default": "40px",
+                        "type": "string"
+                      },
+                      "heroHeight": {
+                        "default": "400px",
+                        "type": "string"
+                      },
+                      "watermarkWidth": {
+                        "default": "200px",
+                        "type": "string"
+                      },
+                      "watermarkOpacity": {
+                        "default": "0.1",
+                        "type": "string"
+                      },
+                      "badgeSize": {
+                        "default": "48px",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "logoWidth",
+                      "logoHeight",
+                      "heroHeight",
+                      "watermarkWidth",
+                      "watermarkOpacity",
+                      "badgeSize"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "brandLogoWidth": {
+                    "type": "string"
+                  },
+                  "brandLogoHeight": {
+                    "type": "string"
+                  },
+                  "brandHeroHeight": {
+                    "type": "string"
+                  },
+                  "brandWatermarkWidth": {
+                    "type": "string"
+                  },
+                  "brandWatermarkOpacity": {
+                    "type": "string"
+                  },
+                  "brandBadgeSize": {
+                    "type": "string"
+                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -3053,7 +3593,11 @@
                   "ogImageUrl",
                   "seoKeywords",
                   "themePreset",
-                  "themeTokens"
+                  "themeTokens",
+                  "typographyScale",
+                  "spacingScale",
+                  "borderTreatment",
+                  "brandDimensions"
                 ],
                 "additionalProperties": {}
               }
@@ -3293,6 +3837,274 @@
                       "type": "string"
                     }
                   },
+                  "typographyScale": {
+                    "default": {
+                      "fontSizeXs": "0.75rem",
+                      "fontSizeSm": "0.875rem",
+                      "fontSizeBase": "1rem",
+                      "fontSizeLg": "1.125rem",
+                      "fontSizeXl": "1.25rem",
+                      "fontSize2xl": "1.5rem",
+                      "fontWeightNormal": "400",
+                      "fontWeightMedium": "500",
+                      "fontWeightBold": "700",
+                      "lineHeightTight": "1.25",
+                      "lineHeightNormal": "1.5",
+                      "lineHeightRelaxed": "1.75"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "fontSizeXs": {
+                        "default": "0.75rem",
+                        "type": "string"
+                      },
+                      "fontSizeSm": {
+                        "default": "0.875rem",
+                        "type": "string"
+                      },
+                      "fontSizeBase": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "fontSizeLg": {
+                        "default": "1.125rem",
+                        "type": "string"
+                      },
+                      "fontSizeXl": {
+                        "default": "1.25rem",
+                        "type": "string"
+                      },
+                      "fontSize2xl": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "fontWeightNormal": {
+                        "default": "400",
+                        "type": "string"
+                      },
+                      "fontWeightMedium": {
+                        "default": "500",
+                        "type": "string"
+                      },
+                      "fontWeightBold": {
+                        "default": "700",
+                        "type": "string"
+                      },
+                      "lineHeightTight": {
+                        "default": "1.25",
+                        "type": "string"
+                      },
+                      "lineHeightNormal": {
+                        "default": "1.5",
+                        "type": "string"
+                      },
+                      "lineHeightRelaxed": {
+                        "default": "1.75",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fontSizeXs",
+                      "fontSizeSm",
+                      "fontSizeBase",
+                      "fontSizeLg",
+                      "fontSizeXl",
+                      "fontSize2xl",
+                      "fontWeightNormal",
+                      "fontWeightMedium",
+                      "fontWeightBold",
+                      "lineHeightTight",
+                      "lineHeightNormal",
+                      "lineHeightRelaxed"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "spacingScale": {
+                    "default": {
+                      "spacingXs": "0.25rem",
+                      "spacingSm": "0.5rem",
+                      "spacingMd": "1rem",
+                      "spacingLg": "1.5rem",
+                      "spacingXl": "2rem",
+                      "spacing2xl": "3rem",
+                      "containerMaxWidth": "64rem",
+                      "gridGap": "1.5rem",
+                      "cardPadding": "2rem"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "spacingXs": {
+                        "default": "0.25rem",
+                        "type": "string"
+                      },
+                      "spacingSm": {
+                        "default": "0.5rem",
+                        "type": "string"
+                      },
+                      "spacingMd": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "spacingLg": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "spacingXl": {
+                        "default": "2rem",
+                        "type": "string"
+                      },
+                      "spacing2xl": {
+                        "default": "3rem",
+                        "type": "string"
+                      },
+                      "containerMaxWidth": {
+                        "default": "64rem",
+                        "type": "string"
+                      },
+                      "gridGap": {
+                        "default": "1.5rem",
+                        "type": "string"
+                      },
+                      "cardPadding": {
+                        "default": "2rem",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "spacingXs",
+                      "spacingSm",
+                      "spacingMd",
+                      "spacingLg",
+                      "spacingXl",
+                      "spacing2xl",
+                      "containerMaxWidth",
+                      "gridGap",
+                      "cardPadding"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "borderTreatment": {
+                    "default": {
+                      "borderRadiusSm": "0.25rem",
+                      "borderRadiusMd": "0.5rem",
+                      "borderRadiusLg": "1rem",
+                      "borderRadiusFull": "9999px",
+                      "borderWidthThin": "1px",
+                      "borderWidthMedium": "2px",
+                      "borderWidthThick": "4px",
+                      "borderStyleDefault": "solid"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "borderRadiusSm": {
+                        "default": "0.25rem",
+                        "type": "string"
+                      },
+                      "borderRadiusMd": {
+                        "default": "0.5rem",
+                        "type": "string"
+                      },
+                      "borderRadiusLg": {
+                        "default": "1rem",
+                        "type": "string"
+                      },
+                      "borderRadiusFull": {
+                        "default": "9999px",
+                        "type": "string"
+                      },
+                      "borderWidthThin": {
+                        "default": "1px",
+                        "type": "string"
+                      },
+                      "borderWidthMedium": {
+                        "default": "2px",
+                        "type": "string"
+                      },
+                      "borderWidthThick": {
+                        "default": "4px",
+                        "type": "string"
+                      },
+                      "borderStyleDefault": {
+                        "default": "solid",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "borderRadiusSm",
+                      "borderRadiusMd",
+                      "borderRadiusLg",
+                      "borderRadiusFull",
+                      "borderWidthThin",
+                      "borderWidthMedium",
+                      "borderWidthThick",
+                      "borderStyleDefault"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "brandDimensions": {
+                    "default": {
+                      "logoWidth": "120px",
+                      "logoHeight": "40px",
+                      "heroHeight": "400px",
+                      "watermarkWidth": "200px",
+                      "watermarkOpacity": "0.1",
+                      "badgeSize": "48px"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "logoWidth": {
+                        "default": "120px",
+                        "type": "string"
+                      },
+                      "logoHeight": {
+                        "default": "40px",
+                        "type": "string"
+                      },
+                      "heroHeight": {
+                        "default": "400px",
+                        "type": "string"
+                      },
+                      "watermarkWidth": {
+                        "default": "200px",
+                        "type": "string"
+                      },
+                      "watermarkOpacity": {
+                        "default": "0.1",
+                        "type": "string"
+                      },
+                      "badgeSize": {
+                        "default": "48px",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "logoWidth",
+                      "logoHeight",
+                      "heroHeight",
+                      "watermarkWidth",
+                      "watermarkOpacity",
+                      "badgeSize"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "brandLogoWidth": {
+                    "type": "string"
+                  },
+                  "brandLogoHeight": {
+                    "type": "string"
+                  },
+                  "brandHeroHeight": {
+                    "type": "string"
+                  },
+                  "brandWatermarkWidth": {
+                    "type": "string"
+                  },
+                  "brandWatermarkOpacity": {
+                    "type": "string"
+                  },
+                  "brandBadgeSize": {
+                    "type": "string"
+                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -3415,7 +4227,11 @@
                   "ogImageUrl",
                   "seoKeywords",
                   "themePreset",
-                  "themeTokens"
+                  "themeTokens",
+                  "typographyScale",
+                  "spacingScale",
+                  "borderTreatment",
+                  "brandDimensions"
                 ],
                 "additionalProperties": {}
               }

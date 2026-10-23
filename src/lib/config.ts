@@ -1,6 +1,6 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
-import { AppConfigSchema, PublicAppConfigDTO } from '../features/content/schemas';
+import { AppConfigSchema, PublicAppConfigDTO, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
@@ -67,6 +67,16 @@ export const APP_DEFAULTS: LocalAppConfig = {
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
   layoutBorderRadius: '1rem',
+  typographyScale: TypographyScaleSchema.parse({}),
+  spacingScale: SpacingScaleSchema.parse({}),
+  borderTreatment: BorderTreatmentSchema.parse({}),
+  brandDimensions: BrandDimensionsSchema.parse({}),
+  brandLogoWidth: '120px',
+  brandLogoHeight: '40px',
+  brandHeroHeight: '400px',
+  brandWatermarkWidth: '200px',
+  brandWatermarkOpacity: '0.1',
+  brandBadgeSize: '48px',
   timezone: 'UTC',
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true,

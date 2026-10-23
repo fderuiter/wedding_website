@@ -111,6 +111,18 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--card-max-rotation']).toBeDefined();
       expect(tokens['--card-spring-stiffness']).toBeDefined();
       expect(tokens['--card-spring-damping']).toBeDefined();
+
+      // Check non-color theme token scales
+      expect(tokens['--font-size-base']).toBeDefined();
+      expect(tokens['--font-weight-bold']).toBeDefined();
+      expect(tokens['--line-height-normal']).toBeDefined();
+      expect(tokens['--spacing-md']).toBeDefined();
+      expect(tokens['--border-radius-md']).toBeDefined();
+      expect(tokens['--border-width-thin']).toBeDefined();
+      expect(tokens['--border-style-default']).toBeDefined();
+      expect(tokens['--brand-logo-width']).toBeDefined();
+      expect(tokens['--brand-hero-height']).toBeDefined();
+      expect(tokens['--brand-watermark-opacity']).toBeDefined();
     }
   });
 
