@@ -108,9 +108,9 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       case 'story':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary">{feature.title || 'Our Story'}</h2>
+            <h2 className="text-center type-h2 text-primary">{feature.title || 'Our Story'}</h2>
             {config.storyText.split('\n\n').map((paragraph, i) => (
-              <p key={i} className="text-lg leading-relaxed">{paragraph}</p>
+              <p key={i} className="type-body">{paragraph}</p>
             ))}
           </motion.section>
         );
@@ -130,16 +130,16 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
         const detailsNode = logisticsNodes.find(n => n.ceremonyTitle);
         if (!detailsNode) return (
           <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+            <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
             <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
           </motion.section>
         );
         return (
           <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+            <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
             <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
               <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
+                <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
                 <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                   <li>{detailsNode.ceremonyTime}</li>
                   <li>{config.venueName} · {config.venueAddress}</li>
@@ -147,7 +147,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                 </ul>
               </div>
               <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                <h3 className="mb-4 text-2xl font-semibold text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
+                <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
                 <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                   <li>{detailsNode.receptionTime}</li>
                   <li>{detailsNode.receptionDetails}</li>
@@ -162,9 +162,9 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
         const accNode = logisticsNodes.find(n => n.title?.includes('Accommodations') || n.description?.includes('hotel'));
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-4xl font-bold text-primary">{accNode?.title || feature.title || 'Accommodations'}</h2>
+            <h2 className="type-h2 text-primary">{accNode?.title || feature.title || 'Accommodations'}</h2>
             {accNode?.description ? (
-              <p className="mx-auto max-w-xl text-lg">{accNode.description}</p>
+              <p className="mx-auto max-w-xl type-body">{accNode.description}</p>
             ) : (
               <div className="text-center text-gray-500 dark:text-gray-400">Accommodation details coming soon...</div>
             )}
@@ -174,9 +174,9 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       case 'venue':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-4xl font-bold text-primary">{feature.title || 'About Our Venue'}</h2>
+            <h2 className="type-h2 text-primary">{feature.title || 'About Our Venue'}</h2>
             {config.venueDescription.split('\n\n').map((paragraph, i) => (
-              <p key={i} className="mx-auto max-w-xl text-lg">{paragraph}</p>
+              <p key={i} className="mx-auto max-w-xl type-body">{paragraph}</p>
             ))}
           </motion.section>
         );
@@ -184,13 +184,13 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
         const travelNodes = logisticsNodes.filter(n => !n.ceremonyTitle && !n.title?.includes('Accommodations'));
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-4xl font-bold text-primary">{feature.title || 'Travel & Things to Do'}</h2>
+            <h2 className="type-h2 text-primary">{feature.title || 'Travel & Things to Do'}</h2>
             {travelNodes.length > 0 ? (
               travelNodes.map((node: any, i: number) => (
                 <Interactive3DCard as="button" type="button" key={i} className="mt-4 focus-visible:ring-4 focus-visible:ring-primary outline-none" tabIndex={0} aria-label={node.title || 'Travel details'}>
                   <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-[var(--shadow-lg)] border border-primary dark:border-primary h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                    {node.title && <h3 className="font-semibold text-xl mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
-                    {node.description && <p className="text-lg [transform:translateZ(10px)]">{node.description}</p>}
+                    {node.title && <h3 className="type-h3 mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
+                    {node.description && <p className="type-body [transform:translateZ(10px)]">{node.description}</p>}
                   </div>
                 </Interactive3DCard>
               ))
@@ -203,16 +203,16 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       case 'faq':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary mb-8">{feature.title || 'Questions You Probably Have'}</h2>
+            <h2 className="text-center type-h2 text-primary mb-8">{feature.title || 'Questions You Probably Have'}</h2>
             <FaqAccordion faqs={faqNodes} />
           </motion.section>
         );
       case 'custom':
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center text-4xl font-bold text-primary">{feature.title}</h2>
+            <h2 className="text-center type-h2 text-primary">{feature.title}</h2>
             {feature.content?.split('\n\n').map((paragraph: string, i: number) => (
-              <p key={i} className="text-lg leading-relaxed">{paragraph}</p>
+              <p key={i} className="type-body">{paragraph}</p>
             ))}
           </motion.section>
         );
@@ -269,10 +269,10 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
                   className="mb-6 h-16 w-auto object-contain"
                 />
               )}
-              <motion.h1 className="mb-6 text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary sm:text-6xl lg:text-7xl" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+              <motion.h1 className="mb-6 type-display text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
                 {config.heroTitle || 'We Tied the Knot!'}
               </motion.h1>
-              <motion.p className="mb-4 text-lg font-medium sm:text-xl" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
+              <motion.p className="mb-4 type-body" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
                 {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
               </motion.p>
               {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
