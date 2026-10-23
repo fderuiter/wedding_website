@@ -14,6 +14,7 @@ export const WeddingPartyMemberSchema = z.object({
   side: WeddingPartySideSchema.nullish(),
   link: safeUrlSchema,
   order: z.coerce.number(),
+  isSample: z.boolean().default(false),
   createdAt: z.date(),
   updatedAt: z.date(),
 }).merge(createMediaAssociationSchema('photo'));

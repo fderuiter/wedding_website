@@ -2,6 +2,7 @@ import React from 'react';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { AdminNav, AdminNavItem } from './AdminNav';
+import { SampleDataBanner } from '@/components/admin/SampleDataBanner';
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/dashboard', label: 'Registry', featureId: 'registry' },
@@ -45,6 +46,7 @@ export default async function AdminDashboardLayout({
           <AdminNav items={visibleNavItems} />
         </div>
       </header>
+      <SampleDataBanner />
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6">
         {children}
       </main>

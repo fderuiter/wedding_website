@@ -13,6 +13,7 @@ export const SeatingTableSchema = z.object({
   width: z.number().positive().default(120),
   height: z.number().positive().default(120),
   rotation: z.number().default(0),
+  isSample: z.boolean().default(false),
   createdAt: z.union([z.string(), z.date()]).optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
   invitationCodes: z.array(InvitationCodeSchema).optional(),

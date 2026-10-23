@@ -269,7 +269,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
           {copied ? 'Link Copied!' : 'Share Gift'}
         </Button>
       </div>
-      {!item.purchased ? (
+      {item.isSample ? (
+        <div className="mt-5 pt-4 border-t border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 rounded-lg text-amber-900 dark:text-amber-100 text-sm">
+          <span className="font-bold block mb-1">Demo / Sample Registry Item</span>
+          Sample items demonstrate registry formatting and layout. Real payments and guest contributions are disabled on sample items.
+        </div>
+      ) : !item.purchased ? (
         <form noValidate 
           className="mt-5 pt-4 border-t border-primary"
           onSubmit={(e) => { e.preventDefault(); handleContributeClick(); }}
