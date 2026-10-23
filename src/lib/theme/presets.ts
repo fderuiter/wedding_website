@@ -1201,14 +1201,24 @@ export function getPresetTokens(
 
 function stripCssVar(val: unknown, fallback: string): string {
   if (typeof val !== 'string' || !val) return fallback;
-  const trimmed = val.trim();
-  if (trimmed.startsWith('var(')) {
-    const match = trimmed.match(/var\([^,]+,\s*(.+)\)$/);
-    if (match && match[1]) {
-      return stripCssVar(match[1].trim(), fallback);
+  let str = val.trim();
+  let depth = 0;
+  const maxDepth = 10;
+
+  while (str.startsWith('var(') && str.endsWith(')') && depth < maxDepth) {
+    depth++;
+    const commaIdx = str.indexOf(',');
+    if (commaIdx === -1) {
+      break;
     }
+    str = str.slice(commaIdx + 1, str.length - 1).trim();
   }
-  return trimmed;
+
+  if (!str || str.startsWith('var(')) {
+    return fallback;
+  }
+
+  return str;
 }
 
 export function getServerExportTokens(
