@@ -2,6 +2,7 @@ import {
   THEME_PRESETS,
   THEME_PRESET_KEYS,
   getPresetTokens,
+  getServerExportTokens,
   isThemePreset,
   parseDurationSec,
   DEFAULT_THEME_PRESET,
@@ -235,6 +236,75 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(parseDurationSec('abc', 0.5)).toBe(0.5);
       expect(parseDurationSec('ms')).toBe(0.8);
       expect(parseDurationSec('s', 0.2)).toBe(0.2);
+    });
+  });
+
+  describe('getServerExportTokens Utility', () => {
+    it('defines explicit serverExportTokens for all 5 built-in theme presets', () => {
+      for (const presetKey of THEME_PRESET_KEYS) {
+        const tokens = THEME_PRESETS[presetKey].serverExportTokens;
+        expect(tokens).toBeDefined();
+        expect(tokens?.canvasBg).toBeDefined();
+        expect(tokens?.cardBg).toBeDefined();
+        expect(tokens?.colorPrimary).toBeDefined();
+        expect(tokens?.colorSecondary).toBeDefined();
+        expect(tokens?.textMuted).toBeDefined();
+        expect(tokens?.borderAccent).toBeDefined();
+        expect(tokens?.badgeBg).toBeDefined();
+        expect(tokens?.badgeText).toBeDefined();
+        expect(tokens?.fontHeading).toBeDefined();
+        expect(tokens?.fontBody).toBeDefined();
+        expect(tokens?.printBg).toBeDefined();
+        expect(tokens?.printText).toBeDefined();
+        expect(tokens?.printBorder).toBeDefined();
+        expect(tokens?.printHeaderBorder).toBeDefined();
+        expect(tokens?.printBadgeBg).toBeDefined();
+      }
+    });
+
+    it('returns default classic server export tokens when called with no arguments', () => {
+      const resolved = getServerExportTokens();
+      expect(resolved).toEqual(THEME_PRESETS['classic'].serverExportTokens);
+    });
+
+    it('returns specific server export tokens for each preset key', () => {
+      const romantic = getServerExportTokens('romantic');
+      expect(romantic.canvasBg).toBe('#fdf2f8');
+      expect(romantic.printText).toBe('#831843');
+
+      const editorial = getServerExportTokens('editorial');
+      expect(editorial.canvasBg).toBe('#f5f5f4');
+      expect(editorial.printText).toBe('#000000');
+    });
+
+    it('falls back to default preset on invalid preset key', () => {
+      const fallback = getServerExportTokens('invalid-key');
+      expect(fallback).toEqual(THEME_PRESETS['classic'].serverExportTokens);
+    });
+
+    it('respects custom tokens and strips var(...) wrappers', () => {
+      const customTokens = {
+        '--color-primary': 'var(--color-primary, #123456)',
+        '--container-bg': '#f0f0f0',
+        '--print-bg': '#fafafa',
+      };
+      const resolved = getServerExportTokens('classic', customTokens);
+      expect(resolved.colorPrimary).toBe('#123456');
+      expect(resolved.canvasBg).toBe('#f0f0f0');
+      expect(resolved.printBg).toBe('#fafafa');
+    });
+
+    it('respects overrides over custom tokens and preset defaults', () => {
+      const overrides = {
+        primary: '#ff0000',
+        secondary: '#00ff00',
+        printBg: '#000000',
+      };
+      const resolved = getServerExportTokens('romantic', null, overrides);
+      expect(resolved.colorPrimary).toBe('#ff0000');
+      expect(resolved.colorSecondary).toBe('#00ff00');
+      expect(resolved.printBg).toBe('#000000');
+      expect(resolved.canvasBg).toBe('#fdf2f8');
     });
   });
 });
