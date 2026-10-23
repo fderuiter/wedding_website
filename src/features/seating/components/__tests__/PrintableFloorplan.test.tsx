@@ -136,4 +136,17 @@ describe('PrintableFloorplan component', () => {
     expect(screen.queryByRole('region', { name: /Unassigned Guests/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Unassigned Guests/i)).not.toBeInTheDocument();
   });
+
+  it('applies custom preset print tokens to element inline styles', () => {
+    const { container } = render(
+      <PrintableFloorplan tables={mockTables} unassignedGuests={mockUnassignedGuests} preset="romantic" />
+    );
+
+    const rootContainer = container.firstElementChild as HTMLElement;
+    expect(rootContainer.style.backgroundColor).toBe('var(--print-bg, #fffafb)');
+    expect(rootContainer.style.color).toBe('var(--print-text, #831843)');
+
+    const headerElement = rootContainer.querySelector('div.border-b-2') as HTMLElement;
+    expect(headerElement.style.borderColor).toBe('var(--print-header-border, #9d174d)');
+  });
 });
