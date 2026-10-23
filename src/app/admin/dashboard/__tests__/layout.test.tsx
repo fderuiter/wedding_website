@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AdminDashboardLayout from '../layout';
 import { AdminNav } from '../AdminNav';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 let mockPathname = '/admin/dashboard';
 
@@ -59,7 +60,7 @@ describe('AdminDashboardLayout and AdminNav', () => {
       children: <div data-testid="test-child">Admin Content</div>,
     });
 
-    render(layoutElement);
+    render(<ToastProvider>{layoutElement}</ToastProvider>);
 
     const mainElement = screen.getByRole('main');
     expect(mainElement).toBeInTheDocument();
@@ -71,7 +72,7 @@ describe('AdminDashboardLayout and AdminNav', () => {
       children: <div>Content</div>,
     });
 
-    render(layoutElement);
+    render(<ToastProvider>{layoutElement}</ToastProvider>);
 
     const navElement = screen.getByRole('navigation', { name: 'Admin Navigation' });
     expect(navElement).toBeInTheDocument();
