@@ -17,6 +17,7 @@ interface FloorplanCanvasProps {
   selectedTableId: string | null;
   onSelectTable: (tableId: string | null) => void;
   onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
+  onUpdateTableRotation?: (tableId: string, rotation: number) => void;
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
   onUnassignGuest: (guestId: string) => void;
   searchQuery?: string;
@@ -29,6 +30,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   selectedTableId,
   onSelectTable,
   onUpdateTablePosition,
+  onUpdateTableRotation,
   onDropGuestOnTable,
   onUnassignGuest,
   searchQuery,
@@ -37,6 +39,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 }: FloorplanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
+  const [rotatingTableId, setRotatingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
@@ -85,11 +88,34 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     };
   }, [tables, isSearching, normalizedQuery]);
 
-  // Handle table keyboard navigation & repositioning
+  // Rotate table by relative degree delta with normalization to 0-359
+  const rotateTableBy = (table: SeatingTableDTO, delta: number) => {
+    const current = table.rotation || 0;
+    let next = Math.round((current + delta) % 360);
+    if (next < 0) next += 360;
+    if (next === 360) next = 0;
+    onUpdateTableRotation?.(table.id, next);
+    setLiveAnnouncement(`${table.name} rotated to ${next} degrees`);
+  };
+
+  // Handle table keyboard navigation, repositioning & rotation
   const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onSelectTable(table.id);
+      return;
+    }
+
+    if (e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      rotateTableBy(table, e.shiftKey ? -45 : 45);
+      return;
+    }
+
+    if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault();
+      const step = e.shiftKey ? 45 : 15;
+      rotateTableBy(table, e.key === 'ArrowRight' ? step : -step);
       return;
     }
 
@@ -125,6 +151,15 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
   };
 
+  // Handle rotation mouse drag start
+  const handleRotationMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.button !== 0) return;
+    setRotatingTableId(table.id);
+    onSelectTable(table.id);
+  };
+
   // Handle table mouse drag
   const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
     e.stopPropagation();
@@ -144,6 +179,30 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (rotatingTableId && canvasRef.current) {
+      const table = tables.find((t) => t.id === rotatingTableId);
+      if (table) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const tableWidth = table.width || 120;
+        const tableHeight = table.height || 120;
+        const centerX = table.x + tableWidth / 2;
+        const centerY = table.y + tableHeight / 2;
+
+        const dx = mouseX - centerX;
+        const dy = mouseY - centerY;
+
+        const deg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+        let normalized = Math.round((deg % 360 + 360) % 360);
+        if (normalized === 360) normalized = 0;
+
+        onUpdateTableRotation?.(table.id, normalized);
+        setLiveAnnouncement(`${table.name} rotated to ${normalized} degrees`);
+      }
+      return;
+    }
+
     if (!draggingTableId || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const newX = Math.max(0, Math.min(rect.width - 120, e.clientX - rect.left - dragOffset.x));
@@ -153,6 +212,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
   const handleCanvasMouseUp = () => {
     setDraggingTableId(null);
+    setRotatingTableId(null);
   };
 
   // Seat circle keyboard events
@@ -595,6 +655,72 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
             {/* Individual Seat Circles around table */}
             {renderSeats(table)}
+
+            {/* Rotation Controls and Handle for Selected Table */}
+            {isSelected && (
+              <>
+                {/* Floating Quick Rotation Controls */}
+                <div
+                  data-testid="rotation-controls"
+                  className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-md px-2 py-1 z-40 text-xs font-semibold select-none"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      rotateTableBy(table, -45);
+                    }}
+                    className="px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                    title="Rotate -45°"
+                    aria-label={`Rotate ${table.name} -45 degrees`}
+                  >
+                    -45°
+                  </button>
+                  <span className="px-1 font-mono text-[11px] text-primary" data-testid="table-rotation-display">
+                    {table.rotation || 0}°
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      rotateTableBy(table, 45);
+                    }}
+                    className="px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                    title="Rotate +45°"
+                    aria-label={`Rotate ${table.name} +45 degrees`}
+                  >
+                    +45°
+                  </button>
+                </div>
+
+                {/* Floating Handle Stem and Knob */}
+                <div
+                  data-testid="rotation-handle"
+                  className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing z-40"
+                  onMouseDown={(e) => handleRotationMouseDown(e, table)}
+                  title={`Rotate ${table.name} (drag mouse or press 'r', Alt+Arrows)`}
+                  aria-label={`Rotation handle for ${table.name}`}
+                  role="button"
+                  tabIndex={-1}
+                >
+                  <button
+                    type="button"
+                    tabIndex={0}
+                    aria-label={`Rotate handle for ${table.name}`}
+                    className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+                    onMouseDown={(e) => handleRotationMouseDown(e, table)}
+                    onKeyDown={(e) => handleTableKeyDown(e, table)}
+                  >
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                  <div className="w-0.5 h-2 bg-primary" />
+                </div>
+              </>
+            )}
           </div>
         );
       })}
