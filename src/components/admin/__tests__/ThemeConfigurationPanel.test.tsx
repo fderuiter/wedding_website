@@ -26,6 +26,11 @@ describe('ThemeConfigurationPanel Component', () => {
     expect(screen.getByLabelText(/Grid Gap/i)).toHaveValue('1.5rem');
     expect(screen.getByLabelText(/Card Padding/i)).toHaveValue('2rem');
     expect(screen.getByLabelText(/Border Radius/i)).toHaveValue('1rem');
+    expect(screen.getByLabelText(/Print Background Color Code/i)).toHaveValue('#ffffff');
+    expect(screen.getByLabelText(/Print Text Color Code/i)).toHaveValue('#111827');
+    expect(screen.getByLabelText(/Print Border Color Code/i)).toHaveValue('#e5e7eb');
+    expect(screen.getByLabelText(/Print Header Border Color Code/i)).toHaveValue('#111827');
+    expect(screen.getByLabelText(/Print Badge Accent Color Code/i)).toHaveValue('#f3f4f6');
   });
 
   test('calls onChange when theme preset changes', () => {
@@ -76,5 +81,20 @@ describe('ThemeConfigurationPanel Component', () => {
     fireEvent.change(gridGapInput, { target: { value: '' } });
     expect(gridGapInput).toHaveAttribute('aria-invalid', 'false');
     expect(handleChange).toHaveBeenCalledWith({ layoutGridGap: '' });
+  });
+
+  test('calls onChange with updated print token when print background changes', () => {
+    const handleChange = jest.fn();
+    render(<ThemeConfigurationPanel values={defaultValues} onChange={handleChange} />);
+
+    const printBgInput = screen.getByLabelText(/Print Background Color Code/i);
+    fireEvent.change(printBgInput, { target: { value: '#fdf2f8' } });
+
+    expect(handleChange).toHaveBeenCalledWith({
+      printBg: '#fdf2f8',
+      themeTokens: {
+        '--print-bg': '#fdf2f8',
+      },
+    });
   });
 });

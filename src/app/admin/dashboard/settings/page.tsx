@@ -9,9 +9,10 @@ import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
 import { Dialog } from '@/components/ui/Dialog';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
-import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, Select, FormMessage } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
@@ -205,6 +206,38 @@ export default function AdminSettingsPage() {
     fetchAll,
   } = useAdminSettings(selectedProfileId);
 
+  const { testConnection, testingConnection } = useAdminBroadcast();
+
+  const handleTestConnection = async (type: 'email' | 'sms') => {
+    try {
+      const res: any = await testConnection({
+        type,
+        provider: type === 'email' ? localConfig?.emailProvider : localConfig?.smsProvider,
+        smtpHost: localConfig?.smtpHost,
+        smtpPort: localConfig?.smtpPort ? Number(localConfig.smtpPort) : 587,
+        smtpUser: localConfig?.smtpUser,
+        smtpPass: localConfig?.smtpPass,
+        smtpFrom: localConfig?.smtpFrom,
+        smtpSecure: Boolean(localConfig?.smtpSecure),
+        resendApiKey: localConfig?.resendApiKey,
+        resendFrom: localConfig?.resendFrom,
+        sendgridApiKey: localConfig?.sendgridApiKey,
+        sendgridFrom: localConfig?.sendgridFrom,
+        twilioAccountSid: localConfig?.twilioAccountSid,
+        twilioAuthToken: localConfig?.twilioAuthToken,
+        twilioFromNumber: localConfig?.twilioFromNumber,
+      });
+
+      if (res.success) {
+        addToast(`Successfully verified ${type.toUpperCase()} provider configuration!`, 'success');
+      } else {
+        addToast(`Connection test failed: ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      addToast(`Connection test failed: ${err.message}`, 'error');
+    }
+  };
+
   const [localConfig, setLocalConfig] = useState<any>(null);
   const [themeTokensText, setThemeTokensText] = useState('{}');
   const [themeTokensError, setThemeTokensError] = useState('');
@@ -300,7 +333,7 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setLocalConfig((prev: any) => ({ ...prev, [name]: value }));
   };
@@ -491,6 +524,12 @@ export default function AdminSettingsPage() {
                 layoutGridGap: localConfig.layoutGridGap,
                 layoutCardPadding: localConfig.layoutCardPadding,
                 layoutBorderRadius: localConfig.layoutBorderRadius,
+                themeTokens: localConfig.themeTokens,
+                printBg: localConfig.printBg || localConfig.themeTokens?.['--print-bg'],
+                printText: localConfig.printText || localConfig.themeTokens?.['--print-text'],
+                printBorder: localConfig.printBorder || localConfig.themeTokens?.['--print-border'],
+                printHeaderBorder: localConfig.printHeaderBorder || localConfig.themeTokens?.['--print-header-border'],
+                printBadgeBg: localConfig.printBadgeBg || localConfig.themeTokens?.['--print-badge-bg'],
                 fontSizeBase: localConfig.fontSizeBase,
                 fontSizeLg: localConfig.fontSizeLg,
                 fontWeightNormal: localConfig.fontWeightNormal,
@@ -510,10 +549,21 @@ export default function AdminSettingsPage() {
                 brandDimensions: localConfig.brandDimensions,
               }}
               onChange={(updated) => {
-                setLocalConfig((prev: any) => ({
-                  ...prev,
-                  ...updated,
-                }));
+                setLocalConfig((prev: any) => {
+                  const mergedTokens = {
+                    ...(prev?.themeTokens || {}),
+                    ...(updated.themeTokens || {}),
+                  };
+                  try {
+                    setThemeTokensText(JSON.stringify(mergedTokens, null, 2));
+                  } catch {}
+
+                  return {
+                    ...prev,
+                    ...updated,
+                    themeTokens: mergedTokens,
+                  };
+                });
               }}
             />
             <FormGroup>
@@ -606,6 +656,163 @@ export default function AdminSettingsPage() {
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
+            <div className="flex justify-between items-center mb-2">
+              <div>
+                <h2 className="text-xl font-semibold">Messaging & Broadcast Settings</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Configure delivery providers (SMTP, Resend, SendGrid, Twilio) and rate limits for guest broadcast communications.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={testingConnection}
+                  onClick={() => handleTestConnection('email')}
+                >
+                  {testingConnection ? 'Testing...' : 'Test Email Connection'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={testingConnection}
+                  onClick={() => handleTestConnection('sms')}
+                >
+                  {testingConnection ? 'Testing...' : 'Test SMS Connection'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4 border-gray-100 dark:border-gray-700">
+              <FormGroup>
+                <Label htmlFor="emailProvider">Email Delivery Provider</Label>
+                <Select
+                  id="emailProvider"
+                  name="emailProvider"
+                  value={localConfig.emailProvider || 'smtp'}
+                  onChange={handleChange}
+                >
+                  <option value="smtp">Standard SMTP Server</option>
+                  <option value="resend">Resend Email API</option>
+                  <option value="sendgrid">SendGrid Email API</option>
+                  <option value="none">Disabled / Simulation</option>
+                </Select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="smsProvider">SMS Gateway Provider</Label>
+                <Select
+                  id="smsProvider"
+                  name="smsProvider"
+                  value={localConfig.smsProvider || 'none'}
+                  onChange={handleChange}
+                >
+                  <option value="none">Disabled / Simulation</option>
+                  <option value="twilio">Twilio Programmable Messaging</option>
+                </Select>
+              </FormGroup>
+            </div>
+
+            {/* SMTP Settings */}
+            {(localConfig.emailProvider === 'smtp' || !localConfig.emailProvider) && (
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/40 rounded-lg space-y-3 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">SMTP Credentials</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <FormGroup>
+                    <Label>SMTP Host</Label>
+                    <Input type="text" name="smtpHost" value={localConfig.smtpHost || ''} onChange={handleChange} placeholder="smtp.mailgun.org" />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>SMTP Port</Label>
+                    <Input type="number" name="smtpPort" value={localConfig.smtpPort || 587} onChange={handleChange} placeholder="587" />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>From Email Address</Label>
+                    <Input type="email" name="smtpFrom" value={localConfig.smtpFrom || ''} onChange={handleChange} placeholder="wedding@example.com" />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>SMTP Username</Label>
+                    <Input type="text" name="smtpUser" value={localConfig.smtpUser || ''} onChange={handleChange} />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>SMTP Password</Label>
+                    <Input type="password" name="smtpPass" value={localConfig.smtpPass || ''} onChange={handleChange} />
+                  </FormGroup>
+                </div>
+              </div>
+            )}
+
+            {/* Resend Settings */}
+            {localConfig.emailProvider === 'resend' && (
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/40 rounded-lg space-y-3 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Resend API Credentials</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <FormGroup>
+                    <Label>Resend API Key</Label>
+                    <Input type="password" name="resendApiKey" value={localConfig.resendApiKey || ''} onChange={handleChange} placeholder="re_123456789..." />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Sender Email Address</Label>
+                    <Input type="email" name="resendFrom" value={localConfig.resendFrom || ''} onChange={handleChange} placeholder="wedding@yourdomain.com" />
+                  </FormGroup>
+                </div>
+              </div>
+            )}
+
+            {/* SendGrid Settings */}
+            {localConfig.emailProvider === 'sendgrid' && (
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/40 rounded-lg space-y-3 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">SendGrid API Credentials</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <FormGroup>
+                    <Label>SendGrid API Key</Label>
+                    <Input type="password" name="sendgridApiKey" value={localConfig.sendgridApiKey || ''} onChange={handleChange} placeholder="SG.123456789..." />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Sender Email Address</Label>
+                    <Input type="email" name="sendgridFrom" value={localConfig.sendgridFrom || ''} onChange={handleChange} placeholder="wedding@yourdomain.com" />
+                  </FormGroup>
+                </div>
+              </div>
+            )}
+
+            {/* Twilio Settings */}
+            {localConfig.smsProvider === 'twilio' && (
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/40 rounded-lg space-y-3 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Twilio SMS Credentials</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <FormGroup>
+                    <Label>Account SID</Label>
+                    <Input type="text" name="twilioAccountSid" value={localConfig.twilioAccountSid || ''} onChange={handleChange} placeholder="AC123456789..." />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Auth Token</Label>
+                    <Input type="password" name="twilioAuthToken" value={localConfig.twilioAuthToken || ''} onChange={handleChange} />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>From Phone Number</Label>
+                    <Input type="text" name="twilioFromNumber" value={localConfig.twilioFromNumber || ''} onChange={handleChange} placeholder="+15551234567" />
+                  </FormGroup>
+                </div>
+              </div>
+            )}
+
+            {/* Dispatch Safety & Batching */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <FormGroup>
+                <Label>Batch Size (Recipients per Chunk)</Label>
+                <Input type="number" name="broadcastBatchSize" value={localConfig.broadcastBatchSize || 50} onChange={handleChange} />
+              </FormGroup>
+              <FormGroup>
+                <Label>Batch Delay (ms between Chunks)</Label>
+                <Input type="number" name="broadcastBatchDelayMs" value={localConfig.broadcastBatchDelayMs || 500} onChange={handleChange} />
+              </FormGroup>
             </div>
           </section>
 

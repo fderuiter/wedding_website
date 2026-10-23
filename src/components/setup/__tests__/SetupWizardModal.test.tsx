@@ -111,8 +111,10 @@ describe('SetupWizard In-Modal Content Overlays', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
 
-    // Step 2: Add Content
-    await waitFor(() => expect(screen.getByText('Step 2: Add Content')).toBeInTheDocument());
+    // Step 3: Sample Data Selection -> Step 4: Complete Setup
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+    await waitFor(() => expect(screen.getByText('Step 4: Complete Setup')).toBeInTheDocument());
   };
 
   test('opens wedding party modal directly in setup wizard without calling window.open', async () => {

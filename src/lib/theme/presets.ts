@@ -282,6 +282,12 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
   '--map-marker-border-color': '#1f2937',
   '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
+  '--print-bg': '#ffffff',
+  '--print-text': '#111827',
+  '--print-border': '#374151',
+  '--print-header-border': '#111827',
+  '--print-badge-bg': '#f3f4f6',
+
 };
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -556,6 +562,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
       '--map-marker-border-color': '#1f2937',
       '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
+      '--print-bg': '#ffffff',
+      '--print-text': '#111827',
+      '--print-border': '#374151',
+      '--print-header-border': '#111827',
+      '--print-badge-bg': '#f3f4f6',
+
     },
   },
   modern: {
@@ -829,6 +841,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
       '--map-marker-border-color': '#0f172a',
       '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
+      '--print-bg': '#ffffff',
+      '--print-text': '#0f172a',
+      '--print-border': '#334155',
+      '--print-header-border': '#0f172a',
+      '--print-badge-bg': '#f1f5f9',
+
     },
   },
   romantic: {
@@ -1103,6 +1121,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
       '--map-marker-border-color': '#231118',
       '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
+      '--print-bg': '#fffafb',
+      '--print-text': '#831843',
+      '--print-border': '#4a1d2f',
+      '--print-header-border': '#831843',
+      '--print-badge-bg': '#fce7f3',
+
     },
   },
   minimal: {
@@ -1379,6 +1403,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
       '--map-marker-border-color': '#18181b',
       '--map-marker-shadow-color': 'rgba(0, 0, 0, 0.6)',
+      '--print-bg': '#ffffff',
+      '--print-text': '#09090b',
+      '--print-border': '#27272a',
+      '--print-header-border': '#09090b',
+      '--print-badge-bg': '#f4f4f5',
+
     },
   },
   editorial: {
@@ -1661,6 +1691,12 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--map-marker-pin-color': 'var(--color-primary, #B91C1C)',
       '--map-marker-border-color': '#ffffff',
       '--map-marker-shadow-color': 'rgba(255, 255, 255, 0.8)',
+      '--print-bg': '#ffffff',
+      '--print-text': '#000000',
+      '--print-border': '#000000',
+      '--print-header-border': '#000000',
+      '--print-badge-bg': '#e4e4e7',
+
     },
   },
 };
