@@ -65,6 +65,7 @@ model Media {
   url          String
   altText      String?
   isDecorative Boolean  @default(false)
+  isSample     Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -89,6 +90,7 @@ model WeddingPartyMember {
   photo     Media?            @relation(fields: [photoId], references: [id])
   link      String?
   order     Int               @default(0)
+  isSample  Boolean           @default(false)
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 }
@@ -110,6 +112,7 @@ model Attraction {
   roomRate    String?
   cutoffDate  String?
   shuttleInfo String?
+  isSample    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -133,6 +136,7 @@ model RegistryItem {
   purchased         Boolean       @default(false)
   purchaserName     String?
   amountContributed Float         @default(0)
+  isSample          Boolean       @default(false)
   contributors      Contributor[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -182,6 +186,7 @@ model InvitationCode {
   tableId            String?
   table              SeatingTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   seatNumber         Int?
+  isSample           Boolean       @default(false)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -202,6 +207,7 @@ model SeatingTable {
   width           Float            @default(120.0)
   height          Float            @default(120.0)
   rotation        Float            @default(0.0)
+  isSample        Boolean          @default(false)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 

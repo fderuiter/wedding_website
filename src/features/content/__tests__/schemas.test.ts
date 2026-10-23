@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -814,6 +814,114 @@ describe('Content Node Schema Validation', () => {
     it('falls back to default when config or partner names are missing', () => {
       expect(deriveBrandMonogram(null)).toBe('A & F');
       expect(deriveBrandMonogram({})).toBe('A & F');
+    });
+  });
+
+  describe('Non-Color Theme Token Schemas', () => {
+    describe('TypographyScaleSchema', () => {
+      it('provides default values when empty object is passed', () => {
+        const result = TypographyScaleSchema.parse({});
+        expect(result.fontSizeBase).toBe('1rem');
+        expect(result.fontWeightNormal).toBe('400');
+        expect(result.lineHeightNormal).toBe('1.5');
+      });
+
+      it('accepts valid CSS length units for font sizes', () => {
+        const validPayload = {
+          fontSizeXs: '12px',
+          fontSizeBase: '1.1rem',
+          fontWeightBold: '800',
+        };
+        const result = TypographyScaleSchema.safeParse(validPayload);
+        expect(result.success).toBe(true);
+      });
+
+      it('rejects invalid length unit strings', () => {
+        const invalidPayload = {
+          fontSizeBase: '16invalidUnit',
+        };
+        const result = TypographyScaleSchema.safeParse(invalidPayload);
+        expect(result.success).toBe(false);
+      });
+    });
+
+    describe('SpacingScaleSchema', () => {
+      it('provides default values when empty object is passed', () => {
+        const result = SpacingScaleSchema.parse({});
+        expect(result.spacingMd).toBe('1rem');
+        expect(result.containerMaxWidth).toBe('64rem');
+        expect(result.gridGap).toBe('1.5rem');
+      });
+
+      it('accepts custom valid spacing units', () => {
+        const validPayload = {
+          spacingSm: '8px',
+          containerMaxWidth: '1200px',
+        };
+        const result = SpacingScaleSchema.safeParse(validPayload);
+        expect(result.success).toBe(true);
+      });
+
+      it('rejects invalid spacing unit formats', () => {
+        const invalidPayload = {
+          spacingMd: '100bad',
+        };
+        const result = SpacingScaleSchema.safeParse(invalidPayload);
+        expect(result.success).toBe(false);
+      });
+    });
+
+    describe('BorderTreatmentSchema', () => {
+      it('provides default values when empty object is passed', () => {
+        const result = BorderTreatmentSchema.parse({});
+        expect(result.borderRadiusMd).toBe('0.5rem');
+        expect(result.borderWidthThin).toBe('1px');
+        expect(result.borderStyleDefault).toBe('solid');
+      });
+
+      it('accepts custom border dimensions', () => {
+        const validPayload = {
+          borderRadiusLg: '16px',
+          borderWidthThick: '3px',
+        };
+        const result = BorderTreatmentSchema.safeParse(validPayload);
+        expect(result.success).toBe(true);
+      });
+
+      it('rejects invalid border radius formats', () => {
+        const invalidPayload = {
+          borderRadiusSm: 'invalid_radius',
+        };
+        const result = BorderTreatmentSchema.safeParse(invalidPayload);
+        expect(result.success).toBe(false);
+      });
+    });
+
+    describe('BrandDimensionsSchema', () => {
+      it('provides default values when empty object is passed', () => {
+        const result = BrandDimensionsSchema.parse({});
+        expect(result.logoWidth).toBe('120px');
+        expect(result.heroHeight).toBe('400px');
+        expect(result.watermarkOpacity).toBe('0.1');
+      });
+
+      it('accepts custom brand dimensions', () => {
+        const validPayload = {
+          logoWidth: '150px',
+          heroHeight: '500px',
+          watermarkOpacity: '0.25',
+        };
+        const result = BrandDimensionsSchema.safeParse(validPayload);
+        expect(result.success).toBe(true);
+      });
+
+      it('rejects invalid dimension unit formats', () => {
+        const invalidPayload = {
+          logoWidth: '150notaunit',
+        };
+        const result = BrandDimensionsSchema.safeParse(invalidPayload);
+        expect(result.success).toBe(false);
+      });
     });
   });
 });
