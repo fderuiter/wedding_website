@@ -36,7 +36,7 @@ class RegistryService {
    * @param data - The data for the new item.
    * @returns A promise that resolves to the newly created registry item.
    */
-  async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+  async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased' | 'isSample'> & { isSample?: boolean; imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
     return this.repository.createItem(data);
   }
 

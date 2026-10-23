@@ -24,7 +24,13 @@ export function Heart3D({
 }) {
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
-  const { themeOutline, metalness = 1, roughness = 0.2, envMapIntensity = 1.2 } = useTheme();
+  const { themeOutline, metalness = 1, roughness = 0.2, envMapIntensity = 1.2, extrusion } = useTheme();
+
+  const depth = extrusion?.depth ?? 1.3;
+  const bevelEnabled = extrusion?.bevelEnabled ?? true;
+  const bevelSegments = extrusion?.bevelSegments ?? 4;
+  const bevelThickness = extrusion?.bevelThickness ?? 0.25;
+  const bevelSize = extrusion?.bevelSize ?? 0.18;
 
   const geom = useMemo(() => {
     const s = new THREE.Shape();
@@ -32,15 +38,15 @@ export function Heart3D({
     s.bezierCurveTo(-1.6, -3.2, -4, -0.8, 0, 2.5);
     s.bezierCurveTo(4, -0.8, 1.6, -3.2, 0, -1.4);
     const g = new THREE.ExtrudeGeometry(s, {
-      depth: 1.3,
-      bevelEnabled: true,
-      bevelSegments: 4,
-      bevelThickness: 0.25,
-      bevelSize: 0.18,
+      depth,
+      bevelEnabled,
+      bevelSegments,
+      bevelThickness,
+      bevelSize,
     });
     g.center();
     return g;
-  }, []);
+  }, [depth, bevelEnabled, bevelSegments, bevelThickness, bevelSize]);
 
   const planeLeft = useMemo(() => new THREE.Plane(new THREE.Vector3(1, 0, 0), 0), []);
   const planeRight = useMemo(() => new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0), []);

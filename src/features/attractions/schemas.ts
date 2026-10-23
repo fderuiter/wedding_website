@@ -18,6 +18,7 @@ export const AttractionSchema = z.object({
   roomRate: z.string().nullable().optional(),
   cutoffDate: z.string().nullable().optional(),
   shuttleInfo: z.string().nullable().optional(),
+  isSample: z.boolean().default(false),
   createdAt: z.date(),
   updatedAt: z.date(),
 }).merge(createMediaAssociationSchema('image'));

@@ -124,6 +124,31 @@ export interface ComponentTokens {
   '--3d-metalness': string;
   '--3d-roughness': string;
   '--3d-env-map-intensity': string;
+  '--3d-physics-accessibility-impulse': string;
+  '--3d-physics-drag-velocity-multiplier': string;
+  '--3d-physics-bump-impulse-y': string;
+  '--3d-physics-bump-impulse-random-multiplier': string;
+  '--3d-physics-break-force-threshold': string;
+  '--3d-physics-explosion-impulse-left-x': string;
+  '--3d-physics-explosion-impulse-left-y': string;
+  '--3d-physics-explosion-impulse-left-z': string;
+  '--3d-physics-explosion-impulse-right-x': string;
+  '--3d-physics-explosion-impulse-right-y': string;
+  '--3d-physics-explosion-impulse-right-z': string;
+  '--3d-physics-explosion-torque-strength': string;
+  '--3d-physics-return-force-multiplier': string;
+  '--3d-physics-pulse-speed-dragging': string;
+  '--3d-physics-pulse-speed-idle': string;
+  '--3d-physics-pulse-scale-multiplier': string;
+  '--3d-physics-idle-rotation-speed': string;
+  '--3d-extrusion-depth': string;
+  '--3d-extrusion-bevel-enabled': string;
+  '--3d-extrusion-bevel-thickness': string;
+  '--3d-extrusion-bevel-size': string;
+  '--3d-extrusion-bevel-segments': string;
+  '--3d-light-ambient-intensity': string;
+  '--3d-light-directional-intensity': string;
+  '--glow-filter': string;
   '--card-perspective': string;
   '--card-max-rotation': string;
   '--card-spring-stiffness': string;
@@ -141,6 +166,42 @@ export interface ComponentTokens {
   '--shadow-md': string;
   '--shadow-lg': string;
   '--shadow-overlay': string;
+
+  '--font-size-xs'?: string;
+  '--font-size-sm'?: string;
+  '--font-size-base'?: string;
+  '--font-size-lg'?: string;
+  '--font-size-xl'?: string;
+  '--font-size-2xl'?: string;
+  '--font-weight-normal'?: string;
+  '--font-weight-medium'?: string;
+  '--font-weight-bold'?: string;
+  '--line-height-tight'?: string;
+  '--line-height-normal'?: string;
+  '--line-height-relaxed'?: string;
+
+  '--spacing-xs'?: string;
+  '--spacing-sm'?: string;
+  '--spacing-md'?: string;
+  '--spacing-lg'?: string;
+  '--spacing-xl'?: string;
+  '--spacing-2xl'?: string;
+
+  '--border-radius-sm'?: string;
+  '--border-radius-md'?: string;
+  '--border-radius-lg'?: string;
+  '--border-radius-full'?: string;
+  '--border-width-thin'?: string;
+  '--border-width-medium'?: string;
+  '--border-width-thick'?: string;
+  '--border-style-default'?: string;
+
+  '--brand-logo-width'?: string;
+  '--brand-logo-height'?: string;
+  '--brand-hero-height'?: string;
+  '--brand-watermark-width'?: string;
+  '--brand-watermark-opacity'?: string;
+  '--brand-badge-size'?: string;
 
   '--brand-hero-image'?: string;
   '--brand-watermark-image'?: string;
@@ -301,6 +362,31 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--3d-metalness': '1',
     '--3d-roughness': '0.2',
     '--3d-env-map-intensity': '1.2',
+    '--3d-physics-accessibility-impulse': '20',
+    '--3d-physics-drag-velocity-multiplier': '20',
+    '--3d-physics-bump-impulse-y': '10',
+    '--3d-physics-bump-impulse-random-multiplier': '10',
+    '--3d-physics-break-force-threshold': '200',
+    '--3d-physics-explosion-impulse-left-x': '20',
+    '--3d-physics-explosion-impulse-left-y': '15',
+    '--3d-physics-explosion-impulse-left-z': '5',
+    '--3d-physics-explosion-impulse-right-x': '-20',
+    '--3d-physics-explosion-impulse-right-y': '15',
+    '--3d-physics-explosion-impulse-right-z': '-5',
+    '--3d-physics-explosion-torque-strength': '40',
+    '--3d-physics-return-force-multiplier': '15',
+    '--3d-physics-pulse-speed-dragging': '5',
+    '--3d-physics-pulse-speed-idle': '1',
+    '--3d-physics-pulse-scale-multiplier': '0.05',
+    '--3d-physics-idle-rotation-speed': '0.002',
+    '--3d-extrusion-depth': '1.3',
+    '--3d-extrusion-bevel-enabled': 'true',
+    '--3d-extrusion-bevel-thickness': '0.25',
+    '--3d-extrusion-bevel-size': '0.18',
+    '--3d-extrusion-bevel-segments': '4',
+    '--3d-light-ambient-intensity': '0.8',
+    '--3d-light-directional-intensity': '1.6',
+    '--glow-filter': 'drop-shadow(0 0 10px var(--color-accent, #D4AF37))',
     '--card-perspective': '1000px',
     '--card-max-rotation': '10deg',
     '--card-spring-stiffness': '300',
@@ -318,6 +404,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
     '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
     '--shadow-overlay': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1rem',
+    '--font-size-lg': '1.125rem',
+    '--font-size-xl': '1.25rem',
+    '--font-size-2xl': '1.5rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '500',
+    '--font-weight-bold': '700',
+    '--line-height-tight': '1.25',
+    '--line-height-normal': '1.5',
+    '--line-height-relaxed': '1.75',
+
+    '--spacing-xs': '0.25rem',
+    '--spacing-sm': '0.5rem',
+    '--spacing-md': '1rem',
+    '--spacing-lg': '1.5rem',
+    '--spacing-xl': '2rem',
+    '--spacing-2xl': '3rem',
+
+    '--border-radius-sm': '0.25rem',
+    '--border-radius-md': '0.375rem',
+    '--border-radius-lg': '0.5rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '4px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '120px',
+    '--brand-logo-height': '40px',
+    '--brand-hero-height': '400px',
+    '--brand-watermark-width': '200px',
+    '--brand-watermark-opacity': '0.1',
+    '--brand-badge-size': '48px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -487,6 +609,31 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--3d-metalness': '0.8',
     '--3d-roughness': '0.15',
     '--3d-env-map-intensity': '1.5',
+    '--3d-physics-accessibility-impulse': '22',
+    '--3d-physics-drag-velocity-multiplier': '25',
+    '--3d-physics-bump-impulse-y': '12',
+    '--3d-physics-bump-impulse-random-multiplier': '12',
+    '--3d-physics-break-force-threshold': '180',
+    '--3d-physics-explosion-impulse-left-x': '22',
+    '--3d-physics-explosion-impulse-left-y': '16',
+    '--3d-physics-explosion-impulse-left-z': '6',
+    '--3d-physics-explosion-impulse-right-x': '-22',
+    '--3d-physics-explosion-impulse-right-y': '16',
+    '--3d-physics-explosion-impulse-right-z': '-6',
+    '--3d-physics-explosion-torque-strength': '45',
+    '--3d-physics-return-force-multiplier': '18',
+    '--3d-physics-pulse-speed-dragging': '6',
+    '--3d-physics-pulse-speed-idle': '1.2',
+    '--3d-physics-pulse-scale-multiplier': '0.06',
+    '--3d-physics-idle-rotation-speed': '0.003',
+    '--3d-extrusion-depth': '1.1',
+    '--3d-extrusion-bevel-enabled': 'true',
+    '--3d-extrusion-bevel-thickness': '0.2',
+    '--3d-extrusion-bevel-size': '0.15',
+    '--3d-extrusion-bevel-segments': '5',
+    '--3d-light-ambient-intensity': '0.9',
+    '--3d-light-directional-intensity': '1.8',
+    '--glow-filter': 'drop-shadow(0 0 12px var(--color-accent, #3B82F6))',
     '--card-perspective': '1200px',
     '--card-max-rotation': '12deg',
     '--card-spring-stiffness': '400',
@@ -504,6 +651,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 10px 15px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -4px rgba(0, 0, 0, 0.08)',
     '--shadow-lg': '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
     '--shadow-overlay': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1rem',
+    '--font-size-lg': '1.25rem',
+    '--font-size-xl': '1.5rem',
+    '--font-size-2xl': '1.75rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '600',
+    '--font-weight-bold': '800',
+    '--line-height-tight': '1.2',
+    '--line-height-normal': '1.4',
+    '--line-height-relaxed': '1.6',
+
+    '--spacing-xs': '0.375rem',
+    '--spacing-sm': '0.75rem',
+    '--spacing-md': '1.25rem',
+    '--spacing-lg': '1.75rem',
+    '--spacing-xl': '2.5rem',
+    '--spacing-2xl': '3.5rem',
+
+    '--border-radius-sm': '0.375rem',
+    '--border-radius-md': '0.5rem',
+    '--border-radius-lg': '0.75rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '3px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '140px',
+    '--brand-logo-height': '45px',
+    '--brand-hero-height': '450px',
+    '--brand-watermark-width': '220px',
+    '--brand-watermark-opacity': '0.08',
+    '--brand-badge-size': '52px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -673,6 +856,31 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--3d-metalness': '0.9',
     '--3d-roughness': '0.3',
     '--3d-env-map-intensity': '1.0',
+    '--3d-physics-accessibility-impulse': '18',
+    '--3d-physics-drag-velocity-multiplier': '18',
+    '--3d-physics-bump-impulse-y': '8',
+    '--3d-physics-bump-impulse-random-multiplier': '8',
+    '--3d-physics-break-force-threshold': '220',
+    '--3d-physics-explosion-impulse-left-x': '18',
+    '--3d-physics-explosion-impulse-left-y': '14',
+    '--3d-physics-explosion-impulse-left-z': '4',
+    '--3d-physics-explosion-impulse-right-x': '-18',
+    '--3d-physics-explosion-impulse-right-y': '14',
+    '--3d-physics-explosion-impulse-right-z': '-4',
+    '--3d-physics-explosion-torque-strength': '35',
+    '--3d-physics-return-force-multiplier': '12',
+    '--3d-physics-pulse-speed-dragging': '4',
+    '--3d-physics-pulse-speed-idle': '0.8',
+    '--3d-physics-pulse-scale-multiplier': '0.04',
+    '--3d-physics-idle-rotation-speed': '0.0015',
+    '--3d-extrusion-depth': '1.4',
+    '--3d-extrusion-bevel-enabled': 'true',
+    '--3d-extrusion-bevel-thickness': '0.3',
+    '--3d-extrusion-bevel-size': '0.22',
+    '--3d-extrusion-bevel-segments': '6',
+    '--3d-light-ambient-intensity': '0.7',
+    '--3d-light-directional-intensity': '1.4',
+    '--glow-filter': 'drop-shadow(0 0 14px var(--color-accent, #F472B6))',
     '--card-perspective': '900px',
     '--card-max-rotation': '8deg',
     '--card-spring-stiffness': '250',
@@ -690,6 +898,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 8px 20px -4px rgba(225, 175, 185, 0.35)',
     '--shadow-lg': '0 20px 30px -10px rgba(225, 175, 185, 0.35)',
     '--shadow-overlay': '0 25px 35px -10px rgba(225, 175, 185, 0.45)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1.05rem',
+    '--font-size-lg': '1.2rem',
+    '--font-size-xl': '1.35rem',
+    '--font-size-2xl': '1.65rem',
+    '--font-weight-normal': '300',
+    '--font-weight-medium': '500',
+    '--font-weight-bold': '600',
+    '--line-height-tight': '1.3',
+    '--line-height-normal': '1.6',
+    '--line-height-relaxed': '1.8',
+
+    '--spacing-xs': '0.25rem',
+    '--spacing-sm': '0.5rem',
+    '--spacing-md': '1rem',
+    '--spacing-lg': '1.5rem',
+    '--spacing-xl': '2.25rem',
+    '--spacing-2xl': '3.25rem',
+
+    '--border-radius-sm': '0.5rem',
+    '--border-radius-md': '0.75rem',
+    '--border-radius-lg': '1.25rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '3px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '130px',
+    '--brand-logo-height': '42px',
+    '--brand-hero-height': '420px',
+    '--brand-watermark-width': '240px',
+    '--brand-watermark-opacity': '0.12',
+    '--brand-badge-size': '56px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -860,6 +1104,31 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--3d-metalness': '0.5',
     '--3d-roughness': '0.4',
     '--3d-env-map-intensity': '0.8',
+    '--3d-physics-accessibility-impulse': '20',
+    '--3d-physics-drag-velocity-multiplier': '20',
+    '--3d-physics-bump-impulse-y': '10',
+    '--3d-physics-bump-impulse-random-multiplier': '10',
+    '--3d-physics-break-force-threshold': '250',
+    '--3d-physics-explosion-impulse-left-x': '15',
+    '--3d-physics-explosion-impulse-left-y': '12',
+    '--3d-physics-explosion-impulse-left-z': '3',
+    '--3d-physics-explosion-impulse-right-x': '-15',
+    '--3d-physics-explosion-impulse-right-y': '12',
+    '--3d-physics-explosion-impulse-right-z': '-3',
+    '--3d-physics-explosion-torque-strength': '30',
+    '--3d-physics-return-force-multiplier': '20',
+    '--3d-physics-pulse-speed-dragging': '3',
+    '--3d-physics-pulse-speed-idle': '0.6',
+    '--3d-physics-pulse-scale-multiplier': '0.02',
+    '--3d-physics-idle-rotation-speed': '0.001',
+    '--3d-extrusion-depth': '1.0',
+    '--3d-extrusion-bevel-enabled': 'true',
+    '--3d-extrusion-bevel-thickness': '0.15',
+    '--3d-extrusion-bevel-size': '0.12',
+    '--3d-extrusion-bevel-segments': '3',
+    '--3d-light-ambient-intensity': '0.8',
+    '--3d-light-directional-intensity': '1.2',
+    '--glow-filter': 'drop-shadow(0 0 6px var(--color-accent, #71717A))',
     '--card-perspective': '800px',
     '--card-max-rotation': '6deg',
     '--card-spring-stiffness': '200',
@@ -877,6 +1146,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
     '--shadow-lg': '0 2px 5px 0 rgba(0, 0, 0, 0.1)',
     '--shadow-overlay': '0 4px 12px 0 rgba(0, 0, 0, 0.15)',
+
+    '--font-size-xs': '0.7rem',
+    '--font-size-sm': '0.8rem',
+    '--font-size-base': '0.95rem',
+    '--font-size-lg': '1.1rem',
+    '--font-size-xl': '1.25rem',
+    '--font-size-2xl': '1.4rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '500',
+    '--font-weight-bold': '600',
+    '--line-height-tight': '1.2',
+    '--line-height-normal': '1.45',
+    '--line-height-relaxed': '1.65',
+
+    '--spacing-xs': '0.2rem',
+    '--spacing-sm': '0.4rem',
+    '--spacing-md': '0.8rem',
+    '--spacing-lg': '1.2rem',
+    '--spacing-xl': '1.8rem',
+    '--spacing-2xl': '2.5rem',
+
+    '--border-radius-sm': '0px',
+    '--border-radius-md': '0px',
+    '--border-radius-lg': '0px',
+    '--border-radius-full': '0px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '1px',
+    '--border-width-thick': '2px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '100px',
+    '--brand-logo-height': '32px',
+    '--brand-hero-height': '360px',
+    '--brand-watermark-width': '180px',
+    '--brand-watermark-opacity': '0.05',
+    '--brand-badge-size': '40px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',
@@ -1049,6 +1354,31 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--3d-metalness': '1.0',
     '--3d-roughness': '0.1',
     '--3d-env-map-intensity': '1.8',
+    '--3d-physics-accessibility-impulse': '25',
+    '--3d-physics-drag-velocity-multiplier': '22',
+    '--3d-physics-bump-impulse-y': '14',
+    '--3d-physics-bump-impulse-random-multiplier': '14',
+    '--3d-physics-break-force-threshold': '160',
+    '--3d-physics-explosion-impulse-left-x': '25',
+    '--3d-physics-explosion-impulse-left-y': '18',
+    '--3d-physics-explosion-impulse-left-z': '8',
+    '--3d-physics-explosion-impulse-right-x': '-25',
+    '--3d-physics-explosion-impulse-right-y': '18',
+    '--3d-physics-explosion-impulse-right-z': '-8',
+    '--3d-physics-explosion-torque-strength': '50',
+    '--3d-physics-return-force-multiplier': '16',
+    '--3d-physics-pulse-speed-dragging': '5',
+    '--3d-physics-pulse-speed-idle': '1',
+    '--3d-physics-pulse-scale-multiplier': '0.05',
+    '--3d-physics-idle-rotation-speed': '0.002',
+    '--3d-extrusion-depth': '1.5',
+    '--3d-extrusion-bevel-enabled': 'true',
+    '--3d-extrusion-bevel-thickness': '0.35',
+    '--3d-extrusion-bevel-size': '0.25',
+    '--3d-extrusion-bevel-segments': '4',
+    '--3d-light-ambient-intensity': '1.0',
+    '--3d-light-directional-intensity': '2.0',
+    '--glow-filter': 'drop-shadow(0 0 10px var(--color-accent, #000000))',
     '--card-perspective': '1500px',
     '--card-max-rotation': '15deg',
     '--card-spring-stiffness': '500',
@@ -1066,6 +1396,42 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--shadow-md': '3px 3px 0px 0px rgba(0,0,0,0.9)',
     '--shadow-lg': '4px 4px 0px 0px rgba(0,0,0,0.9)',
     '--shadow-overlay': '6px 6px 0px 0px rgba(0,0,0,0.9)',
+
+    '--font-size-xs': '0.75rem',
+    '--font-size-sm': '0.875rem',
+    '--font-size-base': '1rem',
+    '--font-size-lg': '1.25rem',
+    '--font-size-xl': '1.6rem',
+    '--font-size-2xl': '2rem',
+    '--font-weight-normal': '400',
+    '--font-weight-medium': '600',
+    '--font-weight-bold': '700',
+    '--line-height-tight': '1.15',
+    '--line-height-normal': '1.4',
+    '--line-height-relaxed': '1.6',
+
+    '--spacing-xs': '0.25rem',
+    '--spacing-sm': '0.5rem',
+    '--spacing-md': '1rem',
+    '--spacing-lg': '1.5rem',
+    '--spacing-xl': '2.25rem',
+    '--spacing-2xl': '3.5rem',
+
+    '--border-radius-sm': '0.125rem',
+    '--border-radius-md': '0.125rem',
+    '--border-radius-lg': '0.25rem',
+    '--border-radius-full': '9999px',
+    '--border-width-thin': '1px',
+    '--border-width-medium': '2px',
+    '--border-width-thick': '4px',
+    '--border-style-default': 'solid',
+
+    '--brand-logo-width': '150px',
+    '--brand-logo-height': '50px',
+    '--brand-hero-height': '480px',
+    '--brand-watermark-width': '250px',
+    '--brand-watermark-opacity': '0.15',
+    '--brand-badge-size': '60px',
 
     '--brand-hero-image': 'none',
     '--brand-watermark-image': 'none',

@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "dev": "next dev --turbo",
-    "prebuild": "node --experimental-strip-types --import ./scripts/register.mjs scripts/generate-docs.ts",
+    "prebuild": "npx tsx scripts/generate-docs.ts",
     "build": "npm run lint && npm run lint:migrations && npm run lint:unused && prisma generate && next build",
     "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
     "start": "node .next/standalone/server.js",
@@ -26,7 +26,7 @@
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
-    "db:seed": "node --experimental-strip-types --import ./scripts/register.mjs scripts/seed.ts",
+    "db:seed": "npx tsx scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "check:action-pins": "npx tsx scripts/check-action-pins.ts",
     "check:identifiers": "npx tsx scripts/check-personal-identifiers.ts",

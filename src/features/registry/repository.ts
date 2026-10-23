@@ -244,6 +244,10 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('Item not found');
       }
 
+      if (item.isSample) {
+        throw new Error('Sample registry items do not accept contributions or payments.');
+      }
+
       // 3. Perform validations inside the locked transactional context
       if (item.purchased) {
         throw new Error('This item has already been purchased.');

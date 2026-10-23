@@ -50,7 +50,7 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { revalidatePath } from 'next/cache';
-import { UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
+import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
@@ -86,7 +86,7 @@ const validConfigData = {
 
 import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
-const updatedConfig = {
+const updatedConfig = AppConfigSchema.parse({
   id: 'global',
   ...validConfigData,
   weddingDate: new Date(validConfigData.weddingDate),
@@ -98,6 +98,12 @@ const updatedConfig = {
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
   layoutBorderRadius: '1rem',
+  brandLogoWidth: '120px',
+  brandLogoHeight: '40px',
+  brandHeroHeight: '400px',
+  brandWatermarkWidth: '200px',
+  brandWatermarkOpacity: '0.1',
+  brandBadgeSize: '48px',
   timezone: 'America/Chicago',
   showCountdown: true,
   showAddToCalendar: true,
@@ -105,7 +111,7 @@ const updatedConfig = {
   features: [],
   createdAt: new Date(),
   updatedAt: new Date(),
-};
+});
 
 function makeAuthReq(body?: object) {
   return new NextRequest('http://localhost/api/admin/settings', {
@@ -376,7 +382,7 @@ describe('PUT /api/admin/settings', () => {
     const res = await PUT(req);
 
     expect(res.status).toBe(200);
-    expect(toPublicAppConfig).toHaveBeenCalledWith(updatedConfig);
+    expect(toPublicAppConfig).toHaveBeenCalledWith(AppConfigSchema.parse(updatedConfig));
   });
 
   it('persists a valid timezone to database', async () => {
