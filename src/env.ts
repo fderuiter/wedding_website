@@ -66,6 +66,7 @@ const isBuildTime = process.env.npm_lifecycle_event === 'build' ||
                     process.env.npm_lifecycle_event === 'prebuild' ||
                     process.env.npm_lifecycle_event === 'prisma:generate' ||
                     process.env.npm_lifecycle_event === 'db:seed' ||
+                    process.argv.some(arg => typeof arg === 'string' && (arg.includes('seed.ts') || arg.includes('generate-') || arg.includes('verify-'))) ||
                     process.env.NODE_ENV === 'test' ||
                     process.env.JEST_WORKER_ID !== undefined ||
                     process.env.NEXT_RUNTIME === 'edge';
