@@ -10,6 +10,7 @@ describe('SubEventService', () => {
       invitationCode: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
       },
       subEvent: {
         findMany: jest.fn(),
@@ -331,6 +332,79 @@ describe('SubEventService', () => {
         subEventIds: ['se-1'],
         action: 'grant',
       });
+    });
+  });
+
+  describe('getAccessMatrix', () => {
+    it('returns paginated invitation codes with default page=1 and limit=25', async () => {
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Ceremony', isPrivate: false, accesses: [] },
+      ]);
+      mockPrisma.invitationCode.count.mockResolvedValue(50);
+      mockPrisma.invitationCode.findMany.mockImplementation((args: any) => {
+        if (args?.distinct) return Promise.resolve([]);
+        if (args?.select && Object.keys(args.select).length === 1 && args.select.partyTags) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve([
+          {
+            id: 'inv-1',
+            code: 'GUEST1',
+            guestName: 'Alice',
+            householdName: 'Smith',
+            partyGroup: 'Family',
+            partyTags: ['VIP'],
+            subEventAccesses: [{ subEventId: 'se-1' }],
+          },
+        ]);
+      });
+
+      const matrix = await service.getAccessMatrix();
+
+      expect(matrix.pagination).toEqual({
+        total: 50,
+        page: 1,
+        limit: 25,
+        totalPages: 2,
+      });
+      expect(matrix.invitationCodes).toHaveLength(1);
+    });
+
+    it('caps max limit at 100 and applies filter predicates in query', async () => {
+      mockPrisma.subEvent.findMany.mockResolvedValue([]);
+      mockPrisma.invitationCode.count.mockResolvedValue(150);
+      mockPrisma.invitationCode.findMany.mockImplementation((args: any) => {
+        if (args?.distinct) return Promise.resolve([]);
+        if (args?.select?.partyTags) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+
+      const matrix = await service.getAccessMatrix({
+        page: 2,
+        limit: 200,
+        search: 'Alice',
+        partyTag: 'VIP',
+        partyGroup: 'Family',
+        householdName: 'Smith',
+      });
+
+      expect(matrix.pagination.limit).toBe(100);
+      expect(mockPrisma.invitationCode.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { guestName: { contains: 'Alice', mode: 'insensitive' } },
+              { code: { contains: 'Alice', mode: 'insensitive' } },
+              { householdName: { contains: 'Alice', mode: 'insensitive' } },
+            ],
+            partyTags: { has: 'VIP' },
+            partyGroup: 'Family',
+            householdName: 'Smith',
+          },
+          skip: 100,
+          take: 100,
+        })
+      );
     });
   });
 });
