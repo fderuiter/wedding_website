@@ -491,6 +491,12 @@ export default function AdminSettingsPage() {
                 layoutGridGap: localConfig.layoutGridGap,
                 layoutCardPadding: localConfig.layoutCardPadding,
                 layoutBorderRadius: localConfig.layoutBorderRadius,
+                themeTokens: localConfig.themeTokens,
+                printBg: localConfig.printBg || localConfig.themeTokens?.['--print-bg'],
+                printText: localConfig.printText || localConfig.themeTokens?.['--print-text'],
+                printBorder: localConfig.printBorder || localConfig.themeTokens?.['--print-border'],
+                printHeaderBorder: localConfig.printHeaderBorder || localConfig.themeTokens?.['--print-header-border'],
+                printBadgeBg: localConfig.printBadgeBg || localConfig.themeTokens?.['--print-badge-bg'],
                 fontSizeBase: localConfig.fontSizeBase,
                 fontSizeLg: localConfig.fontSizeLg,
                 fontWeightNormal: localConfig.fontWeightNormal,
@@ -510,10 +516,21 @@ export default function AdminSettingsPage() {
                 brandDimensions: localConfig.brandDimensions,
               }}
               onChange={(updated) => {
-                setLocalConfig((prev: any) => ({
-                  ...prev,
-                  ...updated,
-                }));
+                setLocalConfig((prev: any) => {
+                  const mergedTokens = {
+                    ...(prev?.themeTokens || {}),
+                    ...(updated.themeTokens || {}),
+                  };
+                  try {
+                    setThemeTokensText(JSON.stringify(mergedTokens, null, 2));
+                  } catch {}
+
+                  return {
+                    ...prev,
+                    ...updated,
+                    themeTokens: mergedTokens,
+                  };
+                });
               }}
             />
             <FormGroup>

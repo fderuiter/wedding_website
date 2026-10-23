@@ -267,6 +267,11 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--floorplan-seat-unassigned-hover': '#374151',
   '--floorplan-status-overcapacity-bg': '#450a0a',
   '--floorplan-status-overcapacity-border': '#dc2626',
+  '--print-bg': '#ffffff',
+  '--print-text': '#111827',
+  '--print-border': '#374151',
+  '--print-header-border': '#111827',
+  '--print-badge-bg': '#f3f4f6',
 };
 
 export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
@@ -526,6 +531,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#374151',
       '--floorplan-status-overcapacity-bg': '#450a0a',
       '--floorplan-status-overcapacity-border': '#dc2626',
+      '--print-bg': '#ffffff',
+      '--print-text': '#111827',
+      '--print-border': '#374151',
+      '--print-header-border': '#111827',
+      '--print-badge-bg': '#f3f4f6',
     },
   },
   modern: {
@@ -784,6 +794,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#1e293b',
       '--floorplan-status-overcapacity-bg': '#4c0519',
       '--floorplan-status-overcapacity-border': '#f43f5e',
+      '--print-bg': '#ffffff',
+      '--print-text': '#0f172a',
+      '--print-border': '#334155',
+      '--print-header-border': '#0f172a',
+      '--print-badge-bg': '#f1f5f9',
     },
   },
   romantic: {
@@ -1043,6 +1058,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#3b1827',
       '--floorplan-status-overcapacity-bg': '#4c0519',
       '--floorplan-status-overcapacity-border': '#f43f5e',
+      '--print-bg': '#fffafb',
+      '--print-text': '#831843',
+      '--print-border': '#4a1d2f',
+      '--print-header-border': '#831843',
+      '--print-badge-bg': '#fce7f3',
     },
   },
   minimal: {
@@ -1304,6 +1324,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#27272a',
       '--floorplan-status-overcapacity-bg': '#450a0a',
       '--floorplan-status-overcapacity-border': '#dc2626',
+      '--print-bg': '#ffffff',
+      '--print-text': '#09090b',
+      '--print-border': '#27272a',
+      '--print-header-border': '#09090b',
+      '--print-badge-bg': '#f4f4f5',
     },
   },
   editorial: {
@@ -1571,6 +1596,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--floorplan-seat-unassigned-hover': '#292524',
       '--floorplan-status-overcapacity-bg': '#450a0a',
       '--floorplan-status-overcapacity-border': '#ef4444',
+      '--print-bg': '#ffffff',
+      '--print-text': '#000000',
+      '--print-border': '#000000',
+      '--print-header-border': '#000000',
+      '--print-badge-bg': '#e4e4e7',
     },
   },
 };

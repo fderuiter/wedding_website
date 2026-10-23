@@ -343,7 +343,7 @@ export function optimizeContrast(baseHex: string, bgHex: string, minRatio: numbe
   return computedHex;
 }
 
-function generateDynamicStyles(
+export function generateDynamicStyles(
   primaryColor: string,
   secondaryColor: string,
   themePreset?: string,
