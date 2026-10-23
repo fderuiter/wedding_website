@@ -21,7 +21,14 @@ export function resolveDirectionsUrl(
 
   const customDirections = sanitizeUrl(location.directions);
   if (customDirections) {
-    return customDirections;
+    if (
+      customDirections.startsWith('http://') ||
+      customDirections.startsWith('https://') ||
+      customDirections.startsWith('/')
+    ) {
+      return customDirections;
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customDirections)}`;
   }
 
   const { latitude, longitude } = location;

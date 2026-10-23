@@ -394,7 +394,7 @@ function SetupWizardContent() {
                 <FormMessage>{error}</FormMessage>
               )}
 
-              <div>
+              <FormGroup>
                 <Label className="font-semibold block mb-2">Starter Archetype Preset</Label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
@@ -422,9 +422,9 @@ function SetupWizardContent() {
                     );
                   })}
                 </div>
-              </div>
+              </FormGroup>
 
-              <div>
+              <FormGroup>
                 <div className="flex justify-between items-center mb-3">
                   <Label className="font-semibold">Sample Data Modules</Label>
                   <div className="space-x-2 text-xs">
@@ -487,7 +487,7 @@ function SetupWizardContent() {
                     <span className="text-sm font-medium">Local Attractions & Hotel Blocks</span>
                   </label>
                 </div>
-              </div>
+              </FormGroup>
 
               <div className="flex gap-3">
                 <Button

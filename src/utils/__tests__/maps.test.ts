@@ -15,6 +15,17 @@ describe('resolveDirectionsUrl', () => {
     expect(resolveDirectionsUrl(location)).toBe('https://maps.google.com/custom');
   });
 
+  it('formats non-URL directions text as a Google Maps search URL', () => {
+    const location = {
+      directions: '500 Floral Way',
+      latitude: 45.0,
+      longitude: -90.0,
+    };
+    expect(resolveDirectionsUrl(location)).toBe(
+      'https://www.google.com/maps/search/?api=1&query=500%20Floral%20Way'
+    );
+  });
+
   it('falls back to Google Maps directions URL when directions is missing but coordinates are valid', () => {
     const location = {
       directions: '',
