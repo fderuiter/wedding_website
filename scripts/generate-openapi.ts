@@ -18,6 +18,7 @@ const contentSchemas = await import('../src/features/content/schemas.js');
 const mediaSchemas = await import('../src/features/media/schemas.js');
 const seatingSchemas = await import('../src/features/seating/schemas.js');
 const subEventSchemas = await import('../src/features/sub-events/schemas.js');
+const broadcastSchemas = await import('../src/features/broadcast/schemas.js');
 const backupValidationSchemas = await import('../src/utils/backupValidation.js');
 
 const ALL_SCHEMAS: Record<string, any> = {
@@ -29,6 +30,7 @@ const ALL_SCHEMAS: Record<string, any> = {
   ...mediaSchemas,
   ...seatingSchemas,
   ...subEventSchemas,
+  ...broadcastSchemas,
   ...backupValidationSchemas,
 };
 

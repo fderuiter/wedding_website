@@ -92,6 +92,12 @@ flowchart LR
     node_api_admin["admin"]
     node_api_admin_entity["[entity]"]
     node_api_admin_entity_id["[id]"]
+    node_api_admin_broadcast["broadcast"]
+    node_api_admin_broadcast_history["history"]
+    node_api_admin_broadcast_preview["preview"]
+    node_api_admin_broadcast_retry["retry"]
+    node_api_admin_broadcast_send["send"]
+    node_api_admin_broadcast_testconnection["test-connection"]
     node_api_admin_features["features"]
     node_api_admin_invitationcodes["invitation-codes"]
     node_api_admin_invitationcodes_batch["batch"]
@@ -177,6 +183,12 @@ flowchart LR
     node_api --> node_api_admin
     node_api_admin --> node_api_admin_entity
     node_api_admin_entity --> node_api_admin_entity_id
+    node_api_admin --> node_api_admin_broadcast
+    node_api_admin_broadcast --> node_api_admin_broadcast_history
+    node_api_admin_broadcast --> node_api_admin_broadcast_preview
+    node_api_admin_broadcast --> node_api_admin_broadcast_retry
+    node_api_admin_broadcast --> node_api_admin_broadcast_send
+    node_api_admin_broadcast --> node_api_admin_broadcast_testconnection
     node_api_admin --> node_api_admin_features
     node_api_admin --> node_api_admin_invitationcodes
     node_api_admin_invitationcodes --> node_api_admin_invitationcodes_batch
@@ -260,6 +272,11 @@ flowchart LR
     class node_admin_login page;
     class node_api_admin_entity api;
     class node_api_admin_entity_id api;
+    class node_api_admin_broadcast_history api;
+    class node_api_admin_broadcast_preview api;
+    class node_api_admin_broadcast_retry api;
+    class node_api_admin_broadcast_send api;
+    class node_api_admin_broadcast_testconnection api;
     class node_api_admin_features api;
     class node_api_admin_invitationcodes_batch api;
     class node_api_admin_invitationcodes_batch_validate api;
@@ -501,6 +518,23 @@ Every configurable value has one authoritative home. Ordinary site customization
 | `timezone` | `default` | Configuration field for timezone |
 | `showCountdown` | `default` | Configuration field for showCountdown |
 | `showAddToCalendar` | `default` | Configuration field for showAddToCalendar |
+| `emailProvider` | `default` | Configuration field for emailProvider |
+| `smtpHost` | `default` | Configuration field for smtpHost |
+| `smtpPort` | `default` | Configuration field for smtpPort |
+| `smtpUser` | `default` | Configuration field for smtpUser |
+| `smtpPass` | `default` | Configuration field for smtpPass |
+| `smtpFrom` | `default` | Configuration field for smtpFrom |
+| `smtpSecure` | `default` | Configuration field for smtpSecure |
+| `resendApiKey` | `default` | Configuration field for resendApiKey |
+| `resendFrom` | `default` | Configuration field for resendFrom |
+| `sendgridApiKey` | `default` | Configuration field for sendgridApiKey |
+| `sendgridFrom` | `default` | Configuration field for sendgridFrom |
+| `smsProvider` | `default` | Configuration field for smsProvider |
+| `twilioAccountSid` | `default` | Configuration field for twilioAccountSid |
+| `twilioAuthToken` | `default` | Configuration field for twilioAuthToken |
+| `twilioFromNumber` | `default` | Configuration field for twilioFromNumber |
+| `broadcastBatchSize` | `default` | Configuration field for broadcastBatchSize |
+| `broadcastBatchDelayMs` | `default` | Configuration field for broadcastBatchDelayMs |
 | `modules` | `default` | Configuration field for modules |
 | `features` | `pipe` | Configuration field for features |
 | `createdAt` | `date` | Configuration field for createdAt |

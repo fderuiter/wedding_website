@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { generateCsvContent } from '@/utils/csv';
+import { BroadcastModal } from '@/components/admin/BroadcastModal';
 
 export function matchDietaryCategory(notes: string | null | undefined, category: string): boolean {
   if (!notes || !notes.trim()) return false;
@@ -126,6 +127,8 @@ export default function InvitationCodesDashboardPage() {
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
   const [isSubEventModalOpen, setIsSubEventModalOpen] = useState(false);
   const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [broadcastModalFilters, setBroadcastModalFilters] = useState<any>(undefined);
   const [bulkSubEventAction, setBulkSubEventAction] = useState<'grant' | 'revoke' | 'set'>('grant');
   const [bulkSelectedSubEventIds, setBulkSelectedSubEventIds] = useState<string[]>([]);
   const [newSubEvent, setNewSubEvent] = useState({
@@ -646,6 +649,14 @@ export default function InvitationCodesDashboardPage() {
           <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
+          <Button variant="secondary" onClick={() => {
+            setBroadcastModalFilters({
+              partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
+              householdName: searchQuery || undefined,
+              attendanceStatus: attendanceFilter !== 'all' ? attendanceFilter : undefined,
+            });
+            setIsBroadcastModalOpen(true);
+          }}>Send Broadcast</Button>
           <Button onClick={() => {
             setNewCode({
               guestName: '',
@@ -1274,6 +1285,12 @@ export default function InvitationCodesDashboardPage() {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => {
+              setBroadcastModalFilters({ selectedIds });
+              setIsBroadcastModalOpen(true);
+            }}>
+              Send Broadcast ({selectedIds.length})
+            </Button>
             <Button size="sm" variant="secondary" onClick={() => setBulkHouseholdModalOpen(true)}>
               Set Household
             </Button>
@@ -1572,6 +1589,14 @@ export default function InvitationCodesDashboardPage() {
           </div>
         </div>
       )}
+
+      <BroadcastModal
+        isOpen={isBroadcastModalOpen}
+        onClose={() => setIsBroadcastModalOpen(false)}
+        targetFilters={broadcastModalFilters}
+        selectedCount={broadcastModalFilters?.selectedIds?.length}
+        subEvents={subEvents}
+      />
     </div>
   );
 }
