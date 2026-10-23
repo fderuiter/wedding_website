@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { getAppConfig } from '@/lib/config';
+import { getServerExportTokens } from '@/lib/theme/presets';
 import { readFile } from 'fs/promises';
 import path from 'path';
 
@@ -71,8 +72,21 @@ export async function GET(request: Request) {
   }
 
   const title = searchParams.get('title') || config?.seoTitle || (p1 && p2 ? `${p1} & ${p2}'s Wedding` : couplesNames);
-  const colorPrimary = searchParams.get('primary') || config?.colorPrimary || '#B91C1C';
-  const colorSecondary = searchParams.get('secondary') || config?.colorSecondary || '#B45309';
+
+  const primaryParam = searchParams.get('primary') || undefined;
+  const secondaryParam = searchParams.get('secondary') || undefined;
+
+  const exportTokens = getServerExportTokens(
+    config?.themePreset,
+    config?.themeTokens,
+    {
+      primary: primaryParam || config?.colorPrimary,
+      secondary: secondaryParam || config?.colorSecondary,
+    }
+  );
+
+  const colorPrimary = exportTokens.colorPrimary;
+  const colorSecondary = exportTokens.colorSecondary;
 
   let dateStr = '';
   if (config?.weddingDate) {
@@ -119,9 +133,9 @@ export async function GET(request: Request) {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#ffffff',
+          backgroundColor: exportTokens.canvasBg,
           backgroundImage: `linear-gradient(135deg, ${colorPrimary}15 0%, ${colorSecondary}25 100%)`,
-          fontFamily: 'LiberationSans, sans-serif',
+          fontFamily: `${exportTokens.fontHeading}, ${exportTokens.fontBody}, LiberationSans, sans-serif`,
           padding: '60px 80px',
           boxSizing: 'border-box',
           position: 'relative',
@@ -135,7 +149,7 @@ export async function GET(request: Request) {
             bottom: '24px',
             left: '24px',
             right: '24px',
-            border: `3px solid ${colorPrimary}`,
+            border: `3px solid ${exportTokens.borderAccent || colorPrimary}`,
             borderRadius: '16px',
             display: 'flex',
             opacity: 0.8,
@@ -149,7 +163,7 @@ export async function GET(request: Request) {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: '#ffffff',
+            backgroundColor: exportTokens.cardBg,
             borderRadius: '12px',
             padding: '48px 64px',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
@@ -199,7 +213,7 @@ export async function GET(request: Request) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '24px',
-                color: '#4B5563',
+                color: exportTokens.textMuted,
                 marginTop: '12px',
                 gap: '16px',
               }}

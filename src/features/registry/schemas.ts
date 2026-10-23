@@ -251,4 +251,22 @@ export const GuestAddressUpdateSchema = z.object({
 
 export type GuestAddressUpdateDTO = z.infer<typeof GuestAddressUpdateSchema>;
 
+export const PublicAddressCollectSchema = z.object({
+  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
+  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').optional().or(z.literal('')).nullable(),
+  addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').optional().or(z.literal('')).nullable(),
+  city: z.string().trim().max(100, 'City must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  state: z.string().trim().max(100, 'State must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  zipCode: z.string().trim().max(20, 'Zip Code must be under 20 characters.').optional().or(z.literal('')).nullable(),
+  country: z.string().trim().max(100, 'Country must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  householdName: z.string().trim().max(100, 'Household name must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  notes: z.string().trim().max(1000, 'Notes must be under 1000 characters.').optional().or(z.literal('')).nullable(),
+  website: z.string().optional().nullable(),
+  honeypot: z.string().optional().nullable(),
+});
+
+export type PublicAddressCollectDTO = z.infer<typeof PublicAddressCollectSchema>;
+
+
 

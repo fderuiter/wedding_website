@@ -2,6 +2,7 @@ import {
   THEME_PRESETS,
   THEME_PRESET_KEYS,
   getPresetTokens,
+  getServerExportTokens,
   isThemePreset,
   parseDurationSec,
   DEFAULT_THEME_PRESET,
@@ -107,6 +108,31 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--3d-metalness']).toBeDefined();
       expect(tokens['--3d-roughness']).toBeDefined();
       expect(tokens['--3d-env-map-intensity']).toBeDefined();
+      expect(tokens['--3d-physics-accessibility-impulse']).toBeDefined();
+      expect(tokens['--3d-physics-drag-velocity-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-bump-impulse-y']).toBeDefined();
+      expect(tokens['--3d-physics-bump-impulse-random-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-break-force-threshold']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-left-x']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-left-y']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-left-z']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-right-x']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-right-y']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-impulse-right-z']).toBeDefined();
+      expect(tokens['--3d-physics-explosion-torque-strength']).toBeDefined();
+      expect(tokens['--3d-physics-return-force-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-pulse-speed-dragging']).toBeDefined();
+      expect(tokens['--3d-physics-pulse-speed-idle']).toBeDefined();
+      expect(tokens['--3d-physics-pulse-scale-multiplier']).toBeDefined();
+      expect(tokens['--3d-physics-idle-rotation-speed']).toBeDefined();
+      expect(tokens['--3d-extrusion-depth']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-enabled']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-thickness']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-size']).toBeDefined();
+      expect(tokens['--3d-extrusion-bevel-segments']).toBeDefined();
+      expect(tokens['--3d-light-ambient-intensity']).toBeDefined();
+      expect(tokens['--3d-light-directional-intensity']).toBeDefined();
+      expect(tokens['--glow-filter']).toBeDefined();
       expect(tokens['--card-perspective']).toBeDefined();
       expect(tokens['--card-max-rotation']).toBeDefined();
       expect(tokens['--card-spring-stiffness']).toBeDefined();
@@ -235,6 +261,97 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(parseDurationSec('abc', 0.5)).toBe(0.5);
       expect(parseDurationSec('ms')).toBe(0.8);
       expect(parseDurationSec('s', 0.2)).toBe(0.2);
+    });
+  });
+
+  describe('getServerExportTokens Utility', () => {
+    it('defines explicit serverExportTokens for all 5 built-in theme presets', () => {
+      for (const presetKey of THEME_PRESET_KEYS) {
+        const tokens = THEME_PRESETS[presetKey].serverExportTokens;
+        expect(tokens).toBeDefined();
+        expect(tokens?.canvasBg).toBeDefined();
+        expect(tokens?.cardBg).toBeDefined();
+        expect(tokens?.colorPrimary).toBeDefined();
+        expect(tokens?.colorSecondary).toBeDefined();
+        expect(tokens?.textMuted).toBeDefined();
+        expect(tokens?.borderAccent).toBeDefined();
+        expect(tokens?.badgeBg).toBeDefined();
+        expect(tokens?.badgeText).toBeDefined();
+        expect(tokens?.fontHeading).toBeDefined();
+        expect(tokens?.fontBody).toBeDefined();
+        expect(tokens?.printBg).toBeDefined();
+        expect(tokens?.printText).toBeDefined();
+        expect(tokens?.printBorder).toBeDefined();
+        expect(tokens?.printHeaderBorder).toBeDefined();
+        expect(tokens?.printBadgeBg).toBeDefined();
+      }
+    });
+
+    it('returns default classic server export tokens when called with no arguments', () => {
+      const resolved = getServerExportTokens();
+      expect(resolved).toEqual(THEME_PRESETS['classic'].serverExportTokens);
+    });
+
+    it('returns specific server export tokens for each preset key', () => {
+      const romantic = getServerExportTokens('romantic');
+      expect(romantic.canvasBg).toBe('#fdf2f8');
+      expect(romantic.printText).toBe('#831843');
+
+      const editorial = getServerExportTokens('editorial');
+      expect(editorial.canvasBg).toBe('#f5f5f4');
+      expect(editorial.printText).toBe('#000000');
+    });
+
+    it('falls back to default preset on invalid preset key', () => {
+      const fallback = getServerExportTokens('invalid-key');
+      expect(fallback).toEqual(THEME_PRESETS['classic'].serverExportTokens);
+    });
+
+    it('respects custom tokens and strips var(...) wrappers', () => {
+      const customTokens = {
+        '--color-primary': 'var(--color-primary, #123456)',
+        '--container-bg': '#f0f0f0',
+        '--print-bg': '#fafafa',
+      };
+      const resolved = getServerExportTokens('classic', customTokens);
+      expect(resolved.colorPrimary).toBe('#123456');
+      expect(resolved.canvasBg).toBe('#f0f0f0');
+      expect(resolved.printBg).toBe('#fafafa');
+    });
+
+    it('respects overrides over custom tokens and preset defaults', () => {
+      const overrides = {
+        primary: '#ff0000',
+        secondary: '#00ff00',
+        printBg: '#000000',
+      };
+      const resolved = getServerExportTokens('romantic', null, overrides);
+      expect(resolved.colorPrimary).toBe('#ff0000');
+      expect(resolved.colorSecondary).toBe('#00ff00');
+      expect(resolved.printBg).toBe('#000000');
+      expect(resolved.canvasBg).toBe('#fdf2f8');
+    });
+
+    it('handles nested var() declarations, font families with commas, and var() without fallback', () => {
+      const customTokens = {
+        '--color-primary': 'var(--a, var(--b, #654321))',
+        '--font-heading': 'var(--font-heading, Playfair Display, Georgia, serif)',
+        '--color-secondary': 'var(--no-fallback)',
+      };
+      const resolved = getServerExportTokens('classic', customTokens);
+      expect(resolved.colorPrimary).toBe('#654321');
+      expect(resolved.fontHeading).toBe('Playfair Display, Georgia, serif');
+      // --color-secondary had no fallback in var(), so it falls back to classic preset colorSecondary
+      expect(resolved.colorSecondary).toBe(THEME_PRESETS['classic'].serverExportTokens.colorSecondary);
+    });
+
+    it('handles deeply nested or pathological var() strings safely without polynomial performance issues', () => {
+      const pathologicalInput = 'var(' + 'var('.repeat(50) + '#123456' + ')'.repeat(51);
+      const customTokens = {
+        '--color-primary': pathologicalInput,
+      };
+      const resolved = getServerExportTokens('classic', customTokens);
+      expect(resolved.colorPrimary).toBeDefined();
     });
   });
 });
