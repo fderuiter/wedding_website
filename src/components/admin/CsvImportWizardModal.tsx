@@ -181,43 +181,6 @@ function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: 
   return { parsed, freqMap };
 }
 
-function computeSummaryFromRows(
-  rows: ExtendedParsedCsvRow[],
-  strategy: 'skip' | 'update' | 'reject'
-): DryRunValidationSummary {
-  const total = rows.length;
-  const validCount = rows.filter((r) => r.isValid).length;
-  const invalidCount = rows.filter((r) => !r.isValid).length;
-  const duplicateCount = rows.filter(
-    (r) =>
-      r.isDuplicate ||
-      r.existingGuestName ||
-      r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
-      r.errors?.some((e) => e.includes('Duplicate'))
-  ).length;
-  const updatedCount = rows.filter(
-    (r) =>
-      r.actionOutcome === 'update' ||
-      (strategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
-  ).length;
-  const skippedCount = rows.filter(
-    (r) =>
-      r.actionOutcome === 'skip' ||
-      (strategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
-  ).length;
-  const createdCount = validCount - updatedCount - skippedCount;
-
-  return {
-    total,
-    validCount,
-    invalidCount,
-    duplicateCount,
-    updatedCount,
-    skippedCount,
-    createdCount,
-  };
-}
-
 type ExtendedParsedCsvRow = ParsedCsvRow & {
   isDuplicate?: boolean;
   existingGuestName?: string | null;
@@ -763,12 +726,6 @@ export function CsvImportWizardModal({
   const [validatedRows, setValidatedRows] = useState<ExtendedParsedCsvRow[]>([]);
   const codeFrequencyRef = useRef<Map<string, number>>(new Map());
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const activeValidationPromiseRef = useRef<Promise<{ summary: DryRunValidationSummary; rows: ExtendedParsedCsvRow[] } | null> | null>(null);
-  const prevStepRef = useRef<number>(step);
-  const prevCollisionStrategyRef = useRef<'skip' | 'update' | 'reject'>(collisionStrategy);
-
   const editableRowsRef = useRef(editableRows);
   editableRowsRef.current = editableRows;
 
@@ -778,149 +735,199 @@ export function CsvImportWizardModal({
   const existingDbSetRef = useRef(existingDbSet);
   existingDbSetRef.current = existingDbSet;
 
+  // Refs for tracking validation debounce and cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingValidationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const inFlightValidationRef = useRef<Promise<void> | null>(null);
+  const prevStepRef = useRef<number | null>(null);
+  const prevStrategyRef = useRef<'skip' | 'update' | 'reject' | null>(null);
+
+  const collisionStrategyRef = useRef(collisionStrategy);
+  collisionStrategyRef.current = collisionStrategy;
+
   const runDryRunValidation = useCallback(
     async (rows: EditableRow[], strategy: 'skip' | 'update' | 'reject') => {
       if (rows.length === 0) {
         setValidatedRows([]);
         setServerSummary(null);
-        return null;
+        return;
       }
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
       setIsValidating(true);
+      try {
+        const payload = {
+          records: rows.map((r) => ({
+            guestName: r.guestName,
+            code: r.code || undefined,
+            email: r.email || undefined,
+            addressLine1: r.addressLine1 || undefined,
+            addressLine2: r.addressLine2 || undefined,
+            city: r.city || undefined,
+            state: r.state || undefined,
+            zipCode: r.zipCode || undefined,
+            country: r.country || undefined,
+            dietaryNotes: r.dietaryNotes || undefined,
+            plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+            plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+            plusOneLastName: r.plusOneLastName.trim() || undefined,
+            householdName: r.householdName.trim() || undefined,
+            partyGroup: r.partyGroup.trim() || undefined,
+            partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
+            extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
+          })),
+          collisionStrategy: strategy,
+        };
 
-      const promise = (async () => {
-        try {
-          const payload = {
-            records: rows.map((r) => ({
-              guestName: r.guestName,
-              code: r.code || undefined,
-              email: r.email || undefined,
-              addressLine1: r.addressLine1 || undefined,
-              addressLine2: r.addressLine2 || undefined,
-              city: r.city || undefined,
-              state: r.state || undefined,
-              zipCode: r.zipCode || undefined,
-              country: r.country || undefined,
-              dietaryNotes: r.dietaryNotes || undefined,
-              plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
-              plusOneFirstName: r.plusOneFirstName.trim() || undefined,
-              plusOneLastName: r.plusOneLastName.trim() || undefined,
-              householdName: r.householdName.trim() || undefined,
-              partyGroup: r.partyGroup.trim() || undefined,
-              partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
-              extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
-            })),
-            collisionStrategy: strategy,
-          };
+        const res = await fetch('/api/admin/invitation-codes/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
 
-          const res = await fetch('/api/admin/invitation-codes/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-          });
+        if (controller.signal.aborted) return;
 
-          if (controller.signal.aborted) {
-            return null;
+        if (res.ok) {
+          const data: DryRunValidationResponse = await res.json();
+          if (controller.signal.aborted) return;
+
+          if (data && data.success && data.summary && data.rows) {
+            setServerSummary(data.summary);
+            setValidatedRows(data.rows as ExtendedParsedCsvRow[]);
+            setIsValidating(false);
+            return;
           }
-
-          if (res.ok) {
-            const data: DryRunValidationResponse = await res.json();
-            if (controller.signal.aborted) {
-              return null;
-            }
-            if (data && data.success && data.summary && data.rows) {
-              const resultRows = data.rows as ExtendedParsedCsvRow[];
-              setServerSummary(data.summary);
-              setValidatedRows(resultRows);
-              setIsValidating(false);
-              return { summary: data.summary, rows: resultRows };
-            }
-          }
-        } catch (err: any) {
-          if (err.name === 'AbortError' || controller.signal.aborted) {
-            return null;
-          }
-          // Fallback to local computation if fetch is unhandled / unreachable
         }
-
-        if (controller.signal.aborted) {
-          return null;
+      } catch (err: any) {
+        if (controller.signal.aborted || err?.name === 'AbortError') {
+          return;
         }
+        // Fallback to local computation if fetch is unhandled / unreachable
+      }
 
-        const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
-        codeFrequencyRef.current = freqMap;
-        const localSummary = computeSummaryFromRows(parsed, strategy);
-        setValidatedRows(parsed);
-        setServerSummary(null);
-        setIsValidating(false);
-        return { summary: localSummary, rows: parsed };
-      })();
+      if (controller.signal.aborted) return;
 
-      activeValidationPromiseRef.current = promise;
-      return promise;
+      const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
+      codeFrequencyRef.current = freqMap;
+      setValidatedRows(parsed);
+      setServerSummary(null);
+      setIsValidating(false);
     },
     []
   );
 
+  const executeValidation = useCallback(
+    (rows: EditableRow[], strategy: 'skip' | 'update' | 'reject') => {
+      const promise = runDryRunValidation(rows, strategy);
+      inFlightValidationRef.current = promise;
+      promise.finally(() => {
+        if (inFlightValidationRef.current === promise) {
+          inFlightValidationRef.current = null;
+        }
+      });
+      return promise;
+    },
+    [runDryRunValidation]
+  );
+
   useEffect(() => {
     if (step === 3 && editableRows.length > 0) {
-      const isStepChange = prevStepRef.current !== 3;
-      const isStrategyChange = prevCollisionStrategyRef.current !== collisionStrategy;
+      const isInitialStep3 = prevStepRef.current !== 3;
+      const isStrategyChanged = prevStrategyRef.current !== collisionStrategy;
 
       prevStepRef.current = step;
-      prevCollisionStrategyRef.current = collisionStrategy;
+      prevStrategyRef.current = collisionStrategy;
 
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
       }
 
-      if (isStepChange || isStrategyChange) {
-        runDryRunValidation(editableRows, collisionStrategy);
+      if (isInitialStep3 || isStrategyChanged) {
+        executeValidation(editableRows, collisionStrategy);
       } else {
-        debounceTimerRef.current = setTimeout(() => {
-          runDryRunValidation(editableRows, collisionStrategy);
-          debounceTimerRef.current = null;
+        pendingValidationTimerRef.current = setTimeout(() => {
+          pendingValidationTimerRef.current = null;
+          executeValidation(editableRows, collisionStrategy);
         }, 400);
       }
     } else if (step !== 3) {
-      prevStepRef.current = step;
-      prevCollisionStrategyRef.current = collisionStrategy;
-
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
       }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
+      prevStepRef.current = step;
+      prevStrategyRef.current = collisionStrategy;
       setValidatedRows([]);
       setServerSummary(null);
       codeFrequencyRef.current.clear();
     }
 
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
       }
     };
-  }, [step, editableRows, collisionStrategy, runDryRunValidation]);
+  }, [step, editableRows, collisionStrategy, executeValidation]);
+
+  const flushPendingValidation = useCallback(async () => {
+    if (pendingValidationTimerRef.current) {
+      clearTimeout(pendingValidationTimerRef.current);
+      pendingValidationTimerRef.current = null;
+      const promise = executeValidation(editableRowsRef.current, collisionStrategyRef.current);
+      await promise;
+    } else if (inFlightValidationRef.current) {
+      await inFlightValidationRef.current;
+    }
+  }, [executeValidation]);
 
   const summary = useMemo(() => {
     if (serverSummary) {
       return serverSummary;
     }
-    return computeSummaryFromRows(validatedRows, collisionStrategy);
-  }, [serverSummary, validatedRows, collisionStrategy]);
+    const total = editableRows.length;
+    const validCount = validatedRows.filter((r) => r.isValid).length;
+    const invalidCount = validatedRows.filter((r) => !r.isValid).length;
+    const duplicateCount = validatedRows.filter(
+      (r) =>
+        r.isDuplicate ||
+        r.existingGuestName ||
+        r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
+        r.errors?.some((e) => e.includes('Duplicate'))
+    ).length;
+    const updatedCount = validatedRows.filter(
+      (r) =>
+        r.actionOutcome === 'update' ||
+        (collisionStrategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
+    ).length;
+    const skippedCount = validatedRows.filter(
+      (r) =>
+        r.actionOutcome === 'skip' ||
+        (collisionStrategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
+    ).length;
+    const createdCount = validCount - updatedCount - skippedCount;
+    return {
+      total,
+      validCount,
+      invalidCount,
+      duplicateCount,
+      updatedCount,
+      skippedCount,
+      createdCount,
+    };
+  }, [serverSummary, editableRows.length, validatedRows, collisionStrategy]);
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'valid') {
@@ -951,6 +958,8 @@ export function CsvImportWizardModal({
     return validatedRows;
   }, [validatedRows, statusFilter]);
 
+  const invalidCount = summary.invalidCount;
+
   const handleCellEdit = useCallback((
     index: number,
     field:
@@ -975,6 +984,8 @@ export function CsvImportWizardModal({
     const updatedValue = field === 'code' ? value.toUpperCase() : value;
     const currentEditable = editableRowsRef.current;
     const oldRow = currentEditable[index];
+
+    setServerSummary(null);
 
     setEditableRows((prev) => {
       const next = [...prev];
@@ -1055,6 +1066,8 @@ export function CsvImportWizardModal({
   const handleExtraFieldEdit = useCallback((index: number, key: string, value: string) => {
     const currentEditable = editableRowsRef.current;
 
+    setServerSummary(null);
+
     setEditableRows((prev) => {
       const next = [...prev];
       const updatedExtra = { ...next[index].extraFields, [key]: value };
@@ -1095,6 +1108,8 @@ export function CsvImportWizardModal({
     const currentEditable = editableRowsRef.current;
     const deletedRow = currentEditable[index];
     const deletedCode = (deletedRow?.code || '').trim().toUpperCase();
+
+    setServerSummary(null);
 
     const remainingEditable = currentEditable.filter((_, i) => i !== index);
     setEditableRows(remainingEditable);
@@ -1145,23 +1160,9 @@ export function CsvImportWizardModal({
       return;
     }
 
-    let currentSummary = serverSummary || summary;
+    await flushPendingValidation();
 
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-      const res = await runDryRunValidation(editableRows, collisionStrategy);
-      if (res) {
-        currentSummary = res.summary;
-      }
-    } else if (activeValidationPromiseRef.current) {
-      const res = await activeValidationPromiseRef.current;
-      if (res) {
-        currentSummary = res.summary;
-      }
-    }
-
-    if (currentSummary.invalidCount > 0) {
+    if (invalidCount > 0) {
       addToast('Please fix or remove invalid rows before submitting.', 'error');
       return;
     }
