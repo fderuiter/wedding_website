@@ -181,6 +181,43 @@ function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: 
   return { parsed, freqMap };
 }
 
+function computeSummaryFromRows(
+  rows: ExtendedParsedCsvRow[],
+  strategy: 'skip' | 'update' | 'reject'
+): DryRunValidationSummary {
+  const total = rows.length;
+  const validCount = rows.filter((r) => r.isValid).length;
+  const invalidCount = rows.filter((r) => !r.isValid).length;
+  const duplicateCount = rows.filter(
+    (r) =>
+      r.isDuplicate ||
+      r.existingGuestName ||
+      r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
+      r.errors?.some((e) => e.includes('Duplicate'))
+  ).length;
+  const updatedCount = rows.filter(
+    (r) =>
+      r.actionOutcome === 'update' ||
+      (strategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
+  ).length;
+  const skippedCount = rows.filter(
+    (r) =>
+      r.actionOutcome === 'skip' ||
+      (strategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
+  ).length;
+  const createdCount = validCount - updatedCount - skippedCount;
+
+  return {
+    total,
+    validCount,
+    invalidCount,
+    duplicateCount,
+    updatedCount,
+    skippedCount,
+    createdCount,
+  };
+}
+
 type ExtendedParsedCsvRow = ParsedCsvRow & {
   isDuplicate?: boolean;
   existingGuestName?: string | null;
@@ -726,6 +763,12 @@ export function CsvImportWizardModal({
   const [validatedRows, setValidatedRows] = useState<ExtendedParsedCsvRow[]>([]);
   const codeFrequencyRef = useRef<Map<string, number>>(new Map());
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeValidationPromiseRef = useRef<Promise<{ summary: DryRunValidationSummary; rows: ExtendedParsedCsvRow[] } | null> | null>(null);
+  const prevStepRef = useRef<number>(step);
+  const prevCollisionStrategyRef = useRef<'skip' | 'update' | 'reject'>(collisionStrategy);
+
   const editableRowsRef = useRef(editableRows);
   editableRowsRef.current = editableRows;
 
@@ -740,107 +783,144 @@ export function CsvImportWizardModal({
       if (rows.length === 0) {
         setValidatedRows([]);
         setServerSummary(null);
-        return;
+        return null;
       }
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       setIsValidating(true);
-      try {
-        const payload = {
-          records: rows.map((r) => ({
-            guestName: r.guestName,
-            code: r.code || undefined,
-            email: r.email || undefined,
-            addressLine1: r.addressLine1 || undefined,
-            addressLine2: r.addressLine2 || undefined,
-            city: r.city || undefined,
-            state: r.state || undefined,
-            zipCode: r.zipCode || undefined,
-            country: r.country || undefined,
-            dietaryNotes: r.dietaryNotes || undefined,
-            plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
-            plusOneFirstName: r.plusOneFirstName.trim() || undefined,
-            plusOneLastName: r.plusOneLastName.trim() || undefined,
-            householdName: r.householdName.trim() || undefined,
-            partyGroup: r.partyGroup.trim() || undefined,
-            partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
-            extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
-          })),
-          collisionStrategy: strategy,
-        };
 
-        const res = await fetch('/api/admin/invitation-codes/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+      const promise = (async () => {
+        try {
+          const payload = {
+            records: rows.map((r) => ({
+              guestName: r.guestName,
+              code: r.code || undefined,
+              email: r.email || undefined,
+              addressLine1: r.addressLine1 || undefined,
+              addressLine2: r.addressLine2 || undefined,
+              city: r.city || undefined,
+              state: r.state || undefined,
+              zipCode: r.zipCode || undefined,
+              country: r.country || undefined,
+              dietaryNotes: r.dietaryNotes || undefined,
+              plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+              plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+              plusOneLastName: r.plusOneLastName.trim() || undefined,
+              householdName: r.householdName.trim() || undefined,
+              partyGroup: r.partyGroup.trim() || undefined,
+              partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
+              extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
+            })),
+            collisionStrategy: strategy,
+          };
 
-        if (res.ok) {
-          const data: DryRunValidationResponse = await res.json();
-          if (data && data.success && data.summary && data.rows) {
-            setServerSummary(data.summary);
-            setValidatedRows(data.rows as ExtendedParsedCsvRow[]);
-            setIsValidating(false);
-            return;
+          const res = await fetch('/api/admin/invitation-codes/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+
+          if (controller.signal.aborted) {
+            return null;
           }
-        }
-      } catch (_err) {
-        // Fallback to local computation if fetch is unhandled / unreachable
-      }
 
-      const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
-      codeFrequencyRef.current = freqMap;
-      setValidatedRows(parsed);
-      setServerSummary(null);
-      setIsValidating(false);
+          if (res.ok) {
+            const data: DryRunValidationResponse = await res.json();
+            if (controller.signal.aborted) {
+              return null;
+            }
+            if (data && data.success && data.summary && data.rows) {
+              const resultRows = data.rows as ExtendedParsedCsvRow[];
+              setServerSummary(data.summary);
+              setValidatedRows(resultRows);
+              setIsValidating(false);
+              return { summary: data.summary, rows: resultRows };
+            }
+          }
+        } catch (err: any) {
+          if (err.name === 'AbortError' || controller.signal.aborted) {
+            return null;
+          }
+          // Fallback to local computation if fetch is unhandled / unreachable
+        }
+
+        if (controller.signal.aborted) {
+          return null;
+        }
+
+        const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
+        codeFrequencyRef.current = freqMap;
+        const localSummary = computeSummaryFromRows(parsed, strategy);
+        setValidatedRows(parsed);
+        setServerSummary(null);
+        setIsValidating(false);
+        return { summary: localSummary, rows: parsed };
+      })();
+
+      activeValidationPromiseRef.current = promise;
+      return promise;
     },
     []
   );
 
   useEffect(() => {
     if (step === 3 && editableRows.length > 0) {
-      runDryRunValidation(editableRows, collisionStrategy);
+      const isStepChange = prevStepRef.current !== 3;
+      const isStrategyChange = prevCollisionStrategyRef.current !== collisionStrategy;
+
+      prevStepRef.current = step;
+      prevCollisionStrategyRef.current = collisionStrategy;
+
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
+      if (isStepChange || isStrategyChange) {
+        runDryRunValidation(editableRows, collisionStrategy);
+      } else {
+        debounceTimerRef.current = setTimeout(() => {
+          runDryRunValidation(editableRows, collisionStrategy);
+          debounceTimerRef.current = null;
+        }, 400);
+      }
     } else if (step !== 3) {
+      prevStepRef.current = step;
+      prevCollisionStrategyRef.current = collisionStrategy;
+
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
       setValidatedRows([]);
       setServerSummary(null);
       codeFrequencyRef.current.clear();
     }
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
   }, [step, editableRows, collisionStrategy, runDryRunValidation]);
 
   const summary = useMemo(() => {
     if (serverSummary) {
       return serverSummary;
     }
-    const total = editableRows.length;
-    const validCount = validatedRows.filter((r) => r.isValid).length;
-    const invalidCount = validatedRows.filter((r) => !r.isValid).length;
-    const duplicateCount = validatedRows.filter(
-      (r) =>
-        r.isDuplicate ||
-        r.existingGuestName ||
-        r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
-        r.errors?.some((e) => e.includes('Duplicate'))
-    ).length;
-    const updatedCount = validatedRows.filter(
-      (r) =>
-        r.actionOutcome === 'update' ||
-        (collisionStrategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
-    ).length;
-    const skippedCount = validatedRows.filter(
-      (r) =>
-        r.actionOutcome === 'skip' ||
-        (collisionStrategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
-    ).length;
-    const createdCount = validCount - updatedCount - skippedCount;
-    return {
-      total,
-      validCount,
-      invalidCount,
-      duplicateCount,
-      updatedCount,
-      skippedCount,
-      createdCount,
-    };
-  }, [serverSummary, editableRows.length, validatedRows, collisionStrategy]);
+    return computeSummaryFromRows(validatedRows, collisionStrategy);
+  }, [serverSummary, validatedRows, collisionStrategy]);
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'valid') {
@@ -870,8 +950,6 @@ export function CsvImportWizardModal({
     }
     return validatedRows;
   }, [validatedRows, statusFilter]);
-
-  const invalidCount = summary.invalidCount;
 
   const handleCellEdit = useCallback((
     index: number,
@@ -1067,7 +1145,23 @@ export function CsvImportWizardModal({
       return;
     }
 
-    if (invalidCount > 0) {
+    let currentSummary = serverSummary || summary;
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+      const res = await runDryRunValidation(editableRows, collisionStrategy);
+      if (res) {
+        currentSummary = res.summary;
+      }
+    } else if (activeValidationPromiseRef.current) {
+      const res = await activeValidationPromiseRef.current;
+      if (res) {
+        currentSummary = res.summary;
+      }
+    }
+
+    if (currentSummary.invalidCount > 0) {
       addToast('Please fix or remove invalid rows before submitting.', 'error');
       return;
     }
