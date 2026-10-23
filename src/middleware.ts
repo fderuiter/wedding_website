@@ -22,7 +22,9 @@ export async function middleware(request: NextRequest) {
 
   const isExcluded = 
     pathname === '/guest/login' ||
+    pathname === '/guest/collect' ||
     pathname === '/api/guest/login' ||
+    pathname === '/api/guest/address/public' ||
     pathname === '/admin/login' ||
     pathname === '/api/admin/login' ||
     pathname === '/api/health' ||
