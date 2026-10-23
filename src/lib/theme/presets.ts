@@ -24,6 +24,17 @@ export interface ComponentTokens {
   '--font-heading': string;
   '--font-body': string;
   '--font-mono': string;
+  '--font-size-display': string;
+  '--font-size-h1': string;
+  '--font-size-h2': string;
+  '--font-size-h3': string;
+  '--font-size-body': string;
+  '--font-weight-heading': string;
+  '--font-weight-body': string;
+  '--line-height-heading': string;
+  '--line-height-body': string;
+  '--letter-spacing-heading': string;
+  '--letter-spacing-body': string;
 
   '--container-bg': string;
   '--card-bg': string;
@@ -263,6 +274,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--font-heading': 'var(--font-playfair), Playfair Display, Georgia, serif',
     '--font-body': 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
     '--font-mono': 'var(--font-geist-mono), monospace',
+    '--font-size-display': '3.75rem',
+    '--font-size-h1': '2.25rem',
+    '--font-size-h2': '1.875rem',
+    '--font-size-h3': '1.5rem',
+    '--font-size-body': '1rem',
+    '--font-weight-heading': '700',
+    '--font-weight-body': '400',
+    '--line-height-heading': '1.2',
+    '--line-height-body': '1.625',
+    '--letter-spacing-heading': '-0.01em',
+    '--letter-spacing-body': '0em',
     '--container-bg': 'var(--color-background, #fff1f2)',
     '--card-bg': '#ffffff',
     '--card-border': '#e5e7eb',
@@ -510,6 +532,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--font-heading': 'var(--font-inter), Arial, Helvetica, sans-serif',
     '--font-body': 'var(--font-inter), Arial, Helvetica, sans-serif',
     '--font-mono': 'var(--font-geist-mono), monospace',
+    '--font-size-display': '4rem',
+    '--font-size-h1': '2.5rem',
+    '--font-size-h2': '2rem',
+    '--font-size-h3': '1.5rem',
+    '--font-size-body': '1rem',
+    '--font-weight-heading': '800',
+    '--font-weight-body': '400',
+    '--line-height-heading': '1.15',
+    '--line-height-body': '1.5',
+    '--letter-spacing-heading': '-0.025em',
+    '--letter-spacing-body': '0em',
     '--container-bg': '#f8fafc',
     '--card-bg': '#ffffff',
     '--card-border': '#f1f5f9',
@@ -757,6 +790,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--font-heading': 'var(--font-cormorant), Cormorant Garamond, Georgia, serif',
     '--font-body': 'var(--font-lato), Arial, Helvetica, sans-serif',
     '--font-mono': 'var(--font-geist-mono), monospace',
+    '--font-size-display': '4.25rem',
+    '--font-size-h1': '2.5rem',
+    '--font-size-h2': '2rem',
+    '--font-size-h3': '1.5rem',
+    '--font-size-body': '1.0625rem',
+    '--font-weight-heading': '600',
+    '--font-weight-body': '400',
+    '--line-height-heading': '1.25',
+    '--line-height-body': '1.7',
+    '--letter-spacing-heading': '0.01em',
+    '--letter-spacing-body': '0.01em',
     '--container-bg': '#fdf2f8',
     '--card-bg': '#fffafb',
     '--card-border': '#fce7f3',
@@ -1005,6 +1049,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--font-heading': 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
     '--font-body': 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
     '--font-mono': 'var(--font-geist-mono), monospace',
+    '--font-size-display': '3.5rem',
+    '--font-size-h1': '2.25rem',
+    '--font-size-h2': '1.75rem',
+    '--font-size-h3': '1.375rem',
+    '--font-size-body': '0.9375rem',
+    '--font-weight-heading': '500',
+    '--font-weight-body': '400',
+    '--line-height-heading': '1.2',
+    '--line-height-body': '1.5',
+    '--letter-spacing-heading': '-0.015em',
+    '--letter-spacing-body': '0em',
     '--container-bg': '#fafafa',
     '--card-bg': '#ffffff',
     '--card-border': '#e4e4e7',
@@ -1255,6 +1310,17 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--font-heading': 'var(--font-cinzel), Cinzel, Georgia, serif',
     '--font-body': 'var(--font-lora), Lora, Georgia, serif',
     '--font-mono': 'var(--font-geist-mono), monospace',
+    '--font-size-display': '4.5rem',
+    '--font-size-h1': '2.75rem',
+    '--font-size-h2': '2.25rem',
+    '--font-size-h3': '1.625rem',
+    '--font-size-body': '1.125rem',
+    '--font-weight-heading': '700',
+    '--font-weight-body': '400',
+    '--line-height-heading': '1.1',
+    '--line-height-body': '1.75',
+    '--letter-spacing-heading': '0.05em',
+    '--letter-spacing-body': '0.005em',
     '--container-bg': '#f5f5f4',
     '--card-bg': '#fcfbf9',
     '--card-border': '#000000',

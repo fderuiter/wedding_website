@@ -29,6 +29,17 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--font-heading']).toBeDefined();
       expect(tokens['--font-body']).toBeDefined();
       expect(tokens['--font-mono']).toBeDefined();
+      expect(tokens['--font-size-display']).toBeDefined();
+      expect(tokens['--font-size-h1']).toBeDefined();
+      expect(tokens['--font-size-h2']).toBeDefined();
+      expect(tokens['--font-size-h3']).toBeDefined();
+      expect(tokens['--font-size-body']).toBeDefined();
+      expect(tokens['--font-weight-heading']).toBeDefined();
+      expect(tokens['--font-weight-body']).toBeDefined();
+      expect(tokens['--line-height-heading']).toBeDefined();
+      expect(tokens['--line-height-body']).toBeDefined();
+      expect(tokens['--letter-spacing-heading']).toBeDefined();
+      expect(tokens['--letter-spacing-body']).toBeDefined();
 
       // Check key button and dialog component CSS variables
       expect(tokens['--btn-radius']).toBeDefined();
@@ -170,10 +181,18 @@ describe('Theme Preset Catalog & Token Mapping', () => {
     const romanticTokens = getPresetTokens('romantic');
     expect(romanticTokens['--btn-radius']).toBe('9999px');
     expect(romanticTokens['--dialog-border-radius']).toBe('1.25rem');
+    expect(romanticTokens['--font-size-display']).toBe('4.25rem');
+    expect(romanticTokens['--font-weight-heading']).toBe('600');
 
     const minimalTokens = getPresetTokens('minimal');
     expect(minimalTokens['--btn-radius']).toBe('0px');
     expect(minimalTokens['--dialog-border-radius']).toBe('0px');
+    expect(minimalTokens['--font-size-display']).toBe('3.5rem');
+    expect(minimalTokens['--font-weight-heading']).toBe('500');
+
+    const editorialTokens = getPresetTokens('editorial');
+    expect(editorialTokens['--font-size-display']).toBe('4.5rem');
+    expect(editorialTokens['--line-height-heading']).toBe('1.1');
 
     const fallbackTokens = getPresetTokens('non-existent-preset');
     expect(fallbackTokens).toEqual(THEME_PRESETS[DEFAULT_THEME_PRESET]);

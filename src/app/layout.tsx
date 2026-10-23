@@ -121,6 +121,17 @@ export default async function RootLayout({
     --font-heading: ${fontHeading};
     --font-body: ${fontBody};
     --font-mono: ${fontMono};
+    --font-size-display: ${presetTokens['--font-size-display']};
+    --font-size-h1: ${presetTokens['--font-size-h1']};
+    --font-size-h2: ${presetTokens['--font-size-h2']};
+    --font-size-h3: ${presetTokens['--font-size-h3']};
+    --font-size-body: ${presetTokens['--font-size-body']};
+    --font-weight-heading: ${presetTokens['--font-weight-heading']};
+    --font-weight-body: ${presetTokens['--font-weight-body']};
+    --line-height-heading: ${presetTokens['--line-height-heading']};
+    --line-height-body: ${presetTokens['--line-height-body']};
+    --letter-spacing-heading: ${presetTokens['--letter-spacing-heading']};
+    --letter-spacing-body: ${presetTokens['--letter-spacing-body']};
   }`;
 
   const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
