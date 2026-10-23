@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { QRCodeCanvas } from 'qrcode.react';
+import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -215,14 +215,20 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
             </div>
           </div>
           {paymentUrl && (
-            <div className="flex flex-col items-center bg-white p-2 rounded border border-gray-200 dark:border-gray-700 shrink-0 self-center sm:self-auto">
-              <QRCodeCanvas
+            <div
+              className="flex flex-col items-center p-2 rounded border shrink-0 self-center sm:self-auto"
+              style={{
+                backgroundColor: 'var(--card-bg, #ffffff)',
+                borderColor: 'var(--color-surface-border, #e5e7eb)',
+              }}
+            >
+              <ThemedQRCode
                 value={paymentUrl}
                 size={80}
                 level="M"
                 aria-label={`QR code to pay via ${item.paymentHandleType || 'Payment App'}`}
               />
-              <span className="text-[10px] text-gray-500 mt-1 font-sans">Scan to Pay</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 font-sans">Scan to Pay</span>
             </div>
           )}
         </div>
