@@ -7,16 +7,30 @@ interface RateLimitInfo {
 
 const rateLimits = new Map<string, RateLimitInfo>();
 
-export async function rateLimit(req: NextRequest, limit: number, windowMs: number): Promise<NextResponse | null> {
+export async function rateLimit(
+  req: NextRequest,
+  limit: number,
+  windowMs: number,
+  keyPrefix?: string
+): Promise<NextResponse | null> {
   // Try to get client IP from x-forwarded-for header (first IP in chain), fallback to '127.0.0.1'
   const rawForwarded = req.headers.get('x-forwarded-for');
   const ip = rawForwarded ? rawForwarded.split(',')[0].trim() : '127.0.0.1';
 
+  let pathname = '';
+  try {
+    pathname = req.nextUrl?.pathname || (req.url ? new URL(req.url).pathname : '');
+  } catch {
+    pathname = '';
+  }
+
+  const key = keyPrefix ? `${keyPrefix}:${ip}` : `${pathname}:${ip}`;
+
   const now = Date.now();
-  const info = rateLimits.get(ip);
+  const info = rateLimits.get(key);
 
   if (!info || info.resetTime < now) {
-    rateLimits.set(ip, { count: 1, resetTime: now + windowMs });
+    rateLimits.set(key, { count: 1, resetTime: now + windowMs });
     return null;
   }
 
