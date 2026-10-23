@@ -105,6 +105,23 @@ describe('/api/og route', () => {
       expect(options.fonts).toBeUndefined();
     });
   });
+
+  it('respects active themePreset configured in getAppConfig', async () => {
+    const { getAppConfig } = require('@/lib/config');
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      partner1Name: 'Alice',
+      partner2Name: 'Bob',
+      themePreset: 'romantic',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+    });
+
+    const req = new Request('http://localhost:3000/api/og');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(ImageResponse).toHaveBeenCalled();
+  });
 });
 
 
