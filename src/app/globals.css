@@ -221,24 +221,22 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
 
 @media print {
   :root, .dark {
-    --color-primary: var(--print-text, #000000) !important;
-    --color-secondary: var(--print-text, #333333) !important;
-    --color-primary-light: var(--print-badge-bg, #e5e7eb) !important;
-    --color-secondary-light: var(--print-badge-bg, #f3f4f6) !important;
-    --color-background: var(--print-bg, #ffffff) !important;
-    --color-foreground: var(--print-text, #000000) !important;
-    --color-border: var(--print-border, #d1d5db) !important;
-    --color-text-on-primary: var(--print-bg, #ffffff) !important;
-    --color-text-on-secondary: var(--print-text, #000000) !important;
-    --color-primary-text: var(--print-text, #000000) !important;
-    --color-secondary-text: var(--print-text, #333333) !important;
-    --background: var(--print-bg, #ffffff) !important;
-    --foreground: var(--print-text, #000000) !important;
+    --color-primary-light: var(--print-badge-bg) !important;
+    --color-secondary-light: var(--print-badge-bg) !important;
+    --color-background: var(--print-bg) !important;
+    --color-foreground: var(--print-text) !important;
+    --color-border: var(--print-border) !important;
+    --color-text-on-primary: var(--print-bg) !important;
+    --color-text-on-secondary: var(--print-text) !important;
+    --color-primary-text: var(--print-text) !important;
+    --color-secondary-text: var(--print-text) !important;
+    --background: var(--print-bg) !important;
+    --foreground: var(--print-text) !important;
   }
 
   body {
-    background-color: var(--print-bg, #ffffff) !important;
-    color: var(--print-text, #000000) !important;
+    background-color: var(--print-bg) !important;
+    color: var(--print-text) !important;
   }
 
   header, footer, nav, button, .skip-link, .no-print, [role="navigation"] {
@@ -246,14 +244,14 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
   }
 
   .card, [class*="card"], article, section {
-    background-color: var(--print-bg, #ffffff) !important;
-    color: var(--print-text, #000000) !important;
-    border-color: var(--print-border, #d1d5db) !important;
+    background-color: var(--print-bg) !important;
+    color: var(--print-text) !important;
+    border-color: var(--print-border) !important;
     box-shadow: none !important;
   }
 
   a {
-    color: var(--print-text, #000000) !important;
+    color: var(--print-text) !important;
     text-decoration: underline !important;
   }
 }

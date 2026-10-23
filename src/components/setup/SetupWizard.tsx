@@ -117,6 +117,7 @@ function SetupWizardContent() {
   const [layoutGridGap, setLayoutGridGap] = useState('1.5rem');
   const [layoutCardPadding, setLayoutCardPadding] = useState('2rem');
   const [layoutBorderRadius, setLayoutBorderRadius] = useState('1rem');
+  const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
 
   const handleThemeChange = (fields: Record<string, any>) => {
@@ -127,6 +128,9 @@ function SetupWizardContent() {
     if (fields.layoutGridGap !== undefined) setLayoutGridGap(fields.layoutGridGap);
     if (fields.layoutCardPadding !== undefined) setLayoutCardPadding(fields.layoutCardPadding);
     if (fields.layoutBorderRadius !== undefined) setLayoutBorderRadius(fields.layoutBorderRadius);
+    if (fields.themeTokens !== undefined) {
+      setThemeTokens((prev) => ({ ...prev, ...fields.themeTokens }));
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -207,6 +211,7 @@ function SetupWizardContent() {
           layoutGridGap,
           layoutCardPadding,
           layoutBorderRadius,
+          themeTokens,
         }),
       });
       if (res.ok) {
@@ -320,6 +325,7 @@ function SetupWizardContent() {
                     layoutGridGap,
                     layoutCardPadding,
                     layoutBorderRadius,
+                    themeTokens,
                   }}
                   onChange={handleThemeChange}
                 />

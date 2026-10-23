@@ -60,19 +60,19 @@ describe('PrintableFloorplan component', () => {
     );
 
     const rootContainer = container.firstElementChild as HTMLElement;
-    expect(rootContainer.style.backgroundColor).toBe('var(--print-bg, #ffffff)');
-    expect(rootContainer.style.color).toBe('var(--print-text, #111827)');
+    expect(rootContainer.style.backgroundColor).toBe('var(--print-bg)');
+    expect(rootContainer.style.color).toBe('var(--print-text)');
 
     // Header border style
     const headerElement = rootContainer.querySelector('div.border-b-2') as HTMLElement;
-    expect(headerElement.style.borderColor).toBe('var(--print-header-border, #111827)');
+    expect(headerElement.style.borderColor).toBe('var(--print-header-border)');
 
     // Table card style
     const tableCards = rootContainer.querySelectorAll('article.break-inside-avoid');
     expect(tableCards.length).toBe(2);
     const firstTableCard = tableCards[0] as HTMLElement;
-    expect(firstTableCard.style.borderColor).toBe('var(--print-border, #e5e7eb)');
-    expect(firstTableCard.style.backgroundColor).toBe('var(--print-bg, #ffffff)');
+    expect(firstTableCard.style.borderColor).toBe('var(--print-border)');
+    expect(firstTableCard.style.backgroundColor).toBe('var(--print-bg)');
 
     // Badge style
     const badges = rootContainer.querySelectorAll('span.font-mono');
@@ -80,8 +80,8 @@ describe('PrintableFloorplan component', () => {
       b.textContent?.includes('Shape:')
     ) as HTMLElement;
     expect(badgeElement).toBeDefined();
-    expect(badgeElement.style.backgroundColor).toBe('var(--print-badge-bg, #f3f4f6)');
-    expect(badgeElement.style.borderColor).toBe('var(--print-border, #e5e7eb)');
+    expect(badgeElement.style.backgroundColor).toBe('var(--print-badge-bg)');
+    expect(badgeElement.style.borderColor).toBe('var(--print-border)');
   });
 
   it('renders main, section, and article landmarks with correct ARIA labelling', () => {
