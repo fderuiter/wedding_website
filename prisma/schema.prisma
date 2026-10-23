@@ -56,6 +56,23 @@ model AppConfig {
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
   showAddToCalendar Boolean  @default(true)
+  emailProvider    String   @default("smtp")
+  smtpHost         String?  @default("")
+  smtpPort         Int?     @default(587)
+  smtpUser         String?  @default("")
+  smtpPass         String?  @default("")
+  smtpFrom         String?  @default("")
+  smtpSecure       Boolean? @default(false)
+  resendApiKey     String?  @default("")
+  resendFrom       String?  @default("")
+  sendgridApiKey   String?  @default("")
+  sendgridFrom     String?  @default("")
+  smsProvider      String?  @default("none")
+  twilioAccountSid String?  @default("")
+  twilioAuthToken  String?  @default("")
+  twilioFromNumber String?  @default("")
+  broadcastBatchSize Int    @default(50)
+  broadcastBatchDelayMs Int @default(500)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -193,6 +210,7 @@ model InvitationCode {
   contributors Contributor[]
   subEventAccesses SubEventAccess[]
   subEventRsvps    SubEventRsvp[]
+  broadcastRecipients BroadcastRecipient[]
 
   @@index([partyTags], type: Gin)
 }
@@ -277,3 +295,36 @@ model SubEventRsvp {
 
   @@unique([subEventId, invitationCodeId])
 }
+
+model BroadcastMessage {
+  id              String               @id @default(uuid())
+  channel         String               // "EMAIL" | "SMS"
+  subject         String?
+  body            String
+  targetFilters   Json?
+  status          String               @default("PENDING") // "PENDING", "SENDING", "SENT", "FAILED", "PARTIALLY_SENT"
+  totalRecipients Int                  @default(0)
+  sentCount       Int                  @default(0)
+  failedCount     Int                  @default(0)
+  sentAt          DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  recipients      BroadcastRecipient[]
+}
+
+model BroadcastRecipient {
+  id               String           @id @default(uuid())
+  broadcastId      String
+  broadcast        BroadcastMessage @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  invitationCodeId String?
+  invitationCode   InvitationCode?  @relation(fields: [invitationCodeId], references: [id], onDelete: SetNull)
+  guestName        String
+  destination      String           // Email or Phone
+  status           String           @default("PENDING") // "PENDING", "SENT", "FAILED"
+  error            String?
+  sentAt           DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+

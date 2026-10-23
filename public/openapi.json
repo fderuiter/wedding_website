@@ -205,6 +205,308 @@
         }
       }
     },
+    "/api/admin/broadcast/history": {
+      "get": {
+        "summary": "GET /api/admin/broadcast/history",
+        "description": "Endpoint for /api/admin/broadcast/history",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/broadcast/preview": {
+      "post": {
+        "summary": "POST /api/admin/broadcast/preview",
+        "description": "Endpoint for /api/admin/broadcast/preview",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "channel": {
+                    "type": "string",
+                    "enum": [
+                      "EMAIL",
+                      "SMS"
+                    ]
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sampleGuestId": {
+                    "type": "string"
+                  },
+                  "targetFilters": {
+                    "type": "object",
+                    "properties": {
+                      "partyTags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "householdName": {
+                        "type": "string"
+                      },
+                      "attendanceStatus": {
+                        "type": "string",
+                        "enum": [
+                          "attending",
+                          "declined",
+                          "pending",
+                          "all"
+                        ]
+                      },
+                      "subEventId": {
+                        "type": "string"
+                      },
+                      "subEventRsvpStatus": {
+                        "type": "string"
+                      },
+                      "selectedIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "searchQuery": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "channel",
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/broadcast/retry": {
+      "post": {
+        "summary": "POST /api/admin/broadcast/retry",
+        "description": "Endpoint for /api/admin/broadcast/retry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "broadcastId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "recipientIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "broadcastId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/broadcast/send": {
+      "post": {
+        "summary": "POST /api/admin/broadcast/send",
+        "description": "Endpoint for /api/admin/broadcast/send",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "channel": {
+                    "type": "string",
+                    "enum": [
+                      "EMAIL",
+                      "SMS"
+                    ]
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "targetFilters": {
+                    "type": "object",
+                    "properties": {
+                      "partyTags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "householdName": {
+                        "type": "string"
+                      },
+                      "attendanceStatus": {
+                        "type": "string",
+                        "enum": [
+                          "attending",
+                          "declined",
+                          "pending",
+                          "all"
+                        ]
+                      },
+                      "subEventId": {
+                        "type": "string"
+                      },
+                      "subEventRsvpStatus": {
+                        "type": "string"
+                      },
+                      "selectedIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "searchQuery": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "customRecipientIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "channel",
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/broadcast/test-connection": {
+      "post": {
+        "summary": "POST /api/admin/broadcast/test-connection",
+        "description": "Endpoint for /api/admin/broadcast/test-connection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "email",
+                      "sms"
+                    ]
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "smtpHost": {
+                    "type": "string"
+                  },
+                  "smtpPort": {
+                    "type": "number"
+                  },
+                  "smtpUser": {
+                    "type": "string"
+                  },
+                  "smtpPass": {
+                    "type": "string"
+                  },
+                  "smtpFrom": {
+                    "type": "string"
+                  },
+                  "smtpSecure": {
+                    "type": "boolean"
+                  },
+                  "resendApiKey": {
+                    "type": "string"
+                  },
+                  "resendFrom": {
+                    "type": "string"
+                  },
+                  "sendgridApiKey": {
+                    "type": "string"
+                  },
+                  "sendgridFrom": {
+                    "type": "string"
+                  },
+                  "twilioAccountSid": {
+                    "type": "string"
+                  },
+                  "twilioAuthToken": {
+                    "type": "string"
+                  },
+                  "twilioFromNumber": {
+                    "type": "string"
+                  },
+                  "testRecipient": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/features": {
       "get": {
         "summary": "GET /api/admin/features",
@@ -2960,6 +3262,187 @@
                   "showAddToCalendar": {
                     "type": "boolean"
                   },
+                  "emailProvider": {
+                    "default": "smtp",
+                    "type": "string"
+                  },
+                  "smtpHost": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpPort": {
+                    "default": 587,
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {}
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpUser": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpPass": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpSecure": {
+                    "default": false,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resendApiKey": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resendFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sendgridApiKey": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sendgridFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smsProvider": {
+                    "default": "none",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioAccountSid": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioAuthToken": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioFromNumber": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "broadcastBatchSize": {
+                    "default": 50,
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {}
+                    ]
+                  },
+                  "broadcastBatchDelayMs": {
+                    "default": 500,
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {}
+                    ]
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -3035,7 +3518,24 @@
                   "typographyScale",
                   "spacingScale",
                   "borderTreatment",
-                  "brandDimensions"
+                  "brandDimensions",
+                  "emailProvider",
+                  "smtpHost",
+                  "smtpPort",
+                  "smtpUser",
+                  "smtpPass",
+                  "smtpFrom",
+                  "smtpSecure",
+                  "resendApiKey",
+                  "resendFrom",
+                  "sendgridApiKey",
+                  "sendgridFrom",
+                  "smsProvider",
+                  "twilioAccountSid",
+                  "twilioAuthToken",
+                  "twilioFromNumber",
+                  "broadcastBatchSize",
+                  "broadcastBatchDelayMs"
                 ],
                 "additionalProperties": {}
               }
@@ -3583,6 +4083,187 @@
                   "showAddToCalendar": {
                     "type": "boolean"
                   },
+                  "emailProvider": {
+                    "default": "smtp",
+                    "type": "string"
+                  },
+                  "smtpHost": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpPort": {
+                    "default": 587,
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {}
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpUser": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpPass": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpSecure": {
+                    "default": false,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resendApiKey": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resendFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sendgridApiKey": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sendgridFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smsProvider": {
+                    "default": "none",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioAccountSid": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioAuthToken": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioFromNumber": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "broadcastBatchSize": {
+                    "default": 50,
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {}
+                    ]
+                  },
+                  "broadcastBatchDelayMs": {
+                    "default": 500,
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {}
+                    ]
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -3658,7 +4339,24 @@
                   "typographyScale",
                   "spacingScale",
                   "borderTreatment",
-                  "brandDimensions"
+                  "brandDimensions",
+                  "emailProvider",
+                  "smtpHost",
+                  "smtpPort",
+                  "smtpUser",
+                  "smtpPass",
+                  "smtpFrom",
+                  "smtpSecure",
+                  "resendApiKey",
+                  "resendFrom",
+                  "sendgridApiKey",
+                  "sendgridFrom",
+                  "smsProvider",
+                  "twilioAccountSid",
+                  "twilioAuthToken",
+                  "twilioFromNumber",
+                  "broadcastBatchSize",
+                  "broadcastBatchDelayMs"
                 ],
                 "additionalProperties": {}
               }
@@ -4217,6 +4915,187 @@
                   "showAddToCalendar": {
                     "type": "boolean"
                   },
+                  "emailProvider": {
+                    "default": "smtp",
+                    "type": "string"
+                  },
+                  "smtpHost": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpPort": {
+                    "default": 587,
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {}
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpUser": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpPass": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smtpSecure": {
+                    "default": false,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resendApiKey": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resendFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sendgridApiKey": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sendgridFrom": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "smsProvider": {
+                    "default": "none",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioAccountSid": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioAuthToken": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "twilioFromNumber": {
+                    "default": "",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "broadcastBatchSize": {
+                    "default": 50,
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {}
+                    ]
+                  },
+                  "broadcastBatchDelayMs": {
+                    "default": 500,
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {}
+                    ]
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -4292,7 +5171,24 @@
                   "typographyScale",
                   "spacingScale",
                   "borderTreatment",
-                  "brandDimensions"
+                  "brandDimensions",
+                  "emailProvider",
+                  "smtpHost",
+                  "smtpPort",
+                  "smtpUser",
+                  "smtpPass",
+                  "smtpFrom",
+                  "smtpSecure",
+                  "resendApiKey",
+                  "resendFrom",
+                  "sendgridApiKey",
+                  "sendgridFrom",
+                  "smsProvider",
+                  "twilioAccountSid",
+                  "twilioAuthToken",
+                  "twilioFromNumber",
+                  "broadcastBatchSize",
+                  "broadcastBatchDelayMs"
                 ],
                 "additionalProperties": {}
               }
