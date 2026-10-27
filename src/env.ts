@@ -62,20 +62,23 @@ const envSchema = z.object({
 
 // Conditionally skip validation during build (e.g., for Prisma generation without secrets)
 // Some CI setups might use NEXT_PHASE or just npm_lifecycle_event.
-const isBuildTime = process.env.npm_lifecycle_event === 'build' ||
+const isEdge = process.env.NEXT_RUNTIME === 'edge';
+const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
+const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
+  arg.includes('seed') ||
+  arg.includes('generate-') ||
+  arg.includes('check-') ||
+  arg.includes('verify-')
+));
+
+const isBuildTime = isEdge ||
+                    process.env.npm_lifecycle_event === 'build' ||
                     process.env.npm_lifecycle_event === 'prebuild' ||
                     process.env.npm_lifecycle_event === 'prisma:generate' ||
                     process.env.npm_lifecycle_event === 'db:seed' ||
+                    isScriptRun ||
                     process.env.NODE_ENV === 'test' ||
-                    process.env.JEST_WORKER_ID !== undefined ||
-                    process.env.NEXT_RUNTIME === 'edge' ||
-                    process.argv.some(arg => typeof arg === 'string' && (
-                      arg.includes('seed') ||
-                      arg.includes('generate-docs') ||
-                      arg.includes('generate-openapi') ||
-                      arg.includes('check-') ||
-                      arg.includes('verify-')
-                    ));
+                    process.env.JEST_WORKER_ID !== undefined;
 
 // In production runtime, strictly require valid environment variables
 if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge' && !process.env.ADMIN_PASSWORD) {

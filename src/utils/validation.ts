@@ -169,8 +169,8 @@ export function sanitizeUrl(url?: string | null): string | undefined {
     return undefined;
   }
 
-  // Allow safe relative paths starting with /
-  if (trimmed.startsWith('/')) {
+  // Allow safe relative paths starting with /, #, or ?
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('?')) {
     return trimmed;
   }
 
@@ -184,12 +184,6 @@ export function sanitizeUrl(url?: string | null): string | undefined {
     return trimmed;
   }
 
-  // If string contains no colon scheme separator, it's a relative path/query string
-  if (!trimmed.includes(':')) {
-    return trimmed;
-  }
-
-  // String contains a colon scheme separator that is not in the allowed protocols list
   return undefined;
 }
 
