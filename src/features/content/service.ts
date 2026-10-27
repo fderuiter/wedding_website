@@ -192,6 +192,61 @@ export class ContentService {
       throw new Error(`Invalid moderation action: ${action}`);
     }
   }
+
+  async moderatePhotosBatch(
+    ids: string[],
+    action: 'approve' | 'reject',
+    author: string = 'Admin'
+  ) {
+    if (!Array.isArray(ids)) {
+      throw new Error('Photo IDs must be an array');
+    }
+    if (ids.length === 0) {
+      throw new Error('At least one photo ID is required');
+    }
+    if (ids.length > 100) {
+      throw new Error('Batch request cannot exceed 100 items');
+    }
+
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const result = await this.moderatePhoto(id, action, author);
+          return {
+            id,
+            success: true,
+            action,
+            data: result,
+          };
+        } catch (err: any) {
+          return {
+            id,
+            success: false,
+            action,
+            error: err?.message || 'Failed to moderate photo',
+          };
+        }
+      })
+    );
+
+    const succeededCount = results.filter((r) => r.success).length;
+    const failedCount = results.filter((r) => !r.success).length;
+
+    return {
+      total: ids.length,
+      succeededCount,
+      failedCount,
+      results,
+    };
+  }
+
+  async batchModeratePhotos(
+    ids: string[],
+    action: 'approve' | 'reject',
+    author: string = 'Admin'
+  ) {
+    return this.moderatePhotosBatch(ids, action, author);
+  }
 }
 
 export const contentService = new ContentService(contentRepository);

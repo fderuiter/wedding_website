@@ -179,4 +179,108 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       expect(result.status).toBe('REJECTED');
     });
   });
+
+  describe('moderatePhotosBatch', () => {
+    it('batch approves multiple photos', async () => {
+      const node1 = {
+        id: 'p1',
+        type: 'Photo' as const,
+        tags: ['gallery'],
+        data: { url: '/p1.png', status: 'PENDING', isVisible: false },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const node2 = {
+        id: 'p2',
+        type: 'Photo' as const,
+        tags: ['gallery'],
+        data: { url: '/p2.png', status: 'PENDING', isVisible: false },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockRepo.getNodeById!.mockImplementation(async (id: string) => {
+        if (id === 'p1') return node1;
+        if (id === 'p2') return node2;
+        return null;
+      });
+      mockRepo.updateNode!.mockImplementation(async (id: string, data: any) => ({
+        id,
+        type: 'Photo',
+        tags: ['gallery'],
+        data: { ...(id === 'p1' ? node1.data : node2.data), ...data.data },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      const res = await service.moderatePhotosBatch(['p1', 'p2'], 'approve', 'AdminUser');
+
+      expect(res.total).toBe(2);
+      expect(res.succeededCount).toBe(2);
+      expect(res.failedCount).toBe(0);
+      expect(res.results).toHaveLength(2);
+      expect(res.results[0]).toEqual(expect.objectContaining({ id: 'p1', success: true }));
+      expect(res.results[1]).toEqual(expect.objectContaining({ id: 'p2', success: true }));
+    });
+
+    it('batch rejects multiple photos and removes nodes/storage', async () => {
+      const node1 = {
+        id: 'p1',
+        type: 'Photo' as const,
+        tags: ['gallery'],
+        data: { url: '/p1.png', status: 'PENDING', isVisible: false },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockRepo.getNodeById!.mockResolvedValue(node1);
+      mockRepo.deleteNode!.mockResolvedValue(undefined);
+
+      const res = await service.moderatePhotosBatch(['p1'], 'reject', 'AdminUser');
+
+      expect(res.total).toBe(1);
+      expect(res.succeededCount).toBe(1);
+      expect(res.failedCount).toBe(0);
+      expect(mockRepo.deleteNode).toHaveBeenCalledWith('p1', 'AdminUser');
+    });
+
+    it('handles partial failures gracefully', async () => {
+      const node1 = {
+        id: 'p1',
+        type: 'Photo' as const,
+        tags: ['gallery'],
+        data: { url: '/p1.png', status: 'PENDING', isVisible: false },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockRepo.getNodeById!.mockImplementation(async (id: string) => {
+        if (id === 'p1') return node1;
+        return null;
+      });
+      mockRepo.updateNode!.mockResolvedValue({
+        id: 'p1',
+        type: 'Photo',
+        tags: ['gallery'],
+        data: { ...node1.data, status: 'APPROVED', isVisible: true },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.moderatePhotosBatch(['p1', 'nonexistent'], 'approve', 'AdminUser');
+
+      expect(res.total).toBe(2);
+      expect(res.succeededCount).toBe(1);
+      expect(res.failedCount).toBe(1);
+      expect(res.results.find((r) => r.id === 'p1')?.success).toBe(true);
+      expect(res.results.find((r) => r.id === 'nonexistent')?.success).toBe(false);
+    });
+
+    it('throws error when batch exceeds 100 items', async () => {
+      const over100Ids = Array.from({ length: 101 }, (_, i) => `p-${i}`);
+      await expect(service.moderatePhotosBatch(over100Ids, 'approve')).rejects.toThrow(
+        'Batch request cannot exceed 100 items'
+      );
+    });
+  });
 });

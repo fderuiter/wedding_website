@@ -113,6 +113,7 @@ flowchart LR
     node_api_admin_photos["photos"]
     node_api_admin_photos_id["[id]"]
     node_api_admin_photos_moderation["moderation"]
+    node_api_admin_photos_moderation_batch["batch"]
     node_api_admin_sampledata["sample-data"]
     node_api_admin_seating["seating"]
     node_api_admin_seating_assign["assign"]
@@ -208,6 +209,7 @@ flowchart LR
     node_api_admin --> node_api_admin_photos
     node_api_admin_photos --> node_api_admin_photos_id
     node_api_admin_photos --> node_api_admin_photos_moderation
+    node_api_admin_photos_moderation --> node_api_admin_photos_moderation_batch
     node_api_admin --> node_api_admin_sampledata
     node_api_admin --> node_api_admin_seating
     node_api_admin_seating --> node_api_admin_seating_assign
@@ -297,6 +299,7 @@ flowchart LR
     class node_api_admin_me api;
     class node_api_admin_photos_id api;
     class node_api_admin_photos_moderation api;
+    class node_api_admin_photos_moderation_batch api;
     class node_api_admin_sampledata api;
     class node_api_admin_seating_assign api;
     class node_api_admin_seating_export api;

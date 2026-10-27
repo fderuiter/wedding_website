@@ -26,6 +26,7 @@ export default function MediaDashboardPage() {
   const [isEditing, setIsEditing] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -96,10 +97,54 @@ export default function MediaDashboardPage() {
     try {
       await apiClient.patch('/api/admin/photos/moderation', { id, action: 'reject' });
       setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
+      setSelectedPendingIds((prev) => prev.filter((i) => i !== id));
       setA11yNotice('Photo rejected and removed.');
     } catch (e) {
       console.error(e);
       setA11yNotice('Failed to reject photo.');
+    }
+  };
+
+  const handleBatchApprove = async (idsToApprove: string[] = selectedPendingIds) => {
+    if (idsToApprove.length === 0) return;
+    try {
+      await apiClient.post('/api/admin/photos/moderation/batch', { ids: idsToApprove, action: 'approve' });
+      setPendingPhotos((prev) => prev.filter((p) => !idsToApprove.includes(p.id)));
+      setSelectedPendingIds((prev) => prev.filter((id) => !idsToApprove.includes(id)));
+      setA11yNotice(`Successfully approved ${idsToApprove.length} photo(s).`);
+      fetchMedia(page);
+    } catch (e) {
+      console.error(e);
+      setA11yNotice('Failed to approve selected photos.');
+    }
+  };
+
+  const handleBatchReject = async (idsToReject: string[] = selectedPendingIds) => {
+    if (idsToReject.length === 0) return;
+    try {
+      await apiClient.post('/api/admin/photos/moderation/batch', { ids: idsToReject, action: 'reject' });
+      setPendingPhotos((prev) => prev.filter((p) => !idsToReject.includes(p.id)));
+      setSelectedPendingIds((prev) => prev.filter((id) => !idsToReject.includes(id)));
+      setA11yNotice(`Successfully rejected and removed ${idsToReject.length} photo(s).`);
+    } catch (e) {
+      console.error(e);
+      setA11yNotice('Failed to reject selected photos.');
+    }
+  };
+
+  const toggleSelectPendingPhoto = (id: string) => {
+    setSelectedPendingIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllPendingPhotos = () => {
+    if (pendingPhotos.length === 0) return;
+    const allSelected = pendingPhotos.every((p) => selectedPendingIds.includes(p.id));
+    if (allSelected) {
+      setSelectedPendingIds([]);
+    } else {
+      setSelectedPendingIds(pendingPhotos.map((p) => p.id));
     }
   };
 
@@ -297,68 +342,118 @@ export default function MediaDashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="pending-photos-list">
-              {pendingPhotos.map((photo) => {
-                const photoData = photo.data || {};
-                const imageUrl = photo.url || photoData.url;
-                const title = photo.title || photoData.title || photoData.altText || 'Guest Photo';
-                const createdDate = photo.createdAt ? new Date(photo.createdAt).toLocaleString() : 'Recently';
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 rounded-xl bg-stone-100 dark:bg-stone-950 border border-stone-200 dark:border-stone-800">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleSelectAllPendingPhotos}
+                  data-testid="select-all-pending-btn"
+                >
+                  {pendingPhotos.length > 0 && pendingPhotos.every((p) => selectedPendingIds.includes(p.id))
+                    ? 'Deselect All Pending'
+                    : 'Select All Pending'}
+                </Button>
 
-                return (
-                  <div
-                    key={photo.id}
-                    data-testid={`pending-photo-card-${photo.id}`}
-                    className="p-4 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-950 shadow-sm flex flex-col justify-between"
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={selectedPendingIds.length === 0}
+                    onClick={() => handleBatchApprove()}
+                    data-testid="batch-approve-btn"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
-                    <div>
-                      <div className="relative h-40 w-full mb-3 overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800">
-                        <MediaImage
-                          media={{ id: photo.id, url: imageUrl, altText: title }}
-                          fallbackUrl="/images/placeholder.png"
-                          fallbackAlt="Unlabelled media asset"
-                          className="object-cover w-full h-full"
-                        />
-                        <span className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-500 text-stone-900 shadow">
-                          Pending
-                        </span>
-                      </div>
-                      <div className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate mb-1" title={title}>
-                        {title}
-                      </div>
-                      <div className="text-xs text-stone-500 dark:text-stone-400 mb-4 flex items-center gap-1">
-                        <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
-                        <span>Submitted {createdDate}</span>
-                      </div>
-                    </div>
+                    Approve Selected ({selectedPendingIds.length})
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={selectedPendingIds.length === 0}
+                    onClick={() => handleBatchReject()}
+                    data-testid="batch-reject-btn"
+                  >
+                    Reject Selected ({selectedPendingIds.length})
+                  </Button>
+                </div>
+              </div>
 
-                    <div className="flex items-center gap-2 pt-3 border-t border-stone-100 dark:border-stone-900">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        data-testid={`approve-photo-${photo.id}`}
-                        onClick={() => handleApprove(photo.id)}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs py-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-                        aria-label={`Approve photo ${title}`}
-                      >
-                        <Icon name="Check" className="w-3.5 h-3.5" />
-                        Approve
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        data-testid={`reject-photo-${photo.id}`}
-                        onClick={() => handleReject(photo.id)}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs py-2"
-                        aria-label={`Reject photo ${title}`}
-                      >
-                        <Icon name="X" className="w-3.5 h-3.5" />
-                        Reject
-                      </Button>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="pending-photos-list">
+                {pendingPhotos.map((photo) => {
+                  const photoData = photo.data || {};
+                  const imageUrl = photo.url || photoData.url;
+                  const title = photo.title || photoData.title || photoData.altText || 'Guest Photo';
+                  const createdDate = photo.createdAt ? new Date(photo.createdAt).toLocaleString() : 'Recently';
+                  const isSelected = selectedPendingIds.includes(photo.id);
+
+                  return (
+                    <div
+                      key={photo.id}
+                      data-testid={`pending-photo-card-${photo.id}`}
+                      className={`p-4 rounded-xl border bg-white dark:bg-stone-950 shadow-sm flex flex-col justify-between transition-all ${
+                        isSelected ? 'border-amber-500 ring-2 ring-amber-500/50' : 'border-stone-200 dark:border-stone-800'
+                      }`}
+                    >
+                      <div>
+                        <div className="relative h-40 w-full mb-3 overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800">
+                          <div className="absolute top-2 left-2 z-10 p-1 bg-white/80 dark:bg-stone-900/80 backdrop-blur rounded">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectPendingPhoto(photo.id)}
+                              aria-label={`Select photo ${title} for batch action`}
+                              data-testid={`pending-checkbox-${photo.id}`}
+                              className="w-4 h-4 rounded border-stone-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                            />
+                          </div>
+                          <MediaImage
+                            media={{ id: photo.id, url: imageUrl, altText: title }}
+                            fallbackUrl="/images/placeholder.png"
+                            fallbackAlt="Unlabelled media asset"
+                            className="object-cover w-full h-full"
+                          />
+                          <span className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-500 text-stone-900 shadow">
+                            Pending
+                          </span>
+                        </div>
+                        <div className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate mb-1" title={title}>
+                          {title}
+                        </div>
+                        <div className="text-xs text-stone-500 dark:text-stone-400 mb-4 flex items-center gap-1">
+                          <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
+                          <span>Submitted {createdDate}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-3 border-t border-stone-100 dark:border-stone-900">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          data-testid={`approve-photo-${photo.id}`}
+                          onClick={() => handleApprove(photo.id)}
+                          className="flex-1 flex items-center justify-center gap-1 text-xs py-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                          aria-label={`Approve photo ${title}`}
+                        >
+                          <Icon name="Check" className="w-3.5 h-3.5" />
+                          Approve
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          data-testid={`reject-photo-${photo.id}`}
+                          onClick={() => handleReject(photo.id)}
+                          className="flex-1 flex items-center justify-center gap-1 text-xs py-2"
+                          aria-label={`Reject photo ${title}`}
+                        >
+                          <Icon name="X" className="w-3.5 h-3.5" />
+                          Reject
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
