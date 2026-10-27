@@ -53,6 +53,15 @@ export function useAdminBroadcast() {
     },
   });
 
+  const { mutateAsync: cancelScheduledBroadcast, isPending: cancelling } = useMutation({
+    mutationFn: async (id: string) => {
+      return apiClient.delete(`/api/admin/broadcast/schedule/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: historyQueryKey });
+    },
+  });
+
   return {
     history,
     loadingHistory,
@@ -65,6 +74,8 @@ export function useAdminBroadcast() {
     retrying,
     testConnection,
     testingConnection,
+    cancelScheduledBroadcast,
+    cancelling,
     refetchHistory: () => queryClient.invalidateQueries({ queryKey: historyQueryKey }),
   };
 }

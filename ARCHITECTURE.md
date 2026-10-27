@@ -96,6 +96,8 @@ flowchart LR
     node_api_admin_broadcast_history["history"]
     node_api_admin_broadcast_preview["preview"]
     node_api_admin_broadcast_retry["retry"]
+    node_api_admin_broadcast_schedule["schedule"]
+    node_api_admin_broadcast_schedule_id["[id]"]
     node_api_admin_broadcast_send["send"]
     node_api_admin_broadcast_testconnection["test-connection"]
     node_api_admin_features["features"]
@@ -130,6 +132,8 @@ flowchart LR
     node_api_admin_versions["versions"]
     node_api_admin_versions_id["[id]"]
     node_api_admin_versions_id_restore["restore"]
+    node_api_cron["cron"]
+    node_api_cron_broadcasts["broadcasts"]
     node_api_guest["guest"]
     node_api_guest_address["address"]
     node_api_guest_address_public["public"]
@@ -190,6 +194,8 @@ flowchart LR
     node_api_admin_broadcast --> node_api_admin_broadcast_history
     node_api_admin_broadcast --> node_api_admin_broadcast_preview
     node_api_admin_broadcast --> node_api_admin_broadcast_retry
+    node_api_admin_broadcast --> node_api_admin_broadcast_schedule
+    node_api_admin_broadcast_schedule --> node_api_admin_broadcast_schedule_id
     node_api_admin_broadcast --> node_api_admin_broadcast_send
     node_api_admin_broadcast --> node_api_admin_broadcast_testconnection
     node_api_admin --> node_api_admin_features
@@ -224,6 +230,8 @@ flowchart LR
     node_api_admin --> node_api_admin_versions
     node_api_admin_versions --> node_api_admin_versions_id
     node_api_admin_versions_id --> node_api_admin_versions_id_restore
+    node_api --> node_api_cron
+    node_api_cron --> node_api_cron_broadcasts
     node_api --> node_api_guest
     node_api_guest --> node_api_guest_address
     node_api_guest_address --> node_api_guest_address_public
@@ -281,6 +289,7 @@ flowchart LR
     class node_api_admin_broadcast_history api;
     class node_api_admin_broadcast_preview api;
     class node_api_admin_broadcast_retry api;
+    class node_api_admin_broadcast_schedule_id api;
     class node_api_admin_broadcast_send api;
     class node_api_admin_broadcast_testconnection api;
     class node_api_admin_features api;
@@ -309,6 +318,7 @@ flowchart LR
     class node_api_admin_upload api;
     class node_api_admin_versions api;
     class node_api_admin_versions_id_restore api;
+    class node_api_cron_broadcasts api;
     class node_api_guest_address api;
     class node_api_guest_address_public api;
     class node_api_guest_login api;
