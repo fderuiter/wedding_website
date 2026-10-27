@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CsvImportWizardModal } from '../CsvImportWizardModal';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { validateSingleCsvRow } from '@/utils/csv';
@@ -552,6 +552,286 @@ describe('CsvImportWizardModal Component', () => {
     await waitFor(() => {
       expect(screen.getByText(/Invalid: 0/i)).toBeInTheDocument();
       expect(commitBtn).not.toBeDisabled();
+    });
+  });
+
+  test('debounces dry-run validation by 400ms during cell editing and generates exactly one backend validation request for 10 consecutive edits', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+            rows: [{ rowIndex: 1, guestName: 'Alice Smith A012345678', code: 'ALICE100', isValid: true, errors: [], warnings: [] }],
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ ok: true, success: true, codes: [] }),
+      });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    // Advance to step 3
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Duplicate Action:/i)).toBeInTheDocument();
+    });
+
+    // Step 3 initial load calls validate endpoint
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/invitation-codes/validate',
+      expect.objectContaining({ method: 'POST' })
+    );
+    (global.fetch as jest.Mock).mockClear();
+
+    const nameInput = screen.getByDisplayValue('Alice Smith');
+
+    jest.useFakeTimers();
+
+    try {
+      // Type 10 characters sequentially with 100ms between each edit (<400ms debounce window)
+      for (let i = 0; i < 10; i++) {
+        fireEvent.change(nameInput, { target: { value: `Alice Smith A${i}` } });
+        jest.advanceTimersByTime(100);
+      }
+
+      // During typing (total 1000ms elapsed, but only 100ms since last edit), no validation request sent yet
+      expect(global.fetch).not.toHaveBeenCalled();
+
+      // Advance remaining 300ms so 400ms elapses after the last edit
+      await act(async () => {
+        jest.advanceTimersByTime(300);
+      });
+
+      // Exactly 1 backend validation call fired for the 10 edits
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/invitation-codes/validate',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('Alice Smith A9'),
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('triggers immediate server dry-run validation without debounce delay on Step 3 load and collision strategy change', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+            rows: [{ rowIndex: 1, guestName: 'Alice Smith', code: 'ALICE100', isValid: true, errors: [], warnings: [] }],
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ ok: true, success: true, codes: [] }),
+      });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    (global.fetch as jest.Mock).mockClear();
+
+    // Advance to Step 3
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    // Immediate validation request fired on Step 3 entry
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/invitation-codes/validate',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    (global.fetch as jest.Mock).mockClear();
+
+    // Change Collision Strategy dropdown
+    const strategySelect = screen.getByLabelText(/Duplicate Action:/i) as HTMLSelectElement;
+    fireEvent.change(strategySelect, { target: { value: 'update' } });
+
+    // Immediate validation request fired on strategy change
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/invitation-codes/validate',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"collisionStrategy":"update"'),
+        })
+      );
+    });
+  });
+
+  test('flushes pending debounced server validation immediately and awaits latest response when clicking Commit Import', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/batch') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, count: 1, imported: 1, skipped: 0, updated: 0 }),
+        });
+      }
+      if (url === '/api/admin/invitation-codes/validate') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+            rows: [{ rowIndex: 1, guestName: 'Alice Smith Updated', code: 'ALICE100', isValid: true, errors: [], warnings: [] }],
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ ok: true, success: true, codes: [] }),
+      });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Duplicate Action:/i)).toBeInTheDocument();
+    });
+
+    (global.fetch as jest.Mock).mockClear();
+
+    // Edit cell
+    const nameInput = screen.getByDisplayValue('Alice Smith');
+    fireEvent.change(nameInput, { target: { value: 'Alice Smith Updated' } });
+
+    const commitBtn = screen.getByText(/Commit Import/i);
+    fireEvent.click(commitBtn);
+
+    // The dry-run validation endpoint should be called immediately (flushed) followed by batch commit endpoint
+    await waitFor(() => {
+      expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/invitation-codes/validate',
+      expect.objectContaining({ method: 'POST' })
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/invitation-codes/batch',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  test('discards stale in-flight validation responses when superseded', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    let resolveFirstValidate: (val: any) => void;
+    const firstValidatePromise = new Promise((resolve) => {
+      resolveFirstValidate = resolve;
+    });
+
+    let validateCallCount = 0;
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        validateCallCount++;
+        if (validateCallCount === 1) {
+          return firstValidatePromise;
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+            rows: [{ rowIndex: 1, guestName: 'Alice Smith', code: 'ALICE100', isValid: true, errors: [], warnings: [] }],
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ ok: true, success: true, codes: [] }),
+      });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    // Step 3 entry triggers first validate call (which is pending on firstValidatePromise)
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Duplicate Action:/i)).toBeInTheDocument();
+    });
+
+    // Now trigger a second validate call immediately by changing collision strategy
+    const strategySelect = screen.getByLabelText(/Duplicate Action:/i) as HTMLSelectElement;
+    fireEvent.change(strategySelect, { target: { value: 'update' } });
+
+    // Resolve the first validate call with stale error data after the second request superseded it
+    resolveFirstValidate!({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: { total: 1, validCount: 0, invalidCount: 1, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 0 },
+        rows: [{ rowIndex: 1, guestName: 'Alice Smith', code: 'ALICE100', isValid: false, errors: ['Stale Error'], warnings: [] }],
+      }),
+    });
+
+    // The UI should show the second validate result (0 invalid), ignoring the stale error
+    await waitFor(() => {
+      expect(screen.queryByText('Stale Error')).not.toBeInTheDocument();
+      expect(screen.getByText(/Valid: 1/i)).toBeInTheDocument();
     });
   });
 });

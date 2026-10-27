@@ -54,8 +54,13 @@ export function resolveDirectionsUrl(
   }
 
   if (rawDirections) {
-    const safeText = sanitizeUrl(rawDirections);
-    if (safeText) {
+    const lower = rawDirections.toLowerCase();
+    if (
+      !lower.startsWith('javascript:') &&
+      !lower.startsWith('data:') &&
+      !lower.startsWith('vbscript:') &&
+      !rawDirections.startsWith('//')
+    ) {
       return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(rawDirections)}`;
     }
   }
