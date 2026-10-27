@@ -227,7 +227,7 @@ class RegistryRepository implements IRegistryRepository {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; amount: number; code?: string; message?: string | null }
+    contribution: { name: string; email?: string | null; amount: number; code?: string; message?: string | null }
   ) {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
@@ -290,6 +290,7 @@ class RegistryRepository implements IRegistryRepository {
       const newTotal = newTotalCents / 100;
 
       const messageToSave = contribution.message && contribution.message.trim() ? contribution.message.trim() : null;
+      const emailToSave = contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
 
       const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
@@ -299,6 +300,7 @@ class RegistryRepository implements IRegistryRepository {
           contributors: {
             create: {
               name: finalName,
+              email: emailToSave,
               amount: contribution.amount,
               message: messageToSave,
               date: new Date(),

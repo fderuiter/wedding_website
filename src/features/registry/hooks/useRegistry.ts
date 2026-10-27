@@ -127,8 +127,8 @@ export function useRegistry() {
   }, []);
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount, code }: { itemId: string; purchaserName: string; amount: number; code?: string }) => {
-      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code });
+    mutationFn: async ({ itemId, purchaserName, amount, code, message, email }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string; email?: string }) => {
+      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, email });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
@@ -295,9 +295,16 @@ export function useRegistry() {
     }
   }, [deleteItem, confirm]);
 
-  const handleContribute = useCallback(async (itemId: string, purchaserName: string, amount: number, code?: string) => {
+  const handleContribute = useCallback(async (
+    itemId: string,
+    purchaserName: string,
+    amount: number,
+    code?: string,
+    message?: string,
+    email?: string
+  ) => {
     return new Promise<void>((resolve, reject) => {
-      contribute({ itemId, purchaserName, amount, code }, {
+      contribute({ itemId, purchaserName, amount, code, message, email }, {
         onSuccess: () => {
           handleCloseModal();
           resolve();

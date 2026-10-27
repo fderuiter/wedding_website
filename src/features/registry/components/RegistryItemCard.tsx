@@ -19,12 +19,12 @@ import { getPaymentUrl } from '../utils/paymentUrls';
  * @description Defines the props for the RegistryItemCard component.
  * @property {RegistryItem} item - The registry item to be displayed in the card.
  * @property {() => void} onClose - Callback function to close the card.
- * @property {(itemId: string, contributorName: string, amount: number, code?: string, message?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
+ * @property {(itemId: string, contributorName: string, amount: number, code?: string, message?: string, email?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
  */
 interface RegistryItemCardProps {
   item: RegistryItem;
   onClose: () => void;
-  onContribute: (itemId: string, contributorName: string, amount: number, code?: string, message?: string) => Promise<void>;
+  onContribute: (itemId: string, contributorName: string, amount: number, code?: string, message?: string, email?: string) => Promise<void>;
 }
 
 /**
@@ -44,6 +44,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   } = useGuestSession();
 
   const [contributorName, setContributorName] = useState('');
+  const [email, setEmail] = useState('');
   const [amount, setAmount] = useState<number | string>('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -106,6 +107,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
     const result = ContributionSchema.safeParse({
       itemId: item.id,
       name: contributorName,
+      email: email || undefined,
       amount: rawAmount,
       code: invitationCode || undefined,
       message: message || undefined,
@@ -128,7 +130,16 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
     }
     setIsSubmitting(true);
     try {
-      if (validData.code !== undefined || validData.message !== undefined) {
+      if (validData.email !== undefined) {
+        await onContribute(
+          item.id,
+          validData.name,
+          finalAmount,
+          validData.code || undefined,
+          validData.message || undefined,
+          validData.email || undefined
+        );
+      } else if (validData.code !== undefined || validData.message !== undefined) {
         await onContribute(
           item.id,
           validData.name,
@@ -356,6 +367,18 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               placeholder="Jane Doe"
               value={contributorName}
               onChange={(e) => setContributorName(e.target.value)}
+              disabled={isSubmitting}
+            />
+          </FormGroup>
+          <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+            <Label>
+              Email Address (Optional)
+            </Label>
+            <Input
+              type="email"
+              placeholder="jane@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               disabled={isSubmitting}
             />
           </FormGroup>
