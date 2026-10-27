@@ -64,7 +64,12 @@ const envSchema = z.object({
 // Some CI setups might use NEXT_PHASE or just npm_lifecycle_event.
 const isEdge = process.env.NEXT_RUNTIME === 'edge';
 const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
-const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (arg.includes('seed.ts') || arg.includes('generate-') || arg.includes('verify-')));
+const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
+  arg.includes('seed') ||
+  arg.includes('generate-') ||
+  arg.includes('check-') ||
+  arg.includes('verify-')
+));
 
 const isBuildTime = isEdge ||
                     process.env.npm_lifecycle_event === 'build' ||
