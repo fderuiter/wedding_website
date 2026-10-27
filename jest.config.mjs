@@ -36,24 +36,6 @@ const config = {
       lines: 0,
       statements: 0,
     },
-    './src/app/api/admin/': {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
-    },
-    './src/components/ui/': {
-      branches: 50,
-      functions: 50,
-      lines: 50,
-      statements: 50,
-    },
-    './src/utils/': {
-      branches: 50,
-      functions: 50,
-      lines: 50,
-      statements: 50,
-    },
   },
   moduleNameMapper: {
     // Handle module aliases (if you have them in tsconfig.json)

@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -187,13 +186,13 @@ function updateArchitectureMd() {
   console.log('Successfully updated ARCHITECTURE.md');
 }
 
-function generateOpenApiSpec() {
+async function generateOpenApiSpec() {
   const openApiScript = path.join(__dirname, 'generate-openapi.ts');
   if (fs.existsSync(openApiScript)) {
     console.log('Generating OpenAPI specification...');
-    execSync(`npx tsx "${openApiScript}"`, { stdio: 'inherit', cwd: path.resolve(__dirname, '..') });
+    await import('./generate-openapi.js');
   }
 }
 
 updateArchitectureMd();
-generateOpenApiSpec();
+await generateOpenApiSpec();
