@@ -6,11 +6,14 @@ import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
 import { Container, Card, Heading } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
+import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
+import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
@@ -49,6 +52,7 @@ interface SetupWizardPersistedState {
   timezone: string;
   sampleArchetype: ArchetypeId;
   selectedModules: string[];
+  importedGuestCount?: number;
 }
 
 const initialSetupWizardState: SetupWizardPersistedState = {
@@ -63,6 +67,7 @@ const initialSetupWizardState: SetupWizardPersistedState = {
   timezone: 'America/Chicago',
   sampleArchetype: 'classic',
   selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
+  importedGuestCount: 0,
 };
 
 function SetupWizardContent() {
@@ -83,6 +88,7 @@ function SetupWizardContent() {
     timezone,
     sampleArchetype,
     selectedModules,
+    importedGuestCount = 0,
   } = wizardState;
 
   const setStep = (newStep: number | ((prev: number) => number)) => {
@@ -124,10 +130,22 @@ function SetupWizardContent() {
   // Content Management Modals
   const [isWeddingPartyModalOpen, setIsWeddingPartyModalOpen] = useState(false);
   const [isAttractionsModalOpen, setIsAttractionsModalOpen] = useState(false);
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
 
   // Content Counts
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
   const { data: attractions = [] } = useAdminAttractions({ enabled: isAuthenticated });
+  const { data: invitationCodes = [], fetchAll: refetchInvitationCodes } = useAdminInvitationCodes({ enabled: isAuthenticated });
+
+  const handleGuestImportComplete = async () => {
+    const result = await refetchInvitationCodes();
+    const codes = (result && Array.isArray(result) ? result : invitationCodes) || [];
+    const count = codes.length;
+    setWizardState((prev) => ({
+      ...prev,
+      importedGuestCount: count,
+    }));
+  };
   // Theme state
   const [themePreset, setThemePreset] = useState<ThemePreset>('classic');
   const [colorPrimary, setColorPrimary] = useState('#4A5568');
@@ -541,7 +559,47 @@ function SetupWizardContent() {
       <AccessibleStep isActive={isAuthenticated && step === 4}>
         <Container>
           <Card className="max-w-2xl text-center">
-            <Heading className="mb-4">Step 4: Complete Setup</Heading>
+            <Heading className="mb-2">Step 4: Guest List Import</Heading>
+            <p className="mb-6 text-gray-700 dark:text-gray-300">
+              Import your guest list spreadsheet to issue invitation codes and manage RSVPs immediately, or skip to complete setup.
+            </p>
+
+            {(importedGuestCount > 0 || invitationCodes.length > 0) ? (
+              <div className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 font-medium">
+                ✓ {importedGuestCount || invitationCodes.length} guest record(s) imported.
+              </div>
+            ) : (
+              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-400 text-sm">
+                No guests imported yet. You can import a CSV file now or add guests later from the admin dashboard.
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setIsCsvModalOpen(true)}
+                className="flex-1 py-3"
+              >
+                Import Guest List CSV
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setStep(5)}
+                className="py-3 px-6"
+              >
+                Skip for Now
+              </Button>
+            </div>
+          </Card>
+        </Container>
+      </AccessibleStep>
+
+      <AccessibleStep isActive={isAuthenticated && step === 5}>
+        <Container>
+          <Card className="max-w-2xl text-center">
+            <Heading className="mb-4">Step 5: Complete Setup</Heading>
             <p className="mb-6 text-gray-700">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
             <div className="space-y-4">
               <Button onClick={() => setIsWeddingPartyModalOpen(true)} variant="secondary" className="w-full py-3">
@@ -551,6 +609,11 @@ function SetupWizardContent() {
                 Manage Attractions ({attractions.length} {attractions.length === 1 ? 'item' : 'items'})
               </Button>
             </div>
+            {(importedGuestCount > 0 || invitationCodes.length > 0) && (
+              <p className="mt-4 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                Guest List: {importedGuestCount || invitationCodes.length} invitation code(s) active
+              </p>
+            )}
             <p className="mt-6 mb-4 text-sm text-gray-600">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
             <Button onClick={() => {
               clearPersistedSetupState();
@@ -571,6 +634,13 @@ function SetupWizardContent() {
         isOpen={isAttractionsModalOpen}
         onClose={() => setIsAttractionsModalOpen(false)}
       />
+
+      <CsvImportWizardModal
+        isOpen={isCsvModalOpen}
+        onClose={() => setIsCsvModalOpen(false)}
+        onImportComplete={handleGuestImportComplete}
+        existingCodes={invitationCodes.map((c) => c.code)}
+      />
     </main>
   );
 }
@@ -580,7 +650,9 @@ export default function SetupWizard() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SetupWizardContent />
+      <ToastProvider>
+        <SetupWizardContent />
+      </ToastProvider>
     </QueryClientProvider>
   );
 }
