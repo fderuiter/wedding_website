@@ -14,6 +14,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   const seatingService = new SeatingTableAdminService();
   const { invitationCodeId, tableId, seatNumber } = parsed.data;
 
-  const result = await seatingService.assignSeat(invitationCodeId, tableId, seatNumber);
-  return NextResponse.json(result);
+  try {
+    const result = await seatingService.assignSeat(invitationCodeId, tableId, seatNumber);
+    return NextResponse.json(result);
+  } catch (error: any) {
+    if (error.message?.includes('Validation Error:')) {
+      throw new ApiError(400, error.message);
+    }
+    throw error;
+  }
 });
