@@ -24,7 +24,7 @@ import { getPaymentUrl } from '../utils/paymentUrls';
 interface RegistryItemCardProps {
   item: RegistryItem;
   onClose: () => void;
-  onContribute: (itemId: string, contributorName: string, amount: number, code?: string, message?: string, email?: string) => Promise<void>;
+  onContribute: (itemId: string, contributorName: string, amount: number, code?: string, message?: string, coverFee?: boolean, email?: string) => Promise<void>;
 }
 
 /**
@@ -47,6 +47,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
   const [email, setEmail] = useState('');
   const [amount, setAmount] = useState<number | string>('');
   const [message, setMessage] = useState('');
+  const [coverFee, setCoverFee] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +112,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       amount: rawAmount,
       code: invitationCode || undefined,
       message: message || undefined,
+      coverFee,
     });
 
     if (!result.success) {
@@ -130,13 +132,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
     }
     setIsSubmitting(true);
     try {
-      if (validData.email !== undefined) {
+      if (validData.email !== undefined || validData.coverFee) {
         await onContribute(
           item.id,
           validData.name,
           finalAmount,
           validData.code || undefined,
           validData.message || undefined,
+          validData.coverFee,
           validData.email || undefined
         );
       } else if (validData.code !== undefined || validData.message !== undefined) {
@@ -415,19 +418,56 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                   ? 'Direct payment transfers via peer-to-peer payment handles incur zero processing fees, ensuring 100% of your gift reaches the couple directly.'
                   : 'Standard payment processor rates apply to online card transfers. Card transfer processing fee disclosures: processing fees (2.5%) cover third-party processor rates to ensure full transparency on the net contribution received by the couple.'}
               </p>
+              {processingFeeRate > 0 && (
+                <label className="flex items-start gap-2.5 cursor-pointer my-3 p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 select-none">
+                  <input
+                    type="checkbox"
+                    checked={coverFee}
+                    onChange={(e) => setCoverFee(e.target.checked)}
+                    disabled={isSubmitting}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary shrink-0 cursor-pointer"
+                  />
+                  <span className="text-xs text-gray-700 dark:text-gray-200 font-medium leading-tight">
+                    Cover transaction processing fee (2.5% / {formatCurrency(estimatedProcessingFee)}) so the couple receives 100% of your gift
+                  </span>
+                </label>
+              )}
               <div className="space-y-1.5 pt-2.5 border-t border-slate-200 dark:border-slate-700 text-xs">
-                <div className="flex justify-between text-gray-700 dark:text-gray-300">
-                  <span>Base Contribution Amount:</span>
-                  <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span>
-                </div>
-                <div className="flex justify-between text-gray-600 dark:text-gray-400">
-                  <span>{hasPaymentHandle ? 'Direct Transfer Fee (0%):' : 'Estimated Card Processing Fee (2.5%):'}</span>
-                  <span>-{formatCurrency(estimatedProcessingFee)}</span>
-                </div>
-                <div className="flex justify-between text-primary font-bold pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 text-sm">
-                  <span>Net Payout Received by Couple:</span>
-                  <span>{formatCurrency(netPayoutAmount)}</span>
-                </div>
+                {coverFee ? (
+                  <>
+                    <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                      <span>Base Gift Contribution:</span>
+                      <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600 dark:text-gray-400">
+                      <span>Covered Card Processing Fee (2.5%):</span>
+                      <span>+{formatCurrency(estimatedProcessingFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-800 dark:text-gray-100 font-semibold pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <span>Total Amount Charged:</span>
+                      <span>{formatCurrency(baseContributionAmount + estimatedProcessingFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-primary font-bold pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 text-sm">
+                      <span>Net Payout Received by Couple:</span>
+                      <span>{formatCurrency(baseContributionAmount)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                      <span>Base Contribution Amount:</span>
+                      <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600 dark:text-gray-400">
+                      <span>{hasPaymentHandle ? 'Direct Transfer Fee (0%):' : 'Estimated Card Processing Fee (2.5%):'}</span>
+                      <span>-{formatCurrency(estimatedProcessingFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-primary font-bold pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 text-sm">
+                      <span>Net Payout Received by Couple:</span>
+                      <span>{formatCurrency(netPayoutAmount)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

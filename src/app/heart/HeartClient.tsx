@@ -126,7 +126,7 @@ function PhysicsHeart({
       if (!interacted) onInteract();
       setPulseSpeed(physics.pulseSpeedDragging);
       if (heartRef.current) {
-        heartRef.current.setBodyType(RigidBodyType.KinematicPositionBased, true);
+        heartRef.current.setBodyType(RigidBodyType.KinematicPositionBased as any, true);
       }
     },
     onDragMove: (norm) => {
@@ -141,7 +141,7 @@ function PhysicsHeart({
     onDragEnd: ({ vx, vy }) => {
       setPulseSpeed(physics.pulseSpeedIdle);
       if (heartRef.current) {
-        heartRef.current.setBodyType(RigidBodyType.Dynamic, true);
+        heartRef.current.setBodyType(RigidBodyType.Dynamic as any, true);
         if (!reduceMotion && (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1)) {
           heartRef.current.setLinvel({
             x: vx * physics.dragVelocityMultiplier,
@@ -153,7 +153,7 @@ function PhysicsHeart({
     },
     onDestroy: () => {
       if (heartRef.current) {
-        heartRef.current.setBodyType(RigidBodyType.Dynamic, true);
+        heartRef.current.setBodyType(RigidBodyType.Dynamic as any, true);
       }
     }
   });

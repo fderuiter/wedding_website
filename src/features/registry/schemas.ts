@@ -21,6 +21,8 @@ export const ContributorSchema = z.object({
   email: z.string().nullable().optional(),
   isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+  coverFee: z.boolean().optional().default(false),
+  feeAmount: z.coerce.number().optional().default(0),
   message: z.string().nullable().optional(),
   date: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()),
   thankYouStatus: z.string().optional().default('Unsent'),
@@ -67,6 +69,7 @@ export const ContributionSchema = z.object({
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   code: z.string().trim().optional(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
+  coverFee: z.boolean().optional().default(false),
 }, { message: 'Invalid request body.' }).superRefine((data, ctx) => {
   const resolvedName = data.name || data.purchaserName;
   if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
