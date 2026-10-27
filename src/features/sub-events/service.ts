@@ -19,6 +19,15 @@ export interface ScheduleEventWithRsvp {
   } | null;
 }
 
+export interface AccessMatrixQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  partyTag?: string;
+  partyGroup?: string;
+  householdName?: string;
+}
+
 export class SubEventService {
   constructor(private client: any = prisma) {}
 
@@ -267,10 +276,25 @@ export class SubEventService {
       }
     }
 
+    if (dto.search && typeof dto.search === 'string' && dto.search.trim()) {
+      const q = dto.search.trim();
+      conditions.push({
+        OR: [
+          { guestName: { contains: q, mode: 'insensitive' } },
+          { code: { contains: q, mode: 'insensitive' } },
+          { householdName: { contains: q, mode: 'insensitive' } },
+        ],
+      });
+    }
+
     let targetCodes: { id: string }[] = [];
     if (conditions.length > 0) {
       targetCodes = await this.client.invitationCode.findMany({
         where: { OR: conditions },
+        select: { id: true },
+      });
+    } else if (!dto.invitationCodeIds) {
+      targetCodes = await this.client.invitationCode.findMany({
         select: { id: true },
       });
     }
@@ -343,7 +367,35 @@ export class SubEventService {
   /**
    * Retrieves the access matrix mapping between sub-events and invitation codes.
    */
-  async getAccessMatrix() {
+  async getAccessMatrix(params?: AccessMatrixQueryParams) {
+    const page = Math.max(1, params?.page ?? 1);
+    const rawLimit = params?.limit ?? 25;
+    const limit = Math.min(100, Math.max(1, rawLimit));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim();
+      where.OR = [
+        { guestName: { contains: q, mode: 'insensitive' } },
+        { code: { contains: q, mode: 'insensitive' } },
+        { householdName: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    if (params?.partyTag && params.partyTag !== 'all' && params.partyTag.trim()) {
+      where.partyTags = { has: params.partyTag.trim() };
+    }
+
+    if (params?.partyGroup && params.partyGroup !== 'all' && params.partyGroup.trim()) {
+      where.partyGroup = params.partyGroup.trim();
+    }
+
+    if (params?.householdName && params.householdName !== 'all' && params.householdName.trim()) {
+      where.householdName = params.householdName.trim();
+    }
+
     const subEvents = await this.client.subEvent.findMany({
       include: {
         accesses: {
@@ -357,7 +409,14 @@ export class SubEventService {
       },
     });
 
+    const total = this.client.invitationCode.count
+      ? await this.client.invitationCode.count({ where })
+      : (await this.client.invitationCode.findMany({ where })).length;
+
     const invitationCodes = await this.client.invitationCode.findMany({
+      where,
+      skip,
+      take: limit,
       select: {
         id: true,
         code: true,
@@ -376,22 +435,73 @@ export class SubEventService {
       },
     });
 
+    let partyGroups: string[] = [];
+    if (this.client.invitationCode.findMany) {
+      const groupsRaw = await this.client.invitationCode.findMany({
+        where: { partyGroup: { not: null } },
+        select: { partyGroup: true },
+        distinct: ['partyGroup'],
+      });
+      partyGroups = Array.from<string>(
+        new Set(groupsRaw.map((g: any) => g.partyGroup).filter(Boolean))
+      ).sort();
+    }
+
+    let householdNames: string[] = [];
+    if (this.client.invitationCode.findMany) {
+      const householdsRaw = await this.client.invitationCode.findMany({
+        where: { householdName: { not: null } },
+        select: { householdName: true },
+        distinct: ['householdName'],
+      });
+      householdNames = Array.from<string>(
+        new Set(householdsRaw.map((h: any) => h.householdName).filter(Boolean))
+      ).sort();
+    }
+
+    let partyTags: string[] = [];
+    if (this.client.invitationCode.findMany) {
+      const tagsRaw = await this.client.invitationCode.findMany({
+        select: { partyTags: true },
+      });
+      const tagSet = new Set<string>();
+      tagsRaw.forEach((t: any) => {
+        (t.partyTags || []).forEach((tag: string) => {
+          if (tag && tag.trim()) tagSet.add(tag.trim());
+        });
+      });
+      partyTags = Array.from(tagSet).sort();
+    }
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
     return {
-      subEvents: subEvents.map((e: any) => ({
+      subEvents: (subEvents || []).map((e: any) => ({
         id: e.id,
         title: e.title,
         isPrivate: e.isPrivate,
-        allowedInvitationCodeIds: e.accesses.map((a: any) => a.invitationCodeId),
+        allowedInvitationCodeIds: e.accesses ? e.accesses.map((a: any) => a.invitationCodeId) : [],
       })),
-      invitationCodes: invitationCodes.map((c: any) => ({
+      invitationCodes: (invitationCodes || []).map((c: any) => ({
         id: c.id,
         code: c.code,
         guestName: c.guestName,
         householdName: c.householdName || null,
         partyGroup: c.partyGroup || null,
         partyTags: c.partyTags || [],
-        allowedSubEventIds: c.subEventAccesses.map((a: any) => a.subEventId),
+        allowedSubEventIds: c.subEventAccesses ? c.subEventAccesses.map((a: any) => a.subEventId) : [],
       })),
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+      filterOptions: {
+        partyTags,
+        partyGroups,
+        householdNames,
+      },
     };
   }
 }

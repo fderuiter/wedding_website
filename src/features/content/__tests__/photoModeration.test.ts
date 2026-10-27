@@ -94,6 +94,36 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       expect(pending).toHaveLength(1);
       expect(pending[0].id).toBe('photo-pending-1');
     });
+
+    it('delegates to repo.getPendingPhotos when repo implements it', async () => {
+      const mockResult = {
+        photos: [
+          {
+            id: 'photo-pending-2',
+            type: 'Photo' as const,
+            tags: ['guest-upload'],
+            data: { url: '/p2.png', status: 'PENDING', isVisible: false },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        total: 10,
+        page: 2,
+        limit: 5,
+        totalPages: 2,
+      };
+
+      mockRepo.getPendingPhotos = jest.fn().mockResolvedValueOnce(mockResult);
+
+      const result = await service.getPendingPhotos({ page: 2, limit: 5 });
+
+      expect(mockRepo.getPendingPhotos).toHaveBeenCalledWith({ page: 2, limit: 5 });
+      expect(result.photos).toEqual(mockResult.photos);
+      expect(result.total).toBe(10);
+      expect(result.page).toBe(2);
+      expect(result.limit).toBe(5);
+      expect(result.totalPages).toBe(2);
+    });
   });
 
   describe('moderatePhoto', () => {

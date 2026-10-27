@@ -6,20 +6,39 @@ import { ApiError } from '@/utils/ApiError';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 
-export const GET = withApiMiddleware(async (_request: NextRequest) => {
+export const GET = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
 
-  const pendingPhotos = await contentService.getPendingPhotos();
+  const url = request.nextUrl || (request.url ? new URL(request.url) : null);
+  const pageParam = url?.searchParams?.get('page');
+  const limitParam = url?.searchParams?.get('limit');
+
+  const page = pageParam !== null && pageParam !== undefined && pageParam !== '' ? parseInt(pageParam, 10) : undefined;
+  const limit = limitParam !== null && limitParam !== undefined && limitParam !== '' ? parseInt(limitParam, 10) : undefined;
+
+  const result: any = await contentService.getPendingPhotos({ page, limit });
+
+  const photos = Array.isArray(result) ? ((result as any).photos || result) : (result?.photos || []);
+  const total = typeof result?.total === 'number' ? result.total : photos.length;
+  const curPage = result?.page || (page && !isNaN(page) ? page : 1);
+  const curLimit = result?.limit || (limit && !isNaN(limit) ? limit : 50);
+  const totalPages = typeof result?.totalPages === 'number' ? result.totalPages : (curLimit > 0 ? Math.ceil(total / curLimit) : 1);
 
   return NextResponse.json({
     success: true,
-    pendingCount: pendingPhotos.length,
-    count: pendingPhotos.length,
-    photos: pendingPhotos,
-    data: pendingPhotos,
+    pendingCount: total,
+    count: photos.length,
+    photos: photos,
+    data: photos,
+    pagination: {
+      page: curPage,
+      limit: curLimit,
+      total: total,
+      totalPages: totalPages,
+    },
   });
 });
 

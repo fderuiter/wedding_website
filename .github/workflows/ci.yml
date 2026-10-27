@@ -259,6 +259,7 @@ jobs:
       - name: Migrate & Seed Test Database
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+          ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
         run: |
           npx prisma migrate deploy
           npm run db:seed
@@ -323,6 +324,7 @@ jobs:
         timeout-minutes: 1
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5433/wedding
+          ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
         run: |
           npm run db:seed
 

@@ -39,6 +39,15 @@ export default function SubEventsMatrixPage() {
   // Pagination
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalRecords, setTotalRecords] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+
+  // Available Filter Options
+  const [filterOptions, setFilterOptions] = useState<{
+    partyTags: string[];
+    partyGroups: string[];
+    householdNames: string[];
+  }>({ partyTags: [], partyGroups: [], householdNames: [] });
 
   // Multi-row selection
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
@@ -56,16 +65,29 @@ export default function SubEventsMatrixPage() {
   const fetchMatrix = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin/sub-events/access');
+      const params = new URLSearchParams();
+      params.set('page', currentPage.toString());
+      params.set('limit', pageSize.toString());
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      if (selectedTagFilter !== 'all') params.set('partyTag', selectedTagFilter);
+      if (selectedGroupFilter !== 'all') params.set('partyGroup', selectedGroupFilter);
+      if (selectedHouseholdFilter !== 'all') params.set('householdName', selectedHouseholdFilter);
+
+      const res = await fetch(`/api/admin/sub-events/access?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to load access matrix');
       const json = await res.json();
       const data = json.data || json;
 
       const events: SubEvent[] = data.subEvents || [];
       const codes: InvitationCode[] = data.invitationCodes || [];
+      const pagination = data.pagination || { total: codes.length, page: currentPage, limit: pageSize, totalPages: 1 };
+      const opts = data.filterOptions || { partyTags: [], partyGroups: [], householdNames: [] };
 
       setSubEvents(events);
       setInvitationCodes(codes);
+      setTotalRecords(pagination.total ?? codes.length);
+      setTotalPages(pagination.totalPages ?? 1);
+      setFilterOptions(opts);
 
       const matrixMap: Record<string, string[]> = {};
       codes.forEach((c) => {
@@ -79,80 +101,50 @@ export default function SubEventsMatrixPage() {
     }
   };
 
-  useEffect(() => {
-    fetchMatrix();
-  }, []);
-
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
     setSelectedRowIds([]);
   }, [searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, pageSize]);
 
+  // Fetch matrix when page or filters or pageSize change
+  useEffect(() => {
+    fetchMatrix();
+  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter]);
+
   // Unique filter values
   const allTags = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(filterOptions.partyTags || []);
     invitationCodes.forEach((c) => {
       (c.partyTags || []).forEach((t) => {
         if (t?.trim()) set.add(t.trim());
       });
     });
     return Array.from(set).sort();
-  }, [invitationCodes]);
+  }, [filterOptions.partyTags, invitationCodes]);
 
   const allGroups = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(filterOptions.partyGroups || []);
     invitationCodes.forEach((c) => {
       if (c.partyGroup?.trim()) set.add(c.partyGroup.trim());
     });
     return Array.from(set).sort();
-  }, [invitationCodes]);
+  }, [filterOptions.partyGroups, invitationCodes]);
 
   const allHouseholds = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(filterOptions.householdNames || []);
     invitationCodes.forEach((c) => {
       if (c.householdName?.trim()) set.add(c.householdName.trim());
     });
     return Array.from(set).sort();
-  }, [invitationCodes]);
+  }, [filterOptions.householdNames, invitationCodes]);
 
   const privateSubEvents = useMemo(() => {
     return subEvents.filter((s) => s.isPrivate);
   }, [subEvents]);
 
-  // Filtered Codes
-  const filteredCodes = useMemo(() => {
-    return invitationCodes.filter((code) => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const nameMatch = code.guestName.toLowerCase().includes(q);
-        const codeMatch = code.code.toLowerCase().includes(q);
-        const householdMatch = code.householdName?.toLowerCase().includes(q);
-        if (!nameMatch && !codeMatch && !householdMatch) return false;
-      }
-
-      if (selectedTagFilter !== 'all') {
-        if (!code.partyTags?.includes(selectedTagFilter)) return false;
-      }
-
-      if (selectedGroupFilter !== 'all') {
-        if (code.partyGroup !== selectedGroupFilter) return false;
-      }
-
-      if (selectedHouseholdFilter !== 'all') {
-        if (code.householdName !== selectedHouseholdFilter) return false;
-      }
-
-      return true;
-    });
-  }, [invitationCodes, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter]);
-
-  // Paginated Codes
-  const totalPages = Math.max(1, Math.ceil(filteredCodes.length / pageSize));
-  const paginatedCodes = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredCodes.slice(start, start + pageSize);
-  }, [filteredCodes, currentPage, pageSize]);
+  // Paginated Codes are directly returned from the API
+  const paginatedCodes = invitationCodes;
 
   // Optimistic Single Cell Toggle
   const handleToggleCell = async (invitationCodeId: string, subEventId: string, willAllow: boolean) => {
@@ -184,42 +176,34 @@ export default function SubEventsMatrixPage() {
 
   // Bulk Column Toggle (for all currently filtered guests)
   const handleColumnToggle = async (subEventId: string, action: 'grant' | 'revoke') => {
-    const targetCodeIds = filteredCodes.map((c) => c.id);
-    if (targetCodeIds.length === 0) return;
+    const body: any = {
+      subEventIds: [subEventId],
+      action,
+    };
 
-    const previousMatrix = { ...accessMatrix };
-
-    // Optimistic matrix update
-    const nextMatrix = { ...accessMatrix };
-    targetCodeIds.forEach((codeId) => {
-      const current = nextMatrix[codeId] || [];
-      if (action === 'grant') {
-        nextMatrix[codeId] = Array.from(new Set([...current, subEventId]));
-      } else {
-        nextMatrix[codeId] = current.filter((id) => id !== subEventId);
-      }
-    });
-    setAccessMatrix(nextMatrix);
+    if (searchQuery.trim()) body.search = searchQuery.trim();
+    if (selectedTagFilter !== 'all') body.partyTags = [selectedTagFilter];
+    if (selectedGroupFilter !== 'all') body.partyGroups = [selectedGroupFilter];
+    if (selectedHouseholdFilter !== 'all') body.householdName = [selectedHouseholdFilter];
 
     try {
       const res = await fetch('/api/admin/sub-events/access/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invitationCodeIds: targetCodeIds,
-          subEventIds: [subEventId],
-          action,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.error || 'Batch column update failed');
       }
-      addToast(`Access ${action === 'grant' ? 'granted' : 'revoked'} for column across ${targetCodeIds.length} guests.`, 'success');
+      addToast(
+        `Access ${action === 'grant' ? 'granted' : 'revoked'} for column across matching guests.`,
+        'success'
+      );
+      fetchMatrix();
     } catch (e: any) {
-      setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Batch update failed. Reverted changes.', 'error');
+      addToast(e.message || 'Batch update failed.', 'error');
     }
   };
 
@@ -477,7 +461,7 @@ export default function SubEventsMatrixPage() {
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">
             No sub-events created yet. Click "+ Create New Sub-Event" to get started.
           </div>
-        ) : filteredCodes.length === 0 ? (
+        ) : totalRecords === 0 ? (
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">
             No invitation codes match your filter criteria.
           </div>
@@ -528,7 +512,7 @@ export default function SubEventsMatrixPage() {
                               type="button"
                               className="text-primary hover:underline font-semibold"
                               onClick={() => handleColumnToggle(evt.id, 'grant')}
-                              title={`Grant ${evt.title} access to all ${filteredCodes.length} filtered guests`}
+                              title={`Grant ${evt.title} access to all ${totalRecords} matching guests`}
                             >
                               Grant All
                             </button>
@@ -537,7 +521,7 @@ export default function SubEventsMatrixPage() {
                               type="button"
                               className="text-red-600 dark:text-red-400 hover:underline font-semibold"
                               onClick={() => handleColumnToggle(evt.id, 'revoke')}
-                              title={`Revoke ${evt.title} access from all ${filteredCodes.length} filtered guests`}
+                              title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
                             >
                               Revoke All
                             </button>
@@ -673,11 +657,11 @@ export default function SubEventsMatrixPage() {
         )}
 
         {/* Pagination Footer */}
-        {filteredCodes.length > 0 && (
+        {totalRecords > 0 && (
           <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-gray-600 dark:text-gray-300">
             <div>
-              Showing {Math.min((currentPage - 1) * pageSize + 1, filteredCodes.length)} to{' '}
-              {Math.min(currentPage * pageSize, filteredCodes.length)} of {filteredCodes.length} guests
+              Showing {totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{' '}
+              {Math.min(currentPage * pageSize, totalRecords)} of {totalRecords} guests
             </div>
 
             <div className="flex items-center gap-2">
