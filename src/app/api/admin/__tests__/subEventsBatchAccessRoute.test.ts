@@ -1,4 +1,4 @@
-import { POST } from '../admin/sub-events/access/batch/route';
+import { POST } from '../sub-events/access/batch/route';
 import { NextRequest } from 'next/server';
 import { subEventService } from '@/features/sub-events/service';
 import { isAdminRequest } from '@/core/auth/auth.server';

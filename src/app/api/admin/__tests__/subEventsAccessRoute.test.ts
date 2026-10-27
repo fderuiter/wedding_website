@@ -1,4 +1,4 @@
-import { GET, PUT } from '../admin/sub-events/access/route';
+import { GET, PUT } from '../sub-events/access/route';
 import { NextRequest } from 'next/server';
 import { subEventService } from '@/features/sub-events/service';
 import { isAdminRequest } from '@/core/auth/auth.server';

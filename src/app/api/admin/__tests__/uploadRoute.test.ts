@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { POST } from '../admin/upload/route';
+import { POST } from '../upload/route';
 
 jest.mock('@/core/auth/auth.server', () => ({
   verifyAdminToken: jest.fn(),

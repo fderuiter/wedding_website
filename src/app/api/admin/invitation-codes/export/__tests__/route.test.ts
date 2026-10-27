@@ -230,4 +230,79 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
       orderBy: { guestName: 'asc' },
     });
   });
+
+  it('filters by redeemed status and secondary dietary, attendance, and address filters', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: '1',
+        guestName: 'Gluten Free Guest',
+        used: true,
+        dietaryNotes: 'GF gluten free',
+        extraFields: { attendanceStatus: 'attending' },
+        addressLine1: '123 Main',
+        city: 'SF',
+        state: 'CA',
+        zipCode: '94102',
+      },
+      {
+        id: '2',
+        guestName: 'Vegan Guest',
+        used: true,
+        dietaryNotes: 'vegan',
+        extraFields: { attendanceStatus: 'declined' },
+        addressLine1: '456 St',
+      },
+      {
+        id: '3',
+        guestName: 'Dairy Free Guest',
+        used: true,
+        dietaryNotes: 'dairy-free',
+        extraFields: { attendanceStatus: 'pending' },
+      },
+      {
+        id: '4',
+        guestName: 'Nut Free Guest',
+        used: true,
+        dietaryNotes: 'peanut allergy',
+        extraFields: { attendanceStatus: true },
+      },
+      {
+        id: '5',
+        guestName: 'Other Dietary Guest',
+        used: true,
+        dietaryNotes: 'kosher',
+        extraFields: { attendanceStatus: false },
+      },
+    ] as any);
+
+    // Test redeemed status filter
+    const reqStatus = new NextRequest('http://localhost:3000/api/admin/invitation-codes/export?status=redeemed');
+    await GET(reqStatus);
+    expect(mockPrisma.invitationCode.findMany).toHaveBeenCalledWith({
+      where: { used: true },
+      orderBy: { guestName: 'asc' },
+    });
+
+    // Test dietary filters
+    for (const d of ['gluten-free', 'vegetarian', 'vegan', 'dairy-free', 'nut-free', 'other']) {
+      const reqD = new NextRequest(`http://localhost:3000/api/admin/invitation-codes/export?dietary=${d}`);
+      const resD = await GET(reqD);
+      expect(resD.status).toBe(200);
+    }
+
+    // Test attendance filters
+    for (const att of ['attending', 'declined', 'pending']) {
+      const reqAtt = new NextRequest(`http://localhost:3000/api/admin/invitation-codes/export?attendance=${att}`);
+      const resAtt = await GET(reqAtt);
+      expect(resAtt.status).toBe(200);
+    }
+
+    // Test address filters
+    for (const add of ['complete', 'missing']) {
+      const reqAdd = new NextRequest(`http://localhost:3000/api/admin/invitation-codes/export?address=${add}`);
+      const resAdd = await GET(reqAdd);
+      expect(resAdd.status).toBe(200);
+    }
+  });
 });

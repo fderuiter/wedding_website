@@ -1,9 +1,9 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
-import { POST as login } from '../admin/login/route';
-import { POST as logout } from '../admin/logout/route';
-import { GET as me } from '../admin/me/route';
+import { POST as login } from '../login/route';
+import { POST as logout } from '../logout/route';
+import { GET as me } from '../me/route';
 import { signAdminToken } from '@/core/auth/auth.server';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
