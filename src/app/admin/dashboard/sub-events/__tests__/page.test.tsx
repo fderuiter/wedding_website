@@ -44,10 +44,30 @@ describe('SubEventsMatrixPage', () => {
     });
 
     global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
-      if (url === '/api/admin/sub-events/access' && (!options || !options.method || options.method === 'GET')) {
+      if (url.startsWith('/api/admin/sub-events/access') && (!options || !options.method || options.method === 'GET')) {
+        const parsedUrl = new URL(url, 'http://localhost:3000');
+        const search = parsedUrl.searchParams.get('search') || '';
+        const partyTag = parsedUrl.searchParams.get('partyTag') || '';
+
+        let filteredCodes = mockMatrixData.invitationCodes;
+        if (search) {
+          filteredCodes = filteredCodes.filter(c => c.guestName.toLowerCase().includes(search.toLowerCase()));
+        }
+        if (partyTag && partyTag !== 'all') {
+          filteredCodes = filteredCodes.filter(c => c.partyTags?.includes(partyTag));
+        }
+
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ success: true, data: mockMatrixData }),
+          json: () => Promise.resolve({
+            success: true,
+            data: {
+              subEvents: mockMatrixData.subEvents,
+              invitationCodes: filteredCodes,
+              pagination: { total: filteredCodes.length, page: 1, limit: 25, totalPages: 1 },
+              filterOptions: { partyTags: ['Bridal Party', 'VIP', 'Friends'], partyGroups: ['Bridal Party', 'Friends'], householdNames: ['Smith Family', 'Jones Household'] },
+            },
+          }),
         });
       }
       if (url === '/api/admin/sub-events/access' && options?.method === 'PUT') {
@@ -95,8 +115,10 @@ describe('SubEventsMatrixPage', () => {
     const searchInput = screen.getByPlaceholderText(/Search guest, code, household/i);
     fireEvent.change(searchInput, { target: { value: 'Alice' } });
 
-    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
-    expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    });
   });
 
   test('filters guests by selected party tag', async () => {
@@ -109,8 +131,10 @@ describe('SubEventsMatrixPage', () => {
     const tagSelect = screen.getByLabelText('Filter by Party Tag');
     fireEvent.change(tagSelect, { target: { value: 'Bridal Party' } });
 
-    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
-    expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+    });
   });
 
   test('toggles single sub-event cell access for a guest', async () => {
@@ -145,13 +169,12 @@ describe('SubEventsMatrixPage', () => {
       expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
     });
 
-    const grantAllBtn = screen.getByTitle(/Grant Rehearsal Dinner access to all 2 filtered guests/i);
+    const grantAllBtn = screen.getByTitle(/Grant Rehearsal Dinner access to all 2 matching guests/i);
     fireEvent.click(grantAllBtn);
 
     expect(global.fetch).toHaveBeenCalledWith('/api/admin/sub-events/access/batch', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({
-        invitationCodeIds: ['inv-1', 'inv-2'],
         subEventIds: ['se-rehearsal'],
         action: 'grant',
       }),
@@ -159,7 +182,7 @@ describe('SubEventsMatrixPage', () => {
 
     await waitFor(() => {
       expect(mockAddToast).toHaveBeenCalledWith(
-        'Access granted for column across 2 guests.',
+        'Access granted for column across matching guests.',
         'success'
       );
     });

@@ -41,9 +41,21 @@ export const BatchUpdateSubEventAccessSchema = z.object({
   partyTags: z.array(z.string()).optional(),
   partyGroups: z.array(z.string()).optional(),
   householdName: z.union([z.string(), z.array(z.string())]).optional(),
+  search: z.string().optional(),
   subEventIds: z.array(z.string()).min(1, 'At least one subEventId is required.'),
   action: z.enum(['grant', 'revoke', 'set']),
 });
 
 export type BatchUpdateSubEventAccessDTO = z.infer<typeof BatchUpdateSubEventAccessSchema>;
+
+export const GetAccessMatrixQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  search: z.string().optional(),
+  partyTag: z.string().optional(),
+  partyGroup: z.string().optional(),
+  householdName: z.string().optional(),
+});
+
+export type GetAccessMatrixQueryDTO = z.infer<typeof GetAccessMatrixQuerySchema>;
 

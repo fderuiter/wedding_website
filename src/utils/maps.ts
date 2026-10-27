@@ -19,16 +19,22 @@ export function resolveDirectionsUrl(
 ): string | undefined {
   if (!location) return undefined;
 
-  const customDirections = sanitizeUrl(location.directions);
-  if (customDirections) {
-    if (
-      customDirections.startsWith('http://') ||
-      customDirections.startsWith('https://') ||
-      customDirections.startsWith('/')
-    ) {
+  const rawDirections = location.directions?.trim();
+  if (rawDirections) {
+    const customDirections = sanitizeUrl(rawDirections);
+    if (customDirections) {
       return customDirections;
     }
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customDirections)}`;
+
+    const lower = rawDirections.toLowerCase();
+    if (
+      !lower.startsWith('javascript:') &&
+      !lower.startsWith('data:') &&
+      !lower.startsWith('vbscript:') &&
+      !rawDirections.startsWith('//')
+    ) {
+      return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(rawDirections)}`;
+    }
   }
 
   const { latitude, longitude } = location;
