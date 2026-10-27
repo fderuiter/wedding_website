@@ -80,6 +80,8 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
         return;
       }
 
+      const firstPhoto = Array.isArray(json.data) ? json.data[0] : json.data;
+
       setUploads((prev) =>
         prev.map((item) =>
           item.id === uploadId
@@ -87,19 +89,25 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
               ...item,
               status: 'success',
               progress: 100,
-              url: json.data?.url,
+              url: firstPhoto?.url,
             }
             : item
         )
       );
 
       if (onUploadSuccess && json.data) {
-        onUploadSuccess({
-          id: json.data.id,
-          url: json.data.url,
-          altText: json.data.altText,
-          createdAt: json.data.createdAt,
-        });
+        if (Array.isArray(json.data)) {
+          json.data.forEach((photo: UploadedPhoto) => {
+            if (photo) onUploadSuccess(photo);
+          });
+        } else {
+          onUploadSuccess({
+            id: json.data.id,
+            url: json.data.url,
+            altText: json.data.altText,
+            createdAt: json.data.createdAt,
+          });
+        }
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Network error during upload';
