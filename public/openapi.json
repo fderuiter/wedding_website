@@ -5245,6 +5245,9 @@
                       }
                     ]
                   },
+                  "search": {
+                    "type": "string"
+                  },
                   "subEventIds": {
                     "minItems": 1,
                     "type": "array",

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { BatchUpdateThankYouNotesSchema } from '@/features/registry/schemas';
-import { thankYouService } from '@/features/registry/thank-you.service';
+import { BatchUpdateThankYouNotesSchema, thankYouService } from '@/features/registry';
 import { formatZodError } from '@/utils/validation';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {

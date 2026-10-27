@@ -15,6 +15,17 @@ describe('resolveDirectionsUrl', () => {
     expect(resolveDirectionsUrl(location)).toBe('https://maps.google.com/custom');
   });
 
+  it('maps plain text address directions to a Google Maps destination URL', () => {
+    const location = {
+      directions: '500 Floral Way',
+      latitude: 0,
+      longitude: 0,
+    };
+    expect(resolveDirectionsUrl(location)).toBe(
+      'https://www.google.com/maps/dir/?api=1&destination=500%20Floral%20Way'
+    );
+  });
+
   it('falls back to Google Maps directions URL when directions is missing but coordinates are valid', () => {
     const location = {
       directions: '',
@@ -104,5 +115,17 @@ describe('resolveDirectionsUrl', () => {
     expect(
       resolveDirectionsUrl({ directions: '', latitude: Infinity, longitude: -90.0 })
     ).toBeUndefined();
+  });
+
+  it('formats Google Maps URL for plain text street addresses without coordinates', () => {
+    expect(
+      resolveDirectionsUrl({ directions: '500 Floral Way', latitude: 0, longitude: 0 })
+    ).toBe('https://www.google.com/maps/dir/?api=1&destination=500%20Floral%20Way');
+  });
+
+  it('uses coordinates when available even if plain text address is provided', () => {
+    expect(
+      resolveDirectionsUrl({ directions: '500 Floral Way', latitude: 37.7749, longitude: -122.4194 })
+    ).toBe('https://www.google.com/maps/dir/?api=1&destination=37.7749,-122.4194');
   });
 });
