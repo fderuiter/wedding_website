@@ -32,6 +32,7 @@
   "rules": {
     "files": "error",
     "exports": "error",
+    "duplicates": "off",
     "nsExports": "error",
     "namespaceMembers": "warn",
     "enumMembers": "warn",

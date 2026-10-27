@@ -3,6 +3,7 @@ import { POST as previewRoute } from '../preview/route';
 import { GET as historyRoute } from '../history/route';
 import { POST as retryRoute } from '../retry/route';
 import { POST as testConnRoute } from '../test-connection/route';
+import { DELETE as cancelScheduleRoute } from '../schedule/[id]/route';
 import { NextRequest } from 'next/server';
 import { BroadcastService } from '@/features/broadcast/service';
 
@@ -16,6 +17,7 @@ jest.mock('@/features/broadcast/service', () => ({
     renderPreview: jest.fn().mockResolvedValue({ body: 'Rendered Body', destination: 'test@example.com' }),
     getBroadcastHistory: jest.fn().mockResolvedValue([{ id: 'b1', status: 'SENT' }]),
     retryFailedRecipients: jest.fn().mockResolvedValue({ id: 'b1', status: 'SENT' }),
+    cancelScheduledBroadcast: jest.fn().mockResolvedValue({ id: 'b1', status: 'CANCELLED' }),
   },
 }));
 
@@ -238,5 +240,32 @@ describe('Broadcast API Routes', () => {
 
     const res = await testConnRoute(req);
     expect(res.status).toBe(400);
+  });
+
+  describe('DELETE /api/admin/broadcast/schedule/[id]', () => {
+    it('cancels scheduled broadcast successfully', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/schedule/b1', { method: 'DELETE' });
+      const res = await cancelScheduleRoute(req, { params: Promise.resolve({ id: 'b1' }) });
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.data.status).toBe('CANCELLED');
+    });
+
+    it('returns 400 when id is missing', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/schedule/', { method: 'DELETE' });
+      const res = await cancelScheduleRoute(req, { params: Promise.resolve({ id: '' }) });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Broadcast ID is required.');
+    });
+
+    it('returns 400 when service throws an error', async () => {
+      (BroadcastService.cancelScheduledBroadcast as jest.Mock).mockRejectedValueOnce(new Error('Cancel failed'));
+      const req = new NextRequest('http://localhost/api/admin/broadcast/schedule/b1', { method: 'DELETE' });
+      const res = await cancelScheduleRoute(req, { params: Promise.resolve({ id: 'b1' }) });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Cancel failed');
+    });
   });
 });

@@ -234,6 +234,33 @@ describe('Dynamic Administration Entity API Routes', () => {
         const body = await res.json();
         expect(body.error).toBe('Invalid member ID(s): missing-id');
       });
+
+      test('re-throws ApiError thrown by reorder service', async () => {
+        const { ApiError } = jest.requireActual('@/utils/ApiError');
+        mockService.reorder.mockRejectedValue(new ApiError(403, 'Forbidden action'));
+
+        const req = new NextRequest('http://localhost/api/admin/wedding-party', {
+          method: 'PUT',
+          body: JSON.stringify({ action: 'reorder', orderedIds: ['valid-id'] }),
+        });
+
+        const res = await PUT(req, { params: Promise.resolve({ entity: 'wedding-party' }) });
+        expect(res.status).toBe(403);
+      });
+
+      test('returns fallback error message when reorder service throws error without message', async () => {
+        mockService.reorder.mockRejectedValue(new Error(''));
+
+        const req = new NextRequest('http://localhost/api/admin/wedding-party', {
+          method: 'PUT',
+          body: JSON.stringify({ action: 'reorder', orderedIds: ['valid-id'] }),
+        });
+
+        const res = await PUT(req, { params: Promise.resolve({ entity: 'wedding-party' }) });
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error).toBe('Failed to reorder items');
+      });
     });
   });
 

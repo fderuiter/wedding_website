@@ -117,4 +117,42 @@ describe('POST /api/admin/invitation-codes/validate', () => {
       'skip'
     );
   });
+
+  test('returns 400 when dryRunValidateBatch throws a Validation Error', async () => {
+    mockServiceInstance.dryRunValidateBatch.mockRejectedValue(
+      new Error('Validation Error: Bad row format')
+    );
+
+    const payload = {
+      records: [{ guestName: 'Alice Smith', code: 'ALICE100' }],
+    };
+
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Bad row format');
+  });
+
+  test('returns 500 when dryRunValidateBatch throws an unexpected error', async () => {
+    mockServiceInstance.dryRunValidateBatch.mockRejectedValue(
+      new Error('Internal DB failure')
+    );
+
+    const payload = {
+      records: [{ guestName: 'Alice Smith', code: 'ALICE100' }],
+    };
+
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(500);
+  });
 });

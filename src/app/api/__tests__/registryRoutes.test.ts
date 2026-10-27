@@ -112,10 +112,26 @@ describe('Registry API routes', () => {
       });
       const res = await contribute(req);
       expect(res.status).toBe(200);
-      expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, {
+      expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, expect.objectContaining({
         name: validContribution.name,
         amount: validContribution.amount,
+        coverFee: false,
+      }));
+    });
+
+    it('processes a valid contribution with fee coverage', async () => {
+      mockContributeToItem.mockResolvedValue({ id: '1', amountContributed: 25 });
+      const req = new Request('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({ ...validContribution, coverFee: true }),
       });
+      const res = await contribute(req);
+      expect(res.status).toBe(200);
+      expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, expect.objectContaining({
+        name: validContribution.name,
+        amount: validContribution.amount,
+        coverFee: true,
+      }));
     });
 
     it('processes a valid contribution with personal message', async () => {
@@ -130,11 +146,12 @@ describe('Registry API routes', () => {
       });
       const res = await contribute(req);
       expect(res.status).toBe(200);
-      expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, {
+      expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, expect.objectContaining({
         name: validContribution.name,
         amount: validContribution.amount,
         message: 'Wishing you a lifetime of love and happiness!',
-      });
+        coverFee: false,
+      }));
     });
 
     it('rejects contribution when personal message exceeds 1000 characters', async () => {

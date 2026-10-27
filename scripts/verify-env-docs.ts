@@ -4,7 +4,8 @@ import ts from 'typescript';
 import { fileURLToPath } from 'url';
 
 export function getKeysFromSource(fileContent: string): string[] {
-  const sourceFile = ts.createSourceFile('env.ts', fileContent, ts.ScriptTarget.Latest, true);
+  const target = (ts as any).ScriptTarget?.Latest ?? 99;
+  const sourceFile = ts.createSourceFile('env.ts', fileContent, target, true);
   const keys: string[] = [];
 
   function getPropertyNameText(node: ts.PropertyName | ts.Expression): string | null {
