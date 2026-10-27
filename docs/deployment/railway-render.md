@@ -40,8 +40,11 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | `POSTGRES_URL_NON_POOLING` | No | Direct connection URL for migrations if using a pooler. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.up.railway.app,wedding.onrender.com,wedding.mydomain.com`). |
+| `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
+| `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
 | `GUEST_PASSCODE` | No | Passcode required for guest access (default `wedding2026`). |
 | `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
+| `CRON_SECRET` | No | Authorization key for background cron triggers. |
 | `S3_BUCKET` | No* | Bucket name for S3 / Cloudflare R2 asset storage. |
 | `S3_REGION` | No* | Bucket region (`us-east-1` or `auto`). |
 | `S3_ACCESS_KEY_ID` | No* | S3 API access key ID. |

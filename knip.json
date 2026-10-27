@@ -30,6 +30,7 @@
   "ignoreDependencies": ["tailwindcss", "lint-staged"],
   "ignoreUnresolved": ["./.next/dev/types/routes.d.ts", ".next/dev/types/routes.d.ts"],
   "rules": {
+    "duplicates": "off",
     "files": "error",
     "exports": "error",
     "nsExports": "error",

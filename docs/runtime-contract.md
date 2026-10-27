@@ -51,8 +51,11 @@ All runtime configuration is supplied via environment variables. The runtime val
 |---|---|---|
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in container environments. |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled database connection string for Prisma migrations. |
+| `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile site routing. |
+| `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations during container startup in `docker-entrypoint.sh`. |
 | `GUEST_PASSCODE` | `wedding2026` | Passcode required for guest website access. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item. |
+| `CRON_SECRET` | *None* | Authorization secret for triggering scheduled background endpoints. |
 
 ### Optional Object Storage Variables (S3-Compatible)
 When storing uploaded media assets externally, all core S3 credential variables must be supplied as a coherent group:
@@ -115,7 +118,7 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
    - Executes TypeScript type checking, Prisma Client generation (`prisma generate`), and Next.js standalone build.
    - Does **not** require an active database connection. Safe for CI/CD build environments.
 2. **Migration Phase (`npx prisma migrate deploy`)**:
-   - Runs before application startup (executed automatically in `docker-entrypoint.sh` or deployment pipeline).
+   - Runs before application startup (executed automatically in `docker-entrypoint.sh` when `RUN_MIGRATIONS=true` or via deployment pipeline).
    - Applies pending database migrations safely without data loss.
 3. **Start Phase (`node server.js`)**:
    - Initializes the Next.js standalone HTTP server, listens on `PORT` (`0.0.0.0`), and validates environment variables.

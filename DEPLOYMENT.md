@@ -67,6 +67,7 @@ The application requires the following environment variables. These match the ru
   - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
 - `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcard patterns allowed to access the application (e.g. `localhost,127.0.0.1,wedding.example`). Wildcard DNS is not required for default single-site deployments. *Required.*
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain-based site routing. Defaults to `false` (1 deployment = 1 wedding site). *Optional.*
+- `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh`. Defaults to `false`. *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website. *Required.*
   - **Security Requirement**: Must be explicitly defined in production environment settings. Never rely on default passcodes.
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
@@ -354,6 +355,7 @@ The application requires the following environment variables in deployment envir
 - `ADMIN_PASSWORD`: Scrypt hash of admin password (`scrypt:[saltBase64]:[keyBase64]`). *Required.*
 - `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcards. *Required.*
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
+- `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh` (default: `false`). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access (default: `wedding2026`).
 - `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
 - `CRON_SECRET`: Authorization secret for cron worker endpoints. *Optional.*

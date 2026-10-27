@@ -45,8 +45,11 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 | `POSTGRES_URL_NON_POOLING` | Yes | Direct connection string for Prisma migrations. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.mydomain.com,*.vercel.app`). |
+| `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
+| `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
 | `GUEST_PASSCODE` | No | Passcode required for guest access (default `wedding2026`). |
 | `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
+| `CRON_SECRET` | No | Authorization key for background cron triggers. |
 | `S3_BUCKET` | Yes* | Bucket name for cloud asset storage. |
 | `S3_REGION` | Yes* | Bucket region (`us-east-1` or `auto` for Cloudflare R2). |
 | `S3_ACCESS_KEY_ID` | Yes* | S3 API access key ID. |
