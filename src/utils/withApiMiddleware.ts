@@ -18,7 +18,7 @@ export function withApiMiddleware(handler: RouteHandler) {
         pathname = url.pathname;
         method = req.method;
       }
-      const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/admin/logout' || pathname === '/api/admin/me' || pathname === '/api/guest/login';
+      const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/guest/login';
       
       const isAdminPath = isProtectedRoute(pathname, method);
 

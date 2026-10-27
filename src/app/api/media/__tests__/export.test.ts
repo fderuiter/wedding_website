@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { isAdminRequest } from '@/core/auth/auth.server';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -25,6 +26,10 @@ jest.mock('@/lib/modules', () => ({
   isFeatureEnabled: jest.fn(),
 }));
 
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn(),
+}));
+
 const mockPrisma = prisma as unknown as {
   media: { findMany: jest.Mock };
   contentNode: { findMany: jest.Mock };
@@ -32,12 +37,44 @@ const mockPrisma = prisma as unknown as {
 
 const mockGetAppConfig = getAppConfig as jest.Mock;
 const mockIsFeatureEnabled = isFeatureEnabled as jest.Mock;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 
 describe('GET & POST /api/media/export Integration Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetAppConfig.mockResolvedValue({ modules: ['gallery'] });
     mockIsFeatureEnabled.mockReturnValue(true);
+    mockIsAdminRequest.mockResolvedValue(true);
+  });
+
+  describe('Authorization Guardrails', () => {
+    test('returns 401 Unauthorized for unauthenticated GET /api/media/export requests', async () => {
+      mockIsAdminRequest.mockResolvedValue(false);
+
+      const req = new NextRequest('http://localhost/api/media/export');
+      const res = await GET(req);
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    test('returns 401 Unauthorized for unauthenticated POST /api/media/export requests', async () => {
+      mockIsAdminRequest.mockResolvedValue(false);
+
+      const req = new NextRequest('http://localhost/api/media/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ['m1'] }),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Unauthorized');
+    });
   });
 
   describe('Feature Flag Guardrails', () => {
