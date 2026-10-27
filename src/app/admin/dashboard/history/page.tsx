@@ -26,7 +26,7 @@ export default function HistoryTimelinePage() {
   const [selectedBroadcast, setSelectedBroadcast] = useState<any>(null);
 
   const { addToast, confirm } = useToast();
-  const { history: broadcastHistory, loadingHistory, retryBroadcast, retrying } = useAdminBroadcast();
+  const { history: broadcastHistory, loadingHistory, retryBroadcast, retrying, cancelScheduledBroadcast, cancelling } = useAdminBroadcast();
 
   const fetchVersions = async (currentPage = page, currentLimit = limit) => {
     setLoading(true);
@@ -73,6 +73,19 @@ export default function HistoryTimelinePage() {
       }
     } catch (e: any) {
       addToast(e.message || 'Retry failed.', 'error');
+    }
+  };
+
+  const handleCancelSchedule = async (broadcastId: string) => {
+    if (!(await confirm('Are you sure you want to cancel this scheduled broadcast?'))) return;
+    try {
+      await cancelScheduledBroadcast(broadcastId);
+      addToast('Scheduled broadcast cancelled.', 'success');
+      if (selectedBroadcast) {
+        setSelectedBroadcast(null);
+      }
+    } catch (e: any) {
+      addToast(e.message || 'Failed to cancel scheduled broadcast.', 'error');
     }
   };
 
@@ -220,7 +233,14 @@ export default function HistoryTimelinePage() {
               )}
               {broadcastHistory.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{formatDate(item.createdAt, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</TableCell>
+                  <TableCell>
+                    {formatDate(item.createdAt, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {item.status === 'SCHEDULED' && item.scheduledFor && (
+                      <div className="text-[11px] text-blue-600 dark:text-blue-400 font-medium mt-0.5">
+                        Scheduled: {formatDate(item.scheduledFor, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${item.channel === 'EMAIL' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'}`}>
                       {item.channel}
@@ -236,7 +256,15 @@ export default function HistoryTimelinePage() {
                   </TableCell>
                   <TableCell>
                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      item.status === 'SENT' ? 'bg-green-100 text-green-800' : item.status === 'PARTIALLY_SENT' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                      item.status === 'SENT'
+                        ? 'bg-green-100 text-green-800'
+                        : item.status === 'SCHEDULED'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+                          : item.status === 'PARTIALLY_SENT'
+                            ? 'bg-amber-100 text-amber-800'
+                            : item.status === 'CANCELLED'
+                              ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                              : 'bg-red-100 text-red-800'
                     }`}>
                       {item.status}
                     </span>
@@ -246,7 +274,17 @@ export default function HistoryTimelinePage() {
                       <Button size="sm" variant="secondary" onClick={() => setSelectedBroadcast(item)}>
                         Details
                       </Button>
-                      {item.failedCount > 0 && (
+                      {item.status === 'SCHEDULED' && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={cancelling}
+                          onClick={() => handleCancelSchedule(item.id)}
+                        >
+                          Cancel Schedule
+                        </Button>
+                      )}
+                      {item.failedCount > 0 && item.status !== 'CANCELLED' && (
                         <Button
                           size="sm"
                           variant="danger"
@@ -275,8 +313,11 @@ export default function HistoryTimelinePage() {
         >
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4 text-sm bg-gray-50 dark:bg-zinc-800 p-3 rounded">
-              <div><strong>Sent At:</strong> {formatDate(selectedBroadcast.createdAt)}</div>
+              <div><strong>Created At:</strong> {formatDate(selectedBroadcast.createdAt)}</div>
               <div><strong>Status:</strong> {selectedBroadcast.status}</div>
+              {selectedBroadcast.scheduledFor && (
+                <div><strong>Scheduled For:</strong> {formatDate(selectedBroadcast.scheduledFor)}</div>
+              )}
               <div><strong>Sent Count:</strong> {selectedBroadcast.sentCount} / {selectedBroadcast.totalRecipients}</div>
               <div><strong>Failed Count:</strong> {selectedBroadcast.failedCount}</div>
             </div>
@@ -315,7 +356,12 @@ export default function HistoryTimelinePage() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t">
-              {selectedBroadcast.failedCount > 0 && (
+              {selectedBroadcast.status === 'SCHEDULED' && (
+                <Button variant="danger" disabled={cancelling} onClick={() => handleCancelSchedule(selectedBroadcast.id)}>
+                  {cancelling ? 'Cancelling...' : 'Cancel Schedule'}
+                </Button>
+              )}
+              {selectedBroadcast.failedCount > 0 && selectedBroadcast.status !== 'CANCELLED' && (
                 <Button variant="danger" disabled={retrying} onClick={() => handleRetryBroadcast(selectedBroadcast.id)}>
                   {retrying ? 'Retrying...' : 'Retry Failed Dispatches'}
                 </Button>

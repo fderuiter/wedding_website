@@ -25,6 +25,7 @@ export interface SendBroadcastInput {
   body: string;
   targetFilters?: BroadcastTargetFilters;
   customRecipientIds?: string[];
+  scheduledFor?: string;
 }
 
 export interface PreviewBroadcastInput {
@@ -69,6 +70,7 @@ export interface BroadcastHistoryItem {
   totalRecipients: number;
   sentCount: number;
   failedCount: number;
+  scheduledFor?: Date | string | null;
   sentAt?: Date | string | null;
   createdAt: Date | string;
   recipients?: Array<{

@@ -430,6 +430,36 @@ export const PhotoModerationSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
 });
 
+export const BatchPhotoModerationSchema = z.object({
+  ids: z.array(z.string()).optional(),
+  photoIds: z.array(z.string()).optional(),
+  nodeIds: z.array(z.string()).optional(),
+  action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
+  status: z.enum(['APPROVED', 'REJECTED']).optional(),
+}).passthrough().superRefine((data, ctx) => {
+  const idsList = data.ids || data.photoIds || data.nodeIds;
+  if (!idsList || !Array.isArray(idsList) || idsList.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ids'],
+      message: 'At least one photo ID (ids, photoIds, or nodeIds) is required',
+    });
+  } else if (idsList.length > 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ids'],
+      message: 'Maximum of 100 photos allowed per batch request',
+    });
+  }
+  if (!data.action && !data.status) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['action'],
+      message: "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required",
+    });
+  }
+});
+
 export const PhotoNodeSchema = BaseContentNode.extend({
   type: z.literal('Photo'),
   data: PhotoDataSchema,

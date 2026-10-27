@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import type { IContentRepository } from './types';
+import { Prisma } from '@prisma/client';
+import type { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
@@ -7,6 +8,70 @@ import { isMultisiteEnabled } from '@/lib/config';
 
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
+
+  async getPendingPhotos(options: PendingPhotosOptions = {}): Promise<PaginatedPendingPhotosResult> {
+    let page = Math.floor(Number(options.page));
+    if (isNaN(page) || page < 1) {
+      page = 1;
+    }
+
+    let limit = Math.floor(Number(options.limit));
+    if (isNaN(limit) || limit < 1) {
+      limit = 50;
+    }
+    if (limit > 100) {
+      limit = 100;
+    }
+
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const where: any = {
+      type: 'Photo',
+      OR: [
+        {
+          data: {
+            path: ['status'],
+            equals: 'PENDING',
+          },
+        },
+        {
+          tags: {
+            has: 'guest-upload',
+          },
+          data: {
+            path: ['isVisible'],
+            equals: false,
+          },
+          OR: [
+            { data: { path: ['status'], equals: Prisma.DbNull } },
+            { data: { path: ['status'], equals: Prisma.AnyNull } },
+          ],
+        },
+      ],
+    };
+
+    const [total, nodes] = await Promise.all([
+      this.client.contentNode.count({ where }),
+      this.client.contentNode.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+    ]);
+
+    const photos = nodes.map((n: any) => ContentNodeSchema.parse(n));
+    const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
+
+    return {
+      photos,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
+  }
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
     const target = isMultisiteEnabled() ? configIdOrSubdomain : 'global';

@@ -8,6 +8,7 @@ import {
   BroadcastTargetFilters,
   BroadcastHistoryItem,
   DispatchResult,
+  BroadcastChannel,
 } from './types';
 
 export class BroadcastService {
@@ -129,7 +130,7 @@ export class BroadcastService {
   }
 
   /**
-   * Dispatches a broadcast message to target recipients in configurable batches.
+   * Dispatches a broadcast message to target recipients in configurable batches, or schedules it for future dispatch.
    */
   static async sendBroadcast(input: SendBroadcastInput) {
     const config = await getAppConfig('global');
@@ -139,22 +140,76 @@ export class BroadcastService {
       throw new Error('No target recipients found matching the filter criteria.');
     }
 
-    // Create BroadcastMessage record
-    const broadcastMessage = await prisma.broadcastMessage.create({
-      data: {
-        channel: input.channel,
-        subject: input.subject || null,
-        body: input.body,
-        targetFilters: (input.targetFilters as any) || {},
-        status: 'SENDING',
-        totalRecipients: guests.length,
-      },
-    });
+    const scheduledDate = input.scheduledFor ? new Date(input.scheduledFor) : null;
+    const isFutureScheduled = scheduledDate && !isNaN(scheduledDate.getTime()) && scheduledDate > new Date();
+
+    if (isFutureScheduled) {
+      const broadcastMessage = await prisma.broadcastMessage.create({
+        data: {
+          channel: input.channel,
+          subject: input.subject || null,
+          body: input.body,
+          targetFilters: (input.targetFilters as any) || {},
+          status: 'SCHEDULED',
+          scheduledFor: scheduledDate,
+          totalRecipients: guests.length,
+        },
+        include: {
+          recipients: true,
+        },
+      });
+      return broadcastMessage;
+    }
+
+    return this.executeDispatch(
+      input.channel,
+      input.subject,
+      input.body,
+      input.targetFilters,
+      config,
+      guests,
+      scheduledDate || undefined
+    );
+  }
+
+  /**
+   * Private helper to execute dispatch for a broadcast message.
+   */
+  private static async executeDispatch(
+    channel: BroadcastChannel,
+    subject: string | undefined | null,
+    body: string,
+    targetFilters: BroadcastTargetFilters | undefined,
+    config: any,
+    guests: any[],
+    scheduledFor?: Date,
+    existingBroadcastId?: string
+  ) {
+    let broadcastMessage;
+    if (existingBroadcastId) {
+      broadcastMessage = await prisma.broadcastMessage.findUnique({ where: { id: existingBroadcastId } });
+    } else {
+      broadcastMessage = await prisma.broadcastMessage.create({
+        data: {
+          channel,
+          subject: subject || null,
+          body,
+          targetFilters: (targetFilters as any) || {},
+          status: 'SENDING',
+          totalRecipients: guests.length,
+          scheduledFor: scheduledFor || null,
+        },
+      });
+    }
+
+    if (!broadcastMessage) {
+      throw new Error('Broadcast message record not found');
+    }
 
     // Create Recipient records
     const recipientRecords = [];
     for (const guest of guests) {
-      const destination = input.channel === 'EMAIL'
+      const destination = channel === 'EMAIL'
         ? (guest.email || '')
         : ((guest.extraFields as any)?.phone || (guest.extraFields as any)?.mobile || '');
 
@@ -165,7 +220,7 @@ export class BroadcastService {
           guestName: guest.guestName,
           destination: destination || 'Missing Contact Info',
           status: destination ? 'PENDING' : 'FAILED',
-          error: destination ? null : `Missing ${input.channel === 'EMAIL' ? 'email address' : 'phone number'}`,
+          error: destination ? null : `Missing ${channel === 'EMAIL' ? 'email address' : 'phone number'}`,
         },
       });
       recipientRecords.push({ recipient, guest });
@@ -194,11 +249,11 @@ export class BroadcastService {
             venueName: config.venueName || '',
           };
 
-          const personalizedBody = renderBroadcastTemplate(input.body, context);
-          const personalizedSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : '';
+          const personalizedBody = renderBroadcastTemplate(body, context);
+          const personalizedSubject = subject ? renderBroadcastTemplate(subject, context) : '';
 
           let result: DispatchResult;
-          if (input.channel === 'EMAIL') {
+          if (channel === 'EMAIL') {
             result = await provider.sendEmail({
               to: recipient.destination,
               subject: personalizedSubject,
@@ -250,6 +305,7 @@ export class BroadcastService {
         status: finalStatus,
         sentCount,
         failedCount,
+        totalRecipients: guests.length,
         sentAt: new Date(),
       },
       include: {
@@ -258,6 +314,89 @@ export class BroadcastService {
     });
 
     return updatedMessage;
+  }
+
+  /**
+   * Processes all due scheduled broadcasts whose scheduledFor timestamp is in the past or present.
+   * Uses atomic status updates to prevent race conditions across parallel workers.
+   */
+  static async processScheduledBroadcasts() {
+    const now = new Date();
+    const config = await getAppConfig('global');
+
+    const dueBroadcasts = await prisma.broadcastMessage.findMany({
+      where: {
+        status: 'SCHEDULED',
+        scheduledFor: {
+          lte: now,
+        },
+      },
+    });
+
+    const processed = [];
+
+    for (const broadcast of dueBroadcasts) {
+      // Atomic state update from SCHEDULED to SENDING
+      const updateResult = await prisma.broadcastMessage.updateMany({
+        where: {
+          id: broadcast.id,
+          status: 'SCHEDULED',
+        },
+        data: {
+          status: 'SENDING',
+        },
+      });
+
+      if (updateResult.count === 0) {
+        // Concurrently processed by another worker
+        continue;
+      }
+
+      // Resolve guests at execution time
+      const guests = await this.resolveTargetGuests(broadcast.targetFilters as BroadcastTargetFilters);
+
+      const result = await this.executeDispatch(
+        (broadcast.channel as unknown) as BroadcastChannel,
+        broadcast.subject,
+        broadcast.body,
+        broadcast.targetFilters as BroadcastTargetFilters,
+        config,
+        guests,
+        broadcast.scheduledFor || undefined,
+        broadcast.id
+      );
+
+      processed.push(result);
+    }
+
+    return processed;
+  }
+
+  /**
+   * Cancels a pending scheduled broadcast.
+   */
+  static async cancelScheduledBroadcast(id: string) {
+    const broadcast = await prisma.broadcastMessage.findUnique({
+      where: { id },
+    });
+
+    if (!broadcast) {
+      throw new Error('Broadcast message not found.');
+    }
+
+    if (broadcast.status !== 'SCHEDULED') {
+      throw new Error('Only pending scheduled broadcasts can be cancelled.');
+    }
+
+    return prisma.broadcastMessage.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+      },
+      include: {
+        recipients: true,
+      },
+    });
   }
 
   /**

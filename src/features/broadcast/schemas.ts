@@ -16,6 +16,7 @@ export const SendBroadcastSchema = z.object({
   body: z.string().min(1, 'Message body cannot be empty'),
   targetFilters: BroadcastTargetFiltersSchema.optional(),
   customRecipientIds: z.array(z.string()).optional(),
+  scheduledFor: z.string().refine((val) => !isNaN(Date.parse(val)), { message: 'Invalid date format' }).optional(),
 });
 
 export const PreviewBroadcastSchema = z.object({

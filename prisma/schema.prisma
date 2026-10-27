@@ -304,10 +304,11 @@ model BroadcastMessage {
   subject         String?
   body            String
   targetFilters   Json?
-  status          String               @default("PENDING") // "PENDING", "SENDING", "SENT", "FAILED", "PARTIALLY_SENT"
+  status          String               @default("PENDING") // "PENDING", "SCHEDULED", "SENDING", "SENT", "FAILED", "PARTIALLY_SENT", "CANCELLED"
   totalRecipients Int                  @default(0)
   sentCount       Int                  @default(0)
   failedCount     Int                  @default(0)
+  scheduledFor    DateTime?
   sentAt          DateTime?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt

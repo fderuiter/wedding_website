@@ -127,8 +127,8 @@ export function useRegistry() {
   }, []);
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string | null; coverFee?: boolean }) => {
-      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee });
+    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string | null; coverFee?: boolean; email?: string | null }) => {
+      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee, email });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
@@ -297,9 +297,17 @@ export function useRegistry() {
     }
   }, [deleteItem, confirm]);
 
-  const handleContribute = useCallback(async (itemId: string, purchaserName: string, amount: number, code?: string, message?: string, coverFee?: boolean) => {
+  const handleContribute = useCallback(async (
+    itemId: string,
+    purchaserName: string,
+    amount: number,
+    code?: string,
+    message?: string,
+    coverFee?: boolean,
+    email?: string
+  ) => {
     return new Promise<void>((resolve, reject) => {
-      contribute({ itemId, purchaserName, amount, code, message, coverFee }, {
+      contribute({ itemId, purchaserName, amount, code, message, coverFee, email }, {
         onSuccess: () => {
           handleCloseModal();
           resolve();

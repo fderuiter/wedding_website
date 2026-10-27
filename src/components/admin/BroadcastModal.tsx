@@ -37,6 +37,8 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   const [body, setBody] = useState('');
   const [activeTab, setActiveTab] = useState<'compose' | 'preview'>('compose');
   const [previewResult, setPreviewResult] = useState<any>(null);
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -47,6 +49,8 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
       setBody('');
       setActiveTab('compose');
       setPreviewResult(null);
+      setIsScheduled(false);
+      setScheduledFor('');
     }
   }, [isOpen, initialChannel]);
 
@@ -97,19 +101,38 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
       addToast('Subject is required for email broadcasts.', 'error');
       return;
     }
+    if (isScheduled) {
+      if (!scheduledFor) {
+        addToast('Please select a scheduled date and time.', 'error');
+        return;
+      }
+      if (new Date(scheduledFor) <= new Date()) {
+        addToast('Scheduled time must be in the future.', 'error');
+        return;
+      }
+    }
 
     try {
+      const scheduledIso = isScheduled && scheduledFor ? new Date(scheduledFor).toISOString() : undefined;
       const result: any = await sendBroadcast({
         channel,
         subject: channel === 'EMAIL' ? subject : undefined,
         body,
         targetFilters,
+        scheduledFor: scheduledIso,
       });
 
-      addToast(
-        `Broadcast dispatched! Sent: ${result.sentCount}, Failed: ${result.failedCount}`,
-        result.failedCount === 0 ? 'success' : 'info'
-      );
+      if (result.status === 'SCHEDULED') {
+        addToast(
+          `Broadcast scheduled for ${new Date(result.scheduledFor || scheduledFor).toLocaleString()}!`,
+          'success'
+        );
+      } else {
+        addToast(
+          `Broadcast dispatched! Sent: ${result.sentCount || 0}, Failed: ${result.failedCount || 0}`,
+          (result.failedCount || 0) === 0 ? 'success' : 'info'
+        );
+      }
       onClose();
     } catch (err: any) {
       addToast(err.message || 'Failed to dispatch broadcast', 'error');
@@ -246,6 +269,36 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
                 className="w-full font-sans"
               />
             </FormGroup>
+
+            {/* Schedule for Later Option */}
+            <div className="p-3 bg-gray-50 dark:bg-zinc-800/60 rounded-md border border-gray-200 dark:border-zinc-700 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-800 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  id="broadcast-schedule-toggle"
+                  checked={isScheduled}
+                  onChange={(e) => setIsScheduled(e.target.checked)}
+                  className="rounded text-red-600 focus:ring-red-500 h-4 w-4"
+                />
+                Schedule message for future automated delivery
+              </label>
+
+              {isScheduled && (
+                <FormGroup>
+                  <Label htmlFor="broadcast-scheduled-for">Dispatch Date & Time</Label>
+                  <Input
+                    id="broadcast-scheduled-for"
+                    type="datetime-local"
+                    value={scheduledFor}
+                    onChange={(e) => setScheduledFor(e.target.value)}
+                    className="w-full"
+                  />
+                  <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+                    The background cron worker will automatically dispatch this message when the scheduled time arrives.
+                  </span>
+                </FormGroup>
+              )}
+            </div>
           </div>
         ) : (
           /* Preview Tab Content */
@@ -293,7 +346,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
             onClick={handleSend}
             disabled={sending || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
           >
-            {sending ? 'Sending Broadcast...' : `Send ${channel === 'EMAIL' ? 'Email' : 'SMS'}`}
+            {sending
+              ? (isScheduled ? 'Scheduling Broadcast...' : 'Sending Broadcast...')
+              : (isScheduled ? 'Schedule Broadcast' : `Send ${channel === 'EMAIL' ? 'Email' : 'SMS'}`)
+            }
           </Button>
         </div>
       </div>

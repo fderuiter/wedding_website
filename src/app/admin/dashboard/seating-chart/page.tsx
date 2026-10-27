@@ -251,11 +251,24 @@ export default function SeatingChartAdminPage() {
     tableId: string | null,
     seatNumber?: number | null
   ) => {
-    const previousGuests = allGuests;
-    const previousTables = tables;
-
     const targetTableId = tableId || null;
     const targetSeatNumber = targetTableId ? (seatNumber ?? null) : null;
+
+    if (targetTableId) {
+      const targetTable = tables.find((t) => t.id === targetTableId);
+      if (targetTable) {
+        const existingCount = allGuests.filter(
+          (g) => g.tableId === targetTableId && g.id !== guestId
+        ).length;
+        if (existingCount >= targetTable.capacity) {
+          alert(`Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`);
+          return;
+        }
+      }
+    }
+
+    const previousGuests = allGuests;
+    const previousTables = tables;
 
     // Optimistically update local guest state, accounting for seat swap side-effects
     const optimisticGuests = allGuests.map((g) => {
@@ -287,7 +300,13 @@ export default function SeatingChartAdminPage() {
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to assign guest seat');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (errorData.error && res.status === 400) {
+          throw new Error(errorData.error);
+        }
+        throw new Error('Failed to assign guest seat');
+      }
 
       const returnedGuest: InvitationCodeDTO = await res.json();
       if (returnedGuest && returnedGuest.id) {

@@ -20,12 +20,40 @@ export function resolveDirectionsUrl(
   if (!location) return undefined;
 
   const rawDirections = location.directions?.trim();
-  if (rawDirections) {
+
+  if (
+    rawDirections &&
+    (rawDirections.startsWith('http://') ||
+      rawDirections.startsWith('https://') ||
+      rawDirections.startsWith('//') ||
+      rawDirections.startsWith('/'))
+  ) {
     const customDirections = sanitizeUrl(rawDirections);
     if (customDirections) {
       return customDirections;
     }
+  }
 
+  const { latitude, longitude } = location;
+
+  const hasValidCoords =
+    typeof latitude === 'number' &&
+    typeof longitude === 'number' &&
+    !isNaN(latitude) &&
+    !isNaN(longitude) &&
+    isFinite(latitude) &&
+    isFinite(longitude) &&
+    !(latitude === 0 && longitude === 0) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180;
+
+  if (hasValidCoords) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+  }
+
+  if (rawDirections) {
     const lower = rawDirections.toLowerCase();
     if (
       !lower.startsWith('javascript:') &&
@@ -37,28 +65,5 @@ export function resolveDirectionsUrl(
     }
   }
 
-  const { latitude, longitude } = location;
-
-  if (
-    typeof latitude !== 'number' ||
-    typeof longitude !== 'number' ||
-    isNaN(latitude) ||
-    isNaN(longitude) ||
-    !isFinite(latitude) ||
-    !isFinite(longitude)
-  ) {
-    return undefined;
-  }
-
-  // Treat (0, 0) as unset / invalid coordinates
-  if (latitude === 0 && longitude === 0) {
-    return undefined;
-  }
-
-  // Validate geographic coordinate boundaries
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-    return undefined;
-  }
-
-  return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+  return undefined;
 }

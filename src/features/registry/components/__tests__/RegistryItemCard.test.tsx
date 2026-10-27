@@ -851,6 +851,49 @@ describe('RegistryItemCard Component', () => {
       expect(qrCode).toBeInTheDocument();
       expect(screen.getByText('Scan to Pay')).toBeInTheDocument();
     });
+
+    it('renders optional email input field and submits contributor email when provided', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
+      const submitBtn = screen.getByRole('button', { name: 'Claim Gift' });
+
+      expect(emailInput).toBeInTheDocument();
+
+      fireEvent.change(nameInput, { target: { value: 'Well Wisher' } });
+      fireEvent.change(emailInput, { target: { value: 'wellwisher@example.com' } });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Well Wisher', 100, undefined, undefined, false, 'wellwisher@example.com');
+      });
+    });
+
+    it('shows validation error when an invalid email format is entered', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
+      const submitBtn = screen.getByRole('button', { name: 'Claim Gift' });
+
+      fireEvent.change(nameInput, { target: { value: 'Well Wisher' } });
+      fireEvent.change(emailInput, { target: { value: 'invalid-email-address' } });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Invalid email address.')).toBeInTheDocument();
+      });
+      expect(mockOnContribute).not.toHaveBeenCalled();
+    });
   });
 
   describe('Fee Coverage Toggle Integration', () => {
@@ -929,7 +972,8 @@ describe('RegistryItemCard Component', () => {
           100,
           undefined,
           undefined,
-          true
+          true,
+          undefined
         );
       });
     });

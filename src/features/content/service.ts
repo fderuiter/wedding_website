@@ -1,4 +1,4 @@
-import { IContentRepository } from './types';
+import { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult } from './types';
 import { contentRepository } from './repository';
 
 export class ContentService {
@@ -82,9 +82,33 @@ export class ContentService {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async getPendingPhotos() {
+  async getPendingPhotos(options: PendingPhotosOptions = {}): Promise<PaginatedPendingPhotosResult> {
+    if (typeof this.repo.getPendingPhotos === 'function') {
+      const res = await this.repo.getPendingPhotos(options);
+      return Object.assign([...res.photos], {
+        photos: res.photos,
+        total: res.total,
+        page: res.page,
+        limit: res.limit,
+        totalPages: res.totalPages,
+      }) as any;
+    }
+
+    let page = Math.floor(Number(options?.page));
+    if (isNaN(page) || page < 1) {
+      page = 1;
+    }
+
+    let limit = Math.floor(Number(options?.limit));
+    if (isNaN(limit) || limit < 1) {
+      limit = 50;
+    }
+    if (limit > 100) {
+      limit = 100;
+    }
+
     const nodes = await this.repo.getNodesByType('Photo');
-    return nodes
+    const filtered = nodes
       .filter((node) => {
         const data = node.data as any;
         if (data?.status === 'PENDING') return true;
@@ -92,6 +116,19 @@ export class ContentService {
         return false;
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const total = filtered.length;
+    const skip = (page - 1) * limit;
+    const paginatedPhotos = filtered.slice(skip, skip + limit);
+    const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
+
+    return Object.assign([...paginatedPhotos], {
+      photos: paginatedPhotos,
+      total,
+      page,
+      limit,
+      totalPages,
+    }) as any;
   }
 
   async moderatePhoto(nodeId: string, action: 'approve' | 'reject', author: string = 'Admin') {
@@ -154,6 +191,61 @@ export class ContentService {
     } else {
       throw new Error(`Invalid moderation action: ${action}`);
     }
+  }
+
+  async moderatePhotosBatch(
+    ids: string[],
+    action: 'approve' | 'reject',
+    author: string = 'Admin'
+  ) {
+    if (!Array.isArray(ids)) {
+      throw new Error('Photo IDs must be an array');
+    }
+    if (ids.length === 0) {
+      throw new Error('At least one photo ID is required');
+    }
+    if (ids.length > 100) {
+      throw new Error('Batch request cannot exceed 100 items');
+    }
+
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const result = await this.moderatePhoto(id, action, author);
+          return {
+            id,
+            success: true,
+            action,
+            data: result,
+          };
+        } catch (err: any) {
+          return {
+            id,
+            success: false,
+            action,
+            error: err?.message || 'Failed to moderate photo',
+          };
+        }
+      })
+    );
+
+    const succeededCount = results.filter((r) => r.success).length;
+    const failedCount = results.filter((r) => !r.success).length;
+
+    return {
+      total: ids.length,
+      succeededCount,
+      failedCount,
+      results,
+    };
+  }
+
+  async batchModeratePhotos(
+    ids: string[],
+    action: 'approve' | 'reject',
+    author: string = 'Admin'
+  ) {
+    return this.moderatePhotosBatch(ids, action, author);
   }
 }
 

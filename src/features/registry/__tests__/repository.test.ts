@@ -318,6 +318,7 @@ describe('RegistryRepository', () => {
           contributors: {
             create: {
               name: contribution.name,
+              email: null,
               amount: contribution.amount,
               coverFee: false,
               feeAmount: 0,
@@ -423,6 +424,7 @@ describe('RegistryRepository', () => {
           contributors: {
             create: {
               name: contribution.name,
+              email: null,
               amount: contribution.amount,
               coverFee: false,
               feeAmount: 0,
@@ -485,6 +487,7 @@ describe('RegistryRepository', () => {
           contributors: {
             create: {
               name: 'Guest Contributor',
+              email: null,
               amount: 50,
               coverFee: false,
               feeAmount: 0,
@@ -545,6 +548,7 @@ describe('RegistryRepository', () => {
           contributors: {
             create: {
               name: 'Jane Smith',
+              email: null,
               amount: 50,
               coverFee: false,
               feeAmount: 0,
@@ -621,6 +625,7 @@ describe('RegistryRepository', () => {
           contributors: {
             create: {
               name: 'Jane Smith',
+              email: null,
               amount: 50,
               coverFee: false,
               feeAmount: 0,
@@ -663,10 +668,53 @@ describe('RegistryRepository', () => {
           contributors: {
             create: {
               name: 'Generous Guest',
+              email: null,
               amount: 100,
               coverFee: true,
               feeAmount: 2.5,
               message: null,
+              date: expect.any(Date),
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
+    });
+
+    it('should store contributor email address when email is provided', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Well Wisher', email: 'wellwisher@example.com', amount: 50, message: 'Congrats!' };
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(50);
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 50,
+          purchased: false,
+          contributors: {
+            create: {
+              name: 'Well Wisher',
+              email: 'wellwisher@example.com',
+              amount: 50,
+              coverFee: false,
+              feeAmount: 0,
+              message: 'Congrats!',
               date: expect.any(Date),
             },
           },

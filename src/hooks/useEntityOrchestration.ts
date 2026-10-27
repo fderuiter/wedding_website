@@ -117,9 +117,7 @@ export function useEntityOrchestration<T extends { id: string }>({
   });
 
   const { mutateAsync: removeBatchItems } = useMutation({
-    mutationFn: async (ids: string[]) => {
-      await Promise.all(ids.map(id => apiClient.delete(`${endpoint}/${id}`)));
-    },
+    mutationFn: async (ids: string[]) => apiClient.delete(`${endpoint}/batch`, { ids }),
     onMutate: async (ids) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);

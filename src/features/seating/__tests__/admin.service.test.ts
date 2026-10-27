@@ -168,6 +168,48 @@ describe('SeatingTableAdminService', () => {
     );
   });
 
+  it('should throw a validation error when assigning a guest to a full table', async () => {
+    mockTxSeatingTableFindUnique.mockResolvedValue({
+      id: 'table-100',
+      name: 'Table 1',
+      capacity: 2,
+      invitationCodes: [
+        { id: 'guest-1', guestName: 'Alice' },
+        { id: 'guest-2', guestName: 'Bob' },
+      ],
+    });
+
+    await expect(service.assignSeat('guest-3', 'table-100', 3, 'Coordinator')).rejects.toThrow(
+      'Validation Error: Table "Table 1" has reached its maximum capacity of 2.'
+    );
+  });
+
+  it('should allow seat re-assignment within the same table even if table is at capacity', async () => {
+    mockTxSeatingTableFindUnique.mockResolvedValue({
+      id: 'table-100',
+      name: 'Table 1',
+      capacity: 2,
+      invitationCodes: [
+        { id: 'guest-1', guestName: 'Alice', seatNumber: 1 },
+        { id: 'guest-2', guestName: 'Bob', seatNumber: 2 },
+      ],
+    });
+
+    mockTxInvitationCodeFindFirst.mockResolvedValue({
+      id: 'guest-2',
+      seatNumber: 2,
+    });
+
+    mockTxInvitationCodeUpdate
+      .mockResolvedValueOnce({ id: 'guest-2', seatNumber: null })
+      .mockResolvedValueOnce({ id: 'guest-1', tableId: 'table-100', seatNumber: 2 });
+
+    const result = await service.assignSeat('guest-1', 'table-100', 2, 'Coordinator');
+
+    expect(result.tableId).toBe('table-100');
+    expect(result.seatNumber).toBe(2);
+  });
+
   it('should unassign a guest when tableId is set to null', async () => {
     mockTxInvitationCodeUpdate.mockResolvedValue({
       id: 'guest-1',
