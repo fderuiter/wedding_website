@@ -51,8 +51,11 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `POSTGRES_URL_NON_POOLING` | No | Secret Manager | Direct connection URL for migrations when using poolers. |
 | `ADMIN_PASSWORD` | Yes | Secret Manager | `scrypt:[saltBase64]:[keyBase64]` hash. |
 | `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). |
+| `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable multi-tenant/multi-profile site routing (`false`). |
+| `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
 | `GUEST_PASSCODE` | No | Secret Manager | Guest passcode (default `wedding2026`). |
 | `HISTORY_VERSION_LIMIT` | No | Cloud Run Env Var | Retained history limit (e.g. `50`). |
+| `CRON_SECRET` | No | Secret Manager | Authorization key for background cron triggers. |
 | `S3_BUCKET` | Yes* | Secret Manager | Object storage bucket name for uploads. |
 | `S3_REGION` | Yes* | Secret Manager | Bucket region (`us-central1` or `auto`). |
 | `S3_ACCESS_KEY_ID` | Yes* | Secret Manager | HMAC / S3 API access key. |

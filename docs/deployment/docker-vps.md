@@ -42,8 +42,11 @@ Configure environment variables in a `.env` file on the VPS or pass them directl
 | `POSTGRES_URL_NON_POOLING` | No | — | Direct PostgreSQL connection string for Prisma migrations (if `DATABASE_URL` uses a pooler). |
 | `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[saltBase64]:[keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
 | `ALLOWED_HOSTS` | Yes | — | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost`). |
+| `MULTISITE_ENABLED` | No | `false` | Enable multi-tenant/multi-profile configuration and subdomain routing. |
+| `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
 | `GUEST_PASSCODE` | No | `wedding2026` | Passcode required for guest website access. |
 | `HISTORY_VERSION_LIMIT` | No | `50` | Maximum history versions to retain per content entry. |
+| `CRON_SECRET` | No | — | Secret authorization key for background cron triggers (e.g., `/api/cron/broadcasts`). |
 | `S3_BUCKET` | No | — | Bucket name for S3 / Cloudflare R2 asset storage. |
 | `S3_REGION` | No | — | Region for S3 bucket (`us-east-1` or `auto` for Cloudflare R2). |
 | `S3_ACCESS_KEY_ID` | No | — | S3/R2 API access key ID. |
@@ -55,11 +58,11 @@ Configure environment variables in a `.env` file on the VPS or pass them directl
 
 ## 3. Migration Mechanism
 
-Database migrations are executed automatically during container initialization via `docker-entrypoint.sh`:
+Database migrations can be executed during container initialization via `docker-entrypoint.sh` when `RUN_MIGRATIONS=true`:
 
 1. When the container starts, `docker-entrypoint.sh` checks for `DATABASE_URL`.
-2. It executes `npx -y prisma migrate deploy` to safely apply pending schema migrations to the target database.
-3. Once migrations complete successfully, the container executes `node server.js` to begin serving requests.
+2. If `RUN_MIGRATIONS=true`, it executes `npx -y prisma migrate deploy` to safely apply pending schema migrations to the target database. Otherwise, it skips automatic container database migrations.
+3. Once migrations complete (or are skipped), the container executes `node server.js` to begin serving requests.
 
 To run migrations manually from outside the container:
 ```bash
@@ -70,11 +73,12 @@ docker compose exec app npx prisma migrate deploy
 
 ## 4. Asset Storage
 
-*   **Local Disk Storage (Default)**: Uploaded files are written to `/app/public/uploads`. Mount a host directory or named volume to preserve files across container redeployments:
+*   **Local Disk Storage (Default)**: Uploaded files are written to `/app/public/uploads`. The production container pre-creates `/app/public/uploads` owned by `nextjs:nodejs` (UID/GID 1001). Mount a host directory or named volume to preserve files across container redeployments, ensuring write permissions are maintained for UID 1001:
     ```yaml
     volumes:
       - ./uploads:/app/public/uploads
     ```
+    If mounting a host directory, ensure appropriate host ownership/permissions (`chown -R 1001:1001 ./uploads`).
 *   **S3 / Cloudflare R2 Object Storage (Recommended for Multi-Instance)**: Provide all four S3 environment variables (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`). The application will stream uploads directly to S3/R2 and serve them via `S3_PUBLIC_URL`.
 
 ---
