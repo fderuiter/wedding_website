@@ -61,8 +61,8 @@ const VALID_WEBP_BUF = Buffer.from(
   'base64'
 );
 
-function makeRequest(overrides: { file?: Partial<File> | null; noFile?: boolean }) {
-  const { file, noFile = false } = overrides;
+function makeRequest(overrides: { file?: Partial<File> | null; files?: Partial<File>[]; noFile?: boolean }) {
+  const { file, files, noFile = false } = overrides;
 
   const defaultFile: Partial<File> & { arrayBuffer: () => Promise<ArrayBuffer> } = {
     name: 'guest-photo.png',
@@ -72,15 +72,20 @@ function makeRequest(overrides: { file?: Partial<File> | null; noFile?: boolean 
       VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
   };
 
-  const formData = new Map<string, File | null>();
+  const formDataMap = new Map<string, File[]>();
   if (!noFile) {
-    formData.set('file', (file ?? defaultFile) as File);
+    if (files) {
+      formDataMap.set('files', files as File[]);
+    } else {
+      formDataMap.set('file', [(file ?? defaultFile) as File]);
+    }
   }
 
   return {
     url: 'http://localhost/api/guest/photos/upload',
     formData: jest.fn(async () => ({
-      get: (key: string) => formData.get(key) ?? null,
+      get: (key: string) => formDataMap.get(key)?.[0] ?? null,
+      getAll: (key: string) => formDataMap.get(key) ?? [],
     })),
   } as unknown as import('next/server').NextRequest;
 }
@@ -180,6 +185,23 @@ describe('POST /api/guest/photos/upload', () => {
       expect(json.error).toBe('Image sanitization failed. The file may be corrupt or invalid.');
       expect(mockWriteFile).not.toHaveBeenCalled();
     });
+
+    it('returns 400 when batch payload exceeds 10 files limit', async () => {
+      const defaultFile = {
+        name: 'guest-photo.png',
+        size: 1024,
+        type: 'image/png',
+        arrayBuffer: async () =>
+          VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
+      };
+      const elevenFiles = Array(11).fill(defaultFile);
+      const req = makeRequest({ files: elevenFiles as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Maximum 10 photos allowed per upload');
+    });
   });
 
   describe('successful uploads', () => {
@@ -190,11 +212,12 @@ describe('POST /api/guest/photos/upload', () => {
       expect(res.status).toBe(201);
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.data.url).toMatch(/^\/uploads\//);
-      expect(json.data.id).toBe('media-123');
+      expect(Array.isArray(json.data)).toBe(true);
+      expect(json.data[0].url).toMatch(/^\/uploads\//);
+      expect(json.data[0].id).toBe('media-123');
 
-      expect(json.data.status).toBe('PENDING');
-      expect(json.data.isVisible).toBe(false);
+      expect(json.data[0].status).toBe('PENDING');
+      expect(json.data[0].isVisible).toBe(false);
 
       expect(mockWriteFile).toHaveBeenCalledTimes(1);
       const { mediaRepository } = require('@/features/media');
@@ -210,6 +233,39 @@ describe('POST /api/guest/photos/upload', () => {
         }),
         'Guest'
       );
+    });
+
+    it('successfully uploads multiple valid images in a single request (batch payload)', async () => {
+      const file1 = {
+        name: 'photo1.png',
+        size: 1024,
+        type: 'image/png',
+        arrayBuffer: async () =>
+          VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
+      };
+      const file2 = {
+        name: 'photo2.jpg',
+        size: 2048,
+        type: 'image/jpeg',
+        arrayBuffer: async () =>
+          VALID_JPEG_BUF.buffer.slice(
+            VALID_JPEG_BUF.byteOffset,
+            VALID_JPEG_BUF.byteOffset + VALID_JPEG_BUF.byteLength
+          ),
+      };
+      const req = makeRequest({ files: [file1, file2] as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(Array.isArray(json.data)).toBe(true);
+      expect(json.data).toHaveLength(2);
+      expect(json.data[0].status).toBe('PENDING');
+      expect(json.data[1].status).toBe('PENDING');
+
+      const { mediaRepository } = require('@/features/media');
+      expect(mediaRepository.createMedia).toHaveBeenCalledTimes(2);
     });
 
     it('accepts valid JPEG image', async () => {

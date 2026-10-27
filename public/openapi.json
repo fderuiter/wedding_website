@@ -6027,15 +6027,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "file": {}
-                },
-                "required": [
-                  "file"
-                ],
-                "additionalProperties": false
+                "$schema": "https://json-schema.org/draft/2020-12/schema"
               }
             }
           }
@@ -6216,15 +6208,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "file": {}
-                },
-                "required": [
-                  "file"
-                ],
-                "additionalProperties": false
+                "$schema": "https://json-schema.org/draft/2020-12/schema"
               }
             }
           }
