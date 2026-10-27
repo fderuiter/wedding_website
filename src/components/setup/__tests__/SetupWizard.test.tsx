@@ -20,6 +20,15 @@ jest.mock('@/hooks/admin/useAdminAttractions', () => ({
   }),
 }));
 
+jest.mock('@/hooks/admin/useAdminInvitationCodes', () => ({
+  useAdminInvitationCodes: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+    fetchAll: jest.fn(() => Promise.resolve([])),
+  }),
+}));
+
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -229,5 +238,88 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(savedPayload).toBeTruthy();
     expect(savedPayload.themePreset).toBe('romantic');
     expect(savedPayload.layoutContainerMaxWidth).toBe('72rem');
+  });
+
+  test('Step 4 renders guest list import controls and launches CsvImportWizardModal', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Login
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Step 2: Essentials
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    // Step 3: Sample Data Selection -> Skip to Step 4
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+
+    // Verify Step 4: Guest List Import
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+    const importBtn = screen.getByRole('button', { name: 'Import Guest List CSV' });
+    const skipBtn = screen.getByRole('button', { name: 'Skip for Now' });
+    expect(importBtn).toBeInTheDocument();
+    expect(skipBtn).toBeInTheDocument();
+
+    // Click "Import Guest List CSV" to open modal
+    fireEvent.click(importBtn);
+
+    // Modal dialog should open
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText('Import Guest Invitation Codes')).toBeInTheDocument();
+    });
+  });
+
+  test('clicking Skip for Now on Step 4 advances user to Step 5 Complete Setup without error', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Login
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Step 2: Essentials
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    // Step 3: Sample Data Selection -> Skip to Step 4
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+
+    // Step 4: Guest List Import -> Click "Skip for Now"
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for Now' }));
+
+    // Step 5: Complete Setup
+    await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
   });
 });
