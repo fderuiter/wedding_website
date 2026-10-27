@@ -339,6 +339,27 @@
         }
       }
     },
+    "/api/admin/broadcast/schedule/{id}": {
+      "delete": {
+        "summary": "DELETE /api/admin/broadcast/schedule/[id]",
+        "description": "Endpoint for /api/admin/broadcast/schedule/[id]",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/broadcast/send": {
       "post": {
         "summary": "POST /api/admin/broadcast/send",
@@ -409,6 +430,9 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "scheduledFor": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -5680,6 +5704,26 @@
       "get": {
         "summary": "GET /api/admin/versions",
         "description": "Endpoint for /api/admin/versions",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/cron/broadcasts": {
+      "get": {
+        "summary": "GET /api/cron/broadcasts",
+        "description": "Endpoint for /api/cron/broadcasts",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/cron/broadcasts",
+        "description": "Endpoint for /api/cron/broadcasts",
         "responses": {
           "200": {
             "description": "Successful response"

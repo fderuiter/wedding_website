@@ -70,6 +70,7 @@ The application requires the following environment variables. These match the ru
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website. *Required.*
   - **Security Requirement**: Must be explicitly defined in production environment settings. Never rely on default passcodes.
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
+- `CRON_SECRET`: Secret authorization token for background cron job triggers (e.g., `/api/cron/broadcasts`). *Optional (recommended).*
 - `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*
 - `S3_REGION`: The region of the S3 bucket (`us-east-1` or `auto` for Cloudflare R2). *Optional (required if other S3 variables are specified).*
 - `S3_ACCESS_KEY_ID`: S3/R2 API access key ID. *Optional (required if other S3 variables are specified).*
@@ -355,6 +356,7 @@ The application requires the following environment variables in deployment envir
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
 - `GUEST_PASSCODE`: Global passcode required for guest access (default: `wedding2026`).
 - `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
+- `CRON_SECRET`: Authorization secret for cron worker endpoints. *Optional.*
 - `S3_BUCKET`: Asset storage bucket name. *Optional.*
 - `S3_REGION`: Bucket region. *Optional.*
 - `S3_ACCESS_KEY_ID`: Bucket access key. *Optional.*
