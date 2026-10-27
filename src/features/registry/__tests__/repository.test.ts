@@ -319,6 +319,8 @@ describe('RegistryRepository', () => {
             create: {
               name: contribution.name,
               amount: contribution.amount,
+              coverFee: false,
+              feeAmount: 0,
               message: null,
               date: expect.any(Date),
             },
@@ -422,6 +424,8 @@ describe('RegistryRepository', () => {
             create: {
               name: contribution.name,
               amount: contribution.amount,
+              coverFee: false,
+              feeAmount: 0,
               message: null,
               date: expect.any(Date),
             },
@@ -482,6 +486,8 @@ describe('RegistryRepository', () => {
             create: {
               name: 'Guest Contributor',
               amount: 50,
+              coverFee: false,
+              feeAmount: 0,
               message: null,
               date: expect.any(Date),
             },
@@ -540,6 +546,8 @@ describe('RegistryRepository', () => {
             create: {
               name: 'Jane Smith',
               amount: 50,
+              coverFee: false,
+              feeAmount: 0,
               message: null,
               date: expect.any(Date),
               invitationCodeId: 'invite-good',
@@ -614,9 +622,52 @@ describe('RegistryRepository', () => {
             create: {
               name: 'Jane Smith',
               amount: 50,
+              coverFee: false,
+              feeAmount: 0,
               message: null,
               date: expect.any(Date),
               invitationCodeId: 'invite-used',
+            },
+          },
+        },
+        include: {
+          image: true,
+          contributors: true,
+        },
+      });
+    });
+
+    it('should calculate feeAmount and record coverFee=true when contributor opts in to cover processing fee', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 100 }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        }
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Generous Guest', amount: 100, coverFee: true };
+      const item = await registryRepository.contributeToItem('1', contribution);
+
+      expect(item.amountContributed).toBe(100);
+      expect(tx.registryItem.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: {
+          amountContributed: 100,
+          purchased: true,
+          contributors: {
+            create: {
+              name: 'Generous Guest',
+              amount: 100,
+              coverFee: true,
+              feeAmount: 2.5,
+              message: null,
+              date: expect.any(Date),
             },
           },
         },

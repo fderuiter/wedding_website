@@ -22,7 +22,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, name, amount, code, message } = parseResult.data;
+  const { itemId, name, amount, code, message, coverFee } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
   if (targetItem && targetItem.isSample) {
@@ -51,6 +51,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     amount,
     code: finalCode,
     message,
+    coverFee,
   });
 
   const isAdmin = await isAdminRequest(request);

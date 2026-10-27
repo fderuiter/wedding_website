@@ -6274,12 +6274,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "coverFee": {
+                    "default": false,
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "itemId",
                   "name",
-                  "amount"
+                  "amount",
+                  "coverFee"
                 ],
                 "additionalProperties": false
               }

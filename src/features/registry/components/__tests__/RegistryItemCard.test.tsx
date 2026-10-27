@@ -852,4 +852,86 @@ describe('RegistryItemCard Component', () => {
       expect(screen.getByText('Scan to Pay')).toBeInTheDocument();
     });
   });
+
+  describe('Fee Coverage Toggle Integration', () => {
+    const feeCashFundItem: RegistryItem = {
+      ...mockGroupItem,
+      id: 'cash-fund-fee-optin',
+      name: 'Honeymoon Fund',
+      price: 500,
+      itemType: 'CASH_FUND',
+      amountContributed: 0,
+    };
+
+    it('renders unchecked fee coverage checkbox for cash fund items without direct payment handle', () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={feeCashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const checkbox = screen.getByRole('checkbox', {
+        name: /Cover transaction processing fee/i,
+      });
+      expect(checkbox).toBeInTheDocument();
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it('toggling fee coverage updates total charge and net payout displays instantly', () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={feeCashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+      fireEvent.change(amountInput, { target: { value: '100' } });
+
+      const checkbox = screen.getByRole('checkbox', {
+        name: /Cover transaction processing fee/i,
+      });
+
+      // Before checking: Net payout is $97.50
+      expect(screen.getByText('$97.50')).toBeInTheDocument();
+
+      // Check fee coverage
+      fireEvent.click(checkbox);
+      expect(checkbox).toBeChecked();
+
+      // After checking: Total amount charged is $102.50, Net payout is $100.00
+      expect(screen.getByText('Covered Card Processing Fee (2.5%):')).toBeInTheDocument();
+      expect(screen.getByText('+$2.50')).toBeInTheDocument();
+      expect(screen.getByText('$102.50')).toBeInTheDocument();
+      expect(screen.getAllByText('$100.00').length).toBeGreaterThanOrEqual(2); // Base gift $100 & Net payout $100
+    });
+
+    it('submits contribution with coverFee=true when checkbox is checked', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={feeCashFundItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Generous Guest' } });
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '100' } });
+
+      const checkbox = screen.getByRole('checkbox', {
+        name: /Cover transaction processing fee/i,
+      });
+      fireEvent.click(checkbox);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith(
+          'cash-fund-fee-optin',
+          'Generous Guest',
+          100,
+          undefined,
+          undefined,
+          true
+        );
+      });
+    });
+  });
 });
