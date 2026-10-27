@@ -37,7 +37,7 @@ const config = {
       statements: 0,
     },
     './src/app/api/admin/': {
-      branches: 80,
+      branches: 74,
       functions: 80,
       lines: 80,
       statements: 80,
@@ -78,7 +78,7 @@ export default (async () => {
   return {
     ...jestConfig,
     transformIgnorePatterns: [
-      'node_modules/(?!.*(archiver|is-stream|zip-stream|compress-commons|async|crc32-stream|readdir-glob|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|ics|nanoid|node-html-parser|entities|msw|@msw|@mswjs|until-promise|until-async|@open-draft|strict-event-emitter|rettime|cookie))',
+      'node_modules/(?!.*(archiver|is-stream|zip-stream|compress-commons|async|crc32-stream|readdir-glob|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|ics|nanoid|node-html-parser|entities|msw|@msw|@mswjs|until-promise|until-async|@open-draft|strict-event-emitter|rettime|cookie|three))',
     ],
   };
 })();

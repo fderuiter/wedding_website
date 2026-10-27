@@ -611,7 +611,7 @@
                             {
                               "type": "string",
                               "format": "email",
-                              "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                              "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                             },
                             {
                               "type": "string",
@@ -620,7 +620,14 @@
                             {
                               "type": "null"
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "addressLine1": {
@@ -845,7 +852,14 @@
                                 "type": "string"
                               }
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "extraFields": {
@@ -944,7 +958,7 @@
                             {
                               "type": "string",
                               "format": "email",
-                              "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                              "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                             },
                             {
                               "type": "string",
@@ -953,7 +967,14 @@
                             {
                               "type": "null"
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "addressLine1": {
@@ -1178,7 +1199,14 @@
                                 "type": "string"
                               }
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "extraFields": {
@@ -1279,7 +1307,7 @@
                             {
                               "type": "string",
                               "format": "email",
-                              "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                              "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                             },
                             {
                               "type": "string",
@@ -1288,7 +1316,14 @@
                             {
                               "type": "null"
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "addressLine1": {
@@ -1513,7 +1548,14 @@
                                 "type": "string"
                               }
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "extraFields": {
@@ -1641,7 +1683,14 @@
                       {
                         "type": "string"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "appConfig": {
@@ -1654,8 +1703,22 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "partner1Name": {
                           "default": "",
                           "type": "string"
@@ -1665,26 +1728,25 @@
                           "type": "string"
                         },
                         "brideName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "groomName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
-                        "weddingDate": {},
+                        "weddingDate": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "baseUrl": {
                           "anyOf": [
                             {
@@ -1749,93 +1811,57 @@
                           "type": "string"
                         },
                         "brandMonogram": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "brandLogoUrl": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "brandLogoAlt": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "heroImageUrl": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "heroImageAlt": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "brandWatermarkUrl": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "brandWatermarkAlt": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "badgeGraphicUrl": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "badgeGraphicAlt": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "seoKeywords": {
@@ -1901,8 +1927,22 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "type": {
                           "type": "string",
                           "minLength": 1,
@@ -1942,20 +1982,30 @@
                           "type": "string"
                         },
                         "altText": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "isDecorative": {
                           "type": "boolean"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        }
                       },
                       "required": [
                         "id",
@@ -1974,8 +2024,22 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -2055,8 +2119,22 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -2088,29 +2166,35 @@
                         "directions": {
                           "type": "string"
                         },
-                        "latitude": {},
-                        "longitude": {},
+                        "latitude": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "longitude": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "imageId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "isVisible": {
                           "type": "boolean"
                         },
                         "promoCode": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "bookingUrl": {
@@ -2133,33 +2217,21 @@
                           ]
                         },
                         "roomRate": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "cutoffDate": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "shuttleInfo": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         }
                       },
@@ -2185,8 +2257,22 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "name": {
                           "type": "string",
                           "minLength": 1,
@@ -2234,37 +2320,15 @@
                           ]
                         },
                         "paymentHandleType": {
-                          "anyOf": [
-                            {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "paymentHandle": {
-                          "anyOf": [
-                            {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "vendorUrl": {
@@ -2293,7 +2357,14 @@
                             }
                           ]
                         },
-                        "isGroupGift": {},
+                        "isGroupGift": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "isMostWanted": {
                           "default": false,
                           "type": "boolean"
@@ -2309,13 +2380,9 @@
                           "type": "boolean"
                         },
                         "purchaserName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "amountContributed": {
@@ -2346,8 +2413,22 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
+                        "updatedAt": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -2359,7 +2440,7 @@
                                   "type": "string",
                                   "maxLength": 255,
                                   "format": "email",
-                                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                                  "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                                 },
                                 {
                                   "type": "null"
@@ -2379,7 +2460,14 @@
                           "type": "number",
                           "minimum": 0
                         },
-                        "date": {},
+                        "date": {
+                          "0": "i",
+                          "1": "g",
+                          "2": "n",
+                          "3": "o",
+                          "4": "r",
+                          "5": "e"
+                        },
                         "registryItemId": {
                           "anyOf": [
                             {
@@ -2444,7 +2532,14 @@
                             {
                               "type": "string"
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         },
                         "updatedAt": {
@@ -2452,7 +2547,14 @@
                             {
                               "type": "string"
                             },
-                            {}
+                            {
+                              "0": "i",
+                              "1": "g",
+                              "2": "n",
+                              "3": "o",
+                              "4": "r",
+                              "5": "e"
+                            }
                           ]
                         }
                       },
@@ -2780,13 +2882,9 @@
                     "minLength": 1
                   },
                   "tableId": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "seatNumber": {
@@ -2863,16 +2961,19 @@
                     "type": "string"
                   },
                   "subdomain": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
-                  "weddingDate": {},
+                  "weddingDate": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "baseUrl": {
                     "anyOf": [
                       {
@@ -2900,8 +3001,22 @@
                   "venueZip": {
                     "type": "string"
                   },
-                  "latitude": {},
-                  "longitude": {},
+                  "latitude": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
+                  "longitude": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "storyText": {
                     "type": "string"
                   },
@@ -2933,93 +3048,57 @@
                     "type": "string"
                   },
                   "brandMonogram": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandLogoUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandLogoAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "heroImageUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "heroImageAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandWatermarkUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandWatermarkAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "badgeGraphicUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "badgeGraphicAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "seoKeywords": {
@@ -3380,13 +3459,9 @@
                   },
                   "smtpHost": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpPort": {
@@ -3397,7 +3472,14 @@
                           {
                             "type": "number"
                           },
-                          {}
+                          {
+                            "0": "i",
+                            "1": "g",
+                            "2": "n",
+                            "3": "o",
+                            "4": "r",
+                            "5": "e"
+                          }
                         ]
                       },
                       {
@@ -3407,134 +3489,86 @@
                   },
                   "smtpUser": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpPass": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpSecure": {
                     "default": false,
-                    "anyOf": [
-                      {
-                        "type": "boolean"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "boolean",
+                      "null"
                     ]
                   },
                   "resendApiKey": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "resendFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "sendgridApiKey": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "sendgridFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smsProvider": {
                     "default": "none",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioAccountSid": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioAuthToken": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioFromNumber": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "broadcastBatchSize": {
@@ -3543,7 +3577,14 @@
                       {
                         "type": "number"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "broadcastBatchDelayMs": {
@@ -3552,7 +3593,14 @@
                       {
                         "type": "number"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "modules": {
@@ -3684,16 +3732,19 @@
                     "type": "string"
                   },
                   "subdomain": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
-                  "weddingDate": {},
+                  "weddingDate": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "baseUrl": {
                     "anyOf": [
                       {
@@ -3721,8 +3772,22 @@
                   "venueZip": {
                     "type": "string"
                   },
-                  "latitude": {},
-                  "longitude": {},
+                  "latitude": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
+                  "longitude": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "storyText": {
                     "type": "string"
                   },
@@ -3754,93 +3819,57 @@
                     "type": "string"
                   },
                   "brandMonogram": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandLogoUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandLogoAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "heroImageUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "heroImageAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandWatermarkUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandWatermarkAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "badgeGraphicUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "badgeGraphicAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "seoKeywords": {
@@ -4201,13 +4230,9 @@
                   },
                   "smtpHost": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpPort": {
@@ -4218,7 +4243,14 @@
                           {
                             "type": "number"
                           },
-                          {}
+                          {
+                            "0": "i",
+                            "1": "g",
+                            "2": "n",
+                            "3": "o",
+                            "4": "r",
+                            "5": "e"
+                          }
                         ]
                       },
                       {
@@ -4228,134 +4260,86 @@
                   },
                   "smtpUser": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpPass": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpSecure": {
                     "default": false,
-                    "anyOf": [
-                      {
-                        "type": "boolean"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "boolean",
+                      "null"
                     ]
                   },
                   "resendApiKey": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "resendFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "sendgridApiKey": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "sendgridFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smsProvider": {
                     "default": "none",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioAccountSid": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioAuthToken": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioFromNumber": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "broadcastBatchSize": {
@@ -4364,7 +4348,14 @@
                       {
                         "type": "number"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "broadcastBatchDelayMs": {
@@ -4373,7 +4364,14 @@
                       {
                         "type": "number"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "modules": {
@@ -4516,16 +4514,19 @@
                     "type": "string"
                   },
                   "subdomain": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
-                  "weddingDate": {},
+                  "weddingDate": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "baseUrl": {
                     "anyOf": [
                       {
@@ -4553,8 +4554,22 @@
                   "venueZip": {
                     "type": "string"
                   },
-                  "latitude": {},
-                  "longitude": {},
+                  "latitude": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
+                  "longitude": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "storyText": {
                     "type": "string"
                   },
@@ -4586,93 +4601,57 @@
                     "type": "string"
                   },
                   "brandMonogram": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandLogoUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandLogoAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "heroImageUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "heroImageAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandWatermarkUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "brandWatermarkAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "badgeGraphicUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "badgeGraphicAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "seoKeywords": {
@@ -5033,13 +5012,9 @@
                   },
                   "smtpHost": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpPort": {
@@ -5050,7 +5025,14 @@
                           {
                             "type": "number"
                           },
-                          {}
+                          {
+                            "0": "i",
+                            "1": "g",
+                            "2": "n",
+                            "3": "o",
+                            "4": "r",
+                            "5": "e"
+                          }
                         ]
                       },
                       {
@@ -5060,134 +5042,86 @@
                   },
                   "smtpUser": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpPass": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smtpSecure": {
                     "default": false,
-                    "anyOf": [
-                      {
-                        "type": "boolean"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "boolean",
+                      "null"
                     ]
                   },
                   "resendApiKey": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "resendFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "sendgridApiKey": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "sendgridFrom": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "smsProvider": {
                     "default": "none",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioAccountSid": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioAuthToken": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "twilioFromNumber": {
                     "default": "",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "broadcastBatchSize": {
@@ -5196,7 +5130,14 @@
                       {
                         "type": "number"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "broadcastBatchDelayMs": {
@@ -5205,7 +5146,14 @@
                       {
                         "type": "number"
                       },
-                      {}
+                      {
+                        "0": "i",
+                        "1": "g",
+                        "2": "n",
+                        "3": "o",
+                        "4": "r",
+                        "5": "e"
+                      }
                     ]
                   },
                   "modules": {
@@ -5486,7 +5434,14 @@
                           {
                             "type": "string"
                           },
-                          {}
+                          {
+                            "0": "i",
+                            "1": "g",
+                            "2": "n",
+                            "3": "o",
+                            "4": "r",
+                            "5": "e"
+                          }
                         ]
                       },
                       {
@@ -5572,7 +5527,14 @@
                           {
                             "type": "string"
                           },
-                          {}
+                          {
+                            "0": "i",
+                            "1": "g",
+                            "2": "n",
+                            "3": "o",
+                            "4": "r",
+                            "5": "e"
+                          }
                         ]
                       },
                       {
@@ -5755,7 +5717,7 @@
                           {
                             "type": "string",
                             "format": "email",
-                            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                           },
                           {
                             "type": "string",
@@ -5921,23 +5883,15 @@
                     ]
                   },
                   "website": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "honeypot": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   }
                 },
@@ -6148,6 +6102,12 @@
           "content": {
             "application/json": {
               "schema": {
+                "0": "i",
+                "1": "g",
+                "2": "n",
+                "3": "o",
+                "4": "r",
+                "5": "e",
                 "$schema": "https://json-schema.org/draft/2020-12/schema"
               }
             }
@@ -6198,13 +6158,9 @@
                     "format": "uri"
                   },
                   "altText": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "isDecorative": {
@@ -6289,13 +6245,9 @@
                     "format": "uri"
                   },
                   "altText": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "isDecorative": {
@@ -6329,6 +6281,12 @@
           "content": {
             "application/json": {
               "schema": {
+                "0": "i",
+                "1": "g",
+                "2": "n",
+                "3": "o",
+                "4": "r",
+                "5": "e",
                 "$schema": "https://json-schema.org/draft/2020-12/schema"
               }
             }
@@ -6381,7 +6339,7 @@
                           {
                             "type": "string",
                             "format": "email",
-                            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                           },
                           {
                             "type": "string",
@@ -6530,8 +6488,21 @@
                       }
                     ]
                   },
-                  "isGroupGift": {},
+                  "isGroupGift": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "isMostWanted": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e",
                     "default": false
                   },
                   "displayOrder": {
@@ -6579,13 +6550,9 @@
                     ]
                   },
                   "imageId": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "imageUrl": {
@@ -6608,13 +6575,9 @@
                     ]
                   },
                   "imageAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "imageDecorative": {
@@ -6632,13 +6595,9 @@
                             "type": "string"
                           },
                           "altText": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "isDecorative": {
@@ -6650,7 +6609,14 @@
                           },
                           "createdAt": {
                             "anyOf": [
-                              {},
+                              {
+                                "0": "i",
+                                "1": "g",
+                                "2": "n",
+                                "3": "o",
+                                "4": "r",
+                                "5": "e"
+                              },
                               {
                                 "type": "string"
                               }
@@ -6658,7 +6624,14 @@
                           },
                           "updatedAt": {
                             "anyOf": [
-                              {},
+                              {
+                                "0": "i",
+                                "1": "g",
+                                "2": "n",
+                                "3": "o",
+                                "4": "r",
+                                "5": "e"
+                              },
                               {
                                 "type": "string"
                               }
@@ -6802,8 +6775,21 @@
                       }
                     ]
                   },
-                  "isGroupGift": {},
+                  "isGroupGift": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e"
+                  },
                   "isMostWanted": {
+                    "0": "i",
+                    "1": "g",
+                    "2": "n",
+                    "3": "o",
+                    "4": "r",
+                    "5": "e",
                     "default": false
                   },
                   "displayOrder": {
@@ -6851,13 +6837,9 @@
                     ]
                   },
                   "imageId": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "imageUrl": {
@@ -6880,13 +6862,9 @@
                     ]
                   },
                   "imageAlt": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "imageDecorative": {
@@ -6904,13 +6882,9 @@
                             "type": "string"
                           },
                           "altText": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "isDecorative": {
@@ -6922,7 +6896,14 @@
                           },
                           "createdAt": {
                             "anyOf": [
-                              {},
+                              {
+                                "0": "i",
+                                "1": "g",
+                                "2": "n",
+                                "3": "o",
+                                "4": "r",
+                                "5": "e"
+                              },
                               {
                                 "type": "string"
                               }
@@ -6930,7 +6911,14 @@
                           },
                           "updatedAt": {
                             "anyOf": [
-                              {},
+                              {
+                                "0": "i",
+                                "1": "g",
+                                "2": "n",
+                                "3": "o",
+                                "4": "r",
+                                "5": "e"
+                              },
                               {
                                 "type": "string"
                               }
