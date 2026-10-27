@@ -6,6 +6,7 @@ import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -13,7 +14,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 /**
  * Render the admin CRUD interface and live preview for wedding-party members.
  *
- * Renders an admin page that lists wedding party members, provides create/edit/delete controls,
+ * Renders an admin page that lists wedding party members, provides create/edit/delete/reorder controls,
  * shows an inline form for drafting a member, and supplies a preview via AdminPreviewLayout.
  *
  * @returns The React element for the Wedding Party admin dashboard and preview.
@@ -30,11 +31,32 @@ export default function WeddingPartyDashboardPage() {
     fetchAll,
     create,
     update,
-    remove
+    remove,
+    reorder
   } = useAdminWeddingParty();
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});
+  const [announcement, setAnnouncement] = useState<string>('');
+
+  const handleMove = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= members.length) return;
+
+    const newMembers = Array.from(members);
+    const [movedItem] = newMembers.splice(index, 1);
+    newMembers.splice(targetIndex, 0, movedItem);
+
+    const orderedIds = newMembers.map((m) => m.id);
+    try {
+      await reorder(orderedIds);
+      setAnnouncement(
+        `Moved ${movedItem.name || 'member'} ${direction} to position ${targetIndex + 1} of ${members.length}`
+      );
+    } catch (e: any) {
+      // Error handled by entity orchestration / toast
+    }
+  };
 
 
   const handleSave = async () => {
@@ -169,8 +191,12 @@ export default function WeddingPartyDashboardPage() {
           </div>
         )}
 
+        <div aria-live="polite" className="sr-only" role="status">
+          {announcement}
+        </div>
+
         <div className="grid gap-4 pb-10" ref={containerRef}>
-          {members.map(member => (
+          {members.map((member, index) => (
             <div key={member.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
               <div className="flex items-center gap-4">
                 {member.photo && <img src={(member.photo as any)?.url || '/images/placeholder.png'} alt={(member.photo as any)?.isDecorative ? '' : ((member.photo as any)?.altText || member.name)} className="w-16 h-16 rounded-full object-cover" />}
@@ -189,7 +215,25 @@ export default function WeddingPartyDashboardPage() {
                   </div>
                 </div>
               </div>
-              <div className="space-x-2 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Move ${member.name || 'member'} up`}
+                  disabled={index === 0 || member.id.startsWith('temp-')}
+                  onClick={() => handleMove(index, 'up')}
+                >
+                  <Icon name="ArrowUp" className="h-4 w-4 mr-1 sm:inline" /> Move Up
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Move ${member.name || 'member'} down`}
+                  disabled={index === members.length - 1 || member.id.startsWith('temp-')}
+                  onClick={() => handleMove(index, 'down')}
+                >
+                  <Icon name="ArrowDown" className="h-4 w-4 mr-1 sm:inline" /> Move Down
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
