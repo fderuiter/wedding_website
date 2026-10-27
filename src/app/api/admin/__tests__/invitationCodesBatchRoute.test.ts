@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { POST } from '../invitation-codes/batch/route';
+import { POST, DELETE } from '../invitation-codes/batch/route';
 import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
@@ -24,6 +24,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     mockIsAdminRequest.mockResolvedValue(true);
     mockServiceInstance = {
       importBatch: jest.fn(),
+      batchDelete: jest.fn(),
     };
     MockInvitationCodeAdminService.mockImplementation(() => mockServiceInstance);
   });
@@ -114,5 +115,71 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('Duplicate invitation code found: ALICE100');
+  });
+});
+
+describe('DELETE /api/admin/invitation-codes/batch', () => {
+  let mockServiceInstance: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockServiceInstance = {
+      batchDelete: jest.fn(),
+    };
+    MockInvitationCodeAdminService.mockImplementation(() => mockServiceInstance);
+  });
+
+  test('returns 401 if request is unauthorized', async () => {
+    mockIsAdminRequest.mockResolvedValue(false);
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids: ['id-1', 'id-2'] }),
+    });
+
+    const res = await DELETE(req);
+    expect(res.status).toBe(401);
+  });
+
+  test('returns 400 for invalid body schema when ids is empty or missing', async () => {
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids: [] }),
+    });
+
+    const res = await DELETE(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('At least one invitation code ID is required');
+  });
+
+  test('returns 400 for malformed JSON body', async () => {
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'DELETE',
+      body: 'invalid-json',
+    });
+
+    const res = await DELETE(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid JSON payload.');
+  });
+
+  test('successfully executes batch deletion and returns 200 with count', async () => {
+    const mockResult = { success: true, count: 2 };
+    mockServiceInstance.batchDelete.mockResolvedValue(mockResult);
+
+    const payload = { ids: ['id-1', 'id-2'] };
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'DELETE',
+      body: JSON.stringify(payload),
+    });
+
+    const res = await DELETE(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual(mockResult);
+    expect(mockServiceInstance.batchDelete).toHaveBeenCalledWith(['id-1', 'id-2'], 'Admin');
   });
 });

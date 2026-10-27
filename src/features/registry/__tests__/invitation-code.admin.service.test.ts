@@ -13,6 +13,24 @@ describe('InvitationCodeAdminService', () => {
         createMany: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      contributor: {
+        updateMany: jest.fn(),
+      },
+      subEventAccess: {
+        deleteMany: jest.fn(),
+      },
+      subEventRsvp: {
+        deleteMany: jest.fn(),
+      },
+      broadcastRecipient: {
+        updateMany: jest.fn(),
+      },
+      snapshotVersion: {
+        create: jest.fn().mockResolvedValue({ id: 'snap-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
     service = new InvitationCodeAdminService();
@@ -399,6 +417,53 @@ describe('InvitationCodeAdminService', () => {
       expect(result.rows[0].existingGuestName).toBe('John Doe');
       expect(result.rows[0].actionOutcome).toBe('update');
       expect(result.rows[0].warnings[0]).toContain('already exists in database for guest "John Doe". Will be updated.');
+    });
+  });
+
+  describe('batchDelete', () => {
+    it('deletes batch of invitation code IDs and logs audit snapshot', async () => {
+      mockPrismaClient.invitationCode.deleteMany.mockResolvedValue({ count: 2 });
+
+      const result = await service.batchDelete(['code-1', 'code-2'], 'Admin');
+
+      expect(result).toEqual({ success: true, count: 2 });
+      expect(mockPrismaClient.contributor.updateMany).toHaveBeenCalledWith({
+        where: { invitationCodeId: { in: ['code-1', 'code-2'] } },
+        data: { invitationCodeId: null },
+      });
+      expect(mockPrismaClient.subEventAccess.deleteMany).toHaveBeenCalledWith({
+        where: { invitationCodeId: { in: ['code-1', 'code-2'] } },
+      });
+      expect(mockPrismaClient.subEventRsvp.deleteMany).toHaveBeenCalledWith({
+        where: { invitationCodeId: { in: ['code-1', 'code-2'] } },
+      });
+      expect(mockPrismaClient.broadcastRecipient.updateMany).toHaveBeenCalledWith({
+        where: { invitationCodeId: { in: ['code-1', 'code-2'] } },
+        data: { invitationCodeId: null },
+      });
+      expect(mockPrismaClient.invitationCode.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['code-1', 'code-2'] } },
+      });
+      expect(mockPrismaClient.snapshotVersion.create).toHaveBeenCalledWith({
+        data: {
+          entityType: 'InvitationCode',
+          entityId: 'batch_delete',
+          data: { count: 2, ids: ['code-1', 'code-2'] },
+          author: 'Admin',
+        },
+      });
+    });
+
+    it('throws validation error if IDs array is empty', async () => {
+      await expect(service.batchDelete([], 'Admin')).rejects.toThrow(
+        'Validation Error: IDs array cannot be empty.'
+      );
+    });
+
+    it('throws validation error if an ID in array is invalid', async () => {
+      await expect(service.batchDelete(['valid-id', ''], 'Admin')).rejects.toThrow(
+        'Validation Error: Invalid ID in array.'
+      );
     });
   });
 });

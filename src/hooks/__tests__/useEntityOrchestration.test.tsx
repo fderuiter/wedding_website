@@ -34,7 +34,12 @@ describe('useEntityOrchestration', () => {
     ];
     let items = [...initialData];
     mockApiClient.get.mockImplementation(async () => items);
-    mockApiClient.delete.mockImplementation(async (url) => {
+    mockApiClient.delete.mockImplementation(async (url, data) => {
+      if (url.endsWith('/batch') && data?.ids) {
+        const idSet = new Set(data.ids);
+        items = items.filter((i) => !idSet.has(i.id));
+        return { success: true };
+      }
       const id = url.split('/').pop();
       items = items.filter((i) => i.id !== id);
       return { success: true };
@@ -79,8 +84,7 @@ describe('useEntityOrchestration', () => {
       await result.current.removeBatch(['1', '3']);
     });
 
-    expect(mockApiClient.delete).toHaveBeenCalledWith('/api/test/1');
-    expect(mockApiClient.delete).toHaveBeenCalledWith('/api/test/3');
+    expect(mockApiClient.delete).toHaveBeenCalledWith('/api/test/batch', { ids: ['1', '3'] });
 
     await waitFor(() => {
       expect(result.current.data).toEqual([
