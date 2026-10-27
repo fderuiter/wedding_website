@@ -61,11 +61,28 @@ export const BatchUpdateThankYouNotesSchema = z.object({
 
 export const ContributionSchema = z.object({
   itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
-  name: z.string({ message: 'Name is required and must be under 100 characters.' }).trim().min(1, 'Name is required and must be under 100 characters.').max(100, 'Name is required and must be under 100 characters.'),
+  name: z.string().trim().optional(),
+  purchaserName: z.string().trim().optional(),
+  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   code: z.string().trim().optional(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
-}, { message: 'Invalid request body.' });
+}, { message: 'Invalid request body.' }).superRefine((data, ctx) => {
+  const resolvedName = data.name || data.purchaserName;
+  if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Name is required and must be under 100 characters.',
+      path: ['name'],
+    });
+  }
+}).transform((data) => {
+  const resolvedName = (data.name || data.purchaserName || '').trim();
+  return {
+    ...data,
+    name: resolvedName,
+  };
+});
 
 export const ItemTypeEnum = z.enum(['PHYSICAL', 'CASH_FUND', 'EXPERIENCE_FUND']);
 export type ItemType = z.infer<typeof ItemTypeEnum>;
@@ -181,6 +198,12 @@ const BatchImportInvitationCodeItemSchema = z.object({
   ]).optional().default([]),
   extraFields: z.record(z.string(), z.any()).optional().nullable(),
 });
+
+export const BatchDeleteInvitationCodesSchema = z.object({
+  ids: z.array(z.string().min(1, 'ID cannot be empty.')).min(1, 'At least one invitation code ID is required.'),
+});
+
+export type BatchDeleteInvitationCodesDTO = z.infer<typeof BatchDeleteInvitationCodesSchema>;
 
 export const BatchImportInvitationCodesSchema = z.object({
   records: z.array(BatchImportInvitationCodeItemSchema).min(1, 'At least one record is required for batch import.'),

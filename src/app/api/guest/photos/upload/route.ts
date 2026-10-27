@@ -16,52 +16,66 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const formData = await req.formData();
-  const fileData = formData.get('file');
+  let rawFiles: any[] = [];
+  if (typeof formData.getAll === 'function') {
+    const filesList = formData.getAll('files');
+    const singleFileList = formData.getAll('file');
+    rawFiles = [...filesList, ...singleFileList].filter(Boolean);
+  } else if (typeof formData.get === 'function') {
+    const f = formData.get('files') ?? formData.get('file');
+    if (f) rawFiles = [f];
+  }
 
-  const parsed = GuestPhotoUploadSchema.safeParse({ file: fileData });
+  const parsed = GuestPhotoUploadSchema.safeParse({ files: rawFiles });
   if (!parsed.success) {
     const errorMessage = parsed.error.issues[0]?.message || 'Validation failed';
     throw new ApiError(400, errorMessage);
   }
 
-  const file = parsed.data.file as File;
-  const sanitizedFile = await sanitizeImage(file);
+  const files = parsed.data.files as File[];
+  const uploadedPhotos = [];
 
-  const storageResult = await getStorageProvider().upload(sanitizedFile, { folder: 'uploads/photos' });
+  for (const file of files) {
+    const sanitizedFile = await sanitizeImage(file);
 
-  // Record in Media table
-  const media = await mediaRepository.createMedia({
-    url: storageResult.url,
-    altText: file.name || 'Guest Photo',
-    isDecorative: false,
-  }, 'Guest');
+    const storageResult = await getStorageProvider().upload(sanitizedFile, { folder: 'uploads/photos' });
 
-  // Record as ContentNode of type 'Photo' for public gallery feeds
-  const photoNode = await contentRepository.createNode({
-    type: 'Photo',
-    tags: ['gallery', 'guest-upload'],
-    data: {
+    // Record in Media table
+    const media = await mediaRepository.createMedia({
       url: storageResult.url,
-      isVisible: false,
+      altText: file.name || 'Guest Photo',
+      isDecorative: false,
+    }, 'Guest');
+
+    // Record as ContentNode of type 'Photo' for public gallery feeds
+    const photoNode = await contentRepository.createNode({
+      type: 'Photo',
+      tags: ['gallery', 'guest-upload'],
+      data: {
+        url: storageResult.url,
+        isVisible: false,
+        status: 'PENDING',
+        title: file.name || 'Guest Photo',
+        mediaId: media.id,
+      },
+    }, 'Guest');
+
+    uploadedPhotos.push({
+      id: media.id,
+      url: storageResult.url,
+      altText: media.altText,
+      createdAt: media.createdAt,
+      nodeId: photoNode.id,
       status: 'PENDING',
-      title: file.name || 'Guest Photo',
-      mediaId: media.id,
-    },
-  }, 'Guest');
+      isVisible: false,
+      message: 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
+    });
+  }
 
   return NextResponse.json(
     {
       success: true,
-      data: {
-        id: media.id,
-        url: storageResult.url,
-        altText: media.altText,
-        createdAt: media.createdAt,
-        nodeId: photoNode.id,
-        status: 'PENDING',
-        isVisible: false,
-        message: 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
-      },
+      data: uploadedPhotos,
     },
     { status: 201 }
   );

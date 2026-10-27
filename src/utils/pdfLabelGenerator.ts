@@ -194,107 +194,158 @@ function formatAddressLines(data: AddressContributorInput): string[] {
   return lines;
 }
 
-export function generatePdfLabelSheet(
+export type ChunkFetcher = (cursor?: string) => Promise<{ items: AddressContributorInput[]; nextCursor?: string | null }>;
+
+export function generatePdfLabelSheetStream(
+  fetcher: ChunkFetcher | AddressContributorInput[],
+  template: LabelTemplate = 'avery_5160',
+  themeOptions?: LabelThemeOptions
+): ReadableStream<Uint8Array> {
+  const config = LABEL_TEMPLATES[template] || LABEL_TEMPLATES.avery_5160;
+
+  const headingFontInput =
+    themeOptions?.fontHeading ||
+    themeOptions?.themeTokens?.['--font-heading'];
+
+  const bodyFontInput =
+    themeOptions?.fontBody ||
+    themeOptions?.fontFamily ||
+    themeOptions?.themeTokens?.['--font-body'];
+
+  const resolvedBodyFont = resolvePdfFont(bodyFontInput);
+  const resolvedHeadingFont = resolvePdfFont(headingFontInput || bodyFontInput);
+
+  const textColorInput =
+    themeOptions?.textColor ||
+    themeOptions?.themeTokens?.['--print-text'];
+
+  const primaryColorInput =
+    themeOptions?.primaryColor ||
+    themeOptions?.themeTokens?.['--heading-color'] ||
+    themeOptions?.themeTokens?.['--btn-primary-bg'];
+
+  const resolvedTextColor = resolvePdfColor(textColorInput, '#111827');
+  const resolvedPrimaryColor = resolvePdfColor(primaryColorInput, resolvedTextColor);
+
+  const chunkFetcher: ChunkFetcher = typeof fetcher === 'function'
+    ? fetcher
+    : async (cursor) => {
+      if (cursor) return { items: [], nextCursor: null };
+      return { items: fetcher, nextCursor: null };
+    };
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const doc = new PDFDocument({
+        autoFirstPage: false,
+        size: 'letter',
+        margin: 0,
+      });
+
+      doc.on('data', (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk));
+      });
+      doc.on('end', () => {
+        controller.close();
+      });
+      doc.on('error', (err: Error) => {
+        controller.error(err);
+      });
+
+      try {
+        let cursor: string | undefined = undefined;
+        let labelOnPageCount = 0;
+        let totalItemsProcessed = 0;
+
+        while (true) {
+          const { items, nextCursor } = await chunkFetcher(cursor);
+          if (!items || items.length === 0) {
+            break;
+          }
+
+          for (const contributor of items) {
+            totalItemsProcessed++;
+
+            if (labelOnPageCount === 0) {
+              doc.addPage();
+            }
+
+            const row = Math.floor(labelOnPageCount / config.columns);
+            const col = labelOnPageCount % config.columns;
+
+            const x = config.marginLeft + col * (config.labelWidth + config.columnGap);
+            const y = config.marginTop + row * (config.labelHeight + config.rowGap);
+
+            const innerX = x + config.padding;
+            const innerY = y + config.padding;
+            const innerWidth = config.labelWidth - config.padding * 2;
+            const innerHeight = config.labelHeight - config.padding * 2;
+
+            const lines = formatAddressLines(contributor);
+
+            const lineHeight = config.fontSize + config.lineGap;
+            const totalTextHeight = lines.length * lineHeight;
+            const startY = Math.max(innerY, innerY + (innerHeight - totalTextHeight) / 2);
+
+            lines.forEach((line, lineIdx) => {
+              const lineY = startY + lineIdx * lineHeight;
+              const isNameLine = lineIdx === 0;
+              const fontToUse = isNameLine ? resolvedHeadingFont : resolvedBodyFont;
+              const colorToUse = isNameLine ? resolvedPrimaryColor : resolvedTextColor;
+
+              doc
+                .font(fontToUse)
+                .fontSize(config.fontSize)
+                .fillColor(colorToUse)
+                .text(line, innerX, lineY, {
+                  width: innerWidth,
+                  height: lineHeight,
+                  align: 'left',
+                  lineBreak: false,
+                });
+            });
+
+            labelOnPageCount++;
+            if (labelOnPageCount >= config.labelsPerPage) {
+              labelOnPageCount = 0;
+            }
+          }
+
+          if (!nextCursor || nextCursor === cursor) {
+            break;
+          }
+          cursor = nextCursor;
+        }
+
+        if (totalItemsProcessed === 0) {
+          doc.addPage();
+          doc
+            .font(resolvedBodyFont)
+            .fontSize(10)
+            .fillColor(resolvedTextColor)
+            .text('No contributor records found for label export.', config.marginLeft, config.marginTop);
+        }
+
+        doc.end();
+      } catch (err) {
+        controller.error(err instanceof Error ? err : new Error(String(err)));
+      }
+    },
+  });
+}
+
+export async function generatePdfLabelSheet(
   contributors: AddressContributorInput[],
   template: LabelTemplate = 'avery_5160',
   themeOptions?: LabelThemeOptions
 ): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const config = LABEL_TEMPLATES[template] || LABEL_TEMPLATES.avery_5160;
-
-    const headingFontInput =
-      themeOptions?.fontHeading ||
-      themeOptions?.themeTokens?.['--font-heading'];
-
-    const bodyFontInput =
-      themeOptions?.fontBody ||
-      themeOptions?.fontFamily ||
-      themeOptions?.themeTokens?.['--font-body'];
-
-    const resolvedBodyFont = resolvePdfFont(bodyFontInput);
-    const resolvedHeadingFont = resolvePdfFont(headingFontInput || bodyFontInput);
-
-    const textColorInput =
-      themeOptions?.textColor ||
-      themeOptions?.themeTokens?.['--print-text'];
-
-    const primaryColorInput =
-      themeOptions?.primaryColor ||
-      themeOptions?.themeTokens?.['--heading-color'] ||
-      themeOptions?.themeTokens?.['--btn-primary-bg'];
-
-    const resolvedTextColor = resolvePdfColor(textColorInput, '#111827');
-    const resolvedPrimaryColor = resolvePdfColor(primaryColorInput, resolvedTextColor);
-
-    const doc = new PDFDocument({
-      autoFirstPage: false,
-      size: 'letter',
-      margin: 0,
-    });
-
-    const buffers: Buffer[] = [];
-    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(buffers)));
-    doc.on('error', (err: Error) => reject(err));
-
-    if (contributors.length === 0) {
-      doc.addPage();
-      doc
-        .font(resolvedBodyFont)
-        .fontSize(10)
-        .fillColor(resolvedTextColor)
-        .text('No contributor records found for label export.', config.marginLeft, config.marginTop);
-      doc.end();
-      return;
-    }
-
-    let itemIndex = 0;
-    while (itemIndex < contributors.length) {
-      doc.addPage();
-
-      for (let row = 0; row < config.rows; row++) {
-        for (let col = 0; col < config.columns; col++) {
-          if (itemIndex >= contributors.length) break;
-
-          const contributor = contributors[itemIndex];
-          itemIndex++;
-
-          const x = config.marginLeft + col * (config.labelWidth + config.columnGap);
-          const y = config.marginTop + row * (config.labelHeight + config.rowGap);
-
-          const innerX = x + config.padding;
-          const innerY = y + config.padding;
-          const innerWidth = config.labelWidth - config.padding * 2;
-          const innerHeight = config.labelHeight - config.padding * 2;
-
-          const lines = formatAddressLines(contributor);
-
-          const lineHeight = config.fontSize + config.lineGap;
-          const totalTextHeight = lines.length * lineHeight;
-          const startY = Math.max(innerY, innerY + (innerHeight - totalTextHeight) / 2);
-
-          lines.forEach((line, lineIdx) => {
-            const lineY = startY + lineIdx * lineHeight;
-            const isNameLine = lineIdx === 0;
-            const fontToUse = isNameLine ? resolvedHeadingFont : resolvedBodyFont;
-            const colorToUse = isNameLine ? resolvedPrimaryColor : resolvedTextColor;
-
-            doc
-              .font(fontToUse)
-              .fontSize(config.fontSize)
-              .fillColor(colorToUse)
-              .text(line, innerX, lineY, {
-                width: innerWidth,
-                height: lineHeight,
-                align: 'left',
-                lineBreak: false,
-              });
-          });
-        }
-        if (itemIndex >= contributors.length) break;
-      }
-    }
-
-    doc.end();
-  });
+  const stream = generatePdfLabelSheetStream(contributors, template, themeOptions);
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }

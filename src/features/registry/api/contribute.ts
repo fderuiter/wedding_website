@@ -22,7 +22,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, name, amount, code, message } = parseResult.data;
+  const { itemId, name, email, amount, code, message } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
   if (targetItem && targetItem.isSample) {
@@ -43,11 +43,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  if (!finalCode && process.env.NODE_ENV !== 'test') {
-    throw new ApiError(400, 'A valid invitation code is required.');
-  }
   const updatedItem = await registryService.contributeToItem(itemId, {
     name,
+    email,
     amount,
     code: finalCode,
     message,

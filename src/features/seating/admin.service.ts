@@ -92,6 +92,16 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           throw new Error('Validation Error: Table not found.');
         }
 
+        // Check table capacity, excluding the target guest if already assigned to this table
+        const existingOccupants = (table.invitationCodes || []).filter(
+          (ic: { id: string }) => ic.id !== invitationCodeId
+        );
+        if (existingOccupants.length >= table.capacity) {
+          throw new Error(
+            `Validation Error: Table "${table.name}" has reached its maximum capacity of ${table.capacity}.`
+          );
+        }
+
         // If seatNumber is specified, check if that seat is already taken by another guest
         if (seatNumber) {
           const occupant = await client.invitationCode.findFirst({

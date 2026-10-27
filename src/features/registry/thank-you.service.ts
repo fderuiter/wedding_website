@@ -4,8 +4,8 @@ import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ContributorSchema } from './schemas';
 import { ApiError } from '@/utils/ApiError';
-import { generateCsvContent } from '@/utils/csv';
-import { generatePdfLabelSheet, LabelTemplate, LabelThemeOptions } from '@/utils/pdfLabelGenerator';
+import { escapeCsvCell } from '@/utils/csv';
+import { generatePdfLabelSheetStream, LabelTemplate, LabelThemeOptions, AddressContributorInput } from '@/utils/pdfLabelGenerator';
 
 export interface ThankYouNotesFilterOptions {
   status?: string;
@@ -33,17 +33,8 @@ export interface PaginationMeta {
 export class ThankYouService {
   constructor(private client: any = prisma) {}
 
-  /**
-   * Retrieves contributor thank-you records with pagination, status/search filters pushed down to DB,
-   * and summary progress metrics computed via database aggregations.
-   */
-  async getThankYouNotes(options: ThankYouNotesFilterOptions = {}) {
+  private buildWhereClause(options: ThankYouNotesFilterOptions = {}): any {
     const { status, search } = options;
-    const page = Math.max(1, options.page ? Number(options.page) : 1);
-    const pageSize = Math.max(1, options.pageSize ? Number(options.pageSize) : 50);
-    const skip = (page - 1) * pageSize;
-    const take = pageSize;
-
     const where: any = {};
 
     if (status && status.trim() && status.toLowerCase() !== 'all') {
@@ -69,6 +60,21 @@ export class ThankYouService {
         { registryItem: { name: { contains: query, mode: 'insensitive' } } },
       ];
     }
+
+    return where;
+  }
+
+  /**
+   * Retrieves contributor thank-you records with pagination, status/search filters pushed down to DB,
+   * and summary progress metrics computed via database aggregations.
+   */
+  async getThankYouNotes(options: ThankYouNotesFilterOptions = {}) {
+    const page = Math.max(1, options.page ? Number(options.page) : 1);
+    const pageSize = Math.max(1, options.pageSize ? Number(options.pageSize) : 50);
+    const skip = (page - 1) * pageSize;
+    const take = pageSize;
+
+    const where = this.buildWhereClause(options);
 
     // Compute status progress aggregations, total matching filtered items, and paginated records concurrently
     const [statusGroups, totalFilteredCount, rawContributors] = await Promise.all([
@@ -321,83 +327,185 @@ export class ThankYouService {
   }
 
   /**
-   * Exports thank-you note records matching filter criteria as an RFC 4180 CSV string.
+   * Exports thank-you note records matching filter criteria as an RFC 4180 CSV Web ReadableStream.
    */
-  async exportThankYouNotesCsv(options: ThankYouNotesFilterOptions = {}): Promise<string> {
-    const { items } = await this.getThankYouNotes({
-      ...options,
-      page: options.page || 1,
-      pageSize: options.pageSize || 1000000,
+  exportThankYouNotesCsv(options: ThankYouNotesFilterOptions = {}): ReadableStream<Uint8Array> {
+    const where = this.buildWhereClause(options);
+    const client = this.client;
+    const batchSize = 1000;
+    const encoder = new TextEncoder();
+
+    return new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          const headers = [
+            'Contributor Name',
+            'Email',
+            'Guest Message',
+            'Gift Item',
+            'Category',
+            'Contribution Amount',
+            'Contribution Date',
+            'Thank-You Status',
+            'Sent Date',
+            'Note Draft',
+          ];
+          const headerRow = headers.map(escapeCsvCell).join(',') + '\n';
+          controller.enqueue(encoder.encode(headerRow));
+
+          let cursor: string | undefined = undefined;
+
+          while (true) {
+            const records: any[] = await client.contributor.findMany({
+              where,
+              take: batchSize,
+              orderBy: { id: 'asc' },
+              ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                message: true,
+                amount: true,
+                date: true,
+                thankYouStatus: true,
+                thankYouSentAt: true,
+                thankYouNote: true,
+                registryItem: {
+                  select: {
+                    name: true,
+                    category: true,
+                  },
+                },
+              },
+            });
+
+            if (!records || records.length === 0) {
+              break;
+            }
+
+            let chunkCsv = '';
+            for (const item of records) {
+              const formattedDate = item.date
+                ? (item.date instanceof Date ? item.date.toISOString() : String(item.date))
+                : '';
+              const formattedSentAt = item.thankYouSentAt
+                ? (item.thankYouSentAt instanceof Date ? item.thankYouSentAt.toISOString() : String(item.thankYouSentAt))
+                : '';
+
+              const row = [
+                escapeCsvCell(item.name || ''),
+                escapeCsvCell(item.email || ''),
+                escapeCsvCell(item.message || ''),
+                escapeCsvCell(item.registryItem?.name || 'General Registry'),
+                escapeCsvCell(item.registryItem?.category || ''),
+                escapeCsvCell(item.amount !== undefined && item.amount !== null ? item.amount : ''),
+                escapeCsvCell(formattedDate),
+                escapeCsvCell(item.thankYouStatus || 'Unsent'),
+                escapeCsvCell(formattedSentAt),
+                escapeCsvCell(item.thankYouNote || ''),
+              ].join(',') + '\n';
+
+              chunkCsv += row;
+            }
+
+            controller.enqueue(encoder.encode(chunkCsv));
+
+            if (records.length < batchSize) {
+              break;
+            }
+
+            const lastId = records[records.length - 1]?.id;
+            if (!lastId || lastId === cursor) {
+              break;
+            }
+            cursor = lastId;
+          }
+
+          controller.close();
+        } catch (err) {
+          controller.error(err instanceof Error ? err : new Error(String(err)));
+        }
+      },
     });
-
-    const headers = [
-      'Contributor Name',
-      'Email',
-      'Guest Message',
-      'Gift Item',
-      'Category',
-      'Contribution Amount',
-      'Contribution Date',
-      'Thank-You Status',
-      'Sent Date',
-      'Note Draft',
-    ];
-
-    const records = items.map((item: any) => ({
-      'Contributor Name': item.name || '',
-      'Email': item.email || '',
-      'Guest Message': item.message || '',
-      'Gift Item': item.registryItem?.name || 'General Registry',
-      'Category': item.registryItem?.category || '',
-      'Contribution Amount': item.amount !== undefined && item.amount !== null ? item.amount : '',
-      'Contribution Date': item.date ? item.date : '',
-      'Thank-You Status': item.thankYouStatus || 'Unsent',
-      'Sent Date': item.thankYouSentAt || '',
-      'Note Draft': item.thankYouNote || '',
-    }));
-
-    return generateCsvContent(records, headers);
   }
 
   /**
-   * Exports thank-you note contributor addresses matching filter criteria as a printable Avery PDF label sheet.
+   * Exports thank-you note contributor addresses matching filter criteria as a printable Avery PDF label sheet Web ReadableStream.
    */
-  async exportThankYouNotesPdf(
+  exportThankYouNotesPdf(
     options: ThankYouNotesFilterOptions & { template?: LabelTemplate; themeOptions?: LabelThemeOptions } = {}
-  ): Promise<Buffer> {
-    const { items } = await this.getThankYouNotes({
-      ...options,
-      page: options.page || 1,
-      pageSize: options.pageSize || 1000000,
-    });
+  ): ReadableStream<Uint8Array> {
+    const where = this.buildWhereClause(options);
+    const client = this.client;
+    const batchSize = 1000;
+    const template = options.template || 'avery_5160';
+    let resolvedThemeOptions: LabelThemeOptions | undefined = options.themeOptions;
 
-    let resolvedThemeOptions: LabelThemeOptions = options.themeOptions || {};
+    const chunkFetcher = async (cursor?: string) => {
+      const records: (AddressContributorInput & { id: string })[] = await client.contributor.findMany({
+        where,
+        take: batchSize,
+        orderBy: { id: 'asc' },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          name: true,
+          invitationCode: {
+            select: {
+              guestName: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              state: true,
+              zipCode: true,
+              country: true,
+            },
+          },
+        },
+      });
 
-    if (!options.themeOptions) {
-      try {
-        const appConfig = await getAppConfig();
-        resolvedThemeOptions = {
-          fontHeading: appConfig.themeTokens?.['--font-heading'],
-          fontBody: appConfig.themeTokens?.['--font-body'],
-          textColor: appConfig.themeTokens?.['--print-text'],
-          primaryColor: appConfig.colorPrimary || appConfig.themeTokens?.['--heading-color'],
-          themeTokens: appConfig.themeTokens,
-        };
-      } catch {
-        resolvedThemeOptions = {};
-      }
+      const nextCursor = records.length > 0 ? records[records.length - 1].id : null;
+      return { items: records, nextCursor };
+    };
+
+    if (!resolvedThemeOptions) {
+      return new ReadableStream<Uint8Array>({
+        async start(controller) {
+          try {
+            const appConfig = await getAppConfig();
+            resolvedThemeOptions = {
+              fontHeading: appConfig.themeTokens?.['--font-heading'],
+              fontBody: appConfig.themeTokens?.['--font-body'],
+              textColor: appConfig.themeTokens?.['--print-text'],
+              primaryColor: appConfig.colorPrimary || appConfig.themeTokens?.['--heading-color'],
+              themeTokens: appConfig.themeTokens,
+            };
+          } catch {
+            resolvedThemeOptions = {};
+          }
+
+          const pdfStream = generatePdfLabelSheetStream(chunkFetcher, template, resolvedThemeOptions);
+          const reader = pdfStream.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) controller.enqueue(value);
+          }
+          controller.close();
+        },
+      });
     }
 
-    const template = options.template || 'avery_5160';
-    return generatePdfLabelSheet(items, template, resolvedThemeOptions);
+    return generatePdfLabelSheetStream(chunkFetcher, template, resolvedThemeOptions);
   }
 
   /**
    * Alias for exportThankYouNotesPdf for backwards compatibility / alternate interface naming.
    */
-  async exportThankYouNotesLabels(
+  exportThankYouNotesLabels(
     options: ThankYouNotesFilterOptions & { template?: LabelTemplate; themeOptions?: LabelThemeOptions } = {}
-  ): Promise<Buffer> {
+  ): ReadableStream<Uint8Array> {
     return this.exportThankYouNotesPdf(options);
   }
 }

@@ -47,6 +47,36 @@ describe('GuestPhotoUploadSchema', () => {
     expect(GuestPhotoUploadSchema.safeParse({ file: validWebp }).success).toBe(true);
   });
 
+  it('validates batch uploads with array of 1 to 10 photos', () => {
+    const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
+    const validJpeg = { size: 2048, type: 'image/jpeg', name: 'photo.jpg' };
+
+    const batchResult = GuestPhotoUploadSchema.safeParse({ files: [validPng, validJpeg] });
+    expect(batchResult.success).toBe(true);
+    if (batchResult.success) {
+      expect(batchResult.data.files).toHaveLength(2);
+    }
+  });
+
+  it('rejects batch payloads exceeding 10 files limit', () => {
+    const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
+    const elevenFiles = Array(11).fill(validPng);
+
+    const result = GuestPhotoUploadSchema.safeParse({ files: elevenFiles });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('Maximum 10 photos allowed per upload');
+    }
+  });
+
+  it('rejects empty file payloads', () => {
+    const result = GuestPhotoUploadSchema.safeParse({ files: [] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('No file provided');
+    }
+  });
+
   it('rejects files exceeding 10MB', () => {
     const oversized = { size: 10 * 1024 * 1024 + 1, type: 'image/png', name: 'photo.png' };
     const result = GuestPhotoUploadSchema.safeParse({ file: oversized });
@@ -64,6 +94,17 @@ describe('GuestPhotoUploadSchema', () => {
       expect(result.error.issues[0].message).toBe(
         'Invalid file format. Only JPEG, PNG, and WebP images are allowed'
       );
+    }
+  });
+
+  it('rejects batch if any file extension does not match declared MIME type', () => {
+    const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
+    const mismatched = { size: 1024, type: 'image/jpeg', name: 'photo.png' };
+
+    const result = GuestPhotoUploadSchema.safeParse({ files: [validPng, mismatched] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('File extension does not match the declared MIME type');
     }
   });
 });
