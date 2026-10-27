@@ -86,7 +86,7 @@ For production hosting guidelines and minimum runtime requirements across contai
 
 ### Environment Variables
 
-Create a `.env.development.local` file in the root directory by copying the `.env.example` file or creating a new one. You need to define the following variables:
+Create a `.env` file (or `.env.local`, `.env.development`, `.env.development.local`) in the root directory by copying the `.env.example` file or creating a new one. You need to define the following variables:
 
 ```env
 # Required for Admin Login (Must be a scrypt hash, NOT plaintext)
@@ -107,10 +107,11 @@ DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
     ```
     This command creates the necessary tables (`RegistryItem`, `Contributor`, etc.) defined in `prisma/schema.prisma`.
 
-2.  **Seed Data (Optional):** If you have a seeding script or want to migrate data from a JSON file, you can run the migration script (this uses the configured Prisma provider to seed the database).
+2.  **Seed Data (Optional):** Run the database seeding script to populate initial configuration settings:
     ```bash
     npm run db:seed
     ```
+    This seeds default `AppConfig` settings (such as partner names, wedding date, venue details, and hero text) from `scripts/seed.ts` into your database.
 
 ## Usage
 

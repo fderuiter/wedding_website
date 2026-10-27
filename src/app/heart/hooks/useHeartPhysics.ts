@@ -70,9 +70,9 @@ export function useHeartPhysics({
 
       // Enable broken pieces physics
       leftRb.setEnabled(true);
-      leftRb.setBodyType(RigidBodyType.Dynamic, true);
+      leftRb.setBodyType(RigidBodyType.Dynamic as any, true);
       rightRb.setEnabled(true);
-      rightRb.setBodyType(RigidBodyType.Dynamic, true);
+      rightRb.setBodyType(RigidBodyType.Dynamic as any, true);
 
       leftRb.setTranslation(position, true);
       leftRb.setRotation(rotation, true);
@@ -110,19 +110,19 @@ export function useHeartPhysics({
       leftRb.setAngvel({ x: 0, y: 0, z: 0 }, true);
       leftRb.setTranslation({ x: 0, y: 0, z: 0 }, true);
       leftRb.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-      leftRb.setBodyType(RigidBodyType.Fixed, true);
+      leftRb.setBodyType(RigidBodyType.Fixed as any, true);
       leftRb.setEnabled(false);
 
       rightRb.setLinvel({ x: 0, y: 0, z: 0 }, true);
       rightRb.setAngvel({ x: 0, y: 0, z: 0 }, true);
       rightRb.setTranslation({ x: 0, y: 0, z: 0 }, true);
       rightRb.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-      rightRb.setBodyType(RigidBodyType.Fixed, true);
+      rightRb.setBodyType(RigidBodyType.Fixed as any, true);
       rightRb.setEnabled(false);
 
       // Re-enable main heart
       mainRb.setEnabled(true);
-      mainRb.setBodyType(RigidBodyType.Dynamic, true);
+      mainRb.setBodyType(RigidBodyType.Dynamic as any, true);
       mainRb.setTranslation({ x: 0, y: 0, z: 0 }, true);
       mainRb.setLinvel({ x: 0, y: 0, z: 0 }, true);
       mainRb.setAngvel({ x: 0, y: 0, z: 0 }, true);
