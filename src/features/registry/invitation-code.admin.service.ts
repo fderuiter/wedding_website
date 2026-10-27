@@ -675,4 +675,49 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       return { success: true, count: dbRecords.length };
     });
   }
+
+  async batchDelete(ids: string[], author: string = 'Admin') {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error('Validation Error: IDs array cannot be empty.');
+    }
+    for (const id of ids) {
+      if (typeof id !== 'string' || id.trim() === '') {
+        throw new Error('Validation Error: Invalid ID in array.');
+      }
+    }
+
+    return executeInTransaction(this.repo.client, async (tx: any) => {
+      await tx.contributor.updateMany({
+        where: { invitationCodeId: { in: ids } },
+        data: { invitationCodeId: null },
+      });
+      await tx.subEventAccess.deleteMany({
+        where: { invitationCodeId: { in: ids } },
+      });
+      await tx.subEventRsvp.deleteMany({
+        where: { invitationCodeId: { in: ids } },
+      });
+      await tx.broadcastRecipient.updateMany({
+        where: { invitationCodeId: { in: ids } },
+        data: { invitationCodeId: null },
+      });
+
+      const deleteResult = await tx.invitationCode.deleteMany({
+        where: { id: { in: ids } },
+      });
+
+      await createAuditSnapshot(
+        'InvitationCode',
+        'batch_delete',
+        { count: deleteResult.count, ids },
+        author,
+        tx
+      );
+
+      return {
+        success: true,
+        count: deleteResult.count,
+      };
+    });
+  }
 }

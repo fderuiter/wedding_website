@@ -182,6 +182,12 @@ const BatchImportInvitationCodeItemSchema = z.object({
   extraFields: z.record(z.string(), z.any()).optional().nullable(),
 });
 
+export const BatchDeleteInvitationCodesSchema = z.object({
+  ids: z.array(z.string().min(1, 'ID cannot be empty.')).min(1, 'At least one invitation code ID is required.'),
+});
+
+export type BatchDeleteInvitationCodesDTO = z.infer<typeof BatchDeleteInvitationCodesSchema>;
+
 export const BatchImportInvitationCodesSchema = z.object({
   records: z.array(BatchImportInvitationCodeItemSchema).min(1, 'At least one record is required for batch import.'),
   collisionStrategy: z.enum(['skip', 'update', 'reject']).default('skip'),

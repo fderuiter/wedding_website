@@ -870,6 +870,15 @@
             "description": "Successful response"
           }
         }
+      },
+      "delete": {
+        "summary": "DELETE /api/admin/invitation-codes/batch",
+        "description": "Endpoint for /api/admin/invitation-codes/batch",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     },
     "/api/admin/invitation-codes/batch/validate": {
