@@ -1196,6 +1196,17 @@
         }
       }
     },
+    "/api/admin/invitation-codes/export": {
+      "get": {
+        "summary": "GET /api/admin/invitation-codes/export",
+        "description": "Endpoint for /api/admin/invitation-codes/export",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/invitation-codes/validate": {
       "post": {
         "summary": "POST /api/admin/invitation-codes/validate",

@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
-import { generateCsvContent } from '@/utils/csv';
 import { BroadcastModal } from '@/components/admin/BroadcastModal';
 
 export function matchDietaryCategory(notes: string | null | undefined, category: string): boolean {
@@ -451,35 +450,21 @@ export default function InvitationCodesDashboardPage() {
   };
 
   const handleExportSelectedCsv = () => {
-    const selectedCodes = codes.filter((item) => selectedIds.includes(item.id));
-    if (selectedCodes.length === 0) {
+    if (selectedIds.length === 0) {
       addToast('No invitation codes selected for export.', 'info');
       return;
     }
 
-    const exportRecords = selectedCodes.map((item) => ({
-      'Guest Name': item.guestName || '',
-      'Invitation Code': item.code || '',
-      Email: item.email || '',
-      'Household Name': item.householdName || '',
-      'Party Group': item.partyGroup || '',
-      'Party Tags': (item.partyTags || []).join(', '),
-      'Dietary Notes': item.dietaryNotes || '',
-      'Plus Ones': item.plusOneAllocations ?? 0,
-      Status: item.used ? 'Redeemed' : 'Unused',
-    }));
+    const params = new URLSearchParams();
+    params.set('ids', selectedIds.join(','));
 
-    const csvText = generateCsvContent(exportRecords);
-    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `selected-invitation-codes-${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = `/api/admin/invitation-codes/export?${params.toString()}`;
+    link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    addToast(`Exported ${selectedCodes.length} selected invitation code(s) to CSV.`, 'success');
+    addToast(`Exported ${selectedIds.length} selected invitation code(s) to CSV.`, 'success');
   };
 
   const handleConfirmBatchDelete = async () => {
@@ -599,41 +584,24 @@ export default function InvitationCodesDashboardPage() {
   };
 
   const handleExportCsv = () => {
-    if (codes.length === 0) {
-      addToast('No invitation codes to export.', 'info');
-      return;
-    }
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) params.set('search', searchQuery.trim());
+    if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter);
+    if (partyGroupFilter && partyGroupFilter !== 'all') params.set('partyGroup', partyGroupFilter);
+    if (selectedTagFilter) params.set('partyTags', selectedTagFilter);
+    if (dietaryFilter && dietaryFilter !== 'all') params.set('dietary', dietaryFilter);
+    if (attendanceFilter && attendanceFilter !== 'all') params.set('attendance', attendanceFilter);
+    if (addressFilter && addressFilter !== 'all') params.set('address', addressFilter);
 
-    const exportRecords = codes.map((item) => ({
-      'Guest Name': item.guestName || '',
-      'Invitation Code': item.code || '',
-      Email: item.email || '',
-      'Plus-One First Name': item.plusOneFirstName || '',
-      'Plus-One Last Name': item.plusOneLastName || '',
-      'Household Name': item.householdName || '',
-      'Party Group': item.partyGroup || '',
-      'Party Tags': (item.partyTags || []).join(', '),
-      'Address Line 1': item.addressLine1 || '',
-      'Address Line 2': item.addressLine2 || '',
-      City: item.city || '',
-      State: item.state || '',
-      'ZIP Code': item.zipCode || '',
-      Country: item.country || '',
-      'Dietary Notes': item.dietaryNotes || '',
-      'Plus Ones': item.plusOneAllocations ?? 0,
-      Status: item.used ? 'Redeemed' : 'Unused',
-    }));
+    const queryString = params.toString();
+    const exportUrl = `/api/admin/invitation-codes/export${queryString ? `?${queryString}` : ''}`;
 
-    const csvText = generateCsvContent(exportRecords);
-    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `invitation-codes-${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = exportUrl;
+    link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
     addToast('Invitation codes exported successfully.', 'success');
   };
 

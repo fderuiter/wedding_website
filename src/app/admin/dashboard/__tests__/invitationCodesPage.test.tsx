@@ -526,46 +526,10 @@ describe('InvitationCodesDashboardPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
   });
 
-  it('exports CSV file when Export CSV button is clicked with guest records present', () => {
-    const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-url');
-    const mockRevokeObjectURL = jest.fn();
-    const originalCreateObjectURL = window.URL.createObjectURL;
-    const originalRevokeObjectURL = window.URL.revokeObjectURL;
-
-    window.URL.createObjectURL = mockCreateObjectURL;
-    window.URL.revokeObjectURL = mockRevokeObjectURL;
-
-    const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    renderComponent();
-
-    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
-    fireEvent.click(exportBtn);
-
-    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
-    expect(mockAnchorClick).toHaveBeenCalledTimes(1);
-    expect(mockRevokeObjectURL).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Invitation codes exported successfully.')).toBeInTheDocument();
-
-    mockAnchorClick.mockRestore();
-    window.URL.createObjectURL = originalCreateObjectURL;
-    window.URL.revokeObjectURL = originalRevokeObjectURL;
-  });
-
-  it('shows warning toast and aborts export when Export CSV is clicked with empty codes list', () => {
-    const mockCreateObjectURL = jest.fn();
-    const originalCreateObjectURL = window.URL.createObjectURL;
-    window.URL.createObjectURL = mockCreateObjectURL;
-
-    (useAdminInvitationCodes as jest.Mock).mockReturnValue({
-      data: [],
-      isLoading: false,
-      error: null,
-      create: mockCreate,
-      remove: mockRemove,
-      removeBatch: mockRemoveBatch,
-      updateBatch: mockUpdateBatch,
-      fetchAll: mockFetchAll,
+  it('exports CSV file via server route when Export CSV button is clicked', () => {
+    let clickedHref = '';
+    const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clickedHref = this.href;
     });
 
     renderComponent();
@@ -573,10 +537,11 @@ describe('InvitationCodesDashboardPage', () => {
     const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
     fireEvent.click(exportBtn);
 
-    expect(screen.getByText('No invitation codes to export.')).toBeInTheDocument();
-    expect(mockCreateObjectURL).not.toHaveBeenCalled();
+    expect(mockAnchorClick).toHaveBeenCalledTimes(1);
+    expect(clickedHref).toContain('/api/admin/invitation-codes/export');
+    expect(screen.getByText('Invitation codes exported successfully.')).toBeInTheDocument();
 
-    window.URL.createObjectURL = originalCreateObjectURL;
+    mockAnchorClick.mockRestore();
   });
 
   describe('Bulk Selection and Floating Action Bar', () => {
@@ -704,16 +669,11 @@ describe('InvitationCodesDashboardPage', () => {
       });
     });
 
-    it('exports selected invitation codes to CSV', () => {
-      const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-selected-url');
-      const mockRevokeObjectURL = jest.fn();
-      const originalCreateObjectURL = window.URL.createObjectURL;
-      const originalRevokeObjectURL = window.URL.revokeObjectURL;
-
-      window.URL.createObjectURL = mockCreateObjectURL;
-      window.URL.revokeObjectURL = mockRevokeObjectURL;
-
-      const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    it('exports selected invitation codes to CSV via server route', () => {
+      let clickedHref = '';
+      const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        clickedHref = this.href;
+      });
 
       renderComponent();
 
@@ -722,14 +682,11 @@ describe('InvitationCodesDashboardPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Export Selected CSV' }));
 
-      expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
       expect(mockAnchorClick).toHaveBeenCalledTimes(1);
-      expect(mockRevokeObjectURL).toHaveBeenCalledTimes(1);
+      expect(clickedHref).toContain('/api/admin/invitation-codes/export?ids=code-1%2Ccode-3');
       expect(screen.getByText('Exported 2 selected invitation code(s) to CSV.')).toBeInTheDocument();
 
       mockAnchorClick.mockRestore();
-      window.URL.createObjectURL = originalCreateObjectURL;
-      window.URL.revokeObjectURL = originalRevokeObjectURL;
     });
   });
 });
