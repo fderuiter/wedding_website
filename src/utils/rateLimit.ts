@@ -7,15 +7,32 @@ interface RateLimitInfo {
 
 const rateLimits = new Map<string, RateLimitInfo>();
 
+function getClientIp(req: NextRequest): string {
+  const reqIp = (req as { ip?: string }).ip;
+  if (reqIp) {
+    return reqIp;
+  }
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp && realIp.trim()) {
+    return realIp.trim();
+  }
+  const rawForwarded = req.headers.get('x-forwarded-for');
+  if (rawForwarded) {
+    const parts = rawForwarded.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      return parts[parts.length - 1];
+    }
+  }
+  return '127.0.0.1';
+}
+
 export async function rateLimit(
   req: NextRequest,
   limit: number,
   windowMs: number,
   keyPrefix?: string
 ): Promise<NextResponse | null> {
-  // Try to get client IP from x-forwarded-for header (first IP in chain), fallback to '127.0.0.1'
-  const rawForwarded = req.headers.get('x-forwarded-for');
-  const ip = rawForwarded ? rawForwarded.split(',')[0].trim() : '127.0.0.1';
+  const ip = getClientIp(req);
 
   let pathname = '';
   try {

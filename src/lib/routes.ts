@@ -51,7 +51,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/api/registry/items', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false, requiredModule: 'registry' },
   { path: '/api/registry', roles: ['public', 'admin'], exact: false, requiredModule: 'registry' },
   { path: '/api/weather', roles: ['public', 'admin'], exact: false, requiredModule: 'weather' },
-  { path: '/api/media/export', roles: ['public', 'admin'], exact: true, requiredModule: 'gallery' },
+  { path: '/api/media/export', roles: ['admin'], exact: true, requiredModule: 'gallery' },
   { path: '/api/media', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false, requiredModule: 'gallery' },
   { path: '/api/admin', roles: ['admin'], exact: false }, // Catch-all for other /api/admin
 ];

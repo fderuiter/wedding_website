@@ -6021,11 +6021,16 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "coverFee": {
+                    "default": false,
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "itemId",
-                  "amount"
+                  "amount",
+                  "coverFee"
                 ],
                 "additionalProperties": false
               }

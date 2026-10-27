@@ -1,6 +1,7 @@
 import { withApiMiddleware } from '../withApiMiddleware';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
+import { resetRateLimitsForTesting } from '../rateLimit';
 
 describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
   let loggerSpy: jest.SpyInstance;
@@ -200,6 +201,85 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       });
       expect(body.referenceId).toBeUndefined();
       expect(loggerSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Rate Limiting & Route Throttling', () => {
+    beforeEach(() => {
+      resetRateLimitsForTesting();
+    });
+
+    test('subjects /api/admin/me to standard rate limit (100 req/min) instead of strict login limit (5 req/15min)', async () => {
+      const handler = jest.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 10; i++) {
+        const req = new NextRequest('http://localhost/api/admin/me', {
+          headers: { 'x-forwarded-for': '192.168.1.100' },
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(200);
+      }
+      expect(handler).toHaveBeenCalledTimes(10);
+    });
+
+    test('subjects /api/admin/logout to standard rate limit (100 req/min) instead of strict login limit', async () => {
+      const handler = jest.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 10; i++) {
+        const req = new NextRequest('http://localhost/api/admin/logout', {
+          headers: { 'x-forwarded-for': '192.168.1.101' },
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(200);
+      }
+      expect(handler).toHaveBeenCalledTimes(10);
+    });
+
+    test('enforces strict 5 request limit on /api/admin/login', async () => {
+      const handler = jest.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 5; i++) {
+        const req = new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          headers: { 'x-forwarded-for': '192.168.1.102' },
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(200);
+      }
+
+      const req6 = new NextRequest('http://localhost/api/admin/login', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '192.168.1.102' },
+      });
+      const res6 = await middleware(req6, {});
+      expect(res6.status).toBe(429);
+      const body = await res6.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Too many requests');
+    });
+
+    test('enforces strict 5 request limit on /api/guest/login', async () => {
+      const handler = jest.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 5; i++) {
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: { 'x-forwarded-for': '192.168.1.103' },
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(200);
+      }
+
+      const req6 = new NextRequest('http://localhost/api/guest/login', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '192.168.1.103' },
+      });
+      const res6 = await middleware(req6, {});
+      expect(res6.status).toBe(429);
     });
   });
 });

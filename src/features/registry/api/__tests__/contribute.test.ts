@@ -83,6 +83,7 @@ describe('POST /api/registry/contribute', () => {
       amount: 50,
       code: undefined,
       message: 'Best wishes!',
+      coverFee: false,
     });
   });
 
@@ -105,6 +106,7 @@ describe('POST /api/registry/contribute', () => {
       amount: 25,
       code: undefined,
       message: undefined,
+      coverFee: false,
     });
   });
 

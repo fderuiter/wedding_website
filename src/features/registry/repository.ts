@@ -227,7 +227,7 @@ class RegistryRepository implements IRegistryRepository {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; email?: string | null; amount: number; code?: string; message?: string | null }
+    contribution: { name: string; email?: string | null; amount: number; code?: string; message?: string | null; coverFee?: boolean }
   ) {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
@@ -286,6 +286,9 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('Contribution cannot be greater than the remaining amount.');
       }
 
+      const coverFee = Boolean(contribution.coverFee);
+      const feeAmount = coverFee ? Math.round(contribution.amount * 0.025 * 100) / 100 : 0;
+
       const newTotalCents = contributedCents + contributionCents;
       const newTotal = newTotalCents / 100;
 
@@ -302,6 +305,8 @@ class RegistryRepository implements IRegistryRepository {
               name: finalName,
               email: emailToSave,
               amount: contribution.amount,
+              coverFee,
+              feeAmount,
               message: messageToSave,
               date: new Date(),
               ...(invitationCodeId ? { invitationCodeId } : {})
