@@ -57,7 +57,7 @@ async function main() {
   if (needsInstall) {
     console.log('Local dependencies out of sync or missing. Performing clean installation...');
     // Silent trigger of dependency installation (only output on failure)
-    const result = child_process.spawnSync('npm', ['ci', '--legacy-peer-deps'], {
+    const result = child_process.spawnSync('npm', ['ci'], {
       cwd: rootDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: true
