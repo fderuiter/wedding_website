@@ -56,7 +56,7 @@ function buildRouteTree(srcPath: string, relativePath: string = ''): RouteNode |
       if (/^page\.(tsx|ts|jsx|js)$/.test(entry.name)) {
         hasPage = true;
       }
-      if (/^route\.(ts|js)$/.test(entry.name)) {
+      if (/^route\.(tsx|ts|jsx|js)$/.test(entry.name)) {
         hasApi = true;
       }
     } else if (entry.isDirectory()) {
