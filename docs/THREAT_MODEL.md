@@ -32,16 +32,15 @@ This application is a reusable, self-hostable wedding website template built on 
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
-[Perimeter Control: Host Header Validation Middleware (isHostAllowed)]
+[Perimeter Control: Edge Middleware (isHostAllowed Host Validation)]
                                        |
                                        v
-[Authentication Gate: Middleware (isGuestRequest / isAdminRequest)]
+[Authentication & Navigation Gate: Edge Middleware (isGuestRequest / isAdminRequest Redirects)]
                                        |
                                        v
-[API Middleware: Rate Limiter (5 requests / 15m on Auth routes, 100/m general)]
-                                       |
-                                       v
-[Authorization Check: withApiMiddleware (isAdminRequest on protected routes)]
+[API Route Wrapper: withApiMiddleware]
+  |-- 1. Rate Limiter (5 requests / 15m on login routes, 100/m general API)
+  |-- 2. Authorization Check (isAdminRequest on protected API routes)
                                        |
                                        v
 [Egress Control: safeFetch & SSRF Guardrail (isPrivateUrl with DNS lookup all)]
@@ -55,13 +54,13 @@ This application is a reusable, self-hostable wedding website template built on 
 
 ### Active Security Controls
 
-1. **Perimeter Host Validation**: All incoming requests are filtered against `ALLOWED_HOSTS` before routing, preventing HTTP Host Header poisoning and cache poisoning.
+1. **Perimeter Host Validation**: All incoming requests are filtered against `ALLOWED_HOSTS` in Edge Middleware (`src/middleware.ts`) before routing, preventing HTTP Host Header poisoning and cache poisoning.
 2. **Password & Token Security**:
    - `ADMIN_PASSWORD` hashed using native `scrypt` with random salt.
    - Admin and Guest session tokens signed via HMAC SHA-256 with constant-time signature verification (`timingSafeEqual`).
    - Constant-time comparison for guest passcode verification to eliminate timing side-channels.
-3. **Strict Authorization**: All administrative API endpoints wrapped in `withApiMiddleware` requiring valid signed admin session tokens.
-4. **Rate Limiting**: IP-based rate limiting applying strict throttles (5 attempts per 15 minutes) on both `/api/admin/login` and `/api/guest/login`.
+3. **Strict Authorization**: All administrative API endpoints wrapped in `withApiMiddleware` requiring valid signed admin session tokens. Edge Middleware (`src/middleware.ts`) also validates sessions to perform clean 303 navigation redirects for protected UI pages.
+4. **Rate Limiting**: IP-based rate limiting executed inside the `withApiMiddleware` API route wrapper (`src/utils/withApiMiddleware.ts`), applying strict throttles (5 attempts per 15 minutes) on credential login endpoints (`/api/admin/login` and `/api/guest/login`) and standard throttles (100 requests per minute) on general API endpoints.
 5. **SSRF Protections**: Registry scraper uses `safeFetch` which resolves DNS hostnames with `{ all: true }`, blocking private IPv4, IPv6, loopback, CGNAT, link-local metadata (e.g. `169.254.169.254`), and reserved ranges across all redirect hops.
 6. **File Upload Sanitization**: Uploaded images are passed through Sharp image processor sanitization, enforcing normalized file extensions and stripping dangerous metadata.
 7. **Log Redaction**: Logger automatically redacts sensitive key patterns (`password`, `passcode`, `secret`, `cookie`, `authorization`, `token`) prior to console emission.
