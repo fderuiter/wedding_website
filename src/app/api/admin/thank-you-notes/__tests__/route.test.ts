@@ -1,10 +1,124 @@
+/** @jest-environment node */
+
 import { GET } from '../route';
 import { GET as EXPORT_GET } from '../export/route';
 import { GET as EXPORT_LABELS_GET } from '../export-labels/route';
 import { PATCH } from '../[id]/route';
 import { POST as BATCH_POST } from '../batch/route';
 import { NextRequest } from 'next/server';
-import { thankYouService } from '@/features/registry/thank-you.service';
+import { thankYouService } from '@/features/registry';
+
+jest.mock('next/server', () => {
+  class MockNextResponse {
+    static json = jest.fn((body, init) => {
+      const responseCookies = new Map();
+      const headers = new Headers();
+      if (init?.headers) {
+        Object.entries(init.headers).forEach(([k, v]) => headers.set(k, v as string));
+      }
+      const cookies = {
+        set: jest.fn((key, value, options) => {
+          responseCookies.set(key, { name: key, value });
+          let cookieString = `${key}=${value}; Path=/`;
+          if (options?.expires) cookieString += `; Expires=${options.expires.toUTCString()}`;
+          if (options?.maxAge === 0) cookieString += '; Max-Age=0';
+          headers.set('set-cookie', cookieString);
+        }),
+        get: jest.fn((key) => responseCookies.get(key)),
+        delete: jest.fn((key) => responseCookies.delete(key)),
+      };
+      return {
+        status: init?.status || 200,
+        headers: headers,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
+        cookies: cookies,
+      };
+    });
+
+    status: number;
+    headers: Headers;
+    bodyContent: unknown;
+
+    constructor(body: unknown, init?: { status?: number; headers?: Record<string, string> }) {
+      this.bodyContent = body;
+      this.status = init?.status || 200;
+      this.headers = new Headers();
+      if (init?.headers) {
+        Object.entries(init.headers).forEach(([k, v]) => {
+          this.headers.set(k, v as string);
+        });
+      }
+    }
+
+    async text() {
+      if (typeof this.bodyContent === 'string') {
+        return this.bodyContent;
+      }
+      if (this.bodyContent && typeof (this.bodyContent as { getReader?: () => ReadableStreamDefaultReader<Uint8Array> }).getReader === 'function') {
+        const reader = (this.bodyContent as { getReader: () => ReadableStreamDefaultReader<Uint8Array> }).getReader();
+        const decoder = new TextDecoder();
+        let result = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          result += decoder.decode(value, { stream: true });
+        }
+        result += decoder.decode();
+        return result;
+      }
+      return String(this.bodyContent);
+    }
+
+    async json() {
+      const text = await this.text();
+      return JSON.parse(text);
+    }
+  }
+
+  const MockNextRequest = jest.fn((input, init) => {
+    const requestCookies = new Map();
+    if (init?.headers?.cookie) {
+      init.headers.cookie.split(';').forEach((c: string) => {
+        const [key, value] = c.trim().split('=');
+        requestCookies.set(key, { name: key, value });
+      });
+    }
+    const urlObj = new URL(input);
+    return {
+      ...init,
+      url: input,
+      nextUrl: urlObj,
+      headers: {
+        get: (key: string) => {
+          if (key === 'cookie' && init?.headers) return init.headers.cookie;
+          return null;
+        }
+      },
+      cookies: {
+        get: jest.fn((key) => requestCookies.get(key)),
+        set: jest.fn(),
+      },
+      json: () => Promise.resolve(init && init.body ? JSON.parse(init.body) : {}),
+    };
+  });
+
+  return {
+    NextResponse: MockNextResponse,
+    NextRequest: MockNextRequest,
+  };
+});
+
+jest.mock('@/features/registry', () => ({
+  ...jest.requireActual('@/features/registry'),
+  thankYouService: {
+    getThankYouNotes: jest.fn(),
+    updateThankYouNote: jest.fn(),
+    batchUpdateThankYouNotes: jest.fn(),
+    exportThankYouNotesCsv: jest.fn(),
+    exportThankYouNotesPdf: jest.fn(),
+  },
+}));
 
 jest.mock('@/features/registry/thank-you.service', () => ({
   thankYouService: {
@@ -20,6 +134,17 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(true),
   checkAdminAuth: jest.fn().mockResolvedValue(true),
 }));
+
+function createMockStream(content: string | Uint8Array): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const bytes = typeof content === 'string' ? encoder.encode(content) : content;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
 
 describe('Thank-You Notes API Routes', () => {
   beforeEach(() => {
@@ -158,7 +283,7 @@ describe('Thank-You Notes API Routes', () => {
   describe('GET /api/admin/thank-you-notes/export', () => {
     it('returns CSV file download response with correct headers', async () => {
       const mockCsv = 'Contributor Name,Email\nJane Doe,jane@example.com\n';
-      (thankYouService.exportThankYouNotesCsv as jest.Mock).mockResolvedValue(mockCsv);
+      (thankYouService.exportThankYouNotesCsv as jest.Mock).mockImplementation(() => createMockStream(mockCsv));
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/export?status=Unsent&search=Jane');
       const res = await EXPORT_GET(req);
@@ -178,7 +303,7 @@ describe('Thank-You Notes API Routes', () => {
   describe('GET /api/admin/thank-you-notes/export-labels', () => {
     it('returns PDF binary response with application/pdf headers and avery_5160 filename', async () => {
       const mockPdfBuffer = Buffer.from('%PDF-1.5 test pdf content');
-      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockResolvedValue(mockPdfBuffer);
+      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockImplementation(() => createMockStream(mockPdfBuffer));
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/export-labels?template=avery_5160&status=Unsent&search=Jane');
       const res = await EXPORT_LABELS_GET(req);
@@ -197,7 +322,7 @@ describe('Thank-You Notes API Routes', () => {
 
     it('handles avery_5163 template selection parameter', async () => {
       const mockPdfBuffer = Buffer.from('%PDF-1.5 test pdf content');
-      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockResolvedValue(mockPdfBuffer);
+      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockImplementation(() => createMockStream(mockPdfBuffer));
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/export-labels?template=avery_5163');
       const res = await EXPORT_LABELS_GET(req);
