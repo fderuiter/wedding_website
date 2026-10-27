@@ -26,7 +26,7 @@
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -e .env.development.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e .env.development.local -- prisma migrate deploy",
-    "db:seed": "npx tsx scripts/seed.ts",
+    "db:seed": "tsx scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "check:action-pins": "npx tsx scripts/check-action-pins.ts",
     "check:identifiers": "npx tsx scripts/check-personal-identifiers.ts",
