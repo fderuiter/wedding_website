@@ -13,7 +13,7 @@ if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
   exit 1
 fi
 
-if [ "$RUN_MIGRATIONS" = "true" ]; then
+if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
   npx -y prisma migrate deploy
 else

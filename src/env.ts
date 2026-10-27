@@ -37,6 +37,9 @@ const envSchema = z.object({
   MULTISITE_ENABLED: z.union([z.boolean(), z.string()])
     .transform(val => val === true || val === 'true' || val === '1')
     .default(false),
+  RUN_MIGRATIONS: z.union([z.boolean(), z.string()])
+    .transform(val => val === true || val === 'true' || val === '1')
+    .default(false),
   GUEST_PASSCODE: z.string().default('wedding2026'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
   CRON_SECRET: z.string().optional(),
@@ -107,6 +110,7 @@ if (process.env.NEXT_RUNTIME === 'edge' || (isBuildTime && (!process.env.DATABAS
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
     ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
+    RUN_MIGRATIONS: process.env.RUN_MIGRATIONS === 'true' || process.env.RUN_MIGRATIONS === '1',
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
     S3_BUCKET: process.env.S3_BUCKET || undefined,
@@ -131,7 +135,7 @@ export const env = new Proxy(_env, {
     if (typeof prop === 'string') {
       const val = process.env[prop];
       if (val !== undefined && val !== '') {
-        if (prop === 'MULTISITE_ENABLED') {
+        if (prop === 'MULTISITE_ENABLED' || prop === 'RUN_MIGRATIONS') {
           return val === 'true' || val === '1';
         }
         if (prop === 'HISTORY_VERSION_LIMIT') {

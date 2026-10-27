@@ -46,17 +46,18 @@ RUN adduser --system --uid 1001 nextjs
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Set correct permissions
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Copy Prisma schema and full node_modules for migrations and standalone execution
+# Set correct permissions and pre-create uploads directory
+RUN mkdir -p .next public/uploads
+RUN chown -R nextjs:nodejs .next public/uploads
+
+# Copy Prisma schema, administrative scripts, and full node_modules for migrations and standalone execution
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 USER nextjs

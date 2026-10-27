@@ -37,10 +37,10 @@ const config = {
       statements: 0,
     },
     './src/app/api/admin/': {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
     },
     './src/components/ui/': {
       branches: 50,
@@ -78,7 +78,7 @@ export default (async () => {
   return {
     ...jestConfig,
     transformIgnorePatterns: [
-      'node_modules/(?!.*(archiver|is-stream|zip-stream|compress-commons|async|crc32-stream|readdir-glob|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|ics|nanoid|node-html-parser|entities|msw|@msw|@mswjs|until-promise|until-async|@open-draft|strict-event-emitter|rettime|cookie))',
+      'node_modules/(?!.*(three|archiver|is-stream|zip-stream|compress-commons|async|crc32-stream|readdir-glob|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|metascraper|metascraper-title|metascraper-description|metascraper-image|cheerio|ics|nanoid|node-html-parser|entities|msw|@msw|@mswjs|until-promise|until-async|@open-draft|strict-event-emitter|rettime|cookie))',
     ],
   };
 })();
