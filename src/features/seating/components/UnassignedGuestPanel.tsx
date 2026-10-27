@@ -178,11 +178,14 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               }}
               className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
-              {tables.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.invitationCodes?.length || 0}/{t.capacity} seats)
-                </option>
-              ))}
+              {tables.map((t) => {
+                const isFull = (t.invitationCodes?.length || 0) >= t.capacity;
+                return (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.invitationCodes?.length || 0}/{t.capacity} seats{isFull ? ' - FULL' : ''})
+                  </option>
+                );
+              })}
             </select>
           </div>
 

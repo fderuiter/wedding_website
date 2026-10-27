@@ -50,9 +50,17 @@ export function TableModal({
     }
   }, [table, isOpen]);
 
+  const currentSeatedCount = table?.invitationCodes?.length || 0;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    if (table && capacity < currentSeatedCount) {
+      if (!confirm(`Warning: This table currently has ${currentSeatedCount} seated guests, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`)) {
+        return;
+      }
+    }
 
     onSave({
       ...(table ? { id: table.id } : {}),
@@ -123,6 +131,11 @@ export function TableModal({
               onChange={(e) => setCapacity(parseInt(e.target.value) || 1)}
               className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             />
+            {table && capacity < currentSeatedCount && (
+              <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
+                Warning: Table has {currentSeatedCount} seated guest{currentSeatedCount === 1 ? '' : 's'}. Lowering capacity below {currentSeatedCount} exceeds current occupancy.
+              </p>
+            )}
           </div>
         </div>
 
