@@ -220,6 +220,20 @@ describe('Dynamic Administration Entity API Routes', () => {
         const body = await res.json();
         expect(body.error).toBe('Invalid reorder payload');
       });
+
+      test('returns 400 when reorder service throws a validation or missing ID error', async () => {
+        mockService.reorder.mockRejectedValue(new Error('Invalid member ID(s): missing-id'));
+
+        const req = new NextRequest('http://localhost/api/admin/wedding-party', {
+          method: 'PUT',
+          body: JSON.stringify({ action: 'reorder', orderedIds: ['valid-id', 'missing-id'] }),
+        });
+
+        const res = await PUT(req, { params: Promise.resolve({ entity: 'wedding-party' }) });
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error).toBe('Invalid member ID(s): missing-id');
+      });
     });
   });
 

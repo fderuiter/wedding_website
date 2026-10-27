@@ -1,10 +1,11 @@
 /** @jest-environment node */
 
 import { WeddingPartyAdminService } from '../admin.service';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 
 const mockTxWeddingPartyMemberCreate = jest.fn();
 const mockTxWeddingPartyMemberUpdate = jest.fn();
+const mockTxWeddingPartyMemberFindMany = jest.fn();
 const mockTxMediaCreate = jest.fn();
 const mockTxMediaUpdate = jest.fn();
 const mockTxSnapshotVersionCreate = jest.fn();
@@ -14,6 +15,7 @@ jest.mock('@/lib/prisma', () => {
     weddingPartyMember: {
       create: (...args: any[]) => mockTxWeddingPartyMemberCreate(...args),
       update: (...args: any[]) => mockTxWeddingPartyMemberUpdate(...args),
+      findMany: (...args: any[]) => mockTxWeddingPartyMemberFindMany(...args),
     },
     media: {
       create: (...args: any[]) => mockTxMediaCreate(...args),
@@ -29,6 +31,7 @@ jest.mock('@/lib/prisma', () => {
       weddingPartyMember: {
         create: jest.fn(),
         update: jest.fn(),
+        findMany: jest.fn(),
       },
       media: {
         create: jest.fn(),
@@ -44,6 +47,7 @@ jest.mock('@/lib/prisma', () => {
 
 jest.mock('@/lib/audit', () => ({
   createAuditSnapshot: jest.fn(),
+  createBatchAuditSnapshots: jest.fn(),
 }));
 
 describe('WeddingPartyAdminService - Atomic Transactions & Auditing', () => {
@@ -243,5 +247,65 @@ describe('WeddingPartyAdminService - Atomic Transactions & Auditing', () => {
 
     await expect(service.create(input, 'Coordinator')).rejects.toThrow('Media Creation Failed');
     expect(mockTxWeddingPartyMemberCreate).not.toHaveBeenCalled();
+  });
+
+  describe('reorder', () => {
+    it('should reorder wedding party members transactionally and create batch audit snapshots', async () => {
+      const orderedIds = ['member-1', 'member-2', 'member-3'];
+      mockTxWeddingPartyMemberFindMany.mockResolvedValue([
+        { id: 'member-1' },
+        { id: 'member-2' },
+        { id: 'member-3' },
+      ]);
+      mockTxWeddingPartyMemberUpdate.mockImplementation((args: any) => {
+        return Promise.resolve({ id: args.where.id, order: args.data.order });
+      });
+
+      await service.reorder(orderedIds, 'Planner');
+
+      expect(mockTxWeddingPartyMemberFindMany).toHaveBeenCalledWith({
+        where: { id: { in: orderedIds } },
+        select: { id: true },
+      });
+      expect(mockTxWeddingPartyMemberUpdate).toHaveBeenCalledTimes(3);
+      expect(mockTxWeddingPartyMemberUpdate).toHaveBeenNthCalledWith(1, {
+        where: { id: 'member-1' },
+        data: { order: 0 },
+      });
+      expect(mockTxWeddingPartyMemberUpdate).toHaveBeenNthCalledWith(2, {
+        where: { id: 'member-2' },
+        data: { order: 1 },
+      });
+      expect(mockTxWeddingPartyMemberUpdate).toHaveBeenNthCalledWith(3, {
+        where: { id: 'member-3' },
+        data: { order: 2 },
+      });
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'WeddingPartyMember',
+        [
+          { id: 'member-1', order: 0 },
+          { id: 'member-2', order: 1 },
+          { id: 'member-3', order: 2 },
+        ],
+        'Planner',
+        expect.any(Object)
+      );
+    });
+
+    it('should throw validation error when an invalid member ID is supplied', async () => {
+      const orderedIds = ['member-1', 'invalid-id'];
+      mockTxWeddingPartyMemberFindMany.mockResolvedValue([{ id: 'member-1' }]);
+
+      await expect(service.reorder(orderedIds, 'Planner')).rejects.toThrow(
+        'Invalid member ID(s): invalid-id'
+      );
+      expect(mockTxWeddingPartyMemberUpdate).not.toHaveBeenCalled();
+    });
+
+    it('should throw validation error when empty array is supplied', async () => {
+      await expect(service.reorder([], 'Planner')).rejects.toThrow(
+        'Ordered IDs array cannot be empty'
+      );
+    });
   });
 });
