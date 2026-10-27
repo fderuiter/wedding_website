@@ -48,8 +48,13 @@ export const PUT = withApiMiddleware(async (request: NextRequest, context: { par
     if (!parseResult.success) {
       throw new ApiError(400, 'Invalid reorder payload');
     }
-    await serviceData.service.reorder(parseResult.data.orderedIds);
-    return NextResponse.json({ success: true });
+    try {
+      await serviceData.service.reorder(parseResult.data.orderedIds);
+      return NextResponse.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(400, error.message || 'Failed to reorder items');
+    }
   }
   throw new ApiError(400, 'Invalid action');
 });
