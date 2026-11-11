@@ -119,6 +119,7 @@ flowchart LR
     node_api_admin_sampledata["sample-data"]
     node_api_admin_seating["seating"]
     node_api_admin_seating_assign["assign"]
+    node_api_admin_seating_autoassign["auto-assign"]
     node_api_admin_seating_export["export"]
     node_api_admin_settings["settings"]
     node_api_admin_setup["setup"]
@@ -220,6 +221,7 @@ flowchart LR
     node_api_admin --> node_api_admin_sampledata
     node_api_admin --> node_api_admin_seating
     node_api_admin_seating --> node_api_admin_seating_assign
+    node_api_admin_seating --> node_api_admin_seating_autoassign
     node_api_admin_seating --> node_api_admin_seating_export
     node_api_admin --> node_api_admin_settings
     node_api_admin --> node_api_admin_setup
@@ -313,6 +315,7 @@ flowchart LR
     class node_api_admin_photos_moderation_batch api;
     class node_api_admin_sampledata api;
     class node_api_admin_seating_assign api;
+    class node_api_admin_seating_autoassign api;
     class node_api_admin_seating_export api;
     class node_api_admin_settings api;
     class node_api_admin_setup api;

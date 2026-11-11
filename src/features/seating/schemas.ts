@@ -26,3 +26,17 @@ export const AssignSeatSchema = z.object({
   tableId: z.string().nullable(),
   seatNumber: z.number().int().positive().nullable().optional(),
 });
+
+export const AutoAssignSchema = z.object({
+  author: z.string().optional(),
+}).optional();
+
+export type AutoAssignDTO = z.infer<typeof AutoAssignSchema>;
+
+export const AutoAssignResultSchema = z.object({
+  assignedCount: z.number().int().min(0),
+  unassignedCount: z.number().int().min(0),
+  assignedGuests: z.array(InvitationCodeSchema),
+});
+
+export type AutoAssignResultDTO = z.infer<typeof AutoAssignResultSchema>;
