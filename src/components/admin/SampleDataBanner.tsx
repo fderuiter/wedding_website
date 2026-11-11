@@ -50,8 +50,10 @@ export function SampleDataBanner() {
       if (res.ok) {
         addToast('All sample data has been successfully purged.', 'success');
         setHasSampleData(false);
-        // Refresh the page to reload dashboard tables with clean state
-        window.location.reload();
+        // Defer reload slightly so React can immediately unmount the banner before full page reload
+        setTimeout(() => {
+          window.location.reload();
+        }, 100);
       } else {
         const data = await res.json().catch(() => ({}));
         addToast(data.error || 'Failed to purge sample data.', 'error');

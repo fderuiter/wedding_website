@@ -74,25 +74,42 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
       for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
-        const page = await guestContext.newPage();
-        try {
+        let attempt = 0;
+        let success = false;
+        while (attempt < 2 && !success) {
+          attempt++;
+          const page = await guestContext.newPage();
           try {
-            await page.goto(route, { waitUntil: 'domcontentloaded' });
-          } catch (gotoError: any) {
-            if (
-              gotoError?.message?.includes('net::ERR_ABORTED') ||
-              gotoError?.message?.includes('Page crashed') ||
-              gotoError?.message?.includes('Target closed')
-            ) {
-              await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
-            } else {
-              throw gotoError;
+            try {
+              await page.goto(route, { waitUntil: 'domcontentloaded' });
+            } catch (gotoError: any) {
+              if (
+                attempt < 2 &&
+                (gotoError?.message?.includes('Page crashed') ||
+                 gotoError?.message?.includes('Target closed'))
+              ) {
+                console.log(`[Unauthenticated] Page crashed on ${route}, retrying on fresh page...`);
+                continue;
+              } else if (gotoError?.message?.includes('net::ERR_ABORTED')) {
+                await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
+              } else {
+                throw gotoError;
+              }
             }
+            if (page.isClosed()) {
+              if (attempt < 2) continue;
+              throw new Error(`Page unexpectedly closed navigating to ${route}`);
+            }
+            const currentUrl = page.url();
+            if (currentUrl === 'about:blank') {
+              await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
+            }
+            const url = new URL(page.url());
+            expect(url.pathname).toBe('/admin/login');
+            success = true;
+          } finally {
+            await page.close().catch(() => {});
           }
-          const url = new URL(page.url());
-          expect(url.pathname).toBe('/admin/login');
-        } finally {
-          await page.close().catch(() => {});
         }
       }
     } finally {
