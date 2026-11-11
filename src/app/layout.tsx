@@ -38,7 +38,6 @@ const playfair = Playfair_Display({
 const cormorant = Cormorant_Garamond({
   variable: '--font-cormorant',
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
 });
 
 const inter = Inter({
