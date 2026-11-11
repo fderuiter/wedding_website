@@ -49,62 +49,81 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   ]);
   await context.addCookies(cookies);
 
-  // Go to invitation codes dashboard
-  try {
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
-  } catch (err: any) {
-    if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
-      await context.addCookies(cookies).catch(() => {});
-      page = await context.newPage();
+  let attempt = 0;
+  let success = false;
+  let lastError: any = null;
+
+  while (attempt < 3 && !success) {
+    attempt++;
+    try {
       await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
-    } else {
-      throw err;
+
+      // Wait for page to finish loading data
+      await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
+
+      // Check if there are codes. If none, click Generate New Code first to create a couple.
+      const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
+      const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
+      await countBtn.waitFor({ state: 'visible', timeout: 30000 });
+      const countText = await countBtn.innerText();
+      if (countText.includes('All (0)')) {
+        // Generate code 1
+        await generateBtn.click();
+        await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
+        await page.getByPlaceholder('e.g. John Doe').fill('Alex Johnson');
+        await page.getByRole('button', { name: 'Generate', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
+        await expect(page.getByText('Alex Johnson')).toBeVisible({ timeout: 30000 });
+
+        // Generate code 2
+        await generateBtn.click();
+        await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
+        await page.getByPlaceholder('e.g. John Doe').fill('Sam Taylor');
+        await page.getByRole('button', { name: 'Generate', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
+        await expect(page.getByText('Sam Taylor')).toBeVisible({ timeout: 30000 });
+      }
+
+      // Select all filtered items
+      const selectAll = page.getByRole('checkbox', { name: 'Select all filtered invitation codes' });
+      await expect(selectAll).toBeVisible({ timeout: 15000 });
+      await selectAll.check();
+
+      const toolbar = page.getByRole('region', { name: 'Batch actions toolbar' });
+      await expect(toolbar).toBeVisible({ timeout: 15000 });
+
+      await page.screenshot({ path: '/tmp/bulk-selection-toolbar.png', fullPage: true });
+
+      // Open Batch Delete Modal
+      const deleteBtn = page.getByRole('button', { name: 'Delete Selected' });
+      await expect(deleteBtn).toBeVisible({ timeout: 15000 });
+      await deleteBtn.click();
+
+      const modal = page.getByRole('dialog', { name: 'Confirm Batch Deletion' });
+      await expect(modal).toBeVisible({ timeout: 15000 });
+
+      await page.screenshot({ path: '/tmp/batch-delete-modal.png', fullPage: true });
+      success = true;
+    } catch (err: any) {
+      lastError = err;
+      if (
+        attempt < 3 &&
+        (err?.message?.includes('crashed') ||
+         err?.message?.includes('closed') ||
+         err?.message?.includes('Target crashed') ||
+         err?.message?.includes('net::ERR_ABORTED'))
+      ) {
+        console.log(`[Bulk Selection] Page crashed or closed (attempt ${attempt}), retrying on fresh page...`);
+        await page.close().catch(() => {});
+        await context.addCookies(cookies).catch(() => {});
+        page = await context.newPage();
+      } else {
+        throw err;
+      }
     }
   }
 
-  // Wait for page to finish loading data
-  await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
-
-  // Check if there are codes. If none, click Generate New Code first to create a couple.
-  const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
-  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
-  await countBtn.waitFor({ state: 'visible', timeout: 30000 });
-  const countText = await countBtn.innerText();
-  if (countText.includes('All (0)')) {
-    // Generate code 1
-    await generateBtn.click();
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
-    await page.getByPlaceholder('e.g. John Doe').fill('Alex Johnson');
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
-    await expect(page.getByText('Alex Johnson')).toBeVisible({ timeout: 30000 });
-
-    // Generate code 2
-    await generateBtn.click();
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
-    await page.getByPlaceholder('e.g. John Doe').fill('Sam Taylor');
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
-    await expect(page.getByText('Sam Taylor')).toBeVisible({ timeout: 30000 });
+  if (!success && lastError) {
+    throw lastError;
   }
-
-  // Select all filtered items
-  const selectAll = page.getByRole('checkbox', { name: 'Select all filtered invitation codes' });
-  await expect(selectAll).toBeVisible({ timeout: 15000 });
-  await selectAll.check();
-
-  const toolbar = page.getByRole('region', { name: 'Batch actions toolbar' });
-  await expect(toolbar).toBeVisible({ timeout: 15000 });
-
-  await page.screenshot({ path: '/tmp/bulk-selection-toolbar.png', fullPage: true });
-
-  // Open Batch Delete Modal
-  const deleteBtn = page.getByRole('button', { name: 'Delete Selected' });
-  await expect(deleteBtn).toBeVisible({ timeout: 15000 });
-  await deleteBtn.click();
-
-  const modal = page.getByRole('dialog', { name: 'Confirm Batch Deletion' });
-  await expect(modal).toBeVisible({ timeout: 15000 });
-
-  await page.screenshot({ path: '/tmp/batch-delete-modal.png', fullPage: true });
 });

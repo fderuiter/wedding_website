@@ -56,6 +56,93 @@ const START_ROUTES = [...PUBLIC_UI_ROUTES, ...PROTECTED_UI_ROUTES];
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
 
+async function setupContextRoutes(ctx: any) {
+  await ctx.route('**/*', async (routeHandler: any, request: any) => {
+    const urlStr = request.url();
+    let url: URL;
+    try {
+      url = new URL(urlStr);
+    } catch {
+      return routeHandler.continue();
+    }
+
+    const host = url.host;
+    if (host === '127.0.0.1:3000' || host === 'localhost:3000' || host === '127.0.0.1' || host === 'localhost') {
+      return routeHandler.continue();
+    }
+
+    if (isDomainMatch(url.hostname, 'googleusercontent.com')) {
+      return routeHandler.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg });
+    }
+    if (isDomainMatch(url.hostname, 'openstreetmap.org')) {
+      return routeHandler.fulfill({ status: 200, contentType: 'image/png', body: transparentPng });
+    }
+    if (isDomainMatch(url.hostname, 'open-meteo.com')) {
+      return routeHandler.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    }
+    if (isDomainMatch(url.hostname, 'cdn.jsdelivr.net')) {
+      return routeHandler.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
+    }
+
+    return routeHandler.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+  });
+
+  await ctx.route('**/api/weather', async (routeHandler: any) => {
+    await routeHandler.fulfill({
+      status: 200,
+      json: {
+        daily: {
+          time: ['2025-10-10'],
+          weathercode: [0],
+          temperature_2m_max: [75],
+          temperature_2m_min: [55],
+          apparent_temperature_max: [75],
+          precipitation_probability_max: [0],
+          wind_speed_10m_max: [5],
+        },
+      },
+    });
+  });
+
+  await ctx.route('**/api/registry/items/*', async (routeHandler: any) => {
+    await routeHandler.fulfill({
+      status: 200,
+      json: {
+        id: '1',
+        name: 'Sample Item',
+        description: 'Sample description',
+        category: 'Home',
+        price: 100,
+        quantity: 1,
+        purchased: false,
+        isGroupGift: false,
+        amountContributed: 0,
+        contributors: [],
+      },
+    });
+  });
+
+  await ctx.route('**/api/registry/items', async (routeHandler: any) => {
+    await routeHandler.fulfill({
+      status: 200,
+      json: [
+        {
+          id: '1',
+          name: 'Sample Item',
+          description: 'Sample description',
+          category: 'Home',
+          price: 100,
+          quantity: 1,
+          purchased: false,
+          isGroupGift: false,
+          amountContributed: 0,
+          contributors: [],
+        }
+      ],
+    });
+  });
+}
+
 test.describe('Dynamic Route Crawler & Link Audit', () => {
 
   test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ browser }) => {
@@ -74,25 +161,51 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
 
       for (const route of PROTECTED_UI_ROUTES) {
         console.log(`[Unauthenticated] Navigating to: ${route}`);
-        const page = await guestContext.newPage();
-        try {
+        let attempt = 0;
+        let success = false;
+        let lastError: any = null;
+
+        while (attempt < 3 && !success) {
+          attempt++;
+          let page: any = null;
           try {
-            await page.goto(route, { waitUntil: 'domcontentloaded' });
-          } catch (gotoError: any) {
+            page = await guestContext.newPage();
+            try {
+              await page.goto(route, { waitUntil: 'domcontentloaded' });
+            } catch (gotoError: any) {
+              if (gotoError?.message?.includes('net::ERR_ABORTED')) {
+                await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
+              } else {
+                throw gotoError;
+              }
+            }
+            await page.waitForURL('**/admin/login', { timeout: 15000 }).catch(() => {});
+            const url = new URL(page.url());
+            expect(url.pathname).toBe('/admin/login');
+            success = true;
+          } catch (err: any) {
+            lastError = err;
             if (
-              gotoError?.message?.includes('net::ERR_ABORTED') ||
-              gotoError?.message?.includes('Page crashed') ||
-              gotoError?.message?.includes('Target closed')
+              attempt < 3 &&
+              (err?.message?.includes('crashed') ||
+               err?.message?.includes('closed') ||
+               err?.message?.includes('Target crashed') ||
+               err?.message?.includes('net::ERR_ABORTED') ||
+               err?.message?.includes('blank'))
             ) {
-              await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
+              console.log(`[Unauthenticated] Page crashed on ${route}, retrying on fresh page (attempt ${attempt})...`);
             } else {
-              throw gotoError;
+              throw err;
+            }
+          } finally {
+            if (page) {
+              await page.close().catch(() => {});
             }
           }
-          const url = new URL(page.url());
-          expect(url.pathname).toBe('/admin/login');
-        } finally {
-          await page.close().catch(() => {});
+        }
+
+        if (!success && lastError) {
+          throw lastError;
         }
       }
     } finally {
@@ -122,90 +235,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           }
         ]);
 
-        await pageContext.route('**/*', async (routeHandler, request) => {
-          const urlStr = request.url();
-          let url: URL;
-          try {
-            url = new URL(urlStr);
-          } catch {
-            return routeHandler.continue();
-          }
-
-          const host = url.host;
-          if (host === '127.0.0.1:3000' || host === 'localhost:3000' || host === '127.0.0.1' || host === 'localhost') {
-            return routeHandler.continue();
-          }
-
-          if (isDomainMatch(url.hostname, 'googleusercontent.com')) {
-            return routeHandler.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg });
-          }
-          if (isDomainMatch(url.hostname, 'openstreetmap.org')) {
-            return routeHandler.fulfill({ status: 200, contentType: 'image/png', body: transparentPng });
-          }
-          if (isDomainMatch(url.hostname, 'open-meteo.com')) {
-            return routeHandler.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-          }
-          if (isDomainMatch(url.hostname, 'cdn.jsdelivr.net')) {
-            return routeHandler.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
-          }
-
-          return routeHandler.fulfill({ status: 200, contentType: 'text/plain', body: '' });
-        });
-
-        await pageContext.route('**/api/weather', async (routeHandler: any) => {
-          await routeHandler.fulfill({
-            status: 200,
-            json: {
-              daily: {
-                time: ['2025-10-10'],
-                weathercode: [0],
-                temperature_2m_max: [75],
-                temperature_2m_min: [55],
-                apparent_temperature_max: [75],
-                precipitation_probability_max: [0],
-                wind_speed_10m_max: [5],
-              },
-            },
-          });
-        });
-
-        await pageContext.route('**/api/registry/items/*', async (routeHandler: any) => {
-          await routeHandler.fulfill({
-            status: 200,
-            json: {
-              id: '1',
-              name: 'Sample Item',
-              description: 'Sample description',
-              category: 'Home',
-              price: 100,
-              quantity: 1,
-              purchased: false,
-              isGroupGift: false,
-              amountContributed: 0,
-              contributors: [],
-            },
-          });
-        });
-
-        await pageContext.route('**/api/registry/items', async (routeHandler: any) => {
-          await routeHandler.fulfill({
-            status: 200,
-            json: [
-              {
-                id: '1',
-                name: 'Sample Item',
-                description: 'Sample description',
-                category: 'Home',
-                price: 100,
-                quantity: 1,
-                purchased: false,
-                isGroupGift: false,
-                amountContributed: 0,
-                contributors: [],
-              }
-            ],
-          });
-        });
+        await setupContextRoutes(pageContext);
 
         const targetUrl = new URL(route, baseURL).toString();
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
@@ -214,7 +244,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         try {
           let attempt = 0;
           let success = false;
-          while (attempt < 2 && !success) {
+          while (attempt < 3 && !success) {
             attempt++;
             try {
               const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
@@ -301,12 +331,13 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               success = true;
             } catch (err: any) {
               if (
-                attempt < 2 &&
+                attempt < 3 &&
                 (err?.message?.includes('crashed') ||
                  err?.message?.includes('closed') ||
+                 err?.message?.includes('Target crashed') ||
                  err?.message?.includes('net::ERR_ABORTED'))
               ) {
-                console.log(`[Authenticated] Page crashed on ${route}, retrying on fresh page...`);
+                console.log(`[Authenticated] Page crashed on ${route}, retrying on fresh page (attempt ${attempt})...`);
                 await page.close().catch(() => {});
                 try {
                   page = await pageContext.newPage();
@@ -317,6 +348,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
                       { name: 'admin_auth', value: cookieValue, url: baseURL },
                       { name: 'guest_auth', value: guestCookieValue, url: baseURL },
                     ]);
+                    await setupContextRoutes(pageContext);
                     page = await pageContext.newPage();
                   } catch {
                     throw err;

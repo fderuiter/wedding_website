@@ -120,49 +120,90 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     ]);
     await context.addCookies(cookies);
 
-    // Seed sample data via API
     const request = context.request;
-    const seedRes = await request.post('/api/admin/sample-data', {
-      headers: { Cookie: `admin_auth=${adminCookie}` },
-      data: {
-        archetype: 'classic',
-        modules: ['registry', 'guests', 'weddingParty', 'attractions'],
-      },
-    });
-    expect(seedRes.status()).toBe(200);
+    const seedSampleData = async () => {
+      const seedRes = await request.post('/api/admin/sample-data', {
+        headers: { Cookie: `admin_auth=${adminCookie}` },
+        data: {
+          archetype: 'classic',
+          modules: ['registry', 'guests', 'weddingParty', 'attractions'],
+        },
+      });
+      expect(seedRes.status()).toBe(200);
+    };
 
-    // Visit admin dashboard
-    try {
-      await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
-    } catch (err: any) {
-      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
-        await context.addCookies(cookies).catch(() => {});
-        page = await context.newPage();
+    // Seed sample data via API
+    await seedSampleData();
+
+    let attempt = 0;
+    let success = false;
+    let lastError: any = null;
+
+    while (attempt < 3 && !success) {
+      attempt++;
+      try {
         await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
-      } else {
-        throw err;
+
+        // Sample data banner should be visible
+        const banner = page.locator('[data-testid="sample-data-banner"]');
+        await expect(banner).toBeVisible({ timeout: 15000 });
+
+        // Should contain "Sample Data Active"
+        await expect(banner).toContainText('Sample Data Active', { timeout: 15000 });
+
+        // Click Purge Sample Data button in banner
+        const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });
+        await expect(purgeButton).toBeVisible({ timeout: 15000 });
+        await purgeButton.click();
+
+        // Confirm in the confirmation dialog modal
+        const confirmButton = page.locator('button', { hasText: 'Confirm' });
+        await expect(confirmButton).toBeVisible({ timeout: 15000 });
+
+        const deletePromise = page.waitForResponse(
+          (resp) => resp.url().includes('/api/admin/sample-data') && resp.request().method() === 'DELETE',
+          { timeout: 15000 }
+        ).catch(() => null);
+
+        await confirmButton.click();
+        await deletePromise;
+
+        // Banner should disappear after purging (handle window.location.reload())
+        try {
+          await expect(banner).not.toBeVisible({ timeout: 15000 });
+        } catch {
+          // If page reload caused context reset, verify banner absence on fresh dashboard page
+          await page.close().catch(() => {});
+          await context.addCookies(cookies).catch(() => {});
+          page = await context.newPage();
+          await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+          await expect(page.locator('[data-testid="sample-data-banner"]')).not.toBeVisible({ timeout: 15000 });
+        }
+
+        success = true;
+      } catch (err: any) {
+        lastError = err;
+        if (
+          attempt < 3 &&
+          (err?.message?.includes('crashed') ||
+           err?.message?.includes('closed') ||
+           err?.message?.includes('Target crashed') ||
+           err?.message?.includes('net::ERR_ABORTED'))
+        ) {
+          console.log(`[Sample Data] UI crashed or disconnected (attempt ${attempt}), retrying...`);
+          await page.close().catch(() => {});
+          await context.addCookies(cookies).catch(() => {});
+          page = await context.newPage();
+          await seedSampleData().catch(() => {});
+        } else {
+          throw err;
+        }
       }
     }
 
-    // Sample data banner should be visible
-    const banner = page.locator('[data-testid="sample-data-banner"]');
-    await expect(banner).toBeVisible({ timeout: 15000 });
-
-    // Should contain "Sample Data Active"
-    await expect(banner).toContainText('Sample Data Active', { timeout: 15000 });
-
-    // Click Purge Sample Data button in banner
-    const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });
-    await expect(purgeButton).toBeVisible({ timeout: 15000 });
-    await purgeButton.click();
-
-    // Confirm in the confirmation dialog modal
-    const confirmButton = page.locator('button', { hasText: 'Confirm' });
-    await expect(confirmButton).toBeVisible({ timeout: 15000 });
-    await confirmButton.click();
-
-    // Banner should disappear after purging
-    await expect(banner).not.toBeVisible({ timeout: 15000 });
+    if (!success && lastError) {
+      throw lastError;
+    }
 
     // Verify status API reports no sample data
     const statusRes = await request.get('/api/admin/sample-data', {
