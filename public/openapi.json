@@ -6093,6 +6093,40 @@
         }
       }
     },
+    "/api/guest/lookup": {
+      "post": {
+        "summary": "POST /api/guest/lookup",
+        "description": "Endpoint for /api/guest/lookup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/guest/photos/upload": {
       "post": {
         "summary": "POST /api/guest/photos/upload",
