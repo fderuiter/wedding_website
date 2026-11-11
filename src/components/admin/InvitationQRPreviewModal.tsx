@@ -36,7 +36,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
   if (!guest) return null;
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(guest.code)}`;
+  const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(guest.code || '')}`;
   const plusOneName = [guest.plusOneFirstName, guest.plusOneLastName].filter(Boolean).join(' ');
 
   const handleCopyLink = async () => {
@@ -77,12 +77,12 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
       const dataUrl = exportCanvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
       downloadLink.href = dataUrl;
-      downloadLink.download = `qr-${guest.code}.png`;
+      downloadLink.download = `qr-${guest.code || 'code'}.png`;
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
 
-      addToast(`Downloaded qr-${guest.code}.png`, 'success');
+      addToast(`Downloaded qr-${guest.code || 'code'}.png`, 'success');
     } catch (err: any) {
       addToast(err?.message || 'Failed to download QR code image.', 'error');
     }

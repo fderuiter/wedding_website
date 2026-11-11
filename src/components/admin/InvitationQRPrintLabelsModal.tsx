@@ -170,7 +170,7 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
           }}
         >
           {visibleCodes.map((item) => {
-            const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(item.code)}`;
+            const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(item.code || '')}`;
             const plusOne = [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ');
 
             return (
