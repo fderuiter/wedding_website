@@ -580,7 +580,10 @@ export function CsvImportWizardModal({
     updated: number;
   } | null>(null);
 
-  const existingDbSet = useMemo(() => new Set(existingCodes.map(c => c.toUpperCase())), [existingCodes]);
+  const existingDbSet = useMemo(
+    () => new Set((existingCodes || []).filter((c): c is string => typeof c === 'string' && Boolean(c)).map(c => c.toUpperCase())),
+    [existingCodes]
+  );
 
   const handleDownloadSample = () => {
     const sampleCsv = generateSampleCsvTemplate();
