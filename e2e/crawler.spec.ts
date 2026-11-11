@@ -82,15 +82,15 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
           try {
             try {
               await page.goto(route, { waitUntil: 'domcontentloaded' });
-            } catch (gotoError: any) {
+            } catch (gotoError: unknown) {
               if (
                 attempt < 2 &&
-                (gotoError?.message?.includes('Page crashed') ||
-                 gotoError?.message?.includes('Target closed'))
+                ((gotoError as Error)?.message?.includes('Page crashed') ||
+                 (gotoError as Error)?.message?.includes('Target closed'))
               ) {
                 console.log(`[Unauthenticated] Page crashed on ${route}, retrying on fresh page...`);
                 continue;
-              } else if (gotoError?.message?.includes('net::ERR_ABORTED')) {
+              } else if ((gotoError as Error)?.message?.includes('net::ERR_ABORTED')) {
                 await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
               } else {
                 throw gotoError;

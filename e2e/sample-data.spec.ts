@@ -108,52 +108,84 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(contributeBody.error).toMatch(/sample/i);
   });
 
-  test('displays sample data banner and badges in admin UI, then purges sample data', async ({ context, page }) => {
+  test('displays sample data banner and badges in admin UI, then purges sample data', async ({ browser }) => {
     const adminCookie = generateAdminCookieValue();
-    await context.addCookies([
-      { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-      { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-    ]);
+    const guestCookie = generateGuestCookieValue();
+    const context = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
 
-    // Seed sample data via API
-    const request = context.request;
-    const seedRes = await request.post('/api/admin/sample-data', {
-      headers: { Cookie: `admin_auth=${adminCookie}` },
-      data: {
-        archetype: 'classic',
-        modules: ['registry', 'guests', 'weddingParty', 'attractions'],
-      },
-    });
-    expect(seedRes.status()).toBe(200);
+    try {
+      await context.addCookies([
+        { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
+        { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
+        { name: 'guest_auth', value: guestCookie, url: 'http://127.0.0.1:3000' },
+        { name: 'guest_auth', value: guestCookie, url: 'http://localhost:3000' },
+      ]);
 
-    // Visit admin dashboard
-    await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+      // Seed sample data via API
+      const request = context.request;
+      const seedRes = await request.post('/api/admin/sample-data', {
+        headers: { Cookie: `admin_auth=${adminCookie}` },
+        data: {
+          archetype: 'classic',
+          modules: ['registry', 'guests', 'weddingParty', 'attractions'],
+        },
+      });
+      expect(seedRes.status()).toBe(200);
 
-    // Sample data banner should be visible
-    const banner = page.locator('[data-testid="sample-data-banner"]');
-    await expect(banner).toBeVisible();
+      let currentAdminPage = await context.newPage();
+      let attempt = 0;
+      while (attempt < 2) {
+        attempt++;
+        try {
+          await currentAdminPage.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+          break;
+        } catch (gotoErr: unknown) {
+          if (
+            attempt < 2 &&
+            ((gotoErr as Error)?.message?.includes('crashed') ||
+             (gotoErr as Error)?.message?.includes('closed') ||
+             (gotoErr as Error)?.message?.includes('net::ERR_ABORTED'))
+          ) {
+            await currentAdminPage.close().catch(() => {});
+            currentAdminPage = await context.newPage();
+            continue;
+          }
+          throw gotoErr;
+        }
+      }
 
-    // Should contain "Sample Data Active"
-    await expect(banner).toContainText('Sample Data Active');
+      // Sample data banner should be visible
+      const banner = currentAdminPage.locator('[data-testid="sample-data-banner"]');
+      await expect(banner).toBeVisible();
 
-    // Click Purge Sample Data button in banner
-    const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });
-    await expect(purgeButton).toBeVisible();
-    await purgeButton.click();
+      // Should contain "Sample Data Active"
+      await expect(banner).toContainText('Sample Data Active');
 
-    // Confirm in the confirmation dialog modal
-    const confirmButton = page.locator('button', { hasText: 'Confirm' });
-    await expect(confirmButton).toBeVisible();
-    await confirmButton.click();
+      // Click Purge Sample Data button in banner
+      const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });
+      await expect(purgeButton).toBeVisible();
+      await purgeButton.click();
 
-    // Banner should disappear after purging
-    await expect(banner).not.toBeVisible();
+      // Confirm in the confirmation dialog modal
+      const confirmButton = currentAdminPage.locator('button', { hasText: 'Confirm' });
+      await expect(confirmButton).toBeVisible();
+      const deletePromise = currentAdminPage.waitForResponse(
+        (res) => res.url().includes('/api/admin/sample-data') && res.request().method() === 'DELETE'
+      );
+      await confirmButton.click();
+      await deletePromise;
 
-    // Verify status API reports no sample data
-    const statusRes = await request.get('/api/admin/sample-data', {
-      headers: { Cookie: `admin_auth=${adminCookie}` },
-    });
-    const statusBody = await statusRes.json();
-    expect(statusBody.hasSampleData).toBe(false);
+      // Banner should disappear after purging
+      await expect(banner).not.toBeVisible();
+
+      // Verify status API reports no sample data
+      const statusRes = await request.get('/api/admin/sample-data', {
+        headers: { Cookie: `admin_auth=${adminCookie}` },
+      });
+      const statusBody = await statusRes.json();
+      expect(statusBody.hasSampleData).toBe(false);
+    } finally {
+      await context.close().catch(() => {});
+    }
   });
 });

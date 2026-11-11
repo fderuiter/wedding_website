@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 
 export function SampleDataBanner() {
+  const router = useRouter();
   const [hasSampleData, setHasSampleData] = useState<boolean>(false);
   const [countsSummary, setCountsSummary] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -50,10 +52,7 @@ export function SampleDataBanner() {
       if (res.ok) {
         addToast('All sample data has been successfully purged.', 'success');
         setHasSampleData(false);
-        // Defer reload slightly so React can immediately unmount the banner before full page reload
-        setTimeout(() => {
-          window.location.reload();
-        }, 100);
+        router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
         addToast(data.error || 'Failed to purge sample data.', 'error');

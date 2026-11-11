@@ -75,13 +75,18 @@ async function main() {
   let passed = false;
 
   try {
+    // 1. Clean up any leftover containers and lingering port listeners before selecting ports
+    console.log('Cleaning up any existing containers and listeners...');
+    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
+    try {
+      child_process.spawnSync('lsof -ti:3000 | xargs kill -9 2>/dev/null || true', { shell: true, stdio: 'ignore' });
+    } catch {
+      // Ignore if lsof is not available
+    }
+
     const dbPort = await getAvailableDbPort();
     process.env.DB_PORT = dbPort.toString();
     console.log(`Using host database port ${dbPort} for container smoke test...`);
-
-    // 1. Clean up any leftover containers
-    console.log('Cleaning up any existing containers...');
-    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
 
     // 2. Start PostgreSQL from scratch
     console.log('Starting clean PostgreSQL database container...');
