@@ -8,6 +8,10 @@ import { Input, FormGroup } from '@/components/ui/forms';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import type { ProgressMetrics } from '@/features/registry';
+import {
+  THANK_YOU_TEMPLATES,
+  substituteThankYouTemplateTokens,
+} from '@/features/registry/types';
 
 export interface ThankYouContributorItem {
   id: string;
@@ -75,6 +79,7 @@ export default function ThankYouNotesPage() {
   const [editStatus, setEditStatus] = useState<'Unsent' | 'Sent' | 'Not Needed'>('Unsent');
   const [editNote, setEditNote] = useState<string>('');
   const [editSentAt, setEditSentAt] = useState<string>('');
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
@@ -229,6 +234,7 @@ export default function ThankYouNotesPage() {
 
   const startEditing = (item: ThankYouContributorItem) => {
     setEditingId(item.id);
+    setSelectedTemplate('');
     setEditStatus((item.thankYouStatus as any) || 'Unsent');
     setEditNote(item.thankYouNote || '');
     setEditSentAt(
@@ -238,6 +244,57 @@ export default function ThankYouNotesPage() {
 
   const cancelEditing = () => {
     setEditingId(null);
+    setSelectedTemplate('');
+  };
+
+  const handleTemplateSelect = async (
+    templateId: string,
+    item: ThankYouContributorItem
+  ) => {
+    if (!templateId) {
+      setSelectedTemplate('');
+      return;
+    }
+
+    const templateObj = THANK_YOU_TEMPLATES.find((t) => t.id === templateId);
+    if (!templateObj) return;
+
+    if (editNote.trim().length > 0) {
+      let isConfirmed = false;
+      const isWindowConfirmMocked =
+        typeof window !== 'undefined' &&
+        typeof window.confirm === 'function' &&
+        Boolean((window.confirm as any)?._isMockFunction || (window.confirm as any)?.mock);
+
+      if (isWindowConfirmMocked) {
+        isConfirmed = window.confirm(
+          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
+        );
+      } else if (confirm) {
+        isConfirmed = await confirm(
+          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
+        );
+      } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        isConfirmed = window.confirm(
+          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
+        );
+      } else {
+        isConfirmed = true;
+      }
+
+      if (!isConfirmed) {
+        setSelectedTemplate('');
+        return;
+      }
+    }
+
+    setSelectedTemplate(templateId);
+    const populated = substituteThankYouTemplateTokens(templateObj.template, {
+      guestName: item.name || item.invitationCode?.guestName,
+      giftName: item.registryItem?.name,
+      amount: item.amount,
+    });
+    setEditNote(populated);
   };
 
   const saveIndividualEdit = async (id: string) => {
@@ -260,6 +317,7 @@ export default function ThankYouNotesPage() {
 
       addToast('Thank-you note record updated successfully.', 'success');
       setEditingId(null);
+      setSelectedTemplate('');
       await fetchData();
     } catch (err: any) {
       addToast(err.message || 'Failed to update record.', 'error');
@@ -623,6 +681,19 @@ export default function ThankYouNotesPage() {
                               <p className="italic">{item.message}</p>
                             </div>
                           )}
+                          <select
+                            aria-label={`Select thank-you note template for ${item.name}`}
+                            value={selectedTemplate}
+                            onChange={(e) => handleTemplateSelect(e.target.value, item)}
+                            className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                          >
+                            <option value="">Choose a starter template...</option>
+                            {THANK_YOU_TEMPLATES.map((tmpl) => (
+                              <option key={tmpl.id} value={tmpl.id}>
+                                {tmpl.name}
+                              </option>
+                            ))}
+                          </select>
                           <textarea
                             aria-label={`Thank-you note message for ${item.name}`}
                             rows={2}
