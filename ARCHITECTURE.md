@@ -159,6 +159,8 @@ flowchart LR
     node_api_registry_validatecode["validate-code"]
     node_api_rsvp["rsvp"]
     node_api_schedule["schedule"]
+    node_api_schedule_id["[id]"]
+    node_api_schedule_id_ics["ics"]
     node_api_weather["weather"]
     node_archive["archive"]
     node_guest["guest"]
@@ -260,6 +262,8 @@ flowchart LR
     node_api_registry --> node_api_registry_validatecode
     node_api --> node_api_rsvp
     node_api --> node_api_schedule
+    node_api_schedule --> node_api_schedule_id
+    node_api_schedule_id --> node_api_schedule_id_ics
     node_api --> node_api_weather
     App --> node_archive
     App --> node_guest
@@ -346,6 +350,7 @@ flowchart LR
     class node_api_registry_validatecode api;
     class node_api_rsvp api;
     class node_api_schedule api;
+    class node_api_schedule_id_ics api;
     class node_api_weather api;
     class node_archive page;
     class node_guest page;

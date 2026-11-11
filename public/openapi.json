@@ -7084,6 +7084,27 @@
         }
       }
     },
+    "/api/schedule/{id}/ics": {
+      "get": {
+        "summary": "GET /api/schedule/[id]/ics",
+        "description": "Endpoint for /api/schedule/[id]/ics",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/schedule": {
       "get": {
         "summary": "GET /api/schedule",

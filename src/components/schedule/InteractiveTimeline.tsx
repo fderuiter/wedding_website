@@ -190,6 +190,7 @@ export default function InteractiveTimeline({
               endTime: item.endTime || '',
               categoryTags: item.category ? [item.category] : ['Events'],
               locationName: item.locationName || item.location || '',
+              attireRules: item.attireRules || '',
               description: item.description || '',
               isPrivate: Boolean(item.isPrivate),
               userRsvp: item.userRsvp || null,
@@ -416,6 +417,7 @@ export default function InteractiveTimeline({
             {filteredEvents.map((event) => {
               const calendarEvent = formatScheduleEventToCalendarEvent(
                 {
+                  id: event.id,
                   title: event.title,
                   startTime: event.startTime,
                   endTime: event.endTime,
@@ -638,7 +640,11 @@ export default function InteractiveTimeline({
                         borderColor: 'var(--schedule-card-border)',
                       }}
                     >
-                      <AddToCalendar event={calendarEvent} />
+                      <AddToCalendar
+                        event={calendarEvent}
+                        eventId={event.id}
+                        downloadUrl={`/api/schedule/${event.id}/ics`}
+                      />
                     </div>
                   </div>
                 </div>

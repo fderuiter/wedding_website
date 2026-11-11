@@ -9,10 +9,14 @@ import { useOverlay } from '@/hooks/useOverlay';
  * @description Defines the props for the AddToCalendar component.
  * @property {CalendarEvent} event - The event object to be added to the calendar.
  * @property {string} [className] - Optional CSS class names to apply to the component.
+ * @property {string} [downloadUrl] - Optional direct server-side download endpoint for the .ics file.
+ * @property {string} [eventId] - Optional event identifier used to construct the .ics download endpoint.
  */
-interface AddToCalendarProps {
+export interface AddToCalendarProps {
   event: CalendarEvent
   className?: string
+  downloadUrl?: string
+  eventId?: string
 }
 
 /**
@@ -24,9 +28,11 @@ interface AddToCalendarProps {
  *
  * @param event - Event data used to generate calendar entries (title, start/end, location, etc.)
  * @param className - Optional additional CSS classes applied to the root container
+ * @param downloadUrl - Optional direct server-side download endpoint for the .ics file
+ * @param eventId - Optional event identifier used to construct the .ics download endpoint
  * @returns The component's JSX element
  */
-export default function AddToCalendar({ event, className }: AddToCalendarProps) {
+export default function AddToCalendar({ event, className, downloadUrl, eventId }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
@@ -83,16 +89,26 @@ export default function AddToCalendar({ event, className }: AddToCalendarProps) 
       url = createOutlookCalendarLink(event);
       window.open(url, '_blank', 'noopener,noreferrer');
     } else {
-      const icsFile = createIcsFile(event);
-      const blob = new Blob([icsFile], { type: 'text/calendar' });
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `${event.name}.ics`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(objectUrl);
+      const directDownloadUrl = downloadUrl || (eventId ? `/api/schedule/${eventId}/ics` : (event.id ? `/api/schedule/${event.id}/ics` : undefined));
+      if (directDownloadUrl) {
+        const link = document.createElement('a');
+        link.href = directDownloadUrl;
+        link.download = `${event.name}.ics`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const icsFile = createIcsFile(event);
+        const blob = new Blob([icsFile], { type: 'text/calendar' });
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = `${event.name}.ics`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(objectUrl);
+      }
     }
     setIsOpen(false);
     triggerRef.current?.focus();
