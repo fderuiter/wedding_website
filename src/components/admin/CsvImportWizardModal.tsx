@@ -20,7 +20,7 @@ interface CsvImportWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportComplete: () => void;
-  existingCodes?: string[];
+  existingCodes?: (string | undefined | null)[];
 }
 
 interface EditableRow {
@@ -580,7 +580,15 @@ export function CsvImportWizardModal({
     updated: number;
   } | null>(null);
 
-  const existingDbSet = useMemo(() => new Set(existingCodes.map(c => c.toUpperCase())), [existingCodes]);
+  const existingDbSet = useMemo(
+    () =>
+      new Set(
+        (existingCodes || [])
+          .filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))
+          .map((c) => c.trim().toUpperCase())
+      ),
+    [existingCodes]
+  );
 
   const handleDownloadSample = () => {
     const sampleCsv = generateSampleCsvTemplate();

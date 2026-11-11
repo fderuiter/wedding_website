@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts
 
 COPY . .
@@ -24,7 +24,7 @@ COPY . .
 RUN npx prisma generate
 
 # Build Next.js application inside builder stage
-RUN --mount=type=cache,target=/app/.next/cache \
+RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
     npm run build
 
 # Runner stage
