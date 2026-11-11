@@ -144,7 +144,11 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     // Confirm in the confirmation dialog modal
     const confirmButton = page.locator('button', { hasText: 'Confirm' });
     await expect(confirmButton).toBeVisible();
-    await confirmButton.click();
+    const [purgeRes] = await Promise.all([
+      page.waitForResponse(res => res.url().includes('/api/admin/sample-data') && res.request().method() === 'DELETE'),
+      confirmButton.click(),
+    ]);
+    expect(purgeRes.status()).toBe(200);
 
     // Banner should disappear after purging
     await expect(banner).not.toBeVisible();

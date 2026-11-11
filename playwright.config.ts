@@ -27,6 +27,7 @@ export default defineConfig({
   } : undefined,
   use: {
     baseURL: 'http://127.0.0.1:3000',
+    channel: 'chromium',
     contextOptions: {
       reducedMotion: 'reduce',
     },
@@ -34,10 +35,7 @@ export default defineConfig({
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--disable-site-isolation-trials',
-        '--js-flags=--max-old-space-size=4096 --expose-gc',
       ],
     },
   },
