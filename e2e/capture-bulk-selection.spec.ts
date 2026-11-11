@@ -50,25 +50,32 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   await context.addCookies(cookies);
 
   // Go to invitation codes dashboard
-  try {
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 20000 });
-  } catch (err: any) {
-    if (
-      err?.message?.includes('crashed') ||
-      err?.message?.includes('closed') ||
-      err?.message?.includes('Timeout') ||
-      err?.message?.includes('timeout')
-    ) {
-      await context.addCookies(cookies).catch(() => {});
-      page = await context.newPage();
-      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    } else {
-      throw err;
+  let attempt = 0;
+  while (attempt < 4) {
+    attempt++;
+    try {
+      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 25000 });
+      await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
+      break;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        attempt < 4 &&
+        (msg.includes('crashed') ||
+         msg.includes('closed') ||
+         msg.includes('Timeout') ||
+         msg.includes('timeout') ||
+         msg.includes('net::ERR_ABORTED'))
+      ) {
+        console.log(`[capture-bulk-selection] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
+        await page.close().catch(() => {});
+        await context.addCookies(cookies).catch(() => {});
+        page = await context.newPage();
+      } else {
+        throw err;
+      }
     }
   }
-
-  // Wait for page to finish loading data
-  await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
 
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });

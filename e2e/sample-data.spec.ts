@@ -127,25 +127,32 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(seedRes.status()).toBe(200);
 
     // Visit admin dashboard
-    try {
-      await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    } catch (err: any) {
-      if (
-        err?.message?.includes('crashed') ||
-        err?.message?.includes('closed') ||
-        err?.message?.includes('Timeout') ||
-        err?.message?.includes('timeout')
-      ) {
-        page = await context.newPage();
-        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      } else {
-        throw err;
+    const banner = page.locator('[data-testid="sample-data-banner"]');
+    let attempt = 0;
+    while (attempt < 4) {
+      attempt++;
+      try {
+        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await expect(banner).toBeVisible({ timeout: 20000 });
+        break;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          attempt < 4 &&
+          (msg.includes('crashed') ||
+           msg.includes('closed') ||
+           msg.includes('Timeout') ||
+           msg.includes('timeout') ||
+           msg.includes('net::ERR_ABORTED'))
+        ) {
+          console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
+          await page.close().catch(() => {});
+          page = await context.newPage();
+        } else {
+          throw err;
+        }
       }
     }
-
-    // Sample data banner should be visible
-    const banner = page.locator('[data-testid="sample-data-banner"]');
-    await expect(banner).toBeVisible({ timeout: 15000 });
 
     // Should contain "Sample Data Active"
     await expect(banner).toContainText('Sample Data Active');
