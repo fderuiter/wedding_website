@@ -101,7 +101,7 @@ export default function SeatingChartAdminPage() {
     const matches = allGuests.filter(
       (g) =>
         g.guestName.toLowerCase().includes(normalizedQuery) ||
-        g.code.toLowerCase().includes(normalizedQuery) ||
+        (g.code ? g.code.toLowerCase().includes(normalizedQuery) : false) ||
         (g.householdName && g.householdName.toLowerCase().includes(normalizedQuery)) ||
         (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)))
     );

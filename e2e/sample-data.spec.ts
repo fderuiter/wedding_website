@@ -129,8 +129,9 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     // Visit admin dashboard
     try {
       await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
-    } catch (err: any) {
-      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed')) {
         await context.addCookies([
           { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
           { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },

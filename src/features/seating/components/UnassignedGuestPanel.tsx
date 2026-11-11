@@ -40,7 +40,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     if (!term) return unassignedGuests;
     return unassignedGuests.filter((guest) => {
       const matchesName = guest.guestName.toLowerCase().includes(term);
-      const matchesCode = guest.code.toLowerCase().includes(term);
+      const matchesCode = guest.code ? guest.code.toLowerCase().includes(term) : false;
       const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
       return matchesName || matchesCode || matchesHousehold || matchesTags;

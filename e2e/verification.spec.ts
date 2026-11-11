@@ -38,8 +38,9 @@ test.describe('UI Verification', () => {
 
     try {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-    } catch (err: any) {
-      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed')) {
         page = await context.newPage();
         await page.goto('/', { waitUntil: 'domcontentloaded' });
       } else {
