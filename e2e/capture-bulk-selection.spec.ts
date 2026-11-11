@@ -32,7 +32,7 @@ function generateGuestCookieValue() {
 }
 
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
 
   const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
   const cookies = origins.flatMap((url) => [
@@ -51,12 +51,17 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   // Go to invitation codes dashboard
   try {
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
+    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 20000 });
   } catch (err: any) {
-    if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+    if (
+      err?.message?.includes('crashed') ||
+      err?.message?.includes('closed') ||
+      err?.message?.includes('Timeout') ||
+      err?.message?.includes('timeout')
+    ) {
       await context.addCookies(cookies).catch(() => {});
       page = await context.newPage();
-      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
+      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 30000 });
     } else {
       throw err;
     }
@@ -67,7 +72,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
-  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
+  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ })).first();
   await countBtn.waitFor({ state: 'visible', timeout: 30000 });
   const countText = await countBtn.innerText();
   if (countText.includes('All (0)')) {

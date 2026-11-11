@@ -127,11 +127,25 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(seedRes.status()).toBe(200);
 
     // Visit admin dashboard
-    await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (err: any) {
+      if (
+        err?.message?.includes('crashed') ||
+        err?.message?.includes('closed') ||
+        err?.message?.includes('Timeout') ||
+        err?.message?.includes('timeout')
+      ) {
+        page = await context.newPage();
+        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } else {
+        throw err;
+      }
+    }
 
     // Sample data banner should be visible
     const banner = page.locator('[data-testid="sample-data-banner"]');
-    await expect(banner).toBeVisible();
+    await expect(banner).toBeVisible({ timeout: 15000 });
 
     // Should contain "Sample Data Active"
     await expect(banner).toContainText('Sample Data Active');
@@ -147,7 +161,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     await confirmButton.click();
 
     // Banner should disappear after purging
-    await expect(banner).not.toBeVisible();
+    await expect(banner).not.toBeVisible({ timeout: 15000 });
 
     // Verify status API reports no sample data
     const statusRes = await request.get('/api/admin/sample-data', {

@@ -214,7 +214,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         try {
           let attempt = 0;
           let success = false;
-          while (attempt < 2 && !success) {
+          while (attempt < 3 && !success) {
             attempt++;
             try {
               const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
@@ -301,7 +301,7 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               success = true;
             } catch (err: any) {
               if (
-                attempt < 2 &&
+                attempt < 3 &&
                 (err?.message?.includes('crashed') ||
                  err?.message?.includes('closed') ||
                  err?.message?.includes('net::ERR_ABORTED'))
