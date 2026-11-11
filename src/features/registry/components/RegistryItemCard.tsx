@@ -14,6 +14,8 @@ import { useShareItem } from '../hooks/useShareItem';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { getPaymentUrl } from '../utils/paymentUrls';
 
+const FIXED_PRESETS = [50, 100, 250];
+
 /**
  * @interface RegistryItemCardProps
  * @description Defines the props for the RegistryItemCard component.
@@ -98,6 +100,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
         setIsValidatingCode(false);
       }
     }
+  };
+
+  const handlePresetClick = (presetValue: number) => {
+    setAmount(presetValue);
+    setError(null);
   };
 
   const handleContributeClick = async () => {
@@ -390,6 +397,62 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               <Label>
                 Contribution Amount <span className="text-red-500">*</span>
               </Label>
+              {remainingAmount > 0 && (
+                <div
+                  role="group"
+                  aria-label="Contribution presets"
+                  className="flex flex-wrap gap-2 mb-2"
+                >
+                  {FIXED_PRESETS.filter((preset) => preset <= remainingAmount).map((preset) => {
+                    const isSelected =
+                      !isNaN(parsedContributionAmount) &&
+                      Math.abs(parsedContributionAmount - preset) < 0.01;
+                    return (
+                      <Button
+                        key={preset}
+                        type="button"
+                        variant={isSelected ? 'primary' : 'outline'}
+                        size="sm"
+                        aria-pressed={isSelected}
+                        disabled={isSubmitting}
+                        onClick={() => handlePresetClick(preset)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handlePresetClick(preset);
+                          }
+                        }}
+                      >
+                        ${preset}
+                      </Button>
+                    );
+                  })}
+                  {(() => {
+                    const isSelected =
+                      !isNaN(parsedContributionAmount) &&
+                      Math.abs(parsedContributionAmount - remainingAmount) < 0.01;
+                    return (
+                      <Button
+                        key="full-remaining"
+                        type="button"
+                        variant={isSelected ? 'primary' : 'outline'}
+                        size="sm"
+                        aria-pressed={isSelected}
+                        disabled={isSubmitting}
+                        onClick={() => handlePresetClick(remainingAmount)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handlePresetClick(remainingAmount);
+                          }
+                        }}
+                      >
+                        Full Remaining ({formatCurrency(remainingAmount)})
+                      </Button>
+                    );
+                  })()}
+                </div>
+              )}
               <Input
                 type="number"
                 placeholder={`Up to ${formatCurrency(remainingAmount)}`}
