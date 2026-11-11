@@ -19,6 +19,14 @@ const fadeUp: Variants = {
   }
 };
 
+function getSafeCallbackUrl(url: string | null): string {
+  if (!url) return '/';
+  if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) {
+    return url;
+  }
+  return '/';
+}
+
 function GuestLoginForm() {
   const { contactEmail } = useTheme();
   const [passcode, setPasscode] = useState('');
@@ -52,7 +60,7 @@ function GuestLoginForm() {
       if (!res.ok) {
         setError(data.error || 'Incorrect passcode. Please try again.');
       } else {
-        const callbackUrl = searchParams.get('callbackUrl') || '/';
+        const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
         router.push(callbackUrl);
       }
     } catch {
@@ -112,7 +120,7 @@ function GuestLoginForm() {
       const code = data.code || data.data?.code || '';
       setMatchedGuest({ guestName, code });
 
-      const callbackUrl = searchParams.get('callbackUrl') || '/';
+      const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
       setTimeout(() => {
         router.push(callbackUrl);
       }, 1500);
@@ -332,7 +340,7 @@ function GuestLoginForm() {
                 <button
                   type="button"
                   onClick={() => {
-                    const callbackUrl = searchParams.get('callbackUrl') || '/';
+                    const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
                     router.push(callbackUrl);
                   }}
                   className="w-full py-2.5 px-4 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
