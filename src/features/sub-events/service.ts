@@ -72,7 +72,7 @@ export class SubEventService {
               invitationCodeId: invitationCodeId,
             },
           }
-          : true,
+          : false,
       },
     });
 
