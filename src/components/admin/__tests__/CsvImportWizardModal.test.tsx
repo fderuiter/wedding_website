@@ -834,4 +834,21 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByText(/Valid: 1/i)).toBeInTheDocument();
     });
   });
+
+  test('safely handles existingCodes containing undefined or null elements without crashing', () => {
+    expect(() => {
+      render(
+        <ToastProvider>
+          <CsvImportWizardModal
+            isOpen={true}
+            onClose={mockOnClose}
+            onImportComplete={mockOnImportComplete}
+            existingCodes={['CODE1', undefined as unknown as string, null as unknown as string, 'code2']}
+          />
+        </ToastProvider>
+      );
+    }).not.toThrow();
+
+    expect(screen.getByText('Import Guest Invitation Codes')).toBeInTheDocument();
+  });
 });
