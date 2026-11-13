@@ -1,7 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import ThankYouNotesPage from '../page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { substituteThankYouTemplateTokens } from '@/features/registry';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -247,5 +248,186 @@ describe('ThankYouNotesPage', () => {
         expect.stringContaining('page=2')
       );
     });
+  });
+
+  it('renders template dropdown and replaces tokens with contributor details', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const editBtn = screen.getByRole('button', { name: 'Edit thank-you note for Alice Johnson' });
+    fireEvent.click(editBtn);
+
+    const templateSelect = screen.getByLabelText('Select thank-you note template for Alice Johnson');
+    expect(templateSelect).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Choose a starter template...' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Physical Gift' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Monetary Contribution' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'General Appreciation' })).toBeInTheDocument();
+
+    const textarea = screen.getByLabelText('Thank-you note message for Alice Johnson');
+    // Clear textarea to avoid overwrite prompt
+    fireEvent.change(textarea, { target: { value: '' } });
+
+    // Select physical gift template
+    fireEvent.change(templateSelect, { target: { value: 'physical-gift' } });
+
+    expect(textarea).toHaveValue(
+      'Dear Alice Johnson, thank you so much for the wonderful Espresso Machine! We are so grateful for your thoughtfulness and love.'
+    );
+  });
+
+  it('populates monetary contribution template with formatted amount and item name', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const editBtn = screen.getByRole('button', { name: 'Edit thank-you note for Alice Johnson' });
+    fireEvent.click(editBtn);
+
+    const textarea = screen.getByLabelText('Thank-you note message for Alice Johnson');
+    fireEvent.change(textarea, { target: { value: '' } });
+
+    const templateSelect = screen.getByLabelText('Select thank-you note template for Alice Johnson');
+    fireEvent.change(templateSelect, { target: { value: 'monetary-contribution' } });
+
+    expect(textarea).toHaveValue(
+      'Dear Alice Johnson, thank you so much for your generous gift of $150.00 towards our Espresso Machine! Your support means the world to us.'
+    );
+  });
+
+  it('falls back to "wedding gift" when registry item name is missing', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ...mockData,
+              items: [
+                {
+                  id: 'c3',
+                  name: 'Charlie Davis',
+                  email: 'charlie@example.com',
+                  amount: 50,
+                  date: new Date().toISOString(),
+                  thankYouStatus: 'Unsent',
+                  thankYouSentAt: null,
+                  thankYouNote: null,
+                  registryItem: null,
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.reject(new Error('Unknown endpoint'));
+    });
+
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Charlie Davis')).toBeInTheDocument();
+    });
+
+    const editBtn = screen.getByRole('button', { name: 'Edit thank-you note for Charlie Davis' });
+    fireEvent.click(editBtn);
+
+    const templateSelect = screen.getByLabelText('Select thank-you note template for Charlie Davis');
+    fireEvent.change(templateSelect, { target: { value: 'general-appreciation' } });
+
+    const textarea = screen.getByLabelText('Thank-you note message for Charlie Davis');
+    expect(textarea).toHaveValue(
+      'Dear Charlie Davis, thank you so much for celebrating with us and for your generous wedding gift! We are so blessed to have you in our lives.'
+    );
+  });
+
+  it('prompts confirmation when replacing note with existing text, respecting cancel and confirm', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const editBtn = screen.getByRole('button', { name: 'Edit thank-you note for Alice Johnson' });
+    fireEvent.click(editBtn);
+
+    const textarea = screen.getByLabelText('Thank-you note message for Alice Johnson');
+    // Alice Johnson already has 'Initial draft note'
+    expect(textarea).toHaveValue('Initial draft note');
+
+    const templateSelect = screen.getByLabelText('Select thank-you note template for Alice Johnson');
+
+    // Trigger template selection with existing note text
+    fireEvent.change(templateSelect, { target: { value: 'physical-gift' } });
+
+    // Confirmation dialog should appear
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
+        )
+      ).toBeInTheDocument();
+    });
+
+    // Click Cancel in dialog
+    const cancelConfirmBtn = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' });
+    fireEvent.click(cancelConfirmBtn);
+
+    // Note should remain unchanged
+    expect(textarea).toHaveValue('Initial draft note');
+
+    // Now trigger again and click Confirm
+    fireEvent.change(templateSelect, { target: { value: 'physical-gift' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    });
+
+    const confirmBtn = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmBtn);
+
+    // Note should now be replaced with substituted template
+    await waitFor(() => {
+      expect(textarea).toHaveValue(
+        'Dear Alice Johnson, thank you so much for the wonderful Espresso Machine! We are so grateful for your thoughtfulness and love.'
+      );
+    });
+  });
+
+  it('substituteThankYouTemplateTokens handles custom tokens, whitespace, and defaults', () => {
+    const res1 = substituteThankYouTemplateTokens('Hi {{guestName}}, thanks for {{giftName}} ({{amount}})!', {
+      guestName: 'Jane',
+      giftName: 'Blender',
+      amount: 100,
+    });
+    expect(res1).toBe('Hi Jane, thanks for Blender ($100.00)!');
+
+    const res2 = substituteThankYouTemplateTokens('Hi {{ guestName }}, thanks for {{ giftName }} ({{ amount }})!', {
+      guestName: null,
+      giftName: null,
+      amount: null,
+    });
+    expect(res2).toBe('Hi Friend, thanks for wedding gift ($0.00)!');
   });
 });

@@ -20,7 +20,7 @@ interface CsvImportWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportComplete: () => void;
-  existingCodes?: string[];
+  existingCodes?: (string | undefined | null)[];
 }
 
 interface EditableRow {
@@ -584,7 +584,7 @@ export function CsvImportWizardModal({
     () =>
       new Set(
         (existingCodes || [])
-          .filter((c): c is string => Boolean(c && typeof c === 'string'))
+          .filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))
           .map((c) => c.trim().toUpperCase())
       ),
     [existingCodes]

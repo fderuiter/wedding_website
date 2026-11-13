@@ -225,6 +225,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     cleanup();
+    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
     // Allow process exit
     setTimeout(() => {
       process.exit(process.exitCode || 0);

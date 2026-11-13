@@ -1,7 +1,16 @@
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
 export type { ProgressMetrics, PaginationMeta, ThankYouNotesFilterOptions } from './thank-you.service';
-export type { RegistryItem } from './types';
+export type {
+  RegistryItem,
+  ThankYouTemplate,
+  ThankYouTemplateTokens,
+} from './types';
+export {
+  THANK_YOU_TEMPLATES,
+  DEFAULT_THANK_YOU_TEMPLATES,
+  substituteThankYouTemplateTokens,
+} from './types';
 export {
   RegistryItemSchema,
   RegistryItemBaseSchema,
