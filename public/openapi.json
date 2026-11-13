@@ -2916,6 +2916,34 @@
         }
       }
     },
+    "/api/admin/seating/auto-assign": {
+      "post": {
+        "summary": "POST /api/admin/seating/auto-assign",
+        "description": "Endpoint for /api/admin/seating/auto-assign",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "author": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/seating/export": {
       "get": {
         "summary": "GET /api/admin/seating/export",

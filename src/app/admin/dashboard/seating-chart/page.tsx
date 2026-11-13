@@ -470,6 +470,7 @@ export default function SeatingChartAdminPage() {
               onAssignGuestToTable={handleAssignGuestToTable}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
+              onAutoAssignComplete={fetchData}
             />
           </div>
 

@@ -2,8 +2,18 @@
 
 import React, { useState, useMemo } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
+import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry/schemas';
 import { SeatingTableDTO } from '../schemas';
+
+function useOptionalToast() {
+  try {
+    return useToast();
+  } catch {
+    return null;
+  }
+}
 
 interface UnassignedGuestPanelProps {
   unassignedGuests: InvitationCodeDTO[];
@@ -11,6 +21,7 @@ interface UnassignedGuestPanelProps {
   onAssignGuestToTable: (guestId: string, tableId: string, seatNumber?: number) => void;
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
+  onAutoAssignComplete?: (result: { assignedCount: number; unassignedCount: number; assignedGuests: any[] }) => void;
 }
 
 export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
@@ -19,11 +30,21 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   onAssignGuestToTable,
   searchQuery,
   onSearchQueryChange,
+  onAutoAssignComplete,
 }: UnassignedGuestPanelProps) {
+  const toast = useOptionalToast();
+  const [optimisticallyAssignedIds, setOptimisticallyAssignedIds] = useState<Set<string>>(new Set());
+  const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
   const [targetSeatNumber, setTargetSeatNumber] = useState<number | undefined>(undefined);
+
+  // Derive active unassigned guests synchronously from props and local optimistic assignments
+  const effectiveUnassignedGuests = useMemo(() => {
+    if (optimisticallyAssignedIds.size === 0) return unassignedGuests;
+    return unassignedGuests.filter((g) => !optimisticallyAssignedIds.has(g.id));
+  }, [unassignedGuests, optimisticallyAssignedIds]);
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -37,19 +58,62 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const filteredGuests = useMemo(() => {
     const term = currentSearchQuery.trim().toLowerCase();
-    if (!term) return unassignedGuests;
-    return unassignedGuests.filter((guest) => {
+    if (!term) return effectiveUnassignedGuests;
+    return effectiveUnassignedGuests.filter((guest) => {
       const matchesName = guest.guestName.toLowerCase().includes(term);
       const matchesCode = guest.code.toLowerCase().includes(term);
       const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
       return matchesName || matchesCode || matchesHousehold || matchesTags;
     });
-  }, [unassignedGuests, currentSearchQuery]);
+  }, [effectiveUnassignedGuests, currentSearchQuery]);
 
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
     e.dataTransfer.setData('text/plain', guestId);
     e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleAutoAssignAll = async () => {
+    setIsAutoAssigning(true);
+    try {
+      const res = await fetch('/api/admin/seating/auto-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to auto-assign seats');
+      }
+
+      const json = await res.json();
+      const payload = json.data || json;
+      const assignedCount = payload.assignedCount ?? 0;
+      const unassignedCount = payload.unassignedCount ?? 0;
+
+      const assignedIds: string[] = (payload.assignedGuests || []).map((g: any) => g.id);
+
+      // Optimistically update local guest state
+      setOptimisticallyAssignedIds((prev) => {
+        const next = new Set(prev);
+        assignedIds.forEach((id) => next.add(id));
+        return next;
+      });
+
+      let summaryMsg = `Successfully auto-assigned ${assignedCount} guest${assignedCount === 1 ? '' : 's'} across reception tables.`;
+      if (assignedCount === 0) {
+        summaryMsg = 'No guests could be auto-assigned. Please verify table capacities.';
+      } else if (unassignedCount > 0) {
+        summaryMsg = `Auto-assigned ${assignedCount} guest${assignedCount === 1 ? '' : 's'} (${unassignedCount} remaining unseated due to capacity).`;
+      }
+
+      toast?.addToast(summaryMsg, 'success');
+      onAutoAssignComplete?.(payload);
+    } catch (err: any) {
+      toast?.addToast(err.message || 'Error executing auto-assignment', 'error');
+    } finally {
+      setIsAutoAssigning(false);
+    }
   };
 
   const handleQuickAssignSubmit = (e: React.FormEvent) => {
@@ -72,11 +136,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         <div>
           <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Unassigned Guests</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            {unassignedGuests.length} guest{unassignedGuests.length === 1 ? '' : 's'} waiting for seating
+            {effectiveUnassignedGuests.length} guest{effectiveUnassignedGuests.length === 1 ? '' : 's'} waiting for seating
           </p>
         </div>
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary">
-          {unassignedGuests.length} unassigned
+          {effectiveUnassignedGuests.length} unassigned
         </span>
       </div>
 
@@ -151,6 +215,35 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
           ))
         )}
       </div>
+
+      {/* Auto-Assign All Action Button */}
+      {effectiveUnassignedGuests.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={handleAutoAssignAll}
+            disabled={isAutoAssigning}
+            className="w-full justify-center flex items-center gap-1.5 font-medium shadow-xs"
+            aria-label="Auto-Assign All"
+          >
+            {isAutoAssigning ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Auto-Assigning...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span>Auto-Assign All</span>
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Accessible Click-to-Assign Dialog */}
       {/* Accessible Click-to-Assign Dialog */}
