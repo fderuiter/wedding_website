@@ -38,8 +38,6 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
   }) => {
     test.setTimeout(60000);
 
-    const baseURL = 'http://127.0.0.1:3000';
-
     // Set admin and guest cookies using URL property matching repository pattern
     await context.addCookies([
       {
@@ -66,8 +64,9 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
 
     try {
       await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
-    } catch (err: any) {
-      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
         await context.addCookies([
           { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://127.0.0.1:3000' },
           { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://127.0.0.1:3000' },
@@ -75,7 +74,7 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
           { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://localhost:3000' },
         ]).catch(() => {});
         page = await context.newPage();
-        await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+        await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded', timeout: 30000 });
       } else {
         throw err;
       }

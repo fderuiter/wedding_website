@@ -10,6 +10,8 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { BroadcastModal } from '@/components/admin/BroadcastModal';
+import { InvitationQRPreviewModal, InvitationQRPreviewGuest } from '@/components/admin/InvitationQRPreviewModal';
+import { InvitationQRPrintLabelsModal, PrintableInvitationCode } from '@/components/admin/InvitationQRPrintLabelsModal';
 
 export function matchDietaryCategory(notes: string | null | undefined, category: string): boolean {
   if (!notes || !notes.trim()) return false;
@@ -128,6 +130,9 @@ export default function InvitationCodesDashboardPage() {
   const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastModalFilters, setBroadcastModalFilters] = useState<any>(undefined);
+  const [qrPreviewGuest, setQrPreviewGuest] = useState<InvitationQRPreviewGuest | null>(null);
+  const [isPrintLabelsModalOpen, setIsPrintLabelsModalOpen] = useState(false);
+  const [printLabelsList, setPrintLabelsList] = useState<PrintableInvitationCode[]>([]);
   const [bulkSubEventAction, setBulkSubEventAction] = useState<'grant' | 'revoke' | 'set'>('grant');
   const [bulkSelectedSubEventIds, setBulkSelectedSubEventIds] = useState<string[]>([]);
   const [newSubEvent, setNewSubEvent] = useState({
@@ -467,6 +472,30 @@ export default function InvitationCodesDashboardPage() {
     addToast(`Exported ${selectedIds.length} selected invitation code(s) to CSV.`, 'success');
   };
 
+  const handlePrintSelectedLabels = () => {
+    if (selectedIds.length === 0) {
+      addToast('No invitation codes selected for printing.', 'info');
+      return;
+    }
+    const targetCodes = codes.filter((c) => selectedIds.includes(c.id));
+    setPrintLabelsList(targetCodes);
+    setIsPrintLabelsModalOpen(true);
+  };
+
+  const handlePrintGlobalLabels = () => {
+    const targetCodes = selectedIds.length > 0
+      ? codes.filter((c) => selectedIds.includes(c.id))
+      : filteredCodes.length > 0
+        ? filteredCodes
+        : codes;
+    if (targetCodes.length === 0) {
+      addToast('No invitation codes available to print.', 'info');
+      return;
+    }
+    setPrintLabelsList(targetCodes);
+    setIsPrintLabelsModalOpen(true);
+  };
+
   const handleConfirmBatchDelete = async () => {
     const count = selectedIds.length;
     try {
@@ -626,6 +655,7 @@ export default function InvitationCodesDashboardPage() {
           <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
           <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
+          <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
           <Button variant="secondary" onClick={() => {
             setBroadcastModalFilters({
               partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
@@ -1142,8 +1172,19 @@ export default function InvitationCodesDashboardPage() {
                       Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
                     </div>
                   )}
-                  <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-                    Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
+                      Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="text-xs py-0.5 px-2 h-auto"
+                      onClick={() => setQrPreviewGuest(item)}
+                      aria-label={`View QR code for ${item.guestName}`}
+                    >
+                      View QR
+                    </Button>
                   </div>
 
                   {/* Party Tags Display */}
@@ -1290,6 +1331,9 @@ export default function InvitationCodesDashboardPage() {
             </Button>
             <Button size="sm" variant="secondary" onClick={handleBatchMarkUnused}>
               Mark as Unused
+            </Button>
+            <Button size="sm" variant="secondary" onClick={handlePrintSelectedLabels}>
+              Print QR Labels
             </Button>
             <Button size="sm" variant="secondary" onClick={handleExportSelectedCsv}>
               Export Selected CSV
@@ -1581,6 +1625,18 @@ export default function InvitationCodesDashboardPage() {
         targetFilters={broadcastModalFilters}
         selectedCount={broadcastModalFilters?.selectedIds?.length}
         subEvents={subEvents}
+      />
+
+      <InvitationQRPreviewModal
+        isOpen={Boolean(qrPreviewGuest)}
+        onClose={() => setQrPreviewGuest(null)}
+        guest={qrPreviewGuest}
+      />
+
+      <InvitationQRPrintLabelsModal
+        isOpen={isPrintLabelsModalOpen}
+        onClose={() => setIsPrintLabelsModalOpen(false)}
+        codes={printLabelsList}
       />
     </div>
   );

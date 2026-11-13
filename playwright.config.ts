@@ -40,8 +40,6 @@ export default defineConfig({
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--disable-site-isolation-trials',
-        '--js-flags=--max-old-space-size=4096 --expose-gc',
       ],
     },
   },

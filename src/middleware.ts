@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
 
@@ -21,10 +22,13 @@ export async function middleware(request: NextRequest) {
   const method = request.method;
 
   const isExcluded = 
+    pathname === '/guest' ||
     pathname === '/guest/login' ||
     pathname === '/guest/collect' ||
     pathname === '/api/guest/login' ||
+    pathname === '/api/guest/address' ||
     pathname === '/api/guest/address/public' ||
+    pathname === '/api/registry/validate-code' ||
     pathname === '/admin/login' ||
     pathname === '/api/admin/login' ||
     pathname === '/api/health' ||
@@ -50,7 +54,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!isExcluded) {
-    const isGuest = await isGuestRequest(request);
+    const isGuest = (await isGuestRequest(request)) || Boolean(await getGuestInviteSession(request));
     const isAdmin = await isAdminRequest(request);
 
     if (!isGuest && !isAdmin) {

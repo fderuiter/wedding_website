@@ -298,6 +298,11 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
 }
 
 @media print {
+  @page {
+    size: letter portrait;
+    margin: 0.4in;
+  }
+
   :root, .dark {
     --color-primary-light: var(--print-badge-bg) !important;
     --color-secondary-light: var(--print-badge-bg) !important;
@@ -317,7 +322,7 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
     color: var(--print-text) !important;
   }
 
-  header, footer, nav, button, .skip-link, .no-print, [role="navigation"] {
+  header, footer, nav, button, .skip-link, .no-print, [role="navigation"], [role="region"][aria-label="Batch actions toolbar"], .batch-actions-toolbar {
     display: none !important;
   }
 
@@ -331,6 +336,61 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
   a {
     color: var(--print-text) !important;
     text-decoration: underline !important;
+  }
+
+  /* Dedicated QR label sheet printing layout */
+  body.printing-qr-labels {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.printing-qr-labels * {
+    visibility: hidden;
+  }
+
+  body.printing-qr-labels .printable-qr-labels-area,
+  body.printing-qr-labels .printable-qr-labels-area * {
+    visibility: visible;
+  }
+
+  body.printing-qr-labels .printable-qr-labels-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  body.printing-qr-labels .printable-qr-labels-area .no-print {
+    display: none !important;
+  }
+
+  body.printing-qr-labels .qr-print-sheet {
+    display: grid !important;
+    gap: 0.12in !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body.printing-qr-labels .qr-label-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border: 1px dashed #cccccc !important;
+    border-radius: 4px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
   }
 }
 

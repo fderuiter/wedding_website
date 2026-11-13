@@ -48,7 +48,39 @@ export default function GuestAddressPage() {
   };
 
   useEffect(() => {
-    fetchAddress();
+    let urlCode: string | null = null;
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      urlCode = params.get('code');
+    }
+
+    if (urlCode && urlCode.trim()) {
+      const autoCode = urlCode.trim().toUpperCase();
+      setCode(autoCode);
+      const autoAuthenticate = async () => {
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/registry/validate-code?code=${encodeURIComponent(autoCode)}`);
+          const data = await res.json();
+          if (res.ok && (data.success || data.valid)) {
+            await fetchAddress();
+            const guest = data.data?.guestName || data.guestName || '';
+            addToast(`Welcome ${guest}!`, 'success');
+          } else {
+            addToast(data.error || 'Invalid or expired invitation code.', 'error');
+            await fetchAddress();
+          }
+        } catch (err: any) {
+          addToast(err.message || 'Error validating code.', 'error');
+          await fetchAddress();
+        } finally {
+          setLoading(false);
+        }
+      };
+      autoAuthenticate();
+    } else {
+      fetchAddress();
+    }
   }, []);
 
   const handleValidateCode = async (e: React.FormEvent) => {
@@ -62,12 +94,13 @@ export default function GuestAddressPage() {
     try {
       const res = await fetch(`/api/registry/validate-code?code=${encodeURIComponent(code.trim())}`);
       const data = await res.json();
-      if (!res.ok || !data.success) {
+      if (!res.ok || (!data.success && !data.valid)) {
         addToast(data.error || 'Invalid or expired invitation code.', 'error');
         return;
       }
       await fetchAddress();
-      addToast(`Welcome ${data.data?.guestName || ''}!`, 'success');
+      const guest = data.data?.guestName || data.guestName || '';
+      addToast(`Welcome ${guest}!`, 'success');
     } catch (err: any) {
       addToast(err.message || 'Error validating code.', 'error');
     } finally {
