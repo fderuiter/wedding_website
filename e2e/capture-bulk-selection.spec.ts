@@ -64,6 +64,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
 
   // Wait for page to finish loading data
   await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
+  await page.waitForResponse(resp => resp.url().includes('/api/admin/invitation-codes') && resp.status() === 200, { timeout: 15000 }).catch(() => {});
 
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });

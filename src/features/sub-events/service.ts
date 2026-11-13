@@ -12,6 +12,7 @@ export interface ScheduleEventWithRsvp {
   location?: string | null;
   category?: string | null;
   isPrivate: boolean;
+  attireRules?: string | null;
   userRsvp?: {
     status: 'attending' | 'declined' | 'pending';
     plusOneCount: number;
@@ -30,6 +31,117 @@ export interface AccessMatrixQueryParams {
 
 export class SubEventService {
   constructor(private client: any = prisma) {}
+
+  /**
+   * Retrieves a single sub-event by ID for a visitor or authenticated guest.
+   * Public sub-events are accessible to everyone.
+   * Private sub-events require an authenticated guest invitation code session with granted access.
+   * Throws ApiError 404 if the sub-event is not found.
+   * Throws ApiError 403 if the visitor is unauthenticated or lacks access to the private sub-event.
+   */
+  async getSubEventByIdForGuest(id: string, code?: string | null): Promise<ScheduleEventWithRsvp> {
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      throw new ApiError(404, 'Sub-event ID is required.');
+    }
+
+    let invitationCodeId: string | null = null;
+    if (code && typeof code === 'string' && code.trim()) {
+      const invite = await this.client.invitationCode.findUnique({
+        where: { code: code.trim().toUpperCase() },
+        select: { id: true },
+      });
+      if (invite) {
+        invitationCodeId = invite.id;
+      }
+    }
+
+    // Try finding in SubEvent table
+    const subEvent = await this.client.subEvent.findUnique({
+      where: { id: id.trim() },
+      include: {
+        accesses: invitationCodeId
+          ? {
+            where: {
+              invitationCodeId: invitationCodeId,
+            },
+          }
+          : true,
+        rsvps: invitationCodeId
+          ? {
+            where: {
+              invitationCodeId: invitationCodeId,
+            },
+          }
+          : false,
+      },
+    });
+
+    if (!subEvent) {
+      // Fallback: check ContentNode
+      let node: any = null;
+      if (this.client.contentNode?.findUnique) {
+        node = await this.client.contentNode.findUnique({
+          where: { id: id.trim() },
+        });
+      }
+      if (!node && this.client.contentNode?.findFirst) {
+        node = await this.client.contentNode.findFirst({
+          where: { id: id.trim() },
+        });
+      }
+
+      if (node && (node.type === 'Schedule' || node.type === 'Logistics' || node.tags?.includes('Schedule') || node.tags?.includes('schedule'))) {
+        const isPriv = Boolean(node.data?.isPrivate);
+        if (isPriv) {
+          throw new ApiError(403, `Forbidden: You do not have access to private event "${node.data?.title || 'Scheduled Event'}".`);
+        }
+        return {
+          id: node.id,
+          title: node.data?.title || 'Scheduled Event',
+          description: node.data?.description || '',
+          startTime: node.data?.startTime || null,
+          endTime: node.data?.endTime || null,
+          locationName: node.data?.locationName || node.data?.location || '',
+          location: node.data?.location || '',
+          category: node.data?.category || '',
+          isPrivate: false,
+          attireRules: node.data?.attireRules || node.data?.attire || null,
+          userRsvp: null,
+        };
+      }
+
+      throw new ApiError(404, `Sub-event with ID ${id} not found.`);
+    }
+
+    // Access control for private events
+    if (subEvent.isPrivate) {
+      if (!invitationCodeId || !subEvent.accesses || subEvent.accesses.length === 0) {
+        throw new ApiError(403, `Forbidden: You do not have access to private event "${subEvent.title}".`);
+      }
+    }
+
+    const rsvp = subEvent.rsvps && subEvent.rsvps.length > 0 ? subEvent.rsvps[0] : null;
+
+    return {
+      id: subEvent.id,
+      title: subEvent.title,
+      description: subEvent.description || '',
+      startTime: subEvent.startTime instanceof Date ? subEvent.startTime.toISOString() : (subEvent.startTime || null),
+      endTime: subEvent.endTime instanceof Date ? subEvent.endTime.toISOString() : (subEvent.endTime || null),
+      locationName: subEvent.locationName || '',
+      location: subEvent.location || '',
+      category: subEvent.category || '',
+      isPrivate: subEvent.isPrivate,
+      attireRules: (subEvent as any).attireRules || (subEvent as any).attire || null,
+      userRsvp: rsvp
+        ? {
+          status: rsvp.status as 'attending' | 'declined' | 'pending',
+          plusOneCount: rsvp.plusOneCount ?? 0,
+          dietaryNotes: rsvp.dietaryNotes || '',
+        }
+        : null,
+    };
+  }
 
   /**
    * Retrieves the schedule accessible to a visitor based on their invitation code session.
@@ -117,6 +229,7 @@ export class SubEventService {
           location: n.data?.location || '',
           category: n.data?.category || '',
           isPrivate: Boolean(n.data?.isPrivate),
+          attireRules: n.data?.attireRules || n.data?.attire || null,
           userRsvp: null,
         }));
     }
@@ -133,6 +246,7 @@ export class SubEventService {
         location: evt.location || '',
         category: evt.category || '',
         isPrivate: evt.isPrivate,
+        attireRules: (evt as any).attireRules || (evt as any).attire || null,
         userRsvp: rsvp
           ? {
             status: rsvp.status as 'attending' | 'declined' | 'pending',

@@ -132,6 +132,7 @@ describe('calendar utils', () => {
   describe('formatScheduleEventToCalendarEvent', () => {
     it('converts ISO schedule item into CalendarEvent structure with exact start/end times and timezone', () => {
       const scheduleItem = {
+        id: 'item-123',
         title: 'Rehearsal Dinner',
         startTime: '2026-06-19T18:00:00.000Z',
         endTime: '2026-06-19T21:00:00.000Z',
@@ -142,6 +143,7 @@ describe('calendar utils', () => {
 
       const result = formatScheduleEventToCalendarEvent(scheduleItem, '2026-06-19', 'America/Chicago');
 
+      expect(result.id).toBe('item-123');
       expect(result.name).toBe('Rehearsal Dinner');
       expect(result.startDate).toBe('2026-06-19');
       expect(result.startTime).toBe('18:00');

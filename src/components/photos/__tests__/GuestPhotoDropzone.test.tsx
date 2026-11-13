@@ -192,4 +192,205 @@ describe('GuestPhotoDropzone', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
+
+  it('throttles concurrent uploads to at most 2 active requests and processes remaining queued files as slots free up', async () => {
+    const resolvers: Array<(_resolveValue: unknown) => void> = [];
+    (global.fetch as jest.Mock).mockImplementation(() => {
+      return new Promise((resolve) => {
+        resolvers.push(resolve);
+      });
+    });
+
+    render(<GuestPhotoDropzone />);
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+
+    const files = [
+      new File(['f1'], 'file1.jpg', { type: 'image/jpeg' }),
+      new File(['f2'], 'file2.jpg', { type: 'image/jpeg' }),
+      new File(['f3'], 'file3.jpg', { type: 'image/jpeg' }),
+      new File(['f4'], 'file4.jpg', { type: 'image/jpeg' }),
+    ];
+
+    fireEvent.change(fileInput, { target: { files } });
+
+    // Exactly 2 active uploads should be triggered initially
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    // 2 uploading badges and 2 queued badges
+    expect(screen.getAllByText('Uploading...')).toHaveLength(2);
+    expect(screen.getAllByText('Queued')).toHaveLength(2);
+
+    // Resolve the first upload
+    resolvers[0]({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { id: 'media-1', url: '/uploads/file1.jpg' },
+      }),
+    });
+
+    // Slot freed -> 3rd upload starts
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    // Resolve the second upload
+    resolvers[1]({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { id: 'media-2', url: '/uploads/file2.jpg' },
+      }),
+    });
+
+    // Slot freed -> 4th upload starts
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(4);
+    });
+
+    // Resolve remaining 2 uploads
+    resolvers[2]({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { id: 'media-3', url: '/uploads/file3.jpg' },
+      }),
+    });
+    resolvers[3]({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { id: 'media-4', url: '/uploads/file4.jpg' },
+      }),
+    });
+
+    // All 4 uploads complete successfully
+    await waitFor(() => {
+      expect(screen.getAllByTestId('upload-success-badge')).toHaveLength(4);
+    });
+  });
+
+  it('aborts in-flight request when user removes an active upload item and suppresses error alerts', async () => {
+    const abortSpy = jest.spyOn(AbortController.prototype, 'abort');
+    let capturedSignal: AbortSignal | undefined;
+
+    (global.fetch as jest.Mock).mockImplementation((_url, options) => {
+      capturedSignal = options?.signal;
+      return new Promise((_, reject) => {
+        if (options?.signal) {
+          options.signal.addEventListener('abort', () => {
+            const error = new Error('The operation was aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }
+      });
+    });
+
+    render(<GuestPhotoDropzone />);
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const validFile = new File(['file data'], 'cancel-me.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Click remove button
+    const removeButton = screen.getByLabelText('Remove item');
+    fireEvent.click(removeButton);
+
+    expect(abortSpy).toHaveBeenCalled();
+    expect(capturedSignal?.aborted).toBe(true);
+
+    // Item should be removed from DOM and no error badge displayed
+    await waitFor(() => {
+      expect(screen.queryByText('cancel-me.jpg')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('upload-error-badge')).not.toBeInTheDocument();
+
+    abortSpy.mockRestore();
+  });
+
+  it('aborts all active requests when component unmounts', async () => {
+    const abortSpy = jest.spyOn(AbortController.prototype, 'abort');
+    const capturedSignals: AbortSignal[] = [];
+
+    (global.fetch as jest.Mock).mockImplementation((_url, options) => {
+      if (options?.signal) {
+        capturedSignals.push(options.signal);
+      }
+      return new Promise(() => {});
+    });
+
+    const { unmount } = render(<GuestPhotoDropzone />);
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const files = [
+      new File(['d1'], 'unmount1.jpg', { type: 'image/jpeg' }),
+      new File(['d2'], 'unmount2.jpg', { type: 'image/jpeg' }),
+    ];
+
+    fireEvent.change(fileInput, { target: { files } });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    expect(capturedSignals).toHaveLength(2);
+    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[1].aborted).toBe(false);
+
+    unmount();
+
+    expect(abortSpy).toHaveBeenCalledTimes(2);
+    expect(capturedSignals[0].aborted).toBe(true);
+    expect(capturedSignals[1].aborted).toBe(true);
+
+    abortSpy.mockRestore();
+  });
+
+  it('aborts all active requests and clears list when "Clear status" is clicked', async () => {
+    const abortSpy = jest.spyOn(AbortController.prototype, 'abort');
+    const capturedSignals: AbortSignal[] = [];
+
+    (global.fetch as jest.Mock).mockImplementation((_url, options) => {
+      if (options?.signal) {
+        capturedSignals.push(options.signal);
+      }
+      return new Promise(() => {});
+    });
+
+    render(<GuestPhotoDropzone />);
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const files = [
+      new File(['d1'], 'clear1.jpg', { type: 'image/jpeg' }),
+      new File(['d2'], 'clear2.jpg', { type: 'image/jpeg' }),
+      new File(['d3'], 'clear3.jpg', { type: 'image/jpeg' }),
+    ];
+
+    fireEvent.change(fileInput, { target: { files } });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    const clearButton = screen.getByTestId('clear-status-button');
+    fireEvent.click(clearButton);
+
+    expect(abortSpy).toHaveBeenCalledTimes(2);
+    expect(capturedSignals[0].aborted).toBe(true);
+    expect(capturedSignals[1].aborted).toBe(true);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('upload-progress-container')).not.toBeInTheDocument();
+    });
+
+    abortSpy.mockRestore();
+  });
 });
