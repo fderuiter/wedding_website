@@ -65,7 +65,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       if (!table.invitationCodes) continue;
       for (const guest of table.invitationCodes) {
         const nameMatch = guest.guestName.toLowerCase().includes(normalizedQuery);
-        const codeMatch = guest.code.toLowerCase().includes(normalizedQuery);
+        const codeMatch = guest.code ? guest.code.toLowerCase().includes(normalizedQuery) : false;
         const householdMatch = guest.householdName
           ? guest.householdName.toLowerCase().includes(normalizedQuery)
           : false;
