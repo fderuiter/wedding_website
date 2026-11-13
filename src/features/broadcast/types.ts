@@ -36,6 +36,13 @@ export interface PreviewBroadcastInput {
   targetFilters?: BroadcastTargetFilters;
 }
 
+export interface SendTestBroadcastInput {
+  channel: BroadcastChannel;
+  subject?: string;
+  body: string;
+  destination?: string;
+}
+
 export interface TestConnectionInput {
   type: 'email' | 'sms';
   provider?: string;

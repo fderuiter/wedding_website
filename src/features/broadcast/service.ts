@@ -5,10 +5,12 @@ import { MultiChannelMessagingProvider } from './providers';
 import {
   SendBroadcastInput,
   PreviewBroadcastInput,
+  SendTestBroadcastInput,
   BroadcastTargetFilters,
   BroadcastHistoryItem,
   DispatchResult,
   BroadcastChannel,
+  BroadcastTemplateContext,
 } from './types';
 
 export class BroadcastService {
@@ -126,6 +128,81 @@ export class BroadcastService {
       body: renderedBody,
       sampleGuestName: sampleGuest.guestName,
       destination,
+    };
+  }
+
+  /**
+   * Dispatches a single test broadcast message to a host destination.
+   * Renders sample context without reading guest records or creating database entries.
+   */
+  static async sendTestBroadcast(input: SendTestBroadcastInput) {
+    const config = await getAppConfig('global');
+
+    // Resolve destination: custom override or administrator contact details from application configuration
+    const destination = (input.destination?.trim()) ||
+      (input.channel === 'EMAIL' ? config.contactEmail : config.twilioFromNumber);
+
+    if (!destination) {
+      throw new Error(`Recipient ${input.channel === 'EMAIL' ? 'email address' : 'phone number'} is required. No destination specified or configured.`);
+    }
+
+    if (input.channel === 'EMAIL') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(destination)) {
+        throw new Error('Invalid email address format for test destination.');
+      }
+    } else if (input.channel === 'SMS') {
+      const e164Regex = /^\+[1-9]\d{1,14}$/;
+      if (!e164Regex.test(destination)) {
+        throw new Error('Invalid phone number format. Must be in E.164 format (e.g. +15551234567).');
+      }
+    }
+
+    const context: BroadcastTemplateContext = {
+      guestName: 'Jane Doe',
+      invitationCode: 'SAMPLE2026',
+      code: 'SAMPLE2026',
+      householdName: 'Doe Family',
+      weddingDate: config.weddingDate
+        ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : '',
+      venueName: config.venueName || '',
+    };
+
+    const renderedBody = renderBroadcastTemplate(input.body, context);
+
+    let personalizedSubject: string | undefined = undefined;
+    if (input.channel === 'EMAIL') {
+      const baseSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : 'Broadcast Test';
+      personalizedSubject = baseSubject.startsWith('[TEST]') ? baseSubject : `[TEST] ${baseSubject}`;
+    }
+
+    const provider = new MultiChannelMessagingProvider(config);
+
+    let result: DispatchResult;
+    if (input.channel === 'EMAIL') {
+      result = await provider.sendEmail({
+        to: destination,
+        subject: personalizedSubject || '[TEST] Broadcast',
+        body: renderedBody,
+      });
+    } else {
+      result = await provider.sendSms({
+        to: destination,
+        body: renderedBody,
+      });
+    }
+
+    if (!result.success) {
+      throw new Error(result.error || `Failed to dispatch test ${input.channel.toLowerCase()}.`);
+    }
+
+    return {
+      success: true,
+      channel: input.channel,
+      destination,
+      subject: personalizedSubject,
+      body: renderedBody,
     };
   }
 

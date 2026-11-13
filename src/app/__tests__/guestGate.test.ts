@@ -202,6 +202,13 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.headers.get('location')).toBeNull();
     });
 
+    it('bypasses guest passcode check for self-service lookup API /api/guest/lookup', async () => {
+      const req = new NextRequest('http://localhost/api/guest/lookup', { method: 'POST' });
+      const res = await middleware(req);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('location')).toBeNull();
+    });
+
     it('bypasses check for robots.txt', async () => {
       const req = new NextRequest('http://localhost/robots.txt');
       const res = await middleware(req);
