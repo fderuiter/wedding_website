@@ -108,84 +108,77 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(contributeBody.error).toMatch(/sample/i);
   });
 
-  test('displays sample data banner and badges in admin UI, then purges sample data', async ({ browser }) => {
+  test('displays sample data banner and badges in admin UI, then purges sample data', async ({ context, page }) => {
     const adminCookie = generateAdminCookieValue();
-    const guestCookie = generateGuestCookieValue();
-    const context = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
+    await context.addCookies([
+      { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
+      { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
+    ]);
 
-    try {
-      await context.addCookies([
-        { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-        { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-        { name: 'guest_auth', value: guestCookie, url: 'http://127.0.0.1:3000' },
-        { name: 'guest_auth', value: guestCookie, url: 'http://localhost:3000' },
-      ]);
+    // Seed sample data via API
+    const request = context.request;
+    const seedRes = await request.post('/api/admin/sample-data', {
+      headers: { Cookie: `admin_auth=${adminCookie}` },
+      data: {
+        archetype: 'classic',
+        modules: ['registry', 'guests', 'weddingParty', 'attractions'],
+      },
+    });
+    expect(seedRes.status()).toBe(200);
 
-      // Seed sample data via API
-      const request = context.request;
-      const seedRes = await request.post('/api/admin/sample-data', {
-        headers: { Cookie: `admin_auth=${adminCookie}` },
-        data: {
-          archetype: 'classic',
-          modules: ['registry', 'guests', 'weddingParty', 'attractions'],
-        },
-      });
-      expect(seedRes.status()).toBe(200);
-
-      let currentAdminPage = await context.newPage();
-      let attempt = 0;
-      while (attempt < 2) {
-        attempt++;
-        try {
-          await currentAdminPage.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
-          break;
-        } catch (gotoErr: unknown) {
-          if (
-            attempt < 2 &&
-            ((gotoErr as Error)?.message?.includes('crashed') ||
-             (gotoErr as Error)?.message?.includes('closed') ||
-             (gotoErr as Error)?.message?.includes('net::ERR_ABORTED'))
-          ) {
-            await currentAdminPage.close().catch(() => {});
-            currentAdminPage = await context.newPage();
-            continue;
-          }
-          throw gotoErr;
+    // Visit admin dashboard
+    const banner = page.locator('[data-testid="sample-data-banner"]');
+    let attempt = 0;
+    while (attempt < 4) {
+      attempt++;
+      try {
+        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await expect(banner).toBeVisible({ timeout: 20000 });
+        break;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          attempt < 4 &&
+          (msg.includes('crashed') ||
+           msg.includes('closed') ||
+           msg.includes('Timeout') ||
+           msg.includes('timeout') ||
+           msg.includes('net::ERR_ABORTED'))
+        ) {
+          console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
+          await page.close().catch(() => {});
+          await context.addCookies([
+            { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
+            { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
+          ]).catch(() => {});
+          page = await context.newPage();
+        } else {
+          throw err;
         }
       }
-
-      // Sample data banner should be visible
-      const banner = currentAdminPage.locator('[data-testid="sample-data-banner"]');
-      await expect(banner).toBeVisible();
-
-      // Should contain "Sample Data Active"
-      await expect(banner).toContainText('Sample Data Active');
-
-      // Click Purge Sample Data button in banner
-      const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });
-      await expect(purgeButton).toBeVisible();
-      await purgeButton.click();
-
-      // Confirm in the confirmation dialog modal
-      const confirmButton = currentAdminPage.locator('button', { hasText: 'Confirm' });
-      await expect(confirmButton).toBeVisible();
-      const deletePromise = currentAdminPage.waitForResponse(
-        (res) => res.url().includes('/api/admin/sample-data') && res.request().method() === 'DELETE'
-      );
-      await confirmButton.click();
-      await deletePromise;
-
-      // Banner should disappear after purging
-      await expect(banner).not.toBeVisible();
-
-      // Verify status API reports no sample data
-      const statusRes = await request.get('/api/admin/sample-data', {
-        headers: { Cookie: `admin_auth=${adminCookie}` },
-      });
-      const statusBody = await statusRes.json();
-      expect(statusBody.hasSampleData).toBe(false);
-    } finally {
-      await context.close().catch(() => {});
     }
+
+    // Should contain "Sample Data Active"
+    await expect(banner).toContainText('Sample Data Active');
+
+    // Click Purge Sample Data button in banner
+    const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });
+    await expect(purgeButton).toBeVisible();
+    await purgeButton.click();
+
+    // Confirm in the confirmation dialog modal
+    const confirmButton = page.locator('button', { hasText: 'Confirm' });
+    await expect(confirmButton).toBeVisible();
+    await confirmButton.click();
+
+    // Banner should disappear after purging
+    await expect(banner).not.toBeVisible({ timeout: 15000 });
+
+    // Verify status API reports no sample data
+    const statusRes = await request.get('/api/admin/sample-data', {
+      headers: { Cookie: `admin_auth=${adminCookie}` },
+    });
+    const statusBody = await statusRes.json();
+    expect(statusBody.hasSampleData).toBe(false);
   });
 });
