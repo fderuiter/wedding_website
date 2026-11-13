@@ -5,6 +5,7 @@ import type { ContentNodeDTO } from '@/features/content/schemas';
 import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
+import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 
 interface CategoryColorStyle {
   bg?: string;
@@ -154,6 +155,7 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         locationName: data?.locationName || data?.location || '',
         attireRules: data?.attireRules || data?.attire || data?.receptionAttire || '',
         description: data?.description || data?.receptionDetails || '',
+        userRsvp: data?.userRsvp !== undefined ? data.userRsvp : undefined,
         createdAt: node.createdAt,
       };
     })
@@ -173,7 +175,22 @@ export default function InteractiveTimeline({
   const [subEventsFromApi, setSubEventsFromApi] = useState<ScheduleEventItem[] | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
-  const [rsvpState, setRsvpState] = useState<Record<string, { status: 'attending' | 'declined' | 'pending'; plusOneCount: number; dietaryNotes: string; isSubmitting?: boolean; message?: string }>>({});
+
+  const initialEvents = useMemo(() => {
+    return initialNodes.map((node) => {
+      const data = node.data as any;
+      return {
+        id: node.id,
+        title: data?.title || '',
+        userRsvp: data?.userRsvp || null,
+      };
+    });
+  }, [initialNodes]);
+
+  const rsvpManager = useScheduleRsvpManager({
+    initialEvents,
+  });
+  const { initializeEvents } = rsvpManager;
 
   useEffect(() => {
     async function loadSchedule() {
@@ -201,16 +218,7 @@ export default function InteractiveTimeline({
               setGuestName(json.guestName || null);
             }
 
-            // Init RSVP state
-            const initialRsvpMap: Record<string, any> = {};
-            data.forEach((item: any) => {
-              initialRsvpMap[item.id] = {
-                status: item.userRsvp?.status || 'pending',
-                plusOneCount: item.userRsvp?.plusOneCount ?? 0,
-                dietaryNotes: item.userRsvp?.dietaryNotes || '',
-              };
-            });
-            setRsvpState(initialRsvpMap);
+            initializeEvents(mapped);
           }
         }
       } catch {
@@ -218,7 +226,7 @@ export default function InteractiveTimeline({
       }
     }
     loadSchedule();
-  }, []);
+  }, [initializeEvents]);
 
   const normalizedEvents = useMemo(() => {
     if (subEventsFromApi && subEventsFromApi.length > 0) {
@@ -287,51 +295,6 @@ export default function InteractiveTimeline({
     }
   };
 
-  const handleRsvpSubmit = async (subEventId: string) => {
-    const current = rsvpState[subEventId];
-    if (!current) return;
-
-    setRsvpState((prev) => ({
-      ...prev,
-      [subEventId]: { ...prev[subEventId], isSubmitting: true, message: undefined },
-    }));
-
-    try {
-      const res = await fetch('/api/rsvp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subEventId,
-          status: current.status,
-          plusOneCount: current.plusOneCount,
-          dietaryNotes: current.dietaryNotes,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to submit RSVP.');
-      }
-
-      setRsvpState((prev) => ({
-        ...prev,
-        [subEventId]: {
-          ...prev[subEventId],
-          isSubmitting: false,
-          message: 'RSVP submitted successfully!',
-        },
-      }));
-    } catch (err: any) {
-      setRsvpState((prev) => ({
-        ...prev,
-        [subEventId]: {
-          ...prev[subEventId],
-          isSubmitting: false,
-          message: err.message || 'Error submitting RSVP.',
-        },
-      }));
-    }
-  };
 
   if (normalizedEvents.length === 0) {
     return null;
@@ -396,6 +359,66 @@ export default function InteractiveTimeline({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* ARIA Live Region for RSVP Notifications */}
+      {rsvpManager.liveMessage && (
+        <div role="status" aria-live="polite" className="sr-only" data-testid="rsvp-live-status">
+          {rsvpManager.liveMessage}
+        </div>
+      )}
+
+      {/* Batch Coordination Action Bar */}
+      {(rsvpManager.dirtyCount > 0 || rsvpManager.isBatchSubmitting || rsvpManager.batchError || rsvpManager.batchSuccessMessage) && (
+        <div
+          role="region"
+          aria-label="RSVP batch coordination"
+          className="mb-8 p-4 rounded-xl border bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+          data-testid="rsvp-batch-bar"
+        >
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              {rsvpManager.dirtyCount > 0 ? (
+                <span className="text-sm font-semibold text-primary">
+                  {rsvpManager.dirtyCount} {rsvpManager.dirtyCount === 1 ? 'event has' : 'events have'} unsaved changes
+                </span>
+              ) : (
+                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  {rsvpManager.batchSuccessMessage || 'All RSVPs up to date'}
+                </span>
+              )}
+            </div>
+            {rsvpManager.batchError && (
+              <span className="text-xs text-rose-600 dark:text-rose-400">
+                {rsvpManager.batchError}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {rsvpManager.dirtyCount > 0 && (
+              <button
+                type="button"
+                disabled={rsvpManager.isAnySubmitting}
+                onClick={() => rsvpManager.submitBatch()}
+                className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
+                data-testid="rsvp-save-all-button"
+              >
+                {rsvpManager.isBatchSubmitting ? 'Saving All...' : 'Save All modified events'}
+              </button>
+            )}
+            {rsvpManager.batchError && (
+              <button
+                type="button"
+                disabled={rsvpManager.isAnySubmitting}
+                onClick={() => rsvpManager.submitBatch()}
+                className="px-3 py-1.5 border border-rose-500 text-rose-600 dark:text-rose-400 font-semibold text-xs rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 transition-colors"
+              >
+                Retry Batch
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -530,108 +553,131 @@ export default function InteractiveTimeline({
                     </div>
 
                     {/* Interactive RSVP Form for Authenticated Guests */}
-                    {(isGuest || event.userRsvp !== undefined) && (
-                      <div className="mb-6 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" data-testid={`rsvp-card-${event.id}`}>
-                        <div className="font-bold text-sm mb-2 flex justify-between items-center">
-                          <span>Your RSVP for {event.title}</span>
-                          {guestName && <span className="text-xs text-gray-500 font-normal">Welcome, {guestName}</span>}
-                        </div>
+                    {(isGuest || event.userRsvp !== undefined) && (() => {
+                      const itemState = rsvpManager.getRsvpState(event.id);
+                      const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
 
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {(['attending', 'declined', 'pending'] as const).map((st) => {
-                            const isSelected = (rsvpState[event.id]?.status || 'pending') === st;
-                            return (
-                              <button
-                                key={st}
-                                type="button"
-                                onClick={() =>
-                                  setRsvpState((prev) => ({
-                                    ...prev,
-                                    [event.id]: {
-                                      ...(prev[event.id] || { plusOneCount: 0, dietaryNotes: '' }),
-                                      status: st,
-                                    },
-                                  }))
-                                }
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
-                                  isSelected
-                                    ? st === 'attending'
-                                      ? 'bg-emerald-600 text-white shadow-sm'
-                                      : st === 'declined'
-                                        ? 'bg-rose-600 text-white shadow-sm'
-                                        : 'bg-amber-600 text-white shadow-sm'
-                                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100'
-                                }`}
-                              >
-                                {st}
-                              </button>
-                            );
-                          })}
-                        </div>
+                      return (
+                        <div
+                          className={`mb-6 p-4 rounded-xl border text-gray-900 dark:text-white transition-all ${
+                            itemState.state === 'error'
+                              ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
+                              : itemState.isDirty
+                                ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 ring-1 ring-amber-300 dark:ring-amber-700'
+                                : 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700'
+                          }`}
+                          data-testid={`rsvp-card-${event.id}`}
+                        >
+                          <div className="font-bold text-sm mb-2 flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <span>Your RSVP for {event.title}</span>
+                              {itemState.isDirty && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
+                                  Unsaved changes
+                                </span>
+                              )}
+                            </div>
+                            {guestName && <span className="text-xs text-gray-500 font-normal">Welcome, {guestName}</span>}
+                          </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                              Plus-One Count
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={10}
-                              value={rsvpState[event.id]?.plusOneCount ?? 0}
-                              onChange={(e) =>
-                                setRsvpState((prev) => ({
-                                  ...prev,
-                                  [event.id]: {
-                                    ...(prev[event.id] || { status: 'pending', dietaryNotes: '' }),
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            {(['attending', 'declined', 'pending'] as const).map((st) => {
+                              const isSelected = itemState.current.status === st;
+                              return (
+                                <button
+                                  key={st}
+                                  type="button"
+                                  disabled={isControlDisabled}
+                                  onClick={() => rsvpManager.updateRsvp(event.id, { status: st })}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
+                                    isSelected
+                                      ? st === 'attending'
+                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                        : st === 'declined'
+                                          ? 'bg-rose-600 text-white shadow-sm'
+                                          : 'bg-amber-600 text-white shadow-sm'
+                                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 disabled:opacity-50'
+                                  }`}
+                                >
+                                  {st}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                Plus-One Count
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={10}
+                                disabled={isControlDisabled}
+                                value={itemState.current.plusOneCount}
+                                onChange={(e) =>
+                                  rsvpManager.updateRsvp(event.id, {
                                     plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
-                                  },
-                                }))
-                              }
-                              className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            />
-                          </div>
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                              />
+                            </div>
 
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                              Dietary Requirements / Notes
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Vegetarian, Nut allergy"
-                              value={rsvpState[event.id]?.dietaryNotes ?? ''}
-                              onChange={(e) =>
-                                setRsvpState((prev) => ({
-                                  ...prev,
-                                  [event.id]: {
-                                    ...(prev[event.id] || { status: 'pending', plusOneCount: 0 }),
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                Dietary Requirements / Notes
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Vegetarian, Nut allergy"
+                                disabled={isControlDisabled}
+                                value={itemState.current.dietaryNotes}
+                                onChange={(e) =>
+                                  rsvpManager.updateRsvp(event.id, {
                                     dietaryNotes: e.target.value,
-                                  },
-                                }))
-                              }
-                              className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            />
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                              />
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="flex justify-between items-center">
-                          <button
-                            type="button"
-                            disabled={rsvpState[event.id]?.isSubmitting}
-                            onClick={() => handleRsvpSubmit(event.id)}
-                            className="px-4 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
-                          >
-                            {rsvpState[event.id]?.isSubmitting ? 'Submitting...' : 'Save RSVP'}
-                          </button>
+                          <div className="flex justify-between items-center">
+                            <button
+                              type="button"
+                              disabled={isControlDisabled}
+                              onClick={() => rsvpManager.submitSingle(event.id)}
+                              className="px-4 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
+                            >
+                              {itemState.isSubmitting ? 'Submitting...' : 'Save RSVP'}
+                            </button>
 
-                          {rsvpState[event.id]?.message && (
-                            <span className={`text-xs font-medium ${rsvpState[event.id].message?.includes('Error') || rsvpState[event.id].message?.includes('Failed') ? 'text-red-500' : 'text-emerald-600'}`}>
-                              {rsvpState[event.id].message}
-                            </span>
+                            {itemState.message && !itemState.error && (
+                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                {itemState.message}
+                              </span>
+                            )}
+                          </div>
+
+                          {itemState.error && (
+                            <div className="mt-2 text-xs text-rose-600 dark:text-rose-400 flex items-center justify-between">
+                              <span>{itemState.error}</span>
+                              <button
+                                type="button"
+                                disabled={isControlDisabled}
+                                onClick={() => rsvpManager.submitSingle(event.id)}
+                                className="underline font-medium hover:text-rose-700 ml-2"
+                              >
+                                Retry
+                              </button>
+                            </div>
                           )}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
+
 
                     {/* Per-Event Calendar Export Dropdown */}
                     <div
