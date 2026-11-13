@@ -83,7 +83,7 @@ describe('RegistryItemCard Component', () => {
     expect(screen.getByText('Price: $100.00')).toBeInTheDocument();
     const img = screen.getByRole('presentation');
     expect(img.getAttribute('src')).toContain('valid.jpg');
-    expect(screen.getByRole('link', { name: 'View on Vendor Site' })).toHaveAttribute('href', 'https://example.com');
+    expect(screen.getByRole('link', { name: 'View on Vendor Site (opens in a new tab)' })).toHaveAttribute('href', 'https://example.com');
     // Using getByLabelText instead of getByPlaceholderText for robustness
     expect(screen.getByLabelText(/Your Name/i)).toBeInTheDocument();
     // Corrected button name
@@ -735,7 +735,7 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for Venmo/i });
+      const link = screen.getByRole('link', { name: /Open payment link for Venmo \(opens in a new tab\)/i });
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute('href', 'https://venmo.com/u/happy-couple');
 
@@ -760,7 +760,7 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for Cash App/i });
+      const link = screen.getByRole('link', { name: /Open payment link for Cash App \(opens in a new tab\)/i });
       expect(link).toHaveAttribute('href', 'https://cash.app/$happycouple');
       expect(screen.getByLabelText(/QR code to pay via Cash App/i)).toBeInTheDocument();
     });
@@ -781,7 +781,7 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for PayPal/i });
+      const link = screen.getByRole('link', { name: /Open payment link for PayPal \(opens in a new tab\)/i });
       expect(link).toHaveAttribute('href', 'https://paypal.me/happycouple');
       expect(screen.getByLabelText(/QR code to pay via PayPal/i)).toBeInTheDocument();
     });
@@ -802,7 +802,7 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for Zelle/i });
+      const link = screen.getByRole('link', { name: /Open payment link for Zelle \(opens in a new tab\)/i });
       expect(link.getAttribute('href')).toContain('mailto:couple@example.com');
       expect(screen.getByLabelText(/QR code to pay via Zelle/i)).toBeInTheDocument();
     });
