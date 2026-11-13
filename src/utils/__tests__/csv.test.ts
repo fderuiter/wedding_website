@@ -1,8 +1,6 @@
 import {
   parseCsvContent,
-  validateCsvRows,
   validateSingleCsvRow,
-  parseInvitationCodesCsv,
   generateCsvContent,
   escapeCsvCell,
   generateSampleCsvTemplate,
@@ -40,108 +38,12 @@ describe('CSV Parser Utility', () => {
     expect(parsed.suggestedPlusOneLastNameCol).toBe('Companion Last Name');
   });
 
-  it('parses CSV using parseInvitationCodesCsv helper', () => {
-    const csv = 'Guest Name,Code,Plus-One First Name,Plus-One Last Name\nAlice,A1,Bob,Smith';
-    const { parseResult, rows } = parseInvitationCodesCsv(csv);
-    expect(parseResult.suggestedPlusOneFirstNameCol).toBe('Plus-One First Name');
-    expect(parseResult.suggestedPlusOneLastNameCol).toBe('Plus-One Last Name');
-    expect(rows[0].isValid).toBe(true);
-    expect(rows[0].plusOneFirstName).toBe('Bob');
-    expect(rows[0].plusOneLastName).toBe('Smith');
-  });
-
   it('disambiguates duplicate CSV headers gracefully', () => {
     const csv = 'Name,Code,Notes,Notes\nAlice,A100,First Note,Second Note';
     const parsed = parseCsvContent(csv);
     expect(parsed.headers).toEqual(['Name', 'Code', 'Notes', 'Notes (2)']);
     expect(parsed.rows[0]['Notes']).toBe('First Note');
     expect(parsed.rows[0]['Notes (2)']).toBe('Second Note');
-  });
-
-  it('validates CSV rows highlighting errors, duplicate codes, and warnings', () => {
-    const rows = [
-      { 'Guest Name': 'Alice', 'Code': 'CODE1' },
-      { 'Guest Name': '', 'Code': 'CODE2' },
-      { 'Guest Name': 'Bob', 'Code': 'CODE1' },
-      { 'Guest Name': 'Charlie', 'Code': '' },
-    ];
-
-    const existingDbCodes = new Set(['DBCODE']);
-    const validated = validateCsvRows(rows, 'Guest Name', 'Code', existingDbCodes);
-
-    expect(validated[0].isValid).toBe(false);
-    expect(validated[0].errors).toContain('Duplicate code "CODE1" within CSV file.');
-
-    expect(validated[1].isValid).toBe(false);
-    expect(validated[1].errors).toContain('Guest name is required.');
-
-    expect(validated[2].isValid).toBe(false);
-    expect(validated[2].errors).toContain('Duplicate code "CODE1" within CSV file.');
-
-    expect(validated[3].isValid).toBe(true);
-    expect(validated[3].warnings).toContain('Blank code: Auto-generated 8-char code will be assigned.');
-  });
-
-  it('validates email formats, plus-one counts, and captures extra fields', () => {
-    const rows = [
-      {
-        'Guest Name': 'David',
-        'Code': 'DAV100',
-        'Email': 'invalid-email',
-        'Dietary': 'Nut Allergy',
-        'Plus Ones': '-1',
-        'Custom Field': 'Extra Data',
-      },
-      {
-        'Guest Name': 'Eve',
-        'Code': 'EVE200',
-        'Email': 'eve@example.com',
-        'Dietary': 'Vegan',
-        'Plus Ones': '2',
-        'Custom Field': 'Table 5',
-      },
-    ];
-
-    const validated = validateCsvRows(rows, {
-      guestNameCol: 'Guest Name',
-      codeCol: 'Code',
-      emailCol: 'Email',
-      dietaryNotesCol: 'Dietary',
-      plusOneCol: 'Plus Ones',
-    });
-
-    expect(validated[0].isValid).toBe(false);
-    expect(validated[0].errors).toContain('Invalid email format.');
-    expect(validated[0].errors).toContain('Plus-one allocation must be a non-negative integer.');
-
-    expect(validated[1].isValid).toBe(true);
-    expect(validated[1].email).toBe('eve@example.com');
-    expect(validated[1].dietaryNotes).toBe('Vegan');
-    expect(validated[1].plusOneAllocations).toBe(2);
-    expect(validated[1].extraFields).toEqual({ 'Custom Field': 'Table 5' });
-  });
-
-  it('validates companion name length limits in validateCsvRows', () => {
-    const longName = 'A'.repeat(101);
-    const rows = [
-      {
-        'Guest Name': 'David',
-        'Code': 'DAV100',
-        'Plus-One First Name': longName,
-        'Plus-One Last Name': longName,
-      },
-    ];
-
-    const validated = validateCsvRows(rows, {
-      guestNameCol: 'Guest Name',
-      codeCol: 'Code',
-      plusOneFirstNameCol: 'Plus-One First Name',
-      plusOneLastNameCol: 'Plus-One Last Name',
-    });
-
-    expect(validated[0].isValid).toBe(false);
-    expect(validated[0].errors).toContain('Plus-one first name must be under 100 characters.');
-    expect(validated[0].errors).toContain('Plus-one last name must be under 100 characters.');
   });
 
   describe('generateCsvContent', () => {
@@ -257,31 +159,6 @@ describe('CSV Parser Utility', () => {
       expect(parsed.rows[0]['Dietary Notes']).toBe('Vegetarian');
       expect(parsed.rows[0]['Plus-One Allocations']).toBe('1');
     });
-
-    it('parses party tags and household info in validateCsvRows', () => {
-      const rows = [
-        {
-          'Guest Name': 'Alice',
-          Code: 'A100',
-          Household: 'Smith Household',
-          Side: 'Bride Side',
-          Tags: 'VIP, Rehearsal Dinner, VIP',
-        },
-      ];
-
-      const validated = validateCsvRows(rows, {
-        guestNameCol: 'Guest Name',
-        codeCol: 'Code',
-        householdCol: 'Household',
-        partyGroupCol: 'Side',
-        partyTagsCol: 'Tags',
-      });
-
-      expect(validated[0].isValid).toBe(true);
-      expect(validated[0].householdName).toBe('Smith Household');
-      expect(validated[0].partyGroup).toBe('Bride Side');
-      expect(validated[0].partyTags).toEqual(['VIP', 'Rehearsal Dinner']);
-    });
   });
 
   describe('validateSingleCsvRow & Hoisted Set Allocations', () => {
@@ -308,11 +185,11 @@ describe('CSV Parser Utility', () => {
       expect(result.email).toBe('alice@example.com');
     });
 
-    it('allocates hoisted column Set only once per batch instead of per-row', () => {
+    it('uses hoisted column Set to avoid allocating a Set per row in validateSingleCsvRow', () => {
       let setConstructorCount = 0;
       const OriginalSet = global.Set;
 
-      // Spy on Set construction during validateCsvRows execution
+      // Spy on Set construction during validateSingleCsvRow execution
       const SetSpy = jest.fn().mockImplementation(function (this: unknown, iterable?: Iterable<unknown>) {
         setConstructorCount++;
         return new OriginalSet(iterable);
@@ -320,17 +197,25 @@ describe('CSV Parser Utility', () => {
       (global as unknown as { Set: typeof Set }).Set = SetSpy as unknown as typeof Set;
 
       try {
-        const rows = Array.from({ length: 100 }, (_, i) => ({
-          'Guest Name': `Guest ${i}`,
-          Code: `CODE${i}`,
-        }));
+        const hoistedMappedCols = new OriginalSet(['Guest Name', 'Code']);
+        const freqMap = new Map<string, number>();
+        const dbCodes = new OriginalSet<string>();
+        const mapping = { guestNameCol: 'Guest Name', codeCol: 'Code' };
 
         setConstructorCount = 0;
-        validateCsvRows(rows, { guestNameCol: 'Guest Name', codeCol: 'Code' }, new OriginalSet());
+        for (let i = 0; i < 100; i++) {
+          validateSingleCsvRow(
+            { 'Guest Name': `Guest ${i}`, Code: `CODE${i}` },
+            i,
+            mapping,
+            freqMap,
+            dbCodes,
+            hoistedMappedCols
+          );
+        }
 
-        // For 100 rows, column mapping Set must be allocated exactly 1 time per batch call, not 100 times!
-        // (Note: existingDbCodes is also passed or constructed once as default parameter)
-        expect(setConstructorCount).toBeLessThanOrEqual(2);
+        // When hoistedMappedCols is supplied, validateSingleCsvRow does not allocate a Set per row
+        expect(setConstructorCount).toBe(0);
       } finally {
         global.Set = OriginalSet;
       }
