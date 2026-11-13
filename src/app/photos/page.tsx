@@ -125,6 +125,7 @@ export default async function PhotosPage() {
         >
           View Full Album
           <Icon name="Camera" className="w-5 h-5" />
+          <span className="sr-only"> (opens in a new tab)</span>
         </Link>
       </div>
     </div>
