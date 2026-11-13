@@ -357,14 +357,19 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
 
   return (
     <div className={className}>
+      <label htmlFor="guest-photo-file-input" className="sr-only">
+        Upload wedding photos
+      </label>
       <input
         type="file"
+        id="guest-photo-file-input"
         ref={fileInputRef}
         onChange={handleFileInputChange}
         accept="image/jpeg,image/png,image/webp"
         multiple
         className="hidden"
         data-testid="guest-photo-file-input"
+        aria-label="Upload wedding photos"
       />
 
       <div

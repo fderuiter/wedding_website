@@ -21,6 +21,10 @@ describe('GuestPhotoDropzone', () => {
     expect(screen.getByText('Share Your Wedding Photos')).toBeInTheDocument();
     expect(screen.getByText(/Supports JPEG, PNG, and WebP/i)).toBeInTheDocument();
     expect(screen.getByTestId('guest-photo-dropzone')).toBeInTheDocument();
+    const fileInput = screen.getByLabelText('Upload wedding photos');
+    expect(fileInput).toBeInTheDocument();
+    expect(fileInput).toHaveAttribute('type', 'file');
+    expect(fileInput).toHaveAttribute('id', 'guest-photo-file-input');
   });
 
   it('shows client validation error when file exceeds 10MB limit', async () => {
