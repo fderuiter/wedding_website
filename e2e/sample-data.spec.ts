@@ -147,6 +147,10 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
         ) {
           console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
           await page.close().catch(() => {});
+          await context.addCookies([
+            { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
+            { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
+          ]).catch(() => {});
           page = await context.newPage();
         } else {
           throw err;

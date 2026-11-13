@@ -13,6 +13,7 @@ import { createEvent, EventAttributes } from 'ics';
  * @property {string} description - A description of the event.
  */
 export interface CalendarEvent {
+  id?: string
   name: string
   startDate: string
   startTime: string
@@ -65,6 +66,7 @@ function buildCalendarUrl(baseUrl: string, params: Record<string, string>): stri
  */
 export function formatScheduleEventToCalendarEvent(
   scheduleItem: {
+    id?: string;
     title?: string;
     ceremonyTitle?: string;
     receptionTitle?: string;
@@ -114,6 +116,7 @@ export function formatScheduleEventToCalendarEvent(
   }
 
   return {
+    id: scheduleItem.id,
     name,
     startDate,
     startTime,

@@ -77,6 +77,8 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
     }
   }
 
+  // Wait for page to finish loading data
+  await page.waitForResponse(resp => resp.url().includes('/api/admin/invitation-codes') && resp.status() === 200, { timeout: 15000 }).catch(() => {});
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
   const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ })).first();
