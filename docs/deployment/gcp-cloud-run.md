@@ -72,13 +72,54 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 Automated schema migrations are performed **before** traffic is shifted to new Cloud Run container revisions.
 
 ### Primary Migration Path: Automated GitHub Actions CI/CD Pipeline
-In `.github/workflows/deploy.yml`, migrations run directly against `DATABASE_URL` prior to building and deploying the container image:
+In the release pipeline ([`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)), database migrations do not run inline. Instead, migrations are delegated to a reusable workflow ([`.github/workflows/db-migrate.yml`](../../.github/workflows/db-migrate.yml)) that executes after release artifacts are published (`publish-artifact`) and before the application container is deployed to Google Cloud Run (`deploy-provider`):
+
 ```yaml
-- name: Run Prisma Database Migrations
-  env:
-    DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  run: npx prisma migrate deploy
+database-migration:
+  name: Execute Database Migration
+  needs: publish-artifact
+  uses: ./.github/workflows/db-migrate.yml
+  with:
+    environment: ${{ inputs.environment || 'production' }}
+  secrets: inherit
 ```
+
+#### Workflow Parameters & Preflight Checks
+The reusable database migration workflow enforces strict preflight validation and safety controls before executing schema changes:
+
+*   **Workflow Inputs**:
+    *   `environment`: Target deployment environment (`production`, `staging`, or `development`; defaults to `'production'`).
+*   **Workflow Secrets**:
+    *   `DATABASE_URL` (Required): Mandatory PostgreSQL connection string. Must start with `postgres://` or `postgresql://`. When using connection poolers (such as PgBouncer or Neon pooling), configure direct, non-pooling connection strings for migration operations.
+*   **Preflight Schema Compatibility Linting**:
+    Executes `npm run lint:migrations` prior to running migrations. The linter validates all migration SQL in `prisma/migrations/` to prevent unannotated destructive operations (such as `DROP TABLE` or `DROP COLUMN`). Destructive DDL statements must be explicitly annotated with `-- allow-destructive: <reason>`.
+*   **Database Status & Schema Drift Detection**:
+    Runs `npx prisma migrate status` against the target database to check for unapplied migrations and identify schema drift before applying new changes.
+*   **Execution Timeouts**:
+    Executes `npx prisma migrate deploy` with guarded session options (`PGOPTIONS: "-c lock_timeout=5000ms -c statement_timeout=30000ms"`) to prevent long lock acquisition or stalled transactions from blocking deployment pipelines.
+
+#### Migration Failure Diagnostic & Recovery Procedures
+If the migration step fails during preflight linting or DDL execution, the deployment pipeline halts immediately to prevent deploying application code against an inconsistent database schema.
+
+**Diagnostic Steps**:
+1.  **Preflight Linter Failure (`lint:migrations`)**: Inspect workflow logs for destructive schema changes. If the schema change is intentional, annotate the migration SQL file in `prisma/migrations/` with `-- allow-destructive: <reason>`.
+2.  **Database Connectivity & Status Failure**: Check target database network connectivity, verify that `DATABASE_URL` matches the required `postgres(ql)://` URI scheme, and check `npx prisma migrate status` output for schema drift or failed migration records.
+3.  **Deploy & Timeout Failures**: Review execution logs for Prisma error codes, PostgreSQL statement timeout (`30000ms`), or table lock timeout (`5000ms`) failures caused by concurrent database traffic.
+
+**Remediation & Rollback Commands**:
+When a migration fails midway or becomes marked as failed in the database:
+1.  Inspect the `_prisma_migrations` table in your target PostgreSQL database to identify the failed migration record.
+2.  Resolve the migration state using the Prisma CLI from your administrative environment:
+    ```bash
+    # Mark a failed migration as rolled back:
+    npx prisma migrate resolve --rolled-back "<failed_migration_name>"
+
+    # OR mark a migration as applied if changes were manually verified:
+    npx prisma migrate resolve --applied "<failed_migration_name>"
+    ```
+    *Note: The migration name must match the exact directory name recorded in the `_prisma_migrations` tracking table (e.g. `20260101000000_init`).*
+3.  Re-run the database migration workflow or deployment pipeline only after confirming that the database state is healthy.
+4.  Do **not** bypass migration errors or force-deploy the Cloud Run service revision while the schema is in a failed state.
 
 ### Secondary Migration Path: Cloud Run Job
 Alternatively, execute a single-use Cloud Run Job before updating the service revision:
@@ -92,6 +133,8 @@ gcloud run jobs create wedding-migrate \
 
 gcloud run jobs execute wedding-migrate --region=us-central1 --wait
 ```
+
+*Note: Operators running manual CLI migrations using Cloud Run Jobs must pass the direct (non-pooling) `DATABASE_URL` secret so Prisma can manage schema locks and migration table state directly.*
 
 ---
 
