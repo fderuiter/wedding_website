@@ -120,6 +120,171 @@ describe('SubEventService', () => {
     });
   });
 
+  describe('getSubEventByIdForGuest', () => {
+    it('throws 404 error if id is missing or whitespace', async () => {
+      await expect(service.getSubEventByIdForGuest('')).rejects.toThrow(ApiError);
+      await expect(service.getSubEventByIdForGuest('   ')).rejects.toThrow(ApiError);
+    });
+
+    it('returns public sub-event for unauthenticated visitor', async () => {
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-1',
+        title: 'Main Ceremony',
+        description: 'Wedding ceremony',
+        isPrivate: false,
+        startTime: new Date('2026-06-20T15:00:00Z'),
+        endTime: new Date('2026-06-20T16:00:00Z'),
+        locationName: 'Chapel',
+        location: 'Chapel, Main St',
+        category: 'Ceremony',
+        accesses: [],
+        rsvps: [],
+      });
+
+      const event = await service.getSubEventByIdForGuest('se-1');
+
+      expect(event.id).toBe('se-1');
+      expect(event.title).toBe('Main Ceremony');
+      expect(event.isPrivate).toBe(false);
+      expect(event.userRsvp).toBeNull();
+    });
+
+    it('returns public sub-event for authenticated guest', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-123',
+        code: 'GUESTCODE',
+      });
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-1',
+        title: 'Main Ceremony',
+        isPrivate: false,
+        startTime: new Date('2026-06-20T15:00:00Z'),
+        endTime: new Date('2026-06-20T16:00:00Z'),
+        accesses: [],
+        rsvps: [],
+      });
+
+      const event = await service.getSubEventByIdForGuest('se-1', 'GUESTCODE');
+
+      expect(event.id).toBe('se-1');
+      expect(event.title).toBe('Main Ceremony');
+    });
+
+    it('throws 403 error when unauthenticated visitor requests private sub-event', async () => {
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-private',
+        title: 'Rehearsal Dinner',
+        isPrivate: true,
+        accesses: [],
+        rsvps: [],
+      });
+
+      await expect(service.getSubEventByIdForGuest('se-private')).rejects.toThrow(ApiError);
+      await expect(service.getSubEventByIdForGuest('se-private')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    });
+
+    it('throws 403 error when guest lacks access to private sub-event', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-unauthorized',
+        code: 'NOTINVITED',
+      });
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-private',
+        title: 'Rehearsal Dinner',
+        isPrivate: true,
+        accesses: [],
+        rsvps: [],
+      });
+
+      await expect(service.getSubEventByIdForGuest('se-private', 'NOTINVITED')).rejects.toThrow(ApiError);
+      await expect(service.getSubEventByIdForGuest('se-private', 'NOTINVITED')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    });
+
+    it('returns private sub-event when authenticated guest has access', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-vip',
+        code: 'VIPCODE',
+      });
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-private',
+        title: 'Rehearsal Dinner',
+        description: 'Private dinner',
+        isPrivate: true,
+        startTime: new Date('2026-06-19T18:00:00Z'),
+        endTime: new Date('2026-06-19T21:00:00Z'),
+        locationName: 'Bistro',
+        accesses: [{ invitationCodeId: 'inv-vip' }],
+        rsvps: [{ status: 'attending', plusOneCount: 1, dietaryNotes: 'Vegetarian' }],
+      });
+
+      const event = await service.getSubEventByIdForGuest('se-private', 'VIPCODE');
+
+      expect(event.id).toBe('se-private');
+      expect(event.title).toBe('Rehearsal Dinner');
+      expect(event.isPrivate).toBe(true);
+      expect(event.userRsvp).toEqual({
+        status: 'attending',
+        plusOneCount: 1,
+        dietaryNotes: 'Vegetarian',
+      });
+    });
+
+    it('throws 404 error when sub-event is not found in SubEvent or ContentNode', async () => {
+      mockPrisma.subEvent.findUnique.mockResolvedValue(null);
+      mockPrisma.contentNode.findUnique = jest.fn().mockResolvedValue(null);
+
+      await expect(service.getSubEventByIdForGuest('nonexistent')).rejects.toThrow(ApiError);
+      await expect(service.getSubEventByIdForGuest('nonexistent')).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    });
+
+    it('returns public ContentNode fallback event if not in SubEvent table', async () => {
+      mockPrisma.subEvent.findUnique.mockResolvedValue(null);
+      mockPrisma.contentNode.findUnique = jest.fn().mockResolvedValue({
+        id: 'cn-1',
+        type: 'Schedule',
+        data: {
+          title: 'Brunch',
+          description: 'Farewell Brunch',
+          startTime: '2026-06-21T10:00:00Z',
+          endTime: '2026-06-21T12:00:00Z',
+          locationName: 'Patio',
+          isPrivate: false,
+          attireRules: 'Casual',
+        },
+      });
+
+      const event = await service.getSubEventByIdForGuest('cn-1');
+
+      expect(event.id).toBe('cn-1');
+      expect(event.title).toBe('Brunch');
+      expect(event.attireRules).toBe('Casual');
+      expect(event.isPrivate).toBe(false);
+    });
+
+    it('throws 403 error for private ContentNode fallback', async () => {
+      mockPrisma.subEvent.findUnique.mockResolvedValue(null);
+      mockPrisma.contentNode.findUnique = jest.fn().mockResolvedValue({
+        id: 'cn-priv',
+        type: 'Schedule',
+        data: {
+          title: 'Secret Party',
+          isPrivate: true,
+        },
+      });
+
+      await expect(service.getSubEventByIdForGuest('cn-priv')).rejects.toThrow(ApiError);
+      await expect(service.getSubEventByIdForGuest('cn-priv')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    });
+  });
+
   describe('submitSubEventRsvps', () => {
     it('throws 401 error if invitation code is invalid', async () => {
       mockPrisma.invitationCode.findUnique.mockResolvedValue(null);

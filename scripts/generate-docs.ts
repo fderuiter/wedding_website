@@ -186,4 +186,13 @@ function updateArchitectureMd() {
   console.log('Successfully updated ARCHITECTURE.md');
 }
 
+async function generateOpenApiSpec() {
+  const openApiScript = path.join(__dirname, 'generate-openapi.ts');
+  if (fs.existsSync(openApiScript)) {
+    console.log('Generating OpenAPI specification...');
+    await import('./generate-openapi.js');
+  }
+}
+
 updateArchitectureMd();
+await generateOpenApiSpec();
