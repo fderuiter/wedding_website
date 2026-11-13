@@ -581,7 +581,12 @@ export function CsvImportWizardModal({
   } | null>(null);
 
   const existingDbSet = useMemo(
-    () => new Set((existingCodes || []).filter((c): c is string => Boolean(c && typeof c === 'string')).map(c => c.trim().toUpperCase())),
+    () =>
+      new Set(
+        (existingCodes || [])
+          .filter((c): c is string => Boolean(c && typeof c === 'string'))
+          .map((c) => c.trim().toUpperCase())
+      ),
     [existingCodes]
   );
 

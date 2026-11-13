@@ -666,14 +666,7 @@
                             {
                               "type": "null"
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "addressLine1": {
@@ -898,14 +891,7 @@
                                 "type": "string"
                               }
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "extraFields": {
@@ -1013,14 +999,7 @@
                             {
                               "type": "null"
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "addressLine1": {
@@ -1245,14 +1224,7 @@
                                 "type": "string"
                               }
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "extraFields": {
@@ -1362,14 +1334,7 @@
                             {
                               "type": "null"
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "addressLine1": {
@@ -1594,14 +1559,7 @@
                                 "type": "string"
                               }
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "extraFields": {
@@ -1729,14 +1687,7 @@
                       {
                         "type": "string"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "appConfig": {
@@ -1749,22 +1700,8 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "createdAt": {},
+                        "updatedAt": {},
                         "partner1Name": {
                           "default": "",
                           "type": "string"
@@ -1785,14 +1722,7 @@
                             "null"
                           ]
                         },
-                        "weddingDate": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "weddingDate": {},
                         "baseUrl": {
                           "anyOf": [
                             {
@@ -1973,22 +1903,8 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "createdAt": {},
+                        "updatedAt": {},
                         "type": {
                           "type": "string",
                           "minLength": 1,
@@ -2036,22 +1952,8 @@
                         "isDecorative": {
                           "type": "boolean"
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        }
+                        "createdAt": {},
+                        "updatedAt": {}
                       },
                       "required": [
                         "id",
@@ -2070,22 +1972,8 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "createdAt": {},
+                        "updatedAt": {},
                         "name": {
                           "type": "string"
                         },
@@ -2165,22 +2053,8 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "createdAt": {},
+                        "updatedAt": {},
                         "name": {
                           "type": "string"
                         },
@@ -2212,22 +2086,8 @@
                         "directions": {
                           "type": "string"
                         },
-                        "latitude": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "longitude": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "latitude": {},
+                        "longitude": {},
                         "imageId": {
                           "type": [
                             "string",
@@ -2303,22 +2163,8 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "createdAt": {},
+                        "updatedAt": {},
                         "name": {
                           "type": "string",
                           "minLength": 1,
@@ -2403,14 +2249,7 @@
                             }
                           ]
                         },
-                        "isGroupGift": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "isGroupGift": {},
                         "isMostWanted": {
                           "default": false,
                           "type": "boolean"
@@ -2459,22 +2298,8 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
-                        "updatedAt": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "createdAt": {},
+                        "updatedAt": {},
                         "name": {
                           "type": "string"
                         },
@@ -2506,14 +2331,7 @@
                           "type": "number",
                           "minimum": 0
                         },
-                        "date": {
-                          "0": "i",
-                          "1": "g",
-                          "2": "n",
-                          "3": "o",
-                          "4": "r",
-                          "5": "e"
-                        },
+                        "date": {},
                         "registryItemId": {
                           "anyOf": [
                             {
@@ -2578,14 +2396,7 @@
                             {
                               "type": "string"
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         },
                         "updatedAt": {
@@ -2593,14 +2404,7 @@
                             {
                               "type": "string"
                             },
-                            {
-                              "0": "i",
-                              "1": "g",
-                              "2": "n",
-                              "3": "o",
-                              "4": "r",
-                              "5": "e"
-                            }
+                            {}
                           ]
                         }
                       },
@@ -2962,6 +2766,34 @@
         }
       }
     },
+    "/api/admin/seating/auto-assign": {
+      "post": {
+        "summary": "POST /api/admin/seating/auto-assign",
+        "description": "Endpoint for /api/admin/seating/auto-assign",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "author": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/seating/export": {
       "get": {
         "summary": "GET /api/admin/seating/export",
@@ -3012,14 +2844,7 @@
                       "null"
                     ]
                   },
-                  "weddingDate": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "weddingDate": {},
                   "baseUrl": {
                     "anyOf": [
                       {
@@ -3047,22 +2872,8 @@
                   "venueZip": {
                     "type": "string"
                   },
-                  "latitude": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
-                  "longitude": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "latitude": {},
+                  "longitude": {},
                   "storyText": {
                     "type": "string"
                   },
@@ -3518,14 +3329,7 @@
                           {
                             "type": "number"
                           },
-                          {
-                            "0": "i",
-                            "1": "g",
-                            "2": "n",
-                            "3": "o",
-                            "4": "r",
-                            "5": "e"
-                          }
+                          {}
                         ]
                       },
                       {
@@ -3623,14 +3427,7 @@
                       {
                         "type": "number"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "broadcastBatchDelayMs": {
@@ -3639,14 +3436,7 @@
                       {
                         "type": "number"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "modules": {
@@ -3783,14 +3573,7 @@
                       "null"
                     ]
                   },
-                  "weddingDate": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "weddingDate": {},
                   "baseUrl": {
                     "anyOf": [
                       {
@@ -3818,22 +3601,8 @@
                   "venueZip": {
                     "type": "string"
                   },
-                  "latitude": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
-                  "longitude": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "latitude": {},
+                  "longitude": {},
                   "storyText": {
                     "type": "string"
                   },
@@ -4289,14 +4058,7 @@
                           {
                             "type": "number"
                           },
-                          {
-                            "0": "i",
-                            "1": "g",
-                            "2": "n",
-                            "3": "o",
-                            "4": "r",
-                            "5": "e"
-                          }
+                          {}
                         ]
                       },
                       {
@@ -4394,14 +4156,7 @@
                       {
                         "type": "number"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "broadcastBatchDelayMs": {
@@ -4410,14 +4165,7 @@
                       {
                         "type": "number"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "modules": {
@@ -4565,14 +4313,7 @@
                       "null"
                     ]
                   },
-                  "weddingDate": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "weddingDate": {},
                   "baseUrl": {
                     "anyOf": [
                       {
@@ -4600,22 +4341,8 @@
                   "venueZip": {
                     "type": "string"
                   },
-                  "latitude": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
-                  "longitude": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "latitude": {},
+                  "longitude": {},
                   "storyText": {
                     "type": "string"
                   },
@@ -5071,14 +4798,7 @@
                           {
                             "type": "number"
                           },
-                          {
-                            "0": "i",
-                            "1": "g",
-                            "2": "n",
-                            "3": "o",
-                            "4": "r",
-                            "5": "e"
-                          }
+                          {}
                         ]
                       },
                       {
@@ -5176,14 +4896,7 @@
                       {
                         "type": "number"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "broadcastBatchDelayMs": {
@@ -5192,14 +4905,7 @@
                       {
                         "type": "number"
                       },
-                      {
-                        "0": "i",
-                        "1": "g",
-                        "2": "n",
-                        "3": "o",
-                        "4": "r",
-                        "5": "e"
-                      }
+                      {}
                     ]
                   },
                   "modules": {
@@ -5480,14 +5186,7 @@
                           {
                             "type": "string"
                           },
-                          {
-                            "0": "i",
-                            "1": "g",
-                            "2": "n",
-                            "3": "o",
-                            "4": "r",
-                            "5": "e"
-                          }
+                          {}
                         ]
                       },
                       {
@@ -5573,14 +5272,7 @@
                           {
                             "type": "string"
                           },
-                          {
-                            "0": "i",
-                            "1": "g",
-                            "2": "n",
-                            "3": "o",
-                            "4": "r",
-                            "5": "e"
-                          }
+                          {}
                         ]
                       },
                       {
@@ -6148,12 +5840,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "0": "i",
-                "1": "g",
-                "2": "n",
-                "3": "o",
-                "4": "r",
-                "5": "e",
                 "$schema": "https://json-schema.org/draft/2020-12/schema"
               }
             }
@@ -6327,12 +6013,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "0": "i",
-                "1": "g",
-                "2": "n",
-                "3": "o",
-                "4": "r",
-                "5": "e",
                 "$schema": "https://json-schema.org/draft/2020-12/schema"
               }
             }
@@ -6539,21 +6219,8 @@
                       }
                     ]
                   },
-                  "isGroupGift": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "isGroupGift": {},
                   "isMostWanted": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e",
                     "default": false
                   },
                   "displayOrder": {
@@ -6660,14 +6327,7 @@
                           },
                           "createdAt": {
                             "anyOf": [
-                              {
-                                "0": "i",
-                                "1": "g",
-                                "2": "n",
-                                "3": "o",
-                                "4": "r",
-                                "5": "e"
-                              },
+                              {},
                               {
                                 "type": "string"
                               }
@@ -6675,14 +6335,7 @@
                           },
                           "updatedAt": {
                             "anyOf": [
-                              {
-                                "0": "i",
-                                "1": "g",
-                                "2": "n",
-                                "3": "o",
-                                "4": "r",
-                                "5": "e"
-                              },
+                              {},
                               {
                                 "type": "string"
                               }
@@ -6826,21 +6479,8 @@
                       }
                     ]
                   },
-                  "isGroupGift": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e"
-                  },
+                  "isGroupGift": {},
                   "isMostWanted": {
-                    "0": "i",
-                    "1": "g",
-                    "2": "n",
-                    "3": "o",
-                    "4": "r",
-                    "5": "e",
                     "default": false
                   },
                   "displayOrder": {
@@ -6947,14 +6587,7 @@
                           },
                           "createdAt": {
                             "anyOf": [
-                              {
-                                "0": "i",
-                                "1": "g",
-                                "2": "n",
-                                "3": "o",
-                                "4": "r",
-                                "5": "e"
-                              },
+                              {},
                               {
                                 "type": "string"
                               }
@@ -6962,14 +6595,7 @@
                           },
                           "updatedAt": {
                             "anyOf": [
-                              {
-                                "0": "i",
-                                "1": "g",
-                                "2": "n",
-                                "3": "o",
-                                "4": "r",
-                                "5": "e"
-                              },
+                              {},
                               {
                                 "type": "string"
                               }
@@ -7123,6 +6749,27 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/schedule/{id}/ics": {
+      "get": {
+        "summary": "GET /api/schedule/[id]/ics",
+        "description": "Endpoint for /api/schedule/[id]/ics",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response"

@@ -120,6 +120,7 @@ flowchart LR
     node_api_admin_sampledata["sample-data"]
     node_api_admin_seating["seating"]
     node_api_admin_seating_assign["assign"]
+    node_api_admin_seating_autoassign["auto-assign"]
     node_api_admin_seating_export["export"]
     node_api_admin_settings["settings"]
     node_api_admin_setup["setup"]
@@ -160,6 +161,8 @@ flowchart LR
     node_api_registry_validatecode["validate-code"]
     node_api_rsvp["rsvp"]
     node_api_schedule["schedule"]
+    node_api_schedule_id["[id]"]
+    node_api_schedule_id_ics["ics"]
     node_api_weather["weather"]
     node_archive["archive"]
     node_guest["guest"]
@@ -222,6 +225,7 @@ flowchart LR
     node_api_admin --> node_api_admin_sampledata
     node_api_admin --> node_api_admin_seating
     node_api_admin_seating --> node_api_admin_seating_assign
+    node_api_admin_seating --> node_api_admin_seating_autoassign
     node_api_admin_seating --> node_api_admin_seating_export
     node_api_admin --> node_api_admin_settings
     node_api_admin --> node_api_admin_setup
@@ -262,6 +266,8 @@ flowchart LR
     node_api_registry --> node_api_registry_validatecode
     node_api --> node_api_rsvp
     node_api --> node_api_schedule
+    node_api_schedule --> node_api_schedule_id
+    node_api_schedule_id --> node_api_schedule_id_ics
     node_api --> node_api_weather
     App --> node_archive
     App --> node_guest
@@ -316,6 +322,7 @@ flowchart LR
     class node_api_admin_photos_moderation_batch api;
     class node_api_admin_sampledata api;
     class node_api_admin_seating_assign api;
+    class node_api_admin_seating_autoassign api;
     class node_api_admin_seating_export api;
     class node_api_admin_settings api;
     class node_api_admin_setup api;
@@ -349,6 +356,7 @@ flowchart LR
     class node_api_registry_validatecode api;
     class node_api_rsvp api;
     class node_api_schedule api;
+    class node_api_schedule_id_ics api;
     class node_api_weather api;
     class node_archive page;
     class node_guest page;
