@@ -688,5 +688,43 @@ describe('InvitationCodesDashboardPage', () => {
 
       mockAnchorClick.mockRestore();
     });
+
+    it('opens QR preview modal when View QR is clicked on a guest entry', () => {
+      renderComponent();
+
+      const viewQrButtons = screen.getAllByRole('button', { name: /View QR code for/i });
+      expect(viewQrButtons.length).toBeGreaterThan(0);
+
+      fireEvent.click(viewQrButtons[0]);
+
+      expect(screen.getByRole('dialog', { name: 'Guest Invitation QR Preview' })).toBeInTheDocument();
+      expect(screen.getByTestId('qr-modal-guest-name')).toHaveTextContent('Alice Smith');
+      expect(screen.getByRole('button', { name: /Download QR code as PNG image/i })).toBeInTheDocument();
+    });
+
+    it('opens print labels modal from the global header and batch toolbar', () => {
+      renderComponent();
+
+      // From global header
+      const globalPrintButton = screen.getByRole('button', { name: 'Print QR Labels' });
+      fireEvent.click(globalPrintButton);
+
+      expect(screen.getByRole('dialog', { name: 'Printable Invitation QR Labels' })).toBeInTheDocument();
+      expect(screen.getByTestId('qr-print-sheet')).toBeInTheDocument();
+
+      // Close modal
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+      // Select 1 guest and open from batch toolbar
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      const batchToolbar = screen.getByRole('region', { name: 'Batch actions toolbar' });
+      const batchPrintButton = within(batchToolbar).getByRole('button', { name: 'Print QR Labels' });
+      fireEvent.click(batchPrintButton);
+
+      expect(screen.getByRole('dialog', { name: 'Printable Invitation QR Labels' })).toBeInTheDocument();
+      const labels = screen.getAllByTestId('qr-label-card');
+      expect(labels.length).toBe(1);
+      expect(within(labels[0]).getByText('Alice Smith')).toBeInTheDocument();
+    });
   });
 });

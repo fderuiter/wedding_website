@@ -179,9 +179,9 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Guest Name,Invitation Code,Email,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
-    expect(lines[1]).toBe('Jane Doe,JANE2026,jane@example.com,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused');
-    expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,bob@example.com,,Smiths,Groom,Local,"456 Oak Rd, Austin, TX, 78701, USA","Gluten-Free, Dairy-Free",0,Redeemed');
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
+    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused');
+    expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,http://localhost:3000/guest?code=BOB2026,bob@example.com,,Smiths,Groom,Local,"456 Oak Rd, Austin, TX, 78701, USA","Gluten-Free, Dairy-Free",0,Redeemed');
   });
 
   it('passes search, status, partyGroup, partyTags, and household filters to Prisma', async () => {

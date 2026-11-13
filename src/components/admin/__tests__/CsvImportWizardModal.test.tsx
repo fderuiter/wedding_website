@@ -835,7 +835,7 @@ describe('CsvImportWizardModal Component', () => {
     });
   });
 
-  test('safely handles existingCodes containing undefined or null without throwing', () => {
+  test('gracefully handles undefined or null entries in existingCodes without throwing', () => {
     expect(() => {
       render(
         <ToastProvider>

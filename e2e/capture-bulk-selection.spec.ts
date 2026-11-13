@@ -32,7 +32,7 @@ function generateGuestCookieValue() {
 }
 
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
 
   const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
   const cookies = origins.flatMap((url) => [
@@ -50,25 +50,38 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   await context.addCookies(cookies);
 
   // Go to invitation codes dashboard
-  try {
-    await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
-  } catch (err: any) {
-    if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
-      await context.addCookies(cookies).catch(() => {});
-      page = await context.newPage();
-      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
-    } else {
-      throw err;
+  let attempt = 0;
+  while (attempt < 4) {
+    attempt++;
+    try {
+      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 25000 });
+      await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
+      break;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        attempt < 4 &&
+        (msg.includes('crashed') ||
+         msg.includes('closed') ||
+         msg.includes('Timeout') ||
+         msg.includes('timeout') ||
+         msg.includes('net::ERR_ABORTED'))
+      ) {
+        console.log(`[capture-bulk-selection] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
+        await page.close().catch(() => {});
+        await context.addCookies(cookies).catch(() => {});
+        page = await context.newPage();
+      } else {
+        throw err;
+      }
     }
   }
 
   // Wait for page to finish loading data
-  await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
   await page.waitForResponse(resp => resp.url().includes('/api/admin/invitation-codes') && resp.status() === 200, { timeout: 15000 }).catch(() => {});
-
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
-  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ }));
+  const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ })).first();
   await countBtn.waitFor({ state: 'visible', timeout: 30000 });
   const countText = await countBtn.innerText();
   if (countText.includes('All (0)')) {

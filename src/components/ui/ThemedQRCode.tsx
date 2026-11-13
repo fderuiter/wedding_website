@@ -77,13 +77,13 @@ function getContrastRatio(hex1: string, hex2: string): number {
  * @description A theme-aware QR code component that automatically computes module
  * and background colors using central theme tokens and enforces WCAG AA contrast standards.
  */
-export const ThemedQRCode: React.FC<ThemedQRCodeProps> = ({
+export const ThemedQRCode = React.forwardRef<HTMLCanvasElement, ThemedQRCodeProps>(({
   fgColor: explicitFgColor,
   bgColor: explicitBgColor,
   bgToken = '--card-bg',
   minContrastRatio = 4.5,
   ...props
-}) => {
+}, ref) => {
   const { themePrimary, themePreset, resolvedTheme } = useTheme();
 
   const { fgColor, bgColor } = useMemo(() => {
@@ -148,9 +148,12 @@ export const ThemedQRCode: React.FC<ThemedQRCodeProps> = ({
 
   return (
     <QRCodeCanvas
+      ref={ref}
       fgColor={fgColor}
       bgColor={bgColor}
       {...props}
     />
   );
-};
+});
+
+ThemedQRCode.displayName = 'ThemedQRCode';
