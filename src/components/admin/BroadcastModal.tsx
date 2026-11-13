@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
+import { useTheme } from '@/components/ThemeProvider';
 import {
   BroadcastChannel,
   BroadcastTargetFilters,
@@ -19,6 +20,8 @@ export interface BroadcastModalProps {
   targetFilters?: BroadcastTargetFilters;
   selectedCount?: number;
   subEvents?: any[];
+  adminEmail?: string;
+  adminPhone?: string;
 }
 
 export const BroadcastModal: React.FC<BroadcastModalProps> = ({
@@ -28,13 +31,25 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   targetFilters,
   selectedCount,
   subEvents = [],
+  adminEmail,
+  adminPhone,
 }) => {
   const { addToast } = useToast();
-  const { sendBroadcast, previewBroadcast, sending, previewing } = useAdminBroadcast();
+  const { contactEmail } = useTheme();
+  const defaultAdminEmail = adminEmail || contactEmail || '';
+  const {
+    sendBroadcast,
+    previewBroadcast,
+    sendTestBroadcast,
+    sending,
+    previewing,
+    sendingTest,
+  } = useAdminBroadcast();
 
   const [channel, setChannel] = useState<BroadcastChannel>(initialChannel);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [testDestination, setTestDestination] = useState('');
   const [activeTab, setActiveTab] = useState<'compose' | 'preview'>('compose');
   const [previewResult, setPreviewResult] = useState<any>(null);
   const [isScheduled, setIsScheduled] = useState(false);
@@ -47,6 +62,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
       setChannel(initialChannel);
       setSubject('');
       setBody('');
+      setTestDestination('');
       setActiveTab('compose');
       setPreviewResult(null);
       setIsScheduled(false);
@@ -89,6 +105,34 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
       setActiveTab('preview');
     } catch (err: any) {
       addToast(err.message || 'Failed to generate preview', 'error');
+    }
+  };
+
+  const handleSendTest = async () => {
+    if (!body.trim()) {
+      addToast('Message body is required for test send.', 'error');
+      return;
+    }
+    if (channel === 'EMAIL' && !subject.trim()) {
+      addToast('Subject is required for email broadcasts.', 'error');
+      return;
+    }
+
+    try {
+      const result: any = await sendTestBroadcast({
+        channel,
+        subject: channel === 'EMAIL' ? subject : undefined,
+        body,
+        destination: testDestination.trim() || undefined,
+      });
+
+      const recipient = result?.destination || testDestination.trim() || 'configured administrator contact';
+      addToast(
+        `Test ${channel === 'EMAIL' ? 'email' : 'SMS'} sent to ${recipient}!`,
+        'success'
+      );
+    } catch (err: any) {
+      addToast(err.message || 'Failed to dispatch test broadcast', 'error');
     }
   };
 
@@ -270,6 +314,26 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
               />
             </FormGroup>
 
+            {/* Test Destination Override Option */}
+            <FormGroup>
+              <Label htmlFor="broadcast-test-destination">Test Destination (Optional)</Label>
+              <Input
+                id="broadcast-test-destination"
+                type={channel === 'EMAIL' ? 'email' : 'tel'}
+                placeholder={
+                  channel === 'EMAIL'
+                    ? (defaultAdminEmail || 'e.g. host@example.com')
+                    : (adminPhone || 'e.g. +15551234567')
+                }
+                value={testDestination}
+                onChange={(e) => setTestDestination(e.target.value)}
+                className="w-full"
+              />
+              <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+                Leave blank to deliver to configured host {channel === 'EMAIL' ? 'contact email' : 'phone number'}.
+              </span>
+            </FormGroup>
+
             {/* Schedule for Later Option */}
             <div className="p-3 bg-gray-50 dark:bg-zinc-800/60 rounded-md border border-gray-200 dark:border-zinc-700 space-y-3">
               <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-800 dark:text-zinc-200">
@@ -334,7 +398,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
 
         {/* Modal Actions */}
         <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200 dark:border-zinc-800">
-          <Button variant="secondary" onClick={onClose} disabled={sending}>
+          <Button variant="secondary" onClick={onClose} disabled={sending || sendingTest}>
             Cancel
           </Button>
           {activeTab === 'compose' && (
@@ -343,8 +407,16 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
             </Button>
           )}
           <Button
+            variant="secondary"
+            onClick={handleSendTest}
+            disabled={sendingTest || sending || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
+            aria-label="Send Test to Me"
+          >
+            {sendingTest ? 'Sending Test...' : (testDestination.trim() ? 'Send Test' : 'Send Test to Me')}
+          </Button>
+          <Button
             onClick={handleSend}
-            disabled={sending || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
+            disabled={sending || sendingTest || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
           >
             {sending
               ? (isScheduled ? 'Scheduling Broadcast...' : 'Sending Broadcast...')

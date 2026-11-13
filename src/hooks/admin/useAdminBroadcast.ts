@@ -4,6 +4,7 @@ import { apiClient } from '@/features/admin/apiClient';
 import type {
   SendBroadcastInput,
   PreviewBroadcastInput,
+  SendTestBroadcastInput,
   TestConnectionInput,
   BroadcastHistoryItem,
 } from '@/features/broadcast';
@@ -29,6 +30,12 @@ export function useAdminBroadcast() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: historyQueryKey });
+    },
+  });
+
+  const { mutateAsync: sendTestBroadcast, isPending: sendingTest } = useMutation({
+    mutationFn: async (payload: SendTestBroadcastInput) => {
+      return apiClient.post('/api/admin/broadcast/test-send', payload);
     },
   });
 
@@ -68,6 +75,8 @@ export function useAdminBroadcast() {
     historyError: historyError ? historyError.message : null,
     sendBroadcast,
     sending,
+    sendTestBroadcast,
+    sendingTest,
     previewBroadcast,
     previewing,
     retryBroadcast,

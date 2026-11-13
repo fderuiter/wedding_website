@@ -29,6 +29,64 @@ export const GuestLoginSchema = z.object({
   passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty')
 });
 
+export const GuestLookupSchema = z.object({
+  query: z.string().trim().optional(),
+  name: z.string().trim().optional(),
+  email: z.string().trim().optional(),
+}).superRefine((data, ctx) => {
+  const query = data.query?.trim();
+  const name = data.name?.trim();
+  const email = data.email?.trim();
+
+  if (!query && !name && !email) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Name or email is required.',
+    });
+    return;
+  }
+
+  if (email !== undefined && email !== '') {
+    const emailResult = z.string().email().safeParse(email);
+    if (!emailResult.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['email'],
+        message: 'Invalid email format.',
+      });
+    }
+  }
+
+  if (name !== undefined && name !== '') {
+    if (name.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['name'],
+        message: 'Name must be at least 2 characters.',
+      });
+    }
+  }
+
+  if (query !== undefined && query !== '') {
+    if (query.includes('@')) {
+      const emailResult = z.string().email().safeParse(query);
+      if (!emailResult.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['query'],
+          message: 'Invalid email format.',
+        });
+      }
+    } else if (query.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['query'],
+        message: 'Name must be at least 2 characters.',
+      });
+    }
+  }
+});
+
 /**
  * @internal
  */

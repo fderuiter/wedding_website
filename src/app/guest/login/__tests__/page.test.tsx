@@ -245,4 +245,149 @@ describe('Guest Login Page with Help Drawer', () => {
       expect(mockPush).toHaveBeenCalledWith('/');
     });
   });
+
+  describe('Self-Service Invitation Lookup Tab', () => {
+    it('displays interactive Look Up Invitation tab in help drawer', async () => {
+      const { container } = render(<GuestLoginPage />);
+
+      const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+      fireEvent.click(helpTrigger);
+
+      const lookupTab = screen.getByRole('tab', { name: /look up invitation/i });
+      expect(lookupTab).toBeInTheDocument();
+      expect(lookupTab).toHaveAttribute('aria-selected', 'false');
+
+      fireEvent.click(lookupTab);
+      expect(lookupTab).toHaveAttribute('aria-selected', 'true');
+
+      expect(screen.getByLabelText(/guest name or email/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /look up invitation/i })).toBeInTheDocument();
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it('validates input requires at least 2 characters for names or valid email format', async () => {
+      render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      const submitBtn = screen.getByRole('button', { name: /look up invitation/i });
+
+      // Empty submission
+      fireEvent.click(submitBtn);
+      expect(await screen.findByText(/please enter your name or email address/i)).toBeInTheDocument();
+
+      // Short name (<2 chars)
+      fireEvent.change(queryInput, { target: { value: 'A' } });
+      fireEvent.click(submitBtn);
+      expect(await screen.findByText(/name must be at least 2 characters/i)).toBeInTheDocument();
+
+      // Invalid email
+      fireEvent.change(queryInput, { target: { value: 'bademail@' } });
+      fireEvent.click(submitBtn);
+      expect(await screen.findByText(/invalid email format/i)).toBeInTheDocument();
+    });
+
+    it('submitting a valid guest name or email displays matching invitation details and grants access', async () => {
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          guestName: 'Taylor Swift',
+          code: 'LOVER13',
+          data: {
+            guestName: 'Taylor Swift',
+            code: 'LOVER13',
+          },
+        }),
+      } as unknown as Response);
+      globalWithFetch.fetch = fetchMock;
+
+      render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
+      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Taylor Swift' }),
+      });
+
+      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
+      expect(screen.getByText(/Taylor Swift/i)).toBeInTheDocument();
+      expect(screen.getByText(/LOVER13/i)).toBeInTheDocument();
+      expect(screen.getByText(/session hydrated/i)).toBeInTheDocument();
+
+      const continueBtn = screen.getByRole('button', { name: /continue to portal/i });
+      expect(continueBtn).toBeInTheDocument();
+      fireEvent.click(continueBtn);
+      expect(mockPush).toHaveBeenCalledWith('/');
+    });
+
+    it('unmatched searches present clear error notice and direct host contact fallback button', async () => {
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({
+          success: false,
+          error: 'No invitation found matching the provided details.',
+        }),
+      } as unknown as Response);
+      globalWithFetch.fetch = fetchMock;
+
+      render(
+        <ThemeProvider config={{ contactEmail: 'hosts@example.com' }}>
+          <GuestLoginPage />
+        </ThemeProvider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Unknown Person' } });
+      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+
+      expect(await screen.findByText(/no invitation found matching/i)).toBeInTheDocument();
+      expect(screen.getByText(/still cannot find your invitation\?/i)).toBeInTheDocument();
+
+      const contactBtn = screen.getByRole('link', { name: /contact host/i });
+      expect(contactBtn).toBeInTheDocument();
+      expect(contactBtn).toHaveAttribute('href', expect.stringContaining('mailto:hosts@example.com'));
+    });
+
+    it('handles rate-limit 429 response and blocks further searches', async () => {
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          success: false,
+          error: 'Too many requests, please try again later.',
+        }),
+      } as unknown as Response);
+      globalWithFetch.fetch = fetchMock;
+
+      render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Spam Search' } });
+      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+
+      expect(await screen.findByText(/too many requests, please try again later/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /look up invitation/i })).toBeDisabled();
+      expect(queryInput).toBeDisabled();
+    });
+  });
 });
