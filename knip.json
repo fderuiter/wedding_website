@@ -37,7 +37,8 @@
     "namespaceMembers": "warn",
     "enumMembers": "warn",
     "types": "error",
-    "nsTypes": "error"
+    "nsTypes": "error",
+    "duplicates": "off"
   },
   "treatConfigHintsAsErrors": false
 }

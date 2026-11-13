@@ -225,7 +225,7 @@ async function run() {
 
             try {
               const targetSchema = getTargetSchema(schemaObj);
-              const jsonSchema = typeof targetSchema.toJSONSchema === 'function' ? targetSchema.toJSONSchema({ unrepresentable: 'ignore' }) : targetSchema;
+              const jsonSchema = typeof targetSchema.toJSONSchema === 'function' ? targetSchema.toJSONSchema({ unrepresentable: 'any' }) : targetSchema;
               operation.requestBody = {
                 required: true,
                 content: {
