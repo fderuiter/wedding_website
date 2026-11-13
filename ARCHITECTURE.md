@@ -100,6 +100,7 @@ flowchart LR
     node_api_admin_broadcast_schedule_id["[id]"]
     node_api_admin_broadcast_send["send"]
     node_api_admin_broadcast_testconnection["test-connection"]
+    node_api_admin_broadcast_testsend["test-send"]
     node_api_admin_features["features"]
     node_api_admin_invitationcodes["invitation-codes"]
     node_api_admin_invitationcodes_batch["batch"]
@@ -204,6 +205,7 @@ flowchart LR
     node_api_admin_broadcast_schedule --> node_api_admin_broadcast_schedule_id
     node_api_admin_broadcast --> node_api_admin_broadcast_send
     node_api_admin_broadcast --> node_api_admin_broadcast_testconnection
+    node_api_admin_broadcast --> node_api_admin_broadcast_testsend
     node_api_admin --> node_api_admin_features
     node_api_admin --> node_api_admin_invitationcodes
     node_api_admin_invitationcodes --> node_api_admin_invitationcodes_batch
@@ -304,6 +306,7 @@ flowchart LR
     class node_api_admin_broadcast_schedule_id api;
     class node_api_admin_broadcast_send api;
     class node_api_admin_broadcast_testconnection api;
+    class node_api_admin_broadcast_testsend api;
     class node_api_admin_features api;
     class node_api_admin_invitationcodes_batch api;
     class node_api_admin_invitationcodes_batch_validate api;

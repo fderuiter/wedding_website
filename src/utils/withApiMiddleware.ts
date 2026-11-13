@@ -8,7 +8,13 @@ import { generateSecureUUID } from './uuid';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
 
-export function withApiMiddleware(handler: RouteHandler) {
+export interface ApiMiddlewareOptions {
+  limit?: number;
+  windowMs?: number;
+  keyPrefix?: string;
+}
+
+export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddlewareOptions) {
   return async (req: NextRequest, context: any) => {
     try {
       let pathname = '/';
@@ -24,9 +30,9 @@ export function withApiMiddleware(handler: RouteHandler) {
 
       // 1. Rate Limiting
       // Stricter limits for login, general limits for everything else
-      const limit = isLoginPath ? 5 : 100;
-      const windowMs = isLoginPath ? 15 * 60 * 1000 : 60 * 1000;
-      const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(req, limit, windowMs) : null;
+      const limit = options?.limit ?? (isLoginPath ? 5 : 100);
+      const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
+      const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(req, limit, windowMs, options?.keyPrefix) : null;
       
       if (rateLimitResponse) {
         // If rate limit exceeded, standardise its error response

@@ -3,8 +3,10 @@ import { POST as previewRoute } from '../preview/route';
 import { GET as historyRoute } from '../history/route';
 import { POST as retryRoute } from '../retry/route';
 import { POST as testConnRoute } from '../test-connection/route';
+import { POST as testSendRoute } from '../test-send/route';
 import { NextRequest } from 'next/server';
 import { BroadcastService } from '@/features/broadcast/service';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(true),
@@ -13,6 +15,7 @@ jest.mock('@/core/auth/auth.server', () => ({
 jest.mock('@/features/broadcast/service', () => ({
   BroadcastService: {
     sendBroadcast: jest.fn().mockResolvedValue({ id: 'b1', status: 'SENT', sentCount: 1, failedCount: 0 }),
+    sendTestBroadcast: jest.fn().mockResolvedValue({ success: true, channel: 'EMAIL', destination: 'host@example.com', subject: '[TEST] Test Subject', body: 'Test Body' }),
     renderPreview: jest.fn().mockResolvedValue({ body: 'Rendered Body', destination: 'test@example.com' }),
     getBroadcastHistory: jest.fn().mockResolvedValue([{ id: 'b1', status: 'SENT' }]),
     retryFailedRecipients: jest.fn().mockResolvedValue({ id: 'b1', status: 'SENT' }),
@@ -238,5 +241,138 @@ describe('Broadcast API Routes', () => {
 
     const res = await testConnRoute(req);
     expect(res.status).toBe(400);
+  });
+
+  describe('POST /api/admin/broadcast/test-send', () => {
+    beforeEach(() => {
+      resetRateLimitsForTesting();
+    });
+
+    it('returns test broadcast result for valid email payload', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '10.0.0.1' },
+        body: JSON.stringify({
+          channel: 'EMAIL',
+          subject: 'Sample Subject',
+          body: 'Hello {{guestName}}',
+          destination: 'admin@example.com',
+        }),
+      });
+
+      const res = await testSendRoute(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.destination).toBe('host@example.com');
+      expect(BroadcastService.sendTestBroadcast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: 'EMAIL',
+          subject: 'Sample Subject',
+          body: 'Hello {{guestName}}',
+          destination: 'admin@example.com',
+        })
+      );
+    });
+
+    it('returns 400 for empty body', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '10.0.0.2' },
+        body: JSON.stringify({
+          channel: 'EMAIL',
+          body: '',
+        }),
+      });
+
+      const res = await testSendRoute(req);
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for invalid email destination', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '10.0.0.3' },
+        body: JSON.stringify({
+          channel: 'EMAIL',
+          body: 'Hello',
+          destination: 'invalid-email-address',
+        }),
+      });
+
+      const res = await testSendRoute(req);
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for non-E.164 phone destination on SMS', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '10.0.0.4' },
+        body: JSON.stringify({
+          channel: 'SMS',
+          body: 'Hello',
+          destination: '1234567890', // Missing leading '+'
+        }),
+      });
+
+      const res = await testSendRoute(req);
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 500 when BroadcastService.sendTestBroadcast throws', async () => {
+      (BroadcastService.sendTestBroadcast as jest.Mock).mockRejectedValueOnce(
+        new Error('Provider API Key missing')
+      );
+
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '10.0.0.5' },
+        body: JSON.stringify({
+          channel: 'EMAIL',
+          body: 'Hello',
+        }),
+      });
+
+      const res = await testSendRoute(req);
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json.error).toContain('Provider API Key missing');
+    });
+
+    it('enforces rate limit of 5 requests per minute per admin session', async () => {
+      // 5 requests should pass
+      for (let i = 0; i < 5; i++) {
+        const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+          method: 'POST',
+          headers: {
+            'x-forwarded-for': '10.0.0.6',
+            cookie: 'admin_auth=test-admin-session-token',
+          },
+          body: JSON.stringify({
+            channel: 'EMAIL',
+            body: 'Hello',
+          }),
+        });
+        const res = await testSendRoute(req);
+        expect(res.status).toBe(200);
+      }
+
+      // 6th request from the same session should receive 429
+      const req6 = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
+        method: 'POST',
+        headers: {
+          'x-forwarded-for': '10.0.0.6',
+          cookie: 'admin_auth=test-admin-session-token',
+        },
+        body: JSON.stringify({
+          channel: 'EMAIL',
+          body: 'Hello',
+        }),
+      });
+      const res6 = await testSendRoute(req6);
+      expect(res6.status).toBe(429);
+      const json6 = await res6.json();
+      expect(json6.error).toContain('Too many requests');
+    });
   });
 });
