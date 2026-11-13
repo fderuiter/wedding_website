@@ -662,6 +662,20 @@ describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {
 });
 
 describe('optimizeContrast In-Memory Cache', () => {
+  function calculateTestContrastRatio(fgHex: string, bgHex: string): number {
+    const getLum = (hex: string) => {
+      const clean = hex.replace('#', '');
+      const r = parseInt(clean.substring(0, 2), 16) / 255;
+      const g = parseInt(clean.substring(2, 4), 16) / 255;
+      const b = parseInt(clean.substring(4, 6), 16) / 255;
+      const parts = [r, g, b].map(s => (s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)));
+      return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2];
+    };
+    const l1 = getLum(fgHex);
+    const l2 = getLum(bgHex);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  }
+
   beforeEach(() => {
     clearContrastCache();
   });
@@ -708,6 +722,57 @@ describe('optimizeContrast In-Memory Cache', () => {
       optimizeContrast(hex, '#FFFFFF', 4.5);
     }
     expect(contrastCache.size).toBeLessThanOrEqual(1000);
+  });
+
+  it('optimizes lightness on light backgrounds to satisfy contrast ratio', () => {
+    const result = optimizeContrast('#FEF08A', '#FFFFFF', 4.5);
+    const ratio = calculateTestContrastRatio(result, '#FFFFFF');
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+    expect(result).not.toBe('#FEF08A');
+    expect(contrastCache.get('#fef08a:#ffffff:4.5')).toBe(result);
+  });
+
+  it('optimizes lightness on dark backgrounds to satisfy contrast ratio', () => {
+    const result = optimizeContrast('#1E293B', '#111827', 4.5);
+    const ratio = calculateTestContrastRatio(result, '#111827');
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+    expect(result).not.toBe('#1E293B');
+    expect(contrastCache.get('#1e293b:#111827:4.5')).toBe(result);
+  });
+
+  it('preserves baseHex when it already satisfies target contrast ratio', () => {
+    const blackOnWhite = optimizeContrast('#000000', '#FFFFFF', 4.5);
+    expect(blackOnWhite).toBe('#000000');
+
+    const whiteOnBlack = optimizeContrast('#FFFFFF', '#000000', 4.5);
+    expect(whiteOnBlack).toBe('#FFFFFF');
+  });
+
+  it('falls back to boundary extreme #000000 when no candidate satisfies target contrast ratio on light background', () => {
+    const result = optimizeContrast('#777777', '#FFFFFF', 25);
+    expect(result).toBe('#000000');
+    expect(contrastCache.get('#777777:#ffffff:25')).toBe('#000000');
+  });
+
+  it('falls back to boundary extreme #ffffff when no candidate satisfies target contrast ratio on dark background', () => {
+    const result = optimizeContrast('#777777', '#111827', 25);
+    expect(result).toBe('#ffffff');
+    expect(contrastCache.get('#777777:#111827:25')).toBe('#ffffff');
+  });
+
+  it('falls back to baseHex on invalid hex string inputs', () => {
+    const invalidBase = optimizeContrast('not-a-color', '#FFFFFF', 4.5);
+    expect(invalidBase).toBe('not-a-color');
+
+    const invalidBg = optimizeContrast('#B91C1C', 'not-a-color', 4.5);
+    expect(invalidBg).toBe('#B91C1C');
+  });
+
+  it('selects candidate closest to original lightness while satisfying contrast ratio', () => {
+    const result = optimizeContrast('#B91C1C', '#111827', 4.5);
+    const ratio = calculateTestContrastRatio(result, '#111827');
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+    expect(result).not.toBe('#ffffff');
   });
 });
 

@@ -180,7 +180,13 @@ function sanitizeTokenValue(val: string | undefined | null): string {
 }
 
 function hexToRgb(hex: string): RGB {
+  if (!hex || typeof hex !== 'string') {
+    throw new Error('Invalid hex color');
+  }
   const cleanHex = hex.replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(cleanHex)) {
+    throw new Error(`Invalid hex color: ${hex}`);
+  }
   let r = 0, g = 0, b = 0;
   if (cleanHex.length === 3) {
     r = parseInt(cleanHex[0] + cleanHex[0], 16);
@@ -284,7 +290,11 @@ export function clearContrastCache(): void {
 }
 
 export function optimizeContrast(baseHex: string, bgHex: string, minRatio: number = 4.5): string {
-  const cacheKey = `${baseHex.toLowerCase()}:${bgHex.toLowerCase()}:${minRatio}`;
+  if (!baseHex || typeof baseHex !== 'string') {
+    return baseHex;
+  }
+  const safeBgHex = typeof bgHex === 'string' ? bgHex : '';
+  const cacheKey = `${baseHex.toLowerCase()}:${safeBgHex.toLowerCase()}:${minRatio}`;
   if (contrastCache.has(cacheKey)) {
     return contrastCache.get(cacheKey)!;
   }
@@ -301,33 +311,29 @@ export function optimizeContrast(baseHex: string, bgHex: string, minRatio: numbe
       const { h, s, l } = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
       
       const isLightBg = bgLuminance > 0.5;
-      let currentL = l;
-      let bestHex = baseHex;
-      const step = 0.01; 
+      const boundaryHex = isLightBg ? '#000000' : '#ffffff';
+      let bestHex = boundaryHex;
 
-      if (isLightBg) {
-        while (currentL > 0) {
-          currentL -= step;
-          if (currentL < 0) currentL = 0;
-          const testRgb = hslToRgb(h, s, currentL);
-          const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
-          if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
-            bestHex = testHex;
-            break;
-          }
+      let low = isLightBg ? 0 : l;
+      let high = isLightBg ? l : 1;
+
+      for (let i = 0; i < 7; i++) {
+        const mid = (low + high) / 2;
+        const testRgb = hslToRgb(h, s, mid);
+        const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
+        if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
           bestHex = testHex;
-        }
-      } else {
-        while (currentL < 1) {
-          currentL += step;
-          if (currentL > 1) currentL = 1;
-          const testRgb = hslToRgb(h, s, currentL);
-          const testHex = rgbToHex(testRgb.r, testRgb.g, testRgb.b);
-          if (getContrastRatio(testRgb, bgRgb) >= minRatio) {
-            bestHex = testHex;
-            break;
+          if (isLightBg) {
+            low = mid;
+          } else {
+            high = mid;
           }
-          bestHex = testHex;
+        } else {
+          if (isLightBg) {
+            high = mid;
+          } else {
+            low = mid;
+          }
         }
       }
       computedHex = bestHex;
