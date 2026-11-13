@@ -26,6 +26,7 @@ export async function middleware(request: NextRequest) {
     pathname === '/guest/login' ||
     pathname === '/guest/collect' ||
     pathname === '/api/guest/login' ||
+    pathname === '/api/guest/lookup' ||
     pathname === '/api/guest/address' ||
     pathname === '/api/guest/address/public' ||
     pathname === '/api/registry/validate-code' ||

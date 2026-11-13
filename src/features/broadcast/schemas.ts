@@ -27,6 +27,35 @@ export const PreviewBroadcastSchema = z.object({
   targetFilters: BroadcastTargetFiltersSchema.optional(),
 });
 
+export const SendTestBroadcastSchema = z.object({
+  channel: z.enum(['EMAIL', 'SMS']),
+  subject: z.string().optional(),
+  body: z.string().min(1, 'Message body cannot be empty'),
+  destination: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.destination && data.destination.trim()) {
+    if (data.channel === 'EMAIL') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(data.destination.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['destination'],
+          message: 'Invalid email address format',
+        });
+      }
+    } else if (data.channel === 'SMS') {
+      const e164Regex = /^\+[1-9]\d{1,14}$/;
+      if (!e164Regex.test(data.destination.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['destination'],
+          message: 'Invalid phone number format. Must be in E.164 format (e.g. +15551234567)',
+        });
+      }
+    }
+  }
+});
+
 export const TestConnectionSchema = z.object({
   type: z.enum(['email', 'sms']),
   provider: z.string().optional(),

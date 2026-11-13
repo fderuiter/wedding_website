@@ -339,25 +339,6 @@ export function parseCsvContent(text: string): CsvParseResult {
   };
 }
 
-export function parseInvitationCodesCsv(
-  text: string,
-  columnMapping?: ColumnMappingOptions,
-  existingDbCodes: Set<string> = new Set()
-): { parseResult: CsvParseResult; rows: ParsedCsvRow[] } {
-  const parseResult = parseCsvContent(text);
-  const mapping: ColumnMappingOptions = columnMapping || {
-    guestNameCol: parseResult.suggestedGuestNameCol,
-    codeCol: parseResult.suggestedCodeCol,
-    emailCol: parseResult.suggestedEmailCol,
-    dietaryNotesCol: parseResult.suggestedDietaryNotesCol,
-    plusOneCol: parseResult.suggestedPlusOneCol,
-    plusOneFirstNameCol: parseResult.suggestedPlusOneFirstNameCol,
-    plusOneLastNameCol: parseResult.suggestedPlusOneLastNameCol,
-  };
-  const rows = validateCsvRows(parseResult.rows, mapping, existingDbCodes);
-  return { parseResult, rows };
-}
-
 function parseCsvLines(text: string): string[][] {
   const result: string[][] = [];
   let currentRow: string[] = [];
@@ -592,82 +573,6 @@ export function validateSingleCsvRow(
     errors,
     warnings,
   };
-}
-
-export function validateCsvRows(
-  rows: Record<string, string>[],
-  columnMappingOrGuestNameCol: string | ColumnMappingOptions,
-  codeColOrDbCodes?: string | Set<string>,
-  existingDbCodesParam: Set<string> = new Set()
-): ParsedCsvRow[] {
-  let mapping: ColumnMappingOptions;
-  let existingDbCodes: Set<string>;
-
-  if (typeof columnMappingOrGuestNameCol === 'object' && columnMappingOrGuestNameCol !== null) {
-    mapping = columnMappingOrGuestNameCol;
-    existingDbCodes = codeColOrDbCodes instanceof Set ? codeColOrDbCodes : existingDbCodesParam;
-  } else {
-    mapping = {
-      guestNameCol: columnMappingOrGuestNameCol || '',
-      codeCol: typeof codeColOrDbCodes === 'string' ? codeColOrDbCodes : '',
-    };
-    existingDbCodes = codeColOrDbCodes instanceof Set ? codeColOrDbCodes : existingDbCodesParam;
-  }
-
-  const {
-    guestNameCol,
-    codeCol = '',
-    emailCol = '',
-    addressLine1Col = '',
-    addressLine2Col = '',
-    cityCol = '',
-    stateCol = '',
-    zipCodeCol = '',
-    countryCol = '',
-    dietaryNotesCol = '',
-    plusOneCol = '',
-    plusOneFirstNameCol = '',
-    plusOneLastNameCol = '',
-    householdNameCol = '',
-    partyGroupCol = '',
-    partyTagsCol = '',
-  } = mapping;
-
-  const codeFrequency = new Map<string, number>();
-
-  // Count code frequencies in batch
-  rows.forEach((r) => {
-    const rawCode = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
-    if (rawCode) {
-      codeFrequency.set(rawCode, (codeFrequency.get(rawCode) || 0) + 1);
-    }
-  });
-
-  // Hoisted column set creation
-  const mappedCols = new Set(
-    [
-      guestNameCol,
-      codeCol,
-      emailCol,
-      addressLine1Col,
-      addressLine2Col,
-      cityCol,
-      stateCol,
-      zipCodeCol,
-      countryCol,
-      dietaryNotesCol,
-      plusOneCol,
-      plusOneFirstNameCol,
-      plusOneLastNameCol,
-      householdNameCol,
-      partyGroupCol,
-      partyTagsCol,
-    ].filter(Boolean)
-  );
-
-  return rows.map((r, idx) =>
-    validateSingleCsvRow(r, idx, mapping, codeFrequency, existingDbCodes, mappedCols)
-  );
 }
 
 export function escapeCsvCell(val: unknown): string {

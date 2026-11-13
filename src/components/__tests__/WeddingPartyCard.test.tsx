@@ -75,7 +75,7 @@ describe('WeddingPartyCard', () => {
   it('checks all outgoing links to ensure they use correct security attributes', () => {
     render(<WeddingPartyCard member={mockMemberWithPhoto} />);
 
-    const link = screen.getByRole('link', { name: /learn more about john doe/i });
+    const link = screen.getByRole('link', { name: /learn more about john doe \(opens in a new tab\)/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', 'https://example.com/john-personal-site');
     expect(link).toHaveAttribute('target', '_blank');

@@ -62,7 +62,7 @@ describe('PhotosPage Accessibility', () => {
     });
 
     // Verify View Full Album link
-    const albumLink = screen.getByRole('link', { name: /view full album/i });
+    const albumLink = screen.getByRole('link', { name: /view full album \(opens in a new tab\)/i });
     expect(albumLink).toBeInTheDocument();
     expect(albumLink).toHaveAttribute(
       'href',

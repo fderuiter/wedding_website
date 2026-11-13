@@ -100,6 +100,7 @@ flowchart LR
     node_api_admin_broadcast_schedule_id["[id]"]
     node_api_admin_broadcast_send["send"]
     node_api_admin_broadcast_testconnection["test-connection"]
+    node_api_admin_broadcast_testsend["test-send"]
     node_api_admin_features["features"]
     node_api_admin_invitationcodes["invitation-codes"]
     node_api_admin_invitationcodes_batch["batch"]
@@ -141,6 +142,7 @@ flowchart LR
     node_api_guest_address["address"]
     node_api_guest_address_public["public"]
     node_api_guest_login["login"]
+    node_api_guest_lookup["lookup"]
     node_api_guest_photos["photos"]
     node_api_guest_photos_upload["upload"]
     node_api_health["health"]
@@ -204,6 +206,7 @@ flowchart LR
     node_api_admin_broadcast_schedule --> node_api_admin_broadcast_schedule_id
     node_api_admin_broadcast --> node_api_admin_broadcast_send
     node_api_admin_broadcast --> node_api_admin_broadcast_testconnection
+    node_api_admin_broadcast --> node_api_admin_broadcast_testsend
     node_api_admin --> node_api_admin_features
     node_api_admin --> node_api_admin_invitationcodes
     node_api_admin_invitationcodes --> node_api_admin_invitationcodes_batch
@@ -245,6 +248,7 @@ flowchart LR
     node_api_guest --> node_api_guest_address
     node_api_guest_address --> node_api_guest_address_public
     node_api_guest --> node_api_guest_login
+    node_api_guest --> node_api_guest_lookup
     node_api_guest --> node_api_guest_photos
     node_api_guest_photos --> node_api_guest_photos_upload
     node_api --> node_api_health
@@ -304,6 +308,7 @@ flowchart LR
     class node_api_admin_broadcast_schedule_id api;
     class node_api_admin_broadcast_send api;
     class node_api_admin_broadcast_testconnection api;
+    class node_api_admin_broadcast_testsend api;
     class node_api_admin_features api;
     class node_api_admin_invitationcodes_batch api;
     class node_api_admin_invitationcodes_batch_validate api;
@@ -337,6 +342,7 @@ flowchart LR
     class node_api_guest_address api;
     class node_api_guest_address_public api;
     class node_api_guest_login api;
+    class node_api_guest_lookup api;
     class node_api_guest_photos_upload api;
     class node_api_health api;
     class node_api_media api;

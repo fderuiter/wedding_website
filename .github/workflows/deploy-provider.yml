@@ -62,6 +62,10 @@ on:
         description: 'Flag indicating if deployment ran in dry-run mode'
         value: ${{ jobs.deploy.outputs.is_dry_run }}
 
+concurrency:
+  group: deploy-provider-${{ inputs.environment || 'production' }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy Release Artifact to Provider

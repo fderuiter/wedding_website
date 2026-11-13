@@ -26,13 +26,26 @@ function getClientIp(req: NextRequest): string {
   return '127.0.0.1';
 }
 
+function getSessionOrIp(req: NextRequest): string {
+  const adminCookie =
+    req.cookies?.get?.('admin_auth')?.value ||
+    (typeof req.headers?.get === 'function'
+      ? req.headers.get('cookie')?.split(';').find((c) => c.trim().startsWith('admin_auth='))?.trim().slice('admin_auth='.length)
+      : undefined);
+
+  if (adminCookie) {
+    return `session:${adminCookie}`;
+  }
+  return getClientIp(req);
+}
+
 export async function rateLimit(
   req: NextRequest,
   limit: number,
   windowMs: number,
   keyPrefix?: string
 ): Promise<NextResponse | null> {
-  const ip = getClientIp(req);
+  const identifier = getSessionOrIp(req);
 
   let pathname = '';
   try {
@@ -41,7 +54,7 @@ export async function rateLimit(
     pathname = '';
   }
 
-  const key = keyPrefix ? `${keyPrefix}:${ip}` : `${pathname}:${ip}`;
+  const key = keyPrefix ? `${keyPrefix}:${identifier}` : `${pathname}:${identifier}`;
 
   const now = Date.now();
   const info = rateLimits.get(key);

@@ -40,7 +40,7 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-            aria-label={`Learn more about ${member.name}`}
+            aria-label={`Learn more about ${member.name} (opens in a new tab)`}
           >
             Learn more <Icon name="ExternalLink" className="ml-2 h-4 w-4" aria-hidden="true" />
           </a>
