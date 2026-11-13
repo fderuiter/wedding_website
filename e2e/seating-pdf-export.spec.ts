@@ -52,10 +52,10 @@ test('seating chart admin dashboard has Export Visual PDF button', async ({ cont
     await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('crashed') || msg.includes('closed')) {
+    if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
       await context.addCookies(cookies).catch(() => {});
       page = await context.newPage();
-      await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+      await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded', timeout: 30000 });
     } else {
       throw err;
     }

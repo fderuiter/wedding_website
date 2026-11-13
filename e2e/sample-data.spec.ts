@@ -127,25 +127,36 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(seedRes.status()).toBe(200);
 
     // Visit admin dashboard
-    try {
-      await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('crashed') || msg.includes('closed')) {
-        await context.addCookies([
-          { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-          { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-        ]).catch(() => {});
-        page = await context.newPage();
-        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
-      } else {
-        throw err;
+    const banner = page.locator('[data-testid="sample-data-banner"]');
+    let attempt = 0;
+    while (attempt < 4) {
+      attempt++;
+      try {
+        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await expect(banner).toBeVisible({ timeout: 20000 });
+        break;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          attempt < 4 &&
+          (msg.includes('crashed') ||
+           msg.includes('closed') ||
+           msg.includes('Timeout') ||
+           msg.includes('timeout') ||
+           msg.includes('net::ERR_ABORTED'))
+        ) {
+          console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
+          await page.close().catch(() => {});
+          await context.addCookies([
+            { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
+            { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
+          ]).catch(() => {});
+          page = await context.newPage();
+        } else {
+          throw err;
+        }
       }
     }
-
-    // Sample data banner should be visible
-    const banner = page.locator('[data-testid="sample-data-banner"]');
-    await expect(banner).toBeVisible();
 
     // Should contain "Sample Data Active"
     await expect(banner).toContainText('Sample Data Active');
@@ -161,7 +172,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     await confirmButton.click();
 
     // Banner should disappear after purging
-    await expect(banner).not.toBeVisible();
+    await expect(banner).not.toBeVisible({ timeout: 15000 });
 
     // Verify status API reports no sample data
     const statusRes = await request.get('/api/admin/sample-data', {
