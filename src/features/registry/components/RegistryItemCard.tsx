@@ -219,7 +219,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  aria-label={`Open payment link for ${item.paymentHandleType || 'Payment App'}`}
+                  aria-label={`Open payment link for ${item.paymentHandleType || 'Payment App'} (opens in a new tab)`}
                 >
                   <span>Open Link</span>
                   <Icon name="ExternalLink" className="w-3.5 h-3.5" />
@@ -269,6 +269,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
             className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
           >
             View on Vendor Site
+            <span className="sr-only"> (opens in a new tab)</span>
           </a>
         ) : <div />}
         <Button

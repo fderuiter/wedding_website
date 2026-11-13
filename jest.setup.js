@@ -271,9 +271,10 @@ jest.mock('next/server', () => {
           if (options?.maxAge === 0) {
             cookieString += '; Max-Age=0';
           }
-          headers.set('set-cookie', cookieString);
+          headers.append('set-cookie', cookieString);
         }),
         get: jest.fn((key) => responseCookies.get(key)),
+        getAll: jest.fn(() => Array.from(responseCookies.values())),
         delete: jest.fn((key) => responseCookies.delete(key)),
       };
 

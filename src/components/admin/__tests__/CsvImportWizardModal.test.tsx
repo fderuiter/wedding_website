@@ -843,7 +843,7 @@ describe('CsvImportWizardModal Component', () => {
             isOpen={true}
             onClose={mockOnClose}
             onImportComplete={mockOnImportComplete}
-            existingCodes={['CODE1', undefined as any, null as any, 'CODE2']}
+            existingCodes={['CODE1', undefined as unknown as string, null as unknown as string, 'code2']}
           />
         </ToastProvider>
       );

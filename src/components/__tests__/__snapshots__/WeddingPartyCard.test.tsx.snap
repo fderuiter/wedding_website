@@ -70,7 +70,7 @@ exports[`WeddingPartyCard matches the component snapshot when member has photo a
         John has been the groom's best friend since high school. He loves sports and cooking.
       </p>
       <a
-        aria-label="Learn more about John Doe"
+        aria-label="Learn more about John Doe (opens in a new tab)"
         class="inline-flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         href="https://example.com/john-personal-site"
         rel="noopener noreferrer"

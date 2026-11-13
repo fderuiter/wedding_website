@@ -39,6 +39,10 @@ on:
         default: 'Automated post-deployment health check failure'
         type: string
 
+concurrency:
+  group: rollback-${{ inputs.target_environment || inputs.environment || 'production' }}
+  cancel-in-progress: false
+
 jobs:
   rollback:
     name: Execute Rollback

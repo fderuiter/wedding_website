@@ -54,6 +54,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.message).toBe('Address submitted successfully.');
+    expect(body.data.id).toBe('generated-id-1');
+    expect(body.data.guestName).toBe('Jane Prospect');
+    expect(body.data.partyTags).toEqual(['address-collection']);
+    expect(body.data.code).toBeUndefined();
 
     expect(mockPrisma.invitationCode.create).toHaveBeenCalledTimes(1);
     const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
@@ -110,8 +114,9 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.id).toBe('existing-guest-1');
-    expect(body.data.code).toBe('ORIG1234'); // Retains original code!
+    expect(body.data.guestName).toBe('Jane Original');
     expect(body.data.partyTags).toEqual(['VIP', 'address-collection']);
+    expect(body.data.code).toBeUndefined();
 
     expect(mockPrisma.invitationCode.findFirst).toHaveBeenCalledWith({
       where: {
@@ -189,8 +194,9 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.id).toBe('existing-guest-2');
-    expect(body.data.code).toBe('NAME5678');
+    expect(body.data.guestName).toBe('John Doe');
     expect(body.data.partyTags).toEqual(['address-collection']);
+    expect(body.data.code).toBeUndefined();
 
     expect(mockPrisma.invitationCode.findFirst).toHaveBeenNthCalledWith(1, {
       where: {

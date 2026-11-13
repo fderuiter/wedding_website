@@ -31,6 +31,10 @@ on:
       DATABASE_URL:
         required: true
 
+concurrency:
+  group: db-migrate-${{ inputs.environment || 'production' }}
+  cancel-in-progress: false
+
 jobs:
   migrate:
     name: Execute Database Migrations
