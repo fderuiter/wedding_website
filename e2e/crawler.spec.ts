@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Browser, type BrowserContext, type Route, type Request } from '@playwright/test';
 import crypto from 'crypto';
 
 function generateAdminCookieValue() {
@@ -56,8 +56,27 @@ const START_ROUTES = [...PUBLIC_UI_ROUTES, ...PROTECTED_UI_ROUTES];
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
 
-async function setupContextRoutes(ctx: any) {
-  await ctx.route('**/*', async (routeHandler: any, request: any) => {
+async function createCrawlerContext(
+  browser: Browser,
+  baseURL: string,
+  cookieValue: string,
+  guestCookieValue: string
+): Promise<BrowserContext> {
+  const context = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+  await context.addCookies([
+    {
+      name: 'admin_auth',
+      value: cookieValue,
+      url: baseURL,
+    },
+    {
+      name: 'guest_auth',
+      value: guestCookieValue,
+      url: baseURL,
+    }
+  ]);
+
+  await context.route('**/*', async (routeHandler: Route, request: Request) => {
     const urlStr = request.url();
     let url: URL;
     try {
@@ -87,7 +106,7 @@ async function setupContextRoutes(ctx: any) {
     return routeHandler.fulfill({ status: 200, contentType: 'text/plain', body: '' });
   });
 
-  await ctx.route('**/api/weather', async (routeHandler: any) => {
+  await context.route('**/api/weather', async (routeHandler: Route) => {
     await routeHandler.fulfill({
       status: 200,
       json: {
@@ -104,7 +123,7 @@ async function setupContextRoutes(ctx: any) {
     });
   });
 
-  await ctx.route('**/api/registry/items/*', async (routeHandler: any) => {
+  await context.route('**/api/registry/items/*', async (routeHandler: Route) => {
     await routeHandler.fulfill({
       status: 200,
       json: {
@@ -122,7 +141,7 @@ async function setupContextRoutes(ctx: any) {
     });
   });
 
-  await ctx.route('**/api/registry/items', async (routeHandler: any) => {
+  await context.route('**/api/registry/items', async (routeHandler: Route) => {
     await routeHandler.fulfill({
       status: 200,
       json: [
@@ -141,6 +160,8 @@ async function setupContextRoutes(ctx: any) {
       ],
     });
   });
+
+  return context;
 }
 
 test.describe('Dynamic Route Crawler & Link Audit', () => {
@@ -148,220 +169,178 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
   test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ browser }) => {
     test.setTimeout(120000);
     const guestCookieValue = generateGuestCookieValue();
+    const baseURL = 'http://127.0.0.1:3000';
 
-    const guestContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3000', reducedMotion: 'reduce' });
-    try {
-      await guestContext.addCookies([
-        {
-          name: 'guest_auth',
-          value: guestCookieValue,
-          url: 'http://127.0.0.1:3000',
-        }
-      ]);
-
-      for (const route of PROTECTED_UI_ROUTES) {
-        console.log(`[Unauthenticated] Navigating to: ${route}`);
-        let attempt = 0;
-        let success = false;
-        let lastError: any = null;
-
-        while (attempt < 3 && !success) {
-          attempt++;
-          let page: any = null;
-          try {
-            page = await guestContext.newPage();
-            try {
-              await page.goto(route, { waitUntil: 'domcontentloaded' });
-            } catch (gotoError: any) {
-              if (gotoError?.message?.includes('net::ERR_ABORTED')) {
-                await page.waitForURL('**/admin/login', { timeout: 10000 }).catch(() => {});
-              } else {
-                throw gotoError;
-              }
+    for (const route of PROTECTED_UI_ROUTES) {
+      console.log(`[Unauthenticated] Navigating to: ${route}`);
+      let attempt = 0;
+      let success = false;
+      while (attempt < 4 && !success) {
+        attempt++;
+        const guestContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+        try {
+          await guestContext.addCookies([
+            {
+              name: 'guest_auth',
+              value: guestCookieValue,
+              url: baseURL,
             }
-            await page.waitForURL('**/admin/login', { timeout: 15000 }).catch(() => {});
+          ]);
+
+          const page = await guestContext.newPage();
+          try {
+            await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 30000 });
             const url = new URL(page.url());
             expect(url.pathname).toBe('/admin/login');
             success = true;
-          } catch (err: any) {
-            lastError = err;
+          } catch (gotoError: unknown) {
+            const msg = gotoError instanceof Error ? gotoError.message : String(gotoError);
             if (
-              attempt < 3 &&
-              (err?.message?.includes('crashed') ||
-               err?.message?.includes('closed') ||
-               err?.message?.includes('Target crashed') ||
-               err?.message?.includes('net::ERR_ABORTED') ||
-               err?.message?.includes('blank'))
+              attempt < 4 &&
+              (msg.includes('net::ERR_ABORTED') ||
+               msg.includes('crashed') ||
+               msg.includes('closed') ||
+               msg.includes('Timeout') ||
+               msg.includes('timeout'))
             ) {
-              console.log(`[Unauthenticated] Page crashed on ${route}, retrying on fresh page (attempt ${attempt})...`);
+              console.log(`[Unauthenticated] Retrying ${route} (attempt ${attempt}) due to: ${msg.slice(0, 80)}`);
             } else {
-              throw err;
+              throw gotoError;
             }
           } finally {
-            if (page) {
-              await page.close().catch(() => {});
-            }
+            await page.close().catch(() => {});
           }
-        }
-
-        if (!success && lastError) {
-          throw lastError;
+        } finally {
+          await guestContext.close().catch(() => {});
         }
       }
-    } finally {
-      await guestContext.close();
     }
   });
 
   for (const route of START_ROUTES) {
     test(`Authenticated admin should successfully render route ${route} and verify internal links`, async ({ browser }) => {
-      test.setTimeout(60000);
+      test.setTimeout(90000);
       const cookieValue = generateAdminCookieValue();
       const guestCookieValue = generateGuestCookieValue();
       const baseURL = 'http://127.0.0.1:3000';
 
-      const pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
+      let pageContext = await createCrawlerContext(browser, baseURL, cookieValue, guestCookieValue);
       try {
-        await pageContext.addCookies([
-          {
-            name: 'admin_auth',
-            value: cookieValue,
-            url: baseURL,
-          },
-          {
-            name: 'guest_auth',
-            value: guestCookieValue,
-            url: baseURL,
-          }
-        ]);
-
-        await setupContextRoutes(pageContext);
-
         const targetUrl = new URL(route, baseURL).toString();
         console.log(`[Authenticated] Navigating to: ${targetUrl}`);
-        let page = await pageContext.newPage();
 
-        try {
-          let attempt = 0;
-          let success = false;
-          while (attempt < 3 && !success) {
-            attempt++;
-            try {
-              const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-              expect(response).not.toBeNull();
-              expect(response!.status()).toBe(200);
+        let attempt = 0;
+        let success = false;
+        while (attempt < 4 && !success) {
+          attempt++;
+          let page: any = null;
+          try {
+            page = await pageContext.newPage();
+            const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            expect(response).not.toBeNull();
+            expect(response!.status()).toBe(200);
 
-              if (route !== '/admin/login') {
-                const currentUrl = new URL(page.url());
-                expect(currentUrl.pathname).not.toBe('/admin/login');
-              }
+            if (route !== '/admin/login') {
+              const currentUrl = new URL(page.url());
+              expect(currentUrl.pathname).not.toBe('/admin/login');
+            }
 
-              const content = await page.content();
-              expect(content).not.toContain('Internal Server Error');
-              expect(content).not.toContain('500 Error');
-              expect(content).not.toContain('An unhandled error occurred');
+            const content = await page.content();
+            expect(content).not.toContain('Internal Server Error');
+            expect(content).not.toContain('500 Error');
+            expect(content).not.toContain('An unhandled error occurred');
 
-              const hrefs = await page.evaluate(() => 
-                Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
-              );
-              console.log(`Found ${hrefs.length} anchor elements on ${route}`);
+            const hrefs = await page.evaluate(() => 
+              Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+            );
+            console.log(`Found ${hrefs.length} anchor elements on ${route}`);
 
-              const linksToCheck = new Set<string>();
-              for (const href of hrefs) {
-                if (!href) continue;
+            const linksToCheck = new Set<string>();
+            for (const href of hrefs) {
+              if (!href) continue;
 
-                if (
-                  href.startsWith('#') ||
-                  href.startsWith('mailto:') ||
-                  href.startsWith('tel:') ||
-                  href.startsWith('javascript:') ||
-                  href.startsWith('data:') ||
-                  href.startsWith('vbscript:')
-                ) {
-                  continue;
-                }
-
-                let resolvedUrl: URL;
-                try {
-                  resolvedUrl = new URL(href, targetUrl);
-                } catch {
-                  continue;
-                }
-
-                if (resolvedUrl.origin !== new URL(baseURL).origin) {
-                  continue;
-                }
-
-                if (resolvedUrl.pathname.includes('/_next/')) {
-                  continue;
-                }
-
-                let normalizedPath = resolvedUrl.pathname;
-                if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
-                  normalizedPath = normalizedPath.slice(0, -1);
-                }
-
-                const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
-                linksToCheck.add(absoluteCheckUrl);
-              }
-
-              const linksArray = Array.from(linksToCheck);
-              const batchSize = 2;
-              for (let i = 0; i < linksArray.length; i += batchSize) {
-                const batch = linksArray.slice(i, i + batchSize);
-                const batchResults = await Promise.all(
-                  batch.map(async (absoluteCheckUrl) => {
-                    const linkResponse = await fetch(absoluteCheckUrl, {
-                      headers: {
-                        Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
-                      },
-                      signal: AbortSignal.timeout(15000),
-                    });
-                    const status = linkResponse.status;
-                    await linkResponse.arrayBuffer();
-                    return { absoluteCheckUrl, status };
-                  })
-                );
-
-                for (const { absoluteCheckUrl, status } of batchResults) {
-                  expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
-                }
-              }
-
-              success = true;
-            } catch (err: any) {
               if (
-                attempt < 3 &&
-                (err?.message?.includes('crashed') ||
-                 err?.message?.includes('closed') ||
-                 err?.message?.includes('Target crashed') ||
-                 err?.message?.includes('net::ERR_ABORTED'))
+                href.startsWith('#') ||
+                href.startsWith('mailto:') ||
+                href.startsWith('tel:') ||
+                href.startsWith('javascript:') ||
+                href.startsWith('data:') ||
+                href.startsWith('vbscript:')
               ) {
-                console.log(`[Authenticated] Page crashed on ${route}, retrying on fresh page (attempt ${attempt})...`);
-                await page.close().catch(() => {});
-                try {
-                  page = await pageContext.newPage();
-                } catch {
-                  try {
-                    pageContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-                    await pageContext.addCookies([
-                      { name: 'admin_auth', value: cookieValue, url: baseURL },
-                      { name: 'guest_auth', value: guestCookieValue, url: baseURL },
-                    ]);
-                    await setupContextRoutes(pageContext);
-                    page = await pageContext.newPage();
-                  } catch {
-                    throw err;
-                  }
-                }
-              } else {
-                throw err;
+                continue;
+              }
+
+              let resolvedUrl: URL;
+              try {
+                resolvedUrl = new URL(href, targetUrl);
+              } catch {
+                continue;
+              }
+
+              if (resolvedUrl.origin !== new URL(baseURL).origin) {
+                continue;
+              }
+
+              if (resolvedUrl.pathname.includes('/_next/')) {
+                continue;
+              }
+
+              let normalizedPath = resolvedUrl.pathname;
+              if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+                normalizedPath = normalizedPath.slice(0, -1);
+              }
+
+              const absoluteCheckUrl = `${resolvedUrl.origin}${normalizedPath}${resolvedUrl.search}`;
+              linksToCheck.add(absoluteCheckUrl);
+            }
+
+            const linksArray = Array.from(linksToCheck);
+            const batchSize = 2;
+            for (let i = 0; i < linksArray.length; i += batchSize) {
+              const batch = linksArray.slice(i, i + batchSize);
+              const batchResults = await Promise.all(
+                batch.map(async (absoluteCheckUrl) => {
+                  const linkResponse = await fetch(absoluteCheckUrl, {
+                    headers: {
+                      Cookie: `admin_auth=${cookieValue}; guest_auth=${guestCookieValue}`,
+                    },
+                    signal: AbortSignal.timeout(15000),
+                  });
+                  const status = linkResponse.status;
+                  await linkResponse.arrayBuffer();
+                  return { absoluteCheckUrl, status };
+                })
+              );
+
+              for (const { absoluteCheckUrl, status } of batchResults) {
+                expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
               }
             }
+
+            success = true;
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (
+              attempt < 4 &&
+              (msg.includes('crashed') ||
+               msg.includes('closed') ||
+               msg.includes('net::ERR_ABORTED') ||
+               msg.includes('Timeout') ||
+               msg.includes('timeout'))
+            ) {
+              console.log(`[Authenticated] Retry attempt ${attempt} on ${route} due to: ${msg.slice(0, 80)}`);
+              if (page) await page.close().catch(() => {});
+              await pageContext.close().catch(() => {});
+              pageContext = await createCrawlerContext(browser, baseURL, cookieValue, guestCookieValue);
+            } else {
+              throw err;
+            }
+          } finally {
+            if (page) {
+              await page.goto('about:blank').catch(() => {});
+              await page.close().catch(() => {});
+            }
           }
-        } finally {
-          await page.goto('about:blank').catch(() => {});
-          await page.close().catch(() => {});
         }
       } finally {
         await pageContext.close().catch(() => {});

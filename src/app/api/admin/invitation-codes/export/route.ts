@@ -6,6 +6,7 @@ import { generateCsvContent } from '@/utils/csv';
 const HEADERS = [
   'Guest Name',
   'Invitation Code',
+  'RSVP Link',
   'Email',
   'Plus-One Name',
   'Household Name',
@@ -20,6 +21,7 @@ const HEADERS = [
 interface InvitationCodeExportRecord extends Record<string, unknown> {
   'Guest Name': string;
   'Invitation Code': string;
+  'RSVP Link': string;
   'Email': string;
   'Plus-One Name': string;
   'Household Name': string;
@@ -191,6 +193,12 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
+  // Determine base URL for complete RSVP links
+  const origin = request.nextUrl.origin;
+  const proto = request.headers.get('x-forwarded-proto') || request.nextUrl.protocol.replace(':', '');
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  const baseUrl = (host ? `${proto}://${host}` : origin).replace(/\/+$/, '');
+
   // Map to export format
   const exportRecords: InvitationCodeExportRecord[] = dbRecords.map((item) => {
     const plusOneName = [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ');
@@ -205,9 +213,12 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       .filter(Boolean)
       .join(', ');
 
+    const rsvpLink = item.code ? `${baseUrl}/guest?code=${encodeURIComponent(item.code)}` : '';
+
     return {
       'Guest Name': item.guestName || '',
       'Invitation Code': item.code || '',
+      'RSVP Link': rsvpLink,
       'Email': item.email || '',
       'Plus-One Name': plusOneName,
       'Household Name': item.householdName || '',
