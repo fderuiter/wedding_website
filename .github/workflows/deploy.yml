@@ -45,6 +45,10 @@ on:
         default: 'google-cloud-run'
         type: string
 
+concurrency:
+  group: deploy-${{ inputs.environment || 'production' }}
+  cancel-in-progress: false
+
 jobs:
   publish-artifact:
     name: Publish Release Artifact
