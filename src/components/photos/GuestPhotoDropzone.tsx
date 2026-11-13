@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { MAX_GUEST_PHOTO_SIZE, GUEST_PHOTO_ACCEPTED_TYPES, GUEST_PHOTO_ALLOWED_EXTENSIONS, getFileExtension } from '@/utils/validation';
+
+const MAX_CONCURRENT_UPLOADS = 2;
 
 export interface UploadedPhoto {
   id: string;
@@ -20,6 +22,7 @@ export interface UploadStatus {
   errorMessage?: string;
   url?: string;
   file?: File;
+  order?: number;
 }
 
 interface GuestPhotoDropzoneProps {
@@ -33,6 +36,13 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
   const [globalError, setGlobalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const uploadsRef = useRef<UploadStatus[]>(uploads);
+  uploadsRef.current = uploads;
+  const isMountedRef = useRef(true);
+  const uploadCounterRef = useRef(0);
+  const processQueueRef = useRef<() => void>(() => {});
+
   const validateFile = useCallback((file: File): string | null => {
     if (file.size > MAX_GUEST_PHOTO_SIZE) {
       return `"${file.name}" exceeds the 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`;
@@ -45,55 +55,71 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
   }, []);
 
   const uploadFile = useCallback(async (file: File, uploadId: string) => {
-    setUploads((prev) =>
-      prev.map((item) =>
-        item.id === uploadId ? { ...item, status: 'uploading', progress: 30 } : item
-      )
-    );
+    const controller = new AbortController();
+    abortControllersRef.current.set(uploadId, controller);
+
+    setUploads((prev) => {
+      const next = prev.map((item) =>
+        item.id === uploadId ? { ...item, status: 'uploading' as const, progress: 30 } : item
+      );
+      uploadsRef.current = next;
+      return next;
+    });
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      setUploads((prev) =>
-        prev.map((item) =>
+      setUploads((prev) => {
+        const next = prev.map((item) =>
           item.id === uploadId ? { ...item, progress: 60 } : item
-        )
-      );
+        );
+        uploadsRef.current = next;
+        return next;
+      });
 
       const response = await fetch('/api/guest/photos/upload', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
       const json = await response.json();
 
       if (!response.ok || !json.success) {
         const errorMsg = json.error || 'Failed to upload photo';
-        setUploads((prev) =>
-          prev.map((item) =>
-            item.id === uploadId
-              ? { ...item, status: 'error', progress: 0, errorMessage: errorMsg }
-              : item
-          )
-        );
+        if (isMountedRef.current) {
+          setUploads((prev) => {
+            const next = prev.map((item) =>
+              item.id === uploadId
+                ? { ...item, status: 'error' as const, progress: 0, errorMessage: errorMsg }
+                : item
+            );
+            uploadsRef.current = next;
+            return next;
+          });
+        }
         return;
       }
 
       const firstPhoto = Array.isArray(json.data) ? json.data[0] : json.data;
 
-      setUploads((prev) =>
-        prev.map((item) =>
-          item.id === uploadId
-            ? {
-              ...item,
-              status: 'success',
-              progress: 100,
-              url: firstPhoto?.url,
-            }
-            : item
-        )
-      );
+      if (isMountedRef.current) {
+        setUploads((prev) => {
+          const next = prev.map((item) =>
+            item.id === uploadId
+              ? {
+                ...item,
+                status: 'success' as const,
+                progress: 100,
+                url: firstPhoto?.url,
+              }
+              : item
+          );
+          uploadsRef.current = next;
+          return next;
+        });
+      }
 
       if (onUploadSuccess && json.data) {
         if (Array.isArray(json.data)) {
@@ -110,21 +136,85 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
         }
       }
     } catch (err: unknown) {
+      const isAbort =
+        (err instanceof Error && err.name === 'AbortError') ||
+        (typeof err === 'object' && err !== null && (err as { name?: string }).name === 'AbortError');
+
+      if (isAbort) {
+        if (isMountedRef.current) {
+          setUploads((prev) => {
+            const next = prev.filter((item) => item.id !== uploadId);
+            uploadsRef.current = next;
+            return next;
+          });
+        }
+        return;
+      }
+
+      if (!isMountedRef.current) return;
       const errorMessage = err instanceof Error ? err.message : 'Network error during upload';
-      setUploads((prev) =>
-        prev.map((item) =>
+      setUploads((prev) => {
+        const next = prev.map((item) =>
           item.id === uploadId
             ? {
               ...item,
-              status: 'error',
+              status: 'error' as const,
               progress: 0,
               errorMessage,
             }
             : item
-        )
-      );
+        );
+        uploadsRef.current = next;
+        return next;
+      });
+    } finally {
+      abortControllersRef.current.delete(uploadId);
+      processQueueRef.current();
     }
   }, [onUploadSuccess]);
+
+  const processQueue = useCallback(() => {
+    const activeCount = abortControllersRef.current.size;
+    if (activeCount >= MAX_CONCURRENT_UPLOADS) {
+      return;
+    }
+
+    const availableSlots = MAX_CONCURRENT_UPLOADS - activeCount;
+    const currentUploads = uploadsRef.current;
+
+    const pendingItems = currentUploads
+      .filter((item) => item.status === 'pending' && item.file && !abortControllersRef.current.has(item.id))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    if (pendingItems.length === 0) {
+      return;
+    }
+
+    const itemsToStart = pendingItems.slice(0, availableSlots);
+    itemsToStart.forEach((item) => {
+      if (item.file) {
+        uploadFile(item.file, item.id);
+      }
+    });
+  }, [uploadFile]);
+
+  processQueueRef.current = processQueue;
+
+  useEffect(() => {
+    processQueue();
+  }, [uploads, processQueue]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    const controllers = abortControllersRef.current;
+    return () => {
+      isMountedRef.current = false;
+      controllers.forEach((controller) => {
+        controller.abort();
+      });
+      controllers.clear();
+    };
+  }, []);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
     setGlobalError(null);
@@ -133,7 +223,6 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
     if (fileArray.length === 0) return;
 
     const newStatuses: UploadStatus[] = [];
-    const validFilesToUpload: { file: File; id: string }[] = [];
 
     fileArray.forEach((file) => {
       const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -148,6 +237,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           status: 'error',
           errorMessage: validationError,
           file,
+          order: uploadCounterRef.current++,
         });
       } else {
         newStatuses.push({
@@ -157,36 +247,56 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           progress: 0,
           status: 'pending',
           file,
+          order: uploadCounterRef.current++,
         });
-        validFilesToUpload.push({ file, id });
       }
     });
 
-    setUploads((prev) => [...newStatuses, ...prev]);
-
-    validFilesToUpload.forEach(({ file, id }) => {
-      uploadFile(file, id);
+    setUploads((prev) => {
+      const next = [...newStatuses, ...prev];
+      uploadsRef.current = next;
+      return next;
     });
-  }, [validateFile, uploadFile]);
+
+    processQueueRef.current();
+  }, [validateFile]);
 
   const handleRetry = useCallback((uploadId: string) => {
-    const item = uploads.find((u) => u.id === uploadId);
+    const item = uploadsRef.current.find((u) => u.id === uploadId);
     if (!item || !item.file) return;
 
     const validationError = validateFile(item.file);
     if (validationError) {
-      setUploads((prev) =>
-        prev.map((u) =>
+      setUploads((prev) => {
+        const next = prev.map((u) =>
           u.id === uploadId
-            ? { ...u, status: 'error', progress: 0, errorMessage: validationError }
+            ? { ...u, status: 'error' as const, progress: 0, errorMessage: validationError }
             : u
-        )
-      );
+        );
+        uploadsRef.current = next;
+        return next;
+      });
       return;
     }
 
-    uploadFile(item.file, uploadId);
-  }, [uploads, validateFile, uploadFile]);
+    setUploads((prev) => {
+      const next = prev.map((u) =>
+        u.id === uploadId
+          ? {
+            ...u,
+            status: 'pending' as const,
+            progress: 0,
+            errorMessage: undefined,
+            order: uploadCounterRef.current++,
+          }
+          : u
+      );
+      uploadsRef.current = next;
+      return next;
+    });
+
+    processQueueRef.current();
+  }, [validateFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -221,7 +331,28 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
   };
 
   const removeUploadItem = (id: string) => {
-    setUploads((prev) => prev.filter((item) => item.id !== id));
+    const controller = abortControllersRef.current.get(id);
+    if (controller) {
+      controller.abort();
+      abortControllersRef.current.delete(id);
+    }
+    setUploads((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      uploadsRef.current = next;
+      return next;
+    });
+    processQueueRef.current();
+  };
+
+  const handleClearStatus = () => {
+    abortControllersRef.current.forEach((controller) => {
+      controller.abort();
+    });
+    abortControllersRef.current.clear();
+    setUploads(() => {
+      uploadsRef.current = [];
+      return [];
+    });
   };
 
   return (
@@ -290,8 +421,9 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             <span>Upload Status</span>
             <button
               type="button"
-              onClick={() => setUploads([])}
+              onClick={handleClearStatus}
               className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+              data-testid="clear-status-button"
             >
               Clear status
             </button>
@@ -316,6 +448,11 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    {item.status === 'pending' && (
+                      <span className="text-xs text-stone-400 dark:text-stone-500 flex items-center gap-1 font-medium" data-testid="upload-pending-badge">
+                        Queued
+                      </span>
+                    )}
                     {item.status === 'uploading' && (
                       <span className="text-xs text-primary flex items-center gap-1 font-medium">
                         <Icon name="Loader2" className="w-3.5 h-3.5 animate-spin" />

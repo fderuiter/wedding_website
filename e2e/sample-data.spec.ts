@@ -127,7 +127,20 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(seedRes.status()).toBe(200);
 
     // Visit admin dashboard
-    await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+    } catch (err: any) {
+      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+        await context.addCookies([
+          { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
+          { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
+        ]).catch(() => {});
+        page = await context.newPage();
+        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+      } else {
+        throw err;
+      }
+    }
 
     // Sample data banner should be visible
     const banner = page.locator('[data-testid="sample-data-banner"]');

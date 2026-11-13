@@ -214,6 +214,7 @@ jobs:
         with:
           name: next-build-artifact
           retention-days: 7
+          include-hidden-files: true
           path: |
             .next/
             public/

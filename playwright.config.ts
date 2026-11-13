@@ -1,6 +1,9 @@
 import { defineConfig } from '@playwright/test';
+import fs from 'fs';
 
 const runWebServer = !process.env.TEST_CONTAINER;
+const defaultChromePath = '/usr/bin/google-chrome';
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (fs.existsSync(defaultChromePath) ? defaultChromePath : undefined);
 
 export default defineConfig({
   testDir: './e2e',
@@ -32,6 +35,7 @@ export default defineConfig({
       reducedMotion: 'reduce',
     },
     launchOptions: {
+      executablePath,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
