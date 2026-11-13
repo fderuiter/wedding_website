@@ -36,6 +36,10 @@ permissions:
   id-token: write
   attestations: write
 
+concurrency:
+  group: publish-artifact-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Build & Publish Immutable OCI Image
