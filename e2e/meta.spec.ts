@@ -29,10 +29,11 @@ test.describe('Metadata', () => {
 
     try {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-    } catch (err: any) {
-      if (err?.message?.includes('crashed') || err?.message?.includes('closed')) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
         page = await context.newPage();
-        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
       } else {
         throw err;
       }
