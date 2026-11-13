@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InteractiveTimeline from '../InteractiveTimeline';
 import type { ContentNodeDTO } from '@/features/content/schemas';
@@ -299,5 +299,231 @@ describe('InteractiveTimeline Component', () => {
     expect(screen.queryByText('No items found')).not.toBeInTheDocument();
     expect(screen.getByText('Wedding Ceremony')).toBeInTheDocument();
     expect(screen.getByText('Evening Reception')).toBeInTheDocument();
+  });
+
+  describe('RSVP Batch Coordination and State Management', () => {
+    const sampleEventsWithRsvp: ContentNodeDTO[] = [
+      {
+        id: 'event-1',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Rehearsal Dinner',
+          startTime: '2026-06-19T18:00:00.000Z',
+          endTime: '2026-06-19T21:00:00.000Z',
+          categoryTags: ['Rehearsal'],
+          userRsvp: {
+            status: 'pending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+          },
+        },
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+      {
+        id: 'event-2',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        data: {
+          title: 'Wedding Ceremony',
+          startTime: '2026-06-20T15:00:00.000Z',
+          endTime: '2026-06-20T16:00:00.000Z',
+          categoryTags: ['Ceremony'],
+          userRsvp: {
+            status: 'attending',
+            plusOneCount: 1,
+            dietaryNotes: '',
+          },
+        },
+        createdAt: new Date('2026-01-02'),
+        updatedAt: new Date('2026-01-02'),
+      },
+    ];
+
+    beforeEach(() => {
+      global.fetch = jest.fn().mockImplementation((url) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: false,
+            json: async () => ({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, data: [] }),
+        });
+      });
+    });
+
+    afterEach(() => {
+      jest.resetAllMocks();
+    });
+
+    it('highlights modified cards, shows batch bar, and submits all dirty events on Save All modified events', async () => {
+      let resolveFetch: (_value: any) => void;
+      const fetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/rsvp') {
+          return fetchPromise;
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      });
+
+      render(<InteractiveTimeline events={sampleEventsWithRsvp} timezone="UTC" />);
+
+      // Initially, batch bar should not be visible
+      expect(screen.queryByTestId('rsvp-batch-bar')).not.toBeInTheDocument();
+
+      // Edit Event 1 (Rehearsal Dinner) to Attending
+      const event1Card = screen.getByTestId('rsvp-card-event-1');
+      const attendingBtn1 = event1Card.querySelector('button:nth-of-type(1)') as HTMLButtonElement;
+      fireEvent.click(attendingBtn1);
+
+      // Now Event 1 should show "Unsaved changes"
+      expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+      // Batch bar should appear with Save All modified events button
+      expect(screen.getByTestId('rsvp-batch-bar')).toBeInTheDocument();
+      expect(screen.getByText(/1 event has unsaved changes/i)).toBeInTheDocument();
+
+      // Edit Event 2 plus-one count
+      const event2Card = screen.getByTestId('rsvp-card-event-2');
+      const plusOneInput2 = event2Card.querySelector('input[type="number"]') as HTMLInputElement;
+      fireEvent.change(plusOneInput2, { target: { value: '3' } });
+
+      expect(screen.getByText(/2 events have unsaved changes/i)).toBeInTheDocument();
+
+      // Click "Save All modified events"
+      const saveAllBtn = screen.getByRole('button', { name: /save all modified events/i });
+      fireEvent.click(saveAllBtn);
+
+      // All input controls should be disabled while submission is in flight (Criterion 4)
+      expect(attendingBtn1).toBeDisabled();
+      expect(plusOneInput2).toBeDisabled();
+      expect(saveAllBtn).toBeDisabled();
+
+      // Resolve the fetch call
+      resolveFetch!({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [
+            { id: 'r1', subEventId: 'event-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+            { id: 'r2', subEventId: 'event-2', status: 'attending', plusOneCount: 3, dietaryNotes: '' },
+          ],
+        }),
+      });
+
+      // Wait for async update
+      const liveStatus = await screen.findByTestId('rsvp-live-status');
+      expect(liveStatus).toHaveTextContent('Successfully saved RSVPs for 2 events.');
+
+      // Unsaved changes badges should now be gone
+      expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+      expect(screen.getByText(/Saved 2 RSVP updates/i)).toBeInTheDocument();
+    });
+
+    it('preserves unsaved edits across category filter transitions', () => {
+      render(<InteractiveTimeline events={sampleEventsWithRsvp} timezone="UTC" />);
+
+      // Switch to Rehearsal tab
+      const rehearsalTab = screen.getByRole('tab', { name: 'Rehearsal' });
+      fireEvent.click(rehearsalTab);
+
+      // Edit Rehearsal Dinner dietary notes
+      const notesInput = screen.getByPlaceholderText('e.g. Vegetarian, Nut allergy') as HTMLInputElement;
+      fireEvent.change(notesInput, { target: { value: 'Strictly Kosher' } });
+
+      expect(notesInput.value).toBe('Strictly Kosher');
+      expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+      // Switch to Ceremony tab (Rehearsal Dinner unmounts from view)
+      const ceremonyTab = screen.getByRole('tab', { name: 'Ceremony' });
+      fireEvent.click(ceremonyTab);
+      expect(screen.queryByText('Rehearsal Dinner')).not.toBeInTheDocument();
+
+      // Switch back to All tab
+      const allTab = screen.getByRole('tab', { name: 'All' });
+      fireEvent.click(allTab);
+
+      // Rehearsal Dinner edits must be preserved
+      const event1Card = screen.getByTestId('rsvp-card-event-1');
+      const restoredInput = event1Card.querySelector('input[type="text"]') as HTMLInputElement;
+      expect(restoredInput.value).toBe('Strictly Kosher');
+      expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    });
+
+    it('flags failed cards, preserves user edits, and suggests retry on network error', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/rsvp') {
+          return Promise.resolve({
+            ok: false,
+            json: async () => ({
+              success: false,
+              error: 'Database connection failed. Please retry.',
+            }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      });
+
+      render(<InteractiveTimeline events={sampleEventsWithRsvp} timezone="UTC" />);
+
+      // Modify Event 1
+      const event1Card = screen.getByTestId('rsvp-card-event-1');
+      const attendingBtn = event1Card.querySelector('button:nth-of-type(1)') as HTMLButtonElement;
+      fireEvent.click(attendingBtn);
+
+      const saveAllBtn = screen.getByRole('button', { name: /save all modified events/i });
+      fireEvent.click(saveAllBtn);
+
+      // Expect error on card and batch bar
+      const retryBatchBtn = await screen.findByRole('button', { name: /retry batch/i });
+      expect(retryBatchBtn).toBeInTheDocument();
+      expect(screen.getAllByText(/Database connection failed/i).length).toBeGreaterThan(0);
+
+      // Pending user edit is preserved
+      expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    });
+
+    it('clears stale confirmation message when user modifies input', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/rsvp') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              data: [{ id: 'r1', subEventId: 'event-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' }],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      });
+
+      render(<InteractiveTimeline events={sampleEventsWithRsvp} timezone="UTC" />);
+
+      // Save Event 1 individually
+      const event1Card = screen.getByTestId('rsvp-card-event-1');
+      const attendingBtn = event1Card.querySelector('button:nth-of-type(1)') as HTMLButtonElement;
+      fireEvent.click(attendingBtn);
+
+      const saveBtn = within(event1Card).getByRole('button', { name: 'Save RSVP' });
+      fireEvent.click(saveBtn);
+
+      // Confirmation banner appears
+      const successBanner = await screen.findByText('RSVP submitted successfully!');
+      expect(successBanner).toBeInTheDocument();
+
+      // Modify dietary notes: stale confirmation banner must clear
+      const notesInput = event1Card.querySelector('input[type="text"]') as HTMLInputElement;
+      fireEvent.change(notesInput, { target: { value: 'Gluten sensitivity' } });
+
+      expect(screen.queryByText('RSVP submitted successfully!')).not.toBeInTheDocument();
+      expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    });
   });
 });
