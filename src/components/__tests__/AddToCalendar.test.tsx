@@ -95,6 +95,53 @@ describe('AddToCalendar', () => {
     expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/mock-url');
   });
 
+  it('triggers direct download using downloadUrl prop without Blob generation', () => {
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(
+      <AddToCalendar
+        event={sampleEvent}
+        downloadUrl="/api/schedule/custom-event-id/ics"
+      />
+    );
+    fireEvent.click(screen.getByText('Add to Calendar'));
+    fireEvent.click(screen.getByText('Apple'));
+
+    expect(calendarUtils.createIcsFile).not.toHaveBeenCalled();
+    expect(mockCreateObjectURL).not.toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it('triggers direct download using eventId prop', () => {
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(
+      <AddToCalendar
+        event={sampleEvent}
+        eventId="event-123"
+      />
+    );
+    fireEvent.click(screen.getByText('Add to Calendar'));
+    fireEvent.click(screen.getByText('iCal'));
+
+    expect(calendarUtils.createIcsFile).not.toHaveBeenCalled();
+    expect(mockCreateObjectURL).not.toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it('triggers direct download when event has id property', () => {
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const eventWithId = { ...sampleEvent, id: 'event-with-id' };
+    render(<AddToCalendar event={eventWithId} />);
+    fireEvent.click(screen.getByText('Add to Calendar'));
+    fireEvent.click(screen.getByText('Apple'));
+
+    expect(calendarUtils.createIcsFile).not.toHaveBeenCalled();
+    expect(mockCreateObjectURL).not.toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
   it('closes the dropdown when Escape key is pressed', () => {
     render(<AddToCalendar event={sampleEvent} />);
     fireEvent.click(screen.getByText('Add to Calendar'));
