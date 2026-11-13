@@ -5,11 +5,12 @@ WORKDIR /app
 
 # Builder stage
 FROM base AS builder
-# Install dependencies needed for prisma
+# Install dependencies needed for prisma and build-time font fetching (Turbopack native SSL)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y \
     openssl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./

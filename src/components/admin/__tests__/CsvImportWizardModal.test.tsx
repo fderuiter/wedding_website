@@ -843,11 +843,12 @@ describe('CsvImportWizardModal Component', () => {
             isOpen={true}
             onClose={mockOnClose}
             onImportComplete={mockOnImportComplete}
-            existingCodes={['CODE1', undefined as unknown as string, null as unknown as string, 'code2']}
+            existingCodes={['CODE1', undefined as unknown as string, '', null as unknown as string, 'code2']}
           />
         </ToastProvider>
       );
     }).not.toThrow();
+
     expect(screen.getByText('Import Guest Invitation Codes')).toBeInTheDocument();
   });
 });

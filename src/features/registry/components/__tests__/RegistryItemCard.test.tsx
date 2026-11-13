@@ -978,4 +978,172 @@ describe('RegistryItemCard Component', () => {
       });
     });
   });
+
+  describe('Group Gift Preset Contribution Buttons', () => {
+    it('renders all fixed presets and full remaining balance button when remaining amount is sufficient', () => {
+      const highBalanceItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'group-high-balance',
+        price: 500,
+        amountContributed: 0,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={highBalanceItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const presetGroup = screen.getByRole('group', { name: /Contribution presets/i });
+      expect(presetGroup).toBeInTheDocument();
+
+      expect(screen.getByRole('button', { name: '$50' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '$100' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '$250' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Full Remaining \(\$500\.00\)/i })).toBeInTheDocument();
+    });
+
+    it('filters out preset buttons that exceed the remaining item balance', () => {
+      // mockGroupItem has price: 100, amountContributed: 30 -> remaining $70.00
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByRole('button', { name: '$50' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Full Remaining \(\$70\.00\)/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '$100' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '$250' })).not.toBeInTheDocument();
+    });
+
+    it('hides higher fixed tiers and displays only the full remaining balance button when remaining balance is under $50', () => {
+      const lowBalanceItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'group-low-balance',
+        price: 100,
+        amountContributed: 75, // remaining: $25.00
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={lowBalanceItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.queryByRole('button', { name: '$50' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '$100' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '$250' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Full Remaining \(\$25\.00\)/i })).toBeInTheDocument();
+    });
+
+    it('sets amount input and clears existing error messages on preset button click', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
+      fireEvent.change(nameInput, { target: { value: 'Generous Contributor' } });
+      // Enter invalid amount that exceeds remaining ($70.00)
+      fireEvent.change(amountInput, { target: { value: '999' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+      expect(await screen.findByText(/Amount cannot exceed the remaining \$70\.00\./i)).toBeInTheDocument();
+
+      // Click $50 preset
+      const preset50 = screen.getByRole('button', { name: '$50' });
+      fireEvent.click(preset50);
+
+      // Error should be cleared and amount input prefilled
+      expect(screen.queryByText(/Amount cannot exceed/i)).not.toBeInTheDocument();
+      expect(amountInput).toHaveValue(50);
+      expect(preset50).toHaveAttribute('aria-pressed', 'true');
+
+      // Click full remaining balance preset
+      const fullPreset = screen.getByRole('button', { name: /Full Remaining \(\$70\.00\)/i });
+      fireEvent.click(fullPreset);
+
+      expect(amountInput).toHaveValue(70);
+      expect(fullPreset).toHaveAttribute('aria-pressed', 'true');
+      expect(preset50).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('highlights preset button and sets aria-pressed=true when user types matching custom amount', () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+      const preset50 = screen.getByRole('button', { name: '$50' });
+      const fullPreset = screen.getByRole('button', { name: /Full Remaining \(\$70\.00\)/i });
+
+      expect(preset50).toHaveAttribute('aria-pressed', 'false');
+      expect(fullPreset).toHaveAttribute('aria-pressed', 'false');
+
+      // Type matching 50
+      fireEvent.change(amountInput, { target: { value: '50' } });
+      expect(preset50).toHaveAttribute('aria-pressed', 'true');
+      expect(fullPreset).toHaveAttribute('aria-pressed', 'false');
+
+      // Type matching 70 (full remaining)
+      fireEvent.change(amountInput, { target: { value: '70' } });
+      expect(preset50).toHaveAttribute('aria-pressed', 'false');
+      expect(fullPreset).toHaveAttribute('aria-pressed', 'true');
+
+      // Type non-matching custom value
+      fireEvent.change(amountInput, { target: { value: '45' } });
+      expect(preset50).toHaveAttribute('aria-pressed', 'false');
+      expect(fullPreset).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('supports keyboard interaction with Enter and Space keys to select presets', () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+      const preset50 = screen.getByRole('button', { name: '$50' });
+      const fullPreset = screen.getByRole('button', { name: /Full Remaining \(\$70\.00\)/i });
+
+      // Trigger Enter on $50 preset
+      fireEvent.keyDown(preset50, { key: 'Enter' });
+      expect(amountInput).toHaveValue(50);
+      expect(preset50).toHaveAttribute('aria-pressed', 'true');
+
+      // Trigger Space on full remaining preset
+      fireEvent.keyDown(fullPreset, { key: ' ' });
+      expect(amountInput).toHaveValue(70);
+      expect(fullPreset).toHaveAttribute('aria-pressed', 'true');
+      expect(preset50).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('submits group contribution successfully after selecting a preset button', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Preset Contributor' } });
+      fireEvent.click(screen.getByRole('button', { name: '$50' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith(
+          mockGroupItem.id,
+          'Preset Contributor',
+          50
+        );
+      });
+    });
+  });
 });

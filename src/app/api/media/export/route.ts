@@ -47,8 +47,14 @@ export async function processExportRequest(
   // Filter by explicit IDs if provided
   if (ids && ids.length > 0) {
     const [mediaList, contentNodeList] = await Promise.all([
-      prisma.media.findMany({ where: { id: { in: ids } } }),
-      prisma.contentNode.findMany({ where: { id: { in: ids } } }),
+      prisma.media.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, url: true, altText: true },
+      }),
+      prisma.contentNode.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, data: true },
+      }),
     ]);
 
     for (const m of mediaList) {
@@ -85,6 +91,7 @@ export async function processExportRequest(
         type: 'Photo',
         tags: { has: tag },
       },
+      select: { id: true, data: true },
     });
 
     for (const n of nodes) {
@@ -102,7 +109,9 @@ export async function processExportRequest(
 
     // Also check Media entries if tag is guest-upload
     if (items.length === 0 && tag === 'guest-upload') {
-      const allMedia = await prisma.media.findMany();
+      const allMedia = await prisma.media.findMany({
+        select: { id: true, url: true, altText: true },
+      });
       for (const m of allMedia) {
         if (m.url && m.url.includes('/uploads/photos') && !seenUrls.has(m.url)) {
           seenUrls.add(m.url);
@@ -120,8 +129,13 @@ export async function processExportRequest(
 
   // Otherwise export all available photos from ContentNodes and Media
   const [nodes, mediaRecords] = await Promise.all([
-    prisma.contentNode.findMany({ where: { type: 'Photo' } }),
-    prisma.media.findMany(),
+    prisma.contentNode.findMany({
+      where: { type: 'Photo' },
+      select: { id: true, data: true },
+    }),
+    prisma.media.findMany({
+      select: { id: true, url: true, altText: true },
+    }),
   ]);
 
   for (const n of nodes) {
@@ -211,80 +225,116 @@ async function handleExport(req: NextRequest) {
     },
   });
 
+  const CONCURRENCY_LIMIT = 8;
+
   (async () => {
     const usedNames = new Set<string>();
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (!item.url) continue;
+    const mediaTasks = items
+      .map((item, index) => {
+        if (!item.url) return null;
 
-      const rawTitle = item.title || item.altText || `photo_${i + 1}`;
+        const rawTitle = item.title || item.altText || `photo_${index + 1}`;
 
-      let urlPath = '';
-      try {
-        urlPath = new URL(item.url, 'http://localhost').pathname;
-      } catch {
-        urlPath = item.url;
-      }
+        let urlPath = '';
+        try {
+          urlPath = new URL(item.url, 'http://localhost').pathname;
+        } catch {
+          urlPath = item.url;
+        }
 
-      let ext = path.extname(urlPath) || '.jpg';
-      if (!ext || ext.length > 5 || ext.includes('?')) ext = '.jpg';
+        let ext = path.extname(urlPath) || '.jpg';
+        if (!ext || ext.length > 5 || ext.includes('?')) ext = '.jpg';
 
-      let cleanBase = path
-        .basename(rawTitle, path.extname(rawTitle))
-        .replace(/[^a-zA-Z0-9_\-]/g, '_')
-        .replace(/^_+|_+$/g, '');
+        let cleanBase = path
+          .basename(rawTitle, path.extname(rawTitle))
+          .replace(/[^a-zA-Z0-9_\-]/g, '_')
+          .replace(/^_+|_+$/g, '');
 
-      if (!cleanBase) cleanBase = `photo_${i + 1}`;
+        if (!cleanBase) cleanBase = `photo_${index + 1}`;
 
-      let filename = `${cleanBase}${ext}`;
-      let counter = 1;
-      while (usedNames.has(filename)) {
-        filename = `${cleanBase}_${counter}${ext}`;
-        counter++;
-      }
-      usedNames.add(filename);
+        let filename = `${cleanBase}${ext}`;
+        let counter = 1;
+        while (usedNames.has(filename)) {
+          filename = `${cleanBase}_${counter}${ext}`;
+          counter++;
+        }
+        usedNames.add(filename);
 
-      try {
-        if (item.url.startsWith('data:')) {
-          const matches = item.url.match(/^data:([^;]+);base64,(.+)$/);
-          if (matches && matches[2]) {
-            const buffer = Buffer.from(matches[2], 'base64');
-            archive.append(buffer, { name: filename });
-          }
-        } else if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
+        return { item, filename };
+      })
+      .filter((task): task is { item: ExportMediaItem; filename: string } => task !== null);
+
+    for (let i = 0; i < mediaTasks.length; i += CONCURRENCY_LIMIT) {
+      const batch = mediaTasks.slice(i, i + CONCURRENCY_LIMIT);
+      const batchResults = await Promise.all(
+        batch.map(async ({ item, filename }) => {
           try {
-            const res = await safeFetch(item.url);
-            if (res.ok) {
-              const buffer = Buffer.from(await res.arrayBuffer());
-              archive.append(buffer, { name: filename });
-            } else {
-              archive.append(
-                Buffer.from(`Failed to download resource: HTTP ${res.status}`),
-                { name: `error_${filename}.txt` }
-              );
+            if (item.url.startsWith('data:')) {
+              const matches = item.url.match(/^data:([^;]+);base64,(.+)$/);
+              if (matches && matches[2]) {
+                const buffer = Buffer.from(matches[2], 'base64');
+                return [{ type: 'buffer' as const, buffer, name: filename }];
+              }
+              return [];
             }
-          } catch (fetchErr: any) {
-            archive.append(
-              Buffer.from(`Fetch error: ${fetchErr?.message || String(fetchErr)}`),
-              { name: `error_${filename}.txt` }
-            );
+
+            if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
+              try {
+                const res = await safeFetch(item.url);
+                if (res.ok) {
+                  const buffer = Buffer.from(await res.arrayBuffer());
+                  return [{ type: 'buffer' as const, buffer, name: filename }];
+                } else {
+                  return [
+                    {
+                      type: 'buffer' as const,
+                      buffer: Buffer.from(`Failed to download resource: HTTP ${res.status}`),
+                      name: `error_${filename}.txt`,
+                    },
+                  ];
+                }
+              } catch (fetchErr: unknown) {
+                const message = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+                return [
+                  {
+                    type: 'buffer' as const,
+                    buffer: Buffer.from(`Fetch error: ${message}`),
+                    name: `error_${filename}.txt`,
+                  },
+                ];
+              }
+            }
+
+            const cleanKey = item.url.replace(/^\/+/, '');
+            const filePath = path.join(process.cwd(), 'public', cleanKey);
+            try {
+              await fs.promises.stat(filePath);
+              return [{ type: 'file' as const, filePath, name: filename }];
+            } catch {
+              return [
+                {
+                  type: 'buffer' as const,
+                  buffer: Buffer.from(`Local asset file not found at ${cleanKey}`),
+                  name: `missing_${filename}.txt`,
+                },
+              ];
+            }
+          } catch (err) {
+            console.error(`Error archiving media ${item.url}:`, err);
+            return [];
           }
-        } else {
-          const cleanKey = item.url.replace(/^\/+/, '');
-          const filePath = path.join(process.cwd(), 'public', cleanKey);
-          try {
-            await fs.promises.stat(filePath);
-            archive.file(filePath, { name: filename });
-          } catch {
-            archive.append(
-              Buffer.from(`Local asset file not found at ${cleanKey}`),
-              { name: `missing_${filename}.txt` }
-            );
+        })
+      );
+
+      for (const entries of batchResults) {
+        for (const entry of entries) {
+          if (entry.type === 'file') {
+            archive.file(entry.filePath, { name: entry.name });
+          } else {
+            archive.append(entry.buffer, { name: entry.name });
           }
         }
-      } catch (err) {
-        console.error(`Error archiving media ${item.url}:`, err);
       }
     }
 
