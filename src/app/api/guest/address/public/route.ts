@@ -140,7 +140,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         message: 'Address submitted successfully.',
         data: {
           id: updatedRecord.id,
-          code: updatedRecord.code,
           guestName: updatedRecord.guestName,
           partyTags: updatedRecord.partyTags,
         },
@@ -196,7 +195,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       message: 'Address submitted successfully.',
       data: {
         id: newRecord.id,
-        code: newRecord.code,
         guestName: newRecord.guestName,
         partyTags: newRecord.partyTags,
       },
