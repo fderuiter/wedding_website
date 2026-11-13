@@ -142,6 +142,7 @@ flowchart LR
     node_api_guest_address["address"]
     node_api_guest_address_public["public"]
     node_api_guest_login["login"]
+    node_api_guest_lookup["lookup"]
     node_api_guest_photos["photos"]
     node_api_guest_photos_upload["upload"]
     node_api_health["health"]
@@ -247,6 +248,7 @@ flowchart LR
     node_api_guest --> node_api_guest_address
     node_api_guest_address --> node_api_guest_address_public
     node_api_guest --> node_api_guest_login
+    node_api_guest --> node_api_guest_lookup
     node_api_guest --> node_api_guest_photos
     node_api_guest_photos --> node_api_guest_photos_upload
     node_api --> node_api_health
@@ -340,6 +342,7 @@ flowchart LR
     class node_api_guest_address api;
     class node_api_guest_address_public api;
     class node_api_guest_login api;
+    class node_api_guest_lookup api;
     class node_api_guest_photos_upload api;
     class node_api_health api;
     class node_api_media api;
