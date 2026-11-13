@@ -6,6 +6,7 @@ import ThingsToDoCard from './ThingsToDoCard';
 import type { AttractionDTO } from '@/features/attractions';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
+import EmptyState from '@/components/EmptyState';
 
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
@@ -54,9 +55,21 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
           <ThingsToDoMap attractions={filteredAttractions} defaultCenter={defaultCenter} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
-          {filteredAttractions.map((attraction) => (
-            <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />
-          ))}
+          {filteredAttractions.length === 0 ? (
+            <EmptyState
+              message={
+                selectedCategories.length > 0
+                  ? 'No attractions match the selected categories.'
+                  : 'No attractions have been added yet. Please check back later!'
+              }
+              onAction={selectedCategories.length > 0 ? () => setSelectedCategories([]) : undefined}
+              actionLabel={selectedCategories.length > 0 ? 'Clear filters' : undefined}
+            />
+          ) : (
+            filteredAttractions.map((attraction) => (
+              <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />
+            ))
+          )}
         </div>
       </div>
     </div>
