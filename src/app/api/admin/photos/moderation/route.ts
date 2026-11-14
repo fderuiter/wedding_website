@@ -125,5 +125,3 @@ export const PATCH = withApiMiddleware(async (request: NextRequest) => {
   });
 });
 
-export const POST = PATCH;
-

@@ -40,5 +40,3 @@ export const PATCH = withApiMiddleware(async (request: NextRequest, { params }: 
     data: result,
   });
 });
-
-export const PUT = PATCH;

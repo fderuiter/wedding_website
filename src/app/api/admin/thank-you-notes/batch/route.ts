@@ -26,5 +26,3 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     records: updatedRecords,
   });
 });
-
-export const PATCH = POST;
