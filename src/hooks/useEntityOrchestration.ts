@@ -142,9 +142,8 @@ export function useEntityOrchestration<T extends { id: string }>({
   });
 
   const { mutateAsync: updateBatchItems } = useMutation({
-    mutationFn: async ({ ids, payload }: { ids: string[]; payload: Partial<T> }) => {
-      await Promise.all(ids.map(id => apiClient.put<T>(`${endpoint}/${id}`, payload)));
-    },
+    mutationFn: async ({ ids, payload }: { ids: string[]; payload: Partial<T> }) =>
+      apiClient.post<any>(`${endpoint}/batch`, { ids, ...payload }),
     onMutate: async ({ ids, payload }) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);

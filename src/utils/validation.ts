@@ -194,6 +194,10 @@ export const AdminEntityCreateSchema = z.record(z.string(), z.any());
 
 export const AdminEntityUpdateSchema = z.record(z.string(), z.any());
 
+export const AdminEntityBatchUpdateSchema = z.object({
+  ids: z.array(z.string().min(1, 'Record identifier cannot be empty')).min(1, 'At least one record identifier is required').max(100, 'Maximum of 100 record identifiers allowed per batch request'),
+}).passthrough();
+
 export const AdminEntityReorderSchema = z.object({
   action: z.literal('reorder'),
   orderedIds: z.array(z.string())

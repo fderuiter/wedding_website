@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { POST, DELETE } from '../invitation-codes/batch/route';
+import { POST, PUT, PATCH, DELETE } from '../invitation-codes/batch/route';
 import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
@@ -24,6 +24,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     mockIsAdminRequest.mockResolvedValue(true);
     mockServiceInstance = {
       importBatch: jest.fn(),
+      updateBatch: jest.fn(),
       batchDelete: jest.fn(),
     };
     MockInvitationCodeAdminService.mockImplementation(() => mockServiceInstance);
@@ -181,5 +182,134 @@ describe('DELETE /api/admin/invitation-codes/batch', () => {
     const body = await res.json();
     expect(body).toEqual(mockResult);
     expect(mockServiceInstance.batchDelete).toHaveBeenCalledWith(['id-1', 'id-2'], 'Admin');
+  });
+});
+
+describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)', () => {
+  let mockServiceInstance: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockServiceInstance = {
+      updateBatch: jest.fn(),
+      importBatch: jest.fn(),
+      batchDelete: jest.fn(),
+    };
+    MockInvitationCodeAdminService.mockImplementation(() => mockServiceInstance);
+  });
+
+  test('successfully executes batch update via POST and returns 200 with count', async () => {
+    const updatedRecords = [
+      { id: 'code-1', used: true },
+      { id: 'code-2', used: true },
+    ];
+    mockServiceInstance.updateBatch.mockResolvedValue(updatedRecords);
+
+    const payload = { ids: ['code-1', 'code-2'], used: true };
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      success: true,
+      count: 2,
+      updatedCount: 2,
+      records: updatedRecords,
+    });
+    expect(mockServiceInstance.updateBatch).toHaveBeenCalledWith(
+      ['code-1', 'code-2'],
+      { used: true },
+      'Admin'
+    );
+  });
+
+  test('successfully executes batch update via PUT', async () => {
+    const updatedRecords = [{ id: 'code-1', used: false }];
+    mockServiceInstance.updateBatch.mockResolvedValue(updatedRecords);
+
+    const payload = { ids: ['code-1'], used: false };
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+
+    const res = await PUT(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.count).toBe(1);
+    expect(mockServiceInstance.updateBatch).toHaveBeenCalledWith(
+      ['code-1'],
+      { used: false },
+      'Admin'
+    );
+  });
+
+  test('successfully executes batch update via PATCH', async () => {
+    const updatedRecords = [{ id: 'code-1', used: true }];
+    mockServiceInstance.updateBatch.mockResolvedValue(updatedRecords);
+
+    const payload = { ids: ['code-1'], payload: { used: true } };
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+
+    const res = await PATCH(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.count).toBe(1);
+    expect(mockServiceInstance.updateBatch).toHaveBeenCalledWith(
+      ['code-1'],
+      { used: true },
+      'Admin'
+    );
+  });
+
+  test('returns 400 when ids array is empty', async () => {
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids: [], used: true }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('At least one record identifier is required');
+  });
+
+  test('returns 400 when ids exceeds 100 items', async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `id-${i}`);
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, used: true }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('Maximum of 100 record identifiers allowed per batch request');
+  });
+
+  test('reverts and returns error when service throws validation error', async () => {
+    mockServiceInstance.updateBatch.mockRejectedValue(
+      new Error('Validation Error: Invalid guest identifier.')
+    );
+
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids: ['invalid-id'], used: true }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid guest identifier.');
   });
 });

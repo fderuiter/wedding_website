@@ -7,10 +7,89 @@ import {
   type BatchDeleteInvitationCodesDTO,
 } from '@/features/registry/schemas';
 import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
-import { formatZodError } from '@/utils/validation';
+import { AdminEntityBatchUpdateSchema, formatZodError } from '@/utils/validation';
+
+async function handleBatchUpdate(req: NextRequest) {
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    throw new ApiError(400, 'Invalid JSON payload.');
+  }
+
+  const parseResult = AdminEntityBatchUpdateSchema.safeParse(body);
+  if (!parseResult.success) {
+    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
+  }
+
+  const { ids, ...rest } = parseResult.data;
+  const updateData =
+    rest.payload && typeof rest.payload === 'object' && !Array.isArray(rest.payload)
+      ? rest.payload
+      : rest;
+  const service = new InvitationCodeAdminService();
+
+  try {
+    const updatedRecords = await service.updateBatch(ids, updateData, 'Admin');
+    return NextResponse.json(
+      {
+        success: true,
+        count: updatedRecords.length,
+        updatedCount: updatedRecords.length,
+        records: updatedRecords,
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    if (error instanceof ApiError) throw error;
+    if (error.message && error.message.includes('Validation Error:')) {
+      throw new ApiError(400, error.message.replace('Validation Error: ', ''));
+    }
+    throw error;
+  }
+}
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    throw new ApiError(400, 'Invalid JSON payload.');
+  }
+
+  if (body && ('ids' in body || !('records' in body))) {
+    const parseResult = AdminEntityBatchUpdateSchema.safeParse(body);
+    if (!parseResult.success) {
+      throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
+    }
+
+    const { ids, ...rest } = parseResult.data;
+    const updateData =
+      rest.payload && typeof rest.payload === 'object' && !Array.isArray(rest.payload)
+        ? rest.payload
+        : rest;
+    const service = new InvitationCodeAdminService();
+
+    try {
+      const updatedRecords = await service.updateBatch(ids, updateData, 'Admin');
+      return NextResponse.json(
+        {
+          success: true,
+          count: updatedRecords.length,
+          updatedCount: updatedRecords.length,
+          records: updatedRecords,
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      if (error instanceof ApiError) throw error;
+      if (error.message && error.message.includes('Validation Error:')) {
+        throw new ApiError(400, error.message.replace('Validation Error: ', ''));
+      }
+      throw error;
+    }
+  }
+
   const parseResult = BatchImportInvitationCodesSchema.safeParse(body);
 
   if (!parseResult.success) {
@@ -33,6 +112,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw error;
   }
 });
+
+export const PUT = withApiMiddleware(handleBatchUpdate);
+export const PATCH = withApiMiddleware(handleBatchUpdate);
 
 export const DELETE = withApiMiddleware(async (req: NextRequest) => {
   let body;

@@ -92,6 +92,7 @@ flowchart LR
     node_api_admin["admin"]
     node_api_admin_entity["[entity]"]
     node_api_admin_entity_id["[id]"]
+    node_api_admin_entity_batch["batch"]
     node_api_admin_broadcast["broadcast"]
     node_api_admin_broadcast_history["history"]
     node_api_admin_broadcast_preview["preview"]
@@ -198,6 +199,7 @@ flowchart LR
     node_api --> node_api_admin
     node_api_admin --> node_api_admin_entity
     node_api_admin_entity --> node_api_admin_entity_id
+    node_api_admin_entity --> node_api_admin_entity_batch
     node_api_admin --> node_api_admin_broadcast
     node_api_admin_broadcast --> node_api_admin_broadcast_history
     node_api_admin_broadcast --> node_api_admin_broadcast_preview
@@ -302,6 +304,7 @@ flowchart LR
     class node_admin_login page;
     class node_api_admin_entity api;
     class node_api_admin_entity_id api;
+    class node_api_admin_entity_batch api;
     class node_api_admin_broadcast_history api;
     class node_api_admin_broadcast_preview api;
     class node_api_admin_broadcast_retry api;
