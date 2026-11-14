@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Container, Card, Heading } from '../Layout';
+import { Container, Card, Heading, type HeadingProps } from '../Layout';
 
 describe('Layout Components', () => {
   test('Layout components render without crashing', () => {
@@ -93,5 +93,42 @@ describe('Layout Components', () => {
     expect(containerRef.current).toBeInstanceOf(HTMLDivElement);
     expect(cardRef.current).toBeInstanceOf(HTMLDivElement);
     expect(headingRef.current).toBeInstanceOf(HTMLHeadingElement);
+  });
+
+  test('Heading accepts HeadingProps and renders as h1 by default when as prop is omitted', () => {
+    const props: HeadingProps = { 'data-testid': 'default-heading', children: 'Default Title' };
+    render(<Heading {...props} />);
+    const heading = screen.getByTestId('default-heading');
+    expect(heading.tagName).toBe('H1');
+    expect(screen.getByRole('heading', { level: 1 })).toBe(heading);
+  });
+
+  const headingLevels = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+
+  test.each(headingLevels)('Heading renders as <%s> tag and preserves styling and attributes', (level) => {
+    const numericLevel = parseInt(level.replace('h', ''), 10);
+    render(
+      <Heading as={level} data-testid={`heading-${level}`} className="custom-heading-class">
+        Level {numericLevel}
+      </Heading>
+    );
+
+    const heading = screen.getByTestId(`heading-${level}`);
+    expect(heading.tagName).toBe(level.toUpperCase());
+    expect(screen.getByRole('heading', { level: numericLevel })).toBe(heading);
+    expect(heading).toHaveClass('custom-heading-class', 'text-2xl', 'font-bold');
+    expect(heading.style.color).toContain('var(--heading-color');
+  });
+
+  test.each(headingLevels)('Heading forwards ref to HTMLHeadingElement for level %s', (level) => {
+    const ref = React.createRef<HTMLHeadingElement>();
+    render(
+      <Heading as={level} ref={ref}>
+        Ref Test {level}
+      </Heading>
+    );
+
+    expect(ref.current).toBeInstanceOf(HTMLHeadingElement);
+    expect(ref.current?.tagName).toBe(level.toUpperCase());
   });
 });

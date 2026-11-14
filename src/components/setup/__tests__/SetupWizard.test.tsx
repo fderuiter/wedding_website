@@ -41,6 +41,54 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     jest.clearAllMocks();
   });
 
+  test('renders exactly one primary h1 and step title as h2 in initial step', () => {
+    renderWithProviders(<SetupWizard />);
+
+    const h1Headings = screen.getAllByRole('heading', { level: 1 });
+    expect(h1Headings).toHaveLength(1);
+    expect(h1Headings[0]).toHaveClass('sr-only');
+    expect(h1Headings[0]).toHaveTextContent('Wedding Website Setup Wizard');
+
+    const h2Headings = screen.getAllByRole('heading', { level: 2 });
+    expect(h2Headings).toHaveLength(1);
+    expect(h2Headings[0]).toHaveTextContent('Welcome to Your Wedding Site!');
+  });
+
+  test('maintains heading hierarchy with one primary h1 and h2 step title across steps', async () => {
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/setup')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Admin Login
+    const passInput = screen.getByPlaceholderText('Admin Password');
+    fireEvent.change(passInput, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument();
+    });
+
+    const h1Headings = screen.getAllByRole('heading', { level: 1 });
+    expect(h1Headings).toHaveLength(1);
+    expect(h1Headings[0]).toHaveClass('sr-only');
+
+    const h2Headings = screen.getAllByRole('heading', { level: 2 });
+    expect(h2Headings).toHaveLength(1);
+    expect(h2Headings[0]).toHaveTextContent('Step 1: The Essentials');
+  });
+
   test('password authentication failure shifts focus, selects text, and sets ARIA error attributes', async () => {
     global.fetch = jest.fn(() =>
       Promise.resolve({
