@@ -296,24 +296,64 @@ describe('SubEventService', () => {
       ).rejects.toThrow(ApiError);
     });
 
+    it('returns an empty array immediately if submission list is empty', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-123',
+        guestName: 'John Doe',
+      });
+
+      const results = await service.submitSubEventRsvps('MYCODE', []);
+
+      expect(results).toEqual([]);
+      expect(mockPrisma.subEvent.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 error if any requested sub-event is missing', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-123',
+        guestName: 'John Doe',
+      });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Ceremony',
+          isPrivate: false,
+          accesses: [],
+        },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('MYCODE', [
+          { subEventId: 'se-1', status: 'attending' },
+          { subEventId: 'se-nonexistent', status: 'attending' },
+        ])
+      ).rejects.toThrow(new ApiError(404, 'Sub-event with ID se-nonexistent not found.'));
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('throws 403 error if guest attempts to RSVP to an unassigned private event', async () => {
       mockPrisma.invitationCode.findUnique.mockResolvedValue({
         id: 'inv-123',
         guestName: 'John Doe',
       });
 
-      mockPrisma.subEvent.findUnique.mockResolvedValue({
-        id: 'se-private',
-        title: 'Secret Dinner',
-        isPrivate: true,
-        accesses: [], // Guest does NOT have access
-      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-private',
+          title: 'Secret Dinner',
+          isPrivate: true,
+          accesses: [], // Guest does NOT have access
+        },
+      ]);
 
       await expect(
         service.submitSubEventRsvps('MYCODE', [
           { subEventId: 'se-private', status: 'attending' },
         ])
-      ).rejects.toThrow(ApiError);
+      ).rejects.toThrow(new ApiError(403, 'Forbidden: You do not have access to private event "Secret Dinner".'));
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('upserts sub-event RSVP if authorized', async () => {
@@ -322,12 +362,14 @@ describe('SubEventService', () => {
         guestName: 'John Doe',
       });
 
-      mockPrisma.subEvent.findUnique.mockResolvedValue({
-        id: 'se-private',
-        title: 'Rehearsal Dinner',
-        isPrivate: true,
-        accesses: [{ invitationCodeId: 'inv-123' }], // Authorized!
-      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-private',
+          title: 'Rehearsal Dinner',
+          isPrivate: true,
+          accesses: [{ invitationCodeId: 'inv-123' }], // Authorized!
+        },
+      ]);
 
       mockPrisma.subEventRsvp.upsert.mockResolvedValue({
         id: 'rsvp-1',
@@ -342,6 +384,19 @@ describe('SubEventService', () => {
         { subEventId: 'se-private', status: 'attending', plusOneCount: 1, dietaryNotes: 'Gluten-Free' },
       ]);
 
+      expect(mockPrisma.subEvent.findMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['se-private'] },
+        },
+        include: {
+          accesses: {
+            where: {
+              invitationCodeId: 'inv-123',
+            },
+          },
+        },
+      });
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
       expect(results).toHaveLength(1);
       expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledWith({
         where: {
@@ -363,6 +418,97 @@ describe('SubEventService', () => {
           dietaryNotes: 'Gluten-Free',
         },
       });
+    });
+
+    it('batches multiple sub-event submissions in a single findMany and single transaction', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-123',
+        guestName: 'John Doe',
+      });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Ceremony',
+          isPrivate: false,
+          accesses: [],
+        },
+        {
+          id: 'se-2',
+          title: 'Rehearsal Dinner',
+          isPrivate: true,
+          accesses: [{ invitationCodeId: 'inv-123' }],
+        },
+      ]);
+
+      mockPrisma.subEventRsvp.upsert
+        .mockResolvedValueOnce({
+          id: 'rsvp-1',
+          subEventId: 'se-1',
+          invitationCodeId: 'inv-123',
+          status: 'attending',
+          plusOneCount: 0,
+          dietaryNotes: '',
+        })
+        .mockResolvedValueOnce({
+          id: 'rsvp-2',
+          subEventId: 'se-2',
+          invitationCodeId: 'inv-123',
+          status: 'declined',
+          plusOneCount: 0,
+          dietaryNotes: 'None',
+        });
+
+      const submissions = [
+        { subEventId: 'se-1', status: 'attending' as const },
+        { subEventId: 'se-2', status: 'declined' as const, dietaryNotes: 'None' },
+      ];
+
+      const results = await service.submitSubEventRsvps('MYCODE', submissions);
+
+      expect(mockPrisma.subEvent.findMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['se-1', 'se-2'] },
+        },
+        include: {
+          accesses: {
+            where: {
+              invitationCodeId: 'inv-123',
+            },
+          },
+        },
+      });
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledTimes(2);
+      expect(results).toHaveLength(2);
+      expect(results[0].id).toBe('rsvp-1');
+      expect(results[1].id).toBe('rsvp-2');
+    });
+
+    it('rolls back transaction if a database write fails during batch execution', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-123',
+        guestName: 'John Doe',
+      });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Ceremony',
+          isPrivate: false,
+          accesses: [],
+        },
+      ]);
+
+      mockPrisma.subEventRsvp.upsert.mockRejectedValue(new Error('Database write error'));
+
+      await expect(
+        service.submitSubEventRsvps('MYCODE', [
+          { subEventId: 'se-1', status: 'attending' },
+        ])
+      ).rejects.toThrow('Database write error');
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 

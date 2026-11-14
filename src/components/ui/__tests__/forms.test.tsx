@@ -270,3 +270,72 @@ test('Form components apply CSS custom properties for default and feedback state
   expect(screen.getByTestId('input').className).toContain('border-[var(--input-warning-border,#f59e0b)]');
   expect(screen.getByTestId('message').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
 });
+
+test('Standalone Input renders outside of FormGroup without throwing', () => {
+  render(<Input data-testid="standalone-input" placeholder="Type here..." />);
+  const input = screen.getByTestId('standalone-input');
+
+  expect(input).toBeInTheDocument();
+  expect(input.id).toBeTruthy();
+  expect(input).not.toHaveAttribute('aria-describedby');
+  expect(input).toHaveAttribute('aria-invalid', 'false');
+  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(input.className).toContain('bg-[var(--input-bg,#ffffff)]');
+  expect(input.className).toContain('h-10 px-3 py-2 text-sm');
+});
+
+test('Standalone Input generates fallback unique identifier with useId when id is omitted, and uses custom id when provided', () => {
+  const { rerender } = render(<Input data-testid="input-1" />);
+  const input1 = screen.getByTestId('input-1');
+  expect(input1.id).toBeTruthy();
+
+  rerender(<Input data-testid="input-1" id="custom-test-id" />);
+  expect(input1.id).toBe('custom-test-id');
+});
+
+test('Standalone Input applies explicit feedback state styles and aria-invalid', () => {
+  const { rerender } = render(<Input data-testid="input" state="default" />);
+  let input = screen.getByTestId('input');
+  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(input).toHaveAttribute('aria-invalid', 'false');
+
+  rerender(<Input data-testid="input" state="error" />);
+  input = screen.getByTestId('input');
+  expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+  expect(input).toHaveAttribute('aria-invalid', 'true');
+
+  rerender(<Input data-testid="input" state="warning" />);
+  input = screen.getByTestId('input');
+  expect(input.className).toContain('border-[var(--input-warning-border,#f59e0b)]');
+  expect(input).toHaveAttribute('aria-invalid', 'false');
+
+  rerender(<Input data-testid="input" state="success" />);
+  input = screen.getByTestId('input');
+  expect(input.className).toContain('border-[var(--input-success-border,#22c55e)]');
+  expect(input).toHaveAttribute('aria-invalid', 'false');
+});
+
+test('Input supports compact and default sizeVariant', () => {
+  const { rerender } = render(<Input data-testid="input" sizeVariant="compact" />);
+  let input = screen.getByTestId('input');
+  expect(input.className).toContain('h-7 px-2 py-1 text-xs');
+  expect(input.className).not.toContain('h-10');
+
+  rerender(<Input data-testid="input" sizeVariant="default" />);
+  input = screen.getByTestId('input');
+  expect(input.className).toContain('h-10 px-3 py-2 text-sm');
+  expect(input.className).not.toContain('h-7');
+});
+
+test('Input inside FormGroup allows explicit state and sizeVariant prop overrides', () => {
+  render(
+    <FormGroup state="default">
+      <Input data-testid="input-override" state="error" sizeVariant="compact" />
+    </FormGroup>
+  );
+  const input = screen.getByTestId('input-override');
+  expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+  expect(input.className).toContain('h-7 px-2 py-1 text-xs');
+  expect(input).toHaveAttribute('aria-invalid', 'true');
+});
+

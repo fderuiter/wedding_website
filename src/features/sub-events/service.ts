@@ -278,53 +278,70 @@ export class SubEventService {
       throw new ApiError(401, 'Invalid invitation session.');
     }
 
-    const results = [];
+    if (!submissions || submissions.length === 0) {
+      return [];
+    }
 
-    for (const sub of submissions) {
-      const subEvent = await this.client.subEvent.findUnique({
-        where: { id: sub.subEventId },
-        include: {
-          accesses: {
-            where: {
-              invitationCodeId: invite.id,
-            },
+    // Collect all unique identifiers from the submissions array before query execution
+    const subEventIds = Array.from(new Set(submissions.map((s) => s.subEventId)));
+
+    // Bulk fetch all referenced records with access relations in one query
+    const subEvents = await this.client.subEvent.findMany({
+      where: {
+        id: { in: subEventIds },
+      },
+      include: {
+        accesses: {
+          where: {
+            invitationCodeId: invite.id,
           },
         },
-      });
+      },
+    });
+
+    const subEventMap = new Map<string, any>(subEvents.map((se: any) => [se.id, se]));
+
+    // Validate event existence and private permissions in memory
+    for (const sub of submissions) {
+      const subEvent = subEventMap.get(sub.subEventId);
 
       if (!subEvent) {
         throw new ApiError(404, `Sub-event with ID ${sub.subEventId} not found.`);
       }
 
       // Check access permission for private sub-events
-      if (subEvent.isPrivate && subEvent.accesses.length === 0) {
+      if (subEvent.isPrivate && (!subEvent.accesses || subEvent.accesses.length === 0)) {
         throw new ApiError(403, `Forbidden: You do not have access to private event "${subEvent.title}".`);
       }
-
-      // Upsert RSVP
-      const rsvp = await this.client.subEventRsvp.upsert({
-        where: {
-          subEventId_invitationCodeId: {
-            subEventId: sub.subEventId,
-            invitationCodeId: invite.id,
-          },
-        },
-        create: {
-          subEventId: sub.subEventId,
-          invitationCodeId: invite.id,
-          status: sub.status,
-          plusOneCount: sub.plusOneCount ?? 0,
-          dietaryNotes: sub.dietaryNotes || '',
-        },
-        update: {
-          status: sub.status,
-          plusOneCount: sub.plusOneCount ?? 0,
-          dietaryNotes: sub.dietaryNotes || '',
-        },
-      });
-
-      results.push(rsvp);
     }
+
+    // Execute all upsert operations within a single Prisma transaction
+    const results = await this.client.$transaction(async (tx: any) => {
+      return Promise.all(
+        submissions.map((sub) =>
+          tx.subEventRsvp.upsert({
+            where: {
+              subEventId_invitationCodeId: {
+                subEventId: sub.subEventId,
+                invitationCodeId: invite.id,
+              },
+            },
+            create: {
+              subEventId: sub.subEventId,
+              invitationCodeId: invite.id,
+              status: sub.status,
+              plusOneCount: sub.plusOneCount ?? 0,
+              dietaryNotes: sub.dietaryNotes || '',
+            },
+            update: {
+              status: sub.status,
+              plusOneCount: sub.plusOneCount ?? 0,
+              dietaryNotes: sub.dietaryNotes || '',
+            },
+          })
+        )
+      );
+    });
 
     return results;
   }

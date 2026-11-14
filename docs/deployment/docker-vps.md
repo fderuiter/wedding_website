@@ -85,15 +85,19 @@ docker compose exec app npx prisma migrate deploy
 
 ## 5. Custom Domain & TLS
 
-Use a reverse proxy such as **Caddy** or **Nginx** with **Let's Encrypt** on the host.
+Use a reverse proxy such as **Caddy** or **Nginx** with **Let's Encrypt** on the host. Always configure reverse proxies to sanitize and overwrite client IP headers (`X-Real-IP` and `X-Forwarded-For`) to prevent attackers from spoofing their IP address to evade rate limiting.
 
 ### Option A: Caddy (Automatic TLS)
 Create a `Caddyfile`:
 ```caddy
 wedding.mydomain.com {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:3000 {
+        # Overwrite/strip untrusted incoming X-Real-IP header with trusted remote client IP
+        header_up X-Real-IP {remote_host}
+    }
 }
 ```
+*Note: Caddy automatically manages `X-Forwarded-For` by appending the client IP. Adding `header_up X-Real-IP {remote_host}` ensures any incoming forged client `X-Real-IP` header is stripped and overwritten before the request reaches the container.*
 
 ### Option B: Nginx + Certbot
 ```nginx
@@ -106,11 +110,14 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
+*Note: Setting `proxy_set_header X-Real-IP $remote_addr;` explicitly overwrites any client-supplied `X-Real-IP` header with the direct connecting IP address `$remote_addr`. Combined with `$proxy_add_x_forwarded_for`, this prevents rate limit evasion via forged proxy headers.*
+
 Obtain TLS certificate:
 ```bash
 sudo certbot --nginx -d wedding.mydomain.com
@@ -153,9 +160,9 @@ Add the health check probe to `docker-compose.yml`:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -165,10 +172,11 @@ Add the health check probe to `docker-compose.yml`:
 The `/api/health` route tests database connectivity and returns HTTP `200 OK` with payload:
 ```json
 {
-  "status": "ok",
-  "timestamp": "2026-09-30T14:30:00.000Z",
-  "services": {
-    "database": "healthy"
+  "success": true,
+  "data": {
+    "status": "ok",
+    "timestamp": "2026-09-30T14:30:00.000Z",
+    "database": "connected"
   }
 }
 ```

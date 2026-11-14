@@ -129,10 +129,11 @@ Vercel Serverless Functions respond to HTTP requests routed to the `/api/health`
 *   **Expected Payload**:
     ```json
     {
-      "status": "ok",
-      "timestamp": "2026-09-30T14:30:00.000Z",
-      "services": {
-        "database": "healthy"
+      "success": true,
+      "data": {
+        "status": "ok",
+        "timestamp": "2026-09-30T14:30:00.000Z",
+        "database": "connected"
       }
     }
     ```
