@@ -360,6 +360,24 @@ describe('InteractiveTimeline Component', () => {
       jest.resetAllMocks();
     });
 
+    it('associates RSVP form labels with unique input identifiers for accessibility', () => {
+      render(<InteractiveTimeline events={sampleEventsWithRsvp} timezone="UTC" />);
+
+      const event1Card = screen.getByTestId('rsvp-card-event-1');
+      const plusOneInput1 = within(event1Card).getByLabelText(/plus-one count/i);
+      const dietaryInput1 = within(event1Card).getByLabelText(/dietary requirements \/ notes/i);
+
+      expect(plusOneInput1).toHaveAttribute('id', 'rsvp-plus-one-event-1');
+      expect(dietaryInput1).toHaveAttribute('id', 'rsvp-dietary-notes-event-1');
+
+      const event2Card = screen.getByTestId('rsvp-card-event-2');
+      const plusOneInput2 = within(event2Card).getByLabelText(/plus-one count/i);
+      const dietaryInput2 = within(event2Card).getByLabelText(/dietary requirements \/ notes/i);
+
+      expect(plusOneInput2).toHaveAttribute('id', 'rsvp-plus-one-event-2');
+      expect(dietaryInput2).toHaveAttribute('id', 'rsvp-dietary-notes-event-2');
+    });
+
     it('highlights modified cards, shows batch bar, and submits all dirty events on Save All modified events', async () => {
       let resolveFetch: (_value: any) => void;
       const fetchPromise = new Promise((resolve) => {
@@ -392,7 +410,7 @@ describe('InteractiveTimeline Component', () => {
 
       // Edit Event 2 plus-one count
       const event2Card = screen.getByTestId('rsvp-card-event-2');
-      const plusOneInput2 = event2Card.querySelector('input[type="number"]') as HTMLInputElement;
+      const plusOneInput2 = within(event2Card).getByLabelText(/plus-one count/i) as HTMLInputElement;
       fireEvent.change(plusOneInput2, { target: { value: '3' } });
 
       expect(screen.getByText(/2 events have unsaved changes/i)).toBeInTheDocument();
@@ -435,7 +453,7 @@ describe('InteractiveTimeline Component', () => {
       fireEvent.click(rehearsalTab);
 
       // Edit Rehearsal Dinner dietary notes
-      const notesInput = screen.getByPlaceholderText('e.g. Vegetarian, Nut allergy') as HTMLInputElement;
+      const notesInput = screen.getByLabelText(/dietary requirements \/ notes/i) as HTMLInputElement;
       fireEvent.change(notesInput, { target: { value: 'Strictly Kosher' } });
 
       expect(notesInput.value).toBe('Strictly Kosher');
@@ -452,7 +470,7 @@ describe('InteractiveTimeline Component', () => {
 
       // Rehearsal Dinner edits must be preserved
       const event1Card = screen.getByTestId('rsvp-card-event-1');
-      const restoredInput = event1Card.querySelector('input[type="text"]') as HTMLInputElement;
+      const restoredInput = within(event1Card).getByLabelText(/dietary requirements \/ notes/i) as HTMLInputElement;
       expect(restoredInput.value).toBe('Strictly Kosher');
       expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
     });
@@ -519,7 +537,7 @@ describe('InteractiveTimeline Component', () => {
       expect(successBanner).toBeInTheDocument();
 
       // Modify dietary notes: stale confirmation banner must clear
-      const notesInput = event1Card.querySelector('input[type="text"]') as HTMLInputElement;
+      const notesInput = within(event1Card).getByLabelText(/dietary requirements \/ notes/i) as HTMLInputElement;
       fireEvent.change(notesInput, { target: { value: 'Gluten sensitivity' } });
 
       expect(screen.queryByText('RSVP submitted successfully!')).not.toBeInTheDocument();
