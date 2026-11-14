@@ -127,4 +127,152 @@ describe('PhotoGalleryClient', () => {
 
     expect(screen.queryByTestId('guest-photos-empty-state')).not.toBeInTheDocument();
   });
+
+  describe('Lightbox Carousel Modal', () => {
+    const uploadHelper = async (id: string, url: string, altText: string) => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { id, url, altText },
+        }),
+      });
+
+      const fileInput = screen.getByTestId('guest-photo-file-input');
+      const file = new File(['image content'], `${id}.jpg`, { type: 'image/jpeg' });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByAltText(altText)).toBeInTheDocument();
+      });
+    };
+
+    it('opens lightbox modal when thumbnail is clicked by index and displays counter', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      // Click second thumbnail (index 1, which corresponds to First Photo since Second Photo was prepended)
+      const thumbnail = screen.getByTestId('photo-thumbnail-1');
+      fireEvent.click(thumbnail);
+
+      expect(screen.getByRole('dialog', { name: 'Photo Preview' })).toBeInTheDocument();
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('2 / 2');
+      const lightboxImg = screen.getByTestId('lightbox-image');
+      expect(lightboxImg).toHaveAttribute('src', '/uploads/photo1.jpg');
+    });
+
+    it('navigates via chevron clicks and wraps continuously around edges', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('p1', '/uploads/photo1.jpg', 'Photo One');
+      await uploadHelper('p2', '/uploads/photo2.jpg', 'Photo Two');
+      await uploadHelper('p3', '/uploads/photo3.jpg', 'Photo Three');
+
+      // Grid order: index 0 = Photo Three, index 1 = Photo Two, index 2 = Photo One
+      // Click index 0
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/photo3.jpg');
+
+      const nextBtn = screen.getByTestId('lightbox-next-btn');
+      const prevBtn = screen.getByTestId('lightbox-prev-btn');
+
+      // Forward navigation
+      fireEvent.click(nextBtn);
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('2 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/photo2.jpg');
+
+      fireEvent.click(nextBtn);
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('3 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/photo1.jpg');
+
+      // Continuous wrap forward (last -> first)
+      fireEvent.click(nextBtn);
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/photo3.jpg');
+
+      // Continuous wrap backward (first -> last)
+      fireEvent.click(prevBtn);
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('3 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/photo1.jpg');
+    });
+
+    it('navigates through photos via ArrowLeft and ArrowRight keyboard keys', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('p1', '/uploads/photo1.jpg', 'Photo One');
+      await uploadHelper('p2', '/uploads/photo2.jpg', 'Photo Two');
+
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 2');
+
+      // ArrowRight -> next photo
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('2 / 2');
+
+      // ArrowLeft -> previous photo
+      fireEvent.keyDown(window, { key: 'ArrowLeft' });
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 2');
+    });
+
+    it('closes lightbox modal on Escape key press, close button click, and backdrop click', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('p1', '/uploads/photo1.jpg', 'Photo One');
+
+      // 1. Escape key
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      // 2. Close button
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('lightbox-close-btn'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      // 3. Backdrop click
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(dialog);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('disables navigation controls in a single photo gallery', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('solo', '/uploads/solo.jpg', 'Solo Photo');
+
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 1');
+
+      const prevBtn = screen.getByTestId('lightbox-prev-btn');
+      const nextBtn = screen.getByTestId('lightbox-next-btn');
+      expect(prevBtn).toBeDisabled();
+      expect(nextBtn).toBeDisabled();
+
+      // Arrow keys do nothing in single photo mode
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 1');
+      fireEvent.keyDown(window, { key: 'ArrowLeft' });
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 1');
+    });
+
+    it('keeps active modal index synchronized when a new photo is uploaded while modal is open', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('orig-1', '/uploads/orig1.jpg', 'Original 1');
+      await uploadHelper('orig-2', '/uploads/orig2.jpg', 'Original 2');
+
+      // Open lightbox on index 0 (Original 2)
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 2');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/orig2.jpg');
+
+      // Upload a new photo while modal is open
+      await uploadHelper('new-3', '/uploads/new3.jpg', 'New Photo 3');
+
+      // The modal should remain displaying Original 2, but its index is now shifted to 2 of 3
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('2 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/orig2.jpg');
+    });
+  });
 });
