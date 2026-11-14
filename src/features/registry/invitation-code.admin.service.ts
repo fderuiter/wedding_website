@@ -3,6 +3,7 @@ import { BaseRepository } from '@/core/infrastructure/repository';
 import { InvitationCodeDTO, DryRunValidatedRow, DryRunValidationSummary, DryRunValidationResponse } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
+import { Prisma } from '@prisma/client';
 
 function generateRandomCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -375,17 +376,115 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         });
       }
 
-      const UPDATE_CHUNK_SIZE = 50;
-      for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK_SIZE) {
-        const chunk = toUpdate.slice(i, i + UPDATE_CHUNK_SIZE);
-        await Promise.all(
-          chunk.map((item) =>
-            tx.invitationCode.update({
-              where: { id: item.id },
-              data: item.data
-            })
+      if (toUpdate.length > 0) {
+        // Consolidate updates by record ID in case multiple rows target the same invitation code
+        const updatesById = new Map<string, any>();
+        for (const item of toUpdate) {
+          const existing = updatesById.get(item.id);
+          if (existing) {
+            Object.assign(existing, item.data);
+          } else {
+            updatesById.set(item.id, { ...item.data });
+          }
+        }
+
+        const rows = Array.from(updatesById.entries()).map(([id, d]) => {
+          return Prisma.sql`(
+            ${id}::text,
+            ${d.guestName}::text,
+            ${'email' in d ? d.email : null}::text,
+            ${'email' in d}::boolean,
+            ${'addressLine1' in d ? d.addressLine1 : null}::text,
+            ${'addressLine1' in d}::boolean,
+            ${'addressLine2' in d ? d.addressLine2 : null}::text,
+            ${'addressLine2' in d}::boolean,
+            ${'city' in d ? d.city : null}::text,
+            ${'city' in d}::boolean,
+            ${'state' in d ? d.state : null}::text,
+            ${'state' in d}::boolean,
+            ${'zipCode' in d ? d.zipCode : null}::text,
+            ${'zipCode' in d}::boolean,
+            ${'country' in d ? d.country : null}::text,
+            ${'country' in d}::boolean,
+            ${'dietaryNotes' in d ? d.dietaryNotes : null}::text,
+            ${'dietaryNotes' in d}::boolean,
+            ${'plusOneAllocations' in d ? d.plusOneAllocations : null}::integer,
+            ${'plusOneAllocations' in d}::boolean,
+            ${'plusOneFirstName' in d ? d.plusOneFirstName : null}::text,
+            ${'plusOneFirstName' in d}::boolean,
+            ${'plusOneLastName' in d ? d.plusOneLastName : null}::text,
+            ${'plusOneLastName' in d}::boolean,
+            ${'householdName' in d ? d.householdName : null}::text,
+            ${'householdName' in d}::boolean,
+            ${'partyGroup' in d ? d.partyGroup : null}::text,
+            ${'partyGroup' in d}::boolean,
+            ${'partyTags' in d ? d.partyTags : null}::text[],
+            ${'partyTags' in d}::boolean,
+            ${'extraFields' in d && d.extraFields !== null && d.extraFields !== undefined ? JSON.stringify(d.extraFields) : null}::jsonb,
+            ${'extraFields' in d}::boolean
+          )`;
+        });
+
+        const values = Prisma.join(rows, ', ');
+
+        const bulkUpdateQuery = Prisma.sql`
+          UPDATE "InvitationCode" AS t
+          SET
+            "guestName" = COALESCE(v."guestName", t."guestName"),
+            "email" = CASE WHEN v."has_email" THEN v."email" ELSE t."email" END,
+            "addressLine1" = CASE WHEN v."has_addressLine1" THEN v."addressLine1" ELSE t."addressLine1" END,
+            "addressLine2" = CASE WHEN v."has_addressLine2" THEN v."addressLine2" ELSE t."addressLine2" END,
+            "city" = CASE WHEN v."has_city" THEN v."city" ELSE t."city" END,
+            "state" = CASE WHEN v."has_state" THEN v."state" ELSE t."state" END,
+            "zipCode" = CASE WHEN v."has_zipCode" THEN v."zipCode" ELSE t."zipCode" END,
+            "country" = CASE WHEN v."has_country" THEN v."country" ELSE t."country" END,
+            "dietaryNotes" = CASE WHEN v."has_dietaryNotes" THEN v."dietaryNotes" ELSE t."dietaryNotes" END,
+            "plusOneAllocations" = CASE WHEN v."has_plusOneAllocations" THEN v."plusOneAllocations" ELSE t."plusOneAllocations" END,
+            "plusOneFirstName" = CASE WHEN v."has_plusOneFirstName" THEN v."plusOneFirstName" ELSE t."plusOneFirstName" END,
+            "plusOneLastName" = CASE WHEN v."has_plusOneLastName" THEN v."plusOneLastName" ELSE t."plusOneLastName" END,
+            "householdName" = CASE WHEN v."has_householdName" THEN v."householdName" ELSE t."householdName" END,
+            "partyGroup" = CASE WHEN v."has_partyGroup" THEN v."partyGroup" ELSE t."partyGroup" END,
+            "partyTags" = CASE WHEN v."has_partyTags" THEN v."partyTags" ELSE t."partyTags" END,
+            "extraFields" = CASE WHEN v."has_extraFields" THEN v."extraFields" ELSE t."extraFields" END,
+            "updatedAt" = NOW()
+          FROM (VALUES ${values}) AS v(
+            "id",
+            "guestName",
+            "email",
+            "has_email",
+            "addressLine1",
+            "has_addressLine1",
+            "addressLine2",
+            "has_addressLine2",
+            "city",
+            "has_city",
+            "state",
+            "has_state",
+            "zipCode",
+            "has_zipCode",
+            "country",
+            "has_country",
+            "dietaryNotes",
+            "has_dietaryNotes",
+            "plusOneAllocations",
+            "has_plusOneAllocations",
+            "plusOneFirstName",
+            "has_plusOneFirstName",
+            "plusOneLastName",
+            "has_plusOneLastName",
+            "householdName",
+            "has_householdName",
+            "partyGroup",
+            "has_partyGroup",
+            "partyTags",
+            "has_partyTags",
+            "extraFields",
+            "has_extraFields"
           )
-        );
+          WHERE t."id" = v."id"
+        `;
+
+        await tx.$executeRaw(bulkUpdateQuery);
       }
 
       await createAuditSnapshot(

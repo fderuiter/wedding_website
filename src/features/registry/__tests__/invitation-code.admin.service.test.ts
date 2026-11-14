@@ -6,6 +6,7 @@ describe('InvitationCodeAdminService', () => {
 
   beforeEach(() => {
     mockPrismaClient = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
       invitationCode: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
@@ -261,7 +262,7 @@ describe('InvitationCodeAdminService', () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([
         { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
       ]);
-      mockPrismaClient.invitationCode.update.mockResolvedValue({ id: '1', guestName: 'Updated Name' });
+      mockPrismaClient.$executeRaw.mockResolvedValue(1);
 
       const records = [
         {
@@ -279,27 +280,29 @@ describe('InvitationCodeAdminService', () => {
       expect(result.updated).toBe(1);
       expect(result.imported).toBe(0);
       expect(mockPrismaClient.invitationCode.createMany).not.toHaveBeenCalled();
-      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith({
-        where: { id: '1' },
-        data: {
-          guestName: 'Updated Name',
-          email: 'updated@example.com',
-          dietaryNotes: 'Vegan',
-          plusOneAllocations: 2,
-          extraFields: { Group: 'VIP' },
-        },
-      });
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+      expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
+
+      const rawQuery = mockPrismaClient.$executeRaw.mock.calls[0][0];
+      expect(rawQuery.sql).toContain('UPDATE "InvitationCode" AS t');
+      expect(rawQuery.sql).toContain('WHERE t."id" = v."id"');
+      expect(rawQuery.values).toContain('1');
+      expect(rawQuery.values).toContain('Updated Name');
+      expect(rawQuery.values).toContain('updated@example.com');
+      expect(rawQuery.values).toContain('Vegan');
+      expect(rawQuery.values).toContain(2);
+      expect(rawQuery.values).toContain(JSON.stringify({ Group: 'VIP' }));
     });
 
-    it('processes bulk updates concurrently in bounded parallel chunks', async () => {
-      // Simulate 60 existing records in DB to exceed the 50-item chunk size
+    it('processes bulk updates in a single raw SQL execution', async () => {
+      // Simulate 60 existing records in DB to exceed previous chunk boundaries
       const dbRecords = Array.from({ length: 60 }, (_, idx) => ({
         id: `id-${idx + 1}`,
         code: `CODE${idx + 1}`,
         guestName: `Guest ${idx + 1}`,
       }));
       mockPrismaClient.invitationCode.findMany.mockResolvedValue(dbRecords);
-      mockPrismaClient.invitationCode.update.mockResolvedValue({});
+      mockPrismaClient.$executeRaw.mockResolvedValue(60);
 
       const records = dbRecords.map((rec) => ({
         guestName: `${rec.guestName} Updated`,
@@ -310,7 +313,44 @@ describe('InvitationCodeAdminService', () => {
 
       expect(result.updated).toBe(60);
       expect(result.imported).toBe(0);
-      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledTimes(60);
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+      expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
+
+      const rawQuery = mockPrismaClient.$executeRaw.mock.calls[0][0];
+      expect(rawQuery.sql).toContain('UPDATE "InvitationCode" AS t');
+      expect(rawQuery.values).toContain('id-1');
+      expect(rawQuery.values).toContain('id-60');
+      expect(rawQuery.values).toContain('Guest 1 Updated');
+      expect(rawQuery.values).toContain('Guest 60 Updated');
+    });
+
+    it('skips executeRaw when there are no records to update', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
+      mockPrismaClient.invitationCode.createMany.mockResolvedValue({ count: 1 });
+
+      const records = [
+        { guestName: 'Brand New Guest', code: 'NEW1' },
+      ];
+
+      const result = await service.importBatch(records, 'update');
+
+      expect(result.imported).toBe(1);
+      expect(result.updated).toBe(0);
+      expect(mockPrismaClient.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('rolls back transaction and does not write audit snapshot when executeRaw fails', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'EXISTING1', guestName: 'Old Guest' },
+      ]);
+      mockPrismaClient.$executeRaw.mockRejectedValue(new Error('Database execution failed'));
+
+      const records = [
+        { guestName: 'Updated Name', code: 'EXISTING1' },
+      ];
+
+      await expect(service.importBatch(records, 'update')).rejects.toThrow('Database execution failed');
+      expect(mockPrismaClient.snapshotVersion.create).not.toHaveBeenCalled();
     });
 
     it('throws error when collisionStrategy is reject and duplicate code is detected', async () => {
