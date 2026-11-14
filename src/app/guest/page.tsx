@@ -1,144 +1,26 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
-import { useToast } from '@/components/ui/ToastProvider';
 import { Icon } from '@/components/ui/Icon';
+import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
 
 export default function GuestAddressPage() {
-  const { addToast } = useToast();
-  const [loading, setLoading] = useState<boolean>(true);
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const [sessionActive, setSessionActive] = useState<boolean>(false);
-  const [code, setCode] = useState<string>('');
-  const [guestName, setGuestName] = useState<string>('');
+  const {
+    state,
+    handleValidateCode,
+    handleSaveAddress,
+    setField,
+    setCode,
+    isLoading,
+    isValidating,
+    isSaving,
+    isAuthenticated,
+  } = useGuestAddressPortal();
 
-  // Address state
-  const [addressLine1, setAddressLine1] = useState<string>('');
-  const [addressLine2, setAddressLine2] = useState<string>('');
-  const [city, setCity] = useState<string>('');
-  const [state, setState] = useState<string>('');
-  const [zipCode, setZipCode] = useState<string>('');
-  const [country, setCountry] = useState<string>('');
+  const { form, code, guestName } = state;
 
-  const fetchAddress = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/guest/address');
-      const data = await res.json();
-      if (res.ok && data.success && data.data) {
-        setSessionActive(true);
-        setGuestName(data.data.guestName || '');
-        setCode(data.data.code || '');
-        setAddressLine1(data.data.addressLine1 || '');
-        setAddressLine2(data.data.addressLine2 || '');
-        setCity(data.data.city || '');
-        setState(data.data.state || '');
-        setZipCode(data.data.zipCode || '');
-        setCountry(data.data.country || '');
-      } else {
-        setSessionActive(false);
-      }
-    } catch {
-      setSessionActive(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let urlCode: string | null = null;
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      urlCode = params.get('code');
-    }
-
-    if (urlCode && urlCode.trim()) {
-      const autoCode = urlCode.trim().toUpperCase();
-      setCode(autoCode);
-      const autoAuthenticate = async () => {
-        setLoading(true);
-        try {
-          const res = await fetch(`/api/registry/validate-code?code=${encodeURIComponent(autoCode)}`);
-          const data = await res.json();
-          if (res.ok && (data.success || data.valid)) {
-            await fetchAddress();
-            const guest = data.data?.guestName || data.guestName || '';
-            addToast(`Welcome ${guest}!`, 'success');
-          } else {
-            addToast(data.error || 'Invalid or expired invitation code.', 'error');
-            await fetchAddress();
-          }
-        } catch (err: any) {
-          addToast(err.message || 'Error validating code.', 'error');
-          await fetchAddress();
-        } finally {
-          setLoading(false);
-        }
-      };
-      autoAuthenticate();
-    } else {
-      fetchAddress();
-    }
-  }, []);
-
-  const handleValidateCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code.trim()) {
-      addToast('Please enter your invitation code.', 'error');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/registry/validate-code?code=${encodeURIComponent(code.trim())}`);
-      const data = await res.json();
-      if (!res.ok || (!data.success && !data.valid)) {
-        addToast(data.error || 'Invalid or expired invitation code.', 'error');
-        return;
-      }
-      await fetchAddress();
-      const guest = data.data?.guestName || data.guestName || '';
-      addToast(`Welcome ${guest}!`, 'success');
-    } catch (err: any) {
-      addToast(err.message || 'Error validating code.', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleSaveAddress = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/guest/address', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          addressLine1,
-          addressLine2,
-          city,
-          state,
-          zipCode,
-          country,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to update address.');
-      }
-
-      addToast('Your mailing address has been updated successfully!', 'success');
-    } catch (err: any) {
-      addToast(err.message || 'An error occurred while saving address.', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12">
         <div className="flex flex-col items-center gap-3">
@@ -149,7 +31,7 @@ export default function GuestAddressPage() {
     );
   }
 
-  if (!sessionActive) {
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12 text-[var(--color-foreground)]">
         <div className="w-full max-w-md bg-white dark:bg-zinc-800 rounded-3xl shadow-xl p-8 border border-gray-100 dark:border-zinc-700 space-y-6">
@@ -174,8 +56,8 @@ export default function GuestAddressPage() {
               />
             </FormGroup>
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Verifying Code...' : 'Access Address Portal'}
+            <Button type="submit" className="w-full" disabled={isValidating}>
+              {isValidating ? 'Verifying Code...' : 'Access Address Portal'}
             </Button>
           </form>
         </div>
@@ -199,8 +81,8 @@ export default function GuestAddressPage() {
             <Input
               id="address-line1"
               type="text"
-              value={addressLine1}
-              onChange={(e) => setAddressLine1(e.target.value)}
+              value={form.addressLine1}
+              onChange={(e) => setField('addressLine1', e.target.value)}
               placeholder="123 Main Street"
             />
           </FormGroup>
@@ -210,8 +92,8 @@ export default function GuestAddressPage() {
             <Input
               id="address-line2"
               type="text"
-              value={addressLine2}
-              onChange={(e) => setAddressLine2(e.target.value)}
+              value={form.addressLine2}
+              onChange={(e) => setField('addressLine2', e.target.value)}
               placeholder="Apt 4B, Suite 100"
             />
           </FormGroup>
@@ -222,8 +104,8 @@ export default function GuestAddressPage() {
               <Input
                 id="address-city"
                 type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
+                value={form.city}
+                onChange={(e) => setField('city', e.target.value)}
                 placeholder="San Francisco"
               />
             </FormGroup>
@@ -233,8 +115,8 @@ export default function GuestAddressPage() {
               <Input
                 id="address-state"
                 type="text"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
+                value={form.state}
+                onChange={(e) => setField('state', e.target.value)}
                 placeholder="CA"
               />
             </FormGroup>
@@ -246,8 +128,8 @@ export default function GuestAddressPage() {
               <Input
                 id="address-zip"
                 type="text"
-                value={zipCode}
-                onChange={(e) => setZipCode(e.target.value)}
+                value={form.zipCode}
+                onChange={(e) => setField('zipCode', e.target.value)}
                 placeholder="94102"
               />
             </FormGroup>
@@ -257,16 +139,16 @@ export default function GuestAddressPage() {
               <Input
                 id="address-country"
                 type="text"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
+                value={form.country}
+                onChange={(e) => setField('country', e.target.value)}
                 placeholder="United States"
               />
             </FormGroup>
           </div>
 
           <div className="pt-4 flex items-center justify-end gap-3">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? 'Saving...' : 'Save Mailing Address'}
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save Mailing Address'}
             </Button>
           </div>
         </form>
