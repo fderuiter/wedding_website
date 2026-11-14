@@ -235,9 +235,12 @@ function PhysicsHeart({
     <>
       <Html zIndexRange={[100, 0]} prepend center>
         {MainAccessibleElements}
-        <div className="sr-only" aria-live="polite">
-          {isBroken ? 'Heart is broken.' : 'Heart is whole.'}
+        <div className="sr-only" role="status" aria-live="polite">
+          {isBroken ? 'Heart is broken.' : showEasterEgg ? 'I love you!' : 'Heart is whole.'}
         </div>
+        {showEasterEgg && (
+          <div className="sr-only">I love you!</div>
+        )}
         {!isBroken && (
           <button
             type="button"
