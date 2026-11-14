@@ -217,13 +217,21 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
     >
       <div className="space-y-4">
         {/* Navigation Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-zinc-700">
+        <div
+          role="tablist"
+          aria-label="Broadcast navigation tabs"
+          className="flex border-b border-gray-200 dark:border-zinc-700"
+        >
           <button
             type="button"
+            role="tab"
+            id="broadcast-tab-compose"
+            aria-selected={activeTab === 'compose'}
+            aria-controls="broadcast-tabpanel-compose"
             onClick={() => setActiveTab('compose')}
             className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
               activeTab === 'compose'
-                ? 'border-red-700 text-red-700 dark:text-red-400 dark:border-red-400 font-semibold'
+                ? 'border-primary text-primary font-semibold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
             }`}
           >
@@ -231,25 +239,33 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={handleGeneratePreview}
-            disabled={previewing}
+            role="tab"
+            id="broadcast-tab-preview"
+            aria-selected={activeTab === 'preview'}
+            aria-controls="broadcast-tabpanel-preview"
+            onClick={() => setActiveTab('preview')}
             className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
               activeTab === 'preview'
-                ? 'border-red-700 text-red-700 dark:text-red-400 dark:border-red-400 font-semibold'
+                ? 'border-primary text-primary font-semibold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
             }`}
           >
-            {previewing ? 'Rendering...' : 'Live Preview'}
+            Live Preview
           </button>
         </div>
 
         {/* Target Summary Banner */}
-        <div className="p-3 bg-red-50 dark:bg-zinc-800/80 rounded-md border border-red-100 dark:border-zinc-700 text-xs text-red-900 dark:text-zinc-200">
+        <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary">
           <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
         </div>
 
         {activeTab === 'compose' ? (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="broadcast-tabpanel-compose"
+            aria-labelledby="broadcast-tab-compose"
+            className="space-y-4"
+          >
             <FormGroup>
               <Label htmlFor="broadcast-channel">Channel</Label>
               <Select
@@ -342,7 +358,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
                   id="broadcast-schedule-toggle"
                   checked={isScheduled}
                   onChange={(e) => setIsScheduled(e.target.checked)}
-                  className="rounded text-red-600 focus:ring-red-500 h-4 w-4"
+                  className="rounded text-primary focus:ring-primary h-4 w-4"
                 />
                 Schedule message for future automated delivery
               </label>
@@ -366,7 +382,12 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
           </div>
         ) : (
           /* Preview Tab Content */
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="broadcast-tabpanel-preview"
+            aria-labelledby="broadcast-tab-preview"
+            className="space-y-4"
+          >
             {previewResult ? (
               <div className="border border-gray-200 dark:border-zinc-700 rounded-md p-4 bg-gray-50 dark:bg-zinc-900/50 space-y-3">
                 <div className="text-xs text-gray-500 dark:text-zinc-400 flex justify-between border-b pb-2 dark:border-zinc-700">
