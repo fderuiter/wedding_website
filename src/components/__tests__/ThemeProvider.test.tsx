@@ -624,6 +624,42 @@ describe('ThemeProvider Dynamic CSS Tokens & Surface Cascade', () => {
     expect(cssText).toContain('--color-error-text:');
     expect(cssText).toContain('--color-focus-ring:');
     expect(cssText).toContain('--color-surface-border:');
+    expect(cssText).toContain('--color-muted-text:');
+    expect(cssText).toContain('--color-text-muted:');
+    expect(cssText).toContain('--color-warning-bg:');
+    expect(cssText).toContain('--color-warning-border:');
+    expect(cssText).toContain('--color-warning-text:');
+    expect(cssText).toContain('--color-status-warning-text:');
+    expect(cssText).toContain('--color-status-unsent-text:');
+    expect(cssText).toContain('--color-status-success-text:');
+    expect(cssText).toContain('--color-status-sent-text:');
+    expect(cssText).toContain('--color-status-info-text:');
+    expect(cssText).toContain('--color-status-not-needed-text:');
+  });
+
+  it('outputs contrast-calibrated semantic tokens for muted text, warning surfaces, and status metrics satisfying >= 4.5:1 contrast', () => {
+    const { container } = render(
+      <ThemeProvider config={{ colorPrimary: '#B91C1C', colorSecondary: '#B45309' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    const styleElem = container.querySelector('#dynamic-theme-style');
+    const cssText = styleElem?.textContent || '';
+
+    // Check presence in light mode context
+    expect(cssText).toMatch(/html:not\(\.dark\)[^}]+--color-muted-text:\s*#4B5563/i);
+    expect(cssText).toMatch(/html:not\(\.dark\)[^}]+--color-warning-text:\s*#78350F/i);
+    expect(cssText).toMatch(/html:not\(\.dark\)[^}]+--color-status-warning-text:\s*#92400E/i);
+    expect(cssText).toMatch(/html:not\(\.dark\)[^}]+--color-status-success-text:\s*#166534/i);
+    expect(cssText).toMatch(/html:not\(\.dark\)[^}]+--color-status-info-text:\s*#1E40AF/i);
+
+    // Check presence in dark mode context
+    expect(cssText).toMatch(/\.dark\s*\{[^}]+--color-muted-text:\s*#9CA3AF/i);
+    expect(cssText).toMatch(/\.dark\s*\{[^}]+--color-warning-text:\s*#FDE68A/i);
+    expect(cssText).toMatch(/\.dark\s*\{[^}]+--color-status-warning-text:\s*#FCD34D/i);
+    expect(cssText).toMatch(/\.dark\s*\{[^}]+--color-status-success-text:\s*#86EFAC/i);
+    expect(cssText).toMatch(/\.dark\s*\{[^}]+--color-status-info-text:\s*#93C5FD/i);
   });
 
   it('includes container cascade surface rules covering gray, slate, zinc, stone, neutral families and data-surface attributes', () => {

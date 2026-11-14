@@ -1,10 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { UnassignedGuestPanel } from '../UnassignedGuestPanel';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+
+expect.extend(toHaveNoViolations);
 
 describe('UnassignedGuestPanel quick-assign modal component', () => {
   const mockUnassignedGuests: InvitationCodeDTO[] = [
@@ -227,6 +230,23 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
 
       // Guests should still be present because assignment failed
       expect(screen.getByText('Jane Doe')).toBeInTheDocument();
+    });
+
+    test('renders empty state notice with contrast-checked muted text token and passes axe audit', async () => {
+      const { container } = render(
+        <ToastProvider>
+          <UnassignedGuestPanel {...defaultProps} unassignedGuests={[]} />
+        </ToastProvider>
+      );
+
+      const emptyNotice = screen.getByText('All guests have been assigned to tables!');
+      expect(emptyNotice).toBeInTheDocument();
+      expect(emptyNotice.className).toContain('var(--color-muted-text');
+      expect(emptyNotice.className).not.toContain('text-gray-400');
+      expect(emptyNotice.className).not.toContain('text-gray-500');
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

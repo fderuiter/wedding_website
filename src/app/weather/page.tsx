@@ -27,7 +27,7 @@ export default async function WeatherPage() {
       <h1 className="text-4xl sm:text-5xl font-extrabold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
         The Forecast for Our Big Day
       </h1>
-      <p className="text-center text-lg sm:text-xl text-gray-400 mb-10">
+      <p className="text-center text-lg sm:text-xl text-[var(--color-muted-text,#4b5563)] mb-10">
         October 10, 2025
       </p>
       <ErrorBoundary title="Weather Forecast Error" message="An error occurred while loading the weather forecast widget.">
