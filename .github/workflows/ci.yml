@@ -133,6 +133,7 @@ jobs:
             }
 
   unit-test:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -170,6 +171,7 @@ jobs:
           path: coverage/
 
   build:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -227,7 +229,7 @@ jobs:
             node_modules/@prisma
 
   e2e-test:
-    needs: build
+    needs: [build, unit-test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
