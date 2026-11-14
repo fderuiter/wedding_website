@@ -108,6 +108,11 @@
     "tsx": "^4.23.15",
     "typescript": "^5.8.2"
   },
+  "overrides": {
+    "archiver": {
+      "minimatch": "^11.0.8"
+    }
+  },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": "eslint --fix"
   }
