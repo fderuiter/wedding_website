@@ -726,5 +726,90 @@ describe('InvitationCodesDashboardPage', () => {
       expect(labels.length).toBe(1);
       expect(within(labels[0]).getByText('Alice Smith')).toBeInTheDocument();
     });
+
+    it('correctly transitions indeterminate state and updates row checkboxes during toggles and deselect all', () => {
+      renderComponent();
+
+      const selectAllCheckbox = screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' }) as HTMLInputElement;
+      const aliceCheckbox = screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }) as HTMLInputElement;
+      const bobCheckbox = screen.getByRole('checkbox', { name: 'Select invitation code for Bob Jones' }) as HTMLInputElement;
+
+      // Initially none selected
+      expect(selectAllCheckbox.checked).toBe(false);
+      expect(selectAllCheckbox.indeterminate).toBe(false);
+      expect(aliceCheckbox.checked).toBe(false);
+      expect(bobCheckbox.checked).toBe(false);
+
+      // Select Alice -> partial selection (indeterminate)
+      fireEvent.click(aliceCheckbox);
+      expect(aliceCheckbox.checked).toBe(true);
+      expect(bobCheckbox.checked).toBe(false);
+      expect(selectAllCheckbox.indeterminate).toBe(true);
+      expect(selectAllCheckbox.checked).toBe(false);
+
+      // Select All Filtered -> all selected
+      fireEvent.click(selectAllCheckbox);
+      expect(selectAllCheckbox.checked).toBe(true);
+      expect(selectAllCheckbox.indeterminate).toBe(false);
+      expect(aliceCheckbox.checked).toBe(true);
+      expect(bobCheckbox.checked).toBe(true);
+
+      // Deselect Alice -> partial selection (indeterminate)
+      fireEvent.click(aliceCheckbox);
+      expect(aliceCheckbox.checked).toBe(false);
+      expect(bobCheckbox.checked).toBe(true);
+      expect(selectAllCheckbox.indeterminate).toBe(true);
+      expect(selectAllCheckbox.checked).toBe(false);
+
+      // Click Deselect All button
+      const deselectBtn = screen.getByRole('button', { name: 'Deselect All' });
+      fireEvent.click(deselectBtn);
+      expect(selectAllCheckbox.checked).toBe(false);
+      expect(selectAllCheckbox.indeterminate).toBe(false);
+      expect(aliceCheckbox.checked).toBe(false);
+      expect(bobCheckbox.checked).toBe(false);
+    });
+
+    it('manages party tags in bulk for selected invitation codes using memoized selection set', async () => {
+      mockUpdateBatch.mockResolvedValue(true);
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Diana Prince' }));
+
+      // Open Manage Tags modal
+      fireEvent.click(screen.getByRole('button', { name: 'Manage Tags' }));
+      expect(screen.getByText('Manage Party Tags (2 Selected)')).toBeInTheDocument();
+
+      // Enter tag name and apply
+      const tagInput = screen.getByPlaceholderText('e.g. VIP');
+      fireEvent.change(tagInput, { target: { value: 'VIP' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Tag Changes' }));
+
+      await waitFor(() => {
+        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-1'], { partyTags: ['VIP'] });
+        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-4'], { partyTags: ['VIP'] });
+        expect(screen.getByText('Updated tags for 2 code(s).')).toBeInTheDocument();
+      });
+    });
+
+    it('sets household name in bulk for selected codes', async () => {
+      mockUpdateBatch.mockResolvedValue(true);
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Set Household' }));
+
+      expect(screen.getByText('Set Household Name (1 Selected)')).toBeInTheDocument();
+
+      const householdInput = screen.getByPlaceholderText('e.g. Smith Household');
+      fireEvent.change(householdInput, { target: { value: 'Smith-Jones Household' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Household Name' }));
+
+      await waitFor(() => {
+        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-1'], { householdName: 'Smith-Jones Household' });
+        expect(screen.getByText('Updated household name for 1 code(s).')).toBeInTheDocument();
+      });
+    });
   });
 });
