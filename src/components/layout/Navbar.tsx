@@ -159,7 +159,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
             <div className="flex-shrink-0 flex items-center h-16">
               <Link
                 href="/"
-                className="flex items-center text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
+                className="flex items-center min-h-[24px] min-w-[24px] text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
               >
                 {brandLogoUrl ? (
                   <img
@@ -168,7 +168,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                     className="h-10 max-h-12 w-auto object-contain"
                   />
                 ) : (
-                  <span>{monogram}</span>
+                  <span className="min-h-[24px] min-w-[24px] inline-flex items-center justify-center">{monogram}</span>
                 )}
               </Link>
             </div>
@@ -205,7 +205,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                   <span className="text-sm font-medium text-[var(--color-primary-text)]">Admin Mode</span>
                   <button
                     onClick={handleLogout}
-                    className="ml-4 bg-[var(--btn-primary-bg,var(--color-primary))] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary))] text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] text-xs py-1 px-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
+                    className="ml-4 bg-[var(--btn-primary-bg,var(--color-primary))] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary))] text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] text-xs py-1 px-3 min-h-[24px] min-w-[24px] inline-flex items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
                   >
                     Logout
                   </button>
