@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Label } from '@/components/ui/forms';
+import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import {
@@ -224,6 +224,13 @@ const EditableTableRow = React.memo(function EditableTableRow({
   onExtraFieldEdit,
   onDeleteRow,
 }: EditableTableRowProps) {
+  const rowState: 'error' | 'warning' | 'default' =
+    !row.isValid || row.actionOutcome === 'invalid'
+      ? 'error'
+      : row.warnings && row.warnings.length > 0
+        ? 'warning'
+        : 'default';
+
   return (
     <tr
       className={
@@ -238,162 +245,180 @@ const EditableTableRow = React.memo(function EditableTableRow({
     >
       <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.guestName || ''}
           aria-label={`Guest Name for row ${row.rowIndex}`}
           onChange={(e) => onCellEdit(index, 'guestName', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.code || ''}
           aria-label={`Invitation Code for row ${row.rowIndex}`}
           placeholder="Auto-generate"
           onChange={(e) => onCellEdit(index, 'code', e.target.value)}
-          className="w-full text-xs font-mono px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 uppercase"
+          sizeVariant="compact"
+          state={rowState}
+          className="font-mono uppercase"
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="email"
           value={editableRow?.email || ''}
           aria-label={`Email for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'email', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.addressLine1 || ''}
           aria-label={`Address Line 1 for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'addressLine1', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.addressLine2 || ''}
           aria-label={`Address Line 2 for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'addressLine2', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.city || ''}
           aria-label={`City for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'city', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.state || ''}
           aria-label={`State for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'state', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.zipCode || ''}
           aria-label={`ZIP Code for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'zipCode', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.country || ''}
           aria-label={`Country for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'country', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.dietaryNotes || ''}
           aria-label={`Dietary Notes for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'dietaryNotes', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2 text-center">
-        <input
+        <Input
           type="number"
           min="0"
           value={editableRow?.plusOneAllocations ?? '0'}
           aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
           onChange={(e) => onCellEdit(index, 'plusOneAllocations', e.target.value)}
-          className="w-14 text-xs text-center px-1 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
+          className="w-14 text-center px-1"
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.plusOneFirstName || ''}
           aria-label={`Plus-One First Name for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'plusOneFirstName', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.plusOneLastName || ''}
           aria-label={`Plus-One Last Name for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'plusOneLastName', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.householdName || ''}
           aria-label={`Household Name for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'householdName', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.partyGroup || ''}
           aria-label={`Party Group for row ${row.rowIndex}`}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'partyGroup', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
-        <input
+        <Input
           type="text"
           value={editableRow?.partyTags || ''}
           aria-label={`Party Tags for row ${row.rowIndex}`}
           placeholder="Comma-separated"
           onChange={(e) => onCellEdit(index, 'partyTags', e.target.value)}
-          className="w-full text-xs px-2 py-1 h-7 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+          sizeVariant="compact"
+          state={rowState}
         />
       </td>
       <td className="p-2">
@@ -404,12 +429,14 @@ const EditableTableRow = React.memo(function EditableTableRow({
                 <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
                   {k}:
                 </span>
-                <input
+                <Input
                   type="text"
                   value={v}
                   aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
                   onChange={(e) => onExtraFieldEdit(index, k, e.target.value)}
-                  className="w-20 text-[11px] px-1.5 py-0.5 h-6 border rounded bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"
+                  sizeVariant="compact"
+                  state={rowState}
+                  className="w-20 text-[11px] h-6 px-1.5 py-0.5"
                 />
               </div>
             ))}

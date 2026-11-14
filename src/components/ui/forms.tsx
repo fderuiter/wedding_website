@@ -70,11 +70,27 @@ export const Label = React.forwardRef<
 });
 Label.displayName = 'Label';
 
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  state?: 'error' | 'success' | 'warning' | 'default';
+  sizeVariant?: 'default' | 'compact';
+}
+
 export const Input = React.forwardRef<
   HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement>
->(({ className, type = 'text', style, ...props }, ref) => {
-  const { id, state, messageId, hasMessage } = useFormItem();
+  InputProps
+>(({ className, type = 'text', style, state: propState, sizeVariant = 'default', id: propId, ...props }, ref) => {
+  const context = useContext(FormItemContext);
+  const fallbackId = useId();
+
+  const id = propId || context?.id || fallbackId;
+  const state = propState || context?.state || 'default';
+  const messageId = context?.messageId;
+  const hasMessage = context?.hasMessage ?? false;
+
+  const sizeStyles = {
+    default: 'h-10 px-3 py-2 text-sm',
+    compact: 'h-7 px-2 py-1 text-xs',
+  };
 
   const stateStyles = {
     default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
@@ -92,7 +108,8 @@ export const Input = React.forwardRef<
         ...style,
       }}
       className={cn(
-        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex w-full border bg-[var(--input-bg,#ffffff)] text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        sizeStyles[sizeVariant],
         stateStyles[state],
         className
       )}

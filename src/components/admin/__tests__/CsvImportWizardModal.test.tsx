@@ -851,4 +851,58 @@ describe('CsvImportWizardModal Component', () => {
 
     expect(screen.getByText('Import Guest Invitation Codes')).toBeInTheDocument();
   });
+
+  test('renders standardized Input primitives with compact size and design tokens in review table', async () => {
+    window.sessionStorage.clear();
+    const csvData = 'Guest Name,Code\nValid Guest,VALID01\n,INVALID01';
+    const file = new File([csvData], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: { total: 2, validCount: 1, invalidCount: 1, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+        rows: [
+          { rowIndex: 1, guestName: 'Valid Guest', code: 'VALID01', isValid: true, errors: [], warnings: [] },
+          { rowIndex: 2, guestName: '', code: 'INVALID01', isValid: false, errors: ['Guest Name is required'], warnings: [] },
+        ],
+      }),
+    });
+
+    render(
+      <ToastProvider>
+        <CsvImportWizardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onImportComplete={mockOnImportComplete}
+        />
+      </ToastProvider>
+    );
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    const validGuestInput = screen.getByLabelText('Guest Name for row 1');
+    const invalidGuestInput = screen.getByLabelText('Guest Name for row 2');
+
+    // Sizing: compact variant applies h-7 px-2 py-1 text-xs
+    expect(validGuestInput.className).toContain('h-7 px-2 py-1 text-xs');
+    expect(invalidGuestInput.className).toContain('h-7 px-2 py-1 text-xs');
+
+    // Theme design tokens: valid row uses default input border token, invalid row uses error border token
+    expect(validGuestInput.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+    expect(invalidGuestInput.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+    expect(invalidGuestInput).toHaveAttribute('aria-invalid', 'true');
+  });
 });
