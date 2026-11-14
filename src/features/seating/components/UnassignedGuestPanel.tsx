@@ -162,7 +162,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       {/* Guest Card List */}
       <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[500px]">
         {filteredGuests.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-xs italic">
+          <div className="text-center py-8 text-[var(--color-muted-text,#4b5563)] text-xs italic">
             {currentSearchQuery.trim()
               ? `No unassigned guests match "${currentSearchQuery.trim()}".`
               : 'All guests have been assigned to tables!'}

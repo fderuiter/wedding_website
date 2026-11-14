@@ -1,7 +1,10 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import Forecast from '../Forecast';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
+
+expect.extend(toHaveNoViolations);
 
 describe('Forecast Component', () => {
   afterEach(() => {
@@ -178,12 +181,20 @@ describe('Forecast Component', () => {
       })
     );
 
-    render(<Forecast />);
+    const { container } = render(<Forecast />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('seasonal-badge')).toBeInTheDocument();
+      const badge = screen.getByTestId('seasonal-badge');
+      expect(badge).toBeInTheDocument();
+      expect(badge.className).toContain('var(--color-warning-bg');
+      expect(badge.className).toContain('var(--color-warning-border');
+      expect(badge.className).toContain('var(--color-warning-text');
+      expect(badge.className).not.toContain('text-amber-200');
       expect(screen.getByText(/Seasonal Climate Averages/i)).toBeInTheDocument();
       expect(screen.getByText(/2026-06-04/i)).toBeInTheDocument();
     });
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

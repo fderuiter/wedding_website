@@ -439,7 +439,7 @@ export default function ThankYouNotesPage() {
             <span className="block text-2xl font-bold text-gray-900 dark:text-white">
               {metrics.total}
             </span>
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span className="text-xs font-medium text-[var(--color-muted-text,#4b5563)]">
               Total Contributions
             </span>
           </div>
@@ -447,7 +447,7 @@ export default function ThankYouNotesPage() {
             <span className="block text-2xl font-bold text-amber-700 dark:text-amber-400">
               {metrics.unsent}
             </span>
-            <span className="text-xs font-medium text-amber-700/80 dark:text-amber-300/80">
+            <span className="text-xs font-medium text-[var(--color-status-warning-text,#92400e)]">
               Pending / Unsent
             </span>
           </div>
@@ -455,7 +455,7 @@ export default function ThankYouNotesPage() {
             <span className="block text-2xl font-bold text-green-700 dark:text-green-400">
               {metrics.sent}
             </span>
-            <span className="text-xs font-medium text-green-700/80 dark:text-green-300/80">
+            <span className="text-xs font-medium text-[var(--color-status-success-text,#166534)]">
               Thank-You Sent
             </span>
           </div>
@@ -463,7 +463,7 @@ export default function ThankYouNotesPage() {
             <span className="block text-2xl font-bold text-blue-700 dark:text-blue-400">
               {metrics.notNeeded}
             </span>
-            <span className="text-xs font-medium text-blue-700/80 dark:text-blue-300/80">
+            <span className="text-xs font-medium text-[var(--color-status-info-text,#1e40af)]">
               Not Needed
             </span>
           </div>
