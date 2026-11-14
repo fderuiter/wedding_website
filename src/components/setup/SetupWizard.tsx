@@ -10,7 +10,9 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
-import { useFormPersist } from '@/hooks/useFormPersist';
+import {
+  useSetupWizardMachine,
+} from '@/hooks/useSetupWizardMachine';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
@@ -40,44 +42,26 @@ function isDefaultUrl(url: string): boolean {
   }
 }
 
-interface SetupWizardPersistedState {
-  step: number;
-  partner1Name: string;
-  partner2Name: string;
-  weddingDate: string;
-  baseUrl: string;
-  venueName: string;
-  venueCity: string;
-  venueState: string;
-  timezone: string;
-  sampleArchetype: ArchetypeId;
-  selectedModules: string[];
-  importedGuestCount?: number;
-}
-
-const initialSetupWizardState: SetupWizardPersistedState = {
-  step: 1,
-  partner1Name: '',
-  partner2Name: '',
-  weddingDate: '',
-  baseUrl: '',
-  venueName: '',
-  venueCity: '',
-  venueState: '',
-  timezone: 'America/Chicago',
-  sampleArchetype: 'classic',
-  selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
-  importedGuestCount: 0,
-};
-
 function SetupWizardContent() {
-  const [wizardState, setWizardState, clearPersistedSetupState] = useFormPersist<SetupWizardPersistedState>(
-    'setup_wizard_draft',
-    initialSetupWizardState
-  );
+  const {
+    state,
+    setStep,
+    updateDraft,
+    toggleModule,
+    openModal,
+    closeModal,
+    setError,
+    startSubmit,
+    loginSuccess,
+    clearPersistedState,
+  } = useSetupWizardMachine();
 
   const {
     step,
+    isAuthenticated,
+    isLoading: loading,
+    error,
+    activeModal,
     partner1Name,
     partner2Name,
     weddingDate,
@@ -89,48 +73,22 @@ function SetupWizardContent() {
     sampleArchetype,
     selectedModules,
     importedGuestCount = 0,
-  } = wizardState;
+  } = state;
 
-  const setStep = (newStep: number | ((prev: number) => number)) => {
-    setWizardState((prev) => ({
-      ...prev,
-      step: typeof newStep === 'function' ? newStep(prev.step) : newStep,
-    }));
-  };
+  const setPartner1Name = (val: string) => updateDraft({ partner1Name: val });
+  const setPartner2Name = (val: string) => updateDraft({ partner2Name: val });
+  const setWeddingDate = (val: string) => updateDraft({ weddingDate: val });
+  const setBaseUrl = (val: string) => updateDraft({ baseUrl: val });
+  const setVenueName = (val: string) => updateDraft({ venueName: val });
+  const setVenueCity = (val: string) => updateDraft({ venueCity: val });
+  const setVenueState = (val: string) => updateDraft({ venueState: val });
+  const setTimezone = (val: string) => updateDraft({ timezone: val });
+  const setSampleArchetype = (archetype: ArchetypeId) => updateDraft({ sampleArchetype: archetype });
+  const setSelectedModules = (modules: string[]) => updateDraft({ selectedModules: modules });
 
-  const setPartner1Name = (val: string) => setWizardState((prev) => ({ ...prev, partner1Name: val }));
-  const setPartner2Name = (val: string) => setWizardState((prev) => ({ ...prev, partner2Name: val }));
-  const setWeddingDate = (val: string) => setWizardState((prev) => ({ ...prev, weddingDate: val }));
-  const setBaseUrl = (val: string) => setWizardState((prev) => ({ ...prev, baseUrl: val }));
-  const setVenueName = (val: string) => setWizardState((prev) => ({ ...prev, venueName: val }));
-  const setVenueCity = (val: string) => setWizardState((prev) => ({ ...prev, venueCity: val }));
-  const setVenueState = (val: string) => setWizardState((prev) => ({ ...prev, venueState: val }));
-  const setTimezone = (val: string) => setWizardState((prev) => ({ ...prev, timezone: val }));
-  const setSampleArchetype = (archetype: ArchetypeId) => setWizardState((prev) => ({ ...prev, sampleArchetype: archetype }));
-  const setSelectedModules = (modules: string[]) => setWizardState((prev) => ({ ...prev, selectedModules: modules }));
-
-  const toggleModule = (moduleKey: string) => {
-    setWizardState((prev) => {
-      const current = prev.selectedModules || [];
-      const updated = current.includes(moduleKey)
-        ? current.filter((m) => m !== moduleKey)
-        : [...current, moduleKey];
-      return { ...prev, selectedModules: updated };
-    });
-  };
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  
   // Login
   const [password, setPassword] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
-
-  // Content Management Modals
-  const [isWeddingPartyModalOpen, setIsWeddingPartyModalOpen] = useState(false);
-  const [isAttractionsModalOpen, setIsAttractionsModalOpen] = useState(false);
-  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
 
   // Content Counts
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
@@ -141,11 +99,9 @@ function SetupWizardContent() {
     const result = await refetchInvitationCodes();
     const codes = (result && Array.isArray(result) ? result : invitationCodes) || [];
     const count = codes.length;
-    setWizardState((prev) => ({
-      ...prev,
-      importedGuestCount: count,
-    }));
+    updateDraft({ importedGuestCount: count });
   };
+
   // Theme state
   const [themePreset, setThemePreset] = useState<ThemePreset>('classic');
   const [colorPrimary, setColorPrimary] = useState('#4A5568');
@@ -172,8 +128,7 @@ function SetupWizardContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
         method: 'POST',
@@ -181,8 +136,7 @@ function SetupWizardContent() {
         body: JSON.stringify({ password }),
       });
       if (res.ok) {
-        setIsAuthenticated(true);
-        setStep(2);
+        loginSuccess();
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error || 'Invalid admin password.');
@@ -193,8 +147,6 @@ function SetupWizardContent() {
       setError(err.message || 'Failed to log in.');
       passwordInputRef.current?.focus();
       passwordInputRef.current?.select();
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -215,8 +167,7 @@ function SetupWizardContent() {
       return;
     }
 
-    setLoading(true);
-    setError('');
+    startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
         method: 'POST',
@@ -261,15 +212,12 @@ function SetupWizardContent() {
     } catch (err: any) {
       setError(err.message || 'Failed to save config.');
       siteUrlInputRef.current?.focus();
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleSampleDataSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    startSubmit();
     try {
       if (selectedModules.length > 0) {
         const res = await fetch('/api/admin/sample-data', {
@@ -290,21 +238,19 @@ function SetupWizardContent() {
       setStep(4);
     } catch (err: any) {
       setError(err.message || 'Error configuring sample data.');
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
     <main id="main-content" tabIndex={-1} className="min-h-screen py-12 flex flex-col justify-center items-center">
       <h1 className="sr-only">Wedding Website Setup Wizard</h1>
-      <AccessibleStep isActive={!isAuthenticated || step === 1}>
+      <AccessibleStep isActive={step === 1}>
         <Container>
           <Card className="max-w-md">
             <Heading as="h2" className="mb-4">Welcome to Your Wedding Site!</Heading>
             <p className="mb-4 text-gray-700">Please enter the admin password configured in your environment to begin setup.</p>
             <form onSubmit={handleLogin} className="space-y-4">
-              <FormGroup state={error && !isAuthenticated ? 'error' : 'default'}>
+              <FormGroup state={error && step === 1 ? 'error' : 'default'}>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
                 <Input
                   ref={passwordInputRef}
@@ -315,7 +261,7 @@ function SetupWizardContent() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-                {error && !isAuthenticated && <FormMessage>{error}</FormMessage>}
+                {error && step === 1 && <FormMessage>{error}</FormMessage>}
               </FormGroup>
               <Button type="submit" disabled={loading} variant="primary" className="w-full py-3">
                 {loading ? 'Authenticating...' : 'Continue'}
@@ -325,7 +271,7 @@ function SetupWizardContent() {
         </Container>
       </AccessibleStep>
 
-      <AccessibleStep isActive={isAuthenticated && step === 2}>
+      <AccessibleStep isActive={step === 2}>
         <Container>
           <Card className="max-w-xl">
             <Heading as="h2" className="mb-4">Step 1: The Essentials</Heading>
@@ -351,7 +297,7 @@ function SetupWizardContent() {
                   <Input id="timezone" type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. America/Chicago" required />
                 </FormGroup>
               </div>
-              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && isAuthenticated && step === 2) ? 'error' : 'default'}>
+              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2) ? 'error' : 'default'}>
                 <Label htmlFor="siteUrl">Site URL (e.g. https://ourwedding.com)</Label>
                 <Input 
                   ref={siteUrlInputRef}
@@ -363,7 +309,7 @@ function SetupWizardContent() {
                 />
                 {isDefaultUrl(baseUrl) ? (
                   <FormMessage>Please use your own URL.</FormMessage>
-                ) : (error && isAuthenticated && step === 2) ? (
+                ) : (error && step === 2) ? (
                   <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>
@@ -406,7 +352,7 @@ function SetupWizardContent() {
         </Container>
       </AccessibleStep>
 
-      <AccessibleStep isActive={isAuthenticated && step === 3}>
+      <AccessibleStep isActive={step === 3}>
         <Container>
           <Card className="max-w-2xl">
             <Heading as="h2" className="mb-2">Step 3: Sample Data Selection</Heading>
@@ -543,7 +489,7 @@ function SetupWizardContent() {
                   type="button"
                   variant="secondary"
                   disabled={loading}
-                  onClick={async () => {
+                  onClick={() => {
                     setSelectedModules([]);
                     setStep(4);
                   }}
@@ -557,7 +503,7 @@ function SetupWizardContent() {
         </Container>
       </AccessibleStep>
 
-      <AccessibleStep isActive={isAuthenticated && step === 4}>
+      <AccessibleStep isActive={step === 4}>
         <Container>
           <Card className="max-w-2xl text-center">
             <Heading as="h2" className="mb-2">Step 4: Guest List Import</Heading>
@@ -579,7 +525,7 @@ function SetupWizardContent() {
               <Button
                 type="button"
                 variant="primary"
-                onClick={() => setIsCsvModalOpen(true)}
+                onClick={() => openModal('csv')}
                 className="flex-1 py-3"
               >
                 Import Guest List CSV
@@ -597,16 +543,16 @@ function SetupWizardContent() {
         </Container>
       </AccessibleStep>
 
-      <AccessibleStep isActive={isAuthenticated && step === 5}>
+      <AccessibleStep isActive={step === 5}>
         <Container>
           <Card className="max-w-2xl text-center">
             <Heading as="h2" className="mb-4">Step 5: Complete Setup</Heading>
             <p className="mb-6 text-gray-700">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
             <div className="space-y-4">
-              <Button onClick={() => setIsWeddingPartyModalOpen(true)} variant="secondary" className="w-full py-3">
+              <Button onClick={() => openModal('weddingParty')} variant="secondary" className="w-full py-3">
                 Manage Wedding Party ({partyMembers.length} {partyMembers.length === 1 ? 'member' : 'members'})
               </Button>
-              <Button onClick={() => setIsAttractionsModalOpen(true)} variant="secondary" className="w-full py-3">
+              <Button onClick={() => openModal('attractions')} variant="secondary" className="w-full py-3">
                 Manage Attractions ({attractions.length} {attractions.length === 1 ? 'item' : 'items'})
               </Button>
             </div>
@@ -617,7 +563,7 @@ function SetupWizardContent() {
             )}
             <p className="mt-6 mb-4 text-sm text-gray-600">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
             <Button onClick={() => {
-              clearPersistedSetupState();
+              clearPersistedState();
               window.location.href = '/admin/dashboard';
             }} variant="primary" className="w-full py-3">
               Go to Admin Dashboard
@@ -627,18 +573,18 @@ function SetupWizardContent() {
       </AccessibleStep>
 
       <WeddingPartyManagerModal
-        isOpen={isWeddingPartyModalOpen}
-        onClose={() => setIsWeddingPartyModalOpen(false)}
+        isOpen={activeModal === 'weddingParty'}
+        onClose={closeModal}
       />
 
       <AttractionsManagerModal
-        isOpen={isAttractionsModalOpen}
-        onClose={() => setIsAttractionsModalOpen(false)}
+        isOpen={activeModal === 'attractions'}
+        onClose={closeModal}
       />
 
       <CsvImportWizardModal
-        isOpen={isCsvModalOpen}
-        onClose={() => setIsCsvModalOpen(false)}
+        isOpen={activeModal === 'csv'}
+        onClose={closeModal}
         onImportComplete={handleGuestImportComplete}
         existingCodes={invitationCodes.map((c) => c.code)}
       />
@@ -657,4 +603,3 @@ export default function SetupWizard() {
     </QueryClientProvider>
   );
 }
-
