@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import ts from 'typescript';
+import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 
 export function getKeysFromSource(fileContent: string): string[] {
