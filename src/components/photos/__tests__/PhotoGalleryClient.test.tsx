@@ -162,6 +162,138 @@ describe('PhotoGalleryClient', () => {
       expect(lightboxImg).toHaveAttribute('src', '/uploads/photo1.jpg');
     });
 
+    it('renders thumbnails as accessible native buttons with descriptive aria-label and visible focus styles', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      const thumbnail0 = screen.getByTestId('photo-thumbnail-0');
+      const thumbnail1 = screen.getByTestId('photo-thumbnail-1');
+
+      expect(thumbnail0.tagName).toBe('BUTTON');
+      expect(thumbnail0).toHaveAttribute('type', 'button');
+      expect(thumbnail0).toHaveAttribute('aria-label', 'View Second Photo');
+      expect(thumbnail0).toHaveClass('focus-visible:ring-2');
+      expect(thumbnail0).toHaveClass('focus-visible:ring-primary');
+
+      expect(thumbnail1.tagName).toBe('BUTTON');
+      expect(thumbnail1).toHaveAttribute('type', 'button');
+      expect(thumbnail1).toHaveAttribute('aria-label', 'View First Photo');
+    });
+
+    it('supports Tab focus navigation and Enter key activation to open preview modal', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      const thumbnail0 = screen.getByTestId('photo-thumbnail-0');
+      thumbnail0.focus();
+      expect(thumbnail0).toHaveFocus();
+
+      // Enter key opens lightbox
+      fireEvent.keyDown(thumbnail0, { key: 'Enter' });
+      expect(screen.getByRole('dialog', { name: 'Photo Preview' })).toBeInTheDocument();
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 2');
+      expect(screen.getByTestId('lightbox-close-btn')).toHaveFocus();
+    });
+
+    it('restores focus to originating thumbnail when lightbox dialog is closed', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      const thumbnail1 = screen.getByTestId('photo-thumbnail-1');
+      thumbnail1.focus();
+      fireEvent.click(thumbnail1);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      // Close via Escape
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(thumbnail1).toHaveFocus();
+
+      // Close via Close Button
+      fireEvent.click(thumbnail1);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('lightbox-close-btn'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(thumbnail1).toHaveFocus();
+
+      // Close via Backdrop
+      fireEvent.click(thumbnail1);
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(dialog);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(thumbnail1).toHaveFocus();
+    });
+
+    it('restores focus to shifted originating thumbnail index when a new photo is uploaded while lightbox is open', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      // Open lightbox on index 0 (Second Photo)
+      const thumbnail0 = screen.getByTestId('photo-thumbnail-0');
+      thumbnail0.focus();
+      fireEvent.click(thumbnail0);
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 2');
+
+      // Upload a new photo while modal is open (shifts Second Photo to index 1)
+      await uploadHelper('photo-3', '/uploads/photo3.jpg', 'Third Photo');
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('2 / 3');
+
+      // Close modal
+      fireEvent.click(screen.getByTestId('lightbox-close-btn'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      // Originating photo (Second Photo) is now at index 1
+      const shiftedThumbnail = screen.getByTestId('photo-thumbnail-1');
+      expect(shiftedThumbnail).toHaveFocus();
+      expect(shiftedThumbnail).toHaveAttribute('aria-label', 'View Second Photo');
+    });
+
+    it('returns focus safely to the gallery container if the originating thumbnail button unmounts', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+
+      const thumbnail = screen.getByTestId('photo-thumbnail-0');
+      thumbnail.focus();
+      fireEvent.click(thumbnail);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      // Remove the thumbnail button from DOM to simulate unmounting
+      thumbnail.remove();
+
+      // Close dialog
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      const galleryGrid = screen.getByTestId('guest-photos-grid');
+      expect(galleryGrid).toHaveFocus();
+    });
+
+    it('traps focus navigation with Tab and Shift+Tab within the lightbox dialog', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      const closeBtn = screen.getByTestId('lightbox-close-btn');
+      const nextBtn = screen.getByTestId('lightbox-next-btn');
+
+      // Tabbing from last focusable element wraps to first
+      nextBtn.focus();
+      expect(nextBtn).toHaveFocus();
+      fireEvent.keyDown(window, { key: 'Tab' });
+      expect(closeBtn).toHaveFocus();
+
+      // Shift+Tab from first focusable element wraps to last
+      fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+      expect(nextBtn).toHaveFocus();
+    });
+
     it('navigates via chevron clicks and wraps continuously around edges', async () => {
       render(<PhotoGalleryClient initialPhotos={[]} />);
       await uploadHelper('p1', '/uploads/photo1.jpg', 'Photo One');
