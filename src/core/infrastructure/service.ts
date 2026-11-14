@@ -73,10 +73,43 @@ export class BaseService<T extends { id: string }> {
     });
   }
 
+  async updateBatch(ids: string[], data: any, author: string = 'Admin'): Promise<T[]> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error('Validation Error: At least one ID is required.');
+    }
+    if (ids.length > 100) {
+      throw new Error('Validation Error: Maximum of 100 items allowed per batch request.');
+    }
+    return this.repo.transaction(async (txRepo) => {
+      const records: T[] = [];
+      for (const id of ids) {
+        await this.validate(data, txRepo.client);
+        const processedData = await this.preSave(data, txRepo.client, author);
+        const record = await txRepo.update(id, processedData);
+        await this.createSnapshot(record.id, record, author, txRepo.client);
+        records.push(record);
+      }
+      return records;
+    });
+  }
 
   async delete(id: string, author: string = 'Admin'): Promise<T> {
     const record = await this.repo.delete(id, author);
     return record;
+  }
+
+  async deleteBatch(ids: string[], author: string = 'Admin'): Promise<T[]> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error('Validation Error: At least one ID is required.');
+    }
+    return this.repo.transaction(async (txRepo) => {
+      const records: T[] = [];
+      for (const id of ids) {
+        const record = await txRepo.delete(id, author);
+        records.push(record);
+      }
+      return records;
+    });
   }
 
   async reorder(orderedIds: string[]): Promise<void> {

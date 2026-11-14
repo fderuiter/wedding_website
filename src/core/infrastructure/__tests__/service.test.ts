@@ -174,4 +174,97 @@ describe('BaseService Enhancements', () => {
       expect(txRepoUpdateMock!).not.toHaveBeenCalled();
     });
   });
+
+  describe('updateBatch', () => {
+    it('should throw validation error if ids array is empty', async () => {
+      await expect(service.updateBatch([], { name: 'Batch' })).rejects.toThrow(
+        'Validation Error: At least one ID is required.'
+      );
+    });
+
+    it('should throw validation error if ids array exceeds 100 items', async () => {
+      const ids = Array.from({ length: 101 }, (_, i) => `id-${i}`);
+      await expect(service.updateBatch(ids, { name: 'Batch' })).rejects.toThrow(
+        'Validation Error: Maximum of 100 items allowed per batch request.'
+      );
+    });
+
+    it('should update all items inside an atomic transaction and create individual audit snapshots', async () => {
+      service.preSaveMock.mockImplementation(async (data) => ({ ...data, saved: true }));
+
+      const ids = ['id-1', 'id-2'];
+      const data = { name: 'Batch Updated' };
+
+      const results = await service.updateBatch(ids, data, 'TestAuthor');
+
+      expect(mockRepo.transaction).toHaveBeenCalledTimes(1);
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ id: 'id-1', name: 'Batch Updated', saved: true });
+      expect(results[1]).toEqual({ id: 'id-2', name: 'Batch Updated', saved: true });
+
+      expect(createAuditSnapshot).toHaveBeenCalledTimes(2);
+      expect(createAuditSnapshot).toHaveBeenNthCalledWith(
+        1,
+        'TestEntity',
+        'id-1',
+        { id: 'id-1', name: 'Batch Updated', saved: true },
+        'TestAuthor',
+        'mock-tx-client'
+      );
+      expect(createAuditSnapshot).toHaveBeenNthCalledWith(
+        2,
+        'TestEntity',
+        'id-2',
+        { id: 'id-2', name: 'Batch Updated', saved: true },
+        'TestAuthor',
+        'mock-tx-client'
+      );
+    });
+
+    it('should roll back completely if any single update encounters a database failure', async () => {
+      mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
+        const txRepo = {
+          client: 'mock-tx-client',
+          update: jest.fn().mockImplementation(async (id: string, updateData: any) => {
+            if (id === 'fail-id') {
+              throw new Error('Database constraint violation: duplicate unique index');
+            }
+            return { id, ...updateData };
+          }),
+        };
+        return cb(txRepo);
+      });
+
+      const ids = ['id-1', 'fail-id', 'id-3'];
+      await expect(service.updateBatch(ids, { name: 'Will Fail' })).rejects.toThrow(
+        'Database constraint violation: duplicate unique index'
+      );
+    });
+  });
+
+  describe('deleteBatch', () => {
+    it('should throw validation error if ids array is empty', async () => {
+      await expect(service.deleteBatch([])).rejects.toThrow(
+        'Validation Error: At least one ID is required.'
+      );
+    });
+
+    it('should delete all items inside a transaction', async () => {
+      mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
+        const txRepo = {
+          client: 'mock-tx-client',
+          delete: jest.fn().mockImplementation(async (id: string) => ({ id, deleted: true })),
+        };
+        return cb(txRepo);
+      });
+
+      const ids = ['id-1', 'id-2'];
+      const results = await service.deleteBatch(ids, 'Admin');
+
+      expect(results).toEqual([
+        { id: 'id-1', deleted: true },
+        { id: 'id-2', deleted: true },
+      ]);
+    });
+  });
 });
