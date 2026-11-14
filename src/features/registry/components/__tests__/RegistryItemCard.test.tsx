@@ -406,7 +406,10 @@ describe('RegistryItemCard Component', () => {
       fireEvent.change(codeInput, { target: { value: 'GOODCODE' } });
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=GOODCODE');
+        expect(apiClient.get).toHaveBeenCalledWith(
+          '/api/registry/validate-code?code=GOODCODE',
+          expect.objectContaining({ signal: expect.any(Object) })
+        );
         expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
       });
 
@@ -432,13 +435,63 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(verifyButton);
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=BADCODE');
+        expect(apiClient.get).toHaveBeenCalledWith(
+          '/api/registry/validate-code?code=BADCODE',
+          expect.objectContaining({ signal: expect.any(Object) })
+        );
         expect(screen.getByText('Invalid invitation code.')).toBeInTheDocument();
       });
 
       const nameInput = screen.getByLabelText(/Your Name/i);
       expect(nameInput).not.toBeDisabled();
       expect(nameInput).toHaveValue('');
+    });
+
+    it('disables the submit button while code verification is in flight', async () => {
+      let resolveValidation: (value: any) => void;
+      const validationPromise = new Promise((resolve) => {
+        resolveValidation = resolve;
+      });
+      (apiClient.get as jest.Mock).mockReturnValue(validationPromise);
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const codeInput = screen.getByLabelText(/Invitation Code/i);
+      fireEvent.change(codeInput, { target: { value: 'INFLIGHT' } });
+
+      const submitButton = screen.getByRole('button', { name: 'Claim Gift' });
+      expect(submitButton).toBeDisabled();
+
+      resolveValidation!({ valid: true, guestName: 'In Flight Guest', code: 'INFLIGHT' });
+      await waitFor(() => {
+        expect(submitButton).not.toBeDisabled();
+      });
+    });
+
+    it('isolates field error indicators so only the failing field receives error styling', async () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      // Submit with empty name and valid amount
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '25' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+      expect(await screen.findByText('Name is required and must be under 100 characters.')).toBeInTheDocument();
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
+      // Name input should have error border styling
+      expect(nameInput.className).toContain('border-[var(--input-error-border');
+      // Amount input should remain in default state styling
+      expect(amountInput.className).toContain('border-[var(--input-border');
     });
 
     it('auto-prefills and locks code when GuestSessionContext has an active verified session', async () => {
