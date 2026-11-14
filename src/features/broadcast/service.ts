@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
+import { generateSecureUUID } from '@/utils/uuid';
 import { renderBroadcastTemplate } from './template';
+
+const RECIPIENT_CHUNK_SIZE = 250;
 import { MultiChannelMessagingProvider } from './providers';
 import {
   SendBroadcastInput,
@@ -283,29 +286,84 @@ export class BroadcastService {
       throw new Error('Broadcast message record not found');
     }
 
-    // Create Recipient records
-    const recipientRecords = [];
+    // Validate and prepare all recipient records in memory
+    const recipientRecords: {
+      recipient: {
+        id: string;
+        broadcastId: string;
+        invitationCodeId: string | null;
+        guestName: string;
+        destination: string;
+        status: string;
+        error: string | null;
+      };
+      guest: any;
+    }[] = [];
+
+    const preparedRecipients: {
+      id: string;
+      broadcastId: string;
+      invitationCodeId: string | null;
+      guestName: string;
+      destination: string;
+      status: string;
+      error: string | null;
+    }[] = [];
+
     for (const guest of guests) {
       const destination = channel === 'EMAIL'
         ? (guest.email || '')
         : ((guest.extraFields as any)?.phone || (guest.extraFields as any)?.mobile || '');
 
-      const recipient = await prisma.broadcastRecipient.create({
-        data: {
-          broadcastId: broadcastMessage.id,
-          invitationCodeId: guest.id,
-          guestName: guest.guestName,
-          destination: destination || 'Missing Contact Info',
-          status: destination ? 'PENDING' : 'FAILED',
-          error: destination ? null : `Missing ${channel === 'EMAIL' ? 'email address' : 'phone number'}`,
-        },
-      });
-      recipientRecords.push({ recipient, guest });
+      const isValid = Boolean(destination);
+      const recipientId = generateSecureUUID();
+      const recipientData = {
+        id: recipientId,
+        broadcastId: broadcastMessage.id,
+        invitationCodeId: guest.id || null,
+        guestName: guest.guestName,
+        destination: destination || 'Missing Contact Info',
+        status: isValid ? 'PENDING' : 'FAILED',
+        error: isValid ? null : `Missing ${channel === 'EMAIL' ? 'email address' : 'phone number'}`,
+      };
+
+      preparedRecipients.push(recipientData);
+      recipientRecords.push({ recipient: recipientData, guest });
+    }
+
+    // Persist recipients in fixed chunks using transactional bulk createMany
+    if (preparedRecipients.length > 0) {
+      const chunks: (typeof preparedRecipients)[] = [];
+      for (let i = 0; i < preparedRecipients.length; i += RECIPIENT_CHUNK_SIZE) {
+        chunks.push(preparedRecipients.slice(i, i + RECIPIENT_CHUNK_SIZE));
+      }
+
+      const insertChunk = async (client: any, chunk: typeof preparedRecipients) => {
+        if (typeof client.broadcastRecipient?.createMany === 'function') {
+          await client.broadcastRecipient.createMany({ data: chunk });
+        } else if (typeof client.broadcastRecipient?.create === 'function') {
+          for (const item of chunk) {
+            await client.broadcastRecipient.create({ data: item });
+          }
+        }
+      };
+
+      if (typeof prisma.$transaction === 'function') {
+        await prisma.$transaction(async (tx) => {
+          for (const chunk of chunks) {
+            await insertChunk(tx, chunk);
+          }
+        });
+      } else {
+        for (const chunk of chunks) {
+          await insertChunk(prisma, chunk);
+        }
+      }
     }
 
     const provider = new MultiChannelMessagingProvider(config);
-    const batchSize = config.broadcastBatchSize || 50;
-    const batchDelayMs = config.broadcastBatchDelayMs || 500;
+    const batchSize = config.broadcastBatchSize ?? 50;
+    const batchDelayMs = config.broadcastBatchDelayMs ?? 500;
 
     let sentCount = 0;
     let failedCount = recipientRecords.filter(r => r.recipient.status === 'FAILED').length;
