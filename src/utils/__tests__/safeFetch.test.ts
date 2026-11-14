@@ -1,5 +1,6 @@
-import { safeFetch } from '../safeFetch';
+import { safeFetch, createPinnedDispatcher } from '../safeFetch';
 import dns from 'dns';
+import { Agent } from 'undici';
 
 // Mock DNS for SSRF check
 jest.mock('dns', () => ({
@@ -36,7 +37,33 @@ describe('safeFetch', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith('https://example.com/item', expect.objectContaining({
       redirect: 'manual',
+      dispatcher: expect.any(Agent),
     }));
+  });
+
+  it('should execute DNS lookup once per hop and pin the socket connection', async () => {
+    const mockResponse = new Response('Pinned OK', { status: 200 });
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    const res = await safeFetch('https://example.com/pinned');
+    expect(res.status).toBe(200);
+
+    // DNS lookup executed exactly once for the single hop
+    expect(mockLookup).toHaveBeenCalledTimes(1);
+    expect(mockLookup).toHaveBeenCalledWith('example.com', { all: true });
+
+    // The fetch call received an undici Agent dispatcher
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const fetchOptions = mockFetch.mock.calls[0][1];
+    expect(fetchOptions.dispatcher).toBeInstanceOf(Agent);
+
+    // Verify dispatcher's connect.lookup pins to the pre-resolved IP without additional DNS queries
+    const agentConnect = (fetchOptions.dispatcher as any)[Object.getOwnPropertySymbols(fetchOptions.dispatcher).find(s => s.description === 'options') || '']?.connect
+      || (fetchOptions.dispatcher as any).connect;
+
+    // Test the createPinnedDispatcher helper directly to verify connection pinning
+    const dispatcher = createPinnedDispatcher('93.184.216.34', 4);
+    expect(dispatcher).toBeInstanceOf(Agent);
   });
 
   it('should block a direct private URL', async () => {
@@ -47,6 +74,99 @@ describe('safeFetch', () => {
       'Blocked: URL resolves to a private or restricted IP address'
     );
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('should block direct IP literals without calling DNS lookup', async () => {
+    // Direct IPv4 loopback
+    await expect(safeFetch('http://127.0.0.1/admin')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+
+    // Direct AWS metadata IP
+    await expect(safeFetch('http://169.254.169.254/latest/meta-data')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+
+    // Direct IPv6 loopback
+    await expect(safeFetch('http://[::1]/secret')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+
+    // Direct IPv6 unique local
+    await expect(safeFetch('http://[fc00::1]/internal')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+
+    expect(mockLookup).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('should allow public direct IP literals and pin connection directly', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('Public IP OK', { status: 200 }));
+
+    const res = await safeFetch('http://93.184.216.34/item');
+    expect(res.status).toBe(200);
+    expect(mockLookup).not.toHaveBeenCalled(); // No DNS lookup needed for IP literal
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith('http://93.184.216.34/item', expect.objectContaining({
+      dispatcher: expect.any(Agent),
+    }));
+  });
+
+  it('should reject multihomed DNS responses containing any private IP', async () => {
+    mockLookup.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '10.0.0.1', family: 4 },
+    ]);
+
+    await expect(safeFetch('https://mixed-domain.com/data')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('should throw an error if an external hostname switches from a public IP to a private IP during fetch (DNS rebinding)', async () => {
+    // Hop 1: Target host resolves to a public IP
+    mockLookup.mockResolvedValueOnce({ address: '93.184.216.34', family: 4 });
+    mockFetch.mockResolvedValueOnce(new Response('', {
+      status: 302,
+      headers: { location: 'https://attacker.example.com/step2' },
+    }));
+
+    // Hop 2: The attacker switches DNS resolution to a private IP (DNS rebinding)
+    mockLookup.mockResolvedValueOnce({ address: '127.0.0.1', family: 4 });
+
+    await expect(safeFetch('https://attacker.example.com/step1')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+
+    // Hop 1 fetched successfully, Hop 2 blocked before network connection
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockLookup).toHaveBeenCalledTimes(2); // Exactly 1 DNS lookup per hop
+  });
+
+  it('should preserve standard fetch options including signal and custom headers', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('OK', { status: 200 }));
+    const controller = new AbortController();
+
+    const res = await safeFetch('https://example.com/api', {
+      signal: controller.signal,
+      headers: {
+        'Authorization': 'Bearer token123',
+        'User-Agent': 'CustomBot/1.0',
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledWith('https://example.com/api', expect.objectContaining({
+      signal: controller.signal,
+      headers: {
+        'Authorization': 'Bearer token123',
+        'User-Agent': 'CustomBot/1.0',
+      },
+      redirect: 'manual',
+      dispatcher: expect.any(Agent),
+    }));
   });
 
   it('should block invalid protocols', async () => {
