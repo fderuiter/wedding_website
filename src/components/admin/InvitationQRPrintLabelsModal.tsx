@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
@@ -32,7 +32,6 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
 }) => {
   const [template, setTemplate] = useState<LabelTemplateType>('avery_5163');
   const [renderedCount, setRenderedCount] = useState<number>(CHUNK_SIZE);
-  const printTriggeredRef = useRef(false);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
@@ -40,7 +39,6 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
   useEffect(() => {
     if (!isOpen) {
       setRenderedCount(CHUNK_SIZE);
-      printTriggeredRef.current = false;
       if (typeof document !== 'undefined') {
         document.body.classList.remove('printing-qr-labels');
       }
@@ -56,17 +54,6 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
         setRenderedCount((prev) => Math.min(prev + CHUNK_SIZE, codes.length));
       }, 16);
       return () => clearTimeout(timer);
-    } else {
-      // Automatically open print dialog once all label canvases are mounted
-      if (!printTriggeredRef.current && codes.length > 0) {
-        printTriggeredRef.current = true;
-        const printTimer = setTimeout(() => {
-          if (typeof window !== 'undefined') {
-            window.print();
-          }
-        }, 300);
-        return () => clearTimeout(printTimer);
-      }
     }
   }, [isOpen, renderedCount, codes.length]);
 
