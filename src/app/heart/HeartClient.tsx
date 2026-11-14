@@ -49,9 +49,6 @@ function PhysicsHeart({
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
   const namesText = [p1, p2].filter(Boolean).join(' and ');
-  const wholeHeartLabel = namesText
-    ? `Interactive 3D Heart: ${namesText}. Status: Whole.`
-    : 'Interactive 3D Heart. Status: Whole.';
   const leftShardLabel = p1
     ? `Broken heart left segment: ${p1}.`
     : 'Broken heart left segment.';
@@ -65,6 +62,12 @@ function PhysicsHeart({
   const groupRef = useRef<THREE.Group>(null!);
   const [pulseSpeed, setPulseSpeed] = useState(physics.pulseSpeedIdle);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const baseWholeHeartLabel = namesText
+    ? `Interactive 3D Heart: ${namesText}. Status: Whole.`
+    : 'Interactive 3D Heart. Status: Whole.';
+  const wholeHeartLabel = showEasterEgg
+    ? `${baseWholeHeartLabel} Secret message revealed: I love you!`
+    : baseWholeHeartLabel;
   const { size, viewport } = useThree();
 
   const wholeButtonRef = useRef<HTMLButtonElement | null>(null);
