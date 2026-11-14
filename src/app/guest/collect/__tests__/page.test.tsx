@@ -130,4 +130,21 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     });
     expect(screen.getByLabelText(/Full Name/i)).toHaveValue('');
   });
+
+  test('renders container and card with semantic theme utility classes', async () => {
+    const { container } = render(<GuestAddressCollectPage />);
+
+    const mainElement = container.querySelector('main');
+    expect(mainElement).toHaveClass('bg-container');
+    expect(mainElement?.className).not.toContain('bg-gray-50');
+
+    const cardElement = screen.getByText('Mailing Address Form').closest('div.rounded-2xl');
+    expect(cardElement).toHaveClass('bg-card');
+    expect(cardElement).toHaveClass('border-card-border');
+    expect(cardElement?.className).not.toContain('bg-white');
+    expect(cardElement?.className).not.toContain('border-gray-100');
+
+    const heading = screen.getByText('Mailing Address Form');
+    expect(heading).toHaveClass('text-heading');
+  });
 });

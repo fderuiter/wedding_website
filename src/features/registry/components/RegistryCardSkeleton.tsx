@@ -11,7 +11,7 @@ const RegistryCardSkeleton: React.FC = () => {
   return (
     <div
       data-testid="registry-card-skeleton"
-      className="border border-primary dark:border-gray-700 rounded-2xl overflow-hidden shadow-md bg-white dark:bg-gray-800 h-full flex flex-col justify-between"
+      className="border border-card-border rounded-2xl overflow-hidden shadow-card bg-card h-full flex flex-col justify-between"
       style={{ minHeight: 'calc(340px * var(--scale-factor, 1))' }}
     >
       <Skeleton className="relative w-full aspect-square !rounded-none" />
