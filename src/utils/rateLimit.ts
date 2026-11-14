@@ -8,14 +8,13 @@ interface RateLimitInfo {
 const rateLimits = new Map<string, RateLimitInfo>();
 
 function getClientIp(req: NextRequest): string {
+  // 1. Prioritize req.ip from Next.js runtime when available
   const reqIp = (req as { ip?: string }).ip;
   if (reqIp) {
     return reqIp;
   }
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp && realIp.trim()) {
-    return realIp.trim();
-  }
+
+  // 2. Evaluate rightmost x-forwarded-for entry from trusted reverse proxy
   const rawForwarded = req.headers.get('x-forwarded-for');
   if (rawForwarded) {
     const parts = rawForwarded.split(',').map((p) => p.trim()).filter(Boolean);
@@ -23,6 +22,14 @@ function getClientIp(req: NextRequest): string {
       return parts[parts.length - 1];
     }
   }
+
+  // 3. Fallback: unverified x-real-ip (deprecated; only when x-forwarded-for is missing)
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp && realIp.trim()) {
+    return realIp.trim();
+  }
+
+  // 4. Fall back to loopback IP when no trusted address exists
   return '127.0.0.1';
 }
 

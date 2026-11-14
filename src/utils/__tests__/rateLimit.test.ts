@@ -55,4 +55,62 @@ describe('rateLimit', () => {
     const blocked = await rateLimit(req, 1, 60000);
     expect(blocked?.status).toBe(429);
   });
+
+  test('prevents forged x-real-ip headers from bypassing request limits when x-forwarded-for is present', async () => {
+    // Both requests originate from the same proxy client IP (203.0.113.195),
+    // but the attacker sends alternating forged x-real-ip headers.
+    const reqSpoofed1 = new NextRequest('http://localhost/api/test', {
+      headers: {
+        'x-forwarded-for': '203.0.113.195',
+        'x-real-ip': '198.51.100.1',
+      },
+    });
+
+    const reqSpoofed2 = new NextRequest('http://localhost/api/test', {
+      headers: {
+        'x-forwarded-for': '203.0.113.195',
+        'x-real-ip': '198.51.100.2',
+      },
+    });
+
+    // With a limit of 1, the first request succeeds and the second must be blocked
+    expect(await rateLimit(reqSpoofed1, 1, 60000)).toBeNull();
+    const blockedRes = await rateLimit(reqSpoofed2, 1, 60000);
+    expect(blockedRes).not.toBeNull();
+    expect(blockedRes?.status).toBe(429);
+  });
+
+  test('prioritizes req.ip from Next.js runtime when available', async () => {
+    const req1 = new NextRequest('http://localhost/api/test', {
+      headers: {
+        'x-forwarded-for': '203.0.113.1',
+        'x-real-ip': '198.51.100.1',
+      },
+    });
+    Object.defineProperty(req1, 'ip', { value: '192.0.2.1' });
+
+    const req2 = new NextRequest('http://localhost/api/test', {
+      headers: {
+        'x-forwarded-for': '203.0.113.2',
+        'x-real-ip': '198.51.100.2',
+      },
+    });
+    Object.defineProperty(req2, 'ip', { value: '192.0.2.1' });
+
+    // Both requests share req.ip '192.0.2.1', so the second request should exceed limit of 1
+    expect(await rateLimit(req1, 1, 60000)).toBeNull();
+    const blockedRes = await rateLimit(req2, 1, 60000);
+    expect(blockedRes).not.toBeNull();
+    expect(blockedRes?.status).toBe(429);
+  });
+
+  test('falls back to loopback IP 127.0.0.1 when no trusted address exists', async () => {
+    const req1 = new NextRequest('http://localhost/api/test');
+    const req2 = new NextRequest('http://localhost/api/test');
+
+    expect(await rateLimit(req1, 1, 60000)).toBeNull();
+    const blockedRes = await rateLimit(req2, 1, 60000);
+    expect(blockedRes).not.toBeNull();
+    expect(blockedRes?.status).toBe(429);
+  });
 });
