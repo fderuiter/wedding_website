@@ -152,6 +152,7 @@ export default function GuestAddressCollectPage() {
               placeholder="e.g. Jane Doe"
               value={formData.guestName}
               onChange={handleChange}
+              autoComplete="name"
               required
               maxLength={100}
             />
@@ -165,6 +166,7 @@ export default function GuestAddressCollectPage() {
               placeholder="jane@example.com"
               value={formData.email}
               onChange={handleChange}
+              autoComplete="email"
             />
           </FormGroup>
 
@@ -176,6 +178,7 @@ export default function GuestAddressCollectPage() {
               placeholder="123 Main Street"
               value={formData.addressLine1}
               onChange={handleChange}
+              autoComplete="address-line1"
               maxLength={150}
             />
           </FormGroup>
@@ -188,6 +191,7 @@ export default function GuestAddressCollectPage() {
               placeholder="Apt, Suite, Unit, etc."
               value={formData.addressLine2}
               onChange={handleChange}
+              autoComplete="address-line2"
               maxLength={150}
             />
           </FormGroup>
@@ -201,6 +205,7 @@ export default function GuestAddressCollectPage() {
                 placeholder="San Francisco"
                 value={formData.city}
                 onChange={handleChange}
+                autoComplete="address-level2"
                 maxLength={100}
               />
             </FormGroup>
@@ -213,6 +218,7 @@ export default function GuestAddressCollectPage() {
                 placeholder="CA"
                 value={formData.state}
                 onChange={handleChange}
+                autoComplete="address-level1"
                 maxLength={100}
               />
             </FormGroup>
@@ -227,6 +233,7 @@ export default function GuestAddressCollectPage() {
                 placeholder="94102"
                 value={formData.zipCode}
                 onChange={handleChange}
+                autoComplete="postal-code"
                 maxLength={20}
               />
             </FormGroup>
@@ -239,6 +246,7 @@ export default function GuestAddressCollectPage() {
                 placeholder="United States"
                 value={formData.country}
                 onChange={handleChange}
+                autoComplete="country-name"
                 maxLength={100}
               />
             </FormGroup>
