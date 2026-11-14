@@ -287,6 +287,7 @@ const FaqAccordion: React.FC<FaqAccordionProps> = ({ faqs, className = '' }) => 
             categories={categories}
             selected={selectedCategories}
             onChange={setSelectedCategories}
+            label="Filter FAQs by category"
           />
         </div>
       )}

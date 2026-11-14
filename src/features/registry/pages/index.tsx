@@ -186,6 +186,7 @@ function RegistryPageContent() {
               categories={categories}
               selected={categoryFilter}
               onChange={setCategoryFilter}
+              label="Filter gifts by category"
             />
             <PriceRangeFilter
               min={minPrice}

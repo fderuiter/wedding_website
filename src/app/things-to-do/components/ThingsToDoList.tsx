@@ -47,6 +47,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
           categories={categories}
           selected={selectedCategories}
           onChange={setSelectedCategories}
+          label="Filter attractions by category"
         />
       </div>
 
