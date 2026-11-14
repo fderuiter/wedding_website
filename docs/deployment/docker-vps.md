@@ -162,7 +162,7 @@ Add the health check probe to `docker-compose.yml`:
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -172,10 +172,11 @@ Add the health check probe to `docker-compose.yml`:
 The `/api/health` route tests database connectivity and returns HTTP `200 OK` with payload:
 ```json
 {
-  "status": "ok",
-  "timestamp": "2026-09-30T14:30:00.000Z",
-  "services": {
-    "database": "healthy"
+  "success": true,
+  "data": {
+    "status": "ok",
+    "timestamp": "2026-09-30T14:30:00.000Z",
+    "database": "connected"
   }
 }
 ```
