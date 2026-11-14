@@ -43,6 +43,7 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
 | `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
 | `GUEST_PASSCODE` | No | Passcode required for guest access (default `wedding2026`). |
+| `GUEST_SESSION_SECRET` | No | Dedicated secret for guest invitation session signing (default `default-guest-session-secret`). |
 | `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
 | `CRON_SECRET` | No | Authorization key for background cron triggers. |
 | `S3_BUCKET` | No* | Bucket name for S3 / Cloudflare R2 asset storage. |

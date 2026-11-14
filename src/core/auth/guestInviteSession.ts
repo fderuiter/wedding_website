@@ -19,7 +19,12 @@ export interface GuestInviteSessionPayload {
 }
 
 async function getSecret(): Promise<string> {
-  return env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026';
+  const secret = env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret';
+  const passcode = env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026';
+  if (secret === passcode) {
+    throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
+  }
+  return secret;
 }
 
 /**
