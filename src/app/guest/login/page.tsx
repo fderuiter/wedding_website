@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
@@ -52,8 +52,17 @@ function GuestLoginForm() {
   const [lookupRateLimited, setLookupRateLimited] = useState(false);
   const [unmatched, setUnmatched] = useState(false);
   const [matchedGuest, setMatchedGuest] = useState<{ guestName: string; code: string } | null>(null);
+  const redirectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +92,9 @@ function GuestLoginForm() {
 
   const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (redirectTimerRef.current) {
+      clearTimeout(redirectTimerRef.current);
+    }
     setLookupError('');
     setUnmatched(false);
     setLookupRateLimited(false);
@@ -132,9 +144,12 @@ function GuestLoginForm() {
       setMatchedGuest({ guestName, code });
 
       const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
-      setTimeout(() => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+      redirectTimerRef.current = setTimeout(() => {
         router.push(callbackUrl);
-      }, 1500);
+      }, 4000);
     } catch {
       setLookupError('A connection error occurred. Please try again.');
     } finally {
@@ -333,7 +348,12 @@ function GuestLoginForm() {
             </p>
 
             {matchedGuest ? (
-              <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 rounded-2xl space-y-3 text-center">
+              <div
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 rounded-2xl space-y-3 text-center"
+              >
                 <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
                   <Icon name="Check" className="w-6 h-6" />
                 </div>
@@ -351,6 +371,9 @@ function GuestLoginForm() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (redirectTimerRef.current) {
+                      clearTimeout(redirectTimerRef.current);
+                    }
                     const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
                     router.push(callbackUrl);
                   }}
