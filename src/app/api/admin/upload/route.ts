@@ -18,7 +18,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const file = parsed.data.file as File;
   const sanitizedFile = await sanitizeImage(file);
 
-  const result = await getStorageProvider().uploadFile(sanitizedFile);
+  const result = await getStorageProvider().upload(sanitizedFile);
 
   return NextResponse.json({ url: result.url });
 });
