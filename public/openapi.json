@@ -103,6 +103,84 @@
         }
       }
     },
+    "/api/admin/{entity}/batch": {
+      "post": {
+        "summary": "POST /api/admin/[entity]/batch",
+        "description": "Endpoint for /api/admin/[entity]/batch",
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/admin/[entity]/batch",
+        "description": "Endpoint for /api/admin/[entity]/batch",
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/admin/[entity]/batch",
+        "description": "Endpoint for /api/admin/[entity]/batch",
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/admin/[entity]/batch",
+        "description": "Endpoint for /api/admin/[entity]/batch",
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/{entity}": {
       "get": {
         "summary": "GET /api/admin/[entity]",
@@ -935,6 +1013,24 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/admin/invitation-codes/batch",
+        "description": "Endpoint for /api/admin/invitation-codes/batch",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/admin/invitation-codes/batch",
+        "description": "Endpoint for /api/admin/invitation-codes/batch",
         "responses": {
           "200": {
             "description": "Successful response"

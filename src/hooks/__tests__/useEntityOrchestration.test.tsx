@@ -34,6 +34,14 @@ describe('useEntityOrchestration', () => {
     ];
     let items = [...initialData];
     mockApiClient.get.mockImplementation(async () => items);
+    mockApiClient.post.mockImplementation(async (url, payload) => {
+      if (url.endsWith('/batch') && payload?.ids) {
+        const idSet = new Set(payload.ids);
+        items = items.map((i) => (idSet.has(i.id) ? { ...i, ...payload } : i));
+        return { success: true, count: payload.ids.length, updatedCount: payload.ids.length };
+      }
+      return { success: true };
+    });
     mockApiClient.delete.mockImplementation(async (url, data) => {
       if (url.endsWith('/batch') && data?.ids) {
         const idSet = new Set(data.ids);
@@ -68,8 +76,8 @@ describe('useEntityOrchestration', () => {
       await result.current.updateBatch(['1', '2'], { status: 'inactive' });
     });
 
-    expect(mockApiClient.put).toHaveBeenCalledWith('/api/test/1', { status: 'inactive' });
-    expect(mockApiClient.put).toHaveBeenCalledWith('/api/test/2', { status: 'inactive' });
+    expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+    expect(mockApiClient.post).toHaveBeenCalledWith('/api/test/batch', { ids: ['1', '2'], status: 'inactive' });
 
     await waitFor(() => {
       expect(result.current.data).toEqual([
@@ -90,6 +98,40 @@ describe('useEntityOrchestration', () => {
       expect(result.current.data).toEqual([
         { id: '2', name: 'Item 2', status: 'inactive' },
       ]);
+    });
+  });
+
+  it('rolls back optimistic updates when updateBatch fails', async () => {
+    const initialData = [
+      { id: '1', name: 'Item 1', status: 'active' },
+      { id: '2', name: 'Item 2', status: 'active' },
+    ];
+    mockApiClient.get.mockImplementation(async () => [...initialData]);
+    mockApiClient.post.mockRejectedValue(new Error('Batch update failed'));
+
+    const { result } = renderHook(
+      () =>
+        useEntityOrchestration<{ id: string; name: string; status: string }>({
+          queryKey: ['test-entity-error'],
+          endpoint: '/api/test',
+          entityName: 'test item',
+          apiClient: mockApiClient as any,
+        }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.data).toEqual(initialData));
+
+    await act(async () => {
+      try {
+        await result.current.updateBatch(['1', '2'], { status: 'inactive' });
+      } catch {
+        // expected error
+      }
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual(initialData);
     });
   });
 });
