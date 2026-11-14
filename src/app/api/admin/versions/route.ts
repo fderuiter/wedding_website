@@ -14,7 +14,7 @@ function maskEmail(email: string): string {
   return `${local[0]}***${local[local.length - 1]}@${domain}`;
 }
 
-export function sanitizeSnapshotData(data: any, entityType?: string): any {
+function sanitizeSnapshotData(data: any, entityType?: string): any {
   if (!data || typeof data !== 'object') {
     return data;
   }
