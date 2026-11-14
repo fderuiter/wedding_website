@@ -1,5 +1,5 @@
 
-import { isPrivateUrl } from '../ssrf';
+import { isPrivateUrl, isPrivateIP, validateAndResolveHost } from '../ssrf';
 import dns from 'dns';
 
 // Mock dns.promises.lookup
@@ -66,5 +66,94 @@ describe('isPrivateUrl', () => {
   it('should return true for AWS metadata IP', async () => {
     mockLookup.mockResolvedValue({ address: '169.254.169.254', family: 4 });
     expect(await isPrivateUrl('http://169.254.169.254')).toBe(true);
+  });
+});
+
+describe('isPrivateIP', () => {
+  it('identifies private and reserved IPv4 addresses', () => {
+    expect(isPrivateIP('127.0.0.1')).toBe(true);
+    expect(isPrivateIP('10.0.0.1')).toBe(true);
+    expect(isPrivateIP('192.168.1.1')).toBe(true);
+    expect(isPrivateIP('172.16.0.1')).toBe(true);
+    expect(isPrivateIP('172.31.255.255')).toBe(true);
+    expect(isPrivateIP('169.254.169.254')).toBe(true);
+    expect(isPrivateIP('100.64.0.1')).toBe(true);
+    expect(isPrivateIP('0.0.0.0')).toBe(true);
+    expect(isPrivateIP('224.0.0.1')).toBe(true);
+    expect(isPrivateIP('255.255.255.255')).toBe(true);
+
+    expect(isPrivateIP('8.8.8.8')).toBe(false);
+    expect(isPrivateIP('1.1.1.1')).toBe(false);
+    expect(isPrivateIP('93.184.216.34')).toBe(false);
+  });
+
+  it('identifies private and reserved IPv6 addresses', () => {
+    expect(isPrivateIP('::1')).toBe(true);
+    expect(isPrivateIP('[::1]')).toBe(true);
+    expect(isPrivateIP('::')).toBe(true);
+    expect(isPrivateIP('fc00::1')).toBe(true);
+    expect(isPrivateIP('fd12:3456:789a::1')).toBe(true);
+    expect(isPrivateIP('fe80::1')).toBe(true);
+    expect(isPrivateIP('[fe80::1]')).toBe(true);
+    expect(isPrivateIP('::ffff:127.0.0.1')).toBe(true);
+    expect(isPrivateIP('ff02::1')).toBe(true);
+    expect(isPrivateIP('2001:db8::1')).toBe(true);
+
+    expect(isPrivateIP('2606:4700:4700::1111')).toBe(false);
+    expect(isPrivateIP('[2606:4700:4700::1111]')).toBe(false);
+  });
+});
+
+describe('validateAndResolveHost', () => {
+  const mockLookup = dns.promises.lookup as jest.Mock;
+
+  beforeEach(() => {
+    mockLookup.mockReset();
+  });
+
+  it('validates IP literals directly without DNS lookup', async () => {
+    await expect(validateAndResolveHost('127.0.0.1')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+    await expect(validateAndResolveHost('[::1]')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+    expect(mockLookup).not.toHaveBeenCalled();
+
+    const publicV4 = await validateAndResolveHost('93.184.216.34');
+    expect(publicV4).toEqual({ address: '93.184.216.34', family: 4 });
+
+    const publicV6 = await validateAndResolveHost('[2606:4700:4700::1111]');
+    expect(publicV6).toEqual({ address: '2606:4700:4700::1111', family: 6 });
+    expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it('resolves hostnames and returns the first public address', async () => {
+    mockLookup.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '93.184.216.35', family: 4 },
+    ]);
+
+    const result = await validateAndResolveHost('example.com');
+    expect(result).toEqual({ address: '93.184.216.34', family: 4 });
+  });
+
+  it('rejects hostnames if any resolved record is private', async () => {
+    mockLookup.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '127.0.0.1', family: 4 },
+    ]);
+
+    await expect(validateAndResolveHost('mixed.example.com')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+  });
+
+  it('rejects hostnames when DNS lookup fails', async () => {
+    mockLookup.mockRejectedValue(new Error('ENOTFOUND'));
+
+    await expect(validateAndResolveHost('unresolvable.test')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
   });
 });
