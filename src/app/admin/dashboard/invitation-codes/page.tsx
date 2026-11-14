@@ -124,6 +124,7 @@ export default function InvitationCodesDashboardPage() {
   const [partyGroupFilter, setPartyGroupFilter] = useState<string>('all');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const [subEvents, setSubEvents] = useState<any[]>([]);
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
   const [isSubEventModalOpen, setIsSubEventModalOpen] = useState(false);
@@ -402,13 +403,13 @@ export default function InvitationCodesDashboardPage() {
 
   const allFilteredSelected = useMemo(() => {
     if (filteredCodes.length === 0) return false;
-    return filteredCodes.every((item) => selectedIds.includes(item.id));
-  }, [filteredCodes, selectedIds]);
+    return filteredCodes.every((item) => selectedIdsSet.has(item.id));
+  }, [filteredCodes, selectedIdsSet]);
 
   const isIndeterminate = useMemo(() => {
-    const selectedFilteredCount = filteredCodes.filter((item) => selectedIds.includes(item.id)).length;
+    const selectedFilteredCount = filteredCodes.filter((item) => selectedIdsSet.has(item.id)).length;
     return selectedFilteredCount > 0 && !allFilteredSelected;
-  }, [filteredCodes, selectedIds, allFilteredSelected]);
+  }, [filteredCodes, selectedIdsSet, allFilteredSelected]);
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -477,14 +478,14 @@ export default function InvitationCodesDashboardPage() {
       addToast('No invitation codes selected for printing.', 'info');
       return;
     }
-    const targetCodes = codes.filter((c) => selectedIds.includes(c.id));
+    const targetCodes = codes.filter((c) => selectedIdsSet.has(c.id));
     setPrintLabelsList(targetCodes);
     setIsPrintLabelsModalOpen(true);
   };
 
   const handlePrintGlobalLabels = () => {
     const targetCodes = selectedIds.length > 0
-      ? codes.filter((c) => selectedIds.includes(c.id))
+      ? codes.filter((c) => selectedIdsSet.has(c.id))
       : filteredCodes.length > 0
         ? filteredCodes
         : codes;
@@ -525,7 +526,7 @@ export default function InvitationCodesDashboardPage() {
     if (selectedIds.length === 0 || !bulkTagInput.trim()) return;
     const tagToProcess = bulkTagInput.trim();
     try {
-      const selectedCodes = codes.filter((c) => selectedIds.includes(c.id));
+      const selectedCodes = codes.filter((c) => selectedIdsSet.has(c.id));
       await Promise.all(
         selectedCodes.map((c) => {
           let currentTags = c.partyTags || [];
@@ -1135,7 +1136,7 @@ export default function InvitationCodesDashboardPage() {
                 <input
                   type="checkbox"
                   aria-label={`Select invitation code for ${item.guestName}`}
-                  checked={selectedIds.includes(item.id)}
+                  checked={selectedIdsSet.has(item.id)}
                   onChange={() => handleToggleSelectRow(item.id)}
                   className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
                 />
@@ -1521,7 +1522,7 @@ export default function InvitationCodesDashboardPage() {
               </p>
               <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
                 {codes
-                  .filter((c) => selectedIds.includes(c.id))
+                  .filter((c) => selectedIdsSet.has(c.id))
                   .map((c) => (
                     <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
                       <span className="font-medium">{c.guestName}</span>
