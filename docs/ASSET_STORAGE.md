@@ -38,9 +38,6 @@ export interface StorageProvider {
   /** Upload file or buffer and receive full object metadata */
   upload(input: File | StorageUploadInputObject, options?: UploadOptions): Promise<StorageObject>;
 
-  /** Backward-compatible helper returning public URL */
-  uploadFile(file: File): Promise<{ url: string }>;
-
   /** Delete an asset by key or public URL */
   delete(keyOrUrl: string): Promise<void>;
 
@@ -60,7 +57,7 @@ export interface StorageProvider {
 ## Storage Adapters
 
 ### 1. Local Development (`LocalStorageProvider`)
-- Used when S3 credentials are not defined in environment variables (see [src/utils/storage.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/storage.ts#L384-L399)).
+- Used when S3 credentials are not defined in environment variables (see [src/utils/storage.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/storage.ts#L369-L384)).
 - Stores assets in the local directory under `public/uploads/` (or configured directory).
 - Serves static files directly via relative public paths (e.g. `/uploads/abcd1234ef56789a.png`).
 

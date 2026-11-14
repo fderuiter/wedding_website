@@ -41,11 +41,6 @@ export interface StorageProvider {
   upload(input: StorageUploadInput, options?: UploadOptions): Promise<StorageObject>;
 
   /**
-   * Backward-compatible helper method returning `{ url }`.
-   */
-  uploadFile(file: File): Promise<{ url: string }>;
-
-  /**
    * Delete an asset by key or public URL.
    */
   delete(keyOrUrl: string): Promise<void>;
@@ -127,11 +122,6 @@ class LocalStorageProvider implements StorageProvider {
       metadata: options?.metadata,
       updatedAt: new Date(),
     };
-  }
-
-  async uploadFile(file: File): Promise<{ url: string }> {
-    const result = await this.upload(file);
-    return { url: result.url };
   }
 
   async delete(keyOrUrl: string): Promise<void> {
@@ -302,11 +292,6 @@ class S3StorageProvider implements StorageProvider {
       metadata: options?.metadata,
       updatedAt: new Date(),
     };
-  }
-
-  async uploadFile(file: File): Promise<{ url: string }> {
-    const result = await this.upload(file);
-    return { url: result.url };
   }
 
   async delete(keyOrUrl: string): Promise<void> {
