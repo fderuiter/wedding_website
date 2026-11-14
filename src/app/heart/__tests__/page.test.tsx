@@ -451,4 +451,129 @@ describe('HeartPage', () => {
       expect(document.activeElement).toBe(resetButton);
     });
   });
+
+  describe('Accessible Canvas Easter Egg', () => {
+    let physicsFrameCallback: ((state: any, delta: number) => void) | null = null;
+    let useFrameMock: jest.Mock;
+
+    const setupGroupMock = () => {
+      document.querySelectorAll('group').forEach((el: any) => {
+        if (!el.scale) {
+          el.scale = { set: jest.fn() };
+        }
+      });
+    };
+
+    beforeEach(() => {
+      physicsFrameCallback = null;
+      useFrameMock = jest.requireMock('@react-three/fiber').useFrame;
+      useFrameMock.mockImplementation((cb: any) => {
+        if (cb && cb.toString().includes('secretSpot')) {
+          physicsFrameCallback = cb;
+        }
+      });
+    });
+
+    afterEach(() => {
+      useFrameMock.mockReset();
+    });
+
+    it('exposes accessible live region announcements, hidden DOM element, and updated button label when easter egg triggers', () => {
+      render(<HeartPage />);
+      setupGroupMock();
+
+      expect(physicsFrameCallback).not.toBeNull();
+
+      // Initially, whole heart state
+      expect(screen.getByText('Heart is whole.')).toBeInTheDocument();
+      expect(screen.queryByText('Secret message revealed: I love you!')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole.')).toBeInTheDocument();
+
+      const mockState = { clock: { getElapsedTime: () => 1.0 } };
+
+      // Move into secret spot (viewport width 10, height 7.5. Thresholds: x > 3, y > 1.75)
+      mockMainBodyApi.translation.mockReturnValue({ x: 4, y: 2, z: 0 });
+      act(() => {
+        if (physicsFrameCallback) {
+          physicsFrameCallback(mockState, 0.016);
+        }
+      });
+
+      // 1. Live region announces secret message
+      expect(screen.getByText('Heart is whole. Secret message revealed: I love you!')).toBeInTheDocument();
+
+      // 2. Hidden accessible paragraph in DOM
+      const domSecretMsg = screen.getByText('Secret message revealed: I love you!');
+      expect(domSecretMsg).toBeInTheDocument();
+      expect(domSecretMsg).toHaveClass('sr-only');
+      expect(domSecretMsg.tagName).toBe('P');
+
+      // 3. Whole heart button aria-label includes secret message status
+      const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole. Secret message revealed: I love you!');
+      expect(wholeHeartBtn).toBeInTheDocument();
+
+      // 4. When leaving secret coordinates, reverts cleanly
+      mockMainBodyApi.translation.mockReturnValue({ x: 0, y: 0, z: 0 });
+      act(() => {
+        if (physicsFrameCallback) {
+          physicsFrameCallback(mockState, 0.016);
+        }
+      });
+
+      expect(screen.getByText('Heart is whole.')).toBeInTheDocument();
+      expect(screen.queryByText('Heart is whole. Secret message revealed: I love you!')).not.toBeInTheDocument();
+      expect(screen.queryByText('Secret message revealed: I love you!')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole.')).toBeInTheDocument();
+    });
+
+    it('does not override the broken state announcement in the live region when the heart breaks', () => {
+      render(<HeartPage />);
+      setupGroupMock();
+
+      expect(physicsFrameCallback).not.toBeNull();
+
+      const mockState = { clock: { getElapsedTime: () => 1.0 } };
+
+      // Trigger easter egg first
+      mockMainBodyApi.translation.mockReturnValue({ x: 4, y: 2, z: 0 });
+      act(() => {
+        if (physicsFrameCallback) {
+          physicsFrameCallback(mockState, 0.016);
+        }
+      });
+
+      expect(screen.getByText('Heart is whole. Secret message revealed: I love you!')).toBeInTheDocument();
+
+      // Now break the heart via collision force
+      act(() => {
+        if (mockMainBodyApi.__triggerContactForce) {
+          mockMainBodyApi.__triggerContactForce({ totalForceMagnitude: 300 } as any);
+        }
+      });
+
+      // Broken state must NOT be overridden by easter egg
+      expect(screen.getByText('Heart is broken.')).toBeInTheDocument();
+      expect(screen.queryByText('Heart is whole. Secret message revealed: I love you!')).not.toBeInTheDocument();
+    });
+
+    it('appends secret message to wholeHeartLabel when no partner names are provided', () => {
+      render(<HeartClient />);
+      setupGroupMock();
+
+      expect(physicsFrameCallback).not.toBeNull();
+
+      const mockState = { clock: { getElapsedTime: () => 1.0 } };
+
+      expect(screen.getByLabelText('Interactive 3D Heart. Status: Whole.')).toBeInTheDocument();
+
+      mockMainBodyApi.translation.mockReturnValue({ x: 4, y: 2, z: 0 });
+      act(() => {
+        if (physicsFrameCallback) {
+          physicsFrameCallback(mockState, 0.016);
+        }
+      });
+
+      expect(screen.getByLabelText('Interactive 3D Heart. Status: Whole. Secret message revealed: I love you!')).toBeInTheDocument();
+    });
+  });
 });
