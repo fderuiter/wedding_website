@@ -415,12 +415,30 @@ export function generateDynamicStyles(
   const errorTextLight = optimizeContrast('#DC2626', '#FFFFFF', 4.5);
   const focusRingLight = optimizeContrast(safePrimary, '#FFFFFF', 3.0);
   const surfaceBorderLight = optimizeContrast('#6B7280', '#FFFFFF', 3.0);
+  const mutedTextLight = optimizeContrast('#4B5563', '#FFFFFF', 4.5);
+
+  const warningBgLight = 'rgba(245, 158, 11, 0.1)';
+  const warningBorderLight = 'rgba(245, 158, 11, 0.3)';
+  const warningTextLight = optimizeContrast('#78350F', '#FFFFFF', 4.5);
+
+  const statusWarningTextLight = optimizeContrast('#92400E', '#FEF3C7', 4.5);
+  const statusSuccessTextLight = optimizeContrast('#166534', '#F0FDF4', 4.5);
+  const statusInfoTextLight = optimizeContrast('#1E40AF', '#EFF6FF', 4.5);
 
   const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
   const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
   const errorTextDark = optimizeContrast('#EF4444', '#111827', 4.5);
   const focusRingDark = optimizeContrast(safePrimary, '#111827', 3.0);
   const surfaceBorderDark = optimizeContrast('#9CA3AF', '#111827', 3.0);
+  const mutedTextDark = optimizeContrast('#9CA3AF', '#111827', 4.5);
+
+  const warningBgDark = 'rgba(245, 158, 11, 0.15)';
+  const warningBorderDark = 'rgba(245, 158, 11, 0.35)';
+  const warningTextDark = optimizeContrast('#FDE68A', '#111827', 4.5);
+
+  const statusWarningTextDark = optimizeContrast('#FCD34D', '#111827', 4.5);
+  const statusSuccessTextDark = optimizeContrast('#86EFAC', '#111827', 4.5);
+  const statusInfoTextDark = optimizeContrast('#93C5FD', '#111827', 4.5);
 
   const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
   const seatAssignedTextDark = optimizeContrast('#ffffff', safePrimary, 4.5);
@@ -444,6 +462,17 @@ export function generateDynamicStyles(
       --color-error-text: ${errorTextDark};
       --color-focus-ring: ${focusRingDark};
       --color-surface-border: ${surfaceBorderDark};
+      --color-muted-text: ${mutedTextDark};
+      --color-text-muted: ${mutedTextDark};
+      --color-warning-bg: ${warningBgDark};
+      --color-warning-border: ${warningBorderDark};
+      --color-warning-text: ${warningTextDark};
+      --color-status-warning-text: ${statusWarningTextDark};
+      --color-status-unsent-text: ${statusWarningTextDark};
+      --color-status-success-text: ${statusSuccessTextDark};
+      --color-status-sent-text: ${statusSuccessTextDark};
+      --color-status-info-text: ${statusInfoTextDark};
+      --color-status-not-needed-text: ${statusInfoTextDark};
 ${lightPresetCssRules}
       --font-heading: ${safeFontHeading};
       --font-body: ${safeFontBody};
@@ -466,6 +495,17 @@ ${lightPresetCssRules}
       --color-error-text: ${errorTextLight};
       --color-focus-ring: ${focusRingLight};
       --color-surface-border: ${surfaceBorderLight};
+      --color-muted-text: ${mutedTextLight};
+      --color-text-muted: ${mutedTextLight};
+      --color-warning-bg: ${warningBgLight};
+      --color-warning-border: ${warningBorderLight};
+      --color-warning-text: ${warningTextLight};
+      --color-status-warning-text: ${statusWarningTextLight};
+      --color-status-unsent-text: ${statusWarningTextLight};
+      --color-status-success-text: ${statusSuccessTextLight};
+      --color-status-sent-text: ${statusSuccessTextLight};
+      --color-status-info-text: ${statusInfoTextLight};
+      --color-status-not-needed-text: ${statusInfoTextLight};
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
     }
 
@@ -504,6 +544,17 @@ ${lightPresetCssRules}
       --color-error-text: ${errorTextLight};
       --color-focus-ring: ${focusRingLight};
       --color-surface-border: ${surfaceBorderLight};
+      --color-muted-text: ${mutedTextLight};
+      --color-text-muted: ${mutedTextLight};
+      --color-warning-bg: ${warningBgLight};
+      --color-warning-border: ${warningBorderLight};
+      --color-warning-text: ${warningTextLight};
+      --color-status-warning-text: ${statusWarningTextLight};
+      --color-status-unsent-text: ${statusWarningTextLight};
+      --color-status-success-text: ${statusSuccessTextLight};
+      --color-status-sent-text: ${statusSuccessTextLight};
+      --color-status-info-text: ${statusInfoTextLight};
+      --color-status-not-needed-text: ${statusInfoTextLight};
     }
 
     /* Re-assert dark mode variables for dark backgrounds under dark mode */
@@ -568,6 +619,17 @@ ${lightPresetCssRules}
       --color-error-text: ${errorTextDark};
       --color-focus-ring: ${focusRingDark};
       --color-surface-border: ${surfaceBorderDark};
+      --color-muted-text: ${mutedTextDark};
+      --color-text-muted: ${mutedTextDark};
+      --color-warning-bg: ${warningBgDark};
+      --color-warning-border: ${warningBorderDark};
+      --color-warning-text: ${warningTextDark};
+      --color-status-warning-text: ${statusWarningTextDark};
+      --color-status-unsent-text: ${statusWarningTextDark};
+      --color-status-success-text: ${statusSuccessTextDark};
+      --color-status-sent-text: ${statusSuccessTextDark};
+      --color-status-info-text: ${statusInfoTextDark};
+      --color-status-not-needed-text: ${statusInfoTextDark};
     }
 
     .dark {
@@ -578,6 +640,17 @@ ${lightPresetCssRules}
       --color-error-text: ${errorTextDark};
       --color-focus-ring: ${focusRingDark};
       --color-surface-border: ${surfaceBorderDark};
+      --color-muted-text: ${mutedTextDark};
+      --color-text-muted: ${mutedTextDark};
+      --color-warning-bg: ${warningBgDark};
+      --color-warning-border: ${warningBorderDark};
+      --color-warning-text: ${warningTextDark};
+      --color-status-warning-text: ${statusWarningTextDark};
+      --color-status-unsent-text: ${statusWarningTextDark};
+      --color-status-success-text: ${statusSuccessTextDark};
+      --color-status-sent-text: ${statusSuccessTextDark};
+      --color-status-info-text: ${statusInfoTextDark};
+      --color-status-not-needed-text: ${statusInfoTextDark};
 ${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};

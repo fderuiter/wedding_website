@@ -1,4 +1,5 @@
 import { AttractionSchema } from '../schemas';
+import { AttractionAdminService } from '../admin.service';
 
 describe('AttractionSchema', () => {
   it('validates a basic attraction without hotel block fields', () => {
@@ -73,5 +74,34 @@ describe('AttractionSchema', () => {
 
     const parsed = AttractionSchema.safeParse(hotelDataWithNulls);
     expect(parsed.success).toBe(true);
+  });
+
+  describe('AttractionAdminService Input Validation', () => {
+    let adminService: AttractionAdminService;
+
+    beforeEach(() => {
+      adminService = new AttractionAdminService();
+    });
+
+    it('validates valid attraction input payloads', async () => {
+      const validData = {
+        name: 'Downtown Museum',
+        description: 'A great art museum',
+        category: 'museum',
+        directions: 'https://maps.example.com',
+        latitude: 40.7128,
+        longitude: -74.006,
+        isVisible: true,
+      };
+      await expect(adminService['validate'](validData)).resolves.not.toThrow();
+    });
+
+    it('rejects invalid attraction input payloads and throws clear validation error', async () => {
+      const invalidData = {
+        name: 12345,
+        website: 'javascript:alert(1)',
+      };
+      await expect(adminService['validate'](invalidData)).rejects.toThrow(/Validation Error/);
+    });
   });
 });

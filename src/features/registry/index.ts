@@ -47,3 +47,12 @@ export type { GuestSessionState, GuestSessionContextType, GuestSessionStatus } f
 export { SessionRecoveryModal } from './components/SessionRecoveryModal';
 export type { SessionRecoveryModalProps } from './components/SessionRecoveryModal';
 export { getPaymentUrl, sanitizePaymentHandle } from './utils/paymentUrls';
+export { useRegistryContributionMachine } from './hooks/useRegistryContributionMachine';
+export type {
+  ContributionPhase,
+  ContributionFieldErrors,
+  UseRegistryContributionMachineOptions,
+  UseRegistryContributionMachineReturn,
+} from './hooks/useRegistryContributionMachine';
+export { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from './utils/invitation';
+export type { AttendanceStatus, AttendanceStatusItem, AddressItem } from './utils/invitation';

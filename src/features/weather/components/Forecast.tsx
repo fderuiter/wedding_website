@@ -145,13 +145,13 @@ const Forecast: React.FC = () => {
       {!isLiveForecast && (
         <div
           data-testid="seasonal-badge"
-          className="mb-6 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center text-sm font-medium text-amber-200 flex flex-col sm:flex-row items-center justify-center gap-2"
+          className="mb-6 p-3 bg-[var(--color-warning-bg,rgba(245,158,11,0.1))] border border-[var(--color-warning-border,rgba(245,158,11,0.3))] rounded-lg text-center text-sm font-medium text-[var(--color-warning-text,#78350f)] flex flex-col sm:flex-row items-center justify-center gap-2"
         >
-          <Icon name="Info" className="w-4 h-4 text-amber-400 shrink-0" />
+          <Icon name="Info" className="w-4 h-4 text-[var(--color-warning-text,#78350f)] shrink-0" />
           <span>
             Seasonal Climate Averages
             {liveForecastAvailableDate && (
-              <span className="ml-1 opacity-90">
+              <span className="ml-1">
                 (Live forecast available on {liveForecastAvailableDate})
               </span>
             )}

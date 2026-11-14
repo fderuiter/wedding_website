@@ -5,6 +5,30 @@ import { isGuestRequest } from '@/core/auth/guest.server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
+import { timingSafeEqualJS } from '@/utils/crypto';
+
+function isValidCronAuthorization(request: NextRequest): boolean {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const token = authHeader.slice(7).trim();
+  if (!token) {
+    return false;
+  }
+
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (cronSecret) {
+    const encoder = new TextEncoder();
+    const tokenBytes = encoder.encode(token);
+    const secretBytes = encoder.encode(cronSecret);
+    return timingSafeEqualJS(tokenBytes, secretBytes);
+  }
+
+  // In non-production environments without CRON_SECRET configured, allow bearer authorization
+  return process.env.NODE_ENV !== 'production';
+}
 
 export async function middleware(request: NextRequest) {
   // Validate Host header at perimeter before executing any route logic
@@ -20,30 +44,41 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const method = request.method;
+  const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+
+  // Background cron execution routes support Bearer token authorization bypass
+  const isCronRoute = normalizedPath === '/api/cron' || normalizedPath.startsWith('/api/cron/');
+  if (isCronRoute) {
+    if (isValidCronAuthorization(request)) {
+      return NextResponse.next();
+    }
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const isExcluded = 
-    pathname === '/guest' ||
-    pathname === '/guest/login' ||
-    pathname === '/guest/collect' ||
-    pathname === '/api/guest/login' ||
-    pathname === '/api/guest/lookup' ||
-    pathname === '/api/guest/address' ||
-    pathname === '/api/guest/address/public' ||
-    pathname === '/api/registry/validate-code' ||
-    pathname === '/admin/login' ||
-    pathname === '/api/admin/login' ||
-    pathname === '/api/health' ||
-    pathname === '/api/ready' ||
-    pathname === '/robots.txt' ||
-    pathname === '/favicon.ico' ||
-    pathname.startsWith('/_next/') ||
-    /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(pathname);
+    normalizedPath === '/guest' ||
+    normalizedPath === '/guest/login' ||
+    normalizedPath === '/guest/collect' ||
+    normalizedPath === '/api/guest/login' ||
+    normalizedPath === '/api/guest/lookup' ||
+    normalizedPath === '/api/guest/address' ||
+    normalizedPath === '/api/guest/address/public' ||
+    normalizedPath === '/api/registry/validate-code' ||
+    normalizedPath === '/admin/login' ||
+    normalizedPath === '/api/admin/login' ||
+    normalizedPath === '/api/admin/setup' ||
+    normalizedPath === '/api/health' ||
+    normalizedPath === '/api/ready' ||
+    normalizedPath === '/robots.txt' ||
+    normalizedPath === '/favicon.ico' ||
+    normalizedPath.startsWith('/_next/') ||
+    /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(normalizedPath);
 
-  if (isProtectedRoute(pathname, method)) {
+  if (isProtectedRoute(normalizedPath, method)) {
     const isAuth = await isAdminRequest(request);
 
     if (!isAuth) {
-      if (pathname.startsWith('/api/')) {
+      if (normalizedPath.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
@@ -59,7 +94,7 @@ export async function middleware(request: NextRequest) {
     const isAdmin = await isAdminRequest(request);
 
     if (!isGuest && !isAdmin) {
-      if (pathname.startsWith('/api/')) {
+      if (normalizedPath.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       const loginUrl = new URL('/guest/login', request.url);

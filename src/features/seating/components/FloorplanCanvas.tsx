@@ -462,7 +462,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         aria-label="Interactive 2D Reception Floorplan Canvas"
         role="region"
       >
-        <div className="max-w-md flex flex-col items-center justify-center p-8 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg text-center space-y-4">
+        <div className="max-w-md flex flex-col items-center justify-center p-8 bg-card/80 backdrop-blur-sm rounded-2xl border border-card-border shadow-card text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-primary/10 dark:bg-primary/20 text-primary flex items-center justify-center mb-1">
             <svg
               className="w-8 h-8"
@@ -480,10 +480,10 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
               />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h3 className="text-lg font-bold text-heading">
             No Tables Created Yet
           </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm">
+          <p className="text-xs text-muted max-w-sm">
             Get started by adding your first reception table to the floorplan. You can configure table shape, capacity, and position.
           </p>
           {onAddTable && (

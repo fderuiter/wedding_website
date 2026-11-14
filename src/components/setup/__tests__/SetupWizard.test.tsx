@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import SetupWizard from '../SetupWizard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { checkAdminClient } from '@/core/auth/auth.client';
 
 jest.mock('@/hooks/admin/useAdminWeddingParty', () => ({
   useAdminWeddingParty: () => ({
@@ -29,6 +30,10 @@ jest.mock('@/hooks/admin/useAdminInvitationCodes', () => ({
   }),
 }));
 
+jest.mock('@/core/auth/auth.client', () => ({
+  checkAdminClient: jest.fn(() => Promise.resolve(false)),
+}));
+
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -38,6 +43,7 @@ function renderWithProviders(ui: React.ReactElement) {
 
 describe('SetupWizard focus shifting and ARIA error linking', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     jest.clearAllMocks();
   });
 
@@ -369,5 +375,165 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
     // Step 5: Complete Setup
     await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+  });
+
+  test('restores administrators directly to persisted step after page refresh when valid session cookie exists', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 3,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+      })
+    );
+
+    renderWithProviders(<SetupWizard />);
+
+    // Should revalidate session and restore directly to Step 3
+    await waitFor(() => {
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Welcome to Your Wedding Site!')).not.toBeInTheDocument();
+    expect(screen.queryByText('Step 1: The Essentials')).not.toBeInTheDocument();
+  });
+
+  test('login action preserves saved draft step greater than step 2 upon successful authentication', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(false);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 4,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+      })
+    );
+
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/setup')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Admin Login is presented because cookie is not active
+    expect(screen.getByText('Welcome to Your Wedding Site!')).toBeInTheDocument();
+
+    const passInput = screen.getByPlaceholderText('Admin Password');
+    fireEvent.change(passInput, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Upon login, preserved step 4 is restored rather than resetting unconditionally to step 2
+    await waitFor(() => {
+      expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Step 1: The Essentials')).not.toBeInTheDocument();
+  });
+
+  test('clears error messages upon advancing steps', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(false);
+    let callCount = 0;
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/setup')) {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true }),
+          } as Response);
+        } else if (callCount === 2) {
+          // Trigger error on Step 2
+          return Promise.resolve({
+            ok: false,
+            json: () => Promise.resolve({ error: 'Config validation failed.' }),
+          } as Response);
+        } else {
+          // Succeed on next attempt
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true }),
+          } as Response);
+        }
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Login
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Step 2: Essentials
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+
+    // Submit and trigger error
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(screen.getByText('Config validation failed.')).toBeInTheDocument();
+    });
+
+    // Re-submit successfully
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument();
+    });
+
+    // Stale error string is eliminated across step transition
+    expect(screen.queryByText('Config validation failed.')).not.toBeInTheDocument();
+  });
+
+  test('enforces mutual exclusion across content management modals on Step 5', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({ step: 5 })
+    );
+
+    renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument();
+    });
+
+    // Open wedding party modal
+    const partyBtn = screen.getByRole('button', { name: /Manage Wedding Party/i });
+    fireEvent.click(partyBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Manage Wedding Party')).toBeInTheDocument();
+    });
+
+    // Directly open attractions modal
+    const attractionsBtn = screen.getByRole('button', { name: /Manage Attractions/i });
+    fireEvent.click(attractionsBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Manage Local Attractions')).toBeInTheDocument();
+      expect(screen.queryByText('Manage Wedding Party')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    });
   });
 });

@@ -8,6 +8,30 @@
   --color-secondary: #B45309;
   --color-primary-light: #FCA5A5;
   --color-secondary-light: #FDE68A;
+  --color-muted-text: var(--color-muted-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-warning-border: var(--color-warning-border);
+  --color-warning-text: var(--color-warning-text);
+  --color-status-warning-text: var(--color-status-warning-text);
+  --color-status-unsent-text: var(--color-status-unsent-text);
+  --color-status-success-text: var(--color-status-success-text);
+  --color-status-sent-text: var(--color-status-sent-text);
+  --color-status-info-text: var(--color-status-info-text);
+  --color-status-not-needed-text: var(--color-status-not-needed-text);
+
+  --color-container: var(--container-bg);
+  --color-container-bg: var(--container-bg);
+  --color-card: var(--card-bg);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-surface: var(--card-bg);
+  --color-surface-border: var(--card-border);
+  --color-heading: var(--heading-color);
+  --color-muted: var(--form-message-text, var(--color-muted, #6B7280));
+  --color-badge: var(--schedule-tag-bg, var(--color-secondary-light, #F3F4F6));
+  --color-badge-text: var(--schedule-tag-text, var(--color-secondary, #B45309));
+  --shadow-card: var(--card-shadow);
 
   --font-sans: var(--font-body, var(--font-geist-sans), Arial, Helvetica, sans-serif);
   --font-serif: var(--font-heading, var(--font-playfair), Georgia, serif);
@@ -45,6 +69,17 @@
   --color-text-on-secondary: #171717;
   --color-primary-text: #B91C1C;
   --color-secondary-text: #B45309;
+  --color-muted-text: #4B5563;
+  --color-text-muted: #4B5563;
+  --color-warning-bg: rgba(245, 158, 11, 0.1);
+  --color-warning-border: rgba(245, 158, 11, 0.3);
+  --color-warning-text: #78350F;
+  --color-status-warning-text: #92400E;
+  --color-status-unsent-text: #92400E;
+  --color-status-success-text: #166534;
+  --color-status-sent-text: #166534;
+  --color-status-info-text: #1E40AF;
+  --color-status-not-needed-text: #1E40AF;
 
   --font-heading: var(--font-playfair, Georgia, serif);
   --font-body: var(--font-geist-sans, Arial, Helvetica, sans-serif);
@@ -96,6 +131,12 @@
   --grid-gap: 1.5rem;
   --card-padding: 2rem;
   --radius-card: 1rem;
+  --container-bg: var(--color-background, #fff1f2);
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --heading-color: var(--color-primary, #b91c1c);
+  --color-muted: #4b5563;
 }
 
 .dark {
@@ -106,6 +147,24 @@
   --color-text-on-secondary: #171717;
   --color-primary-text: #FCA5A5;
   --color-secondary-text: #FDE68A;
+  --color-muted-text: #9CA3AF;
+  --color-text-muted: #9CA3AF;
+  --color-warning-bg: rgba(245, 158, 11, 0.15);
+  --color-warning-border: rgba(245, 158, 11, 0.35);
+  --color-warning-text: #FDE68A;
+  --color-status-warning-text: #FCD34D;
+  --color-status-unsent-text: #FCD34D;
+  --color-status-success-text: #86EFAC;
+  --color-status-sent-text: #86EFAC;
+  --color-status-info-text: #93C5FD;
+  --color-status-not-needed-text: #93C5FD;
+
+  --container-bg: #111827;
+  --card-bg: #1f2937;
+  --card-border: #374151;
+  --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+  --heading-color: #f9fafb;
+  --color-muted: #9ca3af;
 
   --dialog-bg: var(--color-background);
   --dialog-border-color: var(--color-border);

@@ -1,8 +1,34 @@
-import { isPrivateUrl } from './ssrf';
+import { validateAndResolveHost } from './ssrf';
+import { Agent } from 'undici';
+
+/**
+ * Creates an undici Agent that pins the socket connection to a specific resolved IP.
+ * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
+ */
+export function createPinnedDispatcher(address: string, family: number): Agent {
+  return new Agent({
+    connect: {
+      lookup: (_hostname, opts, cb) => {
+        let callback = cb;
+        let options = opts;
+        if (typeof options === 'function') {
+          callback = options;
+          options = {};
+        }
+        if (options && options.all) {
+          callback(null, [{ address, family }]);
+        } else {
+          callback(null, address, family);
+        }
+      },
+    },
+  });
+}
 
 /**
  * Safely fetches a URL by manually following redirects and validating each hop against SSRF.
- * Protects against Server-Side Request Forgery (SSRF) and infinite redirect loops.
+ * Protects against Server-Side Request Forgery (SSRF) and DNS rebinding by pinning the
+ * socket connection to the pre-validated public IP address via an undici dispatcher.
  *
  * @param url The target URL to fetch.
  * @param options Standard Fetch API request options.
@@ -27,18 +53,26 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       throw new Error('Blocked: Only HTTP and HTTPS protocols are allowed');
     }
 
-    // SSRF Guardrail
-    if (await isPrivateUrl(currentUrl)) {
-      throw new Error('Blocked: URL resolves to a private or restricted IP address');
-    }
+    // SSRF Guardrail & IP Resolution:
+    // Resolves hostname to IP(s) and ensures no addresses belong to private/restricted ranges.
+    const pinned = await validateAndResolveHost(parsedUrl.hostname);
 
-    // Override redirect to manual so we can intercept each hop
-    const fetchOptions: RequestInit = {
+    // Create a custom undici dispatcher that binds the connection to the validated IP
+    const dispatcher = createPinnedDispatcher(pinned.address, pinned.family);
+
+    // Override redirect to manual so we can intercept each hop and pin IP per hop
+    const fetchOptions: RequestInit & { dispatcher?: Agent } = {
       ...currentOptions,
       redirect: 'manual',
+      dispatcher,
     };
 
-    const res = await fetch(currentUrl, fetchOptions);
+    let res: Response;
+    try {
+      res = await fetch(currentUrl, fetchOptions as RequestInit);
+    } finally {
+      dispatcher.close().catch(() => {});
+    }
 
     // If it's a redirect, handle manually
     if ([301, 302, 303, 307, 308].includes(res.status)) {

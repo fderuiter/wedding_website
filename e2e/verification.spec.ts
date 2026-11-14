@@ -20,6 +20,21 @@ function generateGuestCookieValue() {
   return `${data}.${signature}`;
 }
 
+function generateAdminCookieValue() {
+  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
+  const payload = {
+    isAdmin: true,
+    iat: Date.now(),
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
+
 test.describe('UI Verification', () => {
   test('should show the main content on visit and be accessible', async ({ context, page }) => {
     const guestCookieValue = generateGuestCookieValue();
@@ -70,5 +85,60 @@ test.describe('UI Verification', () => {
 
     // Assert no violations
     expect(accessibilityScanResults.violations).toEqual([]);
+  });
+
+  test('should pass axe accessibility scan on /weather route with zero contrast violations', async ({ context, page }) => {
+    const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
+    const cookies = origins.map((url) => ({
+      name: 'guest_auth',
+      value: generateGuestCookieValue(),
+      url,
+    }));
+    await context.addCookies(cookies);
+
+    await page.goto('/weather', { waitUntil: 'domcontentloaded' });
+
+    const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
+    if (a11yConfig.rules) {
+      axeBuilder.options({ rules: a11yConfig.rules });
+    }
+    const results = await axeBuilder.analyze();
+    expect(results.violations.filter((v) => v.id === 'color-contrast')).toEqual([]);
+  });
+
+  test('should pass axe accessibility scan on /admin/dashboard/thank-you-notes with zero contrast violations', async ({ context, page }) => {
+    const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
+    const cookies = origins.flatMap((url) => [
+      { name: 'admin_auth', value: generateAdminCookieValue(), url },
+      { name: 'guest_auth', value: generateGuestCookieValue(), url },
+    ]);
+    await context.addCookies(cookies);
+
+    await page.goto('/admin/dashboard/thank-you-notes', { waitUntil: 'domcontentloaded' });
+
+    const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
+    if (a11yConfig.rules) {
+      axeBuilder.options({ rules: a11yConfig.rules });
+    }
+    const results = await axeBuilder.analyze();
+    expect(results.violations.filter((v) => v.id === 'color-contrast')).toEqual([]);
+  });
+
+  test('should pass axe accessibility scan on /admin/dashboard/seating-chart with zero contrast violations', async ({ context, page }) => {
+    const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
+    const cookies = origins.flatMap((url) => [
+      { name: 'admin_auth', value: generateAdminCookieValue(), url },
+      { name: 'guest_auth', value: generateGuestCookieValue(), url },
+    ]);
+    await context.addCookies(cookies);
+
+    await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+
+    const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
+    if (a11yConfig.rules) {
+      axeBuilder.options({ rules: a11yConfig.rules });
+    }
+    const results = await axeBuilder.analyze();
+    expect(results.violations.filter((v) => v.id === 'color-contrast')).toEqual([]);
   });
 });

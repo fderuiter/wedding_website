@@ -1,14 +1,12 @@
-import { useEntityOrchestration } from '../useEntityOrchestration';
+import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
 
-export function useAdminWeddingParty(options?: { enabled?: boolean }) {
-  return useEntityOrchestration<WeddingPartyMemberDTO>({
+export function useAdminWeddingParty(options?: AdminHookOptions) {
+  return useAdminEntityOrchestration<WeddingPartyMemberDTO>({
     queryKey: ['admin-wedding-party'],
     endpoint: '/api/admin/wedding-party',
     entityName: 'wedding party member',
-    apiClient,
-    enabled: options?.enabled,
+    options,
   });
 }
+
