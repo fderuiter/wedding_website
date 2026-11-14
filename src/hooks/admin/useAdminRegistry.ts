@@ -1,13 +1,12 @@
-import { useEntityOrchestration } from '../useEntityOrchestration';
+import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 import type { RegistryItem } from '@/features/registry';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
 
-export function useAdminRegistry() {
-  return useEntityOrchestration<RegistryItem>({
+export function useAdminRegistry(options?: AdminHookOptions) {
+  return useAdminEntityOrchestration<RegistryItem>({
     queryKey: ['admin-registry'],
     endpoint: '/api/registry/items',
     entityName: 'registry item',
-    apiClient,
+    options,
   });
 }
+
