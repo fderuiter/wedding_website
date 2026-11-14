@@ -97,6 +97,10 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
 
     const brandLink = screen.getByText('A & B');
     expect(brandLink.closest('a')).toHaveClass('text-[var(--color-primary-text)]');
+    expect(brandLink.closest('a')).toHaveClass('min-h-[24px]');
+    expect(brandLink.closest('a')).toHaveClass('min-w-[24px]');
+    expect(brandLink).toHaveClass('min-h-[24px]');
+    expect(brandLink).toHaveClass('min-w-[24px]');
     expect(brandLink.closest('a')).not.toHaveClass('text-gray-800');
     expect(brandLink.closest('a')).not.toHaveClass('dark:text-white');
   });
@@ -117,6 +121,8 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
 
     const logoutBtn = screen.getByRole('button', { name: /logout/i });
     expect(logoutBtn).toHaveClass('text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))]');
+    expect(logoutBtn).toHaveClass('min-h-[24px]');
+    expect(logoutBtn).toHaveClass('min-w-[24px]');
     expect(logoutBtn).not.toHaveClass('text-white');
   });
 
