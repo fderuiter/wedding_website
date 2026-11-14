@@ -78,6 +78,61 @@ describe('SQL Migration Backwards Compatibility Linter', () => {
       expect(violations[0].line).toBe(2);
     });
 
+    it('fails on ADD COLUMN with NOT NULL without DEFAULT', () => {
+      const sql = `
+        ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL;
+      `;
+
+      const violations = verifyMigrationContent(sql);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].keyword).toBe('ADD COLUMN NOT NULL');
+      expect(violations[0].line).toBe(2);
+    });
+
+    it('fails on ADD COLUMN IF NOT EXISTS with NOT NULL without DEFAULT', () => {
+      const sql = `
+        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "phoneNumber" TEXT NOT NULL;
+      `;
+
+      const violations = verifyMigrationContent(sql);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].keyword).toBe('ADD COLUMN NOT NULL');
+      expect(violations[0].line).toBe(2);
+    });
+
+    it('fails on chained ADD COLUMN with NOT NULL without DEFAULT', () => {
+      const sql = `
+        ALTER TABLE "Contributor" ADD COLUMN "email" TEXT,
+        ADD COLUMN "priorityLevel" INTEGER NOT NULL;
+      `;
+
+      const violations = verifyMigrationContent(sql);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].keyword).toBe('ADD COLUMN NOT NULL');
+      expect(violations[0].line).toBe(3);
+    });
+
+    it('passes ADD COLUMN with NOT NULL when DEFAULT value is provided', () => {
+      const sql = `
+        ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'GUEST';
+        ALTER TABLE "User" ADD COLUMN "status" TEXT DEFAULT 'ACTIVE' NOT NULL;
+        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isVerified" BOOLEAN NOT NULL DEFAULT false;
+      `;
+
+      const violations = verifyMigrationContent(sql);
+      expect(violations).toEqual([]);
+    });
+
+    it('allows ADD COLUMN with NOT NULL without DEFAULT when allow-destructive annotation is present', () => {
+      const sql = `
+        -- allow-destructive: Required mandatory column for new feature
+        ALTER TABLE "User" ADD COLUMN "tenantId" TEXT NOT NULL;
+      `;
+
+      const violations = verifyMigrationContent(sql);
+      expect(violations).toEqual([]);
+    });
+
     it('allows destructive operations when global -- allow-destructive annotation is present', () => {
       const sql = `
         -- allow-destructive: Contract phase of guest table deprecation

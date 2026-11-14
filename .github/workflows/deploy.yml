@@ -44,12 +44,43 @@ on:
         required: false
         default: 'google-cloud-run'
         type: string
+    outputs:
+      schema_compatibility_status:
+        description: 'Schema compatibility check status'
+        value: ${{ jobs.schema-compatibility.outputs.compatibility_status }}
 
 concurrency:
   group: deploy-${{ inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
+  schema-compatibility:
+    name: Verify Schema Compatibility
+    runs-on: ubuntu-latest
+    outputs:
+      compatibility_status: ${{ steps.lint.outputs.compatibility_status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Schema Compatibility Linter
+        id: lint
+        run: |
+          echo "Executing pre-deployment schema compatibility verification..."
+          npm run lint:migrations
+          echo "compatibility_status=compatible" >> $GITHUB_OUTPUT
+          echo "### 🟢 Pre-Deployment Schema Compatibility Gate" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linter Check:** \`PASSED\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** \`COMPATIBLE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> $GITHUB_STEP_SUMMARY
+
   publish-artifact:
     name: Publish Release Artifact
     uses: ./.github/workflows/publish-artifact.yml
@@ -57,7 +88,7 @@ jobs:
 
   database-migration:
     name: Execute Database Migration
-    needs: publish-artifact
+    needs: [publish-artifact, schema-compatibility]
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: ${{ inputs.environment || 'production' }}
@@ -65,7 +96,7 @@ jobs:
 
   deploy-provider:
     name: Deploy to Hosting Provider
-    needs: [publish-artifact, database-migration]
+    needs: [publish-artifact, database-migration, schema-compatibility]
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: ${{ inputs.environment || 'production' }}
@@ -168,7 +199,7 @@ jobs:
             echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> $GITHUB_STEP_SUMMARY
             echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> $GITHUB_STEP_SUMMARY
             echo "- **Verification Outcome:** \`UNHEALTHY\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Action:** Triggering automated rollback pipeline..." >> $GITHUB_STEP_SUMMARY
+            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
@@ -181,3 +212,4 @@ jobs:
       target_environment: ${{ inputs.environment || 'production' }}
       previous_tag: ${{ inputs.previous_tag || 'latest' }}
       reason: 'Automated post-deployment health check failure on /api/health'
+    secrets: inherit

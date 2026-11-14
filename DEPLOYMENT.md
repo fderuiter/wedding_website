@@ -277,22 +277,41 @@ Before applying schema migrations to production, always perform a database snaps
   ```
 
 ### Rollback Limitations & Compensating Migrations
-- **Forward-Only Migration Policy**: Prisma Migrate does not generate automatic `down` migrations or support automated rollbacks for applied migration files.
+- **Forward-Only Migration Policy**: Prisma Migrate does not generate automatic `down` migrations or support automated rollbacks for applied migration files. Production databases must always move forward to maintain transactional integrity and prevent catastrophic data loss.
 - **Handling Failed Migrations**:
   1. Do NOT manually edit or remove migration files that have already been executed in production.
   2. Create a compensating forward migration using `prisma migrate diff` or manual SQL to reverse desired changes safely.
   3. Mark failed migration states resolved if needed using `npx prisma migrate resolve --rolled-back [migration_name]`.
 
 ### Zero-Downtime Schema Expansion Guidance (Expand-Migrate-Contract)
-For non-breaking production schema updates without service interruption, follow the **Expand-Migrate-Contract** pattern:
-1. **Expand**:
-   - Add new tables, nullable columns, or optional fields in a Prisma migration.
-   - Do NOT drop columns, rename existing columns, or add non-null constraints without defaults in this phase.
-2. **Migrate**:
-   - Deploy application code that reads from/writes to both old and new schema fields (dual-writing).
-   - Execute a data backfill script (`npm run db:seed` or custom backfill) to populate historic data into new fields.
-3. **Contract**:
-   - Once all running instances consume the new fields, deploy a subsequent migration that safely removes deprecated columns/tables.
+To maintain zero database downtime and support continuous delivery, all database mutations must strictly adhere to the three-phase **Expand-Migrate-Contract** pattern across releases:
+
+1. **Phase 1: Expand**
+   - **Permitted Changes**: Add new tables, nullable columns (`NULL`), or optional fields. Non-null columns (`NOT NULL`) are permitted **ONLY** when accompanied by an explicit `DEFAULT` value (e.g., `ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'GUEST';`).
+   - **Prohibitions**: Never drop tables, drop columns, rename columns, or add `NOT NULL` columns without default values.
+   - **Automated Pre-Deployment Verification**: Preflight CI/CD linting (`npm run lint:migrations` executing `scripts/verify-migration-compatibility.ts`) inspects every SQL migration in `prisma/migrations/`. Any non-backwards-compatible statement immediately blocks the pipeline in PR checks (`ci.yml`), migration executions (`db-migrate.yml`), and deployment pipelines (`deploy.yml`).
+
+2. **Phase 2: Migrate**
+   - **Dual-Reading & Dual-Writing**: Deploy application code that reads from both the old and new schema fields and writes to both (or writes to the new field while gracefully falling back to the old).
+   - **N-1 Safe Deployment**: Older application container versions (N-1) can run alongside or be restored against the newly expanded schema without experiencing runtime crashes or SQL constraint violations.
+   - **Data Backfill**: Execute asynchronous data backfill scripts (`npm run db:seed` or targeted data migration scripts) to populate historic rows with appropriate new data representations.
+
+3. **Phase 3: Contract**
+   - **Multi-Release Coordination**: Only after all running application instances have migrated to the new schema and no active container version queries the obsolete columns or tables, deploy a subsequent release that safely removes the deprecated structures.
+   - **Explicit Bypass Annotation**: Destructive DDL operations (`DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `DROP CONSTRAINT`) in this phase require explicit multi-release phased contract cleanup annotations (`-- allow-destructive: <reason>`) above or on the statement to pass the migration compatibility linter.
+
+### N-1 Application Container Compatibility Requirements
+Continuous deployment and automated rollback architectures depend on **N-1 compatibility**:
+- **Backward Compatibility Guarantee**: Application containers from the previous release (`N-1`) must operate reliably against database schemas from the subsequent release (`N`).
+- **Additive Schema Guardrail**: Because previous application containers cannot anticipate new mandatory table columns, any `NOT NULL` column added without a `DEFAULT` constraint causes existing `INSERT` queries from `N-1` containers to fail with `NOT NULL constraint violation`.
+- **Preflight Enforcer**: Both `.github/workflows/db-migrate.yml` and `.github/workflows/deploy.yml` enforce backwards compatibility rules as a mandatory safety gate before executing schema mutations or routing production traffic.
+
+### Automated Rollback Safety Protocols & Guarantees
+When a post-deployment health check (`/api/health`) fails in `.github/workflows/deploy.yml`, automated rollback procedures activate immediately:
+- **Fast Container Restoration**: The rollback workflow (`.github/workflows/rollback.yml`) restores the previous validated container image (`previous_tag`) in under 60 seconds without taking the database offline.
+- **Zero Schema Reversal Needed**: Because the applied database migrations comply with Expand-Migrate-Contract rules and N-1 backwards compatibility, the database schema remains fully compatible with the restored container image. No destructive database rollback or down-migration is executed.
+- **Pre-Rollback Database Safety Gate**: Prior to container redeployment, `.github/workflows/rollback.yml` executes `npm run lint:migrations` to verify that all applied migrations comply with N-1 safety standards.
+- **Diagnostic Visibility**: The rollback workflow outputs comprehensive diagnostics to `$GITHUB_STEP_SUMMARY`, detailing the target environment, restored tag, failure cause, database compatibility status, and follow-up remediation instructions.
 
 ### Portable Provider Examples
 The application works with any standard PostgreSQL server. Examples of compatible managed providers and hosting options include (labeled as examples):
@@ -306,22 +325,35 @@ The application works with any standard PostgreSQL server. Examples of compatibl
 
 ---
 
-## ⚠️ Safe Failure Semantics & Rollback Guidance
+## ⚠️ Safe Failure Semantics & Emergency Resolution Runbook
 
-If a database migration fails during release execution:
+If a deployment or database migration fails during release execution, follow this operational runbook:
 
-1. **Pipeline Halts**: The `Release Pipeline` immediately aborts before reaching `Provider Deployment`. The existing live production container instances remain untouched and functional on the current schema.
-2. **Diagnostic Signaling**: Review workflow output logs and `$GITHUB_STEP_SUMMARY` for Prisma SQL error codes or locked table status.
-3. **Remediation & Rollback Commands**:
-   - If a migration was partially applied or marked failed in `_prisma_migrations`, inspect the database state and use Prisma resolution CLI:
+1. **Pipeline Halts & Rollback Triggering**:
+   - If migration preflight checks fail, `Release Pipeline` aborts before container deployment begins. The live production container instances remain untouched on the existing healthy database.
+   - If post-deployment container verification fails, `verify-deployment` automatically triggers `rollback.yml`, restoring `previous_tag` while keeping the compatible database schema intact.
+
+2. **Diagnostic Triage**:
+   - Review workflow logs and `$GITHUB_STEP_SUMMARY` in GitHub Actions.
+   - For migration linter failures, identify whether a migration SQL statement introduced a destructive operation (`DROP TABLE`, `DROP COLUMN`) or an additive breaking change (`ADD COLUMN ... NOT NULL` without `DEFAULT`).
+   - For runtime probe failures, check `/api/health` status, database connection pool limits, and container error logs.
+
+3. **Remediation & Resolution Commands**:
+   - If a migration failed mid-execution and was marked failed in `_prisma_migrations`, inspect the database state and resolve using Prisma CLI:
      ```bash
-     # Mark a failed migration as rolled back in the database:
+     # Mark a failed migration as rolled back in the database metadata table:
      npx prisma migrate resolve --rolled-back "<migration_name>"
 
-     # OR mark a migration as applied if manually executed and verified:
+     # OR mark a migration as applied if changes were manually verified:
      npx prisma migrate resolve --applied "<migration_name>"
      ```
-4. **Re-triggering**: Re-run the `Database Migration` workflow after resolving schema or database lock issues.
+   - If a forward schema fix is required, author a compensating migration rather than rolling back:
+     ```bash
+     # Generate a compensating migration diff:
+     npx prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-schema-datasource prisma/schema.prisma --script > fix.sql
+     ```
+4. **Re-triggering Release**:
+   - After addressing the root cause and verifying local checks with `npm run lint:migrations` and `npm run test`, trigger the release pipeline again.
 
 ---
 

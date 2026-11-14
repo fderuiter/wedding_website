@@ -30,6 +30,10 @@ on:
     secrets:
       DATABASE_URL:
         required: true
+    outputs:
+      schema_compatibility_status:
+        description: 'Schema compatibility check status'
+        value: ${{ jobs.migrate.outputs.schema_compatibility_status }}
 
 concurrency:
   group: db-migrate-${{ inputs.environment || 'production' }}
@@ -40,6 +44,8 @@ jobs:
     name: Execute Database Migrations
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || 'production' }}
+    outputs:
+      schema_compatibility_status: ${{ steps.lint_migrations.outputs.schema_compatibility_status }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -56,6 +62,11 @@ jobs:
         run: |
           echo "Executing preflight schema compatibility linting..."
           npm run lint:migrations
+          echo "schema_compatibility_status=compatible" >> $GITHUB_OUTPUT
+          echo "### 🟢 Preflight Schema Compatibility Verified" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linter Check:** \`PASSED\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compatibility Status:** \`COMPATIBLE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **N-1 Safe:** \`true\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Verify DATABASE_URL secret
         env:
@@ -97,7 +108,7 @@ jobs:
           The database migration workflow failed during preflight checks or migration execution. To prevent schema instability and partial deployments:
 
           ### Diagnostic Steps
-          1. **Preflight Linter (`lint:migrations`)**: If preflight schema linting failed, ensure all migration SQL statements in `prisma/migrations/` avoid destructive DDL operations (e.g. `DROP TABLE`, `DROP COLUMN`) or include `-- allow-destructive: <reason>` annotations.
+          1. **Preflight Linter (`lint:migrations`)**: If preflight schema linting failed, ensure all migration SQL statements in `prisma/migrations/` avoid destructive DDL operations (e.g. `DROP TABLE`, `DROP COLUMN`, `NOT NULL` column additions without defaults) or include `-- allow-destructive: <reason>` annotations.
           2. **Database Verification & Status**: Check database connectivity, `DATABASE_URL` secret formatting, and verify whether `npx prisma migrate status` reported schema drift or unapplied/failed migration state.
           3. **Migration Deploy & Session Timeouts**: Review workflow logs above for Prisma SQL error codes, lock timeout (`lock_timeout=5000ms`), or statement timeout (`statement_timeout=30000ms`) failures.
 
@@ -121,4 +132,6 @@ jobs:
         if: success()
         run: |
           echo "### ✅ Database Migrations Successfully Applied" >> $GITHUB_STEP_SUMMARY
-          echo "Target Environment: \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Environment:** \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Schema Compatibility Status:** \`COMPATIBLE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> $GITHUB_STEP_SUMMARY
