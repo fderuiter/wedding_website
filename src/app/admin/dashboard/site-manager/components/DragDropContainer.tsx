@@ -84,7 +84,7 @@ export default function DragDropContainer({
                         <div
                           {...provided.dragHandleProps}
                           aria-label={`Reorder ${feature.title || feature.id}`}
-                          className="cursor-grab active:cursor-grabbing text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
+                          className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
                         >
                           <Icon name="DragHandle" className="h-6 w-6" />
                         </div>
