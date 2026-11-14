@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
 import Script from 'next/script';
 import { contentService } from '@/features/content';
@@ -117,16 +117,13 @@ export default async function PhotosPage() {
       </ErrorBoundary>
 
       <div className="flex justify-center mt-12">
-        <Link
+        <AccessibleExternalLink
           href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
-          target="_blank"
-          rel="noopener noreferrer"
           className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
         >
           View Full Album
           <Icon name="Camera" className="w-5 h-5" />
-          <span className="sr-only"> (opens in a new tab)</span>
-        </Link>
+        </AccessibleExternalLink>
       </div>
     </div>
   );

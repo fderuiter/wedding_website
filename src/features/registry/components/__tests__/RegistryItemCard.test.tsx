@@ -83,7 +83,11 @@ describe('RegistryItemCard Component', () => {
     expect(screen.getByText('Price: $100.00')).toBeInTheDocument();
     const img = screen.getByRole('presentation');
     expect(img.getAttribute('src')).toContain('valid.jpg');
-    expect(screen.getByRole('link', { name: 'View on Vendor Site (opens in a new tab)' })).toHaveAttribute('href', 'https://example.com');
+    const vendorLink = screen.getByRole('link', { name: 'View on Vendor Site (opens in a new tab)' });
+    expect(vendorLink).toHaveAttribute('href', 'https://example.com');
+    expect(vendorLink).toHaveAttribute('target', '_blank');
+    expect(vendorLink).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(vendorLink.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     // Using getByLabelText instead of getByPlaceholderText for robustness
     expect(screen.getByLabelText(/Your Name/i)).toBeInTheDocument();
     // Corrected button name

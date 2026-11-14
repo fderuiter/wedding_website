@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import type { AttractionDTO } from '@/features/attractions';
 import { resolveDirectionsUrl } from '@/utils/maps';
 import { useTheme } from '@/components/ThemeProvider';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -160,9 +161,12 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCente
               {directionsUrl && (
                 <>
                   <br />
-                  <a href={directionsUrl} target="_blank" rel="noopener noreferrer">
+                  <AccessibleExternalLink
+                    href={directionsUrl}
+                    aria-label={`Directions to ${attraction.name}`}
+                  >
                     Directions
-                  </a>
+                  </AccessibleExternalLink>
                 </>
               )}
             </Popup>
