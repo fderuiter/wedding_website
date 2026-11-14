@@ -308,4 +308,33 @@ describe('RegistryCard', () => {
       expect(mockOnClick).not.toHaveBeenCalled();
     });
   });
+
+  describe('Theme token utilities', () => {
+    it('applies semantic theme utility classes for card background, border, placeholder, and badges', () => {
+      const sampleItem: RegistryItem = {
+        ...mockItem,
+        isSample: true,
+        itemType: 'CASH_FUND',
+        category: 'Honeymoon',
+      };
+      render(<RegistryCard item={sampleItem} onClick={() => {}} />);
+
+      const card = screen.getByTestId('registry-card');
+      expect(card.className).toContain('border-card-border');
+      expect(card.className).toContain('bg-card');
+      expect(card.className).not.toContain('dark:border-gray-700');
+      expect(card.className).not.toContain('bg-white dark:bg-gray-800');
+
+      const sampleBadge = screen.getByTestId('sample-item-badge');
+      expect(sampleBadge.className).toContain('bg-badge');
+      expect(sampleBadge.className).toContain('text-badge-text');
+      expect(sampleBadge.className).toContain('border-card-border');
+
+      const cashFundBadge = screen.getByText('Cash Fund', { selector: 'span' });
+      expect(cashFundBadge.className).toContain('bg-badge');
+      expect(cashFundBadge.className).toContain('text-badge-text');
+      expect(cashFundBadge.className).toContain('border-card-border');
+    });
+  });
 });
+
