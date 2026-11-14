@@ -10,6 +10,7 @@ jest.mock('@/lib/prisma', () => ({
 
 import { GET as validateCodeRoute } from '@/app/api/registry/validate-code/route';
 import { prisma } from '@/lib/prisma';
+import { verifyGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
 
 const mockFindUnique = prisma.invitationCode.findUnique as jest.Mock;
 
@@ -89,5 +90,13 @@ describe('validate-code Route', () => {
 
     const setCookieHeader = res.headers.get('set-cookie') || '';
     expect(setCookieHeader).toContain('guest_invite_session=');
+
+    const cookieMatch = setCookieHeader.match(/guest_invite_session=([^;]+)/);
+    expect(cookieMatch).not.toBeNull();
+    const token = cookieMatch![1];
+    const verified = await verifyGuestInviteSessionToken(token);
+    expect(verified).not.toBeNull();
+    expect(verified?.code).toBe('GOODCODE');
+    expect(verified?.guestName).toBe('Jane Smith');
   });
 });

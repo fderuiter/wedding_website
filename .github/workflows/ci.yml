@@ -284,6 +284,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
           GUEST_PASSCODE: wedding2026
+          GUEST_SESSION_SECRET: test-guest-session-secret-key
         run: npx playwright test
 
       - name: Generate A11y Report
