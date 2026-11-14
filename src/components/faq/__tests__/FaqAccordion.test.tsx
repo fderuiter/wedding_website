@@ -94,6 +94,8 @@ describe('FaqAccordion Component', () => {
   it('filters visible FAQ items when category pills are toggled', () => {
     render(<FaqAccordion faqs={sampleFaqs} />);
 
+    expect(screen.getByRole('group', { name: 'Filter FAQs by category' })).toBeInTheDocument();
+
     // Checkbox rendered by CategoryFilter
     const dressCodeCheckbox = screen.getByRole('checkbox', { name: /dress code/i });
     expect(dressCodeCheckbox).toBeInTheDocument();

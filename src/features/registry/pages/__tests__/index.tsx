@@ -54,10 +54,13 @@ describe('RegistryPage', () => {
     mockUseRegistry.mockReturnValue(defaultMockState as any);
   });
 
-  it('renders the main heading', () => {
+  it('renders the main heading and filter controls', () => {
     render(<RegistryPage />);
     expect(
       screen.getByRole('heading', { level: 1, name: /wedding registry/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'Filter gifts by category' })
     ).toBeInTheDocument();
   });
 

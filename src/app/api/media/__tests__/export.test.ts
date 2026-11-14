@@ -2,6 +2,8 @@
 
 import { GET, POST } from '../export/route';
 import { NextRequest } from 'next/server';
+import path from 'path';
+import fs from 'fs';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
@@ -380,6 +382,119 @@ describe('GET & POST /api/media/export Integration Tests', () => {
       expect(zipContent).toContain('Wedding_Ceremony_1.jpg');
       expect(zipContent).toContain('Wedding_Ceremony_8.jpg');
       expect(zipContent).toContain('Wedding_Ceremony_9.jpg');
+    });
+  });
+
+  describe('Path Traversal Guardrails and Canonical Boundary Verification', () => {
+    test('rejects relative path traversal sequences escaping public directory and creates error notice', async () => {
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: 'm-traversal', url: '../../package.json', altText: 'Package Config' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      const req = new NextRequest('http://localhost/api/media/export?ids=m-traversal');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const buffer = await readStream(res);
+      const zipContent = buffer.toString('utf-8');
+      expect(zipContent).toContain('error_Package_Config.json.txt');
+      expect(zipContent).not.toContain('"name": "wedding_website"');
+    });
+
+    test('rejects URL-encoded path traversal sequences (%2e%2e) and creates error notice', async () => {
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: 'm-encoded', url: '/%2e%2e/%2e%2e/package.json', altText: 'Encoded Traversal' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      const req = new NextRequest('http://localhost/api/media/export?ids=m-encoded');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const buffer = await readStream(res);
+      const zipContent = buffer.toString('utf-8');
+      expect(zipContent).toContain('error_Encoded_Traversal.json.txt');
+      expect(zipContent).not.toContain('"name": "wedding_website"');
+    });
+
+    test('exports valid media items while appending error notices for path traversal attempts in the same batch', async () => {
+      mockPrisma.media.findMany.mockResolvedValue([
+        {
+          id: 'm-valid',
+          url: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
+          altText: 'Valid Photo',
+        },
+        { id: 'm-bad', url: '/uploads/../../package.json', altText: 'Bad Photo' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      const req = new NextRequest('http://localhost/api/media/export?ids=m-valid,m-bad');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const buffer = await readStream(res);
+      const zipContent = buffer.toString('utf-8');
+      expect(zipContent).toContain('Valid_Photo.jpg');
+      expect(zipContent).toContain('error_Bad_Photo.json.txt');
+      expect(zipContent).not.toContain('"name": "wedding_website"');
+    });
+
+    test('rejects symlinks that point outside the public directory boundary', async () => {
+      const publicDir = path.resolve(process.cwd(), 'public');
+      const symlinkPath = path.join(publicDir, 'test-outside-symlink.json');
+      const targetPath = path.resolve(process.cwd(), 'package.json');
+
+      try {
+        try {
+          await fs.promises.unlink(symlinkPath);
+        } catch {}
+        await fs.promises.symlink(targetPath, symlinkPath);
+
+        mockPrisma.media.findMany.mockResolvedValue([
+          { id: 'm-symlink', url: '/test-outside-symlink.json', altText: 'Symlink Leak' },
+        ]);
+        mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+        const req = new NextRequest('http://localhost/api/media/export?ids=m-symlink');
+        const res = await GET(req);
+
+        expect(res.status).toBe(200);
+        const buffer = await readStream(res);
+        const zipContent = buffer.toString('utf-8');
+        expect(zipContent).toContain('error_Symlink_Leak.json.txt');
+        expect(zipContent).not.toContain('"name": "wedding_website"');
+      } finally {
+        try {
+          await fs.promises.unlink(symlinkPath);
+        } catch {}
+      }
+    });
+
+    test('allows valid local files inside the public directory to export normally', async () => {
+      const publicDir = path.resolve(process.cwd(), 'public');
+      const validFilePath = path.join(publicDir, 'test-valid-media.txt');
+
+      try {
+        await fs.promises.writeFile(validFilePath, 'valid-media-file-content', 'utf-8');
+
+        mockPrisma.media.findMany.mockResolvedValue([
+          { id: 'm-valid-local', url: '/test-valid-media.txt', altText: 'Valid Local Media' },
+        ]);
+        mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+        const req = new NextRequest('http://localhost/api/media/export?ids=m-valid-local');
+        const res = await GET(req);
+
+        expect(res.status).toBe(200);
+        const buffer = await readStream(res);
+        const zipContent = buffer.toString('utf-8');
+        expect(zipContent).toContain('Valid_Local_Media.txt');
+      } finally {
+        try {
+          await fs.promises.unlink(validFilePath);
+        } catch {}
+      }
     });
   });
 });

@@ -12,6 +12,8 @@ export interface CategoryFilterProps extends Omit<React.HTMLAttributes<HTMLDivEl
   selected: string[];
   /** Callback function that is invoked when the selection changes. */
   onChange: (selected: string[]) => void;
+  /** Optional accessible label for the group of category filters. */
+  label?: string;
 }
 
 /**
@@ -20,7 +22,20 @@ export interface CategoryFilterProps extends Omit<React.HTMLAttributes<HTMLDivEl
  * It allows users to select multiple categories to filter a list of items.
  */
 export const CategoryFilter = React.forwardRef<HTMLDivElement, CategoryFilterProps>(
-  ({ categories, selected, onChange, className, ...props }, ref) => {
+  (
+    {
+      categories,
+      selected,
+      onChange,
+      className,
+      label,
+      'aria-label': ariaLabel,
+      'aria-labelledby': ariaLabelledBy,
+      role = 'group',
+      ...props
+    },
+    ref
+  ) => {
     const handleToggle = (category: string) => {
       if (selected.includes(category)) {
         onChange(selected.filter(c => c !== category));
@@ -29,8 +44,19 @@ export const CategoryFilter = React.forwardRef<HTMLDivElement, CategoryFilterPro
       }
     };
 
+    const computedAriaLabel = ariaLabelledBy
+      ? undefined
+      : (ariaLabel || label || 'Filter by category');
+
     return (
-      <div ref={ref} className={cn('flex flex-wrap gap-2 mb-4', className)} {...props}>
+      <div
+        ref={ref}
+        role={role}
+        aria-label={computedAriaLabel}
+        aria-labelledby={ariaLabelledBy}
+        className={cn('flex flex-wrap gap-2 mb-4', className)}
+        {...props}
+      >
         {categories.map(category => (
           <FormGroup key={category} className="inline-flex items-center space-y-0 mr-2">
             <div className="flex items-center space-x-2">

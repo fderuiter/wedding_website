@@ -83,7 +83,7 @@ export default function DragDropContainer({
                       <div className="flex items-center gap-4">
                         <div
                           {...provided.dragHandleProps}
-                          aria-label={`Drag handle for ${feature.title || feature.id}`}
+                          aria-label={`Reorder ${feature.title || feature.id}`}
                           className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
                         >
                           <Icon name="DragHandle" className="h-6 w-6" />
