@@ -76,13 +76,16 @@ export default function DragDropContainer({
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      {...provided.dragHandleProps}
                       className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 transition ${
                         !feature.visible ? 'opacity-50' : ''
                       }`}
                     >
                       <div className="flex items-center gap-4">
-                        <div className="text-gray-500 dark:text-gray-400">
+                        <div
+                          {...provided.dragHandleProps}
+                          aria-label={`Drag handle for ${feature.title || feature.id}`}
+                          className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
+                        >
                           <Icon name="DragHandle" className="h-6 w-6" />
                         </div>
                         <div>

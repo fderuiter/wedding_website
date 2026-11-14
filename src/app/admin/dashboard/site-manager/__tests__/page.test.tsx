@@ -1,7 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import SiteManagerPage from '../page';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('framer-motion', () => {
   const React = require('react');
@@ -52,7 +55,7 @@ jest.mock('@hello-pangea/dnd', () => ({
   Draggable: ({ children }: any) =>
     children({
       draggableProps: { 'data-testid': 'draggable' },
-      dragHandleProps: { 'data-testid': 'drag-handle' },
+      dragHandleProps: { 'data-testid': 'drag-handle', role: 'button', tabIndex: 0 },
       innerRef: React.createRef(),
     }),
 }));
@@ -94,7 +97,7 @@ describe('SiteManagerPage and DragDropContainer', () => {
     expect(screen.getByText('Wedding Day Details')).toBeInTheDocument();
   });
 
-  it('correctly stops propagation on the Visibility button, preventing accidental drag', () => {
+  it('correctly isolates dragHandleProps to the drag handle and activates action buttons without conflicting drag listeners', () => {
     const parentClickSpy = jest.fn();
     const mockToggleVisibility = jest.fn();
     const DragDropContainer = require('../components/DragDropContainer').default;
@@ -109,6 +112,18 @@ describe('SiteManagerPage and DragDropContainer', () => {
       </div>
     );
 
+    // Verify dragHandleProps attach to the dedicated drag handle and NOT the outer card
+    const draggableCards = screen.getAllByTestId('draggable');
+    const dragHandles = screen.getAllByTestId('drag-handle');
+    expect(draggableCards[0]).not.toHaveAttribute('data-testid', 'drag-handle');
+    expect(draggableCards[0]).not.toHaveAttribute('role', 'button');
+    expect(draggableCards[0]).toContainElement(dragHandles[0]);
+
+    // Verify the drag handle has accessible aria-label and keyboard focus ring styling
+    expect(dragHandles[0]).toHaveAttribute('aria-label', 'Drag handle for Our Story');
+    expect(dragHandles[0].className).toContain('focus:ring-2');
+    expect(dragHandles[0].className).toContain('focus:ring-primary');
+
     const visibleBtn = screen.getByRole('button', { name: 'Visible' });
     fireEvent.click(visibleBtn);
 
@@ -116,6 +131,38 @@ describe('SiteManagerPage and DragDropContainer', () => {
     expect(parentClickSpy).not.toHaveBeenCalled();
     // But toggleVisibility should have been called
     expect(mockToggleVisibility).toHaveBeenCalledWith('story');
+  });
+
+  it('falls back to feature identifier for drag handle aria-label when title is missing', () => {
+    const DragDropContainer = require('../components/DragDropContainer').default;
+
+    render(
+      <DragDropContainer
+        features={[
+          { id: 'custom-feature-1', type: 'custom', title: '', visible: true },
+        ]}
+        saveFeatures={mockSaveFeatures}
+        toggleVisibility={jest.fn()}
+      />
+    );
+
+    const dragHandle = screen.getByTestId('drag-handle');
+    expect(dragHandle).toHaveAttribute('aria-label', 'Drag handle for custom-feature-1');
+  });
+
+  it('passes axe accessibility audit without nested button violations', async () => {
+    const DragDropContainer = require('../components/DragDropContainer').default;
+
+    const { container } = render(
+      <DragDropContainer
+        features={mockFeatures}
+        saveFeatures={mockSaveFeatures}
+        toggleVisibility={jest.fn()}
+      />
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('fires sequence mutation payload immediately when a drop action completes', async () => {
