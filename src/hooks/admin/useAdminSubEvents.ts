@@ -1,13 +1,12 @@
-import { useEntityOrchestration } from '../useEntityOrchestration';
-import type { SubEventDTO } from '@/features/sub-events/schemas';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
+import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
+import type { SubEventDTO } from '@/features/sub-events';
 
-export function useAdminSubEvents() {
-  return useEntityOrchestration<SubEventDTO>({
+export function useAdminSubEvents(options?: AdminHookOptions) {
+  return useAdminEntityOrchestration<SubEventDTO>({
     queryKey: ['admin-sub-events'],
     endpoint: '/api/admin/sub-events',
     entityName: 'sub-event',
-    apiClient,
+    options,
   });
 }
+

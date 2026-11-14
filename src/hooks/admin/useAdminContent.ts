@@ -1,13 +1,12 @@
-import { useEntityOrchestration } from '../useEntityOrchestration';
+import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 import type { ContentNodeDTO } from '@/features/content';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
 
-export function useAdminContent() {
-  return useEntityOrchestration<ContentNodeDTO>({
+export function useAdminContent(options?: AdminHookOptions) {
+  return useAdminEntityOrchestration<ContentNodeDTO>({
     queryKey: ['admin-content-nodes'],
     endpoint: '/api/admin/content-nodes',
     entityName: 'content node',
-    apiClient,
+    options,
   });
 }
+

@@ -2,6 +2,7 @@
 
 import { BaseService } from '../service';
 import { createAuditSnapshot } from '@/lib/audit';
+import { z } from 'zod';
 
 jest.mock('@/lib/audit', () => ({
   createAuditSnapshot: jest.fn(),
@@ -265,6 +266,98 @@ describe('BaseService Enhancements', () => {
         { id: 'id-1', deleted: true },
         { id: 'id-2', deleted: true },
       ]);
+    });
+  });
+
+  describe('schema validation in BaseService', () => {
+    const TestSchema = z.object({
+      name: z.string().min(1, 'Name is required'),
+      age: z.number().int().positive('Age must be a positive integer'),
+    });
+
+    it('should validate and create successfully when input data satisfies schema', async () => {
+      const serviceWithSchema = new BaseService<any>(mockRepo, 'TestEntity', TestSchema);
+      const validData = { name: 'Alice', age: 30 };
+
+      const result = await serviceWithSchema.create(validData);
+
+      expect(result).toEqual({ id: 'new-id', name: 'Alice', age: 30 });
+      expect(createAuditSnapshot).toHaveBeenCalledWith(
+        'TestEntity',
+        'new-id',
+        { id: 'new-id', name: 'Alice', age: 30 },
+        'Admin',
+        'mock-tx-client'
+      );
+    });
+
+    it('should validate and update successfully when input data satisfies schema', async () => {
+      const serviceWithSchema = new BaseService<any>(mockRepo, 'TestEntity', TestSchema);
+      const validData = { name: 'Alice', age: 31 };
+
+      const result = await serviceWithSchema.update('entity-1', validData);
+
+      expect(result).toEqual({ id: 'entity-1', name: 'Alice', age: 31 });
+    });
+
+    it('should reject create and throw formatted error with "Validation Error: " prefix on schema failure', async () => {
+      const serviceWithSchema = new BaseService<any>(mockRepo, 'TestEntity', TestSchema);
+      const invalidData = { name: '', age: -5 };
+
+      await expect(serviceWithSchema.create(invalidData)).rejects.toThrow(
+        /^Validation Error: name: Name is required, age: Age must be a positive integer/
+      );
+      expect(createAuditSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('should reject update and throw formatted error with "Validation Error: " prefix on schema failure', async () => {
+      const serviceWithSchema = new BaseService<any>(mockRepo, 'TestEntity', TestSchema);
+      const invalidData = { name: 'Bob', age: 'invalid' };
+
+      await expect(serviceWithSchema.update('entity-1', invalidData)).rejects.toThrow(
+        /^Validation Error: age:/
+      );
+      expect(createAuditSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('should operate as no-op when no schema is provided (backwards compatibility)', async () => {
+      const serviceWithoutSchema = new BaseService<any>(mockRepo, 'TestEntity');
+      const arbitraryData = { unvalidatedField: 'anything', nested: { foo: 123 } };
+
+      const result = await serviceWithoutSchema.create(arbitraryData);
+
+      expect(result).toEqual({ id: 'new-id', ...arbitraryData });
+    });
+
+    it('should allow subclasses to extend validate by calling super.validate(data, client)', async () => {
+      class ExtendedService extends BaseService<any> {
+        constructor() {
+          super(mockRepo, 'ExtendedEntity', TestSchema);
+        }
+
+        protected async validate(data: any, client?: any): Promise<void> {
+          await super.validate(data, client);
+          if (data.name === 'Forbidden') {
+            throw new Error('Custom Error: Forbidden name');
+          }
+        }
+      }
+
+      const extendedService = new ExtendedService();
+
+      // Fails schema first
+      await expect(extendedService.create({ name: '', age: 25 })).rejects.toThrow(
+        /^Validation Error: name: Name is required/
+      );
+
+      // Passes schema, but fails custom logic
+      await expect(extendedService.create({ name: 'Forbidden', age: 25 })).rejects.toThrow(
+        'Custom Error: Forbidden name'
+      );
+
+      // Passes both
+      const valid = await extendedService.create({ name: 'Allowed', age: 25 });
+      expect(valid).toEqual({ id: 'new-id', name: 'Allowed', age: 25 });
     });
   });
 });

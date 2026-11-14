@@ -1,14 +1,12 @@
-import { useEntityOrchestration } from '../useEntityOrchestration';
-import type { InvitationCodeDTO } from '@/features/registry/schemas';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
+import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
+import type { InvitationCodeDTO } from '@/features/registry';
 
-export function useAdminInvitationCodes(options?: { enabled?: boolean }) {
-  return useEntityOrchestration<InvitationCodeDTO>({
+export function useAdminInvitationCodes(options?: AdminHookOptions) {
+  return useAdminEntityOrchestration<InvitationCodeDTO>({
     queryKey: ['admin-invitation-codes'],
     endpoint: '/api/admin/invitation-codes',
     entityName: 'invitation code',
-    apiClient,
-    enabled: options?.enabled,
+    options,
   });
 }
+

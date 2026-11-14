@@ -813,6 +813,27 @@ describe('POST /api/registry/scrape', () => {
     }
   });
 
+  it('should reject DNS rebinding attempts with HTTP status 400', async () => {
+    const dns = require('dns');
+    const originalLookup = dns.promises.lookup;
+    try {
+      // Simulate DNS resolving to a private IP (rebind)
+      dns.promises.lookup = jest.fn().mockResolvedValue({ address: '169.254.169.254', family: 4 });
+
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        body: JSON.stringify({ url: 'https://rebind-attack.example.com/product' }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toBe('Blocked: URL resolves to a private or restricted IP address');
+    } finally {
+      dns.promises.lookup = originalLookup;
+    }
+  });
+
   runIfLive('should perform genuine outbound calls to actual public websites in live mode', async () => {
     const testUrl = 'https://www.example.com';
     const request = new Request('http://localhost/api/registry/scrape', {

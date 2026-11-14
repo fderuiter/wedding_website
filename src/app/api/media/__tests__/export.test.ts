@@ -340,6 +340,34 @@ describe('GET & POST /api/media/export Integration Tests', () => {
       expect(zipContent).toContain('error_Network_Err.jpg.txt');
     });
 
+    test('logs an error entry and continues processing valid media items when a host attempts DNS rebinding', async () => {
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: 'm-rebind', url: 'https://attacker.example.com/rebind.jpg', altText: 'Rebind Attack' },
+        { id: 'm-valid', url: 'https://cdn.example.com/valid.jpg', altText: 'Valid Photo' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      // Item 1 fails due to SSRF / DNS rebinding block
+      mockSafeFetch.mockRejectedValueOnce(
+        new Error('Blocked: URL resolves to a private or restricted IP address')
+      );
+      // Item 2 succeeds normally
+      mockSafeFetch.mockResolvedValueOnce(
+        new Response(Buffer.from('valid-image-bytes'), { status: 200 })
+      );
+
+      const req = new NextRequest('http://localhost/api/media/export?ids=m-rebind,m-valid');
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const buffer = await readStream(res);
+      const zipContent = buffer.toString('utf-8');
+
+      // Verifies error file created for the blocked item and valid item exported
+      expect(zipContent).toContain('error_Rebind_Attack.jpg.txt');
+      expect(zipContent).toContain('Valid_Photo.jpg');
+    });
+
     test('creates missing_${filename}.txt inside ZIP when local file is not found', async () => {
       mockPrisma.media.findMany.mockResolvedValue([
         { id: 'm1', url: '/uploads/missing-file.jpg', altText: 'Missing Local' },

@@ -41,6 +41,7 @@ const envSchema = z.object({
     .transform(val => val === true || val === 'true' || val === '1')
     .default(false),
   GUEST_PASSCODE: z.string().default('wedding2026'),
+  GUEST_SESSION_SECRET: z.string().default('default-guest-session-secret'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
   CRON_SECRET: z.string().optional(),
   S3_BUCKET: z.string().optional(),
@@ -50,6 +51,13 @@ const envSchema = z.object({
   S3_ENDPOINT: z.string().optional(),
   S3_PUBLIC_URL: z.string().optional(),
 }).superRefine((data, ctx) => {
+  if (data.GUEST_SESSION_SECRET && data.GUEST_PASSCODE && data.GUEST_SESSION_SECRET === data.GUEST_PASSCODE) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GUEST_SESSION_SECRET'],
+      message: 'GUEST_SESSION_SECRET must not match GUEST_PASSCODE',
+    });
+  }
   const keys = ['S3_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
   const presentKeys = keys.filter(key => !!data[key]);
   if (presentKeys.length > 0 && presentKeys.length < keys.length) {
@@ -112,6 +120,7 @@ if (process.env.NEXT_RUNTIME === 'edge' || (isBuildTime && (!process.env.DATABAS
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
     RUN_MIGRATIONS: process.env.RUN_MIGRATIONS === 'true' || process.env.RUN_MIGRATIONS === '1',
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
+    GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
     S3_BUCKET: process.env.S3_BUCKET || undefined,
     S3_REGION: process.env.S3_REGION || undefined,

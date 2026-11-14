@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { ApiError } from '@/utils/ApiError';
@@ -10,11 +9,7 @@ import {
   purgeSampleData,
 } from '@/lib/sampleData/generator';
 import { isSiteInitialized, getAppConfig } from '@/lib/config';
-
-export const SampleDataGenerateSchema = z.object({
-  archetype: z.enum(['classic', 'destination', 'romantic']).optional().default('classic'),
-  modules: z.array(z.string()).optional(),
-});
+import { SampleDataGenerateSchema } from '@/lib/sampleData/schemas';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const isAdmin = await isAdminRequest(req);

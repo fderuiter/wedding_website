@@ -25,6 +25,7 @@ export default defineConfig({
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
       ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,example.com,*.example.com',
       GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
+      GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
       E2E_TEST: 'true',
     },
   } : undefined,

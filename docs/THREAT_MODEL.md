@@ -7,7 +7,7 @@ This application is a reusable, self-hostable wedding website template built on 
 ### Primary Assets
 - **Administrative Access**: Admin session tokens, settings modification, content editing, database backups/restores, media uploads.
 - **Guest Access & Privacy**: Guest RSVP data, registry contributions, invitation codes, hidden event details.
-- **System Credentials & Secrets**: `ADMIN_PASSWORD` (scrypt hash), `GUEST_PASSCODE`, `DATABASE_URL`, S3/R2 access keys, HMAC signing secrets.
+- **System Credentials & Secrets**: `ADMIN_PASSWORD` (scrypt hash), `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `DATABASE_URL`, S3/R2 access keys, HMAC signing secrets.
 - **Server Resources & Network Integrity**: Server compute/memory, internal network access (SSRF target), public file storage.
 
 ---
@@ -18,6 +18,7 @@ This application is a reusable, self-hostable wedding website template built on 
 | :--- | :--- | :--- |
 | **Unauthenticated Internet User** | Automated exploitation, vandalism, scraping | Brute-forcing guest passcode / admin password, SSRF via registry link scraper, Host Header injection, file upload abuse. |
 | **Authenticated Guest** | Accessing unreleased features, unauthorized edits | Privilege escalation to admin endpoints, tampering with registry items. |
+| **Malicious Attendee** | Forging session tokens to view or mutate other guests' private details | Attempting HMAC signature forgery using public guest passcode. Stopped by dedicated server-side session secret (`GUEST_SESSION_SECRET`). |
 | **Malicious Reverse Proxy / MITM** | Session hijacking, data interception | Man-in-the-Middle attacks, insecure HTTP redirect handling. |
 | **Rogue Admin / Compromised Key** | Complete data exfiltration or wipeout | Bulk export/import abuse, version history wiping. |
 
@@ -71,4 +72,4 @@ This application is a reusable, self-hostable wedding website template built on 
 ## 4. Residual Risk Assessment & Operational Guidance
 
 - **In-Memory Rate Limiting**: The built-in rate limiter uses in-memory storage suitable for single-instance deployments. For horizontally scaled multi-instance deployments behind a load balancer, deployers should configure rate limiting at the ingress layer (e.g., Cloudflare, Nginx, or AWS WAF).
-- **Secret Rotation**: Deployers must set custom `GUEST_PASSCODE` and `ADMIN_PASSWORD` values in environment variables upon first deployment and rotate them if compromised.
+- **Secret Rotation**: Deployers must set custom `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, and `ADMIN_PASSWORD` values in environment variables upon first deployment and rotate them if compromised.
