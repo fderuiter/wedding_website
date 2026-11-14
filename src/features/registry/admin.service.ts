@@ -1,20 +1,12 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
-import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
+import { deriveAdminInputSchema } from '@/utils/validation';
 import { handleMediaFields } from '@/features/admin/utils';
 import { z } from 'zod';
 
 const RegistryItemInputSchema = deriveAdminInputSchema(RegistryItemSchema);
 export type RegistryItemInput = z.infer<typeof RegistryItemInputSchema>;
-
-function validateRegistryItem(data: any): string | null {
-  const result = RegistryItemInputSchema.safeParse(data);
-  if (!result.success) {
-    return formatZodError(result.error);
-  }
-  return null;
-}
 
 export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
   static ENTITY_KEY = 'registry-items';
@@ -24,12 +16,7 @@ export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
   };
     
   constructor() {
-    super(new BaseRepository<RegistryItemDTO>('registryItem'), 'RegistryItem');
-  }
-
-  protected async validate(data: any, _client?: any): Promise<void> {
-    const error = validateRegistryItem(data);
-    if (error) throw new Error(`Validation Error: ${error}`);
+    super(new BaseRepository<RegistryItemDTO>('registryItem'), 'RegistryItem', RegistryItemInputSchema);
   }
 
   protected async preSave(data: any, client?: any, author?: string): Promise<any> {

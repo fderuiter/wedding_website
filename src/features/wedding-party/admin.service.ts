@@ -3,17 +3,9 @@ import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin/utils';
 import { createBatchAuditSnapshots } from '@/lib/audit';
 import { WeddingPartyMemberSchema } from './schemas';
-import { formatZodError, deriveAdminInputSchema } from '@/utils/validation';
+import { deriveAdminInputSchema } from '@/utils/validation';
 
 const WeddingPartyInputSchema = deriveAdminInputSchema(WeddingPartyMemberSchema, false);
-
-function validateWeddingParty(data: any): string | null {
-  const result = WeddingPartyInputSchema.safeParse(data);
-  if (!result.success) {
-    return formatZodError(result.error);
-  }
-  return null;
-}
 
 export class WeddingPartyAdminService extends BaseService<any> {
   static ENTITY_KEY = 'wedding-party';
@@ -24,12 +16,7 @@ export class WeddingPartyAdminService extends BaseService<any> {
   };
     
   constructor() {
-    super(new BaseRepository('weddingPartyMember'), 'WeddingPartyMember');
-  }
-
-  protected async validate(data: any, _client?: any): Promise<void> {
-    const error = validateWeddingParty(data);
-    if (error) throw new Error(`Validation Error: ${error}`);
+    super(new BaseRepository('weddingPartyMember'), 'WeddingPartyMember', WeddingPartyInputSchema);
   }
 
   protected async preSave(data: any, client?: any, author?: string): Promise<any> {
