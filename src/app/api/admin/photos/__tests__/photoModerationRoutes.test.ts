@@ -1,8 +1,8 @@
 /** @jest-environment node */
 
-import { GET as getModerationQueue, PATCH as patchModerationQueue, POST as postModerationQueue } from '../moderation/route';
-import { POST as postBatchModeration, PATCH as patchBatchModeration } from '../moderation/batch/route';
-import { PATCH as patchPhotoById, PUT as putPhotoById } from '../[id]/route';
+import { GET as getModerationQueue, PATCH as patchModerationQueue } from '../moderation/route';
+import { POST as postBatchModeration } from '../moderation/batch/route';
+import { PATCH as patchPhotoById } from '../[id]/route';
 import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/prisma', () => ({
@@ -146,7 +146,7 @@ describe('Admin Photo Moderation Routes', () => {
     });
   });
 
-  describe('PATCH & POST /api/admin/photos/moderation', () => {
+  describe('PATCH /api/admin/photos/moderation', () => {
     it('returns 404 if gallery feature is disabled', async () => {
       mockGetAppConfig.mockResolvedValueOnce({
         id: 'default',
@@ -210,10 +210,10 @@ describe('Admin Photo Moderation Routes', () => {
       (mockContentService.moderatePhoto as jest.Mock).mockResolvedValueOnce(true);
 
       const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation', {
-        method: 'POST',
+        method: 'PATCH',
         body: JSON.stringify({ nodeId: 'p1', status: 'REJECTED' }),
       });
-      const res = await postModerationQueue(req);
+      const res = await patchModerationQueue(req);
       const json = await res.json();
 
       expect(res.status).toBe(200);
@@ -222,7 +222,7 @@ describe('Admin Photo Moderation Routes', () => {
     });
   });
 
-  describe('PATCH & PUT /api/admin/photos/[id]', () => {
+  describe('PATCH /api/admin/photos/[id]', () => {
     it('returns 404 if gallery feature is disabled', async () => {
       mockGetAppConfig.mockResolvedValueOnce({
         id: 'default',
@@ -262,10 +262,10 @@ describe('Admin Photo Moderation Routes', () => {
       });
 
       const req = new NextRequest('http://localhost:3000/api/admin/photos/p1', {
-        method: 'PUT',
+        method: 'PATCH',
         body: JSON.stringify({ action: 'approve' }),
       });
-      const res = await putPhotoById(req, { params: Promise.resolve({ id: 'p1' }) });
+      const res = await patchPhotoById(req, { params: Promise.resolve({ id: 'p1' }) });
       const json = await res.json();
 
       expect(res.status).toBe(200);
@@ -289,7 +289,7 @@ describe('Admin Photo Moderation Routes', () => {
     });
   });
 
-  describe('POST & PATCH /api/admin/photos/moderation/batch', () => {
+  describe('POST /api/admin/photos/moderation/batch', () => {
     it('returns 404 if gallery feature is disabled', async () => {
       mockGetAppConfig.mockResolvedValueOnce({
         id: 'default',
@@ -403,10 +403,10 @@ describe('Admin Photo Moderation Routes', () => {
       (mockContentService.moderatePhotosBatch as jest.Mock).mockResolvedValueOnce(mockBatchResult);
 
       const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation/batch', {
-        method: 'PATCH',
+        method: 'POST',
         body: JSON.stringify({ photoIds: ['p1'], status: 'APPROVED' }),
       });
-      const res = await patchBatchModeration(req);
+      const res = await postBatchModeration(req);
       const json = await res.json();
 
       expect(res.status).toBe(200);

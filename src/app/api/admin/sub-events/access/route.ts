@@ -38,5 +38,3 @@ export const PUT = withApiMiddleware(async (request: NextRequest) => {
     data: result,
   });
 });
-
-export const POST = PUT;

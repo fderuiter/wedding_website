@@ -61,6 +61,7 @@ describe('ThingsToDoList', () => {
   it('renders all attractions by default', async () => {
     render(<ThingsToDoList attractions={attractions as any} />);
     await screen.findByTestId('things-to-do-map');
+    expect(screen.getByRole('group', { name: 'Filter attractions by category' })).toBeInTheDocument();
     const attractionCards = screen.getAllByText(/Directions/);
     expect(attractionCards.length).toBe(attractions.length);
   });

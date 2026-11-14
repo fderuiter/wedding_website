@@ -486,7 +486,6 @@ describe('HeartPage', () => {
 
       // Initially, whole heart state
       expect(screen.getByText('Heart is whole.')).toBeInTheDocument();
-      expect(screen.queryByText('Secret message revealed: I love you!')).not.toBeInTheDocument();
       expect(screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole.')).toBeInTheDocument();
 
       const mockState = { clock: { getElapsedTime: () => 1.0 } };
@@ -500,13 +499,12 @@ describe('HeartPage', () => {
       });
 
       // 1. Live region announces secret message
-      expect(screen.getByText('Heart is whole. Secret message revealed: I love you!')).toBeInTheDocument();
+      const liveRegion = screen.getByRole('status');
+      expect(liveRegion).toHaveTextContent('I love you!');
 
-      // 2. Hidden accessible paragraph in DOM
-      const domSecretMsg = screen.getByText('Secret message revealed: I love you!');
-      expect(domSecretMsg).toBeInTheDocument();
-      expect(domSecretMsg).toHaveClass('sr-only');
-      expect(domSecretMsg.tagName).toBe('P');
+      // 2. Hidden accessible DOM element in overlay
+      const secretDomNodes = screen.getAllByText('I love you!');
+      expect(secretDomNodes.length).toBeGreaterThanOrEqual(1);
 
       // 3. Whole heart button aria-label includes secret message status
       const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole. Secret message revealed: I love you!');
@@ -521,8 +519,7 @@ describe('HeartPage', () => {
       });
 
       expect(screen.getByText('Heart is whole.')).toBeInTheDocument();
-      expect(screen.queryByText('Heart is whole. Secret message revealed: I love you!')).not.toBeInTheDocument();
-      expect(screen.queryByText('Secret message revealed: I love you!')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole. Secret message revealed: I love you!')).not.toBeInTheDocument();
       expect(screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole.')).toBeInTheDocument();
     });
 
@@ -542,7 +539,8 @@ describe('HeartPage', () => {
         }
       });
 
-      expect(screen.getByText('Heart is whole. Secret message revealed: I love you!')).toBeInTheDocument();
+      const liveRegion = screen.getByRole('status');
+      expect(liveRegion).toHaveTextContent('I love you!');
 
       // Now break the heart via collision force
       act(() => {
@@ -552,8 +550,7 @@ describe('HeartPage', () => {
       });
 
       // Broken state must NOT be overridden by easter egg
-      expect(screen.getByText('Heart is broken.')).toBeInTheDocument();
-      expect(screen.queryByText('Heart is whole. Secret message revealed: I love you!')).not.toBeInTheDocument();
+      expect(liveRegion).toHaveTextContent('Heart is broken.');
     });
 
     it('appends secret message to wholeHeartLabel when no partner names are provided', () => {

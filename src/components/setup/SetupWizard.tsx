@@ -297,10 +297,11 @@ function SetupWizardContent() {
 
   return (
     <main id="main-content" tabIndex={-1} className="min-h-screen py-12 flex flex-col justify-center items-center">
+      <h1 className="sr-only">Wedding Website Setup Wizard</h1>
       <AccessibleStep isActive={!isAuthenticated || step === 1}>
         <Container>
           <Card className="max-w-md">
-            <Heading className="mb-4">Welcome to Your Wedding Site!</Heading>
+            <Heading as="h2" className="mb-4">Welcome to Your Wedding Site!</Heading>
             <p className="mb-4 text-gray-700">Please enter the admin password configured in your environment to begin setup.</p>
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup state={error && !isAuthenticated ? 'error' : 'default'}>
@@ -327,7 +328,7 @@ function SetupWizardContent() {
       <AccessibleStep isActive={isAuthenticated && step === 2}>
         <Container>
           <Card className="max-w-xl">
-            <Heading className="mb-4">Step 1: The Essentials</Heading>
+            <Heading as="h2" className="mb-4">Step 1: The Essentials</Heading>
             <p className="mb-4 text-gray-700">Let&apos;s start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -408,7 +409,7 @@ function SetupWizardContent() {
       <AccessibleStep isActive={isAuthenticated && step === 3}>
         <Container>
           <Card className="max-w-2xl">
-            <Heading className="mb-2">Step 3: Sample Data Selection</Heading>
+            <Heading as="h2" className="mb-2">Step 3: Sample Data Selection</Heading>
             <p className="mb-6 text-gray-700 dark:text-gray-300">
               Populate your wedding site with sample records so you can explore features right away. You can clear or keep sample data anytime from the admin dashboard.
             </p>
@@ -559,7 +560,7 @@ function SetupWizardContent() {
       <AccessibleStep isActive={isAuthenticated && step === 4}>
         <Container>
           <Card className="max-w-2xl text-center">
-            <Heading className="mb-2">Step 4: Guest List Import</Heading>
+            <Heading as="h2" className="mb-2">Step 4: Guest List Import</Heading>
             <p className="mb-6 text-gray-700 dark:text-gray-300">
               Import your guest list spreadsheet to issue invitation codes and manage RSVPs immediately, or skip to complete setup.
             </p>
@@ -599,7 +600,7 @@ function SetupWizardContent() {
       <AccessibleStep isActive={isAuthenticated && step === 5}>
         <Container>
           <Card className="max-w-2xl text-center">
-            <Heading className="mb-4">Step 5: Complete Setup</Heading>
+            <Heading as="h2" className="mb-4">Step 5: Complete Setup</Heading>
             <p className="mb-6 text-gray-700">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
             <div className="space-y-4">
               <Button onClick={() => setIsWeddingPartyModalOpen(true)} variant="secondary" className="w-full py-3">

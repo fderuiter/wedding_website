@@ -52,7 +52,12 @@ jest.mock('@hello-pangea/dnd', () => ({
   Draggable: ({ children }: any) =>
     children({
       draggableProps: { 'data-testid': 'draggable' },
-      dragHandleProps: { 'data-testid': 'drag-handle' },
+      dragHandleProps: {
+        'data-testid': 'drag-handle',
+        role: 'button',
+        tabIndex: 0,
+        'aria-describedby': 'dnd-instructions',
+      },
       innerRef: React.createRef(),
     }),
 }));
@@ -85,6 +90,12 @@ jest.mock('@/components/ui/ToastProvider', () => ({
 describe('SiteManagerPage and DragDropContainer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useAdminFeaturesMock.mockReturnValue({
+      features: mockFeatures,
+      loading: false,
+      error: null,
+      saveFeatures: mockSaveFeatures,
+    });
   });
 
   it('renders the site manager layout and title', () => {
@@ -280,5 +291,65 @@ describe('SiteManagerPage and DragDropContainer', () => {
 
     expect(parentClickSpy).not.toHaveBeenCalled();
     expect(mockOnDeleteSection).toHaveBeenCalledWith('custom-1');
+  });
+
+  it('does not attach drag handle props to the outer card container', () => {
+    render(<SiteManagerPage />);
+
+    const draggableCards = screen.getAllByTestId('draggable');
+    expect(draggableCards.length).toBe(2);
+
+    draggableCards.forEach((card) => {
+      // Outer card should not receive drag handle attributes
+      expect(card).not.toHaveAttribute('data-testid', 'drag-handle');
+      expect(card).not.toHaveAttribute('aria-describedby', 'dnd-instructions');
+      expect(card.tagName).not.toBe('BUTTON');
+      expect(card).not.toHaveAttribute('role', 'button');
+      expect(card).not.toHaveAttribute('tabIndex');
+    });
+  });
+
+  it('attaches drag handle props and keyboard focus to the dedicated handle element', () => {
+    render(<SiteManagerPage />);
+
+    const handles = screen.getAllByTestId('drag-handle');
+    expect(handles.length).toBe(2);
+
+    const firstHandle = screen.getByLabelText('Reorder Our Story');
+    expect(firstHandle).toBeInTheDocument();
+    expect(firstHandle).toHaveAttribute('data-testid', 'drag-handle');
+    expect(firstHandle).toHaveAttribute('role', 'button');
+    expect(firstHandle).toHaveAttribute('tabIndex', '0');
+    expect(firstHandle).toHaveAttribute('aria-describedby', 'dnd-instructions');
+    expect(firstHandle).toHaveClass('cursor-grab');
+
+    // Verify keyboard focus
+    firstHandle.focus();
+    expect(firstHandle).toHaveFocus();
+
+    const secondHandle = screen.getByLabelText('Reorder Wedding Day Details');
+    expect(secondHandle).toBeInTheDocument();
+    expect(secondHandle).toHaveAttribute('data-testid', 'drag-handle');
+  });
+
+  it('falls back to feature.id in drag handle aria-label when title is empty', () => {
+    const DragDropContainer = require('../components/DragDropContainer').default;
+    const untitledFeatures = [
+      { id: 'custom-unnamed', type: 'custom', title: '', visible: true },
+    ];
+
+    render(
+      <DragDropContainer
+        features={untitledFeatures}
+        saveFeatures={mockSaveFeatures}
+        toggleVisibility={jest.fn()}
+      />
+    );
+
+    const fallbackHandle = screen.getByLabelText('Reorder custom-unnamed');
+    expect(fallbackHandle).toBeInTheDocument();
+    expect(fallbackHandle).toHaveAttribute('data-testid', 'drag-handle');
+    fallbackHandle.focus();
+    expect(fallbackHandle).toHaveFocus();
   });
 });
