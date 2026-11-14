@@ -5,6 +5,7 @@ import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { ContributionSchema } from '../schemas';
 import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
@@ -221,17 +222,15 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                 {item.paymentHandle}
               </span>
               {paymentUrl && (
-                <a
+                <AccessibleExternalLink
                   href={paymentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  aria-label={`Open payment link for ${item.paymentHandleType || 'Payment App'} (opens in a new tab)`}
+                  aria-label={`Open payment link for ${item.paymentHandleType || 'Payment App'}`}
+                  showIcon
+                  iconClassName="w-3.5 h-3.5"
                 >
                   <span>Open Link</span>
-                  <Icon name="ExternalLink" className="w-3.5 h-3.5" />
-                  <span className="sr-only"> (opens in a new tab)</span>
-                </a>
+                </AccessibleExternalLink>
               )}
             </div>
           </div>
@@ -269,15 +268,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         {isVendorUrlSafe ? (
-          <a
+          <AccessibleExternalLink
             href={item.vendorUrl as string}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
+            showIcon
+            iconClassName="w-3.5 h-3.5"
+            className="inline-flex items-center gap-1 text-primary dark:text-primary hover:text-primary dark:hover:text-primary underline text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded"
           >
             View on Vendor Site
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
+          </AccessibleExternalLink>
         ) : <div />}
         <Button
           type="button"

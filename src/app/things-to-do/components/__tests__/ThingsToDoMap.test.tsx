@@ -174,5 +174,35 @@ describe('ThingsToDoMap', () => {
       'href',
       'https://www.google.com/maps/dir/?api=1&destination=45,-90'
     );
+    expect(directionsLink).toHaveAttribute(
+      'aria-label',
+      'Directions to Test Spot (opens in a new tab)'
+    );
+    expect(directionsLink).toHaveAttribute('target', '_blank');
+    expect(directionsLink).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('renders accessible directions link announcing destination details and new-tab warning', () => {
+    const attractionWithDirections = [
+      {
+        id: '4',
+        name: 'Millennium Park',
+        description: 'Iconic park',
+        category: 'activity',
+        directions: 'https://maps.example.com/millennium-park',
+        latitude: 41.8826,
+        longitude: -87.6226,
+      },
+    ] as any;
+
+    render(<ThingsToDoMap attractions={attractionWithDirections} />);
+
+    const directionsLink = screen.getByRole('link', {
+      name: 'Directions to Millennium Park (opens in a new tab)',
+    });
+    expect(directionsLink).toBeInTheDocument();
+    expect(directionsLink).toHaveAttribute('href', 'https://maps.example.com/millennium-park');
+    expect(directionsLink).toHaveAttribute('target', '_blank');
+    expect(directionsLink).toHaveAttribute('rel', 'noopener noreferrer');
   });
 });
