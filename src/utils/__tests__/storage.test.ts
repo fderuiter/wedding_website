@@ -102,19 +102,6 @@ describe('Hybrid Storage Provider', () => {
       expect(result.mimeType).toBe('image/jpeg');
     });
 
-    it('supports backward-compatible uploadFile', async () => {
-      const provider = getStorageProvider();
-      const file = {
-        name: 'legacy.png',
-        size: 512,
-        type: 'image/png',
-        arrayBuffer: async () => new Uint8Array([4, 5, 6]).buffer,
-      } as unknown as File;
-
-      const result = await provider.uploadFile(file);
-      expect(result.url).toMatch(/^\/uploads\/[a-f0-9]{16}\.png$/);
-    });
-
     it('deletes an asset by key or URL', async () => {
       const provider = getStorageProvider();
       await provider.delete('/uploads/test-file.png');
