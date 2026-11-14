@@ -17,13 +17,21 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
 
     expect(screen.getByText('Mailing Address Form')).toBeInTheDocument();
     expect(screen.getByLabelText(/Full Name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Full Name/i)).toHaveAttribute('autocomplete', 'name');
     expect(screen.getByLabelText(/Email Address/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Email Address/i)).toHaveAttribute('autocomplete', 'email');
     expect(screen.getByLabelText(/Street Address Line 1/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Street Address Line 1/i)).toHaveAttribute('autocomplete', 'address-line1');
     expect(screen.getByLabelText(/Address Line 2/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Address Line 2/i)).toHaveAttribute('autocomplete', 'address-line2');
     expect(screen.getByLabelText(/City/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/City/i)).toHaveAttribute('autocomplete', 'address-level2');
     expect(screen.getByLabelText(/State \/ Province/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/State \/ Province/i)).toHaveAttribute('autocomplete', 'address-level1');
     expect(screen.getByLabelText(/ZIP \/ Postal Code/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/ZIP \/ Postal Code/i)).toHaveAttribute('autocomplete', 'postal-code');
     expect(screen.getByLabelText(/Country/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Country/i)).toHaveAttribute('autocomplete', 'country-name');
     expect(screen.getByLabelText(/Household Notes/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Submit Address/i })).toBeInTheDocument();
   });
