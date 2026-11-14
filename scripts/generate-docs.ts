@@ -2,23 +2,77 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const scriptDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 // 1. Generate Configuration Markdown from Schema
 import { AppConfigSchema } from '../src/features/content/schemas.ts';
 
-function getZodType(schema: any): string {
-  const t = schema.type || schema._def?.typeName;
+export function getZodType(schema: any): string {
+  if (!schema) return 'unknown';
+
+  let s = schema;
+  let depth = 0;
+  while (s && depth < 20) {
+    depth++;
+    const t = s.type || s._def?.typeName;
+    if (
+      t === 'default' || t === 'ZodDefault' ||
+      t === 'optional' || t === 'ZodOptional' ||
+      t === 'exactOptional' || t === 'ZodExactOptional' ||
+      t === 'nullable' || t === 'ZodNullable' ||
+      t === 'prefault' || t === 'ZodPrefault' ||
+      t === 'nonoptional' || t === 'ZodNonOptional' ||
+      t === 'readonly' || t === 'ZodReadonly' ||
+      t === 'catch' || t === 'ZodCatch' ||
+      t === 'brand' || t === 'ZodBrand'
+    ) {
+      s = s.def?.innerType || s._def?.innerType || (typeof s.unwrap === 'function' ? s.unwrap() : undefined);
+    } else if (t === 'effects' || t === 'ZodEffects') {
+      s = s.def?.schema || s._def?.schema || s.def?.innerType || s._def?.innerType || (typeof s.unwrap === 'function' ? s.unwrap() : undefined);
+    } else if (t === 'pipe' || t === 'pipeline' || t === 'ZodPipe' || t === 'ZodPipeline') {
+      const out = s.def?.out || s._def?.out || s.out;
+      if (out && (out.type === 'transform' || out._def?.typeName === 'ZodTransform')) {
+        s = s.def?.in || s._def?.in || s.in;
+      } else if (out) {
+        s = out;
+      } else {
+        s = s.def?.in || s._def?.in || s.in;
+      }
+    } else {
+      break;
+    }
+  }
+
+  if (!s) return 'unknown';
+
+  const t = s.type || s._def?.typeName;
   if (t === 'string' || t === 'ZodString') return 'string';
   if (t === 'number' || t === 'ZodNumber') return 'number';
   if (t === 'boolean' || t === 'ZodBoolean') return 'boolean';
   if (t === 'date' || t === 'ZodDate') return 'date';
-  if (t === 'union' || t === 'ZodUnion') return schema.def?.options?.map(getZodType).join(' | ') || schema._def?.options?.map(getZodType).join(' | ');
-  if (t === 'array' || t === 'ZodArray') return getZodType(schema.def?.type || schema._def?.type) + '[]';
-  if (t === 'pipeline' || t === 'ZodPipeline') return getZodType(schema.def?.out || schema._def?.out);
+  if (t === 'literal' || t === 'ZodLiteral') {
+    const val = s.value !== undefined ? s.value : (s.def?.value ?? s._def?.value);
+    return typeof val === 'string' ? `'${val}'` : String(val);
+  }
+  if (t === 'enum' || t === 'ZodEnum') {
+    const values = s.options || s._def?.values || (s.def?.entries ? Object.keys(s.def.entries) : undefined) || (s.enum ? Object.keys(s.enum) : undefined);
+    return values && values.length > 0 ? values.map((v: any) => typeof v === 'string' ? `'${v}'` : String(v)).join(' | ') : 'enum';
+  }
+  if (t === 'record' || t === 'ZodRecord') return 'record';
+  if (t === 'union' || t === 'ZodUnion') {
+    const options = s.options || s.def?.options || s._def?.options;
+    return options?.map(getZodType).join(' | ') || 'union';
+  }
+  if (t === 'array' || t === 'ZodArray') {
+    const element = s.element || s.def?.element || (typeof s.def?.type === 'object' ? s.def.type : undefined) || (typeof s._def?.type === 'object' ? s._def.type : undefined);
+    return getZodType(element) + '[]';
+  }
   if (t === 'object' || t === 'ZodObject') return 'object';
-  if (t === 'any' || t === 'ZodAny') return 'any';
+  if (t === 'any' || t === 'ZodAny' || t === 'transform' || t === 'ZodTransform') return 'any';
+  if (t === 'unknown' || t === 'ZodUnknown') return 'unknown';
+
   return t || 'unknown';
 }
 
@@ -88,7 +142,7 @@ function buildRouteTree(srcPath: string, relativePath: string = ''): RouteNode |
 }
 
 function generateRoutesDiagram() {
-  const srcAppPath = path.join(__dirname, '../src/app');
+  const srcAppPath = path.join(scriptDir, '../src/app');
   const tree = buildRouteTree(srcAppPath);
   
   let treeMarkdown = '```mermaid\nflowchart LR\n';
@@ -152,7 +206,7 @@ function generateRoutesDiagram() {
 
 // 3. Generate Environment Specs
 function generateEnvSpecs() {
-  const pkgPath = path.join(__dirname, '../package.json');
+  const pkgPath = path.join(scriptDir, '../package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   
   // We specify Node 22 as per requirements
@@ -167,7 +221,7 @@ function generateEnvSpecs() {
 
 // 4. Update ARCHITECTURE.md
 function updateArchitectureMd() {
-  const filePath = path.join(__dirname, '../ARCHITECTURE.md');
+  const filePath = path.join(scriptDir, '../ARCHITECTURE.md');
   let content = fs.readFileSync(filePath, 'utf8');
 
   // Replace Env
@@ -187,12 +241,16 @@ function updateArchitectureMd() {
 }
 
 async function generateOpenApiSpec() {
-  const openApiScript = path.join(__dirname, 'generate-openapi.ts');
+  const openApiScript = path.join(scriptDir, 'generate-openapi.ts');
   if (fs.existsSync(openApiScript)) {
     console.log('Generating OpenAPI specification...');
     await import('./generate-openapi.js');
   }
 }
 
-updateArchitectureMd();
-await generateOpenApiSpec();
+const isMain = typeof process.argv[1] === 'string' &&
+               path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isMain) {
+  updateArchitectureMd();
+  void generateOpenApiSpec();
+}
