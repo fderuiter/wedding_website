@@ -182,11 +182,12 @@ If you cloned or forked this template to host your own wedding website, you can 
 
 *   `src/app`: Next.js App Router pages and Route Handlers.
 *   `src/components`: Shared React components (Layout, UI elements, 3D scenes).
+*   `src/core`: Framework infrastructure and authentication modules.
+*   `src/data`: Static fallback data.
 *   `src/features`: Feature-specific logic (e.g., `src/features/registry` contains all registry-related components, hooks, and services).
-*   `src/data`: Static data files (e.g., wedding party members, things to do).
+*   `src/hooks`: Shared React hooks.
 *   `src/lib`: Core library configurations (Prisma client).
 *   `src/utils`: Utility functions (validation, formatting, auth).
-*   `src/styles`: Global styles and theme configuration.
 *   `prisma`: Database schema definition.
 *   `public`: Static assets (images, fonts).
 *   `e2e`: End-to-end tests (Playwright).
