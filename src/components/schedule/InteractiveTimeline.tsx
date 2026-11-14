@@ -607,10 +607,14 @@ export default function InteractiveTimeline({
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                             <div>
-                              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              <label
+                                htmlFor={`rsvp-plus-one-${event.id}`}
+                                className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                              >
                                 Plus-One Count
                               </label>
                               <input
+                                id={`rsvp-plus-one-${event.id}`}
                                 type="number"
                                 min={0}
                                 max={10}
@@ -626,10 +630,14 @@ export default function InteractiveTimeline({
                             </div>
 
                             <div>
-                              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              <label
+                                htmlFor={`rsvp-dietary-notes-${event.id}`}
+                                className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                              >
                                 Dietary Requirements / Notes
                               </label>
                               <input
+                                id={`rsvp-dietary-notes-${event.id}`}
                                 type="text"
                                 placeholder="e.g. Vegetarian, Nut allergy"
                                 disabled={isControlDisabled}
