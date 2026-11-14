@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestLoginPage from '../page';
@@ -323,6 +323,10 @@ describe('Guest Login Page with Help Drawer', () => {
       });
 
       expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
+      const statusCard = screen.getByRole('status');
+      expect(statusCard).toBeInTheDocument();
+      expect(statusCard).toHaveAttribute('aria-live', 'polite');
+      expect(statusCard).toHaveAttribute('aria-atomic', 'true');
       expect(screen.getByText(/Taylor Swift/i)).toBeInTheDocument();
       expect(screen.getByText(/LOVER13/i)).toBeInTheDocument();
       expect(screen.getByText(/session hydrated/i)).toBeInTheDocument();
@@ -331,6 +335,131 @@ describe('Guest Login Page with Help Drawer', () => {
       expect(continueBtn).toBeInTheDocument();
       fireEvent.click(continueBtn);
       expect(mockPush).toHaveBeenCalledWith('/');
+    });
+
+    it('automatically navigates to callback URL after extended 4000ms timeout window', async () => {
+      jest.useFakeTimers();
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          guestName: 'Taylor Swift',
+          code: 'LOVER13',
+          data: {
+            guestName: 'Taylor Swift',
+            code: 'LOVER13',
+          },
+        }),
+      } as unknown as Response);
+      globalWithFetch.fetch = fetchMock;
+
+      render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+      });
+
+      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
+      expect(mockPush).not.toHaveBeenCalled();
+
+      act(() => {
+        jest.advanceTimersByTime(3999);
+      });
+      expect(mockPush).not.toHaveBeenCalled();
+
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(mockPush).toHaveBeenCalledTimes(1);
+      expect(mockPush).toHaveBeenCalledWith('/');
+
+      jest.useRealTimers();
+    });
+
+    it('cancels the redirect timer if manual continue button is clicked', async () => {
+      jest.useFakeTimers();
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          guestName: 'Taylor Swift',
+          code: 'LOVER13',
+          data: {
+            guestName: 'Taylor Swift',
+            code: 'LOVER13',
+          },
+        }),
+      } as unknown as Response);
+      globalWithFetch.fetch = fetchMock;
+
+      render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+      });
+
+      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
+      const continueBtn = screen.getByRole('button', { name: /continue to portal/i });
+      fireEvent.click(continueBtn);
+      expect(mockPush).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        jest.advanceTimersByTime(4000);
+      });
+      expect(mockPush).toHaveBeenCalledTimes(1);
+
+      jest.useRealTimers();
+    });
+
+    it('cleans up redirect timer on unmount', async () => {
+      jest.useFakeTimers();
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          guestName: 'Taylor Swift',
+          code: 'LOVER13',
+          data: {
+            guestName: 'Taylor Swift',
+            code: 'LOVER13',
+          },
+        }),
+      } as unknown as Response);
+      globalWithFetch.fetch = fetchMock;
+
+      const { unmount } = render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+      });
+
+      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
+      unmount();
+
+      act(() => {
+        jest.advanceTimersByTime(4000);
+      });
+      expect(mockPush).not.toHaveBeenCalled();
+
+      jest.useRealTimers();
     });
 
     it('unmatched searches present clear error notice and direct host contact fallback button', async () => {
