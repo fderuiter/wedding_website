@@ -2497,25 +2497,6 @@
             "description": "Successful response"
           }
         }
-      },
-      "put": {
-        "summary": "PUT /api/admin/photos/[id]",
-        "description": "Endpoint for /api/admin/photos/[id]",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
       }
     },
     "/api/admin/photos/moderation/batch": {
@@ -2575,15 +2556,6 @@
             "description": "Successful response"
           }
         }
-      },
-      "patch": {
-        "summary": "PATCH /api/admin/photos/moderation/batch",
-        "description": "Endpoint for /api/admin/photos/moderation/batch",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
       }
     },
     "/api/admin/photos/moderation": {
@@ -2638,15 +2610,6 @@
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      },
-      "post": {
-        "summary": "POST /api/admin/photos/moderation",
-        "description": "Endpoint for /api/admin/photos/moderation",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -5138,15 +5101,6 @@
             "description": "Successful response"
           }
         }
-      },
-      "post": {
-        "summary": "POST /api/admin/sub-events/access",
-        "description": "Endpoint for /api/admin/sub-events/access",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
       }
     },
     "/api/admin/thank-you-notes/{id}": {
@@ -5211,25 +5165,6 @@
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      },
-      "put": {
-        "summary": "PUT /api/admin/thank-you-notes/[id]",
-        "description": "Endpoint for /api/admin/thank-you-notes/[id]",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -5301,15 +5236,6 @@
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      },
-      "patch": {
-        "summary": "PATCH /api/admin/thank-you-notes/batch",
-        "description": "Endpoint for /api/admin/thank-you-notes/batch",
         "responses": {
           "200": {
             "description": "Successful response"
