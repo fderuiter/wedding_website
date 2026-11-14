@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
@@ -25,6 +25,20 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
 
+  const triggerButtonRef = useRef<HTMLElement | null>(null);
+  const triggerIndexRef = useRef<number | null>(null);
+  const prevSelectedPhotoIndexRef = useRef<number | null>(null);
+  const gallerySectionRef = useRef<HTMLElement | null>(null);
+  const galleryGridRef = useRef<HTMLDivElement | null>(null);
+  const lightboxModalRef = useRef<HTMLDivElement | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  const openLightbox = (index: number, element?: HTMLElement) => {
+    triggerIndexRef.current = index;
+    triggerButtonRef.current = element || (document.activeElement as HTMLElement) || null;
+    setSelectedPhotoIndex(index);
+  };
+
   const handleUploadSuccess = (uploaded: UploadedPhoto) => {
     setPhotos((prev) => [
       {
@@ -36,6 +50,9 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
       ...prev,
     ]);
     setSelectedPhotoIndex((prev) => (prev !== null ? prev + 1 : null));
+    if (triggerIndexRef.current !== null) {
+      triggerIndexRef.current += 1;
+    }
   };
 
   const toggleSelect = (url: string) => {
@@ -139,6 +156,47 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
   }, [hasMultiplePhotos, guestPhotos.length]);
 
   useEffect(() => {
+    if (selectedPhotoIndex !== null) {
+      if (triggerIndexRef.current === null) {
+        triggerIndexRef.current = selectedPhotoIndex;
+      }
+      if (!triggerButtonRef.current && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+        triggerButtonRef.current = document.activeElement;
+      }
+      closeBtnRef.current?.focus();
+    } else if (prevSelectedPhotoIndexRef.current !== null && selectedPhotoIndex === null) {
+      const targetIndex = triggerIndexRef.current;
+      let targetElement: HTMLElement | null = null;
+
+      if (targetIndex !== null) {
+        targetElement = document.querySelector<HTMLElement>(`[data-testid="photo-thumbnail-${targetIndex}"]`);
+      }
+
+      if (!targetElement && triggerButtonRef.current && triggerButtonRef.current.isConnected) {
+        targetElement = triggerButtonRef.current;
+      }
+
+      if (targetElement && targetElement.isConnected) {
+        targetElement.focus();
+      } else if (galleryGridRef.current && galleryGridRef.current.isConnected) {
+        galleryGridRef.current.focus();
+      } else if (gallerySectionRef.current && gallerySectionRef.current.isConnected) {
+        gallerySectionRef.current.focus();
+      } else {
+        const fallback =
+          document.querySelector<HTMLElement>('[data-testid="guest-photos-grid"]') ||
+          document.querySelector<HTMLElement>('[data-testid="guest-photos-section"]');
+        fallback?.focus();
+      }
+
+      triggerButtonRef.current = null;
+      triggerIndexRef.current = null;
+    }
+
+    prevSelectedPhotoIndexRef.current = selectedPhotoIndex;
+  }, [selectedPhotoIndex]);
+
+  useEffect(() => {
     if (selectedPhotoIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -148,6 +206,29 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
         handlePrev();
       } else if (e.key === 'ArrowRight') {
         handleNext();
+      } else if (e.key === 'Tab') {
+        const modal = lightboxModalRef.current;
+        if (!modal) return;
+        const focusable = Array.from(
+          modal.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), [tabindex]:not([tabindex="-1"]):not(:disabled)'
+          )
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
 
@@ -212,7 +293,12 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
       </div>
 
       {/* Guest Uploaded Photos Grid / Gallery Section */}
-      <section className="space-y-4" data-testid="guest-photos-section">
+      <section
+        ref={gallerySectionRef}
+        tabIndex={-1}
+        className="space-y-4 focus:outline-none"
+        data-testid="guest-photos-section"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
             <Icon name="Camera" className="w-6 h-6 text-primary" />
@@ -221,7 +307,12 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
         </div>
 
         {guestPhotos.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4" data-testid="guest-photos-grid">
+          <div
+            ref={galleryGridRef}
+            tabIndex={-1}
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 focus:outline-none"
+            data-testid="guest-photos-grid"
+          >
             {guestPhotos.map((photo, index) => {
               const isSelected = selectedUrls.has(photo.url);
               return (
@@ -248,9 +339,17 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
                     />
                   </div>
 
-                  <div
-                    onClick={() => setSelectedPhotoIndex(index)}
-                    className="w-full h-full cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={(e) => openLightbox(index, e.currentTarget)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openLightbox(index, e.currentTarget);
+                      }
+                    }}
+                    className="w-full h-full cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                    aria-label={photo.title ? `View ${photo.title}` : `View guest photo ${index + 1}`}
                     data-testid={`photo-thumbnail-${index}`}
                   >
                     <MediaImage
@@ -258,12 +357,12 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
                       alt={photo.title || `Guest photo ${index + 1}`}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
                       <span className="text-xs font-medium text-white truncate">
                         {photo.title || 'Guest Photo'}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 </div>
               );
             })}
@@ -291,6 +390,7 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
       {/* Lightbox Modal */}
       {currentPhoto && selectedPhotoIndex !== null && (
         <div
+          ref={lightboxModalRef}
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
           onClick={() => setSelectedPhotoIndex(null)}
           role="dialog"
@@ -313,9 +413,10 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
 
             {/* Close Button */}
             <button
+              ref={closeBtnRef}
               type="button"
               onClick={() => setSelectedPhotoIndex(null)}
-              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition"
+              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
               aria-label="Close photo preview"
               data-testid="lightbox-close-btn"
             >
@@ -327,7 +428,7 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
               type="button"
               onClick={handlePrev}
               disabled={!hasMultiplePhotos}
-              className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
               aria-label="Previous photo"
               data-testid="lightbox-prev-btn"
             >
@@ -339,7 +440,7 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
               type="button"
               onClick={handleNext}
               disabled={!hasMultiplePhotos}
-              className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
               aria-label="Next photo"
               data-testid="lightbox-next-btn"
             >
