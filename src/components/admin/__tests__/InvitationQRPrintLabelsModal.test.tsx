@@ -59,7 +59,11 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     expect(document.body.classList.contains('printing-qr-labels')).toBe(true);
   });
 
-  it('allows switching between Avery 5163 and Avery 5160 templates', () => {
+  it('allows switching between Avery 5163 and Avery 5160 templates without triggering print', () => {
+    const originalPrint = window.print;
+    const mockPrint = jest.fn();
+    window.print = mockPrint;
+
     render(
       <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
     );
@@ -69,6 +73,48 @@ describe('InvitationQRPrintLabelsModal Component', () => {
 
     fireEvent.change(select, { target: { value: 'avery_5160' } });
     expect(select.value).toBe('avery_5160');
+    expect(mockPrint).not.toHaveBeenCalled();
+
+    window.print = originalPrint;
+  });
+
+  it('does not automatically call window.print when modal is mounted or progressive rendering completes', () => {
+    jest.useFakeTimers();
+    const originalPrint = window.print;
+    const mockPrint = jest.fn();
+    window.print = mockPrint;
+
+    render(
+      <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
+    );
+
+    // Fast-forward past progressive rendering and former print timer thresholds
+    jest.advanceTimersByTime(1000);
+
+    expect(mockPrint).not.toHaveBeenCalled();
+
+    window.print = originalPrint;
+    jest.useRealTimers();
+  });
+
+  it('displays empty preview state safely when codes array is empty without triggering print', () => {
+    jest.useFakeTimers();
+    const originalPrint = window.print;
+    const mockPrint = jest.fn();
+    window.print = mockPrint;
+
+    render(
+      <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={[]} />
+    );
+
+    expect(screen.getByText(/Print QR Code Labels \(0 guests\)/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('qr-label-card')).not.toBeInTheDocument();
+
+    jest.advanceTimersByTime(1000);
+    expect(mockPrint).not.toHaveBeenCalled();
+
+    window.print = originalPrint;
+    jest.useRealTimers();
   });
 
   it('triggers window.print when Print Sheet button is clicked', () => {
