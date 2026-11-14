@@ -407,10 +407,14 @@ jest.mock('@prisma/client', () => {
     $use: jest.fn(),
     $extends: jest.fn().mockImplementation(() => mockPrismaClient),
   };
+  const actual = jest.requireActual('@prisma/client');
   return {
+    ...actual,
     PrismaClient: jest.fn(() => mockPrismaClient),
     Prisma: {
+      ...actual.Prisma,
       ModelName: {
+        ...actual.Prisma?.ModelName,
         AppConfig: 'AppConfig',
         Media: 'Media',
         WeddingPartyMember: 'WeddingPartyMember',
