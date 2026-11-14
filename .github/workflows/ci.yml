@@ -133,6 +133,7 @@ jobs:
             }
 
   unit-test:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -170,6 +171,7 @@ jobs:
           path: coverage/
 
   build:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -227,7 +229,7 @@ jobs:
             node_modules/@prisma
 
   e2e-test:
-    needs: build
+    needs: [build, unit-test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -282,6 +284,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
           GUEST_PASSCODE: wedding2026
+          GUEST_SESSION_SECRET: test-guest-session-secret-key
         run: npx playwright test
 
       - name: Generate A11y Report

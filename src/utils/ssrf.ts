@@ -1,4 +1,10 @@
 import dns from 'dns';
+import net from 'net';
+
+export interface ResolvedAddress {
+  address: string;
+  family: number;
+}
 
 /**
  * Checks if a URL resolves to a private IP address to prevent SSRF.
@@ -8,37 +14,73 @@ import dns from 'dns';
 export async function isPrivateUrl(url: string): Promise<boolean> {
   try {
     const parsedUrl = new URL(url);
-    const hostname = parsedUrl.hostname;
-
-    // Direct IP literal checks in URL before DNS lookup
-    if (isPrivateIPv4(hostname) || isPrivateIPv6(hostname)) {
-      return true;
-    }
-
-    // Resolve hostname to IP(s) - lookup with all: true returns all A and AAAA records
-    const lookupResult = await dns.promises.lookup(hostname, { all: true } as any);
-    const addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
-
-    if (addresses.length === 0) return true;
-
-    for (const record of addresses) {
-      if (!record) continue;
-      const address = record.address || (typeof record === 'string' ? record : '');
-      const family = record.family || (address.includes(':') ? 6 : 4);
-
-      if (family === 4 && isPrivateIPv4(address)) {
-        return true;
-      }
-      if (family === 6 && isPrivateIPv6(address)) {
-        return true;
-      }
-    }
-
+    await validateAndResolveHost(parsedUrl.hostname);
     return false;
   } catch {
     // If we can't parse or resolve, treat as unsafe
     return true;
   }
+}
+
+/**
+ * Resolves a hostname to IP addresses and ensures none are private/restricted.
+ * Returns the first resolved public IP address to pin the connection.
+ * Throws an error if any address is private or if resolution fails.
+ */
+export async function validateAndResolveHost(hostname: string): Promise<ResolvedAddress> {
+  const cleanHost = hostname.replace(/^\[|\]$/g, '').trim();
+
+  // Direct IP literal checks in URL before DNS lookup
+  const ipFamily = net.isIP(cleanHost);
+  if (ipFamily !== 0) {
+    if (isPrivateIP(cleanHost)) {
+      throw new Error('Blocked: URL resolves to a private or restricted IP address');
+    }
+    return { address: cleanHost, family: ipFamily };
+  }
+
+  // Resolve hostname to IP(s) - lookup with all: true returns all A and AAAA records
+  let lookupResult: any;
+  try {
+    lookupResult = await dns.promises.lookup(cleanHost, { all: true } as any);
+  } catch {
+    throw new Error('Blocked: URL resolves to a private or restricted IP address');
+  }
+
+  const rawAddresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
+  const addresses: ResolvedAddress[] = rawAddresses
+    .map(record => {
+      if (!record) return null;
+      const addr = record.address || (typeof record === 'string' ? record : '');
+      const cleanAddr = addr.replace(/^\[|\]$/g, '').trim();
+      if (!cleanAddr) return null;
+      const fam = record.family || (cleanAddr.includes(':') ? 6 : 4);
+      return { address: cleanAddr, family: fam };
+    })
+    .filter((r): r is ResolvedAddress => r !== null);
+
+  if (addresses.length === 0) {
+    throw new Error('Blocked: URL resolves to a private or restricted IP address');
+  }
+
+  for (const record of addresses) {
+    if (record.family === 4 && isPrivateIPv4(record.address)) {
+      throw new Error('Blocked: URL resolves to a private or restricted IP address');
+    }
+    if (record.family === 6 && isPrivateIPv6(record.address)) {
+      throw new Error('Blocked: URL resolves to a private or restricted IP address');
+    }
+  }
+
+  return addresses[0];
+}
+
+export function isPrivateIP(ip: string): boolean {
+  const cleanIp = ip.replace(/^\[|\]$/g, '').trim();
+  if (cleanIp.includes(':')) {
+    return isPrivateIPv6(cleanIp);
+  }
+  return isPrivateIPv4(cleanIp);
 }
 
 function isPrivateIPv4(ip: string): boolean {
@@ -81,7 +123,7 @@ function isPrivateIPv4(ip: string): boolean {
 }
 
 function isPrivateIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
+  const normalized = ip.replace(/^\[|\]$/g, '').trim().toLowerCase();
 
   if (normalized === '::1' || normalized === '::') return true;
 
@@ -93,6 +135,12 @@ function isPrivateIPv6(ip: string): boolean {
 
   // ::ffff:0:0/96 (IPv4-mapped) - Block to avoid bypass complexity
   if (normalized.startsWith('::ffff:')) return true;
+
+  // Multicast ff00::/8
+  if (normalized.startsWith('ff')) return true;
+
+  // Documentation 2001:db8::/32
+  if (normalized.startsWith('2001:db8')) return true;
 
   return false;
 }

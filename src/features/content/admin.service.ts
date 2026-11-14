@@ -2,7 +2,6 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { ContentNodeSchema } from './schemas';
 import { z } from 'zod';
-import { formatZodError } from '@/utils/validation';
 
 const ContentNodeInputSchema = z.union(
   ContentNodeSchema.options.map((opt) =>
@@ -10,23 +9,10 @@ const ContentNodeInputSchema = z.union(
   ) as [any, any, ...any[]]
 );
 
-function validateContentNodeUpdate(data: any): string | null {
-  const result = ContentNodeInputSchema.safeParse(data);
-  if (!result.success) {
-    return formatZodError(result.error);
-  }
-  return null;
-}
-
 export class ContentNodeAdminService extends BaseService<any> {
   static ENTITY_KEY = 'content-nodes';
     
   constructor() {
-    super(new BaseRepository('contentNode'), 'ContentNode');
-  }
-
-  protected async validate(data: any, _client?: any): Promise<void> {
-    const error = validateContentNodeUpdate(data);
-    if (error) throw new Error(`Validation Error: ${error}`);
+    super(new BaseRepository('contentNode'), 'ContentNode', ContentNodeInputSchema);
   }
 }

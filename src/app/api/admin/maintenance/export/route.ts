@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { toPublicAppConfig } from '@/lib/config';
 
-export const EXPORT_CHUNK_SIZE = 100;
+const EXPORT_CHUNK_SIZE = 100;
 
 interface ModelExportConfig {
   key: string;

@@ -20,7 +20,7 @@ const seatingSchemas = await import('../src/features/seating/schemas.js');
 const subEventSchemas = await import('../src/features/sub-events/schemas.js');
 const broadcastSchemas = await import('../src/features/broadcast/schemas.js');
 const backupValidationSchemas = await import('../src/utils/backupValidation.js');
-const sampleDataSchemas = await import('../src/app/api/admin/sample-data/route.js');
+const sampleDataSchemas = await import('../src/lib/sampleData/schemas.js');
 
 const ALL_SCHEMAS: Record<string, any> = {
   ...validationUtils,

@@ -12,66 +12,7 @@ import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { BroadcastModal } from '@/components/admin/BroadcastModal';
 import { InvitationQRPreviewModal, InvitationQRPreviewGuest } from '@/components/admin/InvitationQRPreviewModal';
 import { InvitationQRPrintLabelsModal, PrintableInvitationCode } from '@/components/admin/InvitationQRPrintLabelsModal';
-
-export function matchDietaryCategory(notes: string | null | undefined, category: string): boolean {
-  if (!notes || !notes.trim()) return false;
-  const lower = notes.trim().toLowerCase();
-
-  const isGlutenFree = /\b(gf|gluten[- ]free|gluten)\b/i.test(lower);
-  const isVegan = /\b(vegan)\b/i.test(lower);
-  const isVegetarian = /\b(vegetarian|veg)\b/i.test(lower) && !isVegan;
-  const isDairyFree = /\b(df|dairy[- ]free|dairy|lactose)\b/i.test(lower);
-  const isNutFree = /\b(nut[- ]free|nut|nuts|peanut|allergy|allergies)\b/i.test(lower);
-
-  switch (category) {
-    case 'gluten-free':
-      return isGlutenFree;
-    case 'vegetarian':
-      return isVegetarian;
-    case 'vegan':
-      return isVegan;
-    case 'dairy-free':
-      return isDairyFree;
-    case 'nut-free':
-      return isNutFree;
-    case 'other':
-      return !isGlutenFree && !isVegan && !isVegetarian && !isDairyFree && !isNutFree;
-    case 'has_restriction':
-      return true;
-    case 'all':
-    default:
-      return true;
-  }
-}
-
-export function getAttendanceStatus(item: { used: boolean; extraFields?: Record<string, any> | null }): 'attending' | 'declined' | 'pending' {
-  const rawVal = item.extraFields?.attendanceStatus ??
-    item.extraFields?.rsvpStatus ??
-    item.extraFields?.attendance ??
-    item.extraFields?.rsvp ??
-    item.extraFields?.attending ??
-    item.extraFields?.status;
-
-  if (rawVal !== undefined && rawVal !== null) {
-    if (typeof rawVal === 'boolean') {
-      return rawVal ? 'attending' : 'declined';
-    }
-    if (typeof rawVal === 'string') {
-      const val = rawVal.trim().toLowerCase();
-      if (['attending', 'accepted', 'yes', 'confirmed', 'true'].includes(val)) {
-        return 'attending';
-      }
-      if (['declined', 'no', 'rejected', 'false'].includes(val)) {
-        return 'declined';
-      }
-      if (['pending'].includes(val)) {
-        return 'pending';
-      }
-    }
-  }
-
-  return item.used ? 'attending' : 'pending';
-}
+import { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from '@/features/registry';
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
@@ -275,10 +216,6 @@ export default function InvitationCodesDashboardPage() {
     });
     return Array.from(set).sort();
   }, [codes]);
-
-  const isAddressComplete = (item: any) => {
-    return Boolean(item.addressLine1?.trim() && item.city?.trim() && item.zipCode?.trim());
-  };
 
   const counts = useMemo(() => {
     const complete = codes.filter((c) => isAddressComplete(c)).length;

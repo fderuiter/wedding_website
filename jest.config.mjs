@@ -21,7 +21,6 @@ const config = {
     '!src/**/*.d.ts', // Exclude type definition files
     '!src/**/layout.tsx', // Often layout files have minimal logic
     '!src/types/**/*.ts', // Exclude type definitions
-    '!src/styles/**/*.ts', // Exclude style definitions
     '!**/node_modules/**',
     '!<rootDir>/jest.config.mjs',
     '!<rootDir>/jest.setup.js',
@@ -41,7 +40,6 @@ const config = {
     // Handle module aliases (if you have them in tsconfig.json)
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/pages/(.*)$': '<rootDir>/src/pages/$1',
-    '^@/styles/(.*)$': '<rootDir>/src/styles/$1',
     '^@/types/(.*)$': '<rootDir>/src/types/$1',
     '^@/data/(.*)$': '<rootDir>/src/data/$1',
     '^@/app/(.*)$': '<rootDir>/src/app/$1',

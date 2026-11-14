@@ -1,10 +1,16 @@
 import { createAuditSnapshot } from '@/lib/audit';
 import { BaseRepository } from './repository';
+import { z } from 'zod';
+import { formatZodError } from '@/utils/validation';
 
 export class BaseService<T extends { id: string }> {
   protected defaultQueryArgs?: any;
 
-  constructor(public repo: BaseRepository<T>, public entityType: string) {}
+  constructor(
+    public repo: BaseRepository<T>,
+    public entityType: string,
+    protected schema?: z.ZodSchema<any>
+  ) {}
 
   async findMany(args?: any): Promise<T[]> {
     if (!this.defaultQueryArgs) {
@@ -44,8 +50,13 @@ export class BaseService<T extends { id: string }> {
     return this.repo.findUnique(id);
   }
 
-  protected async validate(_data: any, _client?: any): Promise<void> {
-    // Default: no-op
+  protected async validate(data: any, _client?: any): Promise<void> {
+    if (this.schema) {
+      const result = this.schema.safeParse(data);
+      if (!result.success) {
+        throw new Error(`Validation Error: ${formatZodError(result.error)}`);
+      }
+    }
   }
 
   protected async preSave(data: any, _client?: any, _author?: string): Promise<any> {
