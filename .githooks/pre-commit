@@ -66,21 +66,25 @@ pushStash();
 let exitCode = 0;
 
 try {
-  // 2. Run TypeScript type check
-  console.log('Running TypeScript type check...');
-  const tscResult = spawnSync('npm', ['run', 'type-check'], { stdio: 'inherit', shell: true });
+  const checks = [
+    { name: 'TypeScript type check', script: 'type-check' },
+    { name: 'Knip dead-code analysis', script: 'lint:unused' },
+    { name: 'Environment variables documentation check', script: 'check:env-docs' },
+    { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
+    { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
+    { name: 'Documentation relative links check', script: 'check:links' },
+    { name: 'Prisma schema validation', script: 'check:prisma' },
+    { name: 'Migration compatibility check', script: 'lint:migrations' },
+  ];
 
-  if (tscResult.status !== 0) {
-    console.error('\n❌ Pre-commit check failed: TypeScript type check failed.');
-    exitCode = tscResult.status ?? 1;
-  } else {
-    // 3. Run Knip dead-code analysis
-    console.log('Running Knip dead-code analysis...');
-    const knipResult = spawnSync('npm', ['run', 'lint:unused'], { stdio: 'inherit', shell: true });
+  for (const check of checks) {
+    console.log(`Running ${check.name}...`);
+    const result = spawnSync('npm', ['run', check.script], { stdio: 'inherit', shell: true });
 
-    if (knipResult.status !== 0) {
-      console.error('\n❌ Pre-commit check failed: Knip dead-code analysis failed.');
-      exitCode = knipResult.status ?? 1;
+    if (result.status !== 0) {
+      console.error(`\n❌ Pre-commit check failed: ${check.name} failed.`);
+      exitCode = result.status ?? 1;
+      break;
     }
   }
 } catch (err) {

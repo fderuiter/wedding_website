@@ -14,6 +14,7 @@ const steps: Step[] = [
   { name: 'TypeScript Typecheck', command: 'npm run typecheck' },
   { name: 'ESLint Code Linting', command: 'npm run lint' },
   { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },
+  { name: 'Verify Migration Compatibility', command: 'npm run lint:migrations' },
   { name: 'Unit & Integration Tests', command: 'npm test' },
 ];
 
