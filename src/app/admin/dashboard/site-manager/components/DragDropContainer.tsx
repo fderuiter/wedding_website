@@ -76,13 +76,16 @@ export default function DragDropContainer({
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      {...provided.dragHandleProps}
                       className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 transition ${
                         !feature.visible ? 'opacity-50' : ''
                       }`}
                     >
                       <div className="flex items-center gap-4">
-                        <div className="text-gray-500 dark:text-gray-400">
+                        <div
+                          {...provided.dragHandleProps}
+                          aria-label={`Reorder ${feature.title || feature.id}`}
+                          className="cursor-grab active:cursor-grabbing text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
+                        >
                           <Icon name="DragHandle" className="h-6 w-6" />
                         </div>
                         <div>
