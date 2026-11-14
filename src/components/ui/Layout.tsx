@@ -37,10 +37,14 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 );
 Card.displayName = 'Card';
 
-export const Heading = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, style, ...props }, ref) => {
+export interface HeadingProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  as?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+}
+
+export const Heading = React.forwardRef<HTMLHeadingElement, HeadingProps>(
+  ({ as: Component = 'h1', className, style, ...props }, ref) => {
     return (
-      <h1
+      <Component
         ref={ref}
         style={{
           color: 'var(--heading-color, var(--color-primary, #b91c1c))',
