@@ -1,14 +1,12 @@
-import { useEntityOrchestration } from '../useEntityOrchestration';
+import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 import type { AttractionDTO } from '@/features/attractions';
-// eslint-disable-next-line no-restricted-imports
-import { apiClient } from '@/features/admin/apiClient';
 
-export function useAdminAttractions(options?: { enabled?: boolean }) {
-  return useEntityOrchestration<AttractionDTO>({
+export function useAdminAttractions(options?: AdminHookOptions) {
+  return useAdminEntityOrchestration<AttractionDTO>({
     queryKey: ['admin-attractions'],
     endpoint: '/api/admin/attractions',
     entityName: 'attraction',
-    apiClient,
-    enabled: options?.enabled,
+    options,
   });
 }
+
