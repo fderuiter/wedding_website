@@ -20,6 +20,10 @@ const DESTRUCTIVE_PATTERNS: { name: string; regex: RegExp }[] = [
   { name: 'DROP COLUMN', regex: /\bDROP\s+COLUMN\b/i },
   { name: 'RENAME COLUMN', regex: /\bRENAME\s+COLUMN\b/i },
   { name: 'DROP CONSTRAINT', regex: /\bDROP\s+CONSTRAINT\b/i },
+  {
+    name: 'ADD COLUMN NOT NULL',
+    regex: /\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?!\s*CONSTRAINT\b)(?![^,;]*\bDEFAULT\b)[^,;]*\bNOT\s+NULL\b/i,
+  },
 ];
 
 const BYPASS_ANNOTATION_REGEX = /--\s*allow-destructive(?::\s*(.*))?/i;
@@ -147,13 +151,13 @@ export function main(): void {
 
   if (!result.valid) {
     console.error('\n❌ Migration Compatibility Check Failed!');
-    console.error(`Found ${result.violations.length} destructive DDL operation(s) without bypass annotations:\n`);
+    console.error(`Found ${result.violations.length} destructive DDL or non-backwards-compatible operation(s) without bypass annotations:\n`);
 
     for (const v of result.violations) {
       console.error(`  - ${v.file}:${v.line} -> [${v.keyword}] ${v.snippet}`);
     }
 
-    console.error('\n💡 Destructive changes break zero-downtime deployments. Follow the expand-and-contract strategy.');
+    console.error('\n💡 Destructive changes and NOT NULL column additions without defaults break zero-downtime deployments and N-1 rollback safety. Follow the expand-and-contract strategy.');
     console.error('If this breaking change is intentional, add \'-- allow-destructive: <reason>\' above or on the statement.\n');
 
     process.exit(1);
