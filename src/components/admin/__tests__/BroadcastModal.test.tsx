@@ -55,8 +55,58 @@ describe('BroadcastModal Component', () => {
     expect(bodyInput.value).toContain('{{guestName}}');
   });
 
-  it('switches to live preview when preview button clicked', async () => {
-    mockPreviewBroadcast.mockResolvedValue({
+  it('switches tabs passively without calling preview API when tab is clicked', () => {
+    render(<BroadcastModal {...defaultProps} />);
+
+    const previewTab = screen.getByRole('tab', { name: /Live Preview/i });
+    fireEvent.click(previewTab);
+
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel', { name: /Live Preview/i })).toBeInTheDocument();
+    expect(mockPreviewBroadcast).not.toHaveBeenCalled();
+    expect(mockAddToast).not.toHaveBeenCalled();
+  });
+
+  it('renders standard WAI-ARIA tab semantics and attributes', () => {
+    render(<BroadcastModal {...defaultProps} />);
+
+    const tablist = screen.getByRole('tablist', { name: 'Broadcast navigation tabs' });
+    expect(tablist).toBeInTheDocument();
+
+    const composeTab = screen.getByRole('tab', { name: /Compose Message/i });
+    const previewTab = screen.getByRole('tab', { name: /Live Preview/i });
+
+    expect(composeTab).toHaveAttribute('aria-selected', 'true');
+    expect(composeTab).toHaveAttribute('aria-controls', 'broadcast-tabpanel-compose');
+
+    expect(previewTab).toHaveAttribute('aria-selected', 'false');
+    expect(previewTab).toHaveAttribute('aria-controls', 'broadcast-tabpanel-preview');
+
+    const composePanel = screen.getByRole('tabpanel', { name: /Compose Message/i });
+    expect(composePanel).toHaveAttribute('id', 'broadcast-tabpanel-compose');
+
+    fireEvent.click(previewTab);
+
+    expect(composeTab).toHaveAttribute('aria-selected', 'false');
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+
+    const previewPanel = screen.getByRole('tabpanel', { name: /Live Preview/i });
+    expect(previewPanel).toHaveAttribute('id', 'broadcast-tabpanel-preview');
+  });
+
+  it('displays empty state placeholder when switching to preview tab without preview and without error toast', () => {
+    render(<BroadcastModal {...defaultProps} />);
+
+    const previewTab = screen.getByRole('tab', { name: /Live Preview/i });
+    fireEvent.click(previewTab);
+
+    expect(screen.getByText(/render dynamic variables/i)).toBeInTheDocument();
+    expect(mockAddToast).not.toHaveBeenCalled();
+    expect(mockPreviewBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('explicit preview generation on footer button triggers preview broadcast', async () => {
+    mockPreviewBroadcast.mockResolvedValueOnce({
       body: 'Hello John',
       sampleGuestName: 'John',
       destination: 'john@example.com',
@@ -67,10 +117,54 @@ describe('BroadcastModal Component', () => {
     const bodyInput = screen.getByLabelText('Message Body');
     fireEvent.change(bodyInput, { target: { value: 'Hello {{guestName}}' } });
 
-    const previewBtn = screen.getByRole('button', { name: /^Live Preview$/i });
+    const previewBtn = screen.getByRole('button', { name: /^Preview$/i });
     fireEvent.click(previewBtn);
 
-    expect(mockPreviewBroadcast).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledWith({
+        channel: 'EMAIL',
+        subject: '',
+        body: 'Hello {{guestName}}',
+        targetFilters: undefined,
+      });
+      expect(screen.getByText('Hello John')).toBeInTheDocument();
+    });
+  });
+
+  it('preserves existing preview state when switching between tabs without duplicate API calls', async () => {
+    mockPreviewBroadcast.mockResolvedValueOnce({
+      body: 'Hello John',
+      sampleGuestName: 'John',
+      destination: 'john@example.com',
+    });
+
+    render(<BroadcastModal {...defaultProps} />);
+
+    const bodyInput = screen.getByLabelText('Message Body');
+    fireEvent.change(bodyInput, { target: { value: 'Hello {{guestName}}' } });
+
+    const previewBtn = screen.getByRole('button', { name: /^Preview$/i });
+    fireEvent.click(previewBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Hello John')).toBeInTheDocument();
+    });
+
+    expect(mockPreviewBroadcast).toHaveBeenCalledTimes(1);
+
+    // Switch back to Compose tab
+    const composeTab = screen.getByRole('tab', { name: /Compose Message/i });
+    fireEvent.click(composeTab);
+    expect(screen.getByRole('tabpanel', { name: /Compose Message/i })).toBeInTheDocument();
+
+    // Switch back to Preview tab
+    const previewTab = screen.getByRole('tab', { name: /Live Preview/i });
+    fireEvent.click(previewTab);
+    expect(screen.getByRole('tabpanel', { name: /Live Preview/i })).toBeInTheDocument();
+    expect(screen.getByText('Hello John')).toBeInTheDocument();
+
+    // Ensure no redundant API preview call was made
+    expect(mockPreviewBroadcast).toHaveBeenCalledTimes(1);
   });
 
   it('clicking Send Test to Me dispatches test message without closing dialog', async () => {
