@@ -2,9 +2,6 @@ name: Release Pipeline
 
 permissions:
   contents: read
-  packages: write
-  id-token: write
-  attestations: write
 
 on:
   push:
