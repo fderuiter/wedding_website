@@ -39,7 +39,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   const isClickable = !isClaimed && !isAdmin;
-  const cardClasses = `border border-primary dark:border-gray-700 rounded-[var(--radius-card)] overflow-hidden shadow-[var(--shadow-md)] transition relative bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
+  const cardClasses = `border border-card-border rounded-[var(--radius-card)] overflow-hidden shadow-card transition relative bg-card text-foreground focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
   const { handleShare, copied } = useShareItem(item);
 
   const fundingPercentage = item.price > 0
@@ -67,7 +67,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         </div>
       )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-t-[var(--radius-card)]">
+      <div className="relative w-full aspect-square overflow-hidden bg-card border-b border-card-border rounded-t-[var(--radius-card)]">
         {item.isMostWanted && (
           <span
             className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-[var(--shadow-sm)] backdrop-blur-sm"
@@ -79,7 +79,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         )}
         {item.isSample && (
           <span
-            className={`absolute ${item.isMostWanted ? 'top-10 left-3' : 'top-3 left-3'} z-30 inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-[var(--shadow-xs)]`}
+            className={`absolute ${item.isMostWanted ? 'top-10 left-3' : 'top-3 left-3'} z-30 inline-flex items-center gap-1 bg-badge text-badge-text border border-card-border text-xs font-bold px-2.5 py-0.5 rounded-full shadow-[var(--shadow-xs)]`}
             data-testid="sample-item-badge"
           >
             Sample
@@ -100,7 +100,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         <Button
           variant="ghost"
           size="sm"
-          className="absolute top-3 right-3 z-30 p-2 rounded-full bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 shadow-[var(--shadow-sm)] backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-primary"
+          className="absolute top-3 right-3 z-30 p-2 rounded-full bg-card/80 hover:bg-card text-foreground shadow-[var(--shadow-sm)] backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-primary"
           onClick={handleShare}
           aria-label={`Share ${item.name}`}
           title={`Share ${item.name}`}
@@ -111,26 +111,26 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
       <div className="p-[var(--card-padding)] pb-16 relative z-20 flex flex-col gap-2">
         <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
         <div className="flex items-center justify-between gap-2">
-          <p className="text-base text-gray-600 dark:text-gray-300 font-medium">{item.category}</p>
+          <p className="text-base text-muted font-medium">{item.category}</p>
           {item.itemType === 'CASH_FUND' && (
-            <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold px-2 py-0.5 rounded-full">
+            <span className="bg-badge text-badge-text border border-card-border text-xs font-bold px-2 py-0.5 rounded-full">
               Cash Fund
             </span>
           )}
           {item.itemType === 'EXPERIENCE_FUND' && (
-            <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-2 py-0.5 rounded-full">
+            <span className="bg-badge text-badge-text border border-card-border text-xs font-bold px-2 py-0.5 rounded-full">
               Experience Fund
             </span>
           )}
         </div>
-        <p className="mt-1 text-lg text-gray-800 dark:text-gray-100 font-bold">{formatCurrency(item.price)}</p>
+        <p className="mt-1 text-lg text-foreground font-bold">{formatCurrency(item.price)}</p>
         {item.isGroupGift && !isClaimed && (
           <div className="mt-1 flex flex-col gap-1">
             <div className="flex items-center justify-between text-base text-secondary font-semibold">
               <span>
                 Group Gift: <span className="font-bold">{formatCurrency(item.amountContributed)}</span> contributed
               </span>
-              <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-xs font-bold px-2.5 py-0.5 rounded-full ml-2">
+              <span className="bg-badge text-badge-text border border-card-border text-xs font-bold px-2.5 py-0.5 rounded-full ml-2">
                 {fundingPercentage}%
               </span>
             </div>

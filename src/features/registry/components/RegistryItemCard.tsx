@@ -1,18 +1,16 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
-import { ContributionSchema } from '../schemas';
 import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
-import { apiClient } from '@/lib/apiClient';
 import { useShareItem } from '../hooks/useShareItem';
-import { useGuestSession } from '../context/GuestSessionContext';
+import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
 import { getPaymentUrl } from '../utils/paymentUrls';
 
 const FIXED_PRESETS = [50, 100, 250];
@@ -22,7 +20,7 @@ const FIXED_PRESETS = [50, 100, 250];
  * @description Defines the props for the RegistryItemCard component.
  * @property {RegistryItem} item - The registry item to be displayed in the card.
  * @property {() => void} onClose - Callback function to close the card.
- * @property {(itemId: string, contributorName: string, amount: number, code?: string, message?: string, email?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
+ * @property {(itemId: string, contributorName: string, amount: number, code?: string, message?: string, coverFee?: boolean, email?: string) => Promise<void>} onContribute - Async function to handle the contribution or claiming of an item.
  */
 interface RegistryItemCardProps {
   item: RegistryItem;
@@ -39,138 +37,36 @@ interface RegistryItemCardProps {
  */
 const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute }) => {
   const {
-    invitationCode: sessionCode,
-    guestName: sessionGuestName,
-    isVerified: isSessionVerified,
-    setSession,
-    clearSession,
-  } = useGuestSession();
+    isValidatingCode,
+    isCodeLocked,
+    isSubmitting,
+    isSubmitDisabled,
 
-  const [contributorName, setContributorName] = useState('');
-  const [email, setEmail] = useState('');
-  const [amount, setAmount] = useState<number | string>('');
-  const [message, setMessage] = useState('');
-  const [coverFee, setCoverFee] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+    contributorName,
+    email,
+    amount,
+    message,
+    coverFee,
+    invitationCode,
 
-  const [invitationCode, setInvitationCode] = useState('');
-  const [isValidatingCode, setIsValidatingCode] = useState(false);
-  const [codeValidationError, setCodeValidationError] = useState<string | null>(null);
-  const [isCodeLocked, setIsCodeLocked] = useState(false);
+    fieldErrors,
+    codeError,
+    error,
+
+    setContributorName,
+    setEmail,
+    setAmount,
+    setMessage,
+    setCoverFee,
+
+    handleCodeChange,
+    handleVerifyCode,
+    handleClearCode,
+    handleSubmit,
+    handlePresetClick,
+  } = useRegistryContributionMachine({ item, onContribute });
 
   const { handleShare, copied } = useShareItem(item);
-
-  useEffect(() => {
-    if (isSessionVerified && sessionCode) {
-      setInvitationCode(sessionCode);
-      setContributorName((prev) => prev || sessionGuestName || '');
-      setIsCodeLocked(true);
-    }
-  }, [isSessionVerified, sessionCode, sessionGuestName]);
-
-  const handleCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.toUpperCase();
-    setInvitationCode(val);
-    setCodeValidationError(null);
-    if (val === '') {
-      setIsCodeLocked(false);
-      return;
-    }
-    // Auto-validate if length is 8 characters
-    if (val.length === 8) {
-      setIsValidatingCode(true);
-      setCodeValidationError(null);
-      setError(null);
-      try {
-        const data = await apiClient.get(`/api/registry/validate-code?code=${encodeURIComponent(val)}`);
-        if (data && data.valid) {
-          setContributorName(data.guestName);
-          setIsCodeLocked(true);
-          setSession({
-            invitationCode: data.code || val,
-            guestName: data.guestName,
-            isVerified: true,
-          });
-        } else {
-          setCodeValidationError('Invalid invitation code.');
-        }
-      } catch (err: any) {
-        setCodeValidationError(err.message || 'Invalid invitation code.');
-      } finally {
-        setIsValidatingCode(false);
-      }
-    }
-  };
-
-  const handlePresetClick = (presetValue: number) => {
-    setAmount(presetValue);
-    setError(null);
-  };
-
-  const handleContributeClick = async () => {
-    setError(null);
-
-    const rawAmount = item.isGroupGift ? amount : item.price;
-
-    const result = ContributionSchema.safeParse({
-      itemId: item.id,
-      name: contributorName,
-      email: email || undefined,
-      amount: rawAmount,
-      code: invitationCode || undefined,
-      message: message || undefined,
-      coverFee,
-    });
-
-    if (!result.success) {
-      setError(result.error.issues[0].message);
-      return;
-    }
-
-    const validData = result.data;
-    const finalAmount = validData.amount;
-
-    if (item.isGroupGift) {
-      const remainingAmount = item.price - item.amountContributed;
-      if (finalAmount > remainingAmount) {
-        setError(`Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`);
-        return;
-      }
-    }
-    setIsSubmitting(true);
-    try {
-      if (validData.email !== undefined || validData.coverFee) {
-        await onContribute(
-          item.id,
-          validData.name,
-          finalAmount,
-          validData.code || undefined,
-          validData.message || undefined,
-          validData.coverFee,
-          validData.email || undefined
-        );
-      } else if (validData.code !== undefined || validData.message !== undefined) {
-        await onContribute(
-          item.id,
-          validData.name,
-          finalAmount,
-          validData.code || undefined,
-          validData.message || undefined
-        );
-      } else {
-        await onContribute(item.id, validData.name, finalAmount);
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message || 'Failed to process contribution. Please try again.');
-      } else {
-        setError('An unknown error occurred during contribution.');
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const remainingAmount = item.price - item.amountContributed;
   const isFullyFunded = remainingAmount <= 0;
@@ -297,12 +193,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
       ) : !item.purchased ? (
         <form noValidate 
           className="mt-5 pt-4 border-t border-primary"
-          onSubmit={(e) => { e.preventDefault(); handleContributeClick(); }}
+          onSubmit={handleSubmit}
         >
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
           </h3>
-          <FormGroup state={codeValidationError ? 'error' : 'default'} className="mb-3">
+          <FormGroup state={codeError ? 'error' : 'default'} className="mb-3">
             <Label>
               Invitation Code (Optional)
             </Label>
@@ -319,29 +215,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                   type="button"
                   variant="secondary"
                   disabled={isSubmitting || isValidatingCode || !invitationCode}
-                  onClick={async () => {
-                    setIsValidatingCode(true);
-                    setCodeValidationError(null);
-                    setError(null);
-                    try {
-                      const data = await apiClient.get(`/api/registry/validate-code?code=${encodeURIComponent(invitationCode)}`);
-                      if (data && data.valid) {
-                        setContributorName(data.guestName);
-                        setIsCodeLocked(true);
-                        setSession({
-                          invitationCode: data.code || invitationCode,
-                          guestName: data.guestName,
-                          isVerified: true,
-                        });
-                      } else {
-                        setCodeValidationError('Invalid invitation code.');
-                      }
-                    } catch (err: any) {
-                      setCodeValidationError(err.message || 'Invalid invitation code.');
-                    } finally {
-                      setIsValidatingCode(false);
-                    }
-                  }}
+                  onClick={handleVerifyCode}
                 >
                   {isValidatingCode ? 'Verifying...' : 'Verify'}
                 </Button>
@@ -352,22 +226,16 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                   variant="ghost"
                   className="text-red-500 hover:text-red-700"
                   disabled={isSubmitting}
-                  onClick={async () => {
-                    await clearSession();
-                    setIsCodeLocked(false);
-                    setInvitationCode('');
-                    setContributorName('');
-                    setCodeValidationError(null);
-                  }}
+                  onClick={handleClearCode}
                 >
                   Clear
                 </Button>
               )}
             </div>
-            {codeValidationError && <FormMessage>{codeValidationError}</FormMessage>}
+            {codeError && <FormMessage>{codeError}</FormMessage>}
             {isCodeLocked && <p className="text-sm text-green-600 mt-1">Code verified! Name pre-filled.</p>}
           </FormGroup>
-          <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+          <FormGroup state={fieldErrors.name ? 'error' : 'default'} className="mb-3">
             <Label>
               Your Name <span className="text-red-500">*</span>
             </Label>
@@ -379,7 +247,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               disabled={isSubmitting}
             />
           </FormGroup>
-          <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+          <FormGroup state={fieldErrors.email ? 'error' : 'default'} className="mb-3">
             <Label>
               Email Address (Optional)
             </Label>
@@ -392,7 +260,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
             />
           </FormGroup>
           {item.isGroupGift && (
-            <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+            <FormGroup state={fieldErrors.amount ? 'error' : 'default'} className="mb-3">
               <Label>
                 Contribution Amount <span className="text-red-500">*</span>
               </Label>
@@ -533,7 +401,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               </div>
             </div>
           )}
-          <FormGroup state={error ? 'error' : 'default'} className="mb-3">
+          <FormGroup state={fieldErrors.message ? 'error' : 'default'} className="mb-3">
             <Label>
               Personal Message (Optional)
             </Label>
@@ -551,7 +419,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
             type="submit"
             variant="primary"
             className="w-full flex items-center justify-center"
-            disabled={isSubmitting}
+            disabled={isSubmitDisabled}
             aria-busy={isSubmitting}
           >
             {isSubmitting ? (

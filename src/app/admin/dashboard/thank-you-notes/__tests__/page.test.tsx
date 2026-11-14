@@ -1,8 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import ThankYouNotesPage from '../page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { substituteThankYouTemplateTokens } from '@/features/registry';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -429,5 +432,38 @@ describe('ThankYouNotesPage', () => {
       amount: null,
     });
     expect(res2).toBe('Hi Friend, thanks for wedding gift ($0.00)!');
+  });
+
+  it('renders status metric card labels with semantic status text tokens without opacity slashing and passes axe audit', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const totalLabel = screen.getByText('Total Contributions');
+    expect(totalLabel.className).toContain('var(--color-muted-text');
+    expect(totalLabel.className).not.toMatch(/\/80/);
+
+    const unsentLabel = screen.getByText('Pending / Unsent');
+    expect(unsentLabel.className).toContain('var(--color-status-warning-text');
+    expect(unsentLabel.className).not.toMatch(/\/80/);
+
+    const sentLabel = screen.getByText('Thank-You Sent');
+    expect(sentLabel.className).toContain('var(--color-status-success-text');
+    expect(sentLabel.className).not.toMatch(/\/80/);
+
+    const notNeededLabels = screen.getAllByText('Not Needed');
+    const notNeededLabel = notNeededLabels.find((el) => el.className.includes('text-xs'))!;
+    expect(notNeededLabel).toBeDefined();
+    expect(notNeededLabel.className).toContain('var(--color-status-info-text');
+    expect(notNeededLabel.className).not.toMatch(/\/80/);
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

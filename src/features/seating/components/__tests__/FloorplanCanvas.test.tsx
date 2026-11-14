@@ -157,6 +157,13 @@ describe('FloorplanCanvas component', () => {
     expect(screen.getByText('No Tables Created Yet')).toBeInTheDocument();
     expect(screen.getByText(/Get started by adding your first reception table/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add First Table/i })).toBeInTheDocument();
+
+    const emptyCard = screen.getByText('No Tables Created Yet').closest('div.rounded-2xl') as HTMLElement;
+    expect(emptyCard).toBeInTheDocument();
+    expect(emptyCard.className).toContain('bg-card/80');
+    expect(emptyCard.className).toContain('border-card-border');
+    expect(emptyCard.className).not.toContain('border-gray-200');
+    expect(emptyCard.className).not.toContain('dark:border-gray-700');
   });
 
   it('invokes onAddTable callback when clicking Add First Table button in zero state view', () => {

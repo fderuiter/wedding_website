@@ -92,15 +92,15 @@ export default function GuestAddressCollectPage() {
 
   if (submitted) {
     return (
-      <main className="min-h-screen py-12 px-4 sm:px-6 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-100 dark:border-gray-700 text-center">
+      <main className="min-h-screen py-12 px-4 sm:px-6 flex items-center justify-center bg-container">
+        <div className="max-w-md w-full bg-card rounded-2xl shadow-card p-8 border border-card-border text-center">
           <div className="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
             ✓
           </div>
-          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-2xl font-extrabold text-heading mb-2">
             Address Received!
           </h1>
-          <p className="text-gray-600 dark:text-gray-300 text-sm mb-6">
+          <p className="text-muted text-sm mb-6">
             Thank you for providing your mailing details. The couple looks forward to sending your save-the-date or invitation!
           </p>
           <Button variant="primary" onClick={handleReset} className="w-full">
@@ -112,13 +112,13 @@ export default function GuestAddressCollectPage() {
   }
 
   return (
-    <main className="min-h-screen py-12 px-4 sm:px-6 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-lg w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-100 dark:border-gray-700">
+    <main className="min-h-screen py-12 px-4 sm:px-6 flex items-center justify-center bg-container">
+      <div className="max-w-lg w-full bg-card rounded-2xl shadow-card p-8 border border-card-border">
         <div className="text-center mb-8">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-heading">
             Mailing Address Form
           </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
+          <p className="text-sm text-muted mt-2">
             Please share your physical postal address so the couple can send invitations and wedding updates.
           </p>
         </div>

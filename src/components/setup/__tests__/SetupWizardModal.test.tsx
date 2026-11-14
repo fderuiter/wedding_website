@@ -65,6 +65,7 @@ describe('SetupWizard In-Modal Content Overlays', () => {
   let windowOpenSpy: jest.SpyInstance;
 
   beforeEach(() => {
+    window.sessionStorage.clear();
     jest.clearAllMocks();
     mockMembers.length = 0;
     mockAttractions.length = 0;

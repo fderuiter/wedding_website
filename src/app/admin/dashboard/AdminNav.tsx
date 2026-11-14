@@ -19,7 +19,7 @@ export function AdminNav({ items }: AdminNavProps) {
 
   return (
     <nav aria-label="Admin Navigation">
-      <ul className="flex flex-wrap space-x-4">
+      <ul className="flex flex-wrap items-center gap-2">
         {items.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -31,11 +31,11 @@ export function AdminNav({ items }: AdminNavProps) {
               <Link
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
-                className={
+                className={`inline-flex items-center justify-center px-3 py-1.5 min-h-[32px] min-w-[24px] rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
                   isActive
-                    ? 'font-semibold text-primary dark:text-primary hover:text-primary'
-                    : 'text-gray-700 dark:text-gray-300 hover:text-primary'
-                }
+                    ? 'font-semibold text-primary dark:text-primary bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] hover:text-primary hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.08))]'
+                    : 'text-gray-700 dark:text-gray-300 hover:text-primary hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
+                }`}
               >
                 {item.label}
               </Link>
