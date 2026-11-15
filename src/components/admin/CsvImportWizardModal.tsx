@@ -1072,32 +1072,16 @@ export function CsvImportWizardModal({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const persisted: CsvImportPersistedState = {
-        step: state.step,
-        fileName: state.fileName,
-        csvHeaders: state.csvHeaders,
-        rawRows: state.rawRows,
-        guestNameCol: state.guestNameCol,
-        codeCol: state.codeCol,
-        emailCol: state.emailCol,
-        addressLine1Col: state.addressLine1Col,
-        addressLine2Col: state.addressLine2Col,
-        cityCol: state.cityCol,
-        stateCol: state.stateCol,
-        zipCodeCol: state.zipCodeCol,
-        countryCol: state.countryCol,
-        dietaryNotesCol: state.dietaryNotesCol,
-        plusOneCol: state.plusOneCol,
-        plusOneFirstNameCol: state.plusOneFirstNameCol,
-        plusOneLastNameCol: state.plusOneLastNameCol,
-        householdNameCol: state.householdNameCol,
-        partyGroupCol: state.partyGroupCol,
-        partyTagsCol: state.partyTagsCol,
-        selectedExtraCols: state.selectedExtraCols,
-        collisionStrategy: state.collisionStrategy,
-        editableRows: state.editableRows,
-        importSummary: state.importSummary,
-      };
+      const {
+        isValidating: _unusedValidating,
+        validationSeq: _unusedValidationSeq,
+        serverSummary: _unusedServerSummary,
+        validatedRows: _unusedValidatedRows,
+        statusFilter: _unusedStatusFilter,
+        codeFrequencyMap: _unusedCodeFreq,
+        isSubmitting: _unusedSubmitting,
+        ...persisted
+      } = state;
       window.sessionStorage.setItem('csv_import_wizard_draft', JSON.stringify(persisted));
     } catch (err) {
       console.warn('Failed to write key "csv_import_wizard_draft" to sessionStorage:', err);
