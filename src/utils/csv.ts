@@ -26,6 +26,10 @@ export interface ParsedCsvRow {
 export interface CsvParseResult {
   headers: string[];
   suggestedGuestNameCol: string;
+  suggestedGuestFirstNameCol?: string;
+  suggestedGuestLastNameCol?: string;
+  guestFirstNameCol?: string;
+  guestLastNameCol?: string;
   suggestedCodeCol: string;
   suggestedEmailCol: string;
   suggestedAddressLine1Col: string;
@@ -45,7 +49,9 @@ export interface CsvParseResult {
 }
 
 export interface ColumnMappingOptions {
-  guestNameCol: string;
+  guestNameCol?: string;
+  guestFirstNameCol?: string;
+  guestLastNameCol?: string;
   codeCol?: string;
   emailCol?: string;
   addressLine1Col?: string;
@@ -66,51 +72,37 @@ export interface ColumnMappingOptions {
 
 export const MAX_CSV_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-export function parseCsvContent(text: string): CsvParseResult {
-  // Strip UTF-8 BOM if present
-  let sanitizedText = text;
-  if (sanitizedText.charCodeAt(0) === 0xfeff) {
-    sanitizedText = sanitizedText.slice(1);
-  }
+export function combineFirstAndLastName(firstName?: string, lastName?: string): string {
+  const cleanFirst = (firstName || '').trim().replace(/\s+/g, ' ');
+  const cleanLast = (lastName || '').trim().replace(/\s+/g, ' ');
+  return [cleanFirst, cleanLast].filter(Boolean).join(' ').trim();
+}
 
-  const lines = parseCsvLines(sanitizedText);
-  if (lines.length === 0) {
-    return {
-      headers: [],
-      suggestedGuestNameCol: '',
-      suggestedCodeCol: '',
-      suggestedEmailCol: '',
-      suggestedAddressLine1Col: '',
-      suggestedAddressLine2Col: '',
-      suggestedCityCol: '',
-      suggestedStateCol: '',
-      suggestedZipCodeCol: '',
-      suggestedCountryCol: '',
-      suggestedDietaryNotesCol: '',
-      suggestedPlusOneCol: '',
-      suggestedPlusOneFirstNameCol: '',
-      suggestedPlusOneLastNameCol: '',
-      suggestedHouseholdNameCol: '',
-      suggestedPartyGroupCol: '',
-      suggestedPartyTagsCol: '',
-      rows: [],
-    };
-  }
-
-  const rawHeaders = lines[0].map((h) => h.trim());
-  // Ensure non-empty unique headers
-  const headerCounts = new Map<string, number>();
-  const headers = rawHeaders.map((h, idx) => {
-    let base = h ? h : `Column ${idx + 1}`;
-    const count = headerCounts.get(base) || 0;
-    headerCounts.set(base, count + 1);
-    if (count > 0) {
-      base = `${base} (${count + 1})`;
-    }
-    return base;
-  });
-
+export function detectCsvHeaders(headers: string[]): {
+  suggestedGuestNameCol: string;
+  suggestedGuestFirstNameCol: string;
+  suggestedGuestLastNameCol: string;
+  guestFirstNameCol: string;
+  guestLastNameCol: string;
+  suggestedCodeCol: string;
+  suggestedEmailCol: string;
+  suggestedAddressLine1Col: string;
+  suggestedAddressLine2Col: string;
+  suggestedCityCol: string;
+  suggestedStateCol: string;
+  suggestedZipCodeCol: string;
+  suggestedCountryCol: string;
+  suggestedDietaryNotesCol: string;
+  suggestedPlusOneCol: string;
+  suggestedPlusOneFirstNameCol: string;
+  suggestedPlusOneLastNameCol: string;
+  suggestedHouseholdNameCol: string;
+  suggestedPartyGroupCol: string;
+  suggestedPartyTagsCol: string;
+} {
   let suggestedGuestNameCol = '';
+  let suggestedGuestFirstNameCol = '';
+  let suggestedGuestLastNameCol = '';
   let suggestedCodeCol = '';
   let suggestedEmailCol = '';
   let suggestedAddressLine1Col = '';
@@ -129,15 +121,53 @@ export function parseCsvContent(text: string): CsvParseResult {
 
   for (const h of headers) {
     const lower = h.toLowerCase().trim();
+    const isPlusOne =
+      lower.includes('plus one') ||
+      lower.includes('plus-one') ||
+      lower.includes('plusone') ||
+      lower.includes('+1') ||
+      lower.includes('companion') ||
+      lower.includes('guest 2') ||
+      lower.includes('guest2');
+
     if (!suggestedGuestNameCol) {
       if (
         lower.includes('guest name') ||
         lower.includes('full name') ||
         lower === 'guest' ||
-        lower === 'name' ||
-        lower === 'first name'
+        lower === 'name'
       ) {
         suggestedGuestNameCol = h;
+      }
+    }
+    if (!suggestedGuestFirstNameCol && !isPlusOne) {
+      if (
+        lower === 'first name' ||
+        lower === 'first' ||
+        lower === 'firstname' ||
+        lower === 'given name' ||
+        lower === 'givenname' ||
+        lower === 'forename' ||
+        lower.includes('guest first name') ||
+        lower.includes('guest first') ||
+        lower.includes('first name') ||
+        lower.includes('given name')
+      ) {
+        suggestedGuestFirstNameCol = h;
+      }
+    }
+    if (!suggestedGuestLastNameCol && !isPlusOne) {
+      if (
+        lower === 'last name' ||
+        lower === 'last' ||
+        lower === 'lastname' ||
+        lower === 'surname' ||
+        lower.includes('guest last name') ||
+        lower.includes('guest last') ||
+        lower.includes('last name') ||
+        lower.includes('surname')
+      ) {
+        suggestedGuestLastNameCol = h;
       }
     }
     if (!suggestedCodeCol) {
@@ -295,12 +325,92 @@ export function parseCsvContent(text: string): CsvParseResult {
   }
 
   // Fallback defaults if heuristics didn't match
-  if (!suggestedGuestNameCol && headers.length > 0) {
+  if (!suggestedGuestNameCol && !suggestedGuestFirstNameCol && headers.length > 0) {
     suggestedGuestNameCol = headers[0];
   }
-  if (!suggestedCodeCol && headers.length > 1 && headers[1] !== suggestedGuestNameCol) {
+  if (
+    !suggestedCodeCol &&
+    headers.length > 1 &&
+    headers[1] !== suggestedGuestNameCol &&
+    headers[1] !== suggestedGuestFirstNameCol &&
+    headers[1] !== suggestedGuestLastNameCol
+  ) {
     suggestedCodeCol = headers[1];
   }
+
+  return {
+    suggestedGuestNameCol,
+    suggestedGuestFirstNameCol,
+    suggestedGuestLastNameCol,
+    guestFirstNameCol: suggestedGuestFirstNameCol,
+    guestLastNameCol: suggestedGuestLastNameCol,
+    suggestedCodeCol,
+    suggestedEmailCol,
+    suggestedAddressLine1Col,
+    suggestedAddressLine2Col,
+    suggestedCityCol,
+    suggestedStateCol,
+    suggestedZipCodeCol,
+    suggestedCountryCol,
+    suggestedDietaryNotesCol,
+    suggestedPlusOneCol,
+    suggestedPlusOneFirstNameCol,
+    suggestedPlusOneLastNameCol,
+    suggestedHouseholdNameCol,
+    suggestedPartyGroupCol,
+    suggestedPartyTagsCol,
+  };
+}
+
+export function parseCsvContent(text: string): CsvParseResult {
+  // Strip UTF-8 BOM if present
+  let sanitizedText = text;
+  if (sanitizedText.charCodeAt(0) === 0xfeff) {
+    sanitizedText = sanitizedText.slice(1);
+  }
+
+  const lines = parseCsvLines(sanitizedText);
+  if (lines.length === 0) {
+    return {
+      headers: [],
+      suggestedGuestNameCol: '',
+      suggestedGuestFirstNameCol: '',
+      suggestedGuestLastNameCol: '',
+      guestFirstNameCol: '',
+      guestLastNameCol: '',
+      suggestedCodeCol: '',
+      suggestedEmailCol: '',
+      suggestedAddressLine1Col: '',
+      suggestedAddressLine2Col: '',
+      suggestedCityCol: '',
+      suggestedStateCol: '',
+      suggestedZipCodeCol: '',
+      suggestedCountryCol: '',
+      suggestedDietaryNotesCol: '',
+      suggestedPlusOneCol: '',
+      suggestedPlusOneFirstNameCol: '',
+      suggestedPlusOneLastNameCol: '',
+      suggestedHouseholdNameCol: '',
+      suggestedPartyGroupCol: '',
+      suggestedPartyTagsCol: '',
+      rows: [],
+    };
+  }
+
+  const rawHeaders = lines[0].map((h) => h.trim());
+  // Ensure non-empty unique headers
+  const headerCounts = new Map<string, number>();
+  const headers = rawHeaders.map((h, idx) => {
+    let base = h ? h : `Column ${idx + 1}`;
+    const count = headerCounts.get(base) || 0;
+    headerCounts.set(base, count + 1);
+    if (count > 0) {
+      base = `${base} (${count + 1})`;
+    }
+    return base;
+  });
+
+  const detected = detectCsvHeaders(headers);
 
   const rows: Record<string, string>[] = [];
   for (let i = 1; i < lines.length; i++) {
@@ -319,22 +429,7 @@ export function parseCsvContent(text: string): CsvParseResult {
 
   return {
     headers,
-    suggestedGuestNameCol,
-    suggestedCodeCol,
-    suggestedEmailCol,
-    suggestedAddressLine1Col,
-    suggestedAddressLine2Col,
-    suggestedCityCol,
-    suggestedStateCol,
-    suggestedZipCodeCol,
-    suggestedCountryCol,
-    suggestedDietaryNotesCol,
-    suggestedPlusOneCol,
-    suggestedPlusOneFirstNameCol,
-    suggestedPlusOneLastNameCol,
-    suggestedHouseholdNameCol,
-    suggestedPartyGroupCol,
-    suggestedPartyTagsCol,
+    ...detected,
     rows,
   };
 }
@@ -405,6 +500,8 @@ export function validateSingleCsvRow(
 ): ParsedCsvRow {
   const {
     guestNameCol = '',
+    guestFirstNameCol = '',
+    guestLastNameCol = '',
     codeCol = '',
     emailCol = '',
     addressLine1Col = '',
@@ -428,6 +525,8 @@ export function validateSingleCsvRow(
     new Set(
       [
         guestNameCol,
+        guestFirstNameCol,
+        guestLastNameCol,
         codeCol,
         emailCol,
         addressLine1Col,
@@ -446,7 +545,18 @@ export function validateSingleCsvRow(
       ].filter(Boolean)
     );
 
-  const guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
+  let guestName = guestNameCol ? (r[guestNameCol] || '').trim() : '';
+  if (!guestNameCol) {
+    const firstName = guestFirstNameCol
+      ? (r[guestFirstNameCol] || '').trim()
+      : (r['guestFirstName'] || r['First Name'] || r['Guest First Name'] || '').trim();
+    const lastName = guestLastNameCol
+      ? (r[guestLastNameCol] || '').trim()
+      : (r['guestLastName'] || r['Last Name'] || r['Guest Last Name'] || '').trim();
+    if (firstName || lastName) {
+      guestName = combineFirstAndLastName(firstName, lastName);
+    }
+  }
   const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
   const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
   const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();

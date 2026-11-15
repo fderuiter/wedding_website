@@ -1126,4 +1126,49 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByDisplayValue('Eve Modified Local')).toBeInTheDocument();
     });
   });
+
+  test('supports split guest names (Joy format) through mapping confirmation and preview', async () => {
+    window.sessionStorage.clear();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+        rows: [{ rowIndex: 1, guestName: 'Jane Doe', code: 'JANE100', isValid: true, errors: [], warnings: [] }],
+      }),
+    });
+
+    renderModal(true);
+
+    const csvContent =
+      'First Name,Last Name,Invitation Code\n' +
+      'Jane,Doe,JANE100';
+    const file = new File([csvContent], 'joy_guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    // Step 2: Auto-detected split columns
+    await waitFor(() => {
+      expect(screen.getByText(/2. Map Columns/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Guest First Name Column/i)).toHaveValue('First Name');
+      expect(screen.getByLabelText(/Guest Last Name Column/i)).toHaveValue('Last Name');
+      // Single guest name column should remain unselected
+      expect(screen.getByLabelText(/Guest Name Column \(Required\)/i)).toHaveValue('');
+    });
+
+    // Preview should display combined name
+    expect(screen.getByText('Jane Doe')).toBeInTheDocument();
+
+    // Advance to Step 3
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue('Jane Doe')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('JANE100')).toBeInTheDocument();
+  });
 });

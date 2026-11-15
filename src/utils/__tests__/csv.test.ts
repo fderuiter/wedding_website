@@ -1,5 +1,7 @@
 import {
   parseCsvContent,
+  detectCsvHeaders,
+  combineFirstAndLastName,
   validateSingleCsvRow,
   generateCsvContent,
   escapeCsvCell,
@@ -36,6 +38,48 @@ describe('CSV Parser Utility', () => {
     expect(parsed.suggestedPlusOneCol).toBe('Plus One Count');
     expect(parsed.suggestedPlusOneFirstNameCol).toBe('Companion First Name');
     expect(parsed.suggestedPlusOneLastNameCol).toBe('Companion Last Name');
+  });
+
+  it('auto-detects split guest first and last name headers from Joy exports and avoids setting suggestedGuestNameCol', () => {
+    const csv = 'First Name,Last Name,Invitation Code,Email\nJane,Doe,JANE12,jane@example.com';
+    const parsed = parseCsvContent(csv);
+    expect(parsed.suggestedGuestFirstNameCol).toBe('First Name');
+    expect(parsed.suggestedGuestLastNameCol).toBe('Last Name');
+    expect(parsed.guestFirstNameCol).toBe('First Name');
+    expect(parsed.guestLastNameCol).toBe('Last Name');
+    expect(parsed.suggestedGuestNameCol).toBe('');
+    expect(parsed.suggestedCodeCol).toBe('Invitation Code');
+    expect(parsed.suggestedEmailCol).toBe('Email');
+  });
+
+  it('auto-detects alternative split name header variations', () => {
+    const headers1 = ['Guest First Name', 'Guest Last Name', 'Code'];
+    const detected1 = detectCsvHeaders(headers1);
+    expect(detected1.suggestedGuestFirstNameCol).toBe('Guest First Name');
+    expect(detected1.suggestedGuestLastNameCol).toBe('Guest Last Name');
+    expect(detected1.suggestedGuestNameCol).toBe('');
+
+    const headers2 = ['Given Name', 'Surname', 'Code'];
+    const detected2 = detectCsvHeaders(headers2);
+    expect(detected2.suggestedGuestFirstNameCol).toBe('Given Name');
+    expect(detected2.suggestedGuestLastNameCol).toBe('Surname');
+    expect(detected2.suggestedGuestNameCol).toBe('');
+
+    const headers3 = ['First', 'Last', 'Passcode'];
+    const detected3 = detectCsvHeaders(headers3);
+    expect(detected3.suggestedGuestFirstNameCol).toBe('First');
+    expect(detected3.suggestedGuestLastNameCol).toBe('Last');
+    expect(detected3.suggestedGuestNameCol).toBe('');
+  });
+
+  it('disambiguates split guest names from companion and plus-one name columns', () => {
+    const csv = 'First Name,Last Name,Plus One First Name,Plus One Last Name,Code\nJohn,Smith,Jack,Smith,CODE1';
+    const parsed = parseCsvContent(csv);
+    expect(parsed.suggestedGuestFirstNameCol).toBe('First Name');
+    expect(parsed.suggestedGuestLastNameCol).toBe('Last Name');
+    expect(parsed.suggestedPlusOneFirstNameCol).toBe('Plus One First Name');
+    expect(parsed.suggestedPlusOneLastNameCol).toBe('Plus One Last Name');
+    expect(parsed.suggestedGuestNameCol).toBe('');
   });
 
   it('disambiguates duplicate CSV headers gracefully', () => {
@@ -219,6 +263,134 @@ describe('CSV Parser Utility', () => {
       } finally {
         global.Set = OriginalSet;
       }
+    });
+
+    it('concatenates split first and last names into guestName when single name mapping is absent', () => {
+      const row = {
+        'First Name': 'Jane',
+        'Last Name': 'Doe',
+        Code: 'JANE12',
+      };
+      const freqMap = new Map([['JANE12', 1]]);
+      const dbCodes = new Set<string>();
+
+      const result = validateSingleCsvRow(
+        row,
+        0,
+        { guestFirstNameCol: 'First Name', guestLastNameCol: 'Last Name', codeCol: 'Code' },
+        freqMap,
+        dbCodes
+      );
+
+      expect(result.isValid).toBe(true);
+      expect(result.guestName).toBe('Jane Doe');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('handles rows with only a first name or only a last name gracefully', () => {
+      const freqMap = new Map();
+      const dbCodes = new Set<string>();
+      const mapping = { guestFirstNameCol: 'First Name', guestLastNameCol: 'Last Name' };
+
+      const onlyFirst = validateSingleCsvRow(
+        { 'First Name': 'Cher', 'Last Name': '' },
+        0,
+        mapping,
+        freqMap,
+        dbCodes
+      );
+      expect(onlyFirst.guestName).toBe('Cher');
+
+      const onlyLast = validateSingleCsvRow(
+        { 'First Name': '', 'Last Name': 'Madonna' },
+        1,
+        mapping,
+        freqMap,
+        dbCodes
+      );
+      expect(onlyLast.guestName).toBe('Madonna');
+    });
+
+    it('trims whitespace and avoids duplicate inner spaces during concatenation', () => {
+      const freqMap = new Map();
+      const dbCodes = new Set<string>();
+      const mapping = { guestFirstNameCol: 'First Name', guestLastNameCol: 'Last Name' };
+
+      const result = validateSingleCsvRow(
+        { 'First Name': '   Mary    Ann   ', 'Last Name': '   Smith   ' },
+        0,
+        mapping,
+        freqMap,
+        dbCodes
+      );
+      expect(result.guestName).toBe('Mary Ann Smith');
+    });
+
+    it('adds guestFirstNameCol and guestLastNameCol to mapped columns to prevent unmapped extra fields', () => {
+      const row = {
+        'First Name': 'John',
+        'Last Name': 'Doe',
+        'Custom Note': 'Vegetarian meal requested',
+      };
+      const freqMap = new Map();
+      const dbCodes = new Set<string>();
+
+      const result = validateSingleCsvRow(
+        row,
+        0,
+        { guestFirstNameCol: 'First Name', guestLastNameCol: 'Last Name' },
+        freqMap,
+        dbCodes
+      );
+
+      expect(result.extraFields).toEqual({
+        'Custom Note': 'Vegetarian meal requested',
+      });
+      expect(result.extraFields).not.toHaveProperty('First Name');
+      expect(result.extraFields).not.toHaveProperty('Last Name');
+    });
+
+    it('prioritizes guestNameCol when explicitly provided', () => {
+      const row = {
+        'Full Name': 'Dr. John Doe',
+        'First Name': 'John',
+        'Last Name': 'Doe',
+      };
+      const freqMap = new Map();
+      const dbCodes = new Set<string>();
+
+      const result = validateSingleCsvRow(
+        row,
+        0,
+        { guestNameCol: 'Full Name', guestFirstNameCol: 'First Name', guestLastNameCol: 'Last Name' },
+        freqMap,
+        dbCodes
+      );
+
+      expect(result.guestName).toBe('Dr. John Doe');
+    });
+  });
+
+  describe('combineFirstAndLastName', () => {
+    it('combines first and last name with a single space', () => {
+      expect(combineFirstAndLastName('John', 'Doe')).toBe('John Doe');
+    });
+
+    it('handles only first name or only last name', () => {
+      expect(combineFirstAndLastName('Alice', '')).toBe('Alice');
+      expect(combineFirstAndLastName('', 'Smith')).toBe('Smith');
+      expect(combineFirstAndLastName('Bob', undefined)).toBe('Bob');
+      expect(combineFirstAndLastName(undefined, 'Jones')).toBe('Jones');
+    });
+
+    it('normalizes multiple spaces and trims', () => {
+      expect(combineFirstAndLastName('   Mary    Jane   ', '   Watson   ')).toBe('Mary Jane Watson');
+    });
+
+    it('returns empty string when both are empty or undefined', () => {
+      expect(combineFirstAndLastName('', '')).toBe('');
+      expect(combineFirstAndLastName(undefined, undefined)).toBe('');
+      expect(combineFirstAndLastName('   ', '   ')).toBe('');
     });
   });
 });

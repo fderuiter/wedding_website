@@ -9,6 +9,7 @@ import {
   parseCsvContent,
   validateSingleCsvRow,
   generateSampleCsvTemplate,
+  combineFirstAndLastName,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
   ColumnMappingOptions,
@@ -48,6 +49,8 @@ interface CsvImportPersistedState {
   csvHeaders: string[];
   rawRows: Record<string, string>[];
   guestNameCol: string;
+  guestFirstNameCol: string;
+  guestLastNameCol: string;
   codeCol: string;
   emailCol: string;
   addressLine1Col: string;
@@ -80,6 +83,8 @@ const initialCsvImportState: CsvImportPersistedState = {
   csvHeaders: [],
   rawRows: [],
   guestNameCol: '',
+  guestFirstNameCol: '',
+  guestLastNameCol: '',
   codeCol: '',
   emailCol: '',
   addressLine1Col: '',
@@ -547,6 +552,10 @@ type WizardAction =
     headers: string[];
     rawRows: Record<string, string>[];
     suggestedGuestNameCol: string;
+    suggestedGuestFirstNameCol?: string;
+    suggestedGuestLastNameCol?: string;
+    guestFirstNameCol?: string;
+    guestLastNameCol?: string;
     suggestedCodeCol: string;
     suggestedEmailCol: string;
     suggestedAddressLine1Col: string;
@@ -721,6 +730,8 @@ function wizardReducer(
         csvHeaders: action.headers,
         rawRows: action.rawRows,
         guestNameCol: action.suggestedGuestNameCol,
+        guestFirstNameCol: action.suggestedGuestFirstNameCol || action.guestFirstNameCol || '',
+        guestLastNameCol: action.suggestedGuestLastNameCol || action.guestLastNameCol || '',
         codeCol: action.suggestedCodeCol,
         emailCol: action.suggestedEmailCol,
         addressLine1Col: action.suggestedAddressLine1Col,
@@ -1042,6 +1053,8 @@ export function CsvImportWizardModal({
     csvHeaders,
     rawRows,
     guestNameCol,
+    guestFirstNameCol,
+    guestLastNameCol,
     codeCol,
     emailCol,
     addressLine1Col,
@@ -1092,6 +1105,8 @@ export function CsvImportWizardModal({
     state.csvHeaders,
     state.rawRows,
     state.guestNameCol,
+    state.guestFirstNameCol,
+    state.guestLastNameCol,
     state.codeCol,
     state.emailCol,
     state.addressLine1Col,
@@ -1121,6 +1136,8 @@ export function CsvImportWizardModal({
   const toggleExtraCol = (header: string) => dispatch({ type: 'TOGGLE_EXTRA_COL', header });
 
   const setGuestNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestNameCol', value: val });
+  const setGuestFirstNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestFirstNameCol', value: val });
+  const setGuestLastNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestLastNameCol', value: val });
   const setCodeCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'codeCol', value: val });
   const setEmailCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'emailCol', value: val });
   const setAddressLine1Col = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'addressLine1Col', value: val });
@@ -1189,6 +1206,8 @@ export function CsvImportWizardModal({
       const mappedStandard = new Set(
         [
           parsed.suggestedGuestNameCol,
+          parsed.suggestedGuestFirstNameCol || parsed.guestFirstNameCol,
+          parsed.suggestedGuestLastNameCol || parsed.guestLastNameCol,
           parsed.suggestedCodeCol,
           parsed.suggestedEmailCol,
           parsed.suggestedAddressLine1Col,
@@ -1215,6 +1234,10 @@ export function CsvImportWizardModal({
         headers: parsed.headers,
         rawRows: parsed.rows,
         suggestedGuestNameCol: parsed.suggestedGuestNameCol,
+        suggestedGuestFirstNameCol: parsed.suggestedGuestFirstNameCol || parsed.guestFirstNameCol || '',
+        suggestedGuestLastNameCol: parsed.suggestedGuestLastNameCol || parsed.guestLastNameCol || '',
+        guestFirstNameCol: parsed.suggestedGuestFirstNameCol || parsed.guestFirstNameCol || '',
+        guestLastNameCol: parsed.suggestedGuestLastNameCol || parsed.guestLastNameCol || '',
         suggestedCodeCol: parsed.suggestedCodeCol,
         suggestedEmailCol: parsed.suggestedEmailCol || '',
         suggestedAddressLine1Col: parsed.suggestedAddressLine1Col || '',
@@ -1238,7 +1261,7 @@ export function CsvImportWizardModal({
   };
 
   const handleConfirmMapping = () => {
-    if (!guestNameCol) {
+    if (!guestNameCol && !guestFirstNameCol && !guestLastNameCol) {
       addToast('Please select a column for Guest Name.', 'error');
       return;
     }
@@ -1251,8 +1274,18 @@ export function CsvImportWizardModal({
         }
       });
 
+      let guestName = '';
+      if (guestNameCol) {
+        guestName = (r[guestNameCol] || '').trim();
+      } else if (guestFirstNameCol || guestLastNameCol) {
+        guestName = combineFirstAndLastName(
+          guestFirstNameCol ? r[guestFirstNameCol] : '',
+          guestLastNameCol ? r[guestLastNameCol] : ''
+        );
+      }
+
       return {
-        guestName: (r[guestNameCol] || '').trim(),
+        guestName,
         code: codeCol ? (r[codeCol] || '').trim().toUpperCase() : '',
         email: emailCol ? (r[emailCol] || '').trim() : '',
         addressLine1: addressLine1Col ? (r[addressLine1Col] || '').trim() : '',
@@ -1616,6 +1649,8 @@ export function CsvImportWizardModal({
     return new Set(
       [
         guestNameCol,
+        guestFirstNameCol,
+        guestLastNameCol,
         codeCol,
         emailCol,
         addressLine1Col,
@@ -1635,6 +1670,8 @@ export function CsvImportWizardModal({
     );
   }, [
     guestNameCol,
+    guestFirstNameCol,
+    guestLastNameCol,
     codeCol,
     emailCol,
     addressLine1Col,
@@ -1777,6 +1814,40 @@ export function CsvImportWizardModal({
                   className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
                 >
                   <option value="">-- Select Column --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-guest-first-name">Guest First Name Column (Optional)</Label>
+                <select
+                  id="map-guest-first-name"
+                  value={guestFirstNameCol}
+                  onChange={(e) => setGuestFirstNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
+                >
+                  <option value="">-- Unmapped --</option>
+                  {csvHeaders.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+
+              <FormGroup>
+                <Label htmlFor="map-guest-last-name">Guest Last Name Column (Optional)</Label>
+                <select
+                  id="map-guest-last-name"
+                  value={guestLastNameCol}
+                  onChange={(e) => setGuestLastNameCol(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
+                >
+                  <option value="">-- Unmapped --</option>
                   {csvHeaders.map((h) => (
                     <option key={h} value={h}>
                       {h}
@@ -2067,41 +2138,52 @@ export function CsvImportWizardModal({
             <div className="bg-gray-50 dark:bg-zinc-800 p-3 rounded-lg border border-gray-200 dark:border-zinc-700">
               <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Sample Data Preview (First 3 rows)</h4>
               <div className="space-y-1 text-xs">
-                {rawRows.slice(0, 3).map((r, i) => (
-                  <div key={i} className="flex flex-wrap justify-between py-1 border-b last:border-0 border-gray-200 dark:border-zinc-700 gap-2">
-                    <span>
-                      <strong>Name:</strong> {r[guestNameCol] || <em className="text-red-400">&lt;empty&gt;</em>}
-                    </span>
-                    <span>
-                      <strong>Code:</strong> {codeCol && r[codeCol] ? r[codeCol] : <em className="text-amber-500">&lt;auto-generate&gt;</em>}
-                    </span>
-                    {emailCol && (
+                {rawRows.slice(0, 3).map((r, i) => {
+                  let previewName = '';
+                  if (guestNameCol) {
+                    previewName = (r[guestNameCol] || '').trim();
+                  } else if (guestFirstNameCol || guestLastNameCol) {
+                    previewName = combineFirstAndLastName(
+                      guestFirstNameCol ? r[guestFirstNameCol] : '',
+                      guestLastNameCol ? r[guestLastNameCol] : ''
+                    );
+                  }
+                  return (
+                    <div key={i} className="flex flex-wrap justify-between py-1 border-b last:border-0 border-gray-200 dark:border-zinc-700 gap-2">
                       <span>
-                        <strong>Email:</strong> {r[emailCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                        <strong>Name:</strong> {previewName || <em className="text-red-400">&lt;empty&gt;</em>}
                       </span>
-                    )}
-                    {dietaryNotesCol && (
                       <span>
-                        <strong>Dietary:</strong> {r[dietaryNotesCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                        <strong>Code:</strong> {codeCol && r[codeCol] ? r[codeCol] : <em className="text-amber-500">&lt;auto-generate&gt;</em>}
                       </span>
-                    )}
-                    {plusOneCol && (
-                      <span>
-                        <strong>Plus-Ones:</strong> {r[plusOneCol] || '0'}
-                      </span>
-                    )}
-                    {plusOneFirstNameCol && (
-                      <span>
-                        <strong>Plus-One First:</strong> {r[plusOneFirstNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
-                      </span>
-                    )}
-                    {plusOneLastNameCol && (
-                      <span>
-                        <strong>Plus-One Last:</strong> {r[plusOneLastNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                      {emailCol && (
+                        <span>
+                          <strong>Email:</strong> {r[emailCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                        </span>
+                      )}
+                      {dietaryNotesCol && (
+                        <span>
+                          <strong>Dietary:</strong> {r[dietaryNotesCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                        </span>
+                      )}
+                      {plusOneCol && (
+                        <span>
+                          <strong>Plus-Ones:</strong> {r[plusOneCol] || '0'}
+                        </span>
+                      )}
+                      {plusOneFirstNameCol && (
+                        <span>
+                          <strong>Plus-One First:</strong> {r[plusOneFirstNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                        </span>
+                      )}
+                      {plusOneLastNameCol && (
+                        <span>
+                          <strong>Plus-One Last:</strong> {r[plusOneLastNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
