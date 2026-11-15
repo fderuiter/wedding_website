@@ -125,7 +125,7 @@ Both platforms support HTTP health check probes to monitor container readiness a
 *   **Railway Configuration**: In **Settings > Healthcheck Path**, enter `/api/health`.
 *   **Render Configuration**: In **Web Service Settings > Health Check Path**, enter `/api/health`.
 
-When `/api/health` returns HTTP 200 `{"status": "ok", ...}`, the platform routes live user traffic to the newly deployed container instance.
+When `/api/health` returns HTTP 200 `{ "success": true, "data": { "status": "ok", ... } }`, the platform routes live user traffic to the newly deployed container instance.
 
 ---
 
