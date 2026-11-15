@@ -492,4 +492,221 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     const res11 = await POST(req11);
     expect(res11.status).toBe(429);
   });
+
+  describe('Phone number handling & extraFields persistence', () => {
+    test('creates new InvitationCode with extraFields containing phone and mobile when valid phone is provided', async () => {
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
+        id: 'phone-guest-id',
+        ...data,
+      }));
+
+      const payload = {
+        guestName: 'Phone Guest',
+        email: 'phoneguest@example.com',
+        phone: '+1 (555) 123-4567',
+        addressLine1: '100 Main St',
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(mockPrisma.invitationCode.create).toHaveBeenCalledTimes(1);
+
+      const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.guestName).toBe('Phone Guest');
+      expect(createdData.extraFields).toEqual({
+        phone: '+15551234567',
+        mobile: '+15551234567',
+      });
+    });
+
+    test('strips formatting characters and accepts numbers up to 30 characters', async () => {
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
+        id: 'strip-guest-id',
+        ...data,
+      }));
+
+      const payload = {
+        guestName: 'Format Guest',
+        phone: '  +1-555.234.5678  ',
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.extraFields).toEqual({
+        phone: '+15552345678',
+        mobile: '+15552345678',
+      });
+    });
+
+    test('accepts phone via mobile or phoneNumber alias and persists to extraFields', async () => {
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
+        id: 'alias-guest-id',
+        ...data,
+      }));
+
+      const payload = {
+        guestName: 'Alias Guest',
+        mobile: '+15559876543',
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.extraFields).toEqual({
+        phone: '+15559876543',
+        mobile: '+15559876543',
+      });
+    });
+
+    test('updates existing record matching email and merges new phone details into extraFields', async () => {
+      const existingRecord = {
+        id: 'existing-merge-1',
+        code: 'MERGE1',
+        guestName: 'Existing Guest',
+        email: 'merge@example.com',
+        extraFields: { existingCustomNote: 'VIP Table' },
+        partyTags: ['VIP'],
+        used: false,
+      };
+
+      (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValue(existingRecord);
+      (mockPrisma.invitationCode.update as jest.Mock).mockImplementation(async ({ data }) => ({
+        ...existingRecord,
+        ...data,
+      }));
+
+      const payload = {
+        guestName: 'Existing Guest',
+        email: 'merge@example.com',
+        phone: '+1 (555) 333-4444',
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'existing-merge-1' },
+          data: expect.objectContaining({
+            extraFields: {
+              existingCustomNote: 'VIP Table',
+              phone: '+15553334444',
+              mobile: '+15553334444',
+            },
+          }),
+        })
+      );
+    });
+
+    test('updates existing record matching guest name and updates extraFields', async () => {
+      const existingRecord = {
+        id: 'existing-name-1',
+        code: 'NAME1',
+        guestName: 'Guest Matching By Name',
+        email: null,
+        extraFields: null,
+        partyTags: [],
+        used: false,
+      };
+
+      (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValue(existingRecord);
+      (mockPrisma.invitationCode.update as jest.Mock).mockImplementation(async ({ data }) => ({
+        ...existingRecord,
+        ...data,
+      }));
+
+      const payload = {
+        guestName: 'Guest Matching By Name',
+        phone: '+1 (555) 444-5555',
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'existing-name-1' },
+          data: expect.objectContaining({
+            extraFields: {
+              phone: '+15554445555',
+              mobile: '+15554445555',
+            },
+          }),
+        })
+      );
+    });
+
+    test('returns 400 Bad Request with informative error message on invalid phone format', async () => {
+      const payload = {
+        guestName: 'Invalid Guest',
+        phone: 'not-a-valid-phone',
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Invalid phone number format');
+      expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
+    });
+
+    test('returns 400 Bad Request when phone exceeds 30 characters', async () => {
+      const payload = {
+        guestName: 'Long Phone Guest',
+        phone: '+1234567890123456789012345678901', // 32 characters
+      };
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
+    });
+  });
 });

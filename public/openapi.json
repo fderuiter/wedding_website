@@ -5490,6 +5490,26 @@
                       }
                     ]
                   },
+                  "phone": {
+                    "anyOf": [
+                      {},
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mobile": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "phoneNumber": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "addressLine1": {
                     "anyOf": [
                       {

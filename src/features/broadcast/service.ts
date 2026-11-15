@@ -311,9 +311,18 @@ export class BroadcastService {
     }[] = [];
 
     for (const guest of guests) {
+      let extra = guest.extraFields;
+      if (typeof extra === 'string') {
+        try {
+          extra = JSON.parse(extra);
+        } catch {
+          extra = {};
+        }
+      }
+
       const destination = channel === 'EMAIL'
         ? (guest.email || '')
-        : ((guest.extraFields as any)?.phone || (guest.extraFields as any)?.mobile || '');
+        : ((extra as any)?.phone || (extra as any)?.mobile || '');
 
       const isValid = Boolean(destination);
       const recipientId = generateSecureUUID();
