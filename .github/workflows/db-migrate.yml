@@ -81,13 +81,14 @@ jobs:
             exit 1
           fi
 
-      - name: Check pending migrations
+      - name: Pre-flight schema migration check and summary
         id: status_check
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment || 'production' }}
         run: |
-          echo "Checking Prisma migration status..."
-          npx prisma migrate status
+          echo "Executing pre-flight Prisma migration status audit & SQL DDL summary..."
+          npx tsx scripts/preflight-migration-summary.ts
 
       - name: Run Prisma Migrate Deploy
         id: migrate

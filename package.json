@@ -27,6 +27,7 @@
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -c development -- prisma migrate dev",
     "migrate:deploy": "dotenv -c development -- prisma migrate deploy",
+    "migrate:status": "tsx scripts/preflight-migration-summary.ts",
     "db:seed": "tsx scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "check:action-pins": "npx tsx scripts/check-action-pins.ts",

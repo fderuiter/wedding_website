@@ -85,7 +85,7 @@ The application requires the following environment variables. These match the ru
 
 ## 🏗️ Architecture & Responsibilities
 
-The automated release architecture consists of four distinct, modular workflows:
+The automated release architecture decouples continuous delivery across isolated staging and production environments using mandatory human approval gates and automated rollback safeguards:
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -106,25 +106,27 @@ The automated release architecture consists of four distinct, modular workflows:
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
-│ 3. Database Migration (db-migrate.yml)                    │
-│    • Explicit release/deployment execution                │
-│    • Pre-migration status check & validation              │
-│    • Safe failure signaling & rollback guidance           │
+│ 3. Automated Staging Delivery (environment: staging)      │
+│    • Staging Database Migration (db-migrate.yml)          │
+│    • Staging Provider Deployment (deploy-provider.yml)    │
+│    • Staging Health Verification (/api/health probe)      │
+│    • Automated test environment validation                │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
-│ 4. Provider Deployment (deploy-provider.yml)              │
-│    • Consumes published release artifact (by SHA/tag)     │
-│    • Isolated provider credentials (e.g. Cloud Run)       │
-│    • Exports service URL parameter                         │
+│ 4. Mandatory Production Review Gate (GitHub Environment)  │
+│    • Pre-flight schema status & SQL DDL summary generated │
+│    • Step summary audit in $GITHUB_STEP_SUMMARY           │
+│    • Mandatory human reviewer approval required           │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
-│ 5. Post-Deployment Verification (verify-deployment)       │
-│    • Polls /api/health with retries & exponential backoff │
-│    • Verifies HTTP 200 & database connectivity status    │
+│ 5. Production Delivery Pipeline (environment: production) │
+│    • Production Database Migration (db-migrate.yml)       │
+│    • Production Provider Deployment (deploy-provider.yml) │
+│    • Production Health Verification (/api/health probe)   │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                     ┌─────────┴─────────┐
@@ -136,10 +138,67 @@ The automated release architecture consists of four distinct, modular workflows:
 │ Release Complete      │   │ 6. Automated Rollback        │
 │ High Availability     │   │    • Calls rollback.yml      │
 │ Preserved             │   │    • Restores previous tag   │
+│ Live Traffic Healthy  │   │    • NO second approval gate │
 └───────────────────────┘   └──────────────────────────────┘
 ```
 
 The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2 through 6 in safe sequence for releases.
+
+### 🛡️ GitHub Environment Setup & Reviewer Configuration
+
+To protect production database integrity and application availability, the deployment architecture requires two distinct GitHub repository environments with isolated credentials:
+
+#### 1. Staging Environment (`staging`)
+- **Purpose**: Automated pre-production integration testing, database schema migration verification, and container deployment validation on every merge to `main`.
+- **Environment Setup**:
+  1. Navigate to **Settings** > **Environments** in your GitHub repository.
+  2. Click **New environment** and name it `staging`.
+  3. **Protection Rules**: Leave "Required reviewers" unconfigured to permit unblocked, automated continuous delivery on every merge.
+  4. **Environment Secrets**:
+     - `DATABASE_URL`: Connection string for the isolated staging PostgreSQL instance (e.g., `postgresql://wedding:staging_pass@staging-db.internal:5432/wedding_staging`).
+     - `SERVICE_URL`: Base URL of the staging web service (e.g., `https://staging.wedding.example.com`).
+     - Provider secrets (e.g., `GCP_SA_KEY` or `DEPLOY_WEBHOOK_URL` for staging Cloud Run/hosting service).
+
+#### 2. Production Environment (`production`)
+- **Purpose**: Live environment hosting attendee traffic, requiring explicit human reviewer approval before executing schema migrations or container updates.
+- **Environment Setup**:
+  1. Navigate to **Settings** > **Environments** in your GitHub repository.
+  2. Click **New environment** and name it `production`.
+  3. **Required Reviewers (Mandatory Gate)**:
+     - Check the **Required reviewers** checkbox.
+     - Specify designated maintainers, release managers, or team leads authorized to approve production releases.
+     - Select **Prevent self-review** if team policy mandates dual-control sign-off.
+  4. **Deployment Branches**: Restrict deployment to `main` branch or release tags (`v*`).
+  5. **Environment Secrets**:
+     - `DATABASE_URL`: Connection string for the isolated production PostgreSQL instance (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
+     - `SERVICE_URL`: Base URL of the live production web service (e.g., `https://wedding.example.com`).
+     - `ADMIN_PASSWORD`: Production scrypt hash for administrative login.
+     - `GUEST_PASSCODE`: Production guest access passcode.
+     - `GUEST_SESSION_SECRET`: Production secret for HMAC session token signing.
+     - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL`).
+
+#### 3. Strict Separation of Secrets & Database Credentials
+- Staging and production **MUST NOT** share database credentials or database instances.
+- Reusable workflows inherit secrets dynamically scoped to the target environment (`secrets: inherit` in `.github/workflows/deploy.yml`).
+- Staging migrations execute strictly against the staging database; production migrations execute strictly against the production database following reviewer sign-off.
+
+### 🔄 Staging Promotion & Approval Workflow
+
+1. **Automated Staging Delivery on Merge**:
+   - When a pull request is merged into `main`, GitHub Actions triggers `.github/workflows/deploy.yml`.
+   - The workflow verifies N-1 schema backwards compatibility, builds and scans the immutable container artifact, runs migrations on `staging`, deploys to the staging provider, and validates `/api/health`.
+2. **Pre-Flight Schema Status & DDL Review**:
+   - The pipeline generates a detailed **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`.
+   - The summary details target environment status, pending migration filenames, altered tables/columns, and complete SQL statements.
+3. **Maintainer Review & Sign-Off**:
+   - Maintainers navigate to the active workflow run in GitHub Actions.
+   - Maintainers review the pre-flight schema summary, verify staging health check results, and click **Review deployments**.
+   - Upon selecting the `production` environment and clicking **Approve and deploy**, GitHub Actions unblocks production deployment.
+4. **Production Deployment & Automated Rollback Guard**:
+   - Production database migrations execute via `.github/workflows/db-migrate.yml` with advisory locking and preflight verification.
+   - The updated container is deployed via `.github/workflows/deploy-provider.yml`.
+   - Post-deployment health probes verify `/api/health` with exponential backoff.
+   - **Rollback Guarantee**: If the production health probe fails, `.github/workflows/rollback.yml` is automatically triggered to restore the previous validated container tag (`previous_tag`) **without requiring a second human approval step**.
 
 ---
 
@@ -174,10 +233,11 @@ The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2 through 6
 - **Triggers**: Release pipeline, manual `workflow_dispatch` with target environment (`production`, `staging`, `development`).
 - **Secrets required**: `DATABASE_URL`.
 - **Actions**:
+  - Declares `environment: ${{ inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules and reviewer sign-off for `production`.
   - Validates `DATABASE_URL` format and connectivity.
-  - Executes `prisma migrate status` to audit pending migrations.
-  - Executes `prisma migrate deploy` explicitly against target database.
-  - Emits step summaries and diagnostic error signaling if migration fails.
+  - Executes pre-flight migration status audit (`prisma migrate status`) and emits SQL DDL summaries to `$GITHUB_STEP_SUMMARY`.
+  - Executes `prisma migrate deploy` explicitly against target database with connection lock and statement timeouts.
+  - Emits diagnostic error signaling and resolution guidance if migration fails.
 
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
 - **Triggers**: Release pipeline, manual `workflow_dispatch` with `image_tag` parameter.
@@ -186,16 +246,17 @@ The top-level **Release Pipeline (`deploy.yml`)** orchestrates steps 2 through 6
   - `service_url`: Target deployment service URL.
   - `is_dry_run`: Boolean flag indicating if deployment executed in dry-run mode.
 - **Actions**:
+  - Declares `environment: ${{ inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules and reviewer sign-off for `production`.
   - Consumes a pre-built, tested release artifact tag.
   - Deploys the container to hosting provider (e.g. Google Cloud Run).
   - Exports the active service URL as a job output.
 
 ### 5. Post-Deployment Verification & Automated Rollback (`deploy.yml` & `rollback.yml`)
-- **Triggers**: Runs automatically in `deploy.yml` post-provider deployment.
+- **Triggers**: Runs automatically in `deploy.yml` post-provider deployment for staging and production.
 - **Actions**:
   - `verify-deployment` polls `/api/health` with configurable exponential backoff and a 2-minute maximum timeout.
   - Validates HTTP status code 200 and confirms JSON body `database == 'connected'` and `status == 'ok'`.
-  - Automatically invokes `rollback.yml` if health probes fail or time out, restoring the previous stable OCI image tag and outputting step summary logs.
+  - Automatically invokes `rollback.yml` if health probes fail or time out, restoring the previous stable OCI image tag without requiring a second manual approval step.
 
 ---
 
