@@ -281,5 +281,41 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       const res6 = await middleware(req6, {});
       expect(res6.status).toBe(429);
     });
+
+    test('exempts /api/health from rate limiting across more than 100 consecutive requests', async () => {
+      const handler = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: 'ok', database: 'connected' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 110; i++) {
+        const req = new NextRequest('http://localhost/api/health', {
+          headers: { 'x-forwarded-for': '192.168.1.104' },
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(200);
+      }
+      expect(handler).toHaveBeenCalledTimes(110);
+    });
+
+    test('falls back safely to root path evaluation when request lacks standard URL properties', async () => {
+      const handler = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: 'root' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const middleware = withApiMiddleware(handler);
+
+      const reqWithoutUrl = {
+        headers: new Headers({ 'x-forwarded-for': '192.168.1.105' }),
+      } as any;
+      const res = await middleware(reqWithoutUrl, {});
+      expect(res.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
   });
 });
