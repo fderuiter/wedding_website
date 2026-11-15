@@ -390,9 +390,9 @@ The backend is a set of serverless functions implemented as Next.js Route Handle
   - **Next.js Route Handlers:** For creating serverless API endpoints.
   - **Prisma:** As the ORM for database access.
 - **Route Groups:**
-  - **Admin Routes (`src/app/api/admin/`):** Handle administrator authentication (`login`, `logout`, `me`, `setup`), feature flags, entity CRUD operations, email/SMS broadcasts (`send`, `history`, `preview`, `retry`, `schedule`, `test-connection`), invitation codes (`batch`, `export`, `validate`), seating assignments (`assign`, `export`), sub-events access management, thank-you notes (`batch`, `export`, `export-labels`), media uploads, version restoration, sample data seeding, and database maintenance (`export`, `import`).
+  - **Admin Routes (`src/app/api/admin/`):** Handle administrator authentication (`login`, `logout`, `me`, `setup`), feature flags, entity CRUD operations, email/SMS broadcasts (`send`, `history`, `preview`, `retry`, `schedule`, `test-connection`, `test-send`), invitation codes (`batch`, `export`, `validate`), seating assignments (`assign`, `export`), sub-events access management, thank-you notes (`batch`, `export`, `export-labels`), media uploads, version restoration, sample data seeding, and database maintenance (`export`, `import`).
   - **Cron Routes (`src/app/api/cron/`):** Provide scheduled serverless tasks, including `src/app/api/cron/broadcasts/` for executing pending email and SMS message delivery queues.
-  - **Guest Routes (`src/app/api/guest/`):** Provide guest authentication (`login`), guest photo upload endpoints (`photos/upload`), and mailing address collection (`address` and `address/public`).
+  - **Guest Routes (`src/app/api/guest/`):** Provide guest authentication (`login`), self-service lookup (`lookup`), guest photo upload endpoints (`photos/upload`), and mailing address collection (`address` and `address/public`).
   - **Health Check Route (`src/app/api/health/`):** Server liveness probe returning HTTP 200 health status for infrastructure health monitoring and container orchestration.
   - **Media Routes (`src/app/api/media/`):** Resolve uploaded media assets by ID (`[id]`) and support bulk media file archive exports (`export`).
   - **Open Graph Route (`src/app/api/og/`):** Generate dynamic Open Graph social preview cards on the fly based on configuration branding settings.
