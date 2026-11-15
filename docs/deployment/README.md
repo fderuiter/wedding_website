@@ -13,7 +13,7 @@ All deployment targets consume the exact same application runtime contract, ensu
 3.  **Migration Mechanism**: Database migrations are managed via `npx prisma migrate deploy`. Migrations run prior to application startup via container entrypoint (`docker-entrypoint.sh`), release commands, or CI/CD pipelines.
 4.  **Environment Variable Validation**: Validated at startup by `src/env.ts` (Zod schema). Missing required variables (`DATABASE_URL`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`) fail fast during initialization.
 5.  **Asset Storage Abstraction**: File uploads use local disk storage (`/app/public/uploads`) or provider-agnostic S3-compatible object storage (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_PUBLIC_URL`). No provider-specific storage SDKs are included in core business logic.
-6.  **Health Check Endpoint**: Built-in health probe endpoint at `/api/health` returning HTTP 200 JSON status `{ status: "ok", timestamp: ..., services: { database: "healthy" } }` for liveness and readiness checks.
+6.  **Health Check Endpoint**: Built-in health probe endpoint at `/api/health` returning HTTP 200 JSON status `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` for liveness and readiness checks.
 7.  **Host Header Validation**: Enforced via `ALLOWED_HOSTS` host matching.
 
 ---

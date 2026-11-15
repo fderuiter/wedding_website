@@ -125,7 +125,7 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
    - Initializes the Next.js standalone HTTP server, listens on `PORT` (`0.0.0.0`), and validates environment variables.
 4. **Health & Readiness Probes**:
    - Endpoint: `GET /api/health`
-   - Response: `HTTP 200 OK` with JSON `{ "status": "ok", "timestamp": "...", "database": "connected" }`.
+   - Response: `HTTP 200 OK` with wrapped JSON `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` (`success` is `true`, and `data` contains `status`, `timestamp`, and `database`).
    - Bypasses guest/admin authentication checks in `middleware.ts` to allow load balancers and orchestrators to perform probes without credentials.
 5. **Graceful Shutdown**:
    - On receiving `SIGTERM` or `SIGINT`, the process stops accepting new HTTP connections, waits for ongoing requests to finish, disconnects Prisma database client instances, and exits cleanly.
