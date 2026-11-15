@@ -126,6 +126,6 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 4. **Health & Readiness Probes**:
    - Endpoint: `GET /api/health`
    - Response: `HTTP 200 OK` with wrapped JSON `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` (`success` is `true`, and `data` contains `status`, `timestamp`, and `database`).
-   - Bypasses guest/admin authentication checks in `middleware.ts` to allow load balancers and orchestrators to perform probes without credentials.
+   - Bypasses API rate limiting and authentication checks (including guest/admin checks in `middleware.ts`) for infrastructure probes to allow load balancers, orchestrators, and automated deployment polling to perform health checks without credentials or rate-limit throttling.
 5. **Graceful Shutdown**:
    - On receiving `SIGTERM` or `SIGINT`, the process stops accepting new HTTP connections, waits for ongoing requests to finish, disconnects Prisma database client instances, and exits cleanly.

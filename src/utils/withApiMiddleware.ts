@@ -20,27 +20,35 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
       let pathname = '/';
       let method = 'GET';
       if (req) {
-        const url = req.nextUrl || (req.url ? new URL(req.url) : { pathname: '/' });
-        pathname = url.pathname;
-        method = req.method;
+        let url: any = null;
+        try {
+          url = req.nextUrl || (req.url ? new URL(req.url, 'http://localhost') : null);
+        } catch {
+          url = null;
+        }
+        pathname = url?.pathname || '/';
+        method = req.method || 'GET';
       }
+      const isHealthPath = pathname === '/api/health';
       const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/guest/login' || pathname === '/api/guest/lookup';
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Stricter limits for login, general limits for everything else
-      const limit = options?.limit ?? (isLoginPath ? 5 : 100);
-      const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
-      const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(req, limit, windowMs, options?.keyPrefix) : null;
-      
-      if (rateLimitResponse) {
-        // If rate limit exceeded, standardise its error response
-        const data = await rateLimitResponse.json().catch(() => ({}));
-        return NextResponse.json(
-          { success: false, error: data.error || 'Rate limit exceeded' },
-          { status: 429 }
-        );
+      // Stricter limits for login, general limits for everything else; health probe endpoint (/api/health) is exempt
+      if (!isHealthPath) {
+        const limit = options?.limit ?? (isLoginPath ? 5 : 100);
+        const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
+        const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(req, limit, windowMs, options?.keyPrefix) : null;
+        
+        if (rateLimitResponse) {
+          // If rate limit exceeded, standardise its error response
+          const data = await rateLimitResponse.json().catch(() => ({}));
+          return NextResponse.json(
+            { success: false, error: data.error || 'Rate limit exceeded' },
+            { status: 429 }
+          );
+        }
       }
 
       // 2. Admin Verification
