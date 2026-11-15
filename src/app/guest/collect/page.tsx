@@ -8,6 +8,7 @@ export default function GuestAddressCollectPage() {
   const [formData, setFormData] = useState({
     guestName: '',
     email: '',
+    phone: '',
     addressLine1: '',
     addressLine2: '',
     city: '',
@@ -48,6 +49,7 @@ export default function GuestAddressCollectPage() {
         body: JSON.stringify({
           guestName: formData.guestName.trim(),
           email: formData.email.trim() || undefined,
+          phone: formData.phone.trim() || undefined,
           addressLine1: formData.addressLine1.trim() || undefined,
           addressLine2: formData.addressLine2.trim() || undefined,
           city: formData.city.trim() || undefined,
@@ -77,6 +79,7 @@ export default function GuestAddressCollectPage() {
     setFormData({
       guestName: '',
       email: '',
+      phone: '',
       addressLine1: '',
       addressLine2: '',
       city: '',
@@ -167,6 +170,19 @@ export default function GuestAddressCollectPage() {
               value={formData.email}
               onChange={handleChange}
               autoComplete="email"
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>Phone Number (Optional)</Label>
+            <Input
+              type="tel"
+              name="phone"
+              placeholder="+1 (555) 123-4567"
+              value={formData.phone}
+              onChange={handleChange}
+              autoComplete="tel"
+              maxLength={30}
             />
           </FormGroup>
 

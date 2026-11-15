@@ -377,6 +377,79 @@ describe('BroadcastService', () => {
           })
         ).rejects.toThrow('Transaction deadlock');
       });
+
+      it('dispatches SMS broadcast to guests using phone numbers stored in extraFields', async () => {
+        const guests = [
+          {
+            id: 'g-sms-1',
+            guestName: 'Phone Guest',
+            code: 'SMS1',
+            extraFields: { phone: '+15551234567', mobile: '+15551234567' },
+          },
+          {
+            id: 'g-sms-2',
+            guestName: 'Serialized Phone Guest',
+            code: 'SMS2',
+            extraFields: JSON.stringify({ phone: '+15559876543', mobile: '+15559876543' }),
+          },
+          {
+            id: 'g-sms-3',
+            guestName: 'Missing Phone Guest',
+            code: 'SMS3',
+            extraFields: null,
+          },
+        ];
+
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(guests);
+        (prisma.broadcastMessage.create as jest.Mock).mockResolvedValue({
+          id: 'bm-sms-test',
+          status: 'SENDING',
+        });
+        (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+          id: 'bm-sms-test',
+          status: 'PARTIALLY_SENT',
+          sentCount: 2,
+          failedCount: 1,
+        });
+
+        await BroadcastService.sendBroadcast({
+          channel: 'SMS',
+          body: 'Wedding update for {{guestName}}!',
+        });
+
+        expect((prisma.broadcastRecipient as any).createMany).toHaveBeenCalledTimes(1);
+        const insertedData = (prisma.broadcastRecipient as any).createMany.mock.calls[0][0].data;
+        expect(insertedData).toHaveLength(3);
+
+        const guest1 = insertedData.find((r: any) => r.guestName === 'Phone Guest');
+        expect(guest1.status).toBe('PENDING');
+        expect(guest1.error).toBeNull();
+        expect(guest1.destination).toBe('+15551234567');
+
+        const guest2 = insertedData.find((r: any) => r.guestName === 'Serialized Phone Guest');
+        expect(guest2.status).toBe('PENDING');
+        expect(guest2.error).toBeNull();
+        expect(guest2.destination).toBe('+15559876543');
+
+        const guest3 = insertedData.find((r: any) => r.guestName === 'Missing Phone Guest');
+        expect(guest3.status).toBe('FAILED');
+        expect(guest3.error).toBe('Missing phone number');
+        expect(guest3.destination).toBe('Missing Contact Info');
+
+        // Verify valid recipients were updated to SENT
+        expect(prisma.broadcastRecipient.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: guest1.id },
+            data: expect.objectContaining({ status: 'SENT' }),
+          })
+        );
+        expect(prisma.broadcastRecipient.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: guest2.id },
+            data: expect.objectContaining({ status: 'SENT' }),
+          })
+        );
+      });
     });
   });
 

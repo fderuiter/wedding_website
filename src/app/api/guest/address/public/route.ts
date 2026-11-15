@@ -35,6 +35,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (!body.notes && typeof body.householdNotes === 'string') {
     body.notes = body.householdNotes;
   }
+  if (!body.phone && typeof body.mobile === 'string') {
+    body.phone = body.mobile;
+  }
+  if (!body.phone && typeof body.phoneNumber === 'string') {
+    body.phone = body.phoneNumber;
+  }
 
   // 2. Honeypot Validation
   const honeypotVal = body.website || body.honeypot || body.hp_field || body.confirm_email;
@@ -60,6 +66,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const {
     guestName,
     email,
+    phone,
     addressLine1,
     addressLine2,
     city,
@@ -69,6 +76,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     householdName,
     notes,
   } = payloadData;
+
+  const normalizedPhone = phone ? phone.trim() : '';
 
   // 4. Check for Existing InvitationCode Record (Deduplication)
   const normalizedEmail = email ? email.trim() : '';
@@ -118,20 +127,35 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       updatedDietaryNotes = newNotes;
     }
 
+    const existingExtra =
+      existingRecord.extraFields && typeof existingRecord.extraFields === 'object' && !Array.isArray(existingRecord.extraFields)
+        ? { ...(existingRecord.extraFields as Record<string, any>) }
+        : {};
+
+    const updateData: Record<string, any> = {
+      addressLine1: addressLine1 || null,
+      addressLine2: addressLine2 || null,
+      city: city || null,
+      state: state || null,
+      zipCode: zipCode || null,
+      country: country || null,
+      householdName: householdName || existingRecord.householdName,
+      email: normalizedEmail || existingRecord.email,
+      dietaryNotes: updatedDietaryNotes,
+      partyTags: updatedPartyTags,
+    };
+
+    if (normalizedPhone) {
+      updateData.extraFields = {
+        ...existingExtra,
+        phone: normalizedPhone,
+        mobile: normalizedPhone,
+      };
+    }
+
     const updatedRecord = await prisma.invitationCode.update({
       where: { id: existingRecord.id },
-      data: {
-        addressLine1: addressLine1 || null,
-        addressLine2: addressLine2 || null,
-        city: city || null,
-        state: state || null,
-        zipCode: zipCode || null,
-        country: country || null,
-        householdName: householdName || existingRecord.householdName,
-        email: normalizedEmail || existingRecord.email,
-        dietaryNotes: updatedDietaryNotes,
-        partyTags: updatedPartyTags,
-      },
+      data: updateData as any,
     });
 
     return NextResponse.json(
@@ -171,22 +195,31 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   // 6. Create InvitationCode Record Tagged with 'address-collection'
+  const createData: Record<string, any> = {
+    code: uniqueCode,
+    guestName: normalizedGuestName,
+    email: normalizedEmail || null,
+    addressLine1: addressLine1 || null,
+    addressLine2: addressLine2 || null,
+    city: city || null,
+    state: state || null,
+    zipCode: zipCode || null,
+    country: country || null,
+    householdName: householdName || null,
+    dietaryNotes: notes || null,
+    partyTags: ['address-collection'],
+    used: false,
+  };
+
+  if (normalizedPhone) {
+    createData.extraFields = {
+      phone: normalizedPhone,
+      mobile: normalizedPhone,
+    };
+  }
+
   const newRecord = await prisma.invitationCode.create({
-    data: {
-      code: uniqueCode,
-      guestName: normalizedGuestName,
-      email: normalizedEmail || null,
-      addressLine1: addressLine1 || null,
-      addressLine2: addressLine2 || null,
-      city: city || null,
-      state: state || null,
-      zipCode: zipCode || null,
-      country: country || null,
-      householdName: householdName || null,
-      dietaryNotes: notes || null,
-      partyTags: ['address-collection'],
-      used: false,
-    },
+    data: createData as any,
   });
 
   return NextResponse.json(
