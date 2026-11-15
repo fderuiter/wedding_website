@@ -905,4 +905,225 @@ describe('CsvImportWizardModal Component', () => {
     expect(invalidGuestInput.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
     expect(invalidGuestInput).toHaveAttribute('aria-invalid', 'true');
   });
+
+  test('fast cell editing and immediate batch submission evaluates latest validation status without stale closure error block', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    // Initial CSV has an invalid row (empty guest name)
+    const csvContent = 'Guest Name,Invitation Code\n,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+            rows: [{ rowIndex: 1, guestName: 'Alice Fixed', code: 'ALICE100', isValid: true, errors: [], warnings: [] }],
+          }),
+        });
+      }
+      if (url === '/api/admin/invitation-codes/batch') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, count: 1, imported: 1, skipped: 0, updated: 0 }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    // Correct the empty guest name cell
+    const nameInput = screen.getByLabelText('Guest Name for row 1');
+    fireEvent.change(nameInput, { target: { value: 'Alice Fixed' } });
+
+    // Immediately click Commit Import (during debounce window)
+    const commitBtn = screen.getByText(/Commit Import/i);
+    fireEvent.click(commitBtn);
+
+    // Must successfully proceed to Step 4 rather than being blocked by stale invalidCount
+    await waitFor(() => {
+      expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+    });
+
+    expect(mockOnImportComplete).toHaveBeenCalled();
+  });
+
+  test('cancels active AbortController and pending timer when navigating away from step 3 and resets validating status', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nBob Smith,BOB100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    let abortedSignal: boolean | undefined;
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: any) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        if (options?.signal) {
+          options.signal.addEventListener('abort', () => {
+            abortedSignal = true;
+          });
+        }
+        return new Promise(() => {});
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    // Validating indicator is displayed while request is in-flight
+    expect(screen.getByText(/Validating\.\.\./i)).toBeInTheDocument();
+
+    // Click Back to return to Step 2
+    const backBtn = screen.getByRole('button', { name: /Back/i });
+    fireEvent.click(backBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/2. Map Columns/i)).toBeInTheDocument();
+    });
+
+    // Verify signal was aborted
+    expect(abortedSignal).toBe(true);
+
+    // Re-enter step 3 and verify controls are unlocked (not stuck in validating)
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+  });
+
+  test('reloading the page on step 4 displays the saved import counts and close wizard button without blank screen', async () => {
+    window.sessionStorage.clear();
+
+    // Pre-populate sessionStorage with a Step 4 persisted state
+    const step4PersistedState = {
+      step: 4,
+      fileName: 'completed_guests.csv',
+      csvHeaders: ['Guest Name', 'Invitation Code'],
+      rawRows: [{ 'Guest Name': 'David', 'Invitation Code': 'DAVID1' }],
+      guestNameCol: 'Guest Name',
+      codeCol: 'Invitation Code',
+      emailCol: '',
+      addressLine1Col: '',
+      addressLine2Col: '',
+      cityCol: '',
+      stateCol: '',
+      zipCodeCol: '',
+      countryCol: '',
+      dietaryNotesCol: '',
+      plusOneCol: '',
+      plusOneFirstNameCol: '',
+      plusOneLastNameCol: '',
+      householdNameCol: '',
+      partyGroupCol: '',
+      partyTagsCol: '',
+      selectedExtraCols: [],
+      collisionStrategy: 'skip',
+      editableRows: [],
+      importSummary: {
+        total: 10,
+        imported: 7,
+        skipped: 2,
+        updated: 1,
+      },
+    };
+    window.sessionStorage.setItem('csv_import_wizard_draft', JSON.stringify(step4PersistedState));
+
+    renderModal(true);
+
+    // Verify that Step 4 renders saved completion summary counts
+    expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText(/Batch creation processed without database wipes/i)).toBeInTheDocument();
+
+    // Verify close wizard button is present and functional
+    const closeBtn = screen.getByRole('button', { name: /Close Wizard/i });
+    expect(closeBtn).toBeInTheDocument();
+    fireEvent.click(closeBtn);
+
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  test('reconciles asynchronous server responses with local edits using sequence identifiers to prevent data overwriting', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nEve,EVE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+
+    let resolveValidate: (val: any) => void;
+    const validatePromise = new Promise((resolve) => {
+      resolveValidate = resolve;
+    });
+
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        return validatePromise;
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    // While validation is pending on validatePromise, user edits the cell
+    const nameInput = screen.getByDisplayValue('Eve');
+    fireEvent.change(nameInput, { target: { value: 'Eve Modified Local' } });
+
+    // Invalidate/resolve previous server validation with outdated row data
+    resolveValidate!({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: { total: 1, validCount: 1, invalidCount: 0, duplicateCount: 0, updatedCount: 0, skippedCount: 0, createdCount: 1 },
+        rows: [{ rowIndex: 1, guestName: 'Eve Stale Server Data', code: 'EVE100', isValid: true, errors: [], warnings: [] }],
+      }),
+    });
+
+    // Wait to confirm local edit was not overwritten by stale server response
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue('Eve Stale Server Data')).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue('Eve Modified Local')).toBeInTheDocument();
+    });
+  });
 });

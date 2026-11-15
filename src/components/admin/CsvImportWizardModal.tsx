@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useReducer, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
-import { useFormPersist } from '@/hooks/useFormPersist';
 import {
   parseCsvContent,
   validateSingleCsvRow,
@@ -67,6 +66,12 @@ interface CsvImportPersistedState {
   selectedExtraCols: string[];
   collisionStrategy: 'skip' | 'update' | 'reject';
   editableRows: EditableRow[];
+  importSummary?: {
+    total: number;
+    imported: number;
+    skipped: number;
+    updated: number;
+  } | null;
 }
 
 const initialCsvImportState: CsvImportPersistedState = {
@@ -93,6 +98,7 @@ const initialCsvImportState: CsvImportPersistedState = {
   selectedExtraCols: [],
   collisionStrategy: 'skip',
   editableRows: [],
+  importSummary: null,
 };
 
 const EDITABLE_MAPPING: ColumnMappingOptions = {
@@ -187,29 +193,31 @@ type ExtendedParsedCsvRow = ParsedCsvRow & {
   actionOutcome?: 'create' | 'update' | 'skip' | 'reject' | 'invalid';
 };
 
+type EditableField =
+  | 'guestName'
+  | 'code'
+  | 'email'
+  | 'addressLine1'
+  | 'addressLine2'
+  | 'city'
+  | 'state'
+  | 'zipCode'
+  | 'country'
+  | 'dietaryNotes'
+  | 'plusOneAllocations'
+  | 'plusOneFirstName'
+  | 'plusOneLastName'
+  | 'householdName'
+  | 'partyGroup'
+  | 'partyTags';
+
 interface EditableTableRowProps {
   row: ExtendedParsedCsvRow;
   editableRow: EditableRow;
   index: number;
   onCellEdit: (
     index: number,
-    field:
-      | 'guestName'
-      | 'code'
-      | 'email'
-      | 'addressLine1'
-      | 'addressLine2'
-      | 'city'
-      | 'state'
-      | 'zipCode'
-      | 'country'
-      | 'dietaryNotes'
-      | 'plusOneAllocations'
-      | 'plusOneFirstName'
-      | 'plusOneLastName'
-      | 'householdName'
-      | 'partyGroup'
-      | 'partyTags',
+    field: EditableField,
     value: string
   ) => void;
   onExtraFieldEdit: (index: number, key: string, value: string) => void;
@@ -515,6 +523,484 @@ const EditableTableRow = React.memo(function EditableTableRow({
   );
 });
 
+interface WizardState extends CsvImportPersistedState {
+  isValidating: boolean;
+  validationSeq: number;
+  serverSummary: DryRunValidationSummary | null;
+  validatedRows: ExtendedParsedCsvRow[];
+  statusFilter: 'all' | 'valid' | 'invalid' | 'duplicate' | 'update' | 'skip';
+  codeFrequencyMap: Map<string, number>;
+  isSubmitting: boolean;
+  importSummary: {
+    total: number;
+    imported: number;
+    skipped: number;
+    updated: number;
+  } | null;
+}
+
+type WizardAction =
+  | { type: 'SET_STEP'; step: 1 | 2 | 3 | 4 }
+  | {
+    type: 'FILE_UPLOADED';
+    fileName: string;
+    headers: string[];
+    rawRows: Record<string, string>[];
+    suggestedGuestNameCol: string;
+    suggestedCodeCol: string;
+    suggestedEmailCol: string;
+    suggestedAddressLine1Col: string;
+    suggestedAddressLine2Col: string;
+    suggestedCityCol: string;
+    suggestedStateCol: string;
+    suggestedZipCodeCol: string;
+    suggestedCountryCol: string;
+    suggestedDietaryNotesCol: string;
+    suggestedPlusOneCol: string;
+    suggestedPlusOneFirstNameCol: string;
+    suggestedPlusOneLastNameCol: string;
+    suggestedHouseholdNameCol: string;
+    suggestedPartyGroupCol: string;
+    suggestedPartyTagsCol: string;
+    selectedExtraCols: string[];
+  }
+  | { type: 'SET_COLUMN_MAPPING'; field: keyof CsvImportPersistedState; value: string }
+  | { type: 'TOGGLE_EXTRA_COL'; header: string }
+  | { type: 'SET_COLLISION_STRATEGY'; strategy: 'skip' | 'update' | 'reject' }
+  | {
+    type: 'CONFIRM_MAPPING';
+    editableRows: EditableRow[];
+    validatedRows: ExtendedParsedCsvRow[];
+    freqMap: Map<string, number>;
+  }
+  | {
+    type: 'EDIT_CELL';
+    index: number;
+    field: EditableField;
+    value: string;
+  }
+  | {
+    type: 'EDIT_EXTRA_FIELD';
+    index: number;
+    key: string;
+    value: string;
+  }
+  | { type: 'DELETE_ROW'; index: number }
+  | { type: 'SET_STATUS_FILTER'; filter: 'all' | 'valid' | 'invalid' | 'duplicate' | 'update' | 'skip' }
+  | { type: 'VALIDATION_START'; seq: number }
+  | {
+    type: 'VALIDATION_SUCCESS';
+    seq: number;
+    summary: DryRunValidationSummary;
+    rows: ExtendedParsedCsvRow[];
+  }
+  | {
+    type: 'VALIDATION_LOCAL';
+    seq: number;
+    rows: ExtendedParsedCsvRow[];
+    freqMap: Map<string, number>;
+  }
+  | { type: 'VALIDATION_ABORT'; seq?: number }
+  | { type: 'COMMIT_START' }
+  | {
+    type: 'COMMIT_SUCCESS';
+    summary: { total: number; imported: number; skipped: number; updated: number };
+  }
+  | { type: 'COMMIT_FAILURE'; error?: string }
+  | { type: 'RESET_MODAL' };
+
+const initialWizardState: WizardState = {
+  ...initialCsvImportState,
+  importSummary: null,
+  isValidating: false,
+  validationSeq: 0,
+  serverSummary: null,
+  validatedRows: [],
+  statusFilter: 'all',
+  codeFrequencyMap: new Map(),
+  isSubmitting: false,
+};
+
+function computeWizardSummary(
+  serverSummary: DryRunValidationSummary | null,
+  editableRows: EditableRow[],
+  validatedRows: ExtendedParsedCsvRow[],
+  collisionStrategy: 'skip' | 'update' | 'reject'
+) {
+  if (serverSummary) {
+    return serverSummary;
+  }
+  const total = editableRows.length;
+  const validCount = validatedRows.filter((r) => r.isValid).length;
+  const invalidCount = validatedRows.filter((r) => !r.isValid).length;
+  const duplicateCount = validatedRows.filter(
+    (r) =>
+      r.isDuplicate ||
+      r.existingGuestName ||
+      r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
+      r.errors?.some((e) => e.includes('Duplicate'))
+  ).length;
+  const updatedCount = validatedRows.filter(
+    (r) =>
+      r.actionOutcome === 'update' ||
+      (collisionStrategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
+  ).length;
+  const skippedCount = validatedRows.filter(
+    (r) =>
+      r.actionOutcome === 'skip' ||
+      (collisionStrategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
+  ).length;
+  const createdCount = validCount - updatedCount - skippedCount;
+  return {
+    total,
+    validCount,
+    invalidCount,
+    duplicateCount,
+    updatedCount,
+    skippedCount,
+    createdCount,
+  };
+}
+
+function initWizardState(initial: WizardState, existingDbSet: Set<string>): WizardState {
+  if (typeof window === 'undefined') return initial;
+  try {
+    const saved = window.sessionStorage.getItem('csv_import_wizard_draft');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (typeof parsed === 'object' && parsed !== null) {
+        let validatedRows: ExtendedParsedCsvRow[] = [];
+        let freqMap = new Map<string, number>();
+        if (parsed.step === 3 && Array.isArray(parsed.editableRows) && parsed.editableRows.length > 0) {
+          const res = computeFullValidation(parsed.editableRows, parsed.selectedExtraCols || [], existingDbSet);
+          validatedRows = res.parsed;
+          freqMap = res.freqMap;
+        }
+        return {
+          ...initial,
+          ...parsed,
+          importSummary: parsed.importSummary ?? null,
+          validatedRows,
+          codeFrequencyMap: freqMap,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('initWizardState: Failed to read from sessionStorage:', err);
+  }
+  return initial;
+}
+
+function wizardReducer(
+  state: WizardState,
+  action: WizardAction,
+  existingDbSet: Set<string>
+): WizardState {
+  switch (action.type) {
+    case 'SET_STEP': {
+      if (action.step !== 3) {
+        return {
+          ...state,
+          step: action.step,
+          validatedRows: [],
+          serverSummary: null,
+          codeFrequencyMap: new Map(),
+          isValidating: false,
+        };
+      }
+      return {
+        ...state,
+        step: action.step,
+      };
+    }
+    case 'FILE_UPLOADED': {
+      return {
+        ...state,
+        step: 2,
+        fileName: action.fileName,
+        csvHeaders: action.headers,
+        rawRows: action.rawRows,
+        guestNameCol: action.suggestedGuestNameCol,
+        codeCol: action.suggestedCodeCol,
+        emailCol: action.suggestedEmailCol,
+        addressLine1Col: action.suggestedAddressLine1Col,
+        addressLine2Col: action.suggestedAddressLine2Col,
+        cityCol: action.suggestedCityCol,
+        stateCol: action.suggestedStateCol,
+        zipCodeCol: action.suggestedZipCodeCol,
+        countryCol: action.suggestedCountryCol,
+        dietaryNotesCol: action.suggestedDietaryNotesCol,
+        plusOneCol: action.suggestedPlusOneCol,
+        plusOneFirstNameCol: action.suggestedPlusOneFirstNameCol,
+        plusOneLastNameCol: action.suggestedPlusOneLastNameCol,
+        householdNameCol: action.suggestedHouseholdNameCol,
+        partyGroupCol: action.suggestedPartyGroupCol,
+        partyTagsCol: action.suggestedPartyTagsCol,
+        selectedExtraCols: action.selectedExtraCols,
+      };
+    }
+    case 'SET_COLUMN_MAPPING': {
+      return {
+        ...state,
+        [action.field]: action.value,
+      };
+    }
+    case 'TOGGLE_EXTRA_COL': {
+      return {
+        ...state,
+        selectedExtraCols: state.selectedExtraCols.includes(action.header)
+          ? state.selectedExtraCols.filter((h) => h !== action.header)
+          : [...state.selectedExtraCols, action.header],
+      };
+    }
+    case 'SET_COLLISION_STRATEGY': {
+      return {
+        ...state,
+        collisionStrategy: action.strategy,
+        serverSummary: null,
+        validationSeq: state.validationSeq + 1,
+      };
+    }
+    case 'CONFIRM_MAPPING': {
+      return {
+        ...state,
+        editableRows: action.editableRows,
+        validatedRows: action.validatedRows,
+        codeFrequencyMap: action.freqMap,
+        serverSummary: null,
+        step: 3,
+      };
+    }
+    case 'EDIT_CELL': {
+      const { index, field, value } = action;
+      const updatedValue = field === 'code' ? value.toUpperCase() : value;
+      const oldRow = state.editableRows[index];
+      if (!oldRow) return state;
+
+      const updatedEditableRows = [...state.editableRows];
+      const updatedRow = {
+        ...oldRow,
+        [field]: updatedValue,
+      };
+      updatedEditableRows[index] = updatedRow;
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: state.selectedExtraCols,
+      };
+
+      const nextValidated = [...state.validatedRows];
+      let nextFreqMap = state.codeFrequencyMap;
+
+      if (field !== 'code') {
+        if (nextValidated.length === updatedEditableRows.length) {
+          nextValidated[index] = validateSingleCsvRow(
+            toRowRecord(updatedRow),
+            index,
+            mapping,
+            state.codeFrequencyMap,
+            existingDbSet,
+            HOISTED_EDITABLE_MAPPED_COLS
+          );
+        }
+      } else {
+        const oldCode = (oldRow.code || '').trim().toUpperCase();
+        const newCode = (value || '').trim().toUpperCase();
+
+        if (oldCode !== newCode) {
+          nextFreqMap = new Map(state.codeFrequencyMap);
+          if (oldCode) {
+            const count = nextFreqMap.get(oldCode) || 0;
+            if (count <= 1) nextFreqMap.delete(oldCode);
+            else nextFreqMap.set(oldCode, count - 1);
+          }
+          if (newCode) {
+            nextFreqMap.set(newCode, (nextFreqMap.get(newCode) || 0) + 1);
+          }
+
+          if (nextValidated.length === updatedEditableRows.length) {
+            for (let i = 0; i < updatedEditableRows.length; i++) {
+              const rCode = i === index ? newCode : (updatedEditableRows[i].code || '').trim().toUpperCase();
+              if (i === index || rCode === oldCode || rCode === newCode) {
+                const rowToVal = i === index ? updatedRow : updatedEditableRows[i];
+                nextValidated[i] = validateSingleCsvRow(
+                  toRowRecord(rowToVal),
+                  i,
+                  mapping,
+                  nextFreqMap,
+                  existingDbSet,
+                  HOISTED_EDITABLE_MAPPED_COLS
+                );
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        ...state,
+        editableRows: updatedEditableRows,
+        validatedRows: nextValidated,
+        codeFrequencyMap: nextFreqMap,
+        serverSummary: null,
+        validationSeq: state.validationSeq + 1,
+      };
+    }
+    case 'EDIT_EXTRA_FIELD': {
+      const { index, key, value } = action;
+      const oldRow = state.editableRows[index];
+      if (!oldRow) return state;
+
+      const updatedEditableRows = [...state.editableRows];
+      const updatedRow = {
+        ...oldRow,
+        extraFields: { ...oldRow.extraFields, [key]: value },
+      };
+      updatedEditableRows[index] = updatedRow;
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: state.selectedExtraCols,
+      };
+
+      const nextValidated = [...state.validatedRows];
+      if (nextValidated.length === updatedEditableRows.length) {
+        nextValidated[index] = validateSingleCsvRow(
+          toRowRecord(updatedRow),
+          index,
+          mapping,
+          state.codeFrequencyMap,
+          existingDbSet,
+          HOISTED_EDITABLE_MAPPED_COLS
+        );
+      }
+
+      return {
+        ...state,
+        editableRows: updatedEditableRows,
+        validatedRows: nextValidated,
+        serverSummary: null,
+        validationSeq: state.validationSeq + 1,
+      };
+    }
+    case 'DELETE_ROW': {
+      const { index } = action;
+      const deletedRow = state.editableRows[index];
+      if (!deletedRow) return state;
+      const deletedCode = (deletedRow.code || '').trim().toUpperCase();
+
+      const remainingEditable = state.editableRows.filter((_, i) => i !== index);
+
+      let nextFreqMap = state.codeFrequencyMap;
+      if (deletedCode) {
+        nextFreqMap = new Map(state.codeFrequencyMap);
+        const count = nextFreqMap.get(deletedCode) || 0;
+        if (count <= 1) nextFreqMap.delete(deletedCode);
+        else nextFreqMap.set(deletedCode, count - 1);
+      }
+
+      const mapping: ColumnMappingOptions = {
+        ...EDITABLE_MAPPING,
+        extraCols: state.selectedExtraCols,
+      };
+
+      const remainingValidated = state.validatedRows.filter((_, i) => i !== index);
+      const nextValidated = remainingValidated.map((row, i) => {
+        const rCode = (remainingEditable[i].code || '').trim().toUpperCase();
+        if (rCode === deletedCode) {
+          return validateSingleCsvRow(
+            toRowRecord(remainingEditable[i]),
+            i,
+            mapping,
+            nextFreqMap,
+            existingDbSet,
+            HOISTED_EDITABLE_MAPPED_COLS
+          );
+        }
+        return { ...row, rowIndex: i + 1 };
+      });
+
+      return {
+        ...state,
+        editableRows: remainingEditable,
+        validatedRows: nextValidated,
+        codeFrequencyMap: nextFreqMap,
+        serverSummary: null,
+        validationSeq: state.validationSeq + 1,
+      };
+    }
+    case 'SET_STATUS_FILTER': {
+      return {
+        ...state,
+        statusFilter: action.filter,
+      };
+    }
+    case 'VALIDATION_START': {
+      return {
+        ...state,
+        isValidating: true,
+        validationSeq: action.seq,
+      };
+    }
+    case 'VALIDATION_SUCCESS': {
+      if (action.seq !== state.validationSeq) {
+        return state;
+      }
+      return {
+        ...state,
+        serverSummary: action.summary,
+        validatedRows: action.rows,
+        isValidating: false,
+      };
+    }
+    case 'VALIDATION_LOCAL': {
+      if (action.seq !== state.validationSeq) {
+        return state;
+      }
+      return {
+        ...state,
+        serverSummary: null,
+        validatedRows: action.rows,
+        codeFrequencyMap: action.freqMap,
+        isValidating: false,
+      };
+    }
+    case 'VALIDATION_ABORT': {
+      return {
+        ...state,
+        isValidating: false,
+      };
+    }
+    case 'COMMIT_START': {
+      return {
+        ...state,
+        isSubmitting: true,
+      };
+    }
+    case 'COMMIT_SUCCESS': {
+      return {
+        ...state,
+        isSubmitting: false,
+        importSummary: action.summary,
+        step: 4,
+      };
+    }
+    case 'COMMIT_FAILURE': {
+      return {
+        ...state,
+        isSubmitting: false,
+      };
+    }
+    case 'RESET_MODAL': {
+      return {
+        ...initialWizardState,
+      };
+    }
+    default:
+      return state;
+  }
+}
+
 export function CsvImportWizardModal({
   isOpen,
   onClose,
@@ -523,10 +1009,32 @@ export function CsvImportWizardModal({
 }: CsvImportWizardModalProps) {
   const { addToast } = useToast();
 
-  const [csvFormState, setCsvFormState, clearPersistedCsvState] = useFormPersist<CsvImportPersistedState>(
-    'csv_import_wizard_draft',
-    initialCsvImportState
+  const existingDbSet = useMemo(
+    () =>
+      new Set(
+        (existingCodes || [])
+          .filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))
+          .map((c) => c.trim().toUpperCase())
+      ),
+    [existingCodes]
   );
+
+  const existingDbSetRef = useRef(existingDbSet);
+  existingDbSetRef.current = existingDbSet;
+
+  const [state, rawDispatch] = useReducer(
+    (s: WizardState, a: WizardAction) => wizardReducer(s, a, existingDbSetRef.current),
+    initialWizardState,
+    (init) => initWizardState(init, existingDbSet)
+  );
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const dispatch = useCallback((action: WizardAction) => {
+    stateRef.current = wizardReducer(stateRef.current, action, existingDbSetRef.current);
+    rawDispatch(action);
+  }, []);
 
   const {
     step,
@@ -552,70 +1060,82 @@ export function CsvImportWizardModal({
     selectedExtraCols,
     collisionStrategy,
     editableRows,
-  } = csvFormState;
+    isValidating,
+    serverSummary,
+    validatedRows,
+    statusFilter,
+    isSubmitting,
+    importSummary,
+  } = state;
 
-  const setStep = (val: 1 | 2 | 3 | 4 | ((prev: 1 | 2 | 3 | 4) => 1 | 2 | 3 | 4)) => {
-    setCsvFormState((prev) => ({
-      ...prev,
-      step: typeof val === 'function' ? val(prev.step) : val,
-    }));
-  };
+  // Sync draft state to sessionStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const {
+        isValidating: _unusedValidating,
+        validationSeq: _unusedValidationSeq,
+        serverSummary: _unusedServerSummary,
+        validatedRows: _unusedValidatedRows,
+        statusFilter: _unusedStatusFilter,
+        codeFrequencyMap: _unusedCodeFreq,
+        isSubmitting: _unusedSubmitting,
+        ...persisted
+      } = state;
+      window.sessionStorage.setItem('csv_import_wizard_draft', JSON.stringify(persisted));
+    } catch (err) {
+      console.warn('Failed to write key "csv_import_wizard_draft" to sessionStorage:', err);
+    }
+  }, [
+    state.step,
+    state.fileName,
+    state.csvHeaders,
+    state.rawRows,
+    state.guestNameCol,
+    state.codeCol,
+    state.emailCol,
+    state.addressLine1Col,
+    state.addressLine2Col,
+    state.cityCol,
+    state.stateCol,
+    state.zipCodeCol,
+    state.countryCol,
+    state.dietaryNotesCol,
+    state.plusOneCol,
+    state.plusOneFirstNameCol,
+    state.plusOneLastNameCol,
+    state.householdNameCol,
+    state.partyGroupCol,
+    state.partyTagsCol,
+    state.selectedExtraCols,
+    state.collisionStrategy,
+    state.editableRows,
+    state.importSummary,
+  ]);
 
-  const setFileName = (val: string) => setCsvFormState((prev) => ({ ...prev, fileName: val }));
-  const setCsvHeaders = (val: string[]) => setCsvFormState((prev) => ({ ...prev, csvHeaders: val }));
-  const setRawRows = (val: Record<string, string>[]) => setCsvFormState((prev) => ({ ...prev, rawRows: val }));
-  const setGuestNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, guestNameCol: val }));
-  const setCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, codeCol: val }));
-  const setEmailCol = (val: string) => setCsvFormState((prev) => ({ ...prev, emailCol: val }));
-  const setAddressLine1Col = (val: string) => setCsvFormState((prev) => ({ ...prev, addressLine1Col: val }));
-  const setAddressLine2Col = (val: string) => setCsvFormState((prev) => ({ ...prev, addressLine2Col: val }));
-  const setCityCol = (val: string) => setCsvFormState((prev) => ({ ...prev, cityCol: val }));
-  const setStateCol = (val: string) => setCsvFormState((prev) => ({ ...prev, stateCol: val }));
-  const setZipCodeCol = (val: string) => setCsvFormState((prev) => ({ ...prev, zipCodeCol: val }));
-  const setCountryCol = (val: string) => setCsvFormState((prev) => ({ ...prev, countryCol: val }));
-  const setDietaryNotesCol = (val: string) => setCsvFormState((prev) => ({ ...prev, dietaryNotesCol: val }));
-  const setPlusOneCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneCol: val }));
-  const setPlusOneFirstNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneFirstNameCol: val }));
-  const setPlusOneLastNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, plusOneLastNameCol: val }));
-  const setHouseholdNameCol = (val: string) => setCsvFormState((prev) => ({ ...prev, householdNameCol: val }));
-  const setPartyGroupCol = (val: string) => setCsvFormState((prev) => ({ ...prev, partyGroupCol: val }));
-  const setPartyTagsCol = (val: string) => setCsvFormState((prev) => ({ ...prev, partyTagsCol: val }));
-  const setSelectedExtraCols = (
-    val: string[] | ((prev: string[]) => string[])
-  ) => {
-    setCsvFormState((prev) => ({
-      ...prev,
-      selectedExtraCols: typeof val === 'function' ? val(prev.selectedExtraCols) : val,
-    }));
-  };
-  const setCollisionStrategy = (val: 'skip' | 'update' | 'reject') =>
-    setCsvFormState((prev) => ({ ...prev, collisionStrategy: val }));
-  const setEditableRows = (
-    val: EditableRow[] | ((prev: EditableRow[]) => EditableRow[])
-  ) => {
-    setCsvFormState((prev) => ({
-      ...prev,
-      editableRows: typeof val === 'function' ? val(prev.editableRows) : val,
-    }));
-  };
+  const setStep = (s: 1 | 2 | 3 | 4) => dispatch({ type: 'SET_STEP', step: s });
+  const setCollisionStrategy = (strategy: 'skip' | 'update' | 'reject') =>
+    dispatch({ type: 'SET_COLLISION_STRATEGY', strategy });
+  const setStatusFilter = (filter: 'all' | 'valid' | 'invalid' | 'duplicate' | 'update' | 'skip') =>
+    dispatch({ type: 'SET_STATUS_FILTER', filter });
+  const toggleExtraCol = (header: string) => dispatch({ type: 'TOGGLE_EXTRA_COL', header });
 
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [importSummary, setImportSummary] = useState<{
-    total: number;
-    imported: number;
-    skipped: number;
-    updated: number;
-  } | null>(null);
-
-  const existingDbSet = useMemo(
-    () =>
-      new Set(
-        (existingCodes || [])
-          .filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))
-          .map((c) => c.trim().toUpperCase())
-      ),
-    [existingCodes]
-  );
+  const setGuestNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestNameCol', value: val });
+  const setCodeCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'codeCol', value: val });
+  const setEmailCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'emailCol', value: val });
+  const setAddressLine1Col = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'addressLine1Col', value: val });
+  const setAddressLine2Col = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'addressLine2Col', value: val });
+  const setCityCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'cityCol', value: val });
+  const setStateCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'stateCol', value: val });
+  const setZipCodeCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'zipCodeCol', value: val });
+  const setCountryCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'countryCol', value: val });
+  const setDietaryNotesCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'dietaryNotesCol', value: val });
+  const setPlusOneCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'plusOneCol', value: val });
+  const setPlusOneFirstNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'plusOneFirstNameCol', value: val });
+  const setPlusOneLastNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'plusOneLastNameCol', value: val });
+  const setHouseholdNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'householdNameCol', value: val });
+  const setPartyGroupCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'partyGroupCol', value: val });
+  const setPartyTagsCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'partyTagsCol', value: val });
 
   const handleDownloadSample = () => {
     const sampleCsv = generateSampleCsvTemplate();
@@ -652,7 +1172,6 @@ export function CsvImportWizardModal({
       return;
     }
 
-    setFileName(file.name);
     const reader = new FileReader();
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
@@ -666,25 +1185,6 @@ export function CsvImportWizardModal({
         addToast('No valid CSV rows or headers found in file.', 'error');
         return;
       }
-
-      setCsvHeaders(parsed.headers);
-      setRawRows(parsed.rows);
-      setGuestNameCol(parsed.suggestedGuestNameCol);
-      setCodeCol(parsed.suggestedCodeCol);
-      setEmailCol(parsed.suggestedEmailCol || '');
-      setAddressLine1Col(parsed.suggestedAddressLine1Col || '');
-      setAddressLine2Col(parsed.suggestedAddressLine2Col || '');
-      setCityCol(parsed.suggestedCityCol || '');
-      setStateCol(parsed.suggestedStateCol || '');
-      setZipCodeCol(parsed.suggestedZipCodeCol || '');
-      setCountryCol(parsed.suggestedCountryCol || '');
-      setDietaryNotesCol(parsed.suggestedDietaryNotesCol || '');
-      setPlusOneCol(parsed.suggestedPlusOneCol || '');
-      setPlusOneFirstNameCol(parsed.suggestedPlusOneFirstNameCol || '');
-      setPlusOneLastNameCol(parsed.suggestedPlusOneLastNameCol || '');
-      setHouseholdNameCol(parsed.suggestedHouseholdNameCol || '');
-      setPartyGroupCol(parsed.suggestedPartyGroupCol || '');
-      setPartyTagsCol(parsed.suggestedPartyTagsCol || '');
 
       const mappedStandard = new Set(
         [
@@ -706,8 +1206,32 @@ export function CsvImportWizardModal({
           parsed.suggestedPartyTagsCol,
         ].filter(Boolean)
       );
-      setSelectedExtraCols(parsed.headers.filter((h) => !mappedStandard.has(h)));
-      setStep(2);
+
+      const selectedExtraCols = parsed.headers.filter((h) => !mappedStandard.has(h));
+
+      dispatch({
+        type: 'FILE_UPLOADED',
+        fileName: file.name,
+        headers: parsed.headers,
+        rawRows: parsed.rows,
+        suggestedGuestNameCol: parsed.suggestedGuestNameCol,
+        suggestedCodeCol: parsed.suggestedCodeCol,
+        suggestedEmailCol: parsed.suggestedEmailCol || '',
+        suggestedAddressLine1Col: parsed.suggestedAddressLine1Col || '',
+        suggestedAddressLine2Col: parsed.suggestedAddressLine2Col || '',
+        suggestedCityCol: parsed.suggestedCityCol || '',
+        suggestedStateCol: parsed.suggestedStateCol || '',
+        suggestedZipCodeCol: parsed.suggestedZipCodeCol || '',
+        suggestedCountryCol: parsed.suggestedCountryCol || '',
+        suggestedDietaryNotesCol: parsed.suggestedDietaryNotesCol || '',
+        suggestedPlusOneCol: parsed.suggestedPlusOneCol || '',
+        suggestedPlusOneFirstNameCol: parsed.suggestedPlusOneFirstNameCol || '',
+        suggestedPlusOneLastNameCol: parsed.suggestedPlusOneLastNameCol || '',
+        suggestedHouseholdNameCol: parsed.suggestedHouseholdNameCol || '',
+        suggestedPartyGroupCol: parsed.suggestedPartyGroupCol || '',
+        suggestedPartyTagsCol: parsed.suggestedPartyTagsCol || '',
+        selectedExtraCols,
+      });
     };
 
     reader.readAsText(file, 'UTF-8');
@@ -748,43 +1272,30 @@ export function CsvImportWizardModal({
       };
     });
 
-    setEditableRows(initialMapped);
-    setStep(3);
+    const { parsed, freqMap } = computeFullValidation(
+      initialMapped,
+      selectedExtraCols,
+      existingDbSetRef.current
+    );
+
+    dispatch({
+      type: 'CONFIRM_MAPPING',
+      editableRows: initialMapped,
+      validatedRows: parsed,
+      freqMap,
+    });
   };
 
-  // Dry-run server validation and status filter state
-  const [isValidating, setIsValidating] = useState<boolean>(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'invalid' | 'duplicate' | 'update' | 'skip'>('all');
-  const [serverSummary, setServerSummary] = useState<DryRunValidationSummary | null>(null);
-
-  // Incremental row validation state
-  const [validatedRows, setValidatedRows] = useState<ExtendedParsedCsvRow[]>([]);
-  const codeFrequencyRef = useRef<Map<string, number>>(new Map());
-
-  const editableRowsRef = useRef(editableRows);
-  editableRowsRef.current = editableRows;
-
-  const selectedExtraColsRef = useRef(selectedExtraCols);
-  selectedExtraColsRef.current = selectedExtraCols;
-
-  const existingDbSetRef = useRef(existingDbSet);
-  existingDbSetRef.current = existingDbSet;
-
-  // Refs for tracking validation debounce and cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingValidationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const inFlightValidationRef = useRef<Promise<void> | null>(null);
   const prevStepRef = useRef<number | null>(null);
   const prevStrategyRef = useRef<'skip' | 'update' | 'reject' | null>(null);
 
-  const collisionStrategyRef = useRef(collisionStrategy);
-  collisionStrategyRef.current = collisionStrategy;
-
   const runDryRunValidation = useCallback(
     async (rows: EditableRow[], strategy: 'skip' | 'update' | 'reject') => {
       if (rows.length === 0) {
-        setValidatedRows([]);
-        setServerSummary(null);
+        dispatch({ type: 'VALIDATION_LOCAL', seq: stateRef.current.validationSeq, rows: [], freqMap: new Map() });
         return;
       }
 
@@ -795,7 +1306,9 @@ export function CsvImportWizardModal({
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      setIsValidating(true);
+      const seq = stateRef.current.validationSeq + 1;
+      dispatch({ type: 'VALIDATION_START', seq });
+
       try {
         const payload = {
           records: rows.map((r) => ({
@@ -827,35 +1340,54 @@ export function CsvImportWizardModal({
           signal: controller.signal,
         });
 
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          dispatch({ type: 'VALIDATION_ABORT', seq });
+          return;
+        }
 
         if (res.ok) {
           const data: DryRunValidationResponse = await res.json();
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted) {
+            dispatch({ type: 'VALIDATION_ABORT', seq });
+            return;
+          }
 
           if (data && data.success && data.summary && data.rows) {
-            setServerSummary(data.summary);
-            setValidatedRows(data.rows as ExtendedParsedCsvRow[]);
-            setIsValidating(false);
+            dispatch({
+              type: 'VALIDATION_SUCCESS',
+              seq,
+              summary: data.summary,
+              rows: data.rows as ExtendedParsedCsvRow[],
+            });
             return;
           }
         }
       } catch (err: any) {
         if (controller.signal.aborted || err?.name === 'AbortError') {
+          dispatch({ type: 'VALIDATION_ABORT', seq });
           return;
         }
         // Fallback to local computation if fetch is unhandled / unreachable
       }
 
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        dispatch({ type: 'VALIDATION_ABORT', seq });
+        return;
+      }
 
-      const { parsed, freqMap } = computeFullValidation(rows, selectedExtraColsRef.current, existingDbSetRef.current);
-      codeFrequencyRef.current = freqMap;
-      setValidatedRows(parsed);
-      setServerSummary(null);
-      setIsValidating(false);
+      const { parsed, freqMap } = computeFullValidation(
+        rows,
+        stateRef.current.selectedExtraCols,
+        existingDbSetRef.current
+      );
+      dispatch({
+        type: 'VALIDATION_LOCAL',
+        seq,
+        rows: parsed,
+        freqMap,
+      });
     },
-    []
+    [dispatch]
   );
 
   const executeValidation = useCallback(
@@ -904,9 +1436,7 @@ export function CsvImportWizardModal({
       }
       prevStepRef.current = step;
       prevStrategyRef.current = collisionStrategy;
-      setValidatedRows([]);
-      setServerSummary(null);
-      codeFrequencyRef.current.clear();
+      dispatch({ type: 'VALIDATION_ABORT' });
     }
 
     return () => {
@@ -915,13 +1445,26 @@ export function CsvImportWizardModal({
         pendingValidationTimerRef.current = null;
       }
     };
-  }, [step, editableRows, collisionStrategy, executeValidation]);
+  }, [step, editableRows, collisionStrategy, executeValidation, dispatch]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingValidationTimerRef.current) {
+        clearTimeout(pendingValidationTimerRef.current);
+        pendingValidationTimerRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
 
   const flushPendingValidation = useCallback(async () => {
     if (pendingValidationTimerRef.current) {
       clearTimeout(pendingValidationTimerRef.current);
       pendingValidationTimerRef.current = null;
-      const promise = executeValidation(editableRowsRef.current, collisionStrategyRef.current);
+      const promise = executeValidation(stateRef.current.editableRows, stateRef.current.collisionStrategy);
       await promise;
     } else if (inFlightValidationRef.current) {
       await inFlightValidationRef.current;
@@ -929,40 +1472,8 @@ export function CsvImportWizardModal({
   }, [executeValidation]);
 
   const summary = useMemo(() => {
-    if (serverSummary) {
-      return serverSummary;
-    }
-    const total = editableRows.length;
-    const validCount = validatedRows.filter((r) => r.isValid).length;
-    const invalidCount = validatedRows.filter((r) => !r.isValid).length;
-    const duplicateCount = validatedRows.filter(
-      (r) =>
-        r.isDuplicate ||
-        r.existingGuestName ||
-        r.warnings?.some((w) => w.includes('already exists') || w.includes('Duplicate')) ||
-        r.errors?.some((e) => e.includes('Duplicate'))
-    ).length;
-    const updatedCount = validatedRows.filter(
-      (r) =>
-        r.actionOutcome === 'update' ||
-        (collisionStrategy === 'update' && r.warnings?.some((w) => w.includes('Will be updated')))
-    ).length;
-    const skippedCount = validatedRows.filter(
-      (r) =>
-        r.actionOutcome === 'skip' ||
-        (collisionStrategy === 'skip' && r.warnings?.some((w) => w.includes('Will be skipped')))
-    ).length;
-    const createdCount = validCount - updatedCount - skippedCount;
-    return {
-      total,
-      validCount,
-      invalidCount,
-      duplicateCount,
-      updatedCount,
-      skippedCount,
-      createdCount,
-    };
-  }, [serverSummary, editableRows.length, validatedRows, collisionStrategy]);
+    return computeWizardSummary(serverSummary, editableRows, validatedRows, collisionStrategy);
+  }, [serverSummary, editableRows, validatedRows, collisionStrategy]);
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'valid') {
@@ -993,219 +1504,52 @@ export function CsvImportWizardModal({
     return validatedRows;
   }, [validatedRows, statusFilter]);
 
-  const invalidCount = summary.invalidCount;
-
   const handleCellEdit = useCallback((
     index: number,
-    field:
-      | 'guestName'
-      | 'code'
-      | 'email'
-      | 'addressLine1'
-      | 'addressLine2'
-      | 'city'
-      | 'state'
-      | 'zipCode'
-      | 'country'
-      | 'dietaryNotes'
-      | 'plusOneAllocations'
-      | 'plusOneFirstName'
-      | 'plusOneLastName'
-      | 'householdName'
-      | 'partyGroup'
-      | 'partyTags',
+    field: EditableField,
     value: string
   ) => {
-    const updatedValue = field === 'code' ? value.toUpperCase() : value;
-    const currentEditable = editableRowsRef.current;
-    const oldRow = currentEditable[index];
-
-    setServerSummary(null);
-
-    setEditableRows((prev) => {
-      const next = [...prev];
-      next[index] = {
-        ...next[index],
-        [field]: updatedValue,
-      };
-      return next;
-    });
-
-    setValidatedRows((prevValidated) => {
-      if (!prevValidated || prevValidated.length !== currentEditable.length) {
-        return prevValidated;
-      }
-
-      const mapping: ColumnMappingOptions = {
-        ...EDITABLE_MAPPING,
-        extraCols: selectedExtraColsRef.current,
-      };
-
-      if (field !== 'code') {
-        const updatedEditableRow = {
-          ...currentEditable[index],
-          [field]: value,
-        };
-        const nextValidated = [...prevValidated];
-        nextValidated[index] = validateSingleCsvRow(
-          toRowRecord(updatedEditableRow),
-          index,
-          mapping,
-          codeFrequencyRef.current,
-          existingDbSetRef.current,
-          HOISTED_EDITABLE_MAPPED_COLS
-        );
-        return nextValidated;
-      } else {
-        const oldCode = (oldRow?.code || '').trim().toUpperCase();
-        const newCode = (value || '').trim().toUpperCase();
-
-        if (oldCode === newCode) return prevValidated;
-
-        const freqMap = codeFrequencyRef.current;
-        if (oldCode) {
-          const count = freqMap.get(oldCode) || 0;
-          if (count <= 1) freqMap.delete(oldCode);
-          else freqMap.set(oldCode, count - 1);
-        }
-        if (newCode) {
-          freqMap.set(newCode, (freqMap.get(newCode) || 0) + 1);
-        }
-
-        const nextValidated = [...prevValidated];
-        const updatedEditableRow = {
-          ...currentEditable[index],
-          code: newCode,
-        };
-
-        for (let i = 0; i < currentEditable.length; i++) {
-          const rCode = i === index ? newCode : (currentEditable[i].code || '').trim().toUpperCase();
-          if (i === index || rCode === oldCode || rCode === newCode) {
-            const rowToVal = i === index ? updatedEditableRow : currentEditable[i];
-            nextValidated[i] = validateSingleCsvRow(
-              toRowRecord(rowToVal),
-              i,
-              mapping,
-              freqMap,
-              existingDbSetRef.current,
-              HOISTED_EDITABLE_MAPPED_COLS
-            );
-          }
-        }
-
-        return nextValidated;
-      }
-    });
-  }, [setEditableRows]);
+    dispatch({ type: 'EDIT_CELL', index, field, value });
+  }, [dispatch]);
 
   const handleExtraFieldEdit = useCallback((index: number, key: string, value: string) => {
-    const currentEditable = editableRowsRef.current;
-
-    setServerSummary(null);
-
-    setEditableRows((prev) => {
-      const next = [...prev];
-      const updatedExtra = { ...next[index].extraFields, [key]: value };
-      next[index] = {
-        ...next[index],
-        extraFields: updatedExtra,
-      };
-      return next;
-    });
-
-    setValidatedRows((prevValidated) => {
-      if (!prevValidated || prevValidated.length !== currentEditable.length) return prevValidated;
-
-      const mapping: ColumnMappingOptions = {
-        ...EDITABLE_MAPPING,
-        extraCols: selectedExtraColsRef.current,
-      };
-
-      const updatedEditableRow = {
-        ...currentEditable[index],
-        extraFields: { ...currentEditable[index].extraFields, [key]: value },
-      };
-
-      const nextValidated = [...prevValidated];
-      nextValidated[index] = validateSingleCsvRow(
-        toRowRecord(updatedEditableRow),
-        index,
-        mapping,
-        codeFrequencyRef.current,
-        existingDbSetRef.current,
-        HOISTED_EDITABLE_MAPPED_COLS
-      );
-      return nextValidated;
-    });
-  }, [setEditableRows]);
+    dispatch({ type: 'EDIT_EXTRA_FIELD', index, key, value });
+  }, [dispatch]);
 
   const handleDeleteRow = useCallback((index: number) => {
-    const currentEditable = editableRowsRef.current;
-    const deletedRow = currentEditable[index];
-    const deletedCode = (deletedRow?.code || '').trim().toUpperCase();
-
-    setServerSummary(null);
-
-    const remainingEditable = currentEditable.filter((_, i) => i !== index);
-    setEditableRows(remainingEditable);
-
-    setValidatedRows((prevValidated) => {
-      if (!prevValidated) return [];
-
-      const freqMap = codeFrequencyRef.current;
-      if (deletedCode) {
-        const count = freqMap.get(deletedCode) || 0;
-        if (count <= 1) freqMap.delete(deletedCode);
-        else freqMap.set(deletedCode, count - 1);
-      }
-
-      const mapping: ColumnMappingOptions = {
-        ...EDITABLE_MAPPING,
-        extraCols: selectedExtraColsRef.current,
-      };
-
-      const remainingValidated = prevValidated.filter((_, i) => i !== index);
-
-      return remainingValidated.map((row, i) => {
-        const rCode = (remainingEditable[i].code || '').trim().toUpperCase();
-        if (rCode === deletedCode) {
-          return validateSingleCsvRow(
-            toRowRecord(remainingEditable[i]),
-            i,
-            mapping,
-            freqMap,
-            existingDbSetRef.current,
-            HOISTED_EDITABLE_MAPPED_COLS
-          );
-        }
-        return { ...row, rowIndex: i + 1 };
-      });
-    });
-  }, [setEditableRows]);
-
-  const toggleExtraCol = (header: string) => {
-    setSelectedExtraCols((prev) =>
-      prev.includes(header) ? prev.filter((h) => h !== header) : [...prev, header]
-    );
-  };
+    dispatch({ type: 'DELETE_ROW', index });
+  }, [dispatch]);
 
   const handleCommitBatch = async () => {
-    if (editableRows.length === 0) {
+    if (stateRef.current.editableRows.length === 0) {
       addToast('No records to import.', 'error');
       return;
     }
 
     await flushPendingValidation();
 
-    if (invalidCount > 0) {
+    const latest = stateRef.current;
+    const latestSummary = computeWizardSummary(
+      latest.serverSummary,
+      latest.editableRows,
+      latest.validatedRows,
+      latest.collisionStrategy
+    );
+
+    if (latestSummary.invalidCount > 0) {
       addToast('Please fix or remove invalid rows before submitting.', 'error');
       return;
     }
 
-    setIsSubmitting(true);
+    if (latest.isValidating) {
+      addToast('Validation in progress. Please wait.', 'error');
+      return;
+    }
+
+    dispatch({ type: 'COMMIT_START' });
     try {
       const payload = {
-        records: editableRows.map((r) => ({
+        records: latest.editableRows.map((r) => ({
           guestName: r.guestName,
           code: r.code || undefined,
           email: r.email || undefined,
@@ -1224,7 +1568,7 @@ export function CsvImportWizardModal({
           partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
           extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
         })),
-        collisionStrategy,
+        collisionStrategy: latest.collisionStrategy,
       };
 
       const res = await fetch('/api/admin/invitation-codes/batch', {
@@ -1238,26 +1582,32 @@ export function CsvImportWizardModal({
         throw new Error(data.error || 'Batch import failed.');
       }
 
-      setImportSummary({
-        total: data.count || editableRows.length,
-        imported: data.imported || 0,
-        skipped: data.skipped || 0,
-        updated: data.updated || 0,
+      dispatch({
+        type: 'COMMIT_SUCCESS',
+        summary: {
+          total: data.count || latest.editableRows.length,
+          imported: data.imported || 0,
+          skipped: data.skipped || 0,
+          updated: data.updated || 0,
+        },
       });
-      setStep(4);
       addToast('Batch CSV import completed successfully.', 'success');
       onImportComplete();
     } catch (err: any) {
+      dispatch({ type: 'COMMIT_FAILURE', error: err.message });
       addToast(err.message || 'Failed to execute batch import.', 'error');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
   const handleResetModal = () => {
-    clearPersistedCsvState();
-    setCsvFormState(initialCsvImportState);
-    setImportSummary(null);
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem('csv_import_wizard_draft');
+      } catch (err) {
+        console.warn('Failed to clear sessionStorage:', err);
+      }
+    }
+    dispatch({ type: 'RESET_MODAL' });
     onClose();
   };
 
@@ -1909,7 +2259,7 @@ export function CsvImportWizardModal({
         )}
 
         {/* Step 4: Completion Summary */}
-        {step === 4 && importSummary && (
+        {step === 4 && (
           <div className="space-y-6 py-4 text-center">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-3xl font-bold">
               ✓
@@ -1923,15 +2273,15 @@ export function CsvImportWizardModal({
 
             <div className="grid grid-cols-3 gap-3 bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-200 dark:border-zinc-700 text-center max-w-md mx-auto">
               <div>
-                <div className="text-2xl font-black text-primary">{importSummary.imported}</div>
+                <div className="text-2xl font-black text-primary">{importSummary ? importSummary.imported : 0}</div>
                 <div className="text-xs uppercase font-semibold text-gray-500">Imported</div>
               </div>
               <div>
-                <div className="text-2xl font-black text-amber-600">{importSummary.skipped}</div>
+                <div className="text-2xl font-black text-amber-600">{importSummary ? importSummary.skipped : 0}</div>
                 <div className="text-xs uppercase font-semibold text-gray-500">Skipped</div>
               </div>
               <div>
-                <div className="text-2xl font-black text-blue-600">{importSummary.updated}</div>
+                <div className="text-2xl font-black text-blue-600">{importSummary ? importSummary.updated : 0}</div>
                 <div className="text-xs uppercase font-semibold text-gray-500">Updated</div>
               </div>
             </div>
