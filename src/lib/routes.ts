@@ -23,6 +23,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/', label: 'Home', roles: ['public', 'admin'], showInNav: true, exact: true },
   { path: '/registry', label: 'Registry', roles: ['public', 'admin'], showInNav: true, exact: true, requiredModule: 'registry' },
   { path: '/photos', label: 'Photos', roles: ['public', 'admin'], showInNav: true, requiredModule: 'gallery' },
+  { path: '/photos/slideshow', label: 'Slideshow', roles: ['public', 'admin'], showInNav: false, requiredModule: 'gallery' },
   { path: '/wedding-party', label: 'Wedding Party', roles: ['public', 'admin'], showInNav: true, requiredModule: 'weddingParty' },
   { path: '/things-to-do', label: 'Things to Do', roles: ['public', 'admin'], showInNav: true, requiredModule: 'attractions' },
   { path: '/weather', label: 'Weather', roles: ['public', 'admin'], showInNav: true, requiredModule: 'weather' },
@@ -51,6 +52,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/api/registry/items', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false, requiredModule: 'registry' },
   { path: '/api/registry', roles: ['public', 'admin'], exact: false, requiredModule: 'registry' },
   { path: '/api/weather', roles: ['public', 'admin'], exact: false, requiredModule: 'weather' },
+  { path: '/api/photos', roles: ['public', 'admin'], exact: false, requiredModule: 'gallery' },
   { path: '/api/media/export', roles: ['admin'], exact: true, requiredModule: 'gallery' },
   { path: '/api/media', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false, requiredModule: 'gallery' },
   { path: '/api/admin', roles: ['admin'], exact: false }, // Catch-all for other /api/admin

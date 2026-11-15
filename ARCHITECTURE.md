@@ -172,6 +172,7 @@ flowchart LR
     node_guest_login["login"]
     node_heart["heart"]
     node_photos["photos"]
+    node_photos_slideshow["slideshow"]
     node_projectinfo["project-info"]
     node_registry["registry"]
     node_registry_additem["add-item"]
@@ -279,6 +280,7 @@ flowchart LR
     node_guest --> node_guest_login
     App --> node_heart
     App --> node_photos
+    node_photos --> node_photos_slideshow
     App --> node_projectinfo
     App --> node_registry
     node_registry --> node_registry_additem
@@ -352,6 +354,7 @@ flowchart LR
     class node_api_media_id api;
     class node_api_media_export api;
     class node_api_og api;
+    class node_api_photos api;
     class node_api_photos_upload api;
     class node_api_ready api;
     class node_api_registry_contribute api;
@@ -370,6 +373,7 @@ flowchart LR
     class node_guest_login page;
     class node_heart page;
     class node_photos page;
+    class node_photos_slideshow page;
     class node_projectinfo page;
     class node_registry page;
     class node_registry_additem page;

@@ -6060,6 +6060,17 @@
         }
       }
     },
+    "/api/photos": {
+      "get": {
+        "summary": "GET /api/photos",
+        "description": "Endpoint for /api/photos",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/photos/upload": {
       "post": {
         "summary": "POST /api/photos/upload",

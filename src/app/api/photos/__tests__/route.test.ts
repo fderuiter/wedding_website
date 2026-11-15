@@ -1,0 +1,105 @@
+/** @jest-environment node */
+
+import { GET } from '../route';
+import { NextRequest } from 'next/server';
+import { contentService } from '@/features/content';
+import { getAppConfig } from '@/lib/config';
+
+jest.mock('@/features/content', () => ({
+  contentService: {
+    getPublicPhotos: jest.fn(),
+  },
+}));
+
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn(),
+}));
+
+const mockGetPublicPhotos = contentService.getPublicPhotos as jest.MockedFunction<typeof contentService.getPublicPhotos>;
+const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
+
+describe('GET /api/photos', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetAppConfig.mockResolvedValue({
+      modules: { gallery: true },
+    } as any);
+  });
+
+  it('returns approved public photos successfully', async () => {
+    const mockNodes = [
+      {
+        id: 'photo-1',
+        type: 'Photo',
+        createdAt: new Date('2026-06-20T18:00:00.000Z'),
+        updatedAt: new Date('2026-06-20T18:00:00.000Z'),
+        data: {
+          url: 'https://example.com/photo1.jpg',
+          title: 'First Dance',
+          altText: 'Couple first dance',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+      },
+      {
+        id: 'photo-2',
+        type: 'Photo',
+        createdAt: new Date('2026-06-20T18:30:00.000Z'),
+        updatedAt: new Date('2026-06-20T18:30:00.000Z'),
+        data: {
+          url: 'https://example.com/photo2.jpg',
+          title: 'Cake Cutting',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+      },
+    ];
+
+    mockGetPublicPhotos.mockResolvedValue(mockNodes as any);
+
+    const req = new NextRequest('http://localhost/api/photos');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.photos).toHaveLength(2);
+    expect(json.photos[0]).toEqual({
+      id: 'photo-1',
+      url: 'https://example.com/photo1.jpg',
+      title: 'First Dance',
+      altText: 'Couple first dance',
+      createdAt: '2026-06-20T18:00:00.000Z',
+    });
+    expect(json.photos[1]).toEqual({
+      id: 'photo-2',
+      url: 'https://example.com/photo2.jpg',
+      title: 'Cake Cutting',
+      altText: 'Cake Cutting',
+      createdAt: '2026-06-20T18:30:00.000Z',
+    });
+  });
+
+  it('returns empty array when no approved photos exist', async () => {
+    mockGetPublicPhotos.mockResolvedValue([]);
+
+    const req = new NextRequest('http://localhost/api/photos');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.photos).toEqual([]);
+  });
+
+  it('returns 404 when gallery module is disabled', async () => {
+    mockGetAppConfig.mockResolvedValue({
+      modules: { gallery: false },
+    } as any);
+
+    const req = new NextRequest('http://localhost/api/photos');
+    const res = await GET(req);
+
+    expect(res.status).toBe(404);
+  });
+});
