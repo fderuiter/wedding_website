@@ -102,6 +102,8 @@ export default function RootLayoutClient({
   }, [pathname]);
 
   const isHeartPage = pathname === '/heart';
+  const isSlideshowPage = pathname === '/photos/slideshow';
+  const isStandalonePage = isHeartPage || isSlideshowPage;
 
   const handleLogout = async () => {
     try {
@@ -118,7 +120,7 @@ export default function RootLayoutClient({
   return (
     <QueryClientProvider client={queryClient}>
       <GlobalRadialGlow />
-      {!isHeartPage && (
+      {!isStandalonePage && (
         <Navbar
           headerRef={headerRef}
           isAdmin={isAdmin}
@@ -126,7 +128,7 @@ export default function RootLayoutClient({
           config={config}
         />
       )}
-      <main aria-label="Application Content" id="main-content" style={{ paddingTop: isHeartPage ? 0 : mainPaddingTop }}>
+      <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
         {children}
       </main>
 
