@@ -12,6 +12,10 @@ import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
 
+function fallbackVenueField(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : 'TBD';
+}
+
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
   const initialized = isSiteInitialized(config);
@@ -74,11 +78,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     groomName: body.groomName ?? '',
     weddingDate: body.weddingDate ?? new Date().toISOString(),
     baseUrl: body.baseUrl ?? '',
-    venueName: body.venueName ?? 'TBD Venue',
-    venueAddress: body.venueAddress ?? '',
-    venueCity: body.venueCity ?? '',
-    venueState: body.venueState ?? '',
-    venueZip: body.venueZip ?? '',
+    venueName: fallbackVenueField(body.venueName),
+    venueAddress: fallbackVenueField(body.venueAddress),
+    venueCity: fallbackVenueField(body.venueCity),
+    venueState: fallbackVenueField(body.venueState),
+    venueZip: fallbackVenueField(body.venueZip),
     latitude: body.latitude ?? 0,
     longitude: body.longitude ?? 0,
     storyText: body.storyText ?? '',

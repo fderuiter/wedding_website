@@ -177,10 +177,10 @@ function SetupWizardContent() {
           partner2Name,
           weddingDate,
           baseUrl,
-          venueName: venueName || 'TBD',
+          venueName: venueName?.trim() || 'TBD',
           venueAddress: 'TBD',
-          venueCity: venueCity || 'TBD',
-          venueState: venueState || 'TBD',
+          venueCity: venueCity?.trim() || 'TBD',
+          venueState: venueState?.trim() || 'TBD',
           venueZip: 'TBD',
           timezone: timezone || 'America/Chicago',
           latitude: 0,
@@ -316,15 +316,15 @@ function SetupWizardContent() {
               <div className="grid grid-cols-3 gap-4">
                 <FormGroup className="col-span-3 md:col-span-1">
                   <Label htmlFor="venueName">Venue Name</Label>
-                  <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} required />
+                  <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="TBD" />
                 </FormGroup>
                 <FormGroup className="col-span-3 md:col-span-1">
                   <Label htmlFor="venueCity">City</Label>
-                  <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} required />
+                  <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="TBD" />
                 </FormGroup>
                 <FormGroup className="col-span-3 md:col-span-1">
                   <Label htmlFor="venueState">State</Label>
-                  <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} required />
+                  <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="TBD" />
                 </FormGroup>
               </div>
 

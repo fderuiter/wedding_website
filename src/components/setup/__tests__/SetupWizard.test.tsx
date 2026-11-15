@@ -536,4 +536,70 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       expect(screen.getAllByRole('dialog')).toHaveLength(1);
     });
   });
+
+  test('allows completing Step 2 with empty or whitespace venue fields using TBD fallback', async () => {
+    let savedPayload: Record<string, unknown> | null = null;
+    let callCount = 0;
+    global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      } else {
+        if (init && init.body) {
+          savedPayload = JSON.parse(init.body as string);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Login
+    const passInput = screen.getByPlaceholderText('Admin Password');
+    fireEvent.change(passInput, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+
+    const venueNameInput = screen.getByLabelText(/Venue Name/i);
+    const venueCityInput = screen.getByLabelText(/^City$/i);
+    const venueStateInput = screen.getByLabelText(/State/i);
+
+    expect(venueNameInput).not.toHaveAttribute('required');
+    expect(venueCityInput).not.toHaveAttribute('required');
+    expect(venueStateInput).not.toHaveAttribute('required');
+
+    expect(venueNameInput).toHaveAttribute('placeholder', 'TBD');
+    expect(venueCityInput).toHaveAttribute('placeholder', 'TBD');
+    expect(venueStateInput).toHaveAttribute('placeholder', 'TBD');
+
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+
+    // Leave venue inputs as empty or whitespace
+    fireEvent.change(venueNameInput, { target: { value: '   ' } });
+    fireEvent.change(venueCityInput, { target: { value: '' } });
+    fireEvent.change(venueStateInput, { target: { value: '  ' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument();
+    });
+
+    expect(savedPayload).toBeTruthy();
+    expect(savedPayload.venueName).toBe('TBD');
+    expect(savedPayload.venueCity).toBe('TBD');
+    expect(savedPayload.venueState).toBe('TBD');
+    expect(savedPayload.venueAddress).toBe('TBD');
+    expect(savedPayload.venueZip).toBe('TBD');
+  });
 });
