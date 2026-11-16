@@ -57,15 +57,17 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.length === 0 ? (
-            <EmptyState
-              message={
-                selectedCategories.length > 0
-                  ? 'No attractions match the selected categories.'
-                  : 'No attractions have been added yet. Please check back later!'
-              }
-              onAction={selectedCategories.length > 0 ? () => setSelectedCategories([]) : undefined}
-              actionLabel={selectedCategories.length > 0 ? 'Clear filters' : undefined}
-            />
+            <div className="col-span-full">
+              <EmptyState
+                message={
+                  selectedCategories.length > 0
+                    ? 'No attractions match the selected categories.'
+                    : 'No attractions have been added yet. Please check back later!'
+                }
+                onAction={selectedCategories.length > 0 ? () => setSelectedCategories([]) : undefined}
+                actionLabel={selectedCategories.length > 0 ? 'Clear filters' : undefined}
+              />
+            </div>
           ) : (
             filteredAttractions.map((attraction) => (
               <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />

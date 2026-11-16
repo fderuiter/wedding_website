@@ -243,13 +243,22 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const handleTableDragEnter = (e: React.DragEvent, tableId: string) => {
     e.preventDefault();
     e.stopPropagation();
+    const targetTable = tables.find((t) => t.id === tableId);
+    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+    }
     setActiveDropTarget({ type: 'table', tableId });
   };
 
   const handleTableDragOver = (e: React.DragEvent, tableId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
+    const targetTable = tables.find((t) => t.id === tableId);
+    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+    }
     if (!activeDropTarget || activeDropTarget.type !== 'table' || activeDropTarget.tableId !== tableId) {
       setActiveDropTarget({ type: 'table', tableId });
     }
@@ -267,13 +276,22 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const handleSeatDragEnter = (e: React.DragEvent, tableId: string, seatNumber: number) => {
     e.preventDefault();
     e.stopPropagation();
+    const targetTable = tables.find((t) => t.id === tableId);
+    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+    }
     setActiveDropTarget({ type: 'seat', tableId, seatNumber });
   };
 
   const handleSeatDragOver = (e: React.DragEvent, tableId: string, seatNumber: number) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
+    const targetTable = tables.find((t) => t.id === tableId);
+    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+    }
     if (
       !activeDropTarget ||
       activeDropTarget.type !== 'seat' ||
@@ -307,10 +325,23 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     setActiveDropTarget(null);
-    const guestId = e.dataTransfer.getData('text/plain');
-    if (guestId) {
-      onDropGuestOnTable(guestId, tableId, seatNumber);
+    const guestId = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
+    if (!guestId) return;
+
+    const targetTable = tables.find((t) => t.id === tableId);
+    if (targetTable) {
+      const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
+      const isGuestAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === guestId);
+
+      if (isFull && !isGuestAlreadyAtTable) {
+        setLiveAnnouncement(
+          `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
+        );
+        return;
+      }
     }
+
+    onDropGuestOnTable(guestId, tableId, seatNumber);
   };
 
   // Helper to render seat positions around table
@@ -332,6 +363,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         activeDropTarget?.tableId === table.id &&
         activeDropTarget?.type === 'seat' &&
         activeDropTarget?.seatNumber === i;
+      const isSeatDropDisabled = isSeatDropTarget && (table.invitationCodes?.length || 0) >= table.capacity;
 
       let seatX = 0;
       let seatY = 0;
@@ -400,7 +432,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           }
           className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
             isSeatDropTarget
-              ? 'scale-125 bg-primary/20 border-primary ring-2 ring-primary z-30 font-bold shadow-lg'
+              ? isSeatDropDisabled
+                ? 'scale-125 bg-red-100 dark:bg-red-950/40 border-red-500 ring-2 ring-red-500 z-30 font-bold shadow-lg cursor-not-allowed'
+                : 'scale-125 bg-primary/20 border-primary ring-2 ring-primary z-30 font-bold shadow-lg'
               : assignedGuest
                 ? isMatch
                   ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
@@ -558,14 +592,18 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         const assignedCount = table.invitationCodes?.length || 0;
         const isSelected = selectedTableId === table.id;
         const isOverCapacity = assignedCount > table.capacity;
+        const isFull = assignedCount >= table.capacity;
         const hasMatchingGuest = isSearching && matchingTableIds.has(table.id);
         const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
+        const isDropDisabled = isTableDropTarget && isFull;
 
         return (
           <div
             key={table.id}
             data-table-id={table.id}
             data-is-drop-target={isTableDropTarget ? 'true' : undefined}
+            data-drop-disabled={isDropDisabled ? 'true' : undefined}
+            aria-disabled={isDropDisabled ? 'true' : undefined}
             onMouseDown={(e) => handleTableMouseDown(e, table)}
             onClick={(e) => {
               e.stopPropagation();
@@ -578,7 +616,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             onDrop={(e) => handleDropOnTable(e, table.id)}
             className={`absolute cursor-move transition-all transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
               isTableDropTarget
-                ? 'ring-4 ring-primary border-primary shadow-xl shadow-primary/20 scale-[1.03] z-30'
+                ? isFull
+                  ? 'ring-4 ring-red-500 border-red-500 shadow-xl shadow-red-500/20 scale-[1.03] z-30 cursor-not-allowed'
+                  : 'ring-4 ring-primary border-primary shadow-xl shadow-primary/20 scale-[1.03] z-30'
                 : isSelected
                   ? 'ring-4 ring-primary ring-offset-2 z-20'
                   : 'z-10'
@@ -600,20 +640,22 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             <div
               className={`w-full h-full border-2 flex flex-col items-center justify-center p-2 text-center shadow-md relative transition-colors ${
                 table.shape === 'round' ? 'rounded-full' : ''
-              } ${isTableDropTarget ? 'border-primary' : ''}`}
+              } ${isTableDropTarget ? (isFull ? 'border-red-500' : 'border-primary') : ''}`}
               style={{
-                backgroundColor: isOverCapacity
+                backgroundColor: isOverCapacity || isDropDisabled
                   ? 'var(--floorplan-status-overcapacity-bg, #fef2f2)'
                   : 'var(--floorplan-table-bg, #ffffff)',
                 borderColor: isTableDropTarget
-                  ? 'var(--color-primary, #B91C1C)'
+                  ? isFull
+                    ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
+                    : 'var(--color-primary, #B91C1C)'
                   : isOverCapacity
                     ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
                     : 'var(--floorplan-table-border, #d1d5db)',
                 borderRadius: table.shape === 'round'
                   ? '9999px'
                   : 'var(--floorplan-table-radius, 0.75rem)',
-                color: isOverCapacity
+                color: isOverCapacity || isDropDisabled
                   ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
                   : 'var(--color-foreground, #1f2937)',
               }}
@@ -630,9 +672,10 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 {assignedCount} / {table.capacity} seats
               </span>
 
-              {/* Over capacity warning badge */}
-              {isOverCapacity && (
+              {/* Over capacity / Full capacity warning badges */}
+              {isOverCapacity ? (
                 <span
+                  data-testid="table-overcapacity-badge"
                   className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce"
                   style={{
                     backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
@@ -640,7 +683,17 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 >
                   Over capacity!
                 </span>
-              )}
+              ) : isFull ? (
+                <span
+                  data-testid="table-full-badge"
+                  className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md"
+                  style={{
+                    backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
+                  }}
+                >
+                  Full
+                </span>
+              ) : null}
 
               {/* Search Match Badge */}
               {hasMatchingGuest && (
