@@ -9,7 +9,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 export const metadata: Metadata = {
   title: 'Wedding Party',
   alternates: {
-    canonical: '',
+    canonical: '/wedding-party',
   },
 };
 
