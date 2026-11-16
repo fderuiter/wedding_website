@@ -320,6 +320,7 @@ describe('Guest Login Page with Help Drawer', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'Taylor Swift' }),
+        signal: expect.any(AbortSignal),
       });
 
       expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
@@ -517,6 +518,67 @@ describe('Guest Login Page with Help Drawer', () => {
       expect(await screen.findByText(/too many requests, please try again later/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /look up invitation/i })).toBeDisabled();
       expect(queryInput).toBeDisabled();
+    });
+
+    it('disables passcode form controls and submit button when lookup is active', async () => {
+      let resolveLookup: (() => void) | null = null;
+      const fetchMock = jest.fn<typeof fetch>().mockImplementation((url) => {
+        if (url === '/api/guest/lookup') {
+          return new Promise((resolve) => {
+            resolveLookup = () => resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({ success: true, guestName: 'Alice', code: 'CODE1' }),
+            } as unknown as Response);
+          });
+        }
+        return Promise.reject(new Error('Unknown url'));
+      });
+      globalWithFetch.fetch = fetchMock;
+
+      render(<GuestLoginPage />);
+
+      const passcodeField = screen.getByPlaceholderText('Enter passcode');
+      const loginButton = screen.getByRole('button', { name: /access portal/i });
+      expect(passcodeField).not.toBeDisabled();
+      expect(loginButton).not.toBeDisabled();
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      const queryInput = screen.getByLabelText(/guest name or email/i);
+      fireEvent.change(queryInput, { target: { value: 'Alice Smith' } });
+      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+
+      // Passcode controls must be disabled during active lookup
+      expect(passcodeField).toBeDisabled();
+      expect(loginButton).toBeDisabled();
+
+      // Resolve lookup
+      if (resolveLookup) {
+        await act(async () => {
+          resolveLookup!();
+        });
+      }
+    });
+
+    it('resets lookup errors when switching tabs between instructions and lookup', async () => {
+      render(<GuestLoginPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+
+      // Trigger validation error
+      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
+      expect(await screen.findByText(/please enter your name or email address/i)).toBeInTheDocument();
+
+      // Switch to instructions tab
+      fireEvent.click(screen.getByRole('tab', { name: /instructions/i }));
+      expect(screen.queryByText(/please enter your name or email address/i)).not.toBeInTheDocument();
+
+      // Switch back to lookup tab - error must remain cleared
+      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
+      expect(screen.queryByText(/please enter your name or email address/i)).not.toBeInTheDocument();
     });
   });
 });
