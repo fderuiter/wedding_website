@@ -12,6 +12,7 @@ import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { BroadcastModal } from '@/components/admin/BroadcastModal';
 import { InvitationQRPreviewModal, InvitationQRPreviewGuest } from '@/components/admin/InvitationQRPreviewModal';
 import { InvitationQRPrintLabelsModal, PrintableInvitationCode } from '@/components/admin/InvitationQRPrintLabelsModal';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from '@/features/registry';
 
 export default function InvitationCodesDashboardPage() {
@@ -580,1002 +581,1006 @@ export default function InvitationCodesDashboardPage() {
     addToast('Shareable address collection link copied to clipboard!', 'success');
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Loading...</p></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
-
   return (
-    <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto relative pb-28">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-extrabold text-primary">Pre-Authorized Guest Invitation Codes</h1>
-        <div className="flex gap-4 flex-wrap">
-          <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
-          <Button variant="secondary" onClick={handleCopyShareableLink}>Copy Address Link</Button>
-          <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
-          <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
-          <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
-          <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
-          <Button variant="secondary" onClick={() => {
-            setBroadcastModalFilters({
-              partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
-              householdName: searchQuery || undefined,
-              attendanceStatus: attendanceFilter !== 'all' ? attendanceFilter : undefined,
-            });
-            setIsBroadcastModalOpen(true);
-          }}>Send Broadcast</Button>
-          <Button onClick={() => {
-            setNewCode({
-              guestName: '',
-              code: '',
-              email: '',
-              plusOneFirstName: '',
-              plusOneLastName: '',
-              addressLine1: '',
-              addressLine2: '',
-              city: '',
-              state: '',
-              zipCode: '',
-              country: '',
-              householdName: '',
-              partyGroup: '',
-              partyTags: '',
-            });
-            setIsCreating(true);
-          }}>Generate New Code</Button>
-        </div>
-      </div>
-
-      <CsvImportWizardModal
-        isOpen={isImporting}
-        onClose={() => setIsImporting(false)}
-        onImportComplete={() => fetchAll()}
-        existingCodes={codes.map((item) => item.code).filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))}
-      />
-
-      {isCreating && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-primary mb-8 max-w-2xl">
-          <h2 className="text-xl font-bold mb-4 text-primary">Generate Invitation Code</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <FormGroup>
-              <Label>Guest Name</Label>
-              <Input
-                type="text"
-                placeholder="e.g. John Doe"
-                value={newCode.guestName}
-                onChange={e => setNewCode({ ...newCode, guestName: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Code (Optional - auto-generated if blank)</Label>
-              <Input
-                type="text"
-                placeholder="e.g. JOHN123"
-                value={newCode.code}
-                onChange={e => setNewCode({ ...newCode, code: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Email (Optional)</Label>
-              <Input
-                type="email"
-                placeholder="guest@example.com"
-                value={newCode.email}
-                onChange={e => setNewCode({ ...newCode, email: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Plus-One First Name (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="e.g. Jane"
-                value={newCode.plusOneFirstName}
-                onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Plus-One Last Name (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="e.g. Smith"
-                value={newCode.plusOneLastName}
-                onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Address Line 1 (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="123 Main St"
-                value={newCode.addressLine1}
-                onChange={e => setNewCode({ ...newCode, addressLine1: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Address Line 2 (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="Apt 4B"
-                value={newCode.addressLine2}
-                onChange={e => setNewCode({ ...newCode, addressLine2: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>City (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="San Francisco"
-                value={newCode.city}
-                onChange={e => setNewCode({ ...newCode, city: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>State / Province (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="CA"
-                value={newCode.state}
-                onChange={e => setNewCode({ ...newCode, state: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>ZIP / Postal Code (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="94102"
-                value={newCode.zipCode}
-                onChange={e => setNewCode({ ...newCode, zipCode: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Country (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="United States"
-                value={newCode.country}
-                onChange={e => setNewCode({ ...newCode, country: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Household Name (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="e.g. Smith Household"
-                value={newCode.householdName}
-                onChange={e => setNewCode({ ...newCode, householdName: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup>
-              <Label>Party Side / Group (Optional)</Label>
-              <Input
-                type="text"
-                placeholder="e.g. Bride, Groom, Joint"
-                value={newCode.partyGroup}
-                onChange={e => setNewCode({ ...newCode, partyGroup: e.target.value })}
-              />
-            </FormGroup>
-            <FormGroup className="md:col-span-2">
-              <Label>Party Tags (Optional - comma-separated)</Label>
-              <Input
-                type="text"
-                placeholder="e.g. VIP, Rehearsal Dinner, Family"
-                value={newCode.partyTags}
-                onChange={e => setNewCode({ ...newCode, partyTags: e.target.value })}
-              />
-            </FormGroup>
-          </div>
-          <div className="flex gap-4 mt-6">
-            <Button onClick={handleSave} variant="primary">Generate</Button>
-            <Button variant="secondary" onClick={() => setIsCreating(false)}>Cancel</Button>
-          </div>
-        </div>
-      )}
-
-      {/* Catering & Dietary Summary Widget */}
-      <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 mb-8" data-testid="catering-summary-widget">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-gray-100 dark:border-gray-700/60 pb-3">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <span>🍽️</span> Catering & Dietary Summary
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Overview of guest dietary requirements and restriction counts
-            </p>
-          </div>
-          <div className="text-sm font-semibold text-primary dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-1 rounded-full self-start sm:self-auto border border-red-200 dark:border-red-800/40">
-            {cateringSummary.totalWithRestrictions} {cateringSummary.totalWithRestrictions === 1 ? 'Guest' : 'Guests'} with Dietary Notes
+    <AdminViewState
+      isLoading={isLoading}
+      error={error}
+      onRetry={fetchAll}
+      loadingMessage="Loading..."
+    >
+      <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto relative pb-28">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-extrabold text-primary">Pre-Authorized Guest Invitation Codes</h1>
+          <div className="flex gap-4 flex-wrap">
+            <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
+            <Button variant="secondary" onClick={handleCopyShareableLink}>Copy Address Link</Button>
+            <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
+            <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
+            <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
+            <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
+            <Button variant="secondary" onClick={() => {
+              setBroadcastModalFilters({
+                partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
+                householdName: searchQuery || undefined,
+                attendanceStatus: attendanceFilter !== 'all' ? attendanceFilter : undefined,
+              });
+              setIsBroadcastModalOpen(true);
+            }}>Send Broadcast</Button>
+            <Button onClick={() => {
+              setNewCode({
+                guestName: '',
+                code: '',
+                email: '',
+                plusOneFirstName: '',
+                plusOneLastName: '',
+                addressLine1: '',
+                addressLine2: '',
+                city: '',
+                state: '',
+                zipCode: '',
+                country: '',
+                householdName: '',
+                partyGroup: '',
+                partyTags: '',
+              });
+              setIsCreating(true);
+            }}>Generate New Code</Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
-          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Gluten-Free</div>
-            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.glutenFree}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegetarian</div>
-            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegetarian}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegan</div>
-            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegan}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Dairy-Free</div>
-            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.dairyFree}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Nut / Allergy</div>
-            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.nutFree}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Other</div>
-            <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.other}</div>
-          </div>
-        </div>
-      </div>
+        <CsvImportWizardModal
+          isOpen={isImporting}
+          onClose={() => setIsImporting(false)}
+          onImportComplete={() => fetchAll()}
+          existingCodes={codes.map((item) => item.code).filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))}
+        />
 
-      <div className="flex flex-col gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
-          <FormGroup className="relative flex-1 max-w-md space-y-0">
-            <Input
-              type="text"
-              placeholder="Search by name, code, email, household, tag..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search invitation codes"
-              className="w-full"
-            />
-          </FormGroup>
-
-          <div className="flex flex-wrap gap-3 items-center">
-            <FormGroup className="w-full sm:w-auto space-y-0">
-              <Select
-                id="party-group-filter"
-                aria-label="Filter by party side or group"
-                value={partyGroupFilter}
-                onChange={(e) => setPartyGroupFilter(e.target.value)}
-                className="w-full sm:w-auto"
-              >
-                <option value="all">All Party Groups</option>
-                <option value="Bride">Bride</option>
-                <option value="Groom">Groom</option>
-                <option value="Joint">Joint</option>
-                {allUniquePartyGroups
-                  .filter((g) => !['Bride', 'Groom', 'Joint'].includes(g))
-                  .map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-              </Select>
-            </FormGroup>
-
-            <FormGroup className="w-full sm:w-auto space-y-0">
-              <Select
-                id="dietary-filter"
-                aria-label="Filter by dietary category"
-                value={dietaryFilter}
-                onChange={(e) => setDietaryFilter(e.target.value)}
-                className="w-full sm:w-auto"
-              >
-                <option value="all">All Dietary Categories</option>
-                <option value="has_restriction">Has Dietary Restriction</option>
-                <option value="gluten-free">Gluten-Free</option>
-                <option value="vegetarian">Vegetarian</option>
-                <option value="vegan">Vegan</option>
-                <option value="dairy-free">Dairy-Free</option>
-                <option value="nut-free">Nut-Free / Allergy</option>
-                <option value="other">Other Dietary Restrictions</option>
-              </Select>
-            </FormGroup>
-          </div>
-        </div>
-
-        {/* Interactive Tag Filter Pills Bar */}
-        {allUniqueTags.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Party Tags:</span>
-            <button
-              type="button"
-              onClick={() => setSelectedTagFilter(null)}
-              className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
-                selectedTagFilter === null
-                  ? 'bg-primary text-white font-bold'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
-              }`}
-            >
-              All Tags
-            </button>
-            {allUniqueTags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
-                className={`px-2.5 py-1 text-xs rounded-full transition-colors font-medium ${
-                  selectedTagFilter === tag
-                    ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-300'
-                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 hover:bg-blue-100'
-                }`}
-              >
-                #{tag}
-              </button>
-            ))}
+        {isCreating && (
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-primary mb-8 max-w-2xl">
+            <h2 className="text-xl font-bold mb-4 text-primary">Generate Invitation Code</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <FormGroup>
+                <Label>Guest Name</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  value={newCode.guestName}
+                  onChange={e => setNewCode({ ...newCode, guestName: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Code (Optional - auto-generated if blank)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. JOHN123"
+                  value={newCode.code}
+                  onChange={e => setNewCode({ ...newCode, code: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Email (Optional)</Label>
+                <Input
+                  type="email"
+                  placeholder="guest@example.com"
+                  value={newCode.email}
+                  onChange={e => setNewCode({ ...newCode, email: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Plus-One First Name (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Jane"
+                  value={newCode.plusOneFirstName}
+                  onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Plus-One Last Name (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Smith"
+                  value={newCode.plusOneLastName}
+                  onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Address Line 1 (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="123 Main St"
+                  value={newCode.addressLine1}
+                  onChange={e => setNewCode({ ...newCode, addressLine1: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Address Line 2 (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="Apt 4B"
+                  value={newCode.addressLine2}
+                  onChange={e => setNewCode({ ...newCode, addressLine2: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>City (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="San Francisco"
+                  value={newCode.city}
+                  onChange={e => setNewCode({ ...newCode, city: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>State / Province (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="CA"
+                  value={newCode.state}
+                  onChange={e => setNewCode({ ...newCode, state: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>ZIP / Postal Code (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="94102"
+                  value={newCode.zipCode}
+                  onChange={e => setNewCode({ ...newCode, zipCode: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Country (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="United States"
+                  value={newCode.country}
+                  onChange={e => setNewCode({ ...newCode, country: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Household Name (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Smith Household"
+                  value={newCode.householdName}
+                  onChange={e => setNewCode({ ...newCode, householdName: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Party Side / Group (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Bride, Groom, Joint"
+                  value={newCode.partyGroup}
+                  onChange={e => setNewCode({ ...newCode, partyGroup: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup className="md:col-span-2">
+                <Label>Party Tags (Optional - comma-separated)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. VIP, Rehearsal Dinner, Family"
+                  value={newCode.partyTags}
+                  onChange={e => setNewCode({ ...newCode, partyTags: e.target.value })}
+                />
+              </FormGroup>
+            </div>
+            <div className="flex gap-4 mt-6">
+              <Button onClick={handleSave} variant="primary">Generate</Button>
+              <Button variant="secondary" onClick={() => setIsCreating(false)}>Cancel</Button>
+            </div>
           </div>
         )}
 
-        <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
-          {/* Redemption Status Tab Group */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
-            <div
-              role="tablist"
-              aria-label="Filter invitation codes by status"
-              className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={statusFilter === 'all'}
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  statusFilter === 'all'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                All ({counts.all})
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={statusFilter === 'redeemed'}
-                onClick={() => setStatusFilter('redeemed')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  statusFilter === 'redeemed'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Redeemed ({counts.redeemed})
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={statusFilter === 'unused'}
-                onClick={() => setStatusFilter('unused')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  statusFilter === 'unused'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Unused ({counts.unused})
-              </button>
+        {/* Catering & Dietary Summary Widget */}
+        <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 mb-8" data-testid="catering-summary-widget">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-gray-100 dark:border-gray-700/60 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span>🍽️</span> Catering & Dietary Summary
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Overview of guest dietary requirements and restriction counts
+              </p>
+            </div>
+            <div className="text-sm font-semibold text-primary dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-1 rounded-full self-start sm:self-auto border border-red-200 dark:border-red-800/40">
+              {cateringSummary.totalWithRestrictions} {cateringSummary.totalWithRestrictions === 1 ? 'Guest' : 'Guests'} with Dietary Notes
             </div>
           </div>
 
-          {/* Address Completion Filter */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address:</span>
-            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={() => setAddressFilter('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  addressFilter === 'all'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                All Addresses
-              </button>
-              <button
-                type="button"
-                onClick={() => setAddressFilter('complete')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  addressFilter === 'complete'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Address Complete ({counts.addressComplete})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAddressFilter('missing')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  addressFilter === 'missing'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Address Missing ({counts.addressMissing})
-              </button>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
+            <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Gluten-Free</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.glutenFree}</div>
             </div>
-          </div>
-
-          {/* RSVP Attendance Status Tab Group */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendance:</span>
-            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={() => setAttendanceFilter('all')}
-                aria-label={`All attendance (${attendanceCounts.all})`}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  attendanceFilter === 'all'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                All ({attendanceCounts.all})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAttendanceFilter('attending')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  attendanceFilter === 'attending'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Attending ({attendanceCounts.attending})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAttendanceFilter('declined')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  attendanceFilter === 'declined'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Declined ({attendanceCounts.declined})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAttendanceFilter('pending')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  attendanceFilter === 'pending'
-                    ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Pending ({attendanceCounts.pending})
-              </button>
+            <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegetarian</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegetarian}</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegan</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegan}</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Dairy-Free</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.dairyFree}</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Nut / Allergy</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.nutFree}</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Other</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.other}</div>
             </div>
           </div>
         </div>
-      </div>
 
-      {filteredCodes.length > 0 && (
-        <div className="flex items-center gap-3 mb-4 bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-          <input
-            ref={selectAllRef}
-            type="checkbox"
-            id="select-all-filtered"
-            checked={allFilteredSelected}
-            onChange={handleToggleSelectAll}
-            aria-label="Select all filtered invitation codes"
-            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
-          />
-          <label htmlFor="select-all-filtered" className="text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer">
-            Select All Filtered ({filteredCodes.length})
-          </label>
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+            <FormGroup className="relative flex-1 max-w-md space-y-0">
+              <Input
+                type="text"
+                placeholder="Search by name, code, email, household, tag..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search invitation codes"
+                className="w-full"
+              />
+            </FormGroup>
+
+            <div className="flex flex-wrap gap-3 items-center">
+              <FormGroup className="w-full sm:w-auto space-y-0">
+                <Select
+                  id="party-group-filter"
+                  aria-label="Filter by party side or group"
+                  value={partyGroupFilter}
+                  onChange={(e) => setPartyGroupFilter(e.target.value)}
+                  className="w-full sm:w-auto"
+                >
+                  <option value="all">All Party Groups</option>
+                  <option value="Bride">Bride</option>
+                  <option value="Groom">Groom</option>
+                  <option value="Joint">Joint</option>
+                  {allUniquePartyGroups
+                    .filter((g) => !['Bride', 'Groom', 'Joint'].includes(g))
+                    .map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                </Select>
+              </FormGroup>
+
+              <FormGroup className="w-full sm:w-auto space-y-0">
+                <Select
+                  id="dietary-filter"
+                  aria-label="Filter by dietary category"
+                  value={dietaryFilter}
+                  onChange={(e) => setDietaryFilter(e.target.value)}
+                  className="w-full sm:w-auto"
+                >
+                  <option value="all">All Dietary Categories</option>
+                  <option value="has_restriction">Has Dietary Restriction</option>
+                  <option value="gluten-free">Gluten-Free</option>
+                  <option value="vegetarian">Vegetarian</option>
+                  <option value="vegan">Vegan</option>
+                  <option value="dairy-free">Dairy-Free</option>
+                  <option value="nut-free">Nut-Free / Allergy</option>
+                  <option value="other">Other Dietary Restrictions</option>
+                </Select>
+              </FormGroup>
+            </div>
+          </div>
+
+          {/* Interactive Tag Filter Pills Bar */}
+          {allUniqueTags.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Party Tags:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedTagFilter(null)}
+                className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+                  selectedTagFilter === null
+                    ? 'bg-primary text-white font-bold'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                }`}
+              >
+                All Tags
+              </button>
+              {allUniqueTags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                  className={`px-2.5 py-1 text-xs rounded-full transition-colors font-medium ${
+                    selectedTagFilter === tag
+                      ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-300'
+                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+                  }`}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
+            {/* Redemption Status Tab Group */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
+              <div
+                role="tablist"
+                aria-label="Filter invitation codes by status"
+                className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={statusFilter === 'all'}
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    statusFilter === 'all'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  All ({counts.all})
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={statusFilter === 'redeemed'}
+                  onClick={() => setStatusFilter('redeemed')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    statusFilter === 'redeemed'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Redeemed ({counts.redeemed})
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={statusFilter === 'unused'}
+                  onClick={() => setStatusFilter('unused')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    statusFilter === 'unused'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Unused ({counts.unused})
+                </button>
+              </div>
+            </div>
+
+            {/* Address Completion Filter */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address:</span>
+              <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setAddressFilter('all')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    addressFilter === 'all'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  All Addresses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddressFilter('complete')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    addressFilter === 'complete'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Address Complete ({counts.addressComplete})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddressFilter('missing')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    addressFilter === 'missing'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Address Missing ({counts.addressMissing})
+                </button>
+              </div>
+            </div>
+
+            {/* RSVP Attendance Status Tab Group */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendance:</span>
+              <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceFilter('all')}
+                  aria-label={`All attendance (${attendanceCounts.all})`}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    attendanceFilter === 'all'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  All ({attendanceCounts.all})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceFilter('attending')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    attendanceFilter === 'attending'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Attending ({attendanceCounts.attending})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceFilter('declined')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    attendanceFilter === 'declined'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Declined ({attendanceCounts.declined})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceFilter('pending')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    attendanceFilter === 'pending'
+                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Pending ({attendanceCounts.pending})
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
 
-      <div className="grid gap-4 pb-10" ref={containerRef}>
-        {filteredCodes.map((item) => {
-          const hasAddress = isAddressComplete(item);
-          return (
-            <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="flex items-center gap-4 space-y-1">
-                <input
-                  type="checkbox"
-                  aria-label={`Select invitation code for ${item.guestName}`}
-                  checked={selectedIdsSet.has(item.id)}
-                  onChange={() => handleToggleSelectRow(item.id)}
-                  className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
-                />
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
-                    {item.isSample && (
-                      <span
-                        className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
-                        data-testid="sample-guest-badge"
-                      >
-                        Sample
-                      </span>
-                    )}
-                    {item.householdName && (
-                      <span
-                        className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
-                        data-testid="household-badge"
-                      >
-                        🏠 {item.householdName}
-                      </span>
-                    )}
-                    {item.partyGroup && (
-                      <span
-                        className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
-                        data-testid="party-group-badge"
-                      >
-                        👥 {item.partyGroup}
-                      </span>
-                    )}
-                  </div>
-                  {(item.plusOneFirstName || item.plusOneLastName) && (
-                    <div className="text-sm text-gray-600 dark:text-gray-300">
-                      Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-                      Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="text-xs py-0.5 px-2 h-auto"
-                      onClick={() => setQrPreviewGuest(item)}
-                      aria-label={`View QR code for ${item.guestName}`}
-                    >
-                      View QR
-                    </Button>
-                  </div>
+        {filteredCodes.length > 0 && (
+          <div className="flex items-center gap-3 mb-4 bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              id="select-all-filtered"
+              checked={allFilteredSelected}
+              onChange={handleToggleSelectAll}
+              aria-label="Select all filtered invitation codes"
+              className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+            />
+            <label htmlFor="select-all-filtered" className="text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer">
+              Select All Filtered ({filteredCodes.length})
+            </label>
+          </div>
+        )}
 
-                  {/* Party Tags Display */}
-                  {item.partyTags && item.partyTags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {item.partyTags.map((tag) => (
+        <div className="grid gap-4 pb-10" ref={containerRef}>
+          {filteredCodes.map((item) => {
+            const hasAddress = isAddressComplete(item);
+            return (
+              <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center gap-4 space-y-1">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select invitation code for ${item.guestName}`}
+                    checked={selectedIdsSet.has(item.id)}
+                    onChange={() => handleToggleSelectRow(item.id)}
+                    className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
+                      {item.isSample && (
                         <span
-                          key={tag}
-                          className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
-                          data-testid="party-tag-pill"
+                          className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
+                          data-testid="sample-guest-badge"
                         >
-                          #{tag}
+                          Sample
                         </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Mailing Address Display */}
-                  <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
-                    <span className="font-bold">Mailing Address: </span>
-                    {hasAddress ? (
-                      <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
-                        {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
-                      </span>
-                    ) : item.addressLine1 ? (
-                      <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
-                        Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
-                    <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
-                    <span>
-                      RSVP:{' '}
-                      <span
-                        className={
-                          getAttendanceStatus(item) === 'attending'
-                            ? 'text-green-600 font-semibold'
-                            : getAttendanceStatus(item) === 'declined'
-                              ? 'text-red-600 font-semibold'
-                              : 'text-amber-600 font-semibold'
-                        }
-                      >
-                        {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
-                      </span>
-                    </span>
-                  </div>
-                  {item.dietaryNotes && item.dietaryNotes.trim() && (
-                    <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
-                      <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
-                    </div>
-                  )}
-
-                  {/* Private Sub-Event Access Matrix Toggles */}
-                  <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
-                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
-                      Private Sub-Event Permissions:
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {subEvents.length === 0 ? (
-                        <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
-                      ) : (
-                        subEvents.map((evt) => {
-                          const isAllowed = (accessMatrix[item.id] || []).includes(evt.id);
-                          return (
-                            <label
-                              key={evt.id}
-                              className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                isAllowed
-                                  ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
-                                  : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isAllowed}
-                                aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
-                                onChange={(e) => handleToggleSubEventAccess(item.id, evt.id, e.target.checked)}
-                                className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
-                              />
-                              <span>
-                                {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
-                              </span>
-                            </label>
-                          );
-                        })
                       )}
+                      {item.householdName && (
+                        <span
+                          className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
+                          data-testid="household-badge"
+                        >
+                          🏠 {item.householdName}
+                        </span>
+                      )}
+                      {item.partyGroup && (
+                        <span
+                          className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
+                          data-testid="party-group-badge"
+                        >
+                          👥 {item.partyGroup}
+                        </span>
+                      )}
+                    </div>
+                    {(item.plusOneFirstName || item.plusOneLastName) && (
+                      <div className="text-sm text-gray-600 dark:text-gray-300">
+                        Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
+                        Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="text-xs py-0.5 px-2 h-auto"
+                        onClick={() => setQrPreviewGuest(item)}
+                        aria-label={`View QR code for ${item.guestName}`}
+                      >
+                        View QR
+                      </Button>
+                    </div>
+
+                    {/* Party Tags Display */}
+                    {item.partyTags && item.partyTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.partyTags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+                            data-testid="party-tag-pill"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Mailing Address Display */}
+                    <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
+                      <span className="font-bold">Mailing Address: </span>
+                      {hasAddress ? (
+                        <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
+                          {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                        </span>
+                      ) : item.addressLine1 ? (
+                        <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
+                          Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
+                      <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+                      <span>
+                        RSVP:{' '}
+                        <span
+                          className={
+                            getAttendanceStatus(item) === 'attending'
+                              ? 'text-green-600 font-semibold'
+                              : getAttendanceStatus(item) === 'declined'
+                                ? 'text-red-600 font-semibold'
+                                : 'text-amber-600 font-semibold'
+                          }
+                        >
+                          {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
+                        </span>
+                      </span>
+                    </div>
+                    {item.dietaryNotes && item.dietaryNotes.trim() && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
+                        <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+                      </div>
+                    )}
+
+                    {/* Private Sub-Event Access Matrix Toggles */}
+                    <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
+                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                        Private Sub-Event Permissions:
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {subEvents.length === 0 ? (
+                          <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+                        ) : (
+                          subEvents.map((evt) => {
+                            const isAllowed = (accessMatrix[item.id] || []).includes(evt.id);
+                            return (
+                              <label
+                                key={evt.id}
+                                className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
+                                  isAllowed
+                                    ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
+                                    : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isAllowed}
+                                  aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
+                                  onChange={(e) => handleToggleSubEventAccess(item.id, evt.id, e.target.checked)}
+                                  className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                                />
+                                <span>
+                                  {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  aria-label={`Delete code for ${item.guestName}`}
-                  onClick={(e) => handleDelete(item.id, e)}
-                >
-                  Delete
+                <div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    aria-label={`Delete code for ${item.guestName}`}
+                    onClick={(e) => handleDelete(item.id, e)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+          {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
+          {codes.length > 0 && filteredCodes.length === 0 && (
+            <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
+          )}
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div
+            role="region"
+            aria-label="Batch actions toolbar"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-3xl bg-gray-900 text-white dark:bg-gray-800 dark:text-white p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 text-sm animate-fade-in"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-bold px-2.5 py-1 bg-primary text-white rounded-lg text-xs tracking-wide uppercase">
+                {selectedIds.length} Selected
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="secondary" onClick={() => {
+                setBroadcastModalFilters({ selectedIds });
+                setIsBroadcastModalOpen(true);
+              }}>
+                Send Broadcast ({selectedIds.length})
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setBulkHouseholdModalOpen(true)}>
+                Set Household
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setBulkTagModalOpen(true)}>
+                Manage Tags
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setBulkSubEventModalOpen(true)}>
+                Sub-Event Access
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleBatchMarkRedeemed}>
+                Mark as Redeemed
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleBatchMarkUnused}>
+                Mark as Unused
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handlePrintSelectedLabels}>
+                Print QR Labels
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleExportSelectedCsv}>
+                Export Selected CSV
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => setIsBatchDeleteModalOpen(true)}>
+                Delete Selected
+              </Button>
+              <Button size="sm" variant="ghost" className="text-gray-300 hover:text-white" onClick={() => setSelectedIds([])}>
+                Deselect All
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {bulkHouseholdModalOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Set Household Name ({selectedIds.length} Selected)
+              </h2>
+              <FormGroup>
+                <Label>Household Name</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Smith Household"
+                  value={bulkHouseholdInput}
+                  onChange={(e) => setBulkHouseholdInput(e.target.value)}
+                />
+              </FormGroup>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setBulkHouseholdModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={handleBulkSetHousehold}>
+                  Apply Household Name
                 </Button>
               </div>
             </div>
-          );
-        })}
-        {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
-        {codes.length > 0 && filteredCodes.length === 0 && (
-          <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
+          </div>
         )}
-      </div>
 
-      {selectedIds.length > 0 && (
-        <div
-          role="region"
-          aria-label="Batch actions toolbar"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-3xl bg-gray-900 text-white dark:bg-gray-800 dark:text-white p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 text-sm animate-fade-in"
-        >
-          <div className="flex items-center gap-2">
-            <span className="font-bold px-2.5 py-1 bg-primary text-white rounded-lg text-xs tracking-wide uppercase">
-              {selectedIds.length} Selected
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => {
-              setBroadcastModalFilters({ selectedIds });
-              setIsBroadcastModalOpen(true);
-            }}>
-              Send Broadcast ({selectedIds.length})
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setBulkHouseholdModalOpen(true)}>
-              Set Household
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setBulkTagModalOpen(true)}>
-              Manage Tags
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setBulkSubEventModalOpen(true)}>
-              Sub-Event Access
-            </Button>
-            <Button size="sm" variant="secondary" onClick={handleBatchMarkRedeemed}>
-              Mark as Redeemed
-            </Button>
-            <Button size="sm" variant="secondary" onClick={handleBatchMarkUnused}>
-              Mark as Unused
-            </Button>
-            <Button size="sm" variant="secondary" onClick={handlePrintSelectedLabels}>
-              Print QR Labels
-            </Button>
-            <Button size="sm" variant="secondary" onClick={handleExportSelectedCsv}>
-              Export Selected CSV
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => setIsBatchDeleteModalOpen(true)}>
-              Delete Selected
-            </Button>
-            <Button size="sm" variant="ghost" className="text-gray-300 hover:text-white" onClick={() => setSelectedIds([])}>
-              Deselect All
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {bulkHouseholdModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              Set Household Name ({selectedIds.length} Selected)
-            </h2>
-            <FormGroup>
-              <Label>Household Name</Label>
-              <Input
-                type="text"
-                placeholder="e.g. Smith Household"
-                value={bulkHouseholdInput}
-                onChange={(e) => setBulkHouseholdInput(e.target.value)}
-              />
-            </FormGroup>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setBulkHouseholdModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleBulkSetHousehold}>
-                Apply Household Name
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {bulkTagModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              Manage Party Tags ({selectedIds.length} Selected)
-            </h2>
-            <div className="flex gap-4">
-              <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="radio"
-                  name="tagAction"
-                  checked={bulkTagAction === 'add'}
-                  onChange={() => setBulkTagAction('add')}
+        {bulkTagModalOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Manage Party Tags ({selectedIds.length} Selected)
+              </h2>
+              <div className="flex gap-4">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="tagAction"
+                    checked={bulkTagAction === 'add'}
+                    onChange={() => setBulkTagAction('add')}
+                  />
+                  <span>Add Tag</span>
+                </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="tagAction"
+                    checked={bulkTagAction === 'remove'}
+                    onChange={() => setBulkTagAction('remove')}
+                  />
+                  <span>Remove Tag</span>
+                </label>
+              </div>
+              <FormGroup>
+                <Label>Tag Name</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. VIP"
+                  value={bulkTagInput}
+                  onChange={(e) => setBulkTagInput(e.target.value)}
                 />
-                <span>Add Tag</span>
-              </label>
-              <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="radio"
-                  name="tagAction"
-                  checked={bulkTagAction === 'remove'}
-                  onChange={() => setBulkTagAction('remove')}
-                />
-                <span>Remove Tag</span>
-              </label>
-            </div>
-            <FormGroup>
-              <Label>Tag Name</Label>
-              <Input
-                type="text"
-                placeholder="e.g. VIP"
-                value={bulkTagInput}
-                onChange={(e) => setBulkTagInput(e.target.value)}
-              />
-            </FormGroup>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setBulkTagModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleBulkUpdateTags}>
-                Apply Tag Changes
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {bulkSubEventModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              Batch Sub-Event Access ({selectedIds.length} Guests Selected)
-            </h2>
-
-            <div>
-              <label className="block text-sm font-semibold mb-1">Action:</label>
-              <select
-                aria-label="Batch sub-event action"
-                value={bulkSubEventAction}
-                onChange={(e) => setBulkSubEventAction(e.target.value as any)}
-                className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600"
-              >
-                <option value="grant">Grant Access</option>
-                <option value="revoke">Revoke Access</option>
-                <option value="set">Set Access (Replace)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold mb-2">Select Private Sub-Events:</label>
-              <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
-                {subEvents.length === 0 ? (
-                  <p className="text-xs text-gray-500 italic">No sub-events found.</p>
-                ) : (
-                  subEvents.map((se) => {
-                    const isChecked = bulkSelectedSubEventIds.includes(se.id);
-                    return (
-                      <label key={se.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setBulkSelectedSubEventIds([...bulkSelectedSubEventIds, se.id]);
-                            } else {
-                              setBulkSelectedSubEventIds(
-                                bulkSelectedSubEventIds.filter((id) => id !== se.id)
-                              );
-                            }
-                          }}
-                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                        />
-                        <span>
-                          {se.title} {se.isPrivate ? '(Private)' : '(Public)'}
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
+              </FormGroup>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setBulkTagModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={handleBulkUpdateTags}>
+                  Apply Tag Changes
+                </Button>
               </div>
             </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setBulkSubEventModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleBatchSubEventAccess}>
-                Apply Batch Access
-              </Button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {isBatchDeleteModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="batch-delete-modal-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-            <h2 id="batch-delete-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
-              Confirm Batch Deletion
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Are you sure you want to delete <span className="font-bold text-red-600 dark:text-red-400">{selectedIds.length}</span> selected invitation code(s)? This action cannot be undone.
-            </p>
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
-              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                Selected Guests:
-              </p>
-              <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
-                {codes
-                  .filter((c) => selectedIdsSet.has(c.id))
-                  .map((c) => (
-                    <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                      <span className="font-medium">{c.guestName}</span>
-                      <code className="text-xs font-mono text-gray-500 dark:text-gray-400">{c.code}</code>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setIsBatchDeleteModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={handleConfirmBatchDelete}>
-                Delete {selectedIds.length} Code(s)
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+        {bulkSubEventModalOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Batch Sub-Event Access ({selectedIds.length} Guests Selected)
+              </h2>
 
-      {isSubEventModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="sub-event-modal-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-            <h2 id="sub-event-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
-              Create Timeline Sub-Event
-            </h2>
-            <div className="space-y-3">
-              <FormGroup>
-                <Label>Event Title</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Rehearsal Dinner"
-                  value={newSubEvent.title}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, title: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Description / Notes</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Invitation only dinner for bridal party"
-                  value={newSubEvent.description}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, description: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Location</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Sunset Bistro"
-                  value={newSubEvent.locationName}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, locationName: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Privacy Setting</Label>
-                <div className="flex items-center gap-4 pt-1">
-                  <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="isPrivate"
-                      checked={newSubEvent.isPrivate}
-                      onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: true })}
-                      className="text-primary focus:ring-primary"
-                    />
-                    <span className="font-semibold text-red-600 dark:text-red-400">Private Event</span> (Restricted)
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="isPrivate"
-                      checked={!newSubEvent.isPrivate}
-                      onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: false })}
-                      className="text-primary focus:ring-primary"
-                    />
-                    <span className="font-semibold text-green-600 dark:text-green-400">Public Event</span> (Visible to all)
-                  </label>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Action:</label>
+                <select
+                  aria-label="Batch sub-event action"
+                  value={bulkSubEventAction}
+                  onChange={(e) => setBulkSubEventAction(e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600"
+                >
+                  <option value="grant">Grant Access</option>
+                  <option value="revoke">Revoke Access</option>
+                  <option value="set">Set Access (Replace)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">Select Private Sub-Events:</label>
+                <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
+                  {subEvents.length === 0 ? (
+                    <p className="text-xs text-gray-500 italic">No sub-events found.</p>
+                  ) : (
+                    subEvents.map((se) => {
+                      const isChecked = bulkSelectedSubEventIds.includes(se.id);
+                      return (
+                        <label key={se.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setBulkSelectedSubEventIds([...bulkSelectedSubEventIds, se.id]);
+                              } else {
+                                setBulkSelectedSubEventIds(
+                                  bulkSelectedSubEventIds.filter((id) => id !== se.id)
+                                );
+                              }
+                            }}
+                            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                          />
+                          <span>
+                            {se.title} {se.isPrivate ? '(Private)' : '(Public)'}
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
                 </div>
-              </FormGroup>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setIsSubEventModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleCreateSubEvent}>
-                Create Event
-              </Button>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setBulkSubEventModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={handleBatchSubEventAccess}>
+                  Apply Batch Access
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <BroadcastModal
-        isOpen={isBroadcastModalOpen}
-        onClose={() => setIsBroadcastModalOpen(false)}
-        targetFilters={broadcastModalFilters}
-        selectedCount={broadcastModalFilters?.selectedIds?.length}
-        subEvents={subEvents}
-      />
+        {isBatchDeleteModalOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="batch-delete-modal-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+              <h2 id="batch-delete-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
+                Confirm Batch Deletion
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Are you sure you want to delete <span className="font-bold text-red-600 dark:text-red-400">{selectedIds.length}</span> selected invitation code(s)? This action cannot be undone.
+              </p>
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                  Selected Guests:
+                </p>
+                <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
+                  {codes
+                    .filter((c) => selectedIdsSet.has(c.id))
+                    .map((c) => (
+                      <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                        <span className="font-medium">{c.guestName}</span>
+                        <code className="text-xs font-mono text-gray-500 dark:text-gray-400">{c.code}</code>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setIsBatchDeleteModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={handleConfirmBatchDelete}>
+                  Delete {selectedIds.length} Code(s)
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
-      <InvitationQRPreviewModal
-        isOpen={Boolean(qrPreviewGuest)}
-        onClose={() => setQrPreviewGuest(null)}
-        guest={qrPreviewGuest}
-      />
+        {isSubEventModalOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sub-event-modal-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+              <h2 id="sub-event-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
+                Create Timeline Sub-Event
+              </h2>
+              <div className="space-y-3">
+                <FormGroup>
+                  <Label>Event Title</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. Rehearsal Dinner"
+                    value={newSubEvent.title}
+                    onChange={(e) => setNewSubEvent({ ...newSubEvent, title: e.target.value })}
+                  />
+                </FormGroup>
+                <FormGroup>
+                  <Label>Description / Notes</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. Invitation only dinner for bridal party"
+                    value={newSubEvent.description}
+                    onChange={(e) => setNewSubEvent({ ...newSubEvent, description: e.target.value })}
+                  />
+                </FormGroup>
+                <FormGroup>
+                  <Label>Location</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. Sunset Bistro"
+                    value={newSubEvent.locationName}
+                    onChange={(e) => setNewSubEvent({ ...newSubEvent, locationName: e.target.value })}
+                  />
+                </FormGroup>
+                <FormGroup>
+                  <Label>Privacy Setting</Label>
+                  <div className="flex items-center gap-4 pt-1">
+                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="isPrivate"
+                        checked={newSubEvent.isPrivate}
+                        onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: true })}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span className="font-semibold text-red-600 dark:text-red-400">Private Event</span> (Restricted)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="isPrivate"
+                        checked={!newSubEvent.isPrivate}
+                        onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: false })}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span className="font-semibold text-green-600 dark:text-green-400">Public Event</span> (Visible to all)
+                    </label>
+                  </div>
+                </FormGroup>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setIsSubEventModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateSubEvent}>
+                  Create Event
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
-      <InvitationQRPrintLabelsModal
-        isOpen={isPrintLabelsModalOpen}
-        onClose={() => setIsPrintLabelsModalOpen(false)}
-        codes={printLabelsList}
-      />
-    </div>
+        <BroadcastModal
+          isOpen={isBroadcastModalOpen}
+          onClose={() => setIsBroadcastModalOpen(false)}
+          targetFilters={broadcastModalFilters}
+          selectedCount={broadcastModalFilters?.selectedIds?.length}
+          subEvents={subEvents}
+        />
+
+        <InvitationQRPreviewModal
+          isOpen={Boolean(qrPreviewGuest)}
+          onClose={() => setQrPreviewGuest(null)}
+          guest={qrPreviewGuest}
+        />
+
+        <InvitationQRPrintLabelsModal
+          isOpen={isPrintLabelsModalOpen}
+          onClose={() => setIsPrintLabelsModalOpen(false)}
+          codes={printLabelsList}
+        />
+      </div>
+    </AdminViewState>
   );
 }
