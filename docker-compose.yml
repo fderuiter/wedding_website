@@ -19,12 +19,13 @@ services:
       retries: 5
 
   migration:
+    image: wedding-website:latest
     build:
       context: .
       cache_from:
-        - type=gha,scope=migration
+        - type=gha,scope=app
       cache_to:
-        - type=gha,scope=migration,mode=max
+        - type=gha,scope=app,mode=max
     command: npx prisma migrate deploy
     environment:
       DATABASE_URL: postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}
@@ -34,6 +35,7 @@ services:
     restart: "no"
 
   app:
+    image: wedding-website:latest
     build:
       context: .
       cache_from:
