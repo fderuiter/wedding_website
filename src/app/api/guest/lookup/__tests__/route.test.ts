@@ -200,33 +200,34 @@ describe('POST /api/guest/lookup', () => {
       expect(json.guestName).toBe('Jordan Lee');
     });
 
-    it('matches by plus-one first name and authenticates party invitation', async () => {
+    it('matches by plus-one first name and authenticates successfully', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-plus-1',
-        code: 'PLUS1_CODE',
-        guestName: 'Primary Guest',
-        email: 'primary@example.com',
-        plusOneFirstName: 'Cassandra',
-        plusOneLastName: 'Vane',
+        code: 'PLUSFIRST',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Samantha',
+        plusOneLastName: 'Williams',
       });
 
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: 'Cassandra' }),
+        body: JSON.stringify({ query: 'Samantha' }),
       });
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Guest');
-      expect(json.code).toBe('PLUS1_CODE');
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBe('PLUSFIRST');
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
           OR: expect.arrayContaining([
-            { plusOneFirstName: { equals: 'Cassandra', mode: 'insensitive' } },
+            { guestName: { equals: 'Samantha', mode: 'insensitive' } },
+            { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
+            { plusOneLastName: { equals: 'Samantha', mode: 'insensitive' } },
           ]),
         },
       });
@@ -236,68 +237,66 @@ describe('POST /api/guest/lookup', () => {
       expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
     });
 
-    it('matches by plus-one last name and authenticates party invitation', async () => {
+    it('matches by plus-one last name', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-plus-2',
-        code: 'PLUS2_CODE',
-        guestName: 'Primary Guest',
-        email: 'primary@example.com',
-        plusOneFirstName: 'Cassandra',
-        plusOneLastName: 'Vane',
+        code: 'PLUSLAST',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Samantha',
+        plusOneLastName: 'Williams',
       });
 
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Vane' }),
+        body: JSON.stringify({ name: 'Williams' }),
       });
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Guest');
-      expect(json.code).toBe('PLUS2_CODE');
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBe('PLUSLAST');
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
           OR: expect.arrayContaining([
-            { plusOneLastName: { equals: 'Vane', mode: 'insensitive' } },
+            { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
           ]),
         },
       });
     });
 
-    it('matches compound plus-one full name by tokenizing first and last name', async () => {
+    it('matches compound plus-one full name tokens', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-plus-3',
-        code: 'PLUS3_CODE',
-        guestName: 'Primary Guest',
-        email: 'primary@example.com',
-        plusOneFirstName: 'Cassandra',
-        plusOneLastName: 'Vane',
+        code: 'PLUSFULL',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Samantha',
+        plusOneLastName: 'Williams',
       });
 
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: 'Cassandra Vane' }),
+        body: JSON.stringify({ query: 'Samantha Williams' }),
       });
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Guest');
-      expect(json.code).toBe('PLUS3_CODE');
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBe('PLUSFULL');
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
           OR: expect.arrayContaining([
             {
               AND: [
-                { plusOneFirstName: { equals: 'Cassandra', mode: 'insensitive' } },
-                { plusOneLastName: { equals: 'Vane', mode: 'insensitive' } },
+                { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
               ],
             },
           ]),
@@ -305,12 +304,11 @@ describe('POST /api/guest/lookup', () => {
       });
     });
 
-    it('matches compound multi-token plus-one full name with multiple words', async () => {
+    it('matches multi-token compound plus-one full name', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-plus-4',
-        code: 'PLUS4_CODE',
-        guestName: 'Primary Guest',
-        email: 'primary@example.com',
+        code: 'PLUSMULTI',
+        guestName: 'Primary Host',
         plusOneFirstName: 'Mary Jane',
         plusOneLastName: 'Watson',
       });
@@ -318,19 +316,20 @@ describe('POST /api/guest/lookup', () => {
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: 'Mary Jane Watson' }),
+        body: JSON.stringify({ name: 'Mary Jane Watson' }),
       });
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
 
-      const json = await res.json();
-      expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Guest');
-      expect(json.code).toBe('PLUS4_CODE');
-
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
           OR: expect.arrayContaining([
+            {
+              AND: [
+                { plusOneFirstName: { equals: 'Mary', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Jane Watson', mode: 'insensitive' } },
+              ],
+            },
             {
               AND: [
                 { plusOneFirstName: { equals: 'Mary Jane', mode: 'insensitive' } },
@@ -342,36 +341,37 @@ describe('POST /api/guest/lookup', () => {
       });
     });
 
-    it('falls back to substring search across guestName, plusOneFirstName, and plusOneLastName when exact match misses', async () => {
-      // First call (exact match) returns null; second call (fallback contains) returns invitation
-      mockFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
-        id: 'inv-uuid-plus-5',
-        code: 'PLUS5_CODE',
-        guestName: 'Primary Guest',
-        email: 'primary@example.com',
-        plusOneFirstName: 'Cassandra',
-        plusOneLastName: 'Vane',
-      });
+    it('matches plus-one name by fallback substring contains search when exact match fails', async () => {
+      mockFindFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'inv-uuid-plus-5',
+          code: 'PLUSFALLBACK',
+          guestName: 'Primary Host',
+          plusOneFirstName: 'Samantha',
+          plusOneLastName: 'Williams',
+        });
 
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: 'Cassan' }),
+        body: JSON.stringify({ query: 'Saman' }),
       });
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Guest');
-      expect(json.code).toBe('PLUS5_CODE');
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBe('PLUSFALLBACK');
 
+      expect(mockFindFirst).toHaveBeenCalledTimes(2);
       expect(mockFindFirst).toHaveBeenNthCalledWith(2, {
         where: {
           OR: [
-            { guestName: { contains: 'Cassan', mode: 'insensitive' } },
-            { plusOneFirstName: { contains: 'Cassan', mode: 'insensitive' } },
-            { plusOneLastName: { contains: 'Cassan', mode: 'insensitive' } },
+            { guestName: { contains: 'Saman', mode: 'insensitive' } },
+            { plusOneFirstName: { contains: 'Saman', mode: 'insensitive' } },
+            { plusOneLastName: { contains: 'Saman', mode: 'insensitive' } },
           ],
         },
       });

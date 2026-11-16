@@ -73,25 +73,87 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 Automated schema migrations are performed **before** traffic is shifted to new Cloud Run container revisions.
 
 ### Primary Migration Path: Automated GitHub Actions CI/CD Pipeline
-In the release pipeline ([`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)), database migrations do not run inline. Instead, migrations are delegated to a reusable workflow ([`.github/workflows/db-migrate.yml`](../../.github/workflows/db-migrate.yml)) that executes after release artifacts are published (`publish-artifact`) and before the application container is deployed to Google Cloud Run (`deploy-provider`):
+In the release pipeline ([`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)), database migrations do not run inline. Instead, the release pipeline implements a two-tier staged release architecture that isolates **staging** and **production** database environments. Database migrations are delegated to a reusable workflow ([`.github/workflows/db-migrate.yml`](../../.github/workflows/db-migrate.yml)) executed prior to deploying application container revisions to Google Cloud Run in each respective tier:
+
+*   **Staging Tier (`staging-database-migration`)**: Executes automatically after release artifacts are published (`publish-artifact`) and pre-deployment schema compatibility checks pass (`schema-compatibility`). It applies pending schema migrations to the isolated staging database before `staging-deploy-provider` updates the staging Cloud Run container revision and runs automated health checks ([`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)).
+*   **Production Tier (`production-database-migration`)**: Protected by a mandatory GitHub Environment reviewer approval gate (`environment: production`). Once designated maintainers review the pre-flight schema migration status and verify staging health check results, the migration executes against the live production database before `production-deploy-provider` shifts live traffic to the new Cloud Run revision ([`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)).
+
+For full architectural diagrams and operational guidance, refer to the canonical release documentation in [DEPLOYMENT.md: Continuous Delivery Pipeline Architecture](../../DEPLOYMENT.md#continuous-delivery-pipeline-architecture) and [DEPLOYMENT.md: Staging Promotion & Approval Workflow](../../DEPLOYMENT.md#staging-promotion--approval-workflow).
 
 ```yaml
-database-migration:
-  name: Execute Database Migration
-  needs: publish-artifact
+# Staging Environment Pipeline (Automated on push to main or workflow dispatch)
+staging-database-migration:
+  name: Staging Database Migration
+  needs: [publish-artifact, schema-compatibility]
+  if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
   uses: ./.github/workflows/db-migrate.yml
   with:
-    environment: ${{ inputs.environment || 'production' }}
+    environment: 'staging'
+  secrets: inherit
+
+staging-deploy-provider:
+  name: Staging Provider Deployment
+  needs: [publish-artifact, staging-database-migration]
+  if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+  uses: ./.github/workflows/deploy-provider.yml
+  with:
+    environment: 'staging'
+    image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+    provider: ${{ inputs.provider || 'google-cloud-run' }}
+  secrets: inherit
+
+# Production Environment Pipeline (Mandatory Reviewer Gate & Promotion)
+production-database-migration:
+  name: Production Database Migration
+  needs: [publish-artifact, schema-compatibility, staging-verify-deployment]
+  if: |
+    always() &&
+    (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
+    (needs.schema-compatibility.result == 'success') &&
+    (needs.publish-artifact.result == 'success') &&
+    (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
+  uses: ./.github/workflows/db-migrate.yml
+  with:
+    environment: 'production'
+  secrets: inherit
+
+production-deploy-provider:
+  name: Production Provider Deployment
+  needs: [publish-artifact, staging-verify-deployment, production-database-migration]
+  if: |
+    always() &&
+    (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
+    (needs.publish-artifact.result == 'success') &&
+    (needs.production-database-migration.result == 'success') &&
+    (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
+  uses: ./.github/workflows/deploy-provider.yml
+  with:
+    environment: 'production'
+    image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+    provider: ${{ inputs.provider || 'google-cloud-run' }}
   secrets: inherit
 ```
 
-#### Workflow Parameters & Preflight Checks
-The reusable database migration workflow enforces strict preflight validation and safety controls before executing schema changes:
+#### Production Reviewer Approval Gate & Promotion
+To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules:
+1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`. Staging migrations and Cloud Run deployment proceed automatically.
+2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the pipeline and notifies designated maintainers. Maintainers review the preflight schema summary, altered tables/columns, and staging health check outcome before approving the deployment.
+3. **Automated Rollback Guarantee**: If the production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/rollback.yml` is automatically triggered to restore the previous healthy container tag (`previous_tag`) **without requiring a second human approval gate**.
 
-*   **Workflow Inputs**:
-    *   `environment`: Target deployment environment (`production`, `staging`, or `development`; defaults to `'production'`).
+#### Workflow Parameters, Manual Dispatches & Preflight Checks
+The release pipeline supports automated merges as well as manual triggers via GitHub Actions `workflow_dispatch`:
+
+*   **Release Pipeline Manual Dispatches (`deploy.yml`)**:
+    *   `environment`: Target deployment scope:
+        *   `all` (default): Executes staging migration and deployment, validates staging health, halts for the mandatory production reviewer approval gate, and promotes to production.
+        *   `staging`: Dispatches only `staging-database-migration` and `staging-deploy-provider`, validating changes in the staging environment without promoting to production.
+        *   `production`: Directly targets `production-database-migration` and `production-deploy-provider`, bypassing staging and immediately routing to the mandatory production approval gate.
+    *   `provider`: Hosting provider adapter (defaults to `google-cloud-run`).
+    *   `previous_tag`: Image tag used by automated rollback if health checks fail (defaults to `latest`).
+*   **Standalone Database Migration Dispatches (`db-migrate.yml`)**:
+    *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. It accepts `environment` (`production`, `staging`, or `development`) and execution confirmation (`confirm: true`).
 *   **Workflow Secrets**:
-    *   `DATABASE_URL` (Required): Mandatory PostgreSQL connection string. Must start with `postgres://` or `postgresql://`. When using connection poolers (such as PgBouncer or Neon pooling), configure direct, non-pooling connection strings for migration operations.
+    *   `DATABASE_URL` (Required): Mandatory PostgreSQL connection string scoped to the respective GitHub Environment (`staging` or `production`). Must start with `postgres://` or `postgresql://`. When using connection poolers (such as PgBouncer or Neon pooling), configure direct, non-pooling connection strings for migration operations.
 *   **Preflight Schema Compatibility Linting**:
     Executes `npm run lint:migrations` prior to running migrations. The linter validates all migration SQL in `prisma/migrations/` to prevent unannotated destructive operations (such as `DROP TABLE` or `DROP COLUMN`). Destructive DDL statements must be explicitly annotated with `-- allow-destructive: <reason>`.
 *   **Database Status & Schema Drift Detection**:

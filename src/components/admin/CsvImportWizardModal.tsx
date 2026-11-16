@@ -1041,6 +1041,7 @@ export function CsvImportWizardModal({
 
   const stateRef = useRef(state);
   stateRef.current = state;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dispatch = useCallback((action: WizardAction) => {
     stateRef.current = wizardReducer(stateRef.current, action, existingDbSetRef.current);
@@ -1762,6 +1763,7 @@ export function CsvImportWizardModal({
             </p>
             <div className="border-2 border-dashed border-gray-300 dark:border-zinc-700 rounded-xl p-8 text-center bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".csv,text/csv"
                 id="csv-file-input"
@@ -1770,7 +1772,15 @@ export function CsvImportWizardModal({
               />
               <label
                 htmlFor="csv-file-input"
-                className="cursor-pointer flex flex-col items-center justify-center space-y-2"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className="cursor-pointer flex flex-col items-center justify-center space-y-2 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
               >
                 <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary text-xl font-bold">
                   📄

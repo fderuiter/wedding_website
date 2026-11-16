@@ -9,6 +9,14 @@ import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
+declare module 'react-leaflet' {
+  // eslint-disable-next-line unused-imports/no-unused-vars
+  interface MapContainerProps {
+    role?: string;
+    'aria-label'?: string;
+  }
+}
+
 function escapeHtml(str: string) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -137,6 +145,8 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCente
     return null;
   }
 
+  const { validAttractions } = calculateBoundsAndCentroid(attractions, defaultCenter);
+
   const tileUrl = resolvedTheme === 'dark'
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
     : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
@@ -144,13 +154,19 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCente
   const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
   return (
-    <MapContainer center={defaultCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
+    <MapContainer
+      center={defaultCenter}
+      zoom={13}
+      style={{ height: '100%', width: '100%' }}
+      role="region"
+      aria-label="Things to do map"
+    >
       <MapController attractions={attractions} defaultCenter={defaultCenter} />
       <TileLayer
         url={tileUrl}
         attribution={tileAttribution}
       />
-      {attractions.map((attraction) => {
+      {validAttractions.map((attraction) => {
         const directionsUrl = resolveDirectionsUrl(attraction);
         const icon = createMapMarkerIcon(attraction.name);
 

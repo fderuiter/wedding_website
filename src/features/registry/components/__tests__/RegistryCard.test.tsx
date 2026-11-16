@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe } from 'jest-axe';
 import RegistryCard from '../RegistryCard';
 import RegistryCardSkeleton from '../RegistryCardSkeleton';
 import { RegistryItem } from '@/features/registry';
@@ -175,15 +176,24 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
-  it('is rendered as a div with role="button" and tabIndex when clickable for keyboard accessibility', () => {
+  it('is rendered as a div with role="region" and tabIndex="-1" when clickable, includes a contribute button, and passes axe audit', async () => {
     const mockOnClick = jest.fn();
-    render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
+    const { container } = render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    // It should be rendered as a div with role="button" and tabIndex to avoid invalid nested button elements
     expect(card.tagName).toBe('DIV');
-    expect(card).toHaveAttribute('tabIndex', '0');
-    expect(card).toHaveAttribute('role', 'button');
+    expect(card).toHaveAttribute('tabIndex', '-1');
+    expect(card).toHaveAttribute('role', 'region');
+
+    const contributeButton = screen.getByRole('button', { name: `Contribute to ${mockItem.name}` });
+    expect(contributeButton).toBeInTheDocument();
+
+    fireEvent.click(contributeButton);
+    expect(mockOnClick).toHaveBeenCalledTimes(1);
+    expect(mockOnClick).toHaveBeenCalledWith(mockItem);
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('renders as a div without tabIndex when item is purchased to avoid focus traps', () => {
@@ -196,6 +206,7 @@ describe('RegistryCard', () => {
     expect(card.tagName).toBe('DIV');
     expect(card).not.toHaveAttribute('tabIndex');
     expect(card).not.toHaveAttribute('role', 'button');
+    expect(screen.queryByRole('button', { name: /contribute/i })).not.toBeInTheDocument();
   });
 
   it('renders as a div without tabIndex when admin to avoid focus traps', () => {
@@ -207,6 +218,7 @@ describe('RegistryCard', () => {
     expect(card.tagName).toBe('DIV');
     expect(card).not.toHaveAttribute('tabIndex');
     expect(card).not.toHaveAttribute('role', 'button');
+    expect(screen.queryByRole('button', { name: /contribute/i })).not.toBeInTheDocument();
   });
 
   it('includes fallback 1 in scale-factor minHeight calculation for RegistryCard and RegistryCardSkeleton', () => {

@@ -53,29 +53,36 @@ jobs:
 
       - name: Compute Image Tag & Targets
         id: meta
+        env:
+          RAW_INPUT_TAG: ${{ inputs.tag_name }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          RAW_TAG="${{ inputs.tag_name }}"
-          if [ -z "$RAW_TAG" ]; then
-            TAG_NAME="${{ github.sha }}"
+          if [ -z "$RAW_INPUT_TAG" ]; then
+            TAG_NAME="${GITHUB_SHA}"
           else
-            TAG_NAME="$RAW_TAG"
+            if [[ ! "$RAW_INPUT_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+              echo "::error::Invalid image tag '${RAW_INPUT_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+              exit 1
+            fi
+            TAG_NAME="$RAW_INPUT_TAG"
           fi
 
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           GHCR_PRIMARY="ghcr.io/${REPO_LOWER}:${TAG_NAME}"
           TAGS="${GHCR_PRIMARY}"
 
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
             TAGS="${TAGS},ghcr.io/${REPO_LOWER}:latest"
           fi
 
-          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
-            TAGS="${TAGS},${{ secrets.DOCKERHUB_USERNAME }}/wedding-website:${TAG_NAME},${{ secrets.DOCKERHUB_USERNAME }}/wedding-website:latest"
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            TAGS="${TAGS},${DOCKERHUB_USERNAME}/wedding-website:${TAG_NAME},${DOCKERHUB_USERNAME}/wedding-website:latest"
           fi
 
-          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
-          echo "primary_uri=${GHCR_PRIMARY}" >> $GITHUB_OUTPUT
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -139,8 +146,12 @@ jobs:
           push-to-registry: true
 
       - name: Summary
+        env:
+          PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          echo "### 🚀 Release Artifact Published" >> $GITHUB_STEP_SUMMARY
-          echo "**Primary Image URI:** \`${{ steps.meta.outputs.primary_uri }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`${{ steps.meta.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Release Artifact Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Primary Image URI:** \`${PRIMARY_URI}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tag:** \`${TAG_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Digest:** \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"

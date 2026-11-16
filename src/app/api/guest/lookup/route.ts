@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import type { Prisma } from '@prisma/client';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { GuestLookupSchema } from '@/utils/validation';
@@ -36,20 +36,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
     const tokens = searchName.split(/\s+/).filter(Boolean);
     if (tokens.length >= 2) {
-      const first = tokens[0];
-      const rest = tokens.slice(1).join(' ');
-      conditions.push({
-        AND: [
-          { plusOneFirstName: { equals: first, mode: 'insensitive' } },
-          { plusOneLastName: { equals: rest, mode: 'insensitive' } },
-        ],
-      });
-      if (tokens.length > 2) {
-        const allButLast = tokens.slice(0, -1).join(' ');
-        const last = tokens[tokens.length - 1];
+      for (let i = 1; i < tokens.length; i++) {
+        const first = tokens.slice(0, i).join(' ');
+        const last = tokens.slice(i).join(' ');
         conditions.push({
           AND: [
-            { plusOneFirstName: { equals: allButLast, mode: 'insensitive' } },
+            { plusOneFirstName: { equals: first, mode: 'insensitive' } },
             { plusOneLastName: { equals: last, mode: 'insensitive' } },
           ],
         });
@@ -57,9 +49,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  let invite = await prisma.invitationCode.findFirst({
-    where: conditions.length === 1 ? conditions[0] : { OR: conditions },
-  });
+  let invite = conditions.length > 0
+    ? await prisma.invitationCode.findFirst({
+      where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+    })
+    : null;
 
   if (!invite && searchName && searchName.length >= 3) {
     invite = await prisma.invitationCode.findFirst({
