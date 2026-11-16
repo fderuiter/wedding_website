@@ -3,6 +3,15 @@
 import { useReducer, useEffect, useCallback, useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+import { useToast } from '@/components/ui/ToastProvider';
+
+function useOptionalToast() {
+  try {
+    return useToast();
+  } catch {
+    return null;
+  }
+}
 
 export interface SeatingState {
   tables: SeatingTableDTO[];
@@ -343,6 +352,7 @@ export interface UseSeatingStateReturn {
 export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatingStateReturn {
   const { autoFetch = true } = options;
   const [state, dispatch] = useReducer(seatingReducer, initialSeatingState);
+  const toast = useOptionalToast();
 
   // Derived synchronous unassigned guests collection
   const unassignedGuests = useMemo(() => {
@@ -430,8 +440,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             (g) => g.tableId === targetTableId && g.id !== guestId
           ).length;
           if (existingCount >= targetTable.capacity) {
-            alert(
-              `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
+            toast?.addToast(
+              `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
+              'error'
             );
             return false;
           }
@@ -518,7 +529,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         return false;
       }
     },
-    [state.tables, state.guests]
+    [state.tables, state.guests, toast]
   );
 
   const unassignGuest = useCallback(

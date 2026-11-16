@@ -96,6 +96,125 @@ describe('FloorplanCanvas component', () => {
     expect(screen.getByText('Over capacity!')).toBeInTheDocument();
   });
 
+  it('renders capacity warning badge on full tables', () => {
+    const fullTable: SeatingTableDTO = {
+      id: 'table-full',
+      name: 'Full Table',
+      shape: 'round',
+      capacity: 2,
+      x: 100,
+      y: 100,
+      invitationCodes: [
+        { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
+        { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
+      ],
+    };
+
+    render(<FloorplanCanvas {...defaultProps} tables={[fullTable]} />);
+
+    expect(screen.getByText('Full')).toBeInTheDocument();
+    expect(screen.getByTestId('table-full-badge')).toBeInTheDocument();
+  });
+
+  it('sets dropEffect to none and applies disabled drop indicator styling when dragging over a full table', () => {
+    const fullTable: SeatingTableDTO = {
+      id: 'table-full',
+      name: 'Full Table',
+      shape: 'round',
+      capacity: 2,
+      x: 100,
+      y: 100,
+      invitationCodes: [
+        { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
+        { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
+      ],
+    };
+
+    render(<FloorplanCanvas {...defaultProps} tables={[fullTable]} />);
+
+    const tableOuterDiv = screen.getByRole('button', { name: /Full Table/i });
+    const dataTransfer = { types: ['text/plain'], dropEffect: 'move' };
+
+    fireEvent.dragOver(tableOuterDiv, { dataTransfer });
+
+    expect(dataTransfer.dropEffect).toBe('none');
+    expect(tableOuterDiv.className).toContain('ring-red-500');
+    expect(tableOuterDiv.className).toContain('border-red-500');
+    expect(tableOuterDiv.className).toContain('cursor-not-allowed');
+    expect(tableOuterDiv.className).not.toContain('ring-4 ring-primary');
+    expect(tableOuterDiv).toHaveAttribute('data-drop-disabled', 'true');
+    expect(tableOuterDiv).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('announces table capacity limits to screen readers and rejects drop when invalid drop targets a full table', () => {
+    const onDropGuestOnTable = jest.fn();
+    const fullTable: SeatingTableDTO = {
+      id: 'table-full',
+      name: 'Full Table',
+      shape: 'round',
+      capacity: 2,
+      x: 100,
+      y: 100,
+      invitationCodes: [
+        { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
+        { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
+      ],
+    };
+
+    render(
+      <FloorplanCanvas
+        {...defaultProps}
+        tables={[fullTable]}
+        onDropGuestOnTable={onDropGuestOnTable}
+      />
+    );
+
+    const tableOuterDiv = screen.getByRole('button', { name: /Full Table/i });
+    fireEvent.drop(tableOuterDiv, {
+      dataTransfer: {
+        getData: (format: string) => (format === 'text/plain' ? 'guest-c' : ''),
+      },
+    });
+
+    expect(onDropGuestOnTable).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Table "Full Table" has reached its maximum capacity of 2.')
+    ).toBeInTheDocument();
+  });
+
+  it('allows moving an existing guest between seats at the same full table without rejection', () => {
+    const onDropGuestOnTable = jest.fn();
+    const fullTable: SeatingTableDTO = {
+      id: 'table-full',
+      name: 'Full Table',
+      shape: 'round',
+      capacity: 2,
+      x: 100,
+      y: 100,
+      invitationCodes: [
+        { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
+        { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
+      ],
+    };
+
+    render(
+      <FloorplanCanvas
+        {...defaultProps}
+        tables={[fullTable]}
+        onDropGuestOnTable={onDropGuestOnTable}
+      />
+    );
+
+    const tableOuterDiv = screen.getByRole('button', { name: /Full Table/i });
+    fireEvent.drop(tableOuterDiv, {
+      dataTransfer: {
+        getData: (format: string) => (format === 'text/plain' ? 'guest-a' : ''),
+      },
+    });
+
+    expect(onDropGuestOnTable).toHaveBeenCalledWith('guest-a', 'table-full', undefined);
+  });
+
   it('binds assigned and unassigned seats to theme preset variables', () => {
     render(<FloorplanCanvas {...defaultProps} />);
 
