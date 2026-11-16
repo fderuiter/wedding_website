@@ -29,6 +29,10 @@ export const GuestLoginSchema = z.object({
   passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty')
 });
 
+/**
+ * Schema for guest self-service invitation lookup.
+ * Note: Lookup route requires exact case-insensitive matching; partial substring queries are rejected with 404.
+ */
 export const GuestLookupSchema = z.object({
   query: z.string().trim().optional(),
   name: z.string().trim().optional(),

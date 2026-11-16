@@ -60,7 +60,6 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/guest/login' ||
     normalizedPath === '/guest/collect' ||
     normalizedPath === '/api/guest/login' ||
-    normalizedPath === '/api/guest/lookup' ||
     normalizedPath === '/api/guest/address' ||
     normalizedPath === '/api/guest/address/public' ||
     normalizedPath === '/api/registry/validate-code' ||

@@ -362,7 +362,7 @@ function GuestLoginForm() {
                     Invitation Found!
                   </h3>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                    Welcome, <strong>{matchedGuest.guestName}</strong>. Your invitation passcode is <strong>{matchedGuest.code}</strong>.
+                    Welcome, <strong>{matchedGuest.guestName}</strong>.{matchedGuest.code ? <> Your invitation passcode is <strong>{matchedGuest.code}</strong>.</> : null}
                   </p>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
