@@ -210,5 +210,18 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       const body = await res.json();
       expect(body.error).toBe('At least one record identifier is required');
     });
+
+    test('returns 400 when ids array exceeds 100 items for DELETE', async () => {
+      const ids = Array.from({ length: 101 }, (_, i) => `item-${i}`);
+      const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids }),
+      });
+
+      const res = await DELETE(req, { params: Promise.resolve({ entity: 'attractions' }) });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toBe('Maximum of 100 record identifiers allowed per batch request');
+    });
   });
 });

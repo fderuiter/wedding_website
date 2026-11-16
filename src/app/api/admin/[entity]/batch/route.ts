@@ -71,6 +71,10 @@ export const DELETE = withApiMiddleware(
       throw new ApiError(400, 'At least one record identifier is required');
     }
 
+    if (body.ids.length > 100) {
+      throw new ApiError(400, 'Maximum of 100 record identifiers allowed per batch request');
+    }
+
     try {
       if (typeof serviceData.service.batchDelete === 'function') {
         const result = await serviceData.service.batchDelete(body.ids);
