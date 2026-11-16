@@ -9,6 +9,14 @@ import {
 import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
 import { AdminEntityBatchUpdateSchema, formatZodError } from '@/utils/validation';
 
+function handleValidationError(error: any): never {
+  if (error instanceof ApiError) throw error;
+  if (error?.message && error.message.includes('Validation Error:')) {
+    throw new ApiError(400, error.message.replace('Validation Error: ', ''));
+  }
+  throw error;
+}
+
 async function handleBatchUpdate(req: NextRequest) {
   let body: any;
   try {
@@ -41,53 +49,20 @@ async function handleBatchUpdate(req: NextRequest) {
       { status: 200 }
     );
   } catch (error: any) {
-    if (error instanceof ApiError) throw error;
-    if (error.message && error.message.includes('Validation Error:')) {
-      throw new ApiError(400, error.message.replace('Validation Error: ', ''));
-    }
-    throw error;
+    handleValidationError(error);
   }
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   let body: any;
   try {
-    body = await req.json();
+    body = typeof req.clone === 'function' ? await req.clone().json() : await req.json();
   } catch {
     throw new ApiError(400, 'Invalid JSON payload.');
   }
 
   if (body && ('ids' in body || !('records' in body))) {
-    const parseResult = AdminEntityBatchUpdateSchema.safeParse(body);
-    if (!parseResult.success) {
-      throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
-    }
-
-    const { ids, ...rest } = parseResult.data;
-    const updateData =
-      rest.payload && typeof rest.payload === 'object' && !Array.isArray(rest.payload)
-        ? rest.payload
-        : rest;
-    const service = new InvitationCodeAdminService();
-
-    try {
-      const updatedRecords = await service.updateBatch(ids, updateData, 'Admin');
-      return NextResponse.json(
-        {
-          success: true,
-          count: updatedRecords.length,
-          updatedCount: updatedRecords.length,
-          records: updatedRecords,
-        },
-        { status: 200 }
-      );
-    } catch (error: any) {
-      if (error instanceof ApiError) throw error;
-      if (error.message && error.message.includes('Validation Error:')) {
-        throw new ApiError(400, error.message.replace('Validation Error: ', ''));
-      }
-      throw error;
-    }
+    return handleBatchUpdate(req);
   }
 
   const parseResult = BatchImportInvitationCodesSchema.safeParse(body);
@@ -103,13 +78,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     const result = await service.importBatch(records, collisionStrategy, 'Admin');
     return NextResponse.json(result, { status: 201 });
   } catch (error: any) {
-    if (error.message && error.message.includes('Validation Error:')) {
-      throw new ApiError(400, error.message.replace('Validation Error: ', ''));
-    }
-    if (error.message && error.message.includes('Duplicate invitation code')) {
+    if (error?.message && error.message.includes('Duplicate invitation code')) {
       throw new ApiError(400, error.message);
     }
-    throw error;
+    handleValidationError(error);
   }
 });
 
@@ -138,9 +110,6 @@ export const DELETE = withApiMiddleware(async (req: NextRequest) => {
     const result = await service.batchDelete(ids, 'Admin');
     return NextResponse.json(result, { status: 200 });
   } catch (error: any) {
-    if (error.message && error.message.includes('Validation Error:')) {
-      throw new ApiError(400, error.message.replace('Validation Error: ', ''));
-    }
-    throw error;
+    handleValidationError(error);
   }
 });
