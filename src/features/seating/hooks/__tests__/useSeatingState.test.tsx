@@ -8,6 +8,23 @@ import {
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 
+const mockAddToast = jest.fn();
+let mockUseToastError: Error | null = null;
+
+jest.mock('@/components/ui/ToastProvider', () => ({
+  useToast: () => {
+    if (mockUseToastError) {
+      throw mockUseToastError;
+    }
+    return {
+      addToast: mockAddToast,
+      confirm: jest.fn(),
+      removeToast: jest.fn(),
+      toasts: [],
+    };
+  },
+}));
+
 describe('useSeatingState & seatingReducer', () => {
   const mockTable1: SeatingTableDTO = {
     id: 'table-1',
@@ -213,6 +230,8 @@ describe('useSeatingState & seatingReducer', () => {
 
     beforeEach(() => {
       jest.clearAllMocks();
+      mockAddToast.mockClear();
+      mockUseToastError = null;
       window.alert = jest.fn();
 
       fetchMock = jest.fn((url: string | URL | Request, init?: RequestInit) => {
@@ -303,14 +322,111 @@ describe('useSeatingState & seatingReducer', () => {
       });
 
       expect(assignResult).toBe(false);
-      expect(window.alert).toHaveBeenCalledWith(
-        'Table "Table 1" has reached its maximum capacity of 2.'
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'Table "Table 1" has reached its maximum capacity of 2.',
+        'error'
       );
+      expect(window.alert).not.toHaveBeenCalled();
       // No POST request made
       expect(fetchMock).not.toHaveBeenCalled();
       // Guest 3 remains unassigned
       expect(result.current.unassignedGuests).toHaveLength(1);
       expect(result.current.unassignedGuests[0].id).toBe('g-3');
+    });
+
+    it('falls back cleanly without throwing when running hook outside ToastProvider', async () => {
+      mockUseToastError = new Error('useToast must be used within a ToastProvider');
+
+      fetchMock.mockImplementation((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockTable1]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                { ...mockGuest1, tableId: 'table-1', seatNumber: 1 },
+                { ...mockGuest2, tableId: 'table-1', seatNumber: 2 },
+                mockGuest3,
+              ]),
+          } as Response);
+        }
+        return Promise.reject(new Error('Unknown URL'));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      fetchMock.mockClear();
+
+      let assignResult = true;
+      await act(async () => {
+        assignResult = await result.current.assignGuestToTable('g-3', 'table-1');
+      });
+
+      expect(assignResult).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.current.unassignedGuests).toHaveLength(1);
+    });
+
+    it('allows moving guests between seats at the same full table', async () => {
+      fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockTable1]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                { ...mockGuest1, tableId: 'table-1', seatNumber: 1 },
+                { ...mockGuest2, tableId: 'table-1', seatNumber: 2 },
+              ]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating/assign') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string);
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: body.invitationCodeId,
+                tableId: body.tableId,
+                seatNumber: body.seatNumber,
+              }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      fetchMock.mockClear();
+
+      let assignResult = false;
+      await act(async () => {
+        assignResult = await result.current.assignGuestToTable('g-1', 'table-1', 2);
+      });
+
+      expect(assignResult).toBe(true);
+      expect(mockAddToast).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalled();
     });
 
     it('granularly reverts only failed guest assignment on network error without corrupting other guests', async () => {

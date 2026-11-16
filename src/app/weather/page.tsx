@@ -4,6 +4,7 @@ import { Forecast } from '@/features/weather';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { formatDate } from '@/utils/intl';
 
 export const metadata: Metadata = {
   title: 'Weather Forecast',
@@ -22,14 +23,21 @@ export default async function WeatherPage() {
     notFound();
   }
 
+  const hasValidWeddingDate = Boolean(
+    config.weddingDate && !isNaN(new Date(config.weddingDate).getTime())
+  );
+  const formattedDate = hasValidWeddingDate ? formatDate(config.weddingDate) : null;
+
   return (
     <div className="container mx-auto px-4 py-12 sm:py-16 md:py-20">
       <h1 className="text-4xl sm:text-5xl font-extrabold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
         The Forecast for Our Big Day
       </h1>
-      <p className="text-center text-lg sm:text-xl text-[var(--color-muted-text,#4b5563)] mb-10">
-        October 10, 2025
-      </p>
+      {formattedDate && (
+        <p className="text-center text-lg sm:text-xl text-[var(--color-muted-text,#4b5563)] mb-10">
+          {formattedDate}
+        </p>
+      )}
       <ErrorBoundary title="Weather Forecast Error" message="An error occurred while loading the weather forecast widget.">
         <Forecast />
       </ErrorBoundary>
