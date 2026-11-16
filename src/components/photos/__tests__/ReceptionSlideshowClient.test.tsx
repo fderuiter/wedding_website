@@ -349,4 +349,207 @@ describe('ReceptionSlideshowClient', () => {
 
     consoleWarnSpy.mockRestore();
   });
+
+  it('keeps controls visible after 3 seconds when a toolbar button holds keyboard focus', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const header = screen.getByTestId('slideshow-top-header');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    // Header and footer have focus-within classes
+    expect(header).toHaveClass('focus-within:opacity-100');
+    expect(header).toHaveClass('focus-within:pointer-events-auto');
+    expect(controls).toHaveClass('focus-within:opacity-100');
+    expect(controls).toHaveClass('focus-within:pointer-events-auto');
+
+    // Focus play/pause button
+    act(() => {
+      playPauseBtn.focus();
+    });
+
+    // Advance 3 seconds of inactivity
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    // Controls remain visible and cursor default
+    expect(container).toHaveClass('cursor-default');
+    expect(controls).toHaveClass('opacity-100');
+
+    // Advance another 5 seconds
+    act(() => {
+      jest.advanceTimersByTime(5000);
+    });
+
+    expect(container).toHaveClass('cursor-default');
+    expect(controls).toHaveClass('opacity-100');
+  });
+
+  it('hides controls after 3 seconds only when focus moves outside the controls', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const prevBtn = screen.getByTestId('slideshow-prev-btn');
+
+    // Focus previous button
+    act(() => {
+      prevBtn.focus();
+    });
+
+    // Advance 3 seconds - still visible because focus is retained
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(controls).toHaveClass('opacity-100');
+    expect(container).toHaveClass('cursor-default');
+
+    // Blur the button (focus moves outside)
+    act(() => {
+      prevBtn.blur();
+    });
+
+    // Controls are still visible immediately after blur
+    expect(controls).toHaveClass('opacity-100');
+
+    // Advance 3 seconds after focus left
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    // Now controls and cursor hide
+    expect(controls).toHaveClass('opacity-0');
+    expect(container).toHaveClass('cursor-none');
+  });
+
+  it('restarts inactivity timer when tabbing outside the slideshow container', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+
+    const outsideButton = document.createElement('button');
+    outsideButton.setAttribute('data-testid', 'outside-button');
+    document.body.appendChild(outsideButton);
+
+    try {
+      // Focus toolbar button
+      act(() => {
+        nextBtn.focus();
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+      expect(controls).toHaveClass('opacity-100');
+
+      // Tab/focus outside container
+      act(() => {
+        outsideButton.focus();
+      });
+
+      // Still visible before timer elapses
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(controls).toHaveClass('opacity-100');
+
+      // Hides after full 3 seconds
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(controls).toHaveClass('opacity-0');
+      expect(container).toHaveClass('cursor-none');
+    } finally {
+      outsideButton.remove();
+    }
+  });
+
+  it('maintains focus and controls visibility during fullscreen toggle without premature fading', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const fullscreenBtn = screen.getByTestId('slideshow-fullscreen-btn');
+
+    // Focus fullscreen toggle
+    act(() => {
+      fullscreenBtn.focus();
+    });
+
+    // Click toggle to trigger fullscreen transition
+    act(() => {
+      fireEvent.click(fullscreenBtn);
+    });
+
+    // Verify focus is maintained and controls don't prematurely fade after 3 seconds
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    expect(controls).toHaveClass('opacity-100');
+    expect(container).toHaveClass('cursor-default');
+  });
+
+  it('maintains controls visibility when moving focus between toolbar buttons', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const prevBtn = screen.getByTestId('slideshow-prev-btn');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+
+    // Focus previous button
+    act(() => {
+      prevBtn.focus();
+    });
+
+    // Advance 2 seconds
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(controls).toHaveClass('opacity-100');
+
+    // Focus next button
+    act(() => {
+      nextBtn.focus();
+    });
+
+    // Advance 2 more seconds (total 4 seconds since initial focus)
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    // Controls remain visible
+    expect(controls).toHaveClass('opacity-100');
+    expect(container).toHaveClass('cursor-default');
+  });
 });

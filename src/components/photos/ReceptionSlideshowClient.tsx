@@ -67,6 +67,10 @@ export function ReceptionSlideshowClient({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isControlsFocusedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const controlsRef = useRef<HTMLElement | null>(null);
 
   // Derive resolved upload URL
   const resolvedUploadUrl = useMemo(() => {
@@ -77,25 +81,65 @@ export function ReceptionSlideshowClient({
     return '/photos';
   }, [uploadUrl]);
 
+  // Helper to determine whether an element is an interactive control in the slideshow
+  const isInteractiveControl = useCallback((node: Node | null): boolean => {
+    if (!node || !(node instanceof Element)) return false;
+    if (controlsRef.current?.contains(node) || headerRef.current?.contains(node)) {
+      return true;
+    }
+    if (containerRef.current?.contains(node) && node.closest('button, a, input, select, textarea, [tabindex]')) {
+      return true;
+    }
+    return false;
+  }, []);
+
   // Activity detection for auto-hiding controls & cursor
   const handleUserActivity = useCallback(() => {
     setAreControlsVisible(true);
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
     }
-    inactivityTimerRef.current = setTimeout(() => {
-      setAreControlsVisible(false);
-    }, 3000);
+    if (!isControlsFocusedRef.current) {
+      inactivityTimerRef.current = setTimeout(() => {
+        setAreControlsVisible(false);
+      }, 3000);
+    }
   }, []);
 
   useEffect(() => {
+    if (typeof document !== 'undefined' && isInteractiveControl(document.activeElement)) {
+      isControlsFocusedRef.current = true;
+    }
     handleUserActivity();
 
     const onActivity = () => handleUserActivity();
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as Node | null;
+      if (isInteractiveControl(target)) {
+        isControlsFocusedRef.current = true;
+        handleUserActivity();
+      } else if (isControlsFocusedRef.current) {
+        isControlsFocusedRef.current = false;
+        handleUserActivity();
+      }
+    };
+
+    const handleFocusOut = (e: FocusEvent) => {
+      const nextTarget = e.relatedTarget as Node | null;
+      if (!isInteractiveControl(nextTarget)) {
+        isControlsFocusedRef.current = false;
+        handleUserActivity();
+      }
+    };
+
     window.addEventListener('mousemove', onActivity);
     window.addEventListener('pointermove', onActivity);
     window.addEventListener('touchstart', onActivity);
     window.addEventListener('keydown', onActivity);
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
 
     return () => {
       if (inactivityTimerRef.current) {
@@ -105,8 +149,10 @@ export function ReceptionSlideshowClient({
       window.removeEventListener('pointermove', onActivity);
       window.removeEventListener('touchstart', onActivity);
       window.removeEventListener('keydown', onActivity);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
     };
-  }, [handleUserActivity]);
+  }, [handleUserActivity, isInteractiveControl]);
 
   // Slideshow navigation handlers
   const goToNext = useCallback(() => {
@@ -243,6 +289,7 @@ export function ReceptionSlideshowClient({
 
   return (
     <div
+      ref={containerRef}
       role="region"
       aria-label="Live Wedding Reception Slideshow"
       aria-roledescription="carousel"
@@ -273,7 +320,8 @@ export function ReceptionSlideshowClient({
 
       {/* Top Header Information Overlay */}
       <header
-        className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 ${
+        ref={headerRef}
+        className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
           areControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         data-testid="slideshow-top-header"
@@ -399,9 +447,10 @@ export function ReceptionSlideshowClient({
 
       {/* Bottom Floating Control Bar */}
       <footer
+        ref={controlsRef}
         role="toolbar"
         aria-label="Slideshow Controls"
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-stone-900/85 backdrop-blur-md border border-white/15 shadow-2xl text-white transition-opacity duration-500 ${
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-stone-900/85 backdrop-blur-md border border-white/15 shadow-2xl text-white transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
           areControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         data-testid="slideshow-controls"
