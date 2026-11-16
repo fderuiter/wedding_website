@@ -36,16 +36,22 @@ test.describe('Guest Photos Empty State', () => {
     ]);
 
     try {
-      await page.goto('/photos', { waitUntil: 'domcontentloaded' });
+      await page.goto('/photos', { waitUntil: 'networkidle' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
         page = await context.newPage();
-        await page.goto('/photos', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto('/photos', { waitUntil: 'networkidle', timeout: 30000 });
       } else {
         throw err;
       }
     }
+
+    // Wait for client-side hydration
+    await page.locator('[data-hydrated="true"]').waitFor({ timeout: 15000 });
+
+    // Switch to Guest tab to view guest empty state
+    await page.locator('[data-testid="tab-guest"]').click();
 
     // Verify empty state container is rendered
     const emptyState = page.locator('[data-testid="guest-photos-empty-state"]');

@@ -2,7 +2,6 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
-import Script from 'next/script';
 import { contentService } from '@/features/content';
 import type { ContentNodeDTO } from '@/features/content';
 import { withPageQuery } from '@/lib/query-wrapper';
@@ -21,11 +20,10 @@ export const metadata: Metadata = {
 
 /**
  * @page PhotosPage
- * @description A page that displays a gallery of wedding photos.
+ * @description A page that displays a gallery of wedding photos and guest uploads.
  *
- * This component embeds a Google Photos album using the `publicalbum` script.
- * It also provides a direct link to the full Google Photos album.
- * The embedded gallery is initially hidden and populated with specific photo URLs.
+ * This component renders a native, tabbed photo gallery client displaying curated
+ * couple photos and guest shared pictures with responsive lightbox viewing and export.
  * If live content nodes fail, it falls back to curated default photo assets and shows
  * an explicit state indicator.
  *
@@ -65,7 +63,6 @@ export default async function PhotosPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <Script src="https://cdn.jsdelivr.net/npm/publicalbum@latest/embed-ui.min.js" async />
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Our Wedding Photos
       </h1>
@@ -73,9 +70,11 @@ export default async function PhotosPage() {
         Here is a small selection of photos from our special day. You can view the full album on Google Photos or upload your own photos below.
       </p>
 
-      <div className="mb-10">
-        <PhotoGalleryClient initialPhotos={urls} />
-      </div>
+      <ErrorBoundary title="Gallery Error" message="Could not render photo gallery.">
+        <div className="mb-10">
+          <PhotoGalleryClient initialPhotos={urls} />
+        </div>
+      </ErrorBoundary>
 
       {isUsingFallback && (
         <div
@@ -90,31 +89,6 @@ export default async function PhotosPage() {
           </span>
         </div>
       )}
-
-      <ErrorBoundary title="Gallery Error" message="Could not render photo gallery widget.">
-        <div
-          className="pa-gallery-player-widget"
-          style={{ width: '100%', height: '480px', display: 'none' }}
-          data-link="https://photos.google.com/share/AF1QipMnse1_Xznr2_loPvSR-McR3niH6WtH8lURPwInB0bvBUzrEcZj2kyhtq4ptCArwg?key=MHdQcFk2aUpwYXJnNHNnTllPRmZ1c0JxbEVHQWpn"
-          data-title="Wedding Pics (Good ones) · Friday, Oct 10 📸"
-          data-description="Shared album · Tap to view!"
-          role="region"
-          aria-label="Google Photos Gallery Embed"
-        >
-          {urls.map((url, i) => (
-            <object
-              key={i}
-              data={url}
-              type="image/jpeg"
-              role="img"
-              aria-label={`Wedding photo ${i + 1}`}
-              title={`Wedding photo ${i + 1}`}
-            >
-              Wedding photo {i + 1}
-            </object>
-          ))}
-        </div>
-      </ErrorBoundary>
 
       <div className="flex justify-center mt-12">
         <AccessibleExternalLink

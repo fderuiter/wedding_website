@@ -90,13 +90,140 @@ describe('PhotoGalleryClient', () => {
     });
   });
 
-  it('renders zero-state empty state when no guest photos exist', () => {
+  it('renders curated photos in default tab and zero-state empty state when switching to guest tab with no guest photos', () => {
     render(<PhotoGalleryClient initialPhotos={['/album/photo1.jpg', '/album/photo2.jpg']} />);
 
+    // Default tab is curated photos and displays the curated photo grid
+    expect(screen.getByTestId('curated-photos-section')).toBeInTheDocument();
+    expect(screen.getByTestId('curated-photos-grid')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-curated')).toHaveAttribute('aria-selected', 'true');
+
+    // Switch to guest tab
+    fireEvent.click(screen.getByTestId('tab-guest'));
+
+    // Guest tab displays empty state when no guest photos exist
     expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
     expect(screen.getByTestId('guest-photos-empty-state')).toBeInTheDocument();
     expect(screen.getByText('No guest photos yet')).toBeInTheDocument();
     expect(screen.queryByTestId('guest-photos-grid')).not.toBeInTheDocument();
+  });
+
+  describe('Tabbed Gallery Architecture and Scoped Views', () => {
+    const sampleCuratedUrls = Array.from({ length: 16 }, (_, i) => `/curated/photo-${i + 1}.jpg`);
+
+    it('displays all 16 curated wedding photos when guests load the page', () => {
+      render(<PhotoGalleryClient initialPhotos={sampleCuratedUrls} />);
+
+      // Verify Curated tab is active by default
+      const curatedTab = screen.getByTestId('tab-curated');
+      expect(curatedTab).toHaveAttribute('aria-selected', 'true');
+
+      // Verify all 16 curated photos are rendered
+      const curatedGrid = screen.getByTestId('curated-photos-grid');
+      expect(curatedGrid).toBeInTheDocument();
+
+      for (let i = 0; i < 16; i++) {
+        const thumb = screen.getByTestId(`photo-thumbnail-${i}`);
+        expect(thumb).toBeInTheDocument();
+        expect(thumb).toHaveAttribute('data-category', 'curated');
+      }
+    });
+
+    it('renders accessible tab bar with curated album and guest upload tabs and supports keyboard navigation', () => {
+      render(<PhotoGalleryClient initialPhotos={sampleCuratedUrls} />);
+
+      const tablist = screen.getByRole('tablist', { name: /photo gallery views/i });
+      expect(tablist).toBeInTheDocument();
+
+      const curatedTab = screen.getByTestId('tab-curated');
+      const guestTab = screen.getByTestId('tab-guest');
+
+      expect(curatedTab).toHaveAttribute('role', 'tab');
+      expect(guestTab).toHaveAttribute('role', 'tab');
+      expect(curatedTab).toHaveAttribute('aria-controls', 'tabpanel-curated');
+      expect(guestTab).toHaveAttribute('aria-controls', 'tabpanel-guest');
+
+      // Curated tab starts selected
+      expect(curatedTab).toHaveAttribute('aria-selected', 'true');
+      expect(curatedTab).toHaveAttribute('tabindex', '0');
+      expect(guestTab).toHaveAttribute('aria-selected', 'false');
+      expect(guestTab).toHaveAttribute('tabindex', '-1');
+
+      // ArrowRight navigates to Guest tab
+      curatedTab.focus();
+      fireEvent.keyDown(curatedTab, { key: 'ArrowRight' });
+      expect(guestTab).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
+
+      // ArrowLeft navigates back to Curated tab
+      fireEvent.keyDown(guestTab, { key: 'ArrowLeft' });
+      expect(curatedTab).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByTestId('curated-photos-section')).toBeInTheDocument();
+    });
+
+    it('switches tabs between curated photos and guest uploads without page reloads', async () => {
+      render(<PhotoGalleryClient initialPhotos={sampleCuratedUrls} />);
+
+      // Initially on curated tab
+      expect(screen.getByTestId('curated-photos-grid')).toBeInTheDocument();
+      expect(screen.queryByTestId('guest-photos-section')).not.toBeInTheDocument();
+
+      // Click guest tab
+      fireEvent.click(screen.getByTestId('tab-guest'));
+      expect(screen.queryByTestId('curated-photos-grid')).not.toBeInTheDocument();
+      expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
+      expect(screen.getByTestId('guest-photo-file-input')).toBeInTheDocument();
+
+      // Click curated tab
+      fireEvent.click(screen.getByTestId('tab-curated'));
+      expect(screen.getByTestId('curated-photos-grid')).toBeInTheDocument();
+      expect(screen.queryByTestId('guest-photos-section')).not.toBeInTheDocument();
+    });
+
+    it('counts only visible photos in the active view and selects only items in active tab', () => {
+      render(<PhotoGalleryClient initialPhotos={['/c1.jpg', '/c2.jpg', '/c3.jpg']} />);
+
+      // Curated tab has 3 photos
+      expect(screen.getByText('Select All Photos')).toBeInTheDocument();
+
+      // Select one photo in curated tab
+      fireEvent.click(screen.getByTestId('photo-checkbox-0'));
+      expect(screen.getByText('(1 of 3 selected)')).toBeInTheDocument();
+      expect(screen.getByText('Export Selected (1) (.zip)')).toBeInTheDocument();
+
+      // Click Select All Photos in curated tab
+      fireEvent.click(screen.getByTestId('toggle-select-all-photos-btn'));
+      expect(screen.getByText('(3 of 3 selected)')).toBeInTheDocument();
+      expect(screen.getByText('Deselect All')).toBeInTheDocument();
+      expect(screen.getByText('Export Selected (3) (.zip)')).toBeInTheDocument();
+
+      // Switch to Guest tab (0 photos)
+      fireEvent.click(screen.getByTestId('tab-guest'));
+      // Toolbar counter is hidden for empty guest tab
+      expect(screen.queryByTestId('toggle-select-all-photos-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('export-selected-photos-btn')).not.toBeInTheDocument();
+    });
+
+    it('navigates through curated photos within the lightbox viewer and displays correct position indices', () => {
+      render(<PhotoGalleryClient initialPhotos={['/c1.jpg', '/c2.jpg', '/c3.jpg']} />);
+
+      // Open second curated photo
+      fireEvent.click(screen.getByTestId('photo-thumbnail-1'));
+
+      expect(screen.getByRole('dialog', { name: 'Photo Preview' })).toBeInTheDocument();
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('2 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/c2.jpg');
+
+      // Next button navigates to 3 of 3
+      fireEvent.click(screen.getByTestId('lightbox-next-btn'));
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('3 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/c3.jpg');
+
+      // Next wraps to 1 of 3
+      fireEvent.click(screen.getByTestId('lightbox-next-btn'));
+      expect(screen.getByTestId('lightbox-counter')).toHaveTextContent('1 / 3');
+      expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/c1.jpg');
+    });
   });
 
   it('renders guest photo grid when guest photo is uploaded', async () => {
