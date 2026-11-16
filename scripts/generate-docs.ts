@@ -76,7 +76,7 @@ export function getZodType(schema: any): string {
   return t || 'unknown';
 }
 
-function generateConfigTable() {
+export function generateConfigTable() {
   const shape = AppConfigSchema.shape;
   let markdown = '| Field | Type | Description |\n|---|---|---|\n';
   
@@ -141,7 +141,7 @@ function buildRouteTree(srcPath: string, relativePath: string = ''): RouteNode |
   return null;
 }
 
-function generateRoutesDiagram() {
+export function generateRoutesDiagram() {
   const srcAppPath = path.join(scriptDir, '../src/app');
   const tree = buildRouteTree(srcAppPath);
   
@@ -205,7 +205,7 @@ function generateRoutesDiagram() {
 }
 
 // 3. Generate Environment Specs
-function generateEnvSpecs() {
+export function generateEnvSpecs() {
   const pkgPath = path.join(scriptDir, '../package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   
@@ -220,7 +220,7 @@ function generateEnvSpecs() {
 }
 
 // 4. Update ARCHITECTURE.md
-function updateArchitectureMd() {
+export function updateArchitectureMd() {
   const filePath = path.join(scriptDir, '../ARCHITECTURE.md');
   let content = fs.readFileSync(filePath, 'utf8');
 
@@ -240,7 +240,7 @@ function updateArchitectureMd() {
   console.log('Successfully updated ARCHITECTURE.md');
 }
 
-async function generateOpenApiSpec() {
+export async function generateOpenApiSpec() {
   const openApiScript = path.join(scriptDir, 'generate-openapi.ts');
   if (fs.existsSync(openApiScript)) {
     console.log('Generating OpenAPI specification...');

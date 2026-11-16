@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const ROOT_DIR = process.cwd();
 
@@ -9,9 +10,10 @@ const EXCLUDE_DIRS = [
   '.next',
   'coverage',
   'test-results',
+  'docs-portal',
 ];
 
-interface LinkError {
+export interface LinkError {
   sourceFile: string;
   line: number;
   linkText: string;
@@ -19,7 +21,7 @@ interface LinkError {
   resolvedPath: string;
 }
 
-function findMarkdownFiles(dir: string, fileList: string[] = []): string[] {
+export function findMarkdownFiles(dir: string, fileList: string[] = []): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -40,7 +42,7 @@ function findMarkdownFiles(dir: string, fileList: string[] = []): string[] {
   return fileList;
 }
 
-function checkLinksInFile(filePath: string, errors: LinkError[]) {
+export function checkLinksInFile(filePath: string, errors: LinkError[]) {
   const relSource = path.relative(ROOT_DIR, filePath).replace(/\\/g, '/');
   let content: string;
   try {
@@ -94,7 +96,7 @@ function checkLinksInFile(filePath: string, errors: LinkError[]) {
   });
 }
 
-function main() {
+export function checkDocLinks(): { passed: boolean; errors: LinkError[]; count: number } {
   const mdFiles = findMarkdownFiles(ROOT_DIR);
   const errors: LinkError[] = [];
 
@@ -102,7 +104,13 @@ function main() {
     checkLinksInFile(file, errors);
   }
 
-  if (errors.length > 0) {
+  return { passed: errors.length === 0, errors, count: mdFiles.length };
+}
+
+function main() {
+  const { passed, errors, count } = checkDocLinks();
+
+  if (!passed) {
     console.error('\n❌ Dead documentation link(s) detected:\n');
     errors.forEach((err, idx) => {
       console.error(`  [${idx + 1}] ${err.sourceFile}:${err.line}`);
@@ -121,9 +129,13 @@ ACTIONABLE REMEDIATION:
 `);
     process.exit(1);
   } else {
-    console.log(`✅ Documentation link check passed! Verified ${mdFiles.length} Markdown file(s).`);
+    console.log(`✅ Documentation link check passed! Verified ${count} Markdown file(s).`);
     process.exit(0);
   }
 }
 
-main();
+const isMain = typeof process.argv[1] === 'string' &&
+               path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isMain) {
+  main();
+}

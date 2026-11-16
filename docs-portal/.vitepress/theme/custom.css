@@ -1,0 +1,59 @@
+/* Custom styles for VitePress documentation portal */
+
+:root {
+  --vp-c-brand-1: #0284c7;
+  --vp-c-brand-2: #0369a1;
+  --vp-c-brand-3: #075985;
+}
+
+.api-explorer-wrapper {
+  margin-top: 1.5rem;
+  background-color: var(--vp-c-bg);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--vp-c-text-2);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--vp-c-divider);
+  border-top-color: var(--vp-c-brand-1);
+  border-radius: 50%;
+  animation: spin 1s ease-in-out infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Swagger UI Dark Mode Adaptations */
+.dark #swagger-ui-container .swagger-ui {
+  filter: invert(88%) hue-rotate(180deg);
+}
+
+.dark #swagger-ui-container .swagger-ui img,
+.dark #swagger-ui-container .swagger-ui .model-box,
+.dark #swagger-ui-container .swagger-ui .highlight-code {
+  filter: invert(100%) hue-rotate(180deg);
+}
+
+/* Mermaid SVG sizing */
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+  margin: 1.5rem auto;
+  display: block;
+  background: transparent;
+}
