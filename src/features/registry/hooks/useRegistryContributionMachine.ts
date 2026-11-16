@@ -31,7 +31,8 @@ export interface UseRegistryContributionMachineOptions {
     code?: string,
     message?: string,
     coverFee?: boolean,
-    email?: string
+    email?: string,
+    paymentIntentId?: string
   ) => Promise<void>;
   initialContributorName?: string;
   initialEmail?: string;
@@ -59,6 +60,9 @@ export interface UseRegistryContributionMachineReturn {
   coverFee: boolean;
   invitationCode: string;
 
+  // Payment transaction reference
+  paymentTransactionId: string | null;
+
   // Field error partitions
   fieldErrors: ContributionFieldErrors;
   codeError: string | null;
@@ -72,12 +76,15 @@ export interface UseRegistryContributionMachineReturn {
   setMessage: (message: string) => void;
   setCoverFee: (coverFee: boolean | ((prev: boolean) => boolean)) => void;
   setInvitationCode: (code: string) => void;
+  setPaymentTransactionId: (id: string | null) => void;
+  setPhase: (phase: ContributionPhase) => void;
+  setSubmissionError: (error: string | null) => void;
 
   // Actions
   handleCodeChange: (e: React.ChangeEvent<HTMLInputElement> | string) => void;
   handleVerifyCode: () => Promise<boolean>;
   handleClearCode: () => Promise<void>;
-  handleSubmit: (e?: React.FormEvent) => Promise<void>;
+  handleSubmit: (e?: React.FormEvent, paymentIntentId?: string) => Promise<void>;
   handlePresetClick: (presetValue: number) => void;
 }
 
@@ -113,6 +120,7 @@ export function useRegistryContributionMachine({
   const [fieldErrors, setFieldErrors] = useState<ContributionFieldErrors>({});
   const [codeError, setCodeError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [paymentTransactionId, setPaymentTransactionId] = useState<string | null>(null);
 
   // AbortController for cancelling in-flight validation requests
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -317,7 +325,7 @@ export function useRegistryContributionMachine({
 
   // Action: Submit contribution
   const handleSubmit = useCallback(
-    async (e?: React.FormEvent) => {
+    async (e?: React.FormEvent, paymentIntentId?: string) => {
       if (e) {
         e.preventDefault();
       }
@@ -340,6 +348,7 @@ export function useRegistryContributionMachine({
         code: invitationCode || undefined,
         message: message || undefined,
         coverFee,
+        paymentIntentId,
       });
 
       if (!result.success) {
@@ -370,7 +379,18 @@ export function useRegistryContributionMachine({
 
       setPhase('submitting');
       try {
-        if (validData.email !== undefined || validData.coverFee) {
+        if (paymentIntentId !== undefined && onContribute.length >= 8) {
+          await onContribute(
+            item.id,
+            validData.name,
+            finalAmount,
+            validData.code || undefined,
+            validData.message || undefined,
+            validData.coverFee,
+            validData.email || undefined,
+            paymentIntentId
+          );
+        } else if (validData.email !== undefined || validData.coverFee) {
           await onContribute(
             item.id,
             validData.name,
@@ -390,6 +410,9 @@ export function useRegistryContributionMachine({
           );
         } else {
           await onContribute(item.id, validData.name, finalAmount);
+        }
+        if (paymentIntentId) {
+          setPaymentTransactionId(paymentIntentId);
         }
         setPhase('success');
       } catch (err: unknown) {
@@ -446,6 +469,8 @@ export function useRegistryContributionMachine({
     coverFee,
     invitationCode,
 
+    paymentTransactionId,
+
     fieldErrors,
     codeError,
     submissionError,
@@ -457,6 +482,9 @@ export function useRegistryContributionMachine({
     setMessage,
     setCoverFee,
     setInvitationCode,
+    setPaymentTransactionId,
+    setPhase,
+    setSubmissionError,
 
     handleCodeChange,
     handleVerifyCode,

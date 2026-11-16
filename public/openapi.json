@@ -6186,6 +6186,9 @@
                   "coverFee": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "paymentIntentId": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -6726,6 +6729,88 @@
         }
       }
     },
+    "/api/registry/payment-intent": {
+      "post": {
+        "summary": "POST /api/registry/payment-intent",
+        "description": "Endpoint for /api/registry/payment-intent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "itemId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "coverFee": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "paymentIntentId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "email",
+                            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "itemId",
+                  "amount",
+                  "coverFee"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/scrape": {
       "post": {
         "summary": "POST /api/registry/scrape",
@@ -6783,6 +6868,17 @@
       "get": {
         "summary": "GET /api/registry/validate-code",
         "description": "Endpoint for /api/registry/validate-code",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/registry/webhook/stripe": {
+      "post": {
+        "summary": "POST /api/registry/webhook/stripe",
+        "description": "Stripe webhook handler for registry contributions.\nCryptographically verifies signatures using STRIPE_WEBHOOK_SECRET.\nProcesses payment_intent.succeeded events idempotently.",
         "responses": {
           "200": {
             "description": "Successful response"

@@ -8,6 +8,7 @@ import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { getStripeInstance } from '@/lib/stripe';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
@@ -22,7 +23,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, name, email, amount, code, message, coverFee } = parseResult.data;
+  const { itemId, name, email, amount, code, message, coverFee, paymentIntentId } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
   if (targetItem && targetItem.isSample) {
@@ -43,6 +44,30 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
+  let stripePaymentIntentId: string | null = null;
+  let stripeChargeId: string | null = null;
+  let transactionTimestamp: Date | null = null;
+
+  if (paymentIntentId) {
+    const stripe = getStripeInstance();
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    } catch (err: any) {
+      throw new ApiError(400, `Invalid or unresolved Stripe PaymentIntent: ${err.message}`);
+    }
+
+    if (paymentIntent.status !== 'succeeded') {
+      throw new ApiError(400, `PaymentIntent status is '${paymentIntent.status}'. Payment must be succeeded before recording contribution.`);
+    }
+
+    stripePaymentIntentId = paymentIntent.id;
+    stripeChargeId = typeof paymentIntent.latest_charge === 'string'
+      ? paymentIntent.latest_charge
+      : (paymentIntent.latest_charge as any)?.id || null;
+    transactionTimestamp = paymentIntent.created ? new Date(paymentIntent.created * 1000) : new Date();
+  }
+
   const updatedItem = await registryService.contributeToItem(itemId, {
     name,
     email,
@@ -50,6 +75,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     code: finalCode,
     message,
     coverFee,
+    ...(stripePaymentIntentId
+      ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
+      : {}),
   });
 
   const isAdmin = await isAdminRequest(request);

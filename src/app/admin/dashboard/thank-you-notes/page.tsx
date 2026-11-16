@@ -23,6 +23,9 @@ export interface ThankYouContributorItem {
   thankYouStatus: 'Unsent' | 'Sent' | 'Not Needed' | string;
   thankYouSentAt?: string | null;
   thankYouNote?: string | null;
+  stripePaymentIntentId?: string | null;
+  stripeChargeId?: string | null;
+  transactionTimestamp?: string | null;
   registryItemId?: string | null;
   registryItem?: {
     id: string;
@@ -637,6 +640,14 @@ export default function ThankYouNotesPage() {
                     <TableCell>
                       <div className="font-semibold">{formatCurrency(item.amount)}</div>
                       <div className="text-xs text-gray-500">{formatDate(item.date)}</div>
+                      {(item.stripeChargeId || item.stripePaymentIntentId) && (
+                        <div
+                          className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-medium truncate max-w-[120px]"
+                          title={`Stripe Ref: ${item.stripeChargeId || item.stripePaymentIntentId}`}
+                        >
+                          Ref: {item.stripeChargeId || item.stripePaymentIntentId}
+                        </div>
+                      )}
                     </TableCell>
 
                     <TableCell>

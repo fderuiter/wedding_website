@@ -28,6 +28,9 @@ export const ContributorSchema = z.object({
   thankYouStatus: z.string().optional().default('Unsent'),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
   thankYouNote: z.string().nullable().optional(),
+  stripePaymentIntentId: z.string().nullable().optional(),
+  stripeChargeId: z.string().nullable().optional(),
+  transactionTimestamp: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
   registryItemId: z.string().nullable().optional(),
   registryItem: z.object({
     id: z.string(),
@@ -70,6 +73,7 @@ export const ContributionSchema = z.object({
   code: z.string().trim().optional(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
   coverFee: z.boolean().optional().default(false),
+  paymentIntentId: z.string().trim().optional(),
 }, { message: 'Invalid request body.' }).superRefine((data, ctx) => {
   const resolvedName = data.name || data.purchaserName;
   if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
@@ -86,6 +90,19 @@ export const ContributionSchema = z.object({
     name: resolvedName,
   };
 });
+
+export const PaymentIntentRequestSchema = z.object({
+  itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
+  amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+  coverFee: z.boolean().optional().default(false),
+  paymentIntentId: z.string().trim().optional(),
+  name: z.string().trim().optional(),
+  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
+  code: z.string().trim().optional(),
+});
+
+export type PaymentIntentRequestDTO = z.infer<typeof PaymentIntentRequestSchema>;
 
 export const ItemTypeEnum = z.enum(['PHYSICAL', 'CASH_FUND', 'EXPERIENCE_FUND']);
 export type ItemType = z.infer<typeof ItemTypeEnum>;
