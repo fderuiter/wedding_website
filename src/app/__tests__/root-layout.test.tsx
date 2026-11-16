@@ -56,4 +56,43 @@ describe('RootLayout Server Component Cookie Hydration', () => {
     expect(jsx.type).toBe('html');
     expect(jsx.props.className).toContain('dark');
   });
+
+  it('renders complete server stylesheet in head with dynamic-theme-style id and WCAG contrast tokens', async () => {
+    mockCookies.mockResolvedValue({
+      get: () => undefined,
+    });
+
+    const jsx = await RootLayout({ children: <div>Child Content</div> });
+    const head = jsx.props.children[0];
+    expect(head.type).toBe('head');
+
+    // Find style element in head
+    const styleEl = React.Children.toArray(head.props.children).find(
+      (child): child is React.ReactElement<{ id?: string; dangerouslySetInnerHTML: { __html: string } }> =>
+        React.isValidElement(child) && child.type === 'style' && (child.props as { id?: string }).id === 'dynamic-theme-style'
+    );
+
+    expect(styleEl).toBeDefined();
+    const serverCss = styleEl!.props.dangerouslySetInnerHTML.__html;
+
+    // Check complete token sets: root, light, dark, and container selectors
+    expect(serverCss).toContain(':root {');
+    expect(serverCss).toContain('--color-primary:');
+    expect(serverCss).toContain('--color-primary-text:');
+    expect(serverCss).toContain('html:not(.dark),');
+    expect(serverCss).toContain('.dark {');
+    expect(serverCss).toContain('.bg-white,');
+
+    // Check body has ThemeProvider configured with hasServerStylesheet
+    const body = jsx.props.children[1];
+    expect(body.type).toBe('body');
+    const themeProviderEl = React.Children.toArray(body.props.children).find(
+      (child): child is React.ReactElement<{ hasServerStylesheet?: boolean }> =>
+        React.isValidElement(child) &&
+        (typeof child.type === 'function' && child.type.name === 'ThemeProvider' || (child.props as { hasServerStylesheet?: boolean }).hasServerStylesheet !== undefined)
+    );
+
+    expect(themeProviderEl).toBeDefined();
+    expect(themeProviderEl!.props.hasServerStylesheet).toBe(true);
+  });
 });
