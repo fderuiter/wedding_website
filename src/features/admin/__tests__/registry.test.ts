@@ -1,8 +1,8 @@
 import { getEntityService } from '../registry';
-import { ContentNodeAdminService } from '@/features/content/admin.service';
-import { WeddingPartyAdminService } from '@/features/wedding-party/admin.service';
-import { AttractionAdminService } from '@/features/attractions/admin.service';
-import { RegistryItemAdminService } from '@/features/registry/admin.service';
+import { ContentNodeAdminService } from '@/features/content';
+import { WeddingPartyAdminService } from '@/features/wedding-party';
+import { AttractionAdminService } from '@/features/attractions';
+import { RegistryItemAdminService } from '@/features/registry';
 
 describe('Admin Service Registry', () => {
   test('resolves content-nodes service', async () => {

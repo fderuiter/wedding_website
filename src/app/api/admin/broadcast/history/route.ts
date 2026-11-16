@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { BroadcastService } from '@/features/broadcast/service';
+import { BroadcastService } from '@/features/broadcast';
 
 export const GET = withApiMiddleware(async (_req: NextRequest) => {
   try {

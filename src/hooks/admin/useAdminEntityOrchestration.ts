@@ -1,4 +1,4 @@
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 import { useEntityOrchestration } from '../useEntityOrchestration';
 
 export interface AdminHookOptions {

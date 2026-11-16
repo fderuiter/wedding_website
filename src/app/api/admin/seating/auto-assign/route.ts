@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { SeatingTableAdminService } from '@/features/seating/admin.service';
-import { AutoAssignSchema } from '@/features/seating/schemas';
+import { SeatingTableAdminService } from '@/features/seating';
+import { AutoAssignSchema } from '@/features/seating';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   let author = 'Admin';

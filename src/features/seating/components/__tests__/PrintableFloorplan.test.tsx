@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { PrintableFloorplan } from '../PrintableFloorplan';
 import { SeatingTableDTO } from '../../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 describe('PrintableFloorplan component', () => {
   const mockTables: SeatingTableDTO[] = [

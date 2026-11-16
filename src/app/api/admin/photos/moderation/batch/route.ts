@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { contentService } from '@/features/content';
-import { BatchPhotoModerationSchema } from '@/features/content/schemas';
+import { BatchPhotoModerationSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { getAppConfig } from '@/lib/config';

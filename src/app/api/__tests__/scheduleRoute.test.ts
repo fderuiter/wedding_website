@@ -1,7 +1,7 @@
 import { GET } from '../schedule/route';
 import { NextRequest } from 'next/server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 
 jest.mock('@/core/auth/guestInviteSession');
 jest.mock('@/features/sub-events/service');

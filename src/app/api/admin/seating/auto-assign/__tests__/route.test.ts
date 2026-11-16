@@ -2,7 +2,7 @@
 
 import { NextRequest } from 'next/server';
 import { POST } from '../route';
-import { SeatingTableAdminService } from '@/features/seating/admin.service';
+import { SeatingTableAdminService } from '@/features/seating';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
 jest.mock('@/core/auth/auth.server', () => ({

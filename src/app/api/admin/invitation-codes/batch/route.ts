@@ -5,8 +5,8 @@ import {
   BatchImportInvitationCodesSchema,
   BatchDeleteInvitationCodesSchema,
   type BatchDeleteInvitationCodesDTO,
-} from '@/features/registry/schemas';
-import { InvitationCodeAdminService } from '@/features/registry/invitation-code.admin.service';
+} from '@/features/registry';
+import { InvitationCodeAdminService } from '@/features/registry';
 import { AdminEntityBatchUpdateSchema, formatZodError } from '@/utils/validation';
 
 function handleValidationError(error: any): never {

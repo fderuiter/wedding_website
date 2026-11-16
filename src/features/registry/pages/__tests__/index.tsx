@@ -1,9 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RegistryPage from '../index';
-import { useRegistry } from '@/features/registry/hooks/useRegistry';
+import { useRegistry } from '../../hooks/useRegistry';
 
-jest.mock('@/features/registry/hooks/useRegistry');
+jest.mock('../../hooks/useRegistry');
 
 const mockUseRegistry = useRegistry as jest.MockedFunction<typeof useRegistry>;
 

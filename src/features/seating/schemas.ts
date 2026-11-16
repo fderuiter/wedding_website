@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { InvitationCodeSchema } from '@/features/registry/schemas';
+import { InvitationCodeSchema } from '@/features/registry';
 
 const SeatingTableShapeSchema = z.enum(['round', 'rectangular', 'square']);
 

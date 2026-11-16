@@ -11,7 +11,7 @@ import {
 import { env } from '@/env';
 import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
 import { prisma } from '@/lib/prisma';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {

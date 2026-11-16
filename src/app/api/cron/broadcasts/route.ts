@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { BroadcastService } from '@/features/broadcast/service';
+import { BroadcastService } from '@/features/broadcast';
 import { timingSafeEqualJS } from '@/utils/crypto';
 
 async function handleCron(req: NextRequest) {

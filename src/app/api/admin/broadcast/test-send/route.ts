@@ -3,7 +3,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { formatZodError } from '@/utils/validation';
 import { SendTestBroadcastSchema } from '@/features/broadcast';
-import { BroadcastService } from '@/features/broadcast/service';
+import { BroadcastService } from '@/features/broadcast';
 
 export const POST = withApiMiddleware(
   async (req: NextRequest) => {

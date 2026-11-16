@@ -5,7 +5,7 @@ import { POST as retryRoute } from '../retry/route';
 import { POST as testConnRoute } from '../test-connection/route';
 import { POST as testSendRoute } from '../test-send/route';
 import { NextRequest } from 'next/server';
-import { BroadcastService } from '@/features/broadcast/service';
+import { BroadcastService } from '@/features/broadcast';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 jest.mock('@/core/auth/auth.server', () => ({

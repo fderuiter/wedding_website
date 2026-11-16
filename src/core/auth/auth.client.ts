@@ -1,4 +1,4 @@
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 
 /**
  * Checks the admin status by calling the `/api/admin/me` endpoint.

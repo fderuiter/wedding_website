@@ -1,5 +1,5 @@
 import { GET } from '@/app/api/weather/route';
-import { getWeatherForecast } from '@/features/weather/api/weather-proxy';
+import { getWeatherForecast } from '@/features/weather';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 import { getAppConfig, APP_DEFAULTS } from '@/lib/config';

@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { SeatingTableDTO } from '@/features/seating/schemas';
+import {
+  SeatingTableDTO,
+  FloorplanCanvas,
+  UnassignedGuestPanel,
+  TableModal,
+  PrintableFloorplan,
+  useSeatingState,
+} from '@/features/seating';
 import { InvitationCodeDTO } from '@/features/registry';
-import { FloorplanCanvas } from '@/features/seating/components/FloorplanCanvas';
-import { UnassignedGuestPanel } from '@/features/seating/components/UnassignedGuestPanel';
-import { TableModal } from '@/features/seating/components/TableModal';
-import { PrintableFloorplan } from '@/features/seating/components/PrintableFloorplan';
-import { useSeatingState } from '@/features/seating/hooks/useSeatingState';
 
 export default function SeatingChartAdminPage() {
   const {

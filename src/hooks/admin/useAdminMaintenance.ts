@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 import {
   DatabaseBackupSchema,
   formatZodIssues,

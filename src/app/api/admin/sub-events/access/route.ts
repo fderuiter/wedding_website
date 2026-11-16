@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 import { ApiError } from '@/utils/ApiError';
-import { UpdateSubEventAccessSchema, GetAccessMatrixQuerySchema } from '@/features/sub-events/schemas';
+import { UpdateSubEventAccessSchema, GetAccessMatrixQuerySchema } from '@/features/sub-events';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const url = new URL(request.url);

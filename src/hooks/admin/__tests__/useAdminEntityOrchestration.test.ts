@@ -8,7 +8,7 @@ import { useAdminContent } from '../useAdminContent';
 import { useAdminRegistry } from '../useAdminRegistry';
 import { useAdminSubEvents } from '../useAdminSubEvents';
 import { useAdminInvitationCodes } from '../useAdminInvitationCodes';
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 
 jest.mock('@/features/admin/apiClient', () => ({
   apiClient: {
