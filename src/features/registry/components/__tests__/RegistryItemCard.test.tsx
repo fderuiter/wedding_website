@@ -247,27 +247,117 @@ describe('RegistryItemCard Component', () => {
 
   it('shows error if name is missing on contribution/claim', async () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    const nameInput = screen.getByLabelText(/Your Name/i);
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
-    expect(await screen.findByText('Name is required and must be under 100 characters.')).toBeInTheDocument();
+    const errorMessage = await screen.findByText('Name is required and must be under 100 characters.');
+    expect(errorMessage).toBeInTheDocument();
+    expect(errorMessage).toHaveAttribute('role', 'alert');
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', errorMessage.id);
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
 
   it('shows error if contribution amount is invalid for group gift', async () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    const amountInput = screen.getByLabelText(/Contribution Amount/i);
+    expect(amountInput).not.toHaveAttribute('aria-describedby');
+    expect(amountInput).toHaveAttribute('aria-invalid', 'false');
+
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Test User' } });
-    fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '0' } });
+    fireEvent.change(amountInput, { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
-    expect(await screen.findByText('Contribution amount must be a positive number.')).toBeInTheDocument();
+    const errorMessage = await screen.findByText('Contribution amount must be a positive number.');
+    expect(errorMessage).toBeInTheDocument();
+    expect(errorMessage).toHaveAttribute('role', 'alert');
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
+    expect(amountInput).toHaveAttribute('aria-describedby', errorMessage.id);
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
 
   it('shows error if contribution amount exceeds remaining for group gift', async () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Test User' } });
-    fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '80' } }); // More than remaining 70
+    fireEvent.change(amountInput, { target: { value: '80' } }); // More than remaining 70
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
-    expect(await screen.findByText('Amount cannot exceed the remaining $70.00.')).toBeInTheDocument();
+    const errorMessage = await screen.findByText('Amount cannot exceed the remaining $70.00.');
+    expect(errorMessage).toBeInTheDocument();
+    expect(errorMessage).toHaveAttribute('role', 'alert');
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
+    expect(amountInput).toHaveAttribute('aria-describedby', errorMessage.id);
+    expect(mockOnContribute).not.toHaveBeenCalled();
+  });
+
+  it('shows inline error and connects accessibility attributes for invalid email format', async () => {
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    const nameInput = screen.getByLabelText(/Your Name/i);
+    const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
+    expect(emailInput).not.toHaveAttribute('aria-describedby');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'false');
+
+    fireEvent.change(nameInput, { target: { value: 'Valid User' } });
+    fireEvent.change(emailInput, { target: { value: 'invalid-email-address' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+    const errorMessage = await screen.findByText('Invalid email address.');
+    expect(errorMessage).toBeInTheDocument();
+    expect(errorMessage).toHaveAttribute('role', 'alert');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(emailInput).toHaveAttribute('aria-describedby', errorMessage.id);
+    expect(mockOnContribute).not.toHaveBeenCalled();
+  });
+
+  it('displays simultaneous inline errors for name and amount and clears them on input change', async () => {
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    const nameInput = screen.getByLabelText(/Your Name/i);
+    const amountInput = screen.getByLabelText(/Contribution Amount/i);
+
+    fireEvent.change(nameInput, { target: { value: '' } });
+    fireEvent.change(amountInput, { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+    const nameError = await screen.findByText('Name is required and must be under 100 characters.');
+    const amountError = await screen.findByText('Contribution amount must be a positive number.');
+    expect(nameError).toBeInTheDocument();
+    expect(amountError).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', nameError.id);
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
+    expect(amountInput).toHaveAttribute('aria-describedby', amountError.id);
+
+    // Typing into name clears name error
+    fireEvent.change(nameInput, { target: { value: 'Alice' } });
+    expect(screen.queryByText('Name is required and must be under 100 characters.')).not.toBeInTheDocument();
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
+
+    // Selecting a preset button clears amount error
+    const presetButton = screen.getByRole('button', { name: '$50' });
+    fireEvent.click(presetButton);
+    expect(screen.queryByText('Contribution amount must be a positive number.')).not.toBeInTheDocument();
+    expect(amountInput).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('shows inline error when personal message exceeds length limit', async () => {
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    const nameInput = screen.getByLabelText(/Your Name/i);
+    const messageInput = screen.getByLabelText(/Personal Message \(Optional\)/i);
+    expect(messageInput).not.toHaveAttribute('aria-describedby');
+    expect(messageInput).toHaveAttribute('aria-invalid', 'false');
+
+    fireEvent.change(nameInput, { target: { value: 'Valid User' } });
+    fireEvent.change(messageInput, { target: { value: 'a'.repeat(1001) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+    const messageError = await screen.findByText('Personal note must be under 1000 characters.');
+    expect(messageError).toBeInTheDocument();
+    expect(messageError).toHaveAttribute('role', 'alert');
+    expect(messageInput).toHaveAttribute('aria-invalid', 'true');
+    expect(messageInput).toHaveAttribute('aria-describedby', messageError.id);
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
 
@@ -947,7 +1037,10 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(submitBtn);
 
       await waitFor(() => {
-        expect(screen.getByText('Invalid email address.')).toBeInTheDocument();
+        const errorEl = screen.getByText('Invalid email address.');
+        expect(errorEl).toBeInTheDocument();
+        expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+        expect(emailInput).toHaveAttribute('aria-describedby', errorEl.id);
       });
       expect(mockOnContribute).not.toHaveBeenCalled();
     });
