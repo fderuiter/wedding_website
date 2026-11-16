@@ -127,7 +127,13 @@ export default function GuestAddressCollectPage() {
         </div>
 
         {errorMessage && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm font-medium">
+          <div
+            id="address-collect-error"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm font-medium"
+          >
             {errorMessage}
           </div>
         )}
@@ -158,6 +164,8 @@ export default function GuestAddressCollectPage() {
               autoComplete="name"
               required
               maxLength={100}
+              aria-invalid={Boolean(errorMessage)}
+              aria-describedby={errorMessage ? 'address-collect-error' : undefined}
             />
           </FormGroup>
 

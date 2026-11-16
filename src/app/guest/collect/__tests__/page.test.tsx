@@ -39,10 +39,22 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
   test('shows error message if submitted without guest name', async () => {
     render(<GuestAddressCollectPage />);
 
+    const nameInput = screen.getByLabelText(/Full Name/i);
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
 
-    expect(await screen.findByText('Please enter your full name.')).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Please enter your full name.');
+    expect(alert).toHaveAttribute('id', 'address-collect-error');
+    expect(alert).toHaveAttribute('aria-live', 'assertive');
+    expect(alert).toHaveAttribute('aria-atomic', 'true');
+
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'address-collect-error');
     expect(globalFetch).not.toHaveBeenCalled();
   });
 
@@ -92,15 +104,39 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
 
     render(<GuestAddressCollectPage />);
 
-    fireEvent.change(screen.getByLabelText(/Full Name/i), { target: { value: 'Bob Guest' } });
+    const nameInput = screen.getByLabelText(/Full Name/i);
+    fireEvent.change(nameInput, { target: { value: 'Bob Guest' } });
     fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'invalid-email' } });
 
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
 
-    await waitFor(() => {
-      expect(screen.getByText('Invalid email address.')).toBeInTheDocument();
-    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Invalid email address.');
+    expect(alert).toHaveAttribute('id', 'address-collect-error');
+    expect(alert).toHaveAttribute('aria-live', 'assertive');
+    expect(alert).toHaveAttribute('aria-atomic', 'true');
+
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'address-collect-error');
+  });
+
+  test('clears error alert and resets input aria attributes when editing after an error', async () => {
+    render(<GuestAddressCollectPage />);
+
+    const nameInput = screen.getByLabelText(/Full Name/i);
+    const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
+    fireEvent.submit(submitBtn.closest('form')!);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'address-collect-error');
+
+    fireEvent.change(nameInput, { target: { value: 'Alice' } });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
   });
 
   test('resets form when clicking "Submit Another Address"', async () => {
