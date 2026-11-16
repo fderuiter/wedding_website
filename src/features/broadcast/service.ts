@@ -581,68 +581,100 @@ export class BroadcastService {
     }
 
     const provider = new MultiChannelMessagingProvider(config);
-    let newlySent = 0;
-    let stillFailed = 0;
+    const batchSize = config.broadcastBatchSize ?? 50;
+    const batchDelayMs = config.broadcastBatchDelayMs ?? 500;
 
-    for (const recipient of failedRecipients) {
-      const guest = recipient.invitationCode || {
-        guestName: recipient.guestName,
-        code: '',
-        householdName: '',
-      };
+    for (let i = 0; i < failedRecipients.length; i += batchSize) {
+      const batch = failedRecipients.slice(i, i + batchSize);
 
-      const context = {
-        guestName: recipient.guestName,
-        invitationCode: guest.code || '',
-        householdName: guest.householdName || '',
-        weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-        venueName: config.venueName || '',
-      };
+      const batchResults = await Promise.all(
+        batch.map(async (recipient) => {
+          const guest = recipient.invitationCode || {
+            guestName: recipient.guestName,
+            code: '',
+            householdName: '',
+          };
 
-      const personalizedBody = renderBroadcastTemplate(broadcast.body, context);
-      const personalizedSubject = broadcast.subject ? renderBroadcastTemplate(broadcast.subject, context) : '';
+          const context = {
+            guestName: recipient.guestName,
+            invitationCode: guest.code || '',
+            householdName: guest.householdName || '',
+            weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
+            venueName: config.venueName || '',
+          };
 
-      let result: DispatchResult;
-      if (broadcast.channel === 'EMAIL') {
-        result = await provider.sendEmail({
-          to: recipient.destination,
-          subject: personalizedSubject,
-          body: personalizedBody,
-        });
-      } else {
-        result = await provider.sendSms({
-          to: recipient.destination,
-          body: personalizedBody,
-        });
+          const personalizedBody = renderBroadcastTemplate(broadcast.body, context);
+          const personalizedSubject = broadcast.subject ? renderBroadcastTemplate(broadcast.subject, context) : '';
+
+          let result: DispatchResult;
+          if (broadcast.channel === 'EMAIL') {
+            result = await provider.sendEmail({
+              to: recipient.destination,
+              subject: personalizedSubject,
+              body: personalizedBody,
+            });
+          } else {
+            result = await provider.sendSms({
+              to: recipient.destination,
+              body: personalizedBody,
+            });
+          }
+
+          return { recipient, result };
+        })
+      );
+
+      const successfulRecipientIds = batchResults
+        .filter((item) => item.result.success)
+        .map((item) => item.recipient.id);
+
+      const failedBatchItems = batchResults
+        .filter((item) => !item.result.success);
+
+      const updatePromises: Promise<unknown>[] = [];
+
+      if (successfulRecipientIds.length > 0) {
+        updatePromises.push(
+          prisma.broadcastRecipient.updateMany({
+            where: { id: { in: successfulRecipientIds } },
+            data: {
+              status: 'SENT',
+              error: null,
+              sentAt: new Date(),
+            },
+          })
+        );
       }
 
-      if (result.success) {
-        newlySent++;
-        await prisma.broadcastRecipient.update({
-          where: { id: recipient.id },
-          data: {
-            status: 'SENT',
-            error: null,
-            sentAt: new Date(),
-          },
-        });
-      } else {
-        stillFailed++;
-        await prisma.broadcastRecipient.update({
-          where: { id: recipient.id },
-          data: {
-            error: result.error || 'Retry failed',
-          },
-        });
+      for (const item of failedBatchItems) {
+        updatePromises.push(
+          prisma.broadcastRecipient.update({
+            where: { id: item.recipient.id },
+            data: {
+              status: 'FAILED',
+              error: item.result.error || 'Retry failed',
+            },
+          })
+        );
+      }
+
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
+      }
+
+      if (i + batchSize < failedRecipients.length && batchDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
       }
     }
 
-    const updatedRecipients = await prisma.broadcastRecipient.findMany({
-      where: { broadcastId },
-    });
-
-    const sentCount = updatedRecipients.filter((r) => r.status === 'SENT').length;
-    const failedCount = updatedRecipients.filter((r) => r.status === 'FAILED').length;
+    const [sentCount, failedCount] = await Promise.all([
+      prisma.broadcastRecipient.count({
+        where: { broadcastId, status: 'SENT' },
+      }),
+      prisma.broadcastRecipient.count({
+        where: { broadcastId, status: 'FAILED' },
+      }),
+    ]);
 
     const finalStatus = failedCount === 0
       ? 'SENT'
