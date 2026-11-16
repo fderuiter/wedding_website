@@ -4,15 +4,7 @@ import { InvitationCodeDTO, DryRunValidatedRow, DryRunValidationSummary, DryRunV
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
-
-function generateRandomCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
+import { generateRandomCode } from './utils/invitation';
 
 export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
   static ENTITY_KEY = 'invitation-codes';
