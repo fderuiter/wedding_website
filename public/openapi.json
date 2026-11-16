@@ -6485,6 +6485,252 @@
         }
       }
     },
+    "/api/registry/items/batch": {
+      "post": {
+        "summary": "POST /api/registry/items/batch",
+        "description": "Adds multiple items to the registry in an atomic transaction.\n\n**Response:**\n*   **`201 Created`** - Returns the list of created items and count.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "itemType": {
+                          "default": "PHYSICAL",
+                          "type": "string",
+                          "enum": [
+                            "PHYSICAL",
+                            "CASH_FUND",
+                            "EXPERIENCE_FUND"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "price": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "quantity": {
+                          "default": 1,
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "category": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "vendorUrl": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "isGroupGift": {},
+                        "isMostWanted": {
+                          "default": false
+                        },
+                        "displayOrder": {
+                          "default": 0,
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "paymentHandleType": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "paymentHandle": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 255
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "imageId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "imageUrl": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "const": ""
+                            }
+                          ]
+                        },
+                        "imageAlt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "imageDecorative": {
+                          "type": "boolean"
+                        },
+                        "image": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                },
+                                "altText": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "isDecorative": {
+                                  "type": "boolean"
+                                },
+                                "isSample": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "createdAt": {
+                                  "anyOf": [
+                                    {},
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "updatedAt": {
+                                  "anyOf": [
+                                    {},
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "url",
+                                "altText",
+                                "isDecorative",
+                                "isSample"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "itemType",
+                        "name",
+                        "price",
+                        "quantity",
+                        "category",
+                        "isGroupGift",
+                        "isMostWanted",
+                        "displayOrder"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/items": {
       "get": {
         "summary": "GET /api/registry/items",
@@ -6713,6 +6959,43 @@
                   "isGroupGift",
                   "isMostWanted",
                   "displayOrder"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/registry/scrape/batch": {
+      "post": {
+        "summary": "POST /api/registry/scrape/batch",
+        "description": "Scrapes metadata in parallel for batches of up to 20 product URLs with a concurrency limit of 5.\nIndividual URL failures do not abort the overall batch.\nThe entire batch operation times out after 15 seconds.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "urls": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 2000
+                    }
+                  }
+                },
+                "required": [
+                  "urls"
                 ],
                 "additionalProperties": false
               }

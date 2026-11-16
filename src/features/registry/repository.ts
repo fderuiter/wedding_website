@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
-import type { IRegistryRepository, GetItemsOptions, PaginatedRegistryItems } from './types';
+import type { IRegistryRepository, GetItemsOptions, PaginatedRegistryItems, CreateRegistryItemInput } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
 /**
@@ -117,7 +117,7 @@ class RegistryRepository implements IRegistryRepository {
    * @param {Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>} data - The data for the new item.
    * @returns {Promise<RegistryItemDTO>} A promise that resolves to the newly created registry item.
    */
-  async createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+  async createItem(data: CreateRegistryItemInput) {
     let mediaId = data.imageId;
     if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
       const media = await this.client.media.create({
@@ -166,6 +166,76 @@ class RegistryRepository implements IRegistryRepository {
     });
     await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', this.client);
     return RegistryItemSchema.parse(item);
+  }
+
+  /**
+   * Creates multiple registry items atomically within a database transaction.
+   * If any item insertion fails, all mutations are rolled back.
+   *
+   * @param {Array} items - Array of registry items to insert.
+   * @returns {Promise<RegistryItemDTO[]>} A promise resolving to the created items.
+   */
+  async createBatchItems(items: CreateRegistryItemInput[]): Promise<RegistryItemDTO[]> {
+    const runTransaction = async (txClient: any) => {
+      const createdItems: RegistryItemDTO[] = [];
+
+      for (const data of items) {
+        let mediaId = data.imageId;
+        if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
+          const media = await txClient.media.create({
+            data: {
+              url: data.imageUrl || '/images/placeholder.png',
+              altText: data.imageAlt,
+              isDecorative: data.imageDecorative || false,
+            }
+          });
+          mediaId = media.id;
+        } else if (!mediaId) {
+          const media = await txClient.media.create({
+            data: {
+              url: '/images/placeholder.png',
+              isDecorative: true
+            }
+          });
+          mediaId = media.id;
+        }
+
+        const itemType = data.itemType || 'PHYSICAL';
+        const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
+
+        const item = await txClient.registryItem.create({
+          data: {
+            itemType,
+            paymentHandleType: data.paymentHandleType || null,
+            paymentHandle: data.paymentHandle || null,
+            name: data.name,
+            price: data.price,
+            quantity: isFund ? 1 : (data.quantity ?? 1),
+            category: data.category || 'Uncategorized',
+            description: data.description || '',
+            imageId: mediaId,
+            vendorUrl: data.vendorUrl || null,
+            isGroupGift: isFund ? true : (data.isGroupGift ?? false),
+            isMostWanted: data.isMostWanted ?? false,
+            displayOrder: data.displayOrder ?? 0,
+            contributors: {
+              create: []
+            }
+          },
+          include: {
+            image: true,
+            contributors: true
+          }
+        });
+
+        await createAuditSnapshot('RegistryItem', item.id, item, 'Admin', txClient);
+        createdItems.push(RegistryItemSchema.parse(item));
+      }
+
+      return createdItems;
+    };
+
+    return executeInTransaction(this.client, runTransaction);
   }
 
   async updateItem(id: string, data: Partial<RegistryItemDTO> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
