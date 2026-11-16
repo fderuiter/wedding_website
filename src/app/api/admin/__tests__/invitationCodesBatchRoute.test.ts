@@ -43,6 +43,18 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     expect(res.status).toBe(401);
   });
 
+  test('returns 400 for malformed JSON body', async () => {
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: 'invalid-json',
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid JSON payload.');
+  });
+
   test('returns 400 for invalid body schema', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
@@ -223,6 +235,32 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     });
     expect(mockServiceInstance.updateBatch).toHaveBeenCalledWith(
       ['code-1', 'code-2'],
+      { used: true },
+      'Admin'
+    );
+  });
+
+  test('delegates batch update via POST using req.clone()', async () => {
+    const updatedRecords = [{ id: 'code-1', used: true }];
+    mockServiceInstance.updateBatch.mockResolvedValue(updatedRecords);
+
+    const payload = { ids: ['code-1'], used: true };
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const cloneSpy = jest.fn(() => ({
+      json: () => Promise.resolve(payload),
+    }));
+    (req as any).clone = cloneSpy;
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(cloneSpy).toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.count).toBe(1);
+    expect(mockServiceInstance.updateBatch).toHaveBeenCalledWith(
+      ['code-1'],
       { used: true },
       'Admin'
     );
