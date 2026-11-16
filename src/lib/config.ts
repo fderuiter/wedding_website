@@ -105,6 +105,50 @@ export const APP_DEFAULTS: LocalAppConfig = {
 };
 
 /**
+ * Static mock configuration for static HTML export (Layer 4 fallback).
+ * Provides mock event logistics and initialized state for public static showcases.
+ */
+export const STATIC_MOCK_CONFIG: LocalAppConfig = {
+  ...APP_DEFAULTS,
+  id: 'global',
+  partner1Name: 'Alex Morgan',
+  partner2Name: 'Taylor Jordan',
+  brideName: 'Alex Morgan',
+  groomName: 'Taylor Jordan',
+  weddingDate: new Date('2026-09-19T16:00:00.000Z'),
+  baseUrl: 'https://example.com',
+  venueName: 'The Glasshouse Estate',
+  venueAddress: '123 Meadow Lane',
+  venueCity: 'Minneapolis',
+  venueState: 'MN',
+  venueZip: '55401',
+  latitude: 44.9778,
+  longitude: -93.2650,
+  storyText: 'Welcome to our wedding website! We are so excited to celebrate our special day with you.\n\nFrom the moment we met, we knew we had found a partner for all of life\'s adventures.',
+  venueDescription: 'The Glasshouse Estate is nestled amidst scenic gardens and historic grounds.',
+  travelAdvice: 'The venue is located 25 minutes from Minneapolis-Saint Paul International Airport (MSP).',
+  heroTitle: 'Alex & Taylor',
+  heroSubtitle: 'Celebrating our wedding',
+  seoTitle: 'Alex & Taylor Wedding',
+  seoDescription: 'Join Alex and Taylor for their wedding celebration at The Glasshouse Estate.',
+  contactEmail: 'contact@example.com',
+  colorPrimary: '#B91C1C',
+  colorSecondary: '#B45309',
+  themePreset: 'classic',
+  timezone: 'America/Chicago',
+  showCountdown: true,
+  showAddToCalendar: true,
+  features: [
+    { id: 'story', type: 'story', title: 'Our Story', visible: true },
+    { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
+    { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+    { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+    { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+    { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true },
+  ],
+};
+
+/**
  * Determine if the application configuration has been initialized with custom details.
  */
 export function isSiteInitialized(config: AppConfigDTO | null | undefined): boolean {
@@ -274,77 +318,89 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
  * @returns The resolved and validated AppConfigDTO
  */
 export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
+  const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                         process.env.STATIC_EXPORT === '1' ||
+                         process.env.npm_lifecycle_event === 'build:export';
+
   let dbConfig: AppConfigDTO | null = null;
   const multisite = isMultisiteEnabled();
 
-  try {
-    let rawDbConfig = null;
-    if (multisite && idOrSubdomain && idOrSubdomain !== 'global') {
-      rawDbConfig = await prisma.appConfig.findUnique({
-        where: { id: idOrSubdomain },
-      });
+  if (isStaticExport) {
+    dbConfig = AppConfigSchema.parse({
+      ...STATIC_MOCK_CONFIG,
+      latitude: coordinateSchema.parse(STATIC_MOCK_CONFIG.latitude),
+      longitude: coordinateSchema.parse(STATIC_MOCK_CONFIG.longitude),
+    });
+  } else {
+    try {
+      let rawDbConfig = null;
+      if (multisite && idOrSubdomain && idOrSubdomain !== 'global') {
+        rawDbConfig = await prisma.appConfig.findUnique({
+          where: { id: idOrSubdomain },
+        });
+        if (!rawDbConfig) {
+          rawDbConfig = await prisma.appConfig.findFirst({
+            where: { subdomain: idOrSubdomain },
+          });
+        }
+      } else if (multisite) {
+        const subdomain = await getSubdomainFromHeaders();
+        if (subdomain) {
+          rawDbConfig = await prisma.appConfig.findFirst({
+            where: { subdomain },
+          });
+        }
+      }
+
       if (!rawDbConfig) {
-        rawDbConfig = await prisma.appConfig.findFirst({
-          where: { subdomain: idOrSubdomain },
+        rawDbConfig = await prisma.appConfig.findUnique({
+          where: { id: 'global' },
         });
       }
-    } else if (multisite) {
-      const subdomain = await getSubdomainFromHeaders();
-      if (subdomain) {
-        rawDbConfig = await prisma.appConfig.findFirst({
-          where: { subdomain },
-        });
+
+      if (!rawDbConfig) {
+        dbConfig = AppConfigSchema.parse(await prisma.appConfig.upsert({
+          where: { id: 'global' },
+          update: {},
+          create: { 
+            id: 'global',
+            partner1Name: '',
+            partner2Name: '',
+            brideName: '',
+            groomName: '',
+            baseUrl: '',
+            venueName: '',
+            venueAddress: '',
+            venueCity: '',
+            venueState: '',
+            venueZip: '',
+            latitude: 0,
+            longitude: 0,
+            venueDescription: '',
+            seoDescription: '',
+            contactEmail: '',
+            faviconUrl: '/assets/favicon.png',
+            ogImageUrl: '/images/placeholder.png',
+            seoKeywords: '',
+            colorPrimary: '#B91C1C',
+            colorSecondary: '#B45309',
+            themePreset: 'classic',
+            themeTokens: {},
+            timezone: 'UTC',
+            showCountdown: true,
+            showAddToCalendar: true,
+          },
+        }));
+      } else {
+        dbConfig = AppConfigSchema.parse(rawDbConfig);
       }
-    }
 
-    if (!rawDbConfig) {
-      rawDbConfig = await prisma.appConfig.findUnique({
-        where: { id: 'global' },
-      });
-    }
-
-    if (!rawDbConfig) {
-      dbConfig = AppConfigSchema.parse(await prisma.appConfig.upsert({
-        where: { id: 'global' },
-        update: {},
-        create: { 
-          id: 'global',
-          partner1Name: '',
-          partner2Name: '',
-          brideName: '',
-          groomName: '',
-          baseUrl: '',
-          venueName: '',
-          venueAddress: '',
-          venueCity: '',
-          venueState: '',
-          venueZip: '',
-          latitude: 0,
-          longitude: 0,
-          venueDescription: '',
-          seoDescription: '',
-          contactEmail: '',
-          faviconUrl: '/assets/favicon.png',
-          ogImageUrl: '/images/placeholder.png',
-          seoKeywords: '',
-          colorPrimary: '#B91C1C',
-          colorSecondary: '#B45309',
-          themePreset: 'classic',
-          themeTokens: {},
-          timezone: 'UTC',
-          showCountdown: true,
-          showAddToCalendar: true,
-        },
-      }));
-    } else {
-      dbConfig = AppConfigSchema.parse(rawDbConfig);
-    }
-
-  } catch (error) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('Database connection failed during configuration load:', error);
-    } else {
-      console.warn('Database unreachable, using fallback config.');
+    } catch (error) {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('Database connection failed during configuration load:', error);
+      } else {
+        console.warn('Database unreachable, using fallback config.');
+      }
     }
   }
 

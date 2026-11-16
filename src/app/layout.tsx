@@ -18,8 +18,6 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import { cookies } from 'next/headers';
 import { generateThemeStylesheet } from '@/lib/theme/stylesheet';
 
-export const dynamic = 'force-dynamic';
-
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],
@@ -86,12 +84,22 @@ export default async function RootLayout({
   const publicConfig = toPublicAppConfig(config);
   const isUninitialized = !isSiteInitialized(config);
 
-  const cookieStore = await cookies();
-  const rawThemeMode = cookieStore.get('theme_mode')?.value;
+  const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                         process.env.STATIC_EXPORT === '1' ||
+                         process.env.npm_lifecycle_event === 'build:export';
 
   let initialThemeMode: ThemeMode = 'system';
-  if (rawThemeMode === 'light' || rawThemeMode === 'dark' || rawThemeMode === 'system') {
-    initialThemeMode = rawThemeMode as ThemeMode;
+  if (!isStaticExport) {
+    try {
+      const cookieStore = await cookies();
+      const rawThemeMode = cookieStore.get('theme_mode')?.value;
+
+      if (rawThemeMode === 'light' || rawThemeMode === 'dark' || rawThemeMode === 'system') {
+        initialThemeMode = rawThemeMode as ThemeMode;
+      }
+    } catch {
+      // Ignore if cookies are unavailable
+    }
   }
 
   const initialHtmlClass = initialThemeMode === 'light' ? 'light' : 'dark';
