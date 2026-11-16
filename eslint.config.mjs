@@ -56,6 +56,16 @@ if (reactHooks && reactHooks.rules) {
 }
 
 const eslintConfig = [
+  {
+    ignores: [
+      'storybook-static/**',
+      'public/mockServiceWorker.js',
+      '.next/**',
+      'node_modules/**',
+      'coverage/**',
+      'dist/**',
+    ],
+  },
   ...ensureFlatConfig(nextCoreWebVitals),
   ...ensureFlatConfig(nextTypescript),
   {

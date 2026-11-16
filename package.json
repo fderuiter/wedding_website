@@ -28,6 +28,8 @@
     "migrate:dev": "dotenv -c development -- prisma migrate dev",
     "migrate:deploy": "dotenv -c development -- prisma migrate deploy",
     "migrate:status": "tsx scripts/preflight-migration-summary.ts",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
     "db:seed": "tsx scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "check:action-pins": "npx tsx scripts/check-action-pins.ts",
@@ -79,6 +81,10 @@
     "@axe-core/playwright": "^4.14.0",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.64.1",
+    "@storybook/addon-essentials": "^8.6.14",
+    "@storybook/nextjs": "^8.6.19",
+    "@storybook/react": "^8.6.19",
+    "@storybook/react-webpack5": "^8.6.19",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@testing-library/dom": "^10.4.2",
@@ -94,6 +100,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "0.186.0",
+    "babel-loader": "^9.2.1",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.4.3",
     "eslint-plugin-react": "^7.37.5",
@@ -105,7 +112,10 @@
     "knip": "^6.27.0",
     "lint-staged": "^17.6.0",
     "msw": "^3.0.3",
+    "msw-storybook-addon": "^2.0.7",
+    "postcss-loader": "^8.2.1",
     "prisma": "^7.10.1",
+    "storybook": "^8.6.19",
     "tailwindcss": "^4.1.18",
     "ts-morph": "^28.0.0",
     "tsx": "^4.23.15",
@@ -114,6 +124,12 @@
   "overrides": {
     "archiver": {
       "minimatch": "^11.0.8"
+    },
+    "@storybook/nextjs": {
+      "next": "$next"
+    },
+    "msw-storybook-addon": {
+      "msw": "$msw"
     }
   },
   "lint-staged": {
