@@ -68,5 +68,5 @@ export type {
   UseRegistryContributionMachineOptions,
   UseRegistryContributionMachineReturn,
 } from './hooks/useRegistryContributionMachine';
-export { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from './utils/invitation';
+export { matchDietaryCategory, getAttendanceStatus, isAddressComplete, generateRandomCode } from './utils/invitation';
 export type { AttendanceStatus, AttendanceStatusItem, AddressItem } from './utils/invitation';

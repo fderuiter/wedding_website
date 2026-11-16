@@ -97,9 +97,13 @@ describe('ThingsToDoList', () => {
     render(<ThingsToDoList attractions={[]} />);
     await screen.findByTestId('things-to-do-map');
 
-    expect(screen.getByText('No items found')).toBeInTheDocument();
+    const emptyStateHeading = screen.getByText('No items found');
+    expect(emptyStateHeading).toBeInTheDocument();
     expect(screen.getByText('No attractions have been added yet. Please check back later!')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+
+    const emptyStateComponent = emptyStateHeading.closest('div.col-span-full');
+    expect(emptyStateComponent?.parentElement).toHaveClass('col-span-full');
   });
 
   it('renders EmptyState with "Clear filters" action button when active category filters yield no results', async () => {
