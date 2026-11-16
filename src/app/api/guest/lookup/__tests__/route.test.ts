@@ -12,7 +12,7 @@ import { POST as lookupRoute } from '../route';
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
-import { GUEST_COOKIE } from '@/core/auth/guest.server';
+import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 
 const mockFindFirst = prisma.invitationCode.findFirst as jest.Mock;
@@ -117,10 +117,34 @@ describe('POST /api/guest/lookup', () => {
       expect(json.success).toBe(false);
       expect(json.error).toContain('No invitation found matching');
     });
+
+    it('returns 404 for partial substring queries instead of falling back to contains', async () => {
+      mockFindFirst.mockResolvedValue(null);
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Jane' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('No invitation found matching');
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { guestName: { equals: 'Jane', mode: 'insensitive' } },
+            { plusOneFirstName: { equals: 'Jane', mode: 'insensitive' } },
+            { plusOneLastName: { equals: 'Jane', mode: 'insensitive' } },
+          ],
+        },
+      });
+    });
   });
 
   describe('Successful Lookups & Session Hydration', () => {
-    it('matches by guest name and sets guest_auth and guest_invite_session cookies', async () => {
+    it('matches by guest name and sets guest_invite_session cookie when caller is authenticated', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-1',
         code: 'PASS123',
@@ -128,6 +152,44 @@ describe('POST /api/guest/lookup', () => {
         email: 'jane@example.com',
         addressLine1: '123 Secret Street',
         dietaryNotes: 'Vegan',
+      });
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
+        body: JSON.stringify({ query: 'Jane Doe' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Jane Doe');
+      expect(json.code).toBeUndefined();
+      expect(json.data?.code).toBeUndefined();
+
+      // Minimal public data: should not leak sensitive database fields or raw codes
+      expect(json.addressLine1).toBeUndefined();
+      expect(json.dietaryNotes).toBeUndefined();
+      expect(json.data?.addressLine1).toBeUndefined();
+
+      // Check cookies: guest_auth should not be set (already held); guest_invite_session must be set
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
+      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(setCookieHeaders).toContain('Path=/');
+    });
+
+    it('does not set guest_invite_session cookie when caller is unauthenticated', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-1',
+        code: 'PASS123',
+        guestName: 'Jane Doe',
+        email: 'jane@example.com',
       });
 
       const req = new NextRequest('http://localhost/api/guest/lookup', {
@@ -141,21 +203,14 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.guestName).toBe('Jane Doe');
-      expect(json.code).toBe('PASS123');
+      expect(json.code).toBeUndefined();
 
-      // Minimal public data: should not leak sensitive database fields
-      expect(json.addressLine1).toBeUndefined();
-      expect(json.dietaryNotes).toBeUndefined();
-      expect(json.data.addressLine1).toBeUndefined();
-
-      // Check cookies
       const setCookieHeaders = res.headers.get('set-cookie') || '';
-      expect(setCookieHeaders).toContain(`${GUEST_COOKIE}=`);
-      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
-      expect(setCookieHeaders).toContain('Path=/');
+      expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
     });
 
-    it('matches by email and sets both session cookies', async () => {
+    it('matches by email and sets session cookie when caller is authenticated', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-2',
         code: 'EMAILPASS',
@@ -163,9 +218,13 @@ describe('POST /api/guest/lookup', () => {
         email: 'alex@example.com',
       });
 
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
         body: JSON.stringify({ email: 'alex@example.com' }),
       });
       const res = await lookupRoute(req);
@@ -174,10 +233,10 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.guestName).toBe('Alex Smith');
-      expect(json.code).toBe('EMAILPASS');
+      expect(json.code).toBeUndefined();
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
-      expect(setCookieHeaders).toContain(`${GUEST_COOKIE}=`);
+      expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
       expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
     });
 
@@ -198,6 +257,7 @@ describe('POST /api/guest/lookup', () => {
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.guestName).toBe('Jordan Lee');
+      expect(json.code).toBeUndefined();
     });
 
     it('matches by plus-one first name and authenticates successfully', async () => {
@@ -209,9 +269,13 @@ describe('POST /api/guest/lookup', () => {
         plusOneLastName: 'Williams',
       });
 
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
         body: JSON.stringify({ query: 'Samantha' }),
       });
       const res = await lookupRoute(req);
@@ -220,7 +284,7 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.guestName).toBe('Primary Host');
-      expect(json.code).toBe('PLUSFIRST');
+      expect(json.code).toBeUndefined();
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
@@ -233,7 +297,7 @@ describe('POST /api/guest/lookup', () => {
       });
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
-      expect(setCookieHeaders).toContain(`${GUEST_COOKIE}=`);
+      expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
       expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
     });
 
@@ -257,7 +321,7 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.guestName).toBe('Primary Host');
-      expect(json.code).toBe('PLUSLAST');
+      expect(json.code).toBeUndefined();
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
@@ -288,7 +352,7 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.guestName).toBe('Primary Host');
-      expect(json.code).toBe('PLUSFULL');
+      expect(json.code).toBeUndefined();
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
@@ -321,6 +385,11 @@ describe('POST /api/guest/lookup', () => {
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
 
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBeUndefined();
+
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
           OR: expect.arrayContaining([
@@ -341,16 +410,8 @@ describe('POST /api/guest/lookup', () => {
       });
     });
 
-    it('matches plus-one name by fallback substring contains search when exact match fails', async () => {
-      mockFindFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          id: 'inv-uuid-plus-5',
-          code: 'PLUSFALLBACK',
-          guestName: 'Primary Host',
-          plusOneFirstName: 'Samantha',
-          plusOneLastName: 'Williams',
-        });
+    it('returns 404 for partial plus-one name substring queries instead of falling back to contains', async () => {
+      mockFindFirst.mockResolvedValue(null);
 
       const req = new NextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
@@ -358,23 +419,13 @@ describe('POST /api/guest/lookup', () => {
         body: JSON.stringify({ query: 'Saman' }),
       });
       const res = await lookupRoute(req);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
 
       const json = await res.json();
-      expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Host');
-      expect(json.code).toBe('PLUSFALLBACK');
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('No invitation found matching');
 
-      expect(mockFindFirst).toHaveBeenCalledTimes(2);
-      expect(mockFindFirst).toHaveBeenNthCalledWith(2, {
-        where: {
-          OR: [
-            { guestName: { contains: 'Saman', mode: 'insensitive' } },
-            { plusOneFirstName: { contains: 'Saman', mode: 'insensitive' } },
-            { plusOneLastName: { contains: 'Saman', mode: 'insensitive' } },
-          ],
-        },
-      });
+      expect(mockFindFirst).toHaveBeenCalledTimes(1);
     });
   });
 

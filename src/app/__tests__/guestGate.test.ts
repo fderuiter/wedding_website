@@ -202,8 +202,22 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.headers.get('location')).toBeNull();
     });
 
-    it('bypasses guest passcode check for self-service lookup API /api/guest/lookup', async () => {
+    it('rejects unauthenticated requests to self-service lookup API /api/guest/lookup with 401', async () => {
       const req = new NextRequest('http://localhost/api/guest/lookup', { method: 'POST' });
+      const res = await middleware(req);
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.error).toBe('Unauthorized');
+    });
+
+    it('allows access to /api/guest/lookup for authenticated guest session', async () => {
+      const token = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        cookies: {
+          [GUEST_COOKIE]: token,
+        },
+      });
       const res = await middleware(req);
       expect(res.status).toBe(200);
       expect(res.headers.get('location')).toBeNull();
