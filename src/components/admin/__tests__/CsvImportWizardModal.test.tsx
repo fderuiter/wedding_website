@@ -80,6 +80,41 @@ describe('CsvImportWizardModal Component', () => {
     }
   });
 
+  test('supports full keyboard accessibility with focus navigation and Enter/Space activation', () => {
+    renderModal(true);
+
+    const dropzone = screen.getByRole('button', { name: /click to select csv file/i });
+    expect(dropzone).toBeInTheDocument();
+    expect(dropzone).toHaveAttribute('tabIndex', '0');
+    expect(dropzone).toHaveClass('focus-visible:ring-2');
+    expect(dropzone).toHaveClass('focus-visible:ring-primary');
+    expect(dropzone).toHaveClass('focus-visible:outline-none');
+
+    // Tab navigation focus
+    dropzone.focus();
+    expect(dropzone).toHaveFocus();
+
+    const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    const clickSpy = jest.spyOn(fileInput, 'click');
+
+    // Enter keypress activation
+    const enterEvent = fireEvent.keyDown(dropzone, { key: 'Enter', code: 'Enter' });
+    expect(enterEvent).toBe(false);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    // Space keypress activation
+    const spaceEvent = fireEvent.keyDown(dropzone, { key: ' ', code: 'Space' });
+    expect(spaceEvent).toBe(false);
+    expect(clickSpy).toHaveBeenCalledTimes(2);
+
+    // Other keys do not trigger file picker
+    const arrowEvent = fireEvent.keyDown(dropzone, { key: 'ArrowDown', code: 'ArrowDown' });
+    expect(arrowEvent).toBe(true);
+    expect(clickSpy).toHaveBeenCalledTimes(2);
+
+    clickSpy.mockRestore();
+  });
+
   test('full multi-column wizard workflow with CSV upload, mapping, editing, and batch commit', async () => {
     renderModal(true);
 
