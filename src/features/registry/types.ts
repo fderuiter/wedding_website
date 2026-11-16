@@ -73,10 +73,21 @@ export interface PaginatedRegistryItems {
   totalPages: number;
 }
 
+export type CreateRegistryItemInput = Omit<
+  RegistryItemDTO,
+  'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased' | 'isSample'
+> & {
+  isSample?: boolean;
+  imageUrl?: string;
+  imageAlt?: string | null;
+  imageDecorative?: boolean;
+};
+
 export interface IRegistryRepository {
   getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems>;
   getItemById(id: string, options?: { includeContributors?: boolean }): Promise<RegistryItemDTO | null>;
-  createItem(data: Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased' | 'isSample'> & { isSample?: boolean; imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }): Promise<RegistryItemDTO>;
+  createItem(data: CreateRegistryItemInput): Promise<RegistryItemDTO>;
+  createBatchItems(items: CreateRegistryItemInput[]): Promise<RegistryItemDTO[]>;
   updateItem(id: string, data: Partial<RegistryItemDTO> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }): Promise<RegistryItemDTO>;
   deleteItem(id: string, author?: string): Promise<RegistryItemDTO>;
   contributeToItem(itemId: string, contribution: {
@@ -91,3 +102,4 @@ export interface IRegistryRepository {
     transactionTimestamp?: Date | string | null;
   }): Promise<RegistryItemDTO>;
 }
+

@@ -1,5 +1,5 @@
 import { registryRepository } from './repository';
-import type { IRegistryRepository, RegistryItem, GetItemsOptions, PaginatedRegistryItems } from './types';
+import type { IRegistryRepository, RegistryItem, GetItemsOptions, PaginatedRegistryItems, CreateRegistryItemInput } from './types';
 
 /**
  * Handles business logic for registry-related operations.
@@ -36,8 +36,17 @@ class RegistryService {
    * @param data - The data for the new item.
    * @returns A promise that resolves to the newly created registry item.
    */
-  async createItem(data: Omit<RegistryItem, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased' | 'isSample'> & { isSample?: boolean; imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
+  async createItem(data: CreateRegistryItemInput) {
     return this.repository.createItem(data);
+  }
+
+  /**
+   * Creates a batch of registry items within an atomic transaction.
+   * @param items - Array of item data objects.
+   * @returns A promise that resolves to the array of created registry items.
+   */
+  async createBatchItems(items: CreateRegistryItemInput[]) {
+    return this.repository.createBatchItems(items);
   }
 
   /**

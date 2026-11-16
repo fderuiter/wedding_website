@@ -9,7 +9,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 export const metadata: Metadata = {
   title: 'Things to Do',
   alternates: {
-    canonical: '',
+    canonical: '/things-to-do',
   },
 };
 
@@ -36,10 +36,14 @@ export default async function ThingsToDoPage() {
     [] as AttractionDTO[]
   );
 
+  const heading = config.venueCity?.trim()
+    ? `Things to Do in ${config.venueCity.trim()}`
+    : 'Things to Do';
+
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
-        Things to Do in City
+        {heading}
       </h1>
       <ThingsToDoList attractions={attractions} defaultCenter={[config.latitude, config.longitude]} />
     </div>

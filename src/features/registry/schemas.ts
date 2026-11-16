@@ -334,5 +334,17 @@ export const PublicAddressCollectSchema = z.object({
 
 export type PublicAddressCollectDTO = z.infer<typeof PublicAddressCollectSchema>;
 
+export const BatchScrapeUrlsSchema = z.object({
+  urls: z.array(z.string().trim().max(2000, 'URL must be under 2000 characters.')).min(1, 'At least one URL is required.').max(20, 'Maximum of 20 URLs allowed per batch.'),
+});
+
+export type BatchScrapeUrlsDTO = z.infer<typeof BatchScrapeUrlsSchema>;
+
+export const BatchCreateRegistryItemsSchema = z.object({
+  items: z.array(RegistryItemBaseSchema).min(1, 'At least one item is required.').max(100, 'Maximum of 100 items per batch.'),
+});
+
+export type BatchCreateRegistryItemsDTO = z.infer<typeof BatchCreateRegistryItemsSchema>;
+
 
 

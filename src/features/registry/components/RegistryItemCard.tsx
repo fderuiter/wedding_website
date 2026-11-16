@@ -67,7 +67,7 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
 
     fieldErrors,
     codeError,
-    error,
+    submissionError,
 
     setContributorName,
     setEmail,
@@ -478,6 +478,7 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
               onChange={(e) => setContributorName(e.target.value)}
               disabled={isSubmitting}
             />
+            {fieldErrors.name && <FormMessage>{fieldErrors.name}</FormMessage>}
           </FormGroup>
           <FormGroup state={fieldErrors.email ? 'error' : 'default'} className="mb-3">
             <Label>Email Address (Optional)</Label>
@@ -488,6 +489,7 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
               onChange={(e) => setEmail(e.target.value)}
               disabled={isSubmitting}
             />
+            {fieldErrors.email && <FormMessage>{fieldErrors.email}</FormMessage>}
           </FormGroup>
           {item.isGroupGift && (
             <FormGroup state={fieldErrors.amount ? 'error' : 'default'} className="mb-3">
@@ -560,6 +562,7 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
                 max={remainingAmount}
                 disabled={isSubmitting}
               />
+              {fieldErrors.amount && <FormMessage>{fieldErrors.amount}</FormMessage>}
             </FormGroup>
           )}
 
@@ -655,14 +658,13 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
               maxLength={1000}
               rows={3}
             />
+            {fieldErrors.message && <FormMessage>{fieldErrors.message}</FormMessage>}
           </FormGroup>
-
-          {error && (
+          {submissionError && (
             <FormGroup state="error" className="mb-3">
-              <FormMessage>{error}</FormMessage>
+              <FormMessage>{submissionError}</FormMessage>
             </FormGroup>
           )}
-
           <Button
             type="submit"
             variant="primary"

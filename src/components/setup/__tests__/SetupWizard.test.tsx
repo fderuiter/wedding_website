@@ -83,7 +83,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument();
+      expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument();
     });
 
     const h1Headings = screen.getAllByRole('heading', { level: 1 });
@@ -92,7 +92,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
     const h2Headings = screen.getAllByRole('heading', { level: 2 });
     expect(h2Headings).toHaveLength(1);
-    expect(h2Headings[0]).toHaveTextContent('Step 1: The Essentials');
+    expect(h2Headings[0]).toHaveTextContent('Step 2: The Essentials');
   });
 
   test('password authentication failure shifts focus, selects text, and sets ARIA error attributes', async () => {
@@ -153,8 +153,8 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(passInput, { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    // Wait for Step 1 Essentials form
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    // Wait for Step 2 Essentials form
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     // Fill form except site URL has a sample/default domain
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
@@ -213,8 +213,8 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(passInput, { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    // Wait for Step 1 Essentials form
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    // Wait for Step 2 Essentials form
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
@@ -265,7 +265,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(passInput, { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
@@ -309,7 +309,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     // Step 2: Essentials
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
@@ -355,7 +355,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     // Step 2: Essentials
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
@@ -396,7 +396,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     });
 
     expect(screen.queryByText('Welcome to Your Wedding Site!')).not.toBeInTheDocument();
-    expect(screen.queryByText('Step 1: The Essentials')).not.toBeInTheDocument();
+    expect(screen.queryByText('Step 2: The Essentials')).not.toBeInTheDocument();
   });
 
   test('login action preserves saved draft step greater than step 2 upon successful authentication', async () => {
@@ -438,7 +438,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('Step 1: The Essentials')).not.toBeInTheDocument();
+    expect(screen.queryByText('Step 2: The Essentials')).not.toBeInTheDocument();
   });
 
   test('clears error messages upon advancing steps', async () => {
@@ -480,7 +480,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     // Step 2: Essentials
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
@@ -565,7 +565,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(passInput, { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     const venueNameInput = screen.getByLabelText(/Venue Name/i);
     const venueCityInput = screen.getByLabelText(/^City$/i);
@@ -601,5 +601,180 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(savedPayload.venueState).toBe('TBD');
     expect(savedPayload.venueAddress).toBe('TBD');
     expect(savedPayload.venueZip).toBe('TBD');
+  });
+
+  test('navigates backwards from Step 3 to Step 2 and preserves form values', async () => {
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/setup')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Login
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Step 2: The Essentials
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Timezone/i), { target: { value: 'America/New_York' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam2026.com' } });
+    fireEvent.change(screen.getByLabelText(/Venue Name/i), { target: { value: 'Grand Ballroom' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Chicago' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    // Step 3: Sample Data Selection
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+
+    // Click Back on Step 3
+    const backBtn = screen.getByRole('button', { name: 'Back' });
+    expect(backBtn).toBeInTheDocument();
+    fireEvent.click(backBtn);
+
+    // Verify returned to Step 2
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+    expect(screen.getByLabelText(/Partner 1/i)).toHaveValue('Alex');
+    expect(screen.getByLabelText(/Partner 2/i)).toHaveValue('Sam');
+    expect(screen.getByLabelText(/Wedding Date/i)).toHaveValue('2026-12-31');
+    expect(screen.getByLabelText(/Timezone/i)).toHaveValue('America/New_York');
+    expect(screen.getByLabelText(/Site URL/i)).toHaveValue('https://alexandsam2026.com');
+    expect(screen.getByLabelText(/Venue Name/i)).toHaveValue('Grand Ballroom');
+    expect(screen.getByLabelText(/^City$/i)).toHaveValue('Chicago');
+    expect(screen.getByLabelText(/State/i)).toHaveValue('IL');
+  });
+
+  test('navigates backwards from Step 4 to Step 3 and preserves archetype selection', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 3,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+        sampleArchetype: 'destination',
+      })
+    );
+
+    renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+
+    // Advance to Step 4 via Skip
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+
+    // Click Back on Step 4
+    const backBtn = screen.getByRole('button', { name: 'Back' });
+    expect(backBtn).toBeInTheDocument();
+    fireEvent.click(backBtn);
+
+    // Returned to Step 3
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+    // Destination Wedding archetype preset should still be selected
+    const destinationPresetBtn = screen.getByText('Destination Wedding').closest('button');
+    expect(destinationPresetBtn).toHaveClass('border-primary');
+  });
+
+  test('navigates backwards from Step 5 to Step 4', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 5,
+        importedGuestCount: 42,
+      })
+    );
+
+    renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+
+    // Click Back on Step 5
+    const backBtn = screen.getByRole('button', { name: 'Back' });
+    expect(backBtn).toBeInTheDocument();
+    fireEvent.click(backBtn);
+
+    // Verify returned to Step 4
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Import Guest List CSV' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Skip for Now' })).toBeInTheDocument();
+    expect(screen.getByText(/42 guest record\(s\) imported/i)).toBeInTheDocument();
+  });
+
+  test('supports full bidirectional navigation through steps 2, 3, 4, and 5', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 2,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+        weddingDate: '2026-12-31',
+        baseUrl: 'https://alexandsam.com',
+      })
+    );
+
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/setup')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 2
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+    // Verify Step 2 does NOT have a Back button (to avoid session reset)
+    expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+
+    // Advance 2 -> 3
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+
+    // Advance 3 -> 4
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+
+    // Advance 4 -> 5
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for Now' }));
+    await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+
+    // Step 5 -> Step 4
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+
+    // Step 4 -> Step 3
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+
+    // Step 3 -> Step 2
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+    expect(screen.getByLabelText(/Partner 1/i)).toHaveValue('Alex');
+    expect(screen.getByLabelText(/Partner 2/i)).toHaveValue('Sam');
   });
 });

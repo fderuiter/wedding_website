@@ -80,6 +80,7 @@ jobs:
             TAGS="${TAGS},${DOCKERHUB_USERNAME}/wedding-website:${TAG_NAME},${DOCKERHUB_USERNAME}/wedding-website:latest"
           fi
 
+          echo "image_repository=ghcr.io/${REPO_LOWER}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -141,7 +142,7 @@ jobs:
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@c0744595e72338575084a4bf85ed76e1eb521ddf # v2.2.3
         with:
-          subject-name: ghcr.io/${{ github.repository }}
+          subject-name: ${{ steps.meta.outputs.image_repository }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 

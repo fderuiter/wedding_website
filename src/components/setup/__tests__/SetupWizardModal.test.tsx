@@ -99,8 +99,8 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     fireEvent.change(passInput, { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    // Step 1: Essentials Form
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    // Step 2: Essentials Form
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
@@ -255,7 +255,7 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     // Enter partner names
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Taylor' } });
@@ -278,7 +278,7 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    await waitFor(() => expect(screen.getByText('Step 1: The Essentials')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
     expect(screen.getByLabelText(/Partner 1/i)).toHaveValue('Taylor');
     expect(screen.getByLabelText(/Partner 2/i)).toHaveValue('Jordan');

@@ -7,6 +7,7 @@ import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { useAdminFeatures } from '@/hooks/admin/useAdminFeatures';
 
 import type { Feature } from './components/DragDropContainer';
@@ -43,7 +44,7 @@ const DragDropContainer = dynamic(
 
 export default function SiteManagerPage() {
   const { addToast } = useToast();
-  const { features, loading, error, saveFeatures } = useAdminFeatures();
+  const { features, loading, error, saveFeatures, fetchAll } = useAdminFeatures();
 
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [sectionToDelete, setSectionToDelete] = useState<Feature | null>(null);
@@ -81,85 +82,89 @@ export default function SiteManagerPage() {
     setCustomContent('');
   };
 
-  if (loading) return <div className="p-8 text-center text-primary">Loading Site Manager...</div>;
-  if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
-
   return (
-    <div className="py-10">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
-          <div className="space-x-4">
-            <Button onClick={() => setShowCustomModal(true)} variant="secondary">Add Custom Section</Button>
+    <AdminViewState
+      isLoading={loading}
+      error={error}
+      onRetry={fetchAll}
+      loadingSkeleton={<DragDropSkeleton />}
+    >
+      <div className="py-10">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
+            <div className="space-x-4">
+              <Button onClick={() => setShowCustomModal(true)} variant="secondary">Add Custom Section</Button>
+            </div>
           </div>
+
+          <p className="mb-6 text-lg text-gray-700 dark:text-gray-300">
+            Drag and drop sections to reorder them on the homepage. Toggle the eye icon to show or hide a section. Use Tab to navigate and Space/Enter to select and move items.
+          </p>
+
+          <DragDropContainer
+            features={features}
+            saveFeatures={saveFeatures}
+            toggleVisibility={toggleVisibility}
+            onDeleteSection={(id) => {
+              const target = features.find(f => f.id === id);
+              if (target) setSectionToDelete(target);
+            }}
+          />
+
+          <Dialog
+            isOpen={!!sectionToDelete}
+            onClose={() => setSectionToDelete(null)}
+            title="Delete Custom Section"
+            className="dark:bg-gray-800"
+          >
+            <div className="space-y-4">
+              <p className="text-gray-700 dark:text-gray-300">
+                Are you sure you want to delete the section &quot;{sectionToDelete?.title || sectionToDelete?.id}&quot;? This action cannot be undone.
+              </p>
+              <div className="flex gap-4 mt-6">
+                <Button
+                  onClick={() => sectionToDelete && deleteCustomSection(sectionToDelete.id)}
+                  variant="danger"
+                  className="flex-1"
+                >
+                  Delete
+                </Button>
+                <Button
+                  onClick={() => setSectionToDelete(null)}
+                  variant="ghost"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+
+          <Dialog
+            isOpen={showCustomModal}
+            onClose={() => setShowCustomModal(false)}
+            title="Add Custom Section"
+            aria-labelledby="modal-title"
+            className="dark:bg-gray-800"
+          >
+            <div className="space-y-4">
+              <FormGroup>
+                <Label>Section Title</Label>
+                <Input type="text" value={customTitle} onChange={e => setCustomTitle(e.target.value)} placeholder="e.g. Health & Safety" />
+              </FormGroup>
+              <FormGroup>
+                <Label>Content</Label>
+                <Textarea value={customContent} onChange={e => setCustomContent(e.target.value)} rows={5} placeholder="Add your content here... Use double line breaks for paragraphs." />
+              </FormGroup>
+              <div className="flex gap-4 mt-6">
+                <Button onClick={addCustomSection} className="flex-1 bg-green-600 hover:bg-green-700">Save Section</Button>
+                <Button onClick={() => setShowCustomModal(false)} variant="ghost" className="flex-1">Cancel</Button>
+              </div>
+            </div>
+          </Dialog>
         </div>
-
-        <p className="mb-6 text-lg text-gray-700 dark:text-gray-300">
-          Drag and drop sections to reorder them on the homepage. Toggle the eye icon to show or hide a section. Use Tab to navigate and Space/Enter to select and move items.
-        </p>
-
-        <DragDropContainer
-          features={features}
-          saveFeatures={saveFeatures}
-          toggleVisibility={toggleVisibility}
-          onDeleteSection={(id) => {
-            const target = features.find(f => f.id === id);
-            if (target) setSectionToDelete(target);
-          }}
-        />
-
-        <Dialog
-          isOpen={!!sectionToDelete}
-          onClose={() => setSectionToDelete(null)}
-          title="Delete Custom Section"
-          className="dark:bg-gray-800"
-        >
-          <div className="space-y-4">
-            <p className="text-gray-700 dark:text-gray-300">
-              Are you sure you want to delete the section &quot;{sectionToDelete?.title || sectionToDelete?.id}&quot;? This action cannot be undone.
-            </p>
-            <div className="flex gap-4 mt-6">
-              <Button
-                onClick={() => sectionToDelete && deleteCustomSection(sectionToDelete.id)}
-                variant="danger"
-                className="flex-1"
-              >
-                Delete
-              </Button>
-              <Button
-                onClick={() => setSectionToDelete(null)}
-                variant="ghost"
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </Dialog>
-
-        <Dialog
-          isOpen={showCustomModal}
-          onClose={() => setShowCustomModal(false)}
-          title="Add Custom Section"
-          aria-labelledby="modal-title"
-          className="dark:bg-gray-800"
-        >
-          <div className="space-y-4">
-            <FormGroup>
-              <Label>Section Title</Label>
-              <Input type="text" value={customTitle} onChange={e => setCustomTitle(e.target.value)} placeholder="e.g. Health & Safety" />
-            </FormGroup>
-            <FormGroup>
-              <Label>Content</Label>
-              <Textarea value={customContent} onChange={e => setCustomContent(e.target.value)} rows={5} placeholder="Add your content here... Use double line breaks for paragraphs." />
-            </FormGroup>
-            <div className="flex gap-4 mt-6">
-              <Button onClick={addCustomSection} className="flex-1 bg-green-600 hover:bg-green-700">Save Section</Button>
-              <Button onClick={() => setShowCustomModal(false)} variant="ghost" className="flex-1">Cancel</Button>
-            </div>
-          </div>
-        </Dialog>
       </div>
-    </div>
+    </AdminViewState>
   );
 }

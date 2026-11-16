@@ -274,7 +274,7 @@ function SetupWizardContent() {
       <AccessibleStep isActive={step === 2}>
         <Container>
           <Card className="max-w-xl">
-            <Heading as="h2" className="mb-4">Step 1: The Essentials</Heading>
+            <Heading as="h2" className="mb-4">Step 2: The Essentials</Heading>
             <p className="mb-4 text-gray-700">Let&apos;s start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -476,7 +476,16 @@ function SetupWizardContent() {
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={loading}
+                  onClick={() => setStep(2)}
+                  className="py-3 px-6"
+                >
+                  Back
+                </Button>
                 <Button
                   type="submit"
                   disabled={loading}
@@ -524,6 +533,14 @@ function SetupWizardContent() {
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
                 type="button"
+                variant="secondary"
+                onClick={() => setStep(3)}
+                className="py-3 px-6"
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
                 variant="primary"
                 onClick={() => openModal('csv')}
                 className="flex-1 py-3"
@@ -562,12 +579,26 @@ function SetupWizardContent() {
               </p>
             )}
             <p className="mt-6 mb-4 text-sm text-gray-600">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
-            <Button onClick={() => {
-              clearPersistedState();
-              window.location.href = '/admin/dashboard';
-            }} variant="primary" className="w-full py-3">
-              Go to Admin Dashboard
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setStep(4)}
+                className="py-3 px-6"
+              >
+                Back
+              </Button>
+              <Button
+                onClick={() => {
+                  clearPersistedState();
+                  window.location.href = '/admin/dashboard';
+                }}
+                variant="primary"
+                className="flex-1 py-3"
+              >
+                Go to Admin Dashboard
+              </Button>
+            </div>
           </Card>
         </Container>
       </AccessibleStep>

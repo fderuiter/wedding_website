@@ -158,8 +158,10 @@ flowchart LR
     node_api_registry_contribute["contribute"]
     node_api_registry_items["items"]
     node_api_registry_items_id["[id]"]
+    node_api_registry_items_batch["batch"]
     node_api_registry_paymentintent["payment-intent"]
     node_api_registry_scrape["scrape"]
+    node_api_registry_scrape_batch["batch"]
     node_api_registry_session["session"]
     node_api_registry_validatecode["validate-code"]
     node_api_registry_webhook["webhook"]
@@ -269,8 +271,10 @@ flowchart LR
     node_api_registry --> node_api_registry_contribute
     node_api_registry --> node_api_registry_items
     node_api_registry_items --> node_api_registry_items_id
+    node_api_registry_items --> node_api_registry_items_batch
     node_api_registry --> node_api_registry_paymentintent
     node_api_registry --> node_api_registry_scrape
+    node_api_registry_scrape --> node_api_registry_scrape_batch
     node_api_registry --> node_api_registry_session
     node_api_registry --> node_api_registry_validatecode
     node_api_registry --> node_api_registry_webhook
@@ -366,8 +370,10 @@ flowchart LR
     class node_api_registry_contribute api;
     class node_api_registry_items api;
     class node_api_registry_items_id api;
+    class node_api_registry_items_batch api;
     class node_api_registry_paymentintent api;
     class node_api_registry_scrape api;
+    class node_api_registry_scrape_batch api;
     class node_api_registry_session api;
     class node_api_registry_validatecode api;
     class node_api_registry_webhook_stripe api;
