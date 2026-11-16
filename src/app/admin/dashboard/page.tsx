@@ -8,17 +8,42 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { formatCurrency, formatDate } from '@/utils/intl';
 
-const ContributionsList = ({ contributors }: { contributors?: { name: string; amount: number; date: string }[] }) => {
+const ContributionsList = ({
+  contributors,
+}: {
+  contributors?: {
+    name: string;
+    amount: number;
+    date: string;
+    stripeChargeId?: string | null;
+    stripePaymentIntentId?: string | null;
+    transactionTimestamp?: string | null;
+  }[];
+}) => {
   if (!contributors || contributors.length === 0) {
     return <span className="text-gray-500 dark:text-gray-400">None</span>;
   }
   return (
-    <ul className="text-xs space-y-1">
-      {contributors.map((c, idx) => (
-        <li key={idx}>
-          {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
-        </li>
-      ))}
+    <ul className="text-xs space-y-1.5">
+      {contributors.map((c, idx) => {
+        const transactionRef = c.stripeChargeId || c.stripePaymentIntentId;
+        return (
+          <li key={idx} className="flex flex-col">
+            <span>
+              {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
+            </span>
+            {transactionRef && (
+              <span
+                data-testid={`verified-transaction-${idx}`}
+                className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-medium"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                Verified Ref: {transactionRef}
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 };

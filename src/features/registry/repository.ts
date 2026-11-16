@@ -297,12 +297,36 @@ class RegistryRepository implements IRegistryRepository {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; email?: string | null; amount: number; code?: string; message?: string | null; coverFee?: boolean }
+    contribution: {
+      name: string;
+      email?: string | null;
+      amount: number;
+      code?: string;
+      message?: string | null;
+      coverFee?: boolean;
+      stripePaymentIntentId?: string | null;
+      stripeChargeId?: string | null;
+      transactionTimestamp?: Date | string | null;
+    }
   ) {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
       if (typeof txClient.$queryRaw === 'function') {
         await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+      }
+
+      // Check for idempotent duplicate if a Stripe PaymentIntent ID is provided
+      if (contribution.stripePaymentIntentId) {
+        const existing = await txClient.contributor.findFirst({
+          where: { stripePaymentIntentId: contribution.stripePaymentIntentId },
+        });
+        if (existing) {
+          const existingItem = await txClient.registryItem.findUnique({
+            where: { id: itemId },
+            include: { image: true, contributors: true },
+          });
+          return RegistryItemSchema.parse(existingItem);
+        }
       }
 
       // 2. Fetch the absolute latest state of the item inside the transaction context
@@ -364,6 +388,7 @@ class RegistryRepository implements IRegistryRepository {
 
       const messageToSave = contribution.message && contribution.message.trim() ? contribution.message.trim() : null;
       const emailToSave = contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
+      const transactionDate = contribution.transactionTimestamp ? new Date(contribution.transactionTimestamp) : new Date();
 
       const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
@@ -378,7 +403,10 @@ class RegistryRepository implements IRegistryRepository {
               coverFee,
               feeAmount,
               message: messageToSave,
-              date: new Date(),
+              date: transactionDate,
+              ...(contribution.stripePaymentIntentId ? { stripePaymentIntentId: contribution.stripePaymentIntentId } : {}),
+              ...(contribution.stripeChargeId ? { stripeChargeId: contribution.stripeChargeId } : {}),
+              ...(contribution.transactionTimestamp ? { transactionTimestamp: new Date(contribution.transactionTimestamp) } : {}),
               ...(invitationCodeId ? { invitationCodeId } : {})
             }
           }
