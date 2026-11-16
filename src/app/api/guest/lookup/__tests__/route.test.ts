@@ -199,6 +199,183 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.guestName).toBe('Jordan Lee');
     });
+
+    it('matches by plus-one first name and authenticates party invitation', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-1',
+        code: 'PLUS1_CODE',
+        guestName: 'Primary Guest',
+        email: 'primary@example.com',
+        plusOneFirstName: 'Cassandra',
+        plusOneLastName: 'Vane',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Cassandra' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Guest');
+      expect(json.code).toBe('PLUS1_CODE');
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            { plusOneFirstName: { equals: 'Cassandra', mode: 'insensitive' } },
+          ]),
+        },
+      });
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).toContain(`${GUEST_COOKIE}=`);
+      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
+    });
+
+    it('matches by plus-one last name and authenticates party invitation', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-2',
+        code: 'PLUS2_CODE',
+        guestName: 'Primary Guest',
+        email: 'primary@example.com',
+        plusOneFirstName: 'Cassandra',
+        plusOneLastName: 'Vane',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Vane' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Guest');
+      expect(json.code).toBe('PLUS2_CODE');
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            { plusOneLastName: { equals: 'Vane', mode: 'insensitive' } },
+          ]),
+        },
+      });
+    });
+
+    it('matches compound plus-one full name by tokenizing first and last name', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-3',
+        code: 'PLUS3_CODE',
+        guestName: 'Primary Guest',
+        email: 'primary@example.com',
+        plusOneFirstName: 'Cassandra',
+        plusOneLastName: 'Vane',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Cassandra Vane' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Guest');
+      expect(json.code).toBe('PLUS3_CODE');
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            {
+              AND: [
+                { plusOneFirstName: { equals: 'Cassandra', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Vane', mode: 'insensitive' } },
+              ],
+            },
+          ]),
+        },
+      });
+    });
+
+    it('matches compound multi-token plus-one full name with multiple words', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-4',
+        code: 'PLUS4_CODE',
+        guestName: 'Primary Guest',
+        email: 'primary@example.com',
+        plusOneFirstName: 'Mary Jane',
+        plusOneLastName: 'Watson',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Mary Jane Watson' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Guest');
+      expect(json.code).toBe('PLUS4_CODE');
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            {
+              AND: [
+                { plusOneFirstName: { equals: 'Mary Jane', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Watson', mode: 'insensitive' } },
+              ],
+            },
+          ]),
+        },
+      });
+    });
+
+    it('falls back to substring search across guestName, plusOneFirstName, and plusOneLastName when exact match misses', async () => {
+      // First call (exact match) returns null; second call (fallback contains) returns invitation
+      mockFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: 'inv-uuid-plus-5',
+        code: 'PLUS5_CODE',
+        guestName: 'Primary Guest',
+        email: 'primary@example.com',
+        plusOneFirstName: 'Cassandra',
+        plusOneLastName: 'Vane',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Cassan' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Guest');
+      expect(json.code).toBe('PLUS5_CODE');
+
+      expect(mockFindFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          OR: [
+            { guestName: { contains: 'Cassan', mode: 'insensitive' } },
+            { plusOneFirstName: { contains: 'Cassan', mode: 'insensitive' } },
+            { plusOneLastName: { contains: 'Cassan', mode: 'insensitive' } },
+          ],
+        },
+      });
+    });
   });
 
   describe('Rate Limiting Guardrails', () => {

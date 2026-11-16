@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { GuestLookupSchema } from '@/utils/validation';
@@ -24,12 +25,36 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const searchEmail = email?.trim() || (query?.includes('@') ? query.trim() : undefined);
   const searchName = name?.trim() || (!query?.includes('@') ? query?.trim() : undefined);
 
-  const conditions: Array<Record<string, { equals: string; mode: 'insensitive' }>> = [];
+  const conditions: Prisma.InvitationCodeWhereInput[] = [];
   if (searchEmail) {
     conditions.push({ email: { equals: searchEmail, mode: 'insensitive' } });
   }
   if (searchName) {
     conditions.push({ guestName: { equals: searchName, mode: 'insensitive' } });
+    conditions.push({ plusOneFirstName: { equals: searchName, mode: 'insensitive' } });
+    conditions.push({ plusOneLastName: { equals: searchName, mode: 'insensitive' } });
+
+    const tokens = searchName.split(/\s+/).filter(Boolean);
+    if (tokens.length >= 2) {
+      const first = tokens[0];
+      const rest = tokens.slice(1).join(' ');
+      conditions.push({
+        AND: [
+          { plusOneFirstName: { equals: first, mode: 'insensitive' } },
+          { plusOneLastName: { equals: rest, mode: 'insensitive' } },
+        ],
+      });
+      if (tokens.length > 2) {
+        const allButLast = tokens.slice(0, -1).join(' ');
+        const last = tokens[tokens.length - 1];
+        conditions.push({
+          AND: [
+            { plusOneFirstName: { equals: allButLast, mode: 'insensitive' } },
+            { plusOneLastName: { equals: last, mode: 'insensitive' } },
+          ],
+        });
+      }
+    }
   }
 
   let invite = await prisma.invitationCode.findFirst({
@@ -39,7 +64,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (!invite && searchName && searchName.length >= 3) {
     invite = await prisma.invitationCode.findFirst({
       where: {
-        guestName: { contains: searchName, mode: 'insensitive' },
+        OR: [
+          { guestName: { contains: searchName, mode: 'insensitive' } },
+          { plusOneFirstName: { contains: searchName, mode: 'insensitive' } },
+          { plusOneLastName: { contains: searchName, mode: 'insensitive' } },
+        ],
       },
     });
   }
