@@ -56,6 +56,11 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
     onDelete?.(item.id);
   };
 
+  const handleContribute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClick(item);
+  };
+
   const innerContent = (
     <>
       {/* Visual overlay for claimed/fully funded - Adjusted colors */}
@@ -162,6 +167,18 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
             </Button>
           </div>
         )}
+        {isClickable && (
+          <div className="absolute bottom-4 right-4 z-20">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleContribute}
+              aria-label={`Contribute to ${item.name}`}
+            >
+              Contribute
+            </Button>
+          </div>
+        )}
       </div>
     </>
   );
@@ -177,8 +194,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
           ? `, ${fundingPercentage}% funded`
           : ''
     }`,
-    tabIndex: isClickable ? 0 : undefined,
-    role: isClickable ? 'button' : undefined,
+    tabIndex: isClickable ? -1 : undefined,
+    role: isClickable ? 'region' : undefined,
   };
 
   if (isAdmin) {

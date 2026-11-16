@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -24,18 +25,35 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const searchEmail = email?.trim() || (query?.includes('@') ? query.trim() : undefined);
   const searchName = name?.trim() || (!query?.includes('@') ? query?.trim() : undefined);
 
-  const conditions: Array<Record<string, { equals: string; mode: 'insensitive' }>> = [];
+  const conditions: Prisma.InvitationCodeWhereInput[] = [];
   if (searchEmail) {
     conditions.push({ email: { equals: searchEmail, mode: 'insensitive' } });
   }
   if (searchName) {
     conditions.push({ guestName: { equals: searchName, mode: 'insensitive' } });
+    conditions.push({ plusOneFirstName: { equals: searchName, mode: 'insensitive' } });
+    conditions.push({ plusOneLastName: { equals: searchName, mode: 'insensitive' } });
+
+    const tokens = searchName.split(/\s+/).filter(Boolean);
+    if (tokens.length >= 2) {
+      for (let i = 1; i < tokens.length; i++) {
+        const first = tokens.slice(0, i).join(' ');
+        const last = tokens.slice(i).join(' ');
+        conditions.push({
+          AND: [
+            { plusOneFirstName: { equals: first, mode: 'insensitive' } },
+            { plusOneLastName: { equals: last, mode: 'insensitive' } },
+          ],
+        });
+      }
+    }
   }
 
-  const invite = await prisma.invitationCode.findFirst({
-    where: conditions.length === 1 ? conditions[0] : { OR: conditions },
-  });
-
+  const invite = conditions.length > 0
+    ? await prisma.invitationCode.findFirst({
+      where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+    })
+    : null;
   if (!invite) {
     throw new ApiError(404, 'No invitation found matching the provided details.');
   }

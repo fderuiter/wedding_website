@@ -132,7 +132,13 @@ describe('POST /api/guest/lookup', () => {
       expect(json.error).toContain('No invitation found matching');
 
       expect(mockFindFirst).toHaveBeenCalledWith({
-        where: { guestName: { equals: 'Jane', mode: 'insensitive' } },
+        where: {
+          OR: [
+            { guestName: { equals: 'Jane', mode: 'insensitive' } },
+            { plusOneFirstName: { equals: 'Jane', mode: 'insensitive' } },
+            { plusOneLastName: { equals: 'Jane', mode: 'insensitive' } },
+          ],
+        },
       });
     });
   });
@@ -252,6 +258,174 @@ describe('POST /api/guest/lookup', () => {
       const json = await res.json();
       expect(json.guestName).toBe('Jordan Lee');
       expect(json.code).toBeUndefined();
+    });
+
+    it('matches by plus-one first name and authenticates successfully', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-1',
+        code: 'PLUSFIRST',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Samantha',
+        plusOneLastName: 'Williams',
+      });
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
+        body: JSON.stringify({ query: 'Samantha' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBeUndefined();
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            { guestName: { equals: 'Samantha', mode: 'insensitive' } },
+            { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
+            { plusOneLastName: { equals: 'Samantha', mode: 'insensitive' } },
+          ]),
+        },
+      });
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
+      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
+    });
+
+    it('matches by plus-one last name', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-2',
+        code: 'PLUSLAST',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Samantha',
+        plusOneLastName: 'Williams',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Williams' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBeUndefined();
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
+          ]),
+        },
+      });
+    });
+
+    it('matches compound plus-one full name tokens', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-3',
+        code: 'PLUSFULL',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Samantha',
+        plusOneLastName: 'Williams',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Samantha Williams' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBeUndefined();
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            {
+              AND: [
+                { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
+              ],
+            },
+          ]),
+        },
+      });
+    });
+
+    it('matches multi-token compound plus-one full name', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-plus-4',
+        code: 'PLUSMULTI',
+        guestName: 'Primary Host',
+        plusOneFirstName: 'Mary Jane',
+        plusOneLastName: 'Watson',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Mary Jane Watson' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.guestName).toBe('Primary Host');
+      expect(json.code).toBeUndefined();
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            {
+              AND: [
+                { plusOneFirstName: { equals: 'Mary', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Jane Watson', mode: 'insensitive' } },
+              ],
+            },
+            {
+              AND: [
+                { plusOneFirstName: { equals: 'Mary Jane', mode: 'insensitive' } },
+                { plusOneLastName: { equals: 'Watson', mode: 'insensitive' } },
+              ],
+            },
+          ]),
+        },
+      });
+    });
+
+    it('returns 404 for partial plus-one name substring queries instead of falling back to contains', async () => {
+      mockFindFirst.mockResolvedValue(null);
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Saman' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('No invitation found matching');
+
+      expect(mockFindFirst).toHaveBeenCalledTimes(1);
     });
   });
 

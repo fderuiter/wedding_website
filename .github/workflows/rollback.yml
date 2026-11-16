@@ -64,48 +64,88 @@ jobs:
         run: npm ci
 
       - name: Log Rollback Request Details
+        env:
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
         run: |
+          if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
+            echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
+            exit 1
+          fi
+
+          if [[ ! "$PREVIOUS_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+            echo "::error::Invalid image tag '${PREVIOUS_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+            exit 1
+          fi
+
+          INVALID_REASON_CHARS="[;\`\$\&\|<>\\]"
+          if [[ "$REASON" =~ $INVALID_REASON_CHARS ]]; then
+            echo "::error::Invalid characters detected in rollback reason. Semicolons, backticks, and shell metacharacters are forbidden."
+            exit 1
+          fi
+
+          SAFE_REASON=$(printf '%s' "$REASON" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          NOW=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
           echo "=================================================="
           echo "           AUTOMATED ROLLBACK INITIATED           "
           echo "=================================================="
-          echo "Target Environment: ${{ inputs.target_environment || 'production' }}"
-          echo "Rollback Image Tag: ${{ inputs.previous_tag || 'latest' }}"
-          echo "Rollback Trigger Reason: ${{ inputs.reason || 'Post-deployment verification failure' }}"
-          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Target Environment: ${TARGET_ENV}"
+          echo "Rollback Image Tag: ${PREVIOUS_TAG}"
+          echo "Rollback Trigger Reason: ${SAFE_REASON}"
+          echo "Timestamp: ${NOW}"
           echo "=================================================="
 
       - name: Pre-Rollback Database Compatibility Safety Gate
         id: db_safety_check
+        env:
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
         run: |
           echo "=================================================="
           echo "    PRE-ROLLBACK DATABASE COMPATIBILITY CHECK    "
           echo "=================================================="
           echo "Verifying database migrations backwards compatibility for N-1 container restoration..."
           npm run lint:migrations
-          echo "db_compatibility_status=verified" >> $GITHUB_OUTPUT
+          echo "db_compatibility_status=verified" >> "$GITHUB_OUTPUT"
           echo "✅ N-1 database schema compatibility validated. Safe to redeploy previous image tag."
 
       - name: Redeploy Previous Validated Container Image
+        env:
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
         run: |
-          echo "Restoring production deployment to image tag/digest: ${{ inputs.previous_tag || 'latest' }}..."
+          echo "Restoring ${TARGET_ENV} deployment to image tag/digest: ${PREVIOUS_TAG}..."
           echo "Container service successfully restored to previous image tag."
 
       - name: Send Rollback Notification
         if: always()
+        env:
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
         run: |
-          echo "NOTIFICATION: Rollback completed for environment ${{ inputs.target_environment || 'production' }} to image tag ${{ inputs.previous_tag || 'latest' }}."
-          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          SAFE_ENV=$(printf '%s' "$TARGET_ENV" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_TAG=$(printf '%s' "$PREVIOUS_TAG" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_REASON=$(printf '%s' "$REASON" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          NOW=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+          echo "NOTIFICATION: Rollback completed for environment ${SAFE_ENV} to image tag ${SAFE_TAG}."
+          cat << EOF >> "$GITHUB_STEP_SUMMARY"
           ### ⏪ Automated Rollback Execution Summary
-          - **Target Environment:** `${{ inputs.target_environment || 'production' }}`
-          - **Restored Image Tag:** `${{ inputs.previous_tag || 'latest' }}`
-          - **Trigger Reason:** `${{ inputs.reason || 'Post-deployment verification failure' }}`
-          - **Timestamp:** `$(date -u +'%Y-%m-%dT%H:%M:%SZ')`
-          - **Pre-Rollback Database Safety Gate:** `PASSED (N-1 Schema Compatible)`
-          - **Database Schema Action:** `Preserved (Forward-Only / Expand-Migrate-Contract Compliant)`
-          - **Overall Rollback Status:** `SUCCESS`
+          - **Target Environment:** \`${SAFE_ENV}\`
+          - **Restored Image Tag:** \`${SAFE_TAG}\`
+          - **Trigger Reason:** \`${SAFE_REASON}\`
+          - **Timestamp:** \`${NOW}\`
+          - **Pre-Rollback Database Safety Gate:** \`PASSED (N-1 Schema Compatible)\`
+          - **Database Schema Action:** \`Preserved (Forward-Only / Expand-Migrate-Contract Compliant)\`
+          - **Overall Rollback Status:** \`SUCCESS\`
 
           #### Diagnostic & Safety Details
           1. **N-1 Backward Compatibility**: Applied database migrations strictly follow Expand-Migrate-Contract rules. Destructive column/table drops or NOT NULL additions without defaults were prevented.
-          2. **Container Restoration**: Previous stable container image `${{ inputs.previous_tag || 'latest' }}` restored without requiring destructive database schema reversal.
+          2. **Container Restoration**: Previous stable container image \`${SAFE_TAG}\` restored without requiring destructive database schema reversal.
           3. **Next Steps**: Investigate the root cause of the post-deployment health check failure from release logs before attempting redeployment.
           EOF

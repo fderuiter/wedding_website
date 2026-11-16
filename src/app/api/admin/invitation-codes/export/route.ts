@@ -4,11 +4,36 @@ import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
 import { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from '@/features/registry';
 
+function extractPhoneNumber(extraFields: unknown): string {
+  if (!extraFields) return '';
+
+  let parsed: unknown = extraFields;
+  if (typeof extraFields === 'string') {
+    try {
+      parsed = JSON.parse(extraFields);
+    } catch {
+      return '';
+    }
+  }
+
+  if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>;
+    const candidate = [record.phone, record.mobile, record.phoneNumber].find(
+      (val) => (typeof val === 'string' && val.trim().length > 0) || typeof val === 'number'
+    );
+    if (typeof candidate === 'string') return candidate;
+    if (typeof candidate === 'number') return String(candidate);
+  }
+
+  return '';
+}
+
 const HEADERS = [
   'Guest Name',
   'Invitation Code',
   'RSVP Link',
   'Email',
+  'Phone Number',
   'Plus-One Name',
   'Household Name',
   'Party Group',
@@ -24,6 +49,7 @@ interface InvitationCodeExportRecord extends Record<string, unknown> {
   'Invitation Code': string;
   'RSVP Link': string;
   'Email': string;
+  'Phone Number': string;
   'Plus-One Name': string;
   'Household Name': string;
   'Party Group': string;
@@ -141,12 +167,14 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       .join(', ');
 
     const rsvpLink = item.code ? `${baseUrl}/guest?code=${encodeURIComponent(item.code)}` : '';
+    const phoneNumber = extractPhoneNumber(item.extraFields);
 
     return {
       'Guest Name': item.guestName || '',
       'Invitation Code': item.code || '',
       'RSVP Link': rsvpLink,
       'Email': item.email || '',
+      'Phone Number': phoneNumber,
       'Plus-One Name': plusOneName,
       'Household Name': item.householdName || '',
       'Party Group': item.partyGroup || '',
