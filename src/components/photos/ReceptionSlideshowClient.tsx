@@ -18,7 +18,7 @@ interface ReceptionSlideshowClientProps {
   uploadUrl?: string;
 }
 
-const DEFAULT_FALLBACK_PHOTOS: SlideshowPhoto[] = [
+export const DEFAULT_FALLBACK_PHOTOS: SlideshowPhoto[] = [
   {
     id: 'fallback-1',
     url: 'https://lh3.googleusercontent.com/pw/AP1GczNPp0Rk6pvvMtymS3RUx7F6cAyOkFaovF20N5_FkaDupk3QkgjNWfTiMxZbgtnyO-Ny0tH3JPkT6Vld35Pg8xFq1AAcZcxnHdTQ3DfHKsNLKpA59mEw=w1920-h1080',
@@ -59,6 +59,8 @@ export function ReceptionSlideshowClient({
   uploadUrl,
 }: ReceptionSlideshowClientProps) {
   const [photos, setPhotos] = useState<SlideshowPhoto[]>(() => normalizePhotos(initialPhotos));
+  const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
+  const failedUrlsRef = useRef<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [duration, setDuration] = useState<5 | 8 | 10>(8);
@@ -91,6 +93,47 @@ export function ReceptionSlideshowClient({
       return true;
     }
     return false;
+  }, []);
+
+  // Keep currentIndex in bounds when photos queue size shrinks
+  useEffect(() => {
+    if (photos.length > 0 && currentIndex >= photos.length) {
+      setCurrentIndex((prev) => (photos.length > 0 ? prev % photos.length : 0));
+    } else if (photos.length === 0 && currentIndex !== 0) {
+      setCurrentIndex(0);
+    }
+  }, [photos.length, currentIndex]);
+
+  // Handle broken image URLs by skipping immediately and falling back to default photos if all fail
+  const handlePhotoError = useCallback((failedUrl: string) => {
+    failedUrlsRef.current.add(failedUrl);
+    setFailedUrls((prev) => {
+      const next = new Set(prev);
+      next.add(failedUrl);
+      return next;
+    });
+
+    setPhotos((currentList) => {
+      const remaining = currentList.filter((p) => p.url !== failedUrl);
+
+      if (remaining.length > 0) {
+        return remaining;
+      }
+
+      // All photos in current list failed: recover with default fallback photos that haven't failed.
+      // Guard against infinite loops if fallback photos also fail.
+      const availableFallbacks = DEFAULT_FALLBACK_PHOTOS.filter(
+        (p) => p.url !== failedUrl && !failedUrlsRef.current.has(p.url)
+      );
+
+      if (availableFallbacks.length > 0) {
+        return availableFallbacks.length === DEFAULT_FALLBACK_PHOTOS.length
+          ? DEFAULT_FALLBACK_PHOTOS
+          : availableFallbacks;
+      }
+
+      return [];
+    });
   }, []);
 
   // Activity detection for auto-hiding controls & cursor
@@ -196,7 +239,13 @@ export function ReceptionSlideshowClient({
         setPhotos((prev) => {
           const existingUrls = new Set(prev.map((p) => p.url));
           const newPhotos: SlideshowPhoto[] = data.photos
-            .filter((p: SlideshowPhoto) => p.url && !existingUrls.has(p.url))
+            .filter(
+              (p: SlideshowPhoto) =>
+                p.url &&
+                !existingUrls.has(p.url) &&
+                !failedUrls.has(p.url) &&
+                !failedUrlsRef.current.has(p.url)
+            )
             .map((p: SlideshowPhoto) => ({
               id: p.id,
               url: p.url,
@@ -216,7 +265,7 @@ export function ReceptionSlideshowClient({
       // Network disconnection or failure handled gracefully without crashing
       console.warn('Unable to fetch latest photos from API, continuing with cached photos:', err);
     }
-  }, []);
+  }, [failedUrls]);
 
   useEffect(() => {
     // 30 seconds background polling to conserve server resources
@@ -285,7 +334,8 @@ export function ReceptionSlideshowClient({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [goToNext, goToPrev, toggleFullscreen, showQrCode]);
 
-  const activePhoto = photos[currentIndex % photos.length] || photos[0];
+  const safeIndex = photos.length > 0 ? currentIndex % photos.length : 0;
+  const activePhoto = photos.length > 0 ? (photos[safeIndex] || photos[0]) : null;
 
   return (
     <div
@@ -300,7 +350,7 @@ export function ReceptionSlideshowClient({
     >
       {/* Screen reader live update announcement */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        Photo {currentIndex + 1} of {photos.length}: {activePhoto?.title || 'Wedding Photo'}
+        Photo {photos.length > 0 ? safeIndex + 1 : 0} of {photos.length}: {activePhoto?.title || 'Wedding Photo'}
       </div>
 
       {/* Ambient Blurred Background of Current Photo */}
@@ -350,7 +400,7 @@ export function ReceptionSlideshowClient({
         </div>
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium text-stone-200">
-          <span>{currentIndex + 1}</span>
+          <span>{photos.length > 0 ? safeIndex + 1 : 0}</span>
           <span className="text-stone-500">/</span>
           <span>{photos.length}</span>
         </div>
@@ -366,9 +416,10 @@ export function ReceptionSlideshowClient({
             <img
               key={activePhoto.url}
               src={activePhoto.url}
-              alt={activePhoto.altText || activePhoto.title || `Reception photo ${currentIndex + 1}`}
+              alt={activePhoto.altText || activePhoto.title || `Reception photo ${safeIndex + 1}`}
               className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl transition-opacity duration-700 ease-in-out"
               data-testid="slideshow-image"
+              onError={() => handlePhotoError(activePhoto.url)}
             />
             {activePhoto.title && (
               <p

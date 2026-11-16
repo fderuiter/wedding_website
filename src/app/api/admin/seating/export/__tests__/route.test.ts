@@ -348,4 +348,46 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     const pdfText = await res.text();
     expect(pdfText.startsWith('%PDF-')).toBe(true);
   });
+
+  it('neutralizes formula injection trigger characters in CSV export fields', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't-malicious',
+        name: '=SUM(1+1)',
+        shape: '+SHAPE',
+        capacity: 10,
+        invitationCodes: [
+          {
+            id: 'g-malicious-1',
+            guestName: '=cmd|"/C calc"!A0',
+            code: '-CODE100',
+            seatNumber: 1,
+          },
+        ],
+      },
+    ] as any);
+
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'g-malicious-2',
+        guestName: '@AdminUser',
+        code: '\tTABCODE',
+        seatNumber: null,
+        tableId: null,
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/seating/export');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
+
+    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code');
+    expect(lines[1]).toBe('\'=SUM(1+1),\'\+SHAPE,10,1,"\'=cmd|""/C calc""!A0",\'-CODE100');
+    expect(lines[2]).toBe("Unassigned,,,,SingleQuoteAdmin,'\tTABCODE".replace('SingleQuoteAdmin', "'@AdminUser"));
+  });
 });

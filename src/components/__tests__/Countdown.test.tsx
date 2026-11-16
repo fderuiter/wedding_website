@@ -23,7 +23,7 @@ describe('Countdown', () => {
     expect(screen.getByRole('timer')).toHaveTextContent('10 days 5 hours 3 minutes 12 seconds to go!');
   });
 
-  it('provides proper ARIA attributes and focus management without duplicate sr-only elements', () => {
+  it('provides proper ARIA attributes and focus management with dedicated live region', () => {
     const now = new Date('2026-10-15T12:00:00Z');
     jest.setSystemTime(now);
 
@@ -31,13 +31,15 @@ describe('Countdown', () => {
     const { container } = render(<Countdown targetDate={targetDate.toISOString()} />);
 
     const timer = screen.getByRole('timer');
-    expect(timer).toHaveAttribute('aria-live', 'polite');
-    expect(timer).toHaveAttribute('aria-atomic', 'true');
+    expect(timer).not.toHaveAttribute('aria-live');
+    expect(timer).not.toHaveAttribute('aria-atomic');
     expect(timer).toHaveAttribute('tabIndex', '0');
     expect(timer).toHaveAttribute('aria-label', '10 days, 5 hours, 3 minutes, 12 seconds to go!');
 
-    // Verify there are no duplicate .sr-only elements
-    expect(container.querySelector('.sr-only')).toBeNull();
+    const liveRegion = screen.getByRole('status');
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+    expect(liveRegion).toHaveClass('sr-only');
+    expect(container.querySelectorAll('.sr-only')).toHaveLength(1);
   });
 
   it('responds to keyboard events (Space and Enter) with state feedback announcements', () => {
@@ -48,12 +50,15 @@ describe('Countdown', () => {
     render(<Countdown targetDate={targetDate.toISOString()} />);
 
     const timer = screen.getByRole('timer');
+    const liveRegion = screen.getByRole('status');
 
     fireEvent.keyDown(timer, { key: ' ' });
-    expect(timer).toHaveAttribute('aria-label', 'Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+    expect(liveRegion).toHaveTextContent('Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+    expect(timer).toHaveAttribute('aria-label', '10 days, 5 hours, 3 minutes, 12 seconds to go!');
 
     fireEvent.keyDown(timer, { key: 'Enter' });
-    expect(timer).toHaveAttribute('aria-label', 'Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+    expect(liveRegion).toHaveTextContent('Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+    expect(timer).toHaveAttribute('aria-label', '10 days, 5 hours, 3 minutes, 12 seconds to go!');
   });
 
   it('updates sub-day time units every second', () => {
@@ -87,7 +92,10 @@ describe('Countdown', () => {
       jest.advanceTimersByTime(3000);
     });
 
-    expect(screen.getAllByText(/The wedding day is here!/i)[0]).toBeInTheDocument();
+    const statusRegion = screen.getByRole('status');
+    expect(statusRegion).toHaveTextContent('The wedding day is here!');
+    expect(statusRegion).toHaveAttribute('aria-live', 'polite');
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument();
     expect(jest.getTimerCount()).toBe(0);
   });
 
@@ -98,8 +106,35 @@ describe('Countdown', () => {
 
     render(<Countdown targetDate={targetDateStr} />);
 
-    expect(screen.getAllByText(/The wedding day is here!/i)[0]).toBeInTheDocument();
+    const statusRegion = screen.getByRole('status');
+    expect(statusRegion).toHaveTextContent('The wedding day is here!');
+    expect(statusRegion).toHaveAttribute('aria-live', 'polite');
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('updates the live region on consecutive Space or Enter key presses without dropped speech events', () => {
+    const now = new Date('2026-10-15T12:00:00Z');
+    jest.setSystemTime(now);
+
+    const targetDate = new Date('2026-10-25T17:03:12Z');
+    render(<Countdown targetDate={targetDate.toISOString()} />);
+
+    const timer = screen.getByRole('timer');
+    const liveRegion = screen.getByRole('status');
+
+    fireEvent.keyDown(timer, { key: ' ' });
+    const firstText = liveRegion.textContent;
+    expect(liveRegion).toHaveTextContent('Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+
+    fireEvent.keyDown(timer, { key: ' ' });
+    const secondText = liveRegion.textContent;
+    expect(liveRegion).toHaveTextContent('Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+    expect(secondText).not.toBe(firstText);
+
+    fireEvent.keyDown(timer, { key: 'Enter' });
+    const thirdText = liveRegion.textContent;
+    expect(liveRegion).toHaveTextContent('Countdown status: 10 days, 5 hours, 3 minutes, 12 seconds to go!');
+    expect(thirdText).not.toBe(secondText);
   });
 
   it('completely cleans up and clears all background scheduled tasks whenever unmounted', () => {

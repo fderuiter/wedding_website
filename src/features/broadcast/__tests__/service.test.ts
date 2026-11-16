@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
+import { getAppConfig } from '@/lib/config';
 import { BroadcastService } from '../service';
+import { MultiChannelMessagingProvider } from '../providers';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -16,6 +18,8 @@ jest.mock('@/lib/prisma', () => ({
     broadcastRecipient: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
+      count: jest.fn(),
       findMany: jest.fn(),
     },
   },
@@ -59,6 +63,107 @@ describe('BroadcastService', () => {
         where: { partyTags: { hasSome: ['VIP'] } },
       });
     });
+
+    describe('attendance status filtering via domain utility', () => {
+      const mockGuestList = [
+        // Attending guests
+        { id: 'g1', guestName: 'Alice Attending', used: true, extraFields: null },
+        { id: 'g2', guestName: 'Bob Confirmed', used: false, extraFields: { attendanceStatus: 'attending' } },
+        { id: 'g3', guestName: 'Charlie Yes', used: true, extraFields: { rsvpStatus: 'yes' } },
+        // Declined guests
+        { id: 'g4', guestName: 'David Declined', used: false, extraFields: { attendanceStatus: 'declined' } },
+        { id: 'g5', guestName: 'Eve No', used: false, extraFields: { rsvp: 'no' } },
+        { id: 'g6', guestName: 'Frank Rejected', used: true, extraFields: { attendanceStatus: false } },
+        // Pending guests
+        { id: 'g7', guestName: 'Grace Pending Unused', used: false, extraFields: null },
+        { id: 'g8', guestName: 'Heidi Explicit Pending', used: false, extraFields: { status: 'pending' } },
+      ];
+
+      beforeEach(() => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(mockGuestList);
+      });
+
+      it('excludes declined and attending guests when filtering by pending status', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'pending' });
+
+        expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({ where: {} });
+        const ids = res.map((g) => g.id);
+        expect(ids).toEqual(['g7', 'g8']);
+        expect(res.every((g) => ['Grace Pending Unused', 'Heidi Explicit Pending'].includes(g.guestName))).toBe(true);
+        // Explicitly verify zero declined guests are returned
+        expect(res.some((g) => ['David Declined', 'Eve No', 'Frank Rejected'].includes(g.guestName))).toBe(false);
+      });
+
+      it('excludes pending and attending guests when filtering by declined status', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'declined' });
+
+        const ids = res.map((g) => g.id);
+        expect(ids).toEqual(['g4', 'g5', 'g6']);
+        expect(res.every((g) => ['David Declined', 'Eve No', 'Frank Rejected'].includes(g.guestName))).toBe(true);
+        // Explicitly verify zero pending guests are returned
+        expect(res.some((g) => ['Grace Pending Unused', 'Heidi Explicit Pending'].includes(g.guestName))).toBe(false);
+      });
+
+      it('returns attending guests when filtering by attending status', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'attending' });
+
+        const ids = res.map((g) => g.id);
+        expect(ids).toEqual(['g1', 'g2', 'g3']);
+        expect(res.every((g) => ['Alice Attending', 'Bob Confirmed', 'Charlie Yes'].includes(g.guestName))).toBe(true);
+        expect(res.some((g) => ['David Declined', 'Grace Pending Unused'].includes(g.guestName))).toBe(false);
+      });
+
+      it('returns all guests without attendance filtering when attendanceStatus is all', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'all' });
+        expect(res).toHaveLength(mockGuestList.length);
+      });
+
+      it('returns all guests when filters is undefined', async () => {
+        const res = await BroadcastService.resolveTargetGuests();
+        expect(res).toHaveLength(mockGuestList.length);
+      });
+
+      it('filters attendance within selectedIds when both are supplied', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+          { id: 'g4', guestName: 'David Declined', used: false, extraFields: { attendanceStatus: 'declined' } },
+          { id: 'g7', guestName: 'Grace Pending Unused', used: false, extraFields: null },
+        ]);
+
+        const res = await BroadcastService.resolveTargetGuests({
+          selectedIds: ['g4', 'g7'],
+          attendanceStatus: 'pending',
+        });
+
+        expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({
+          where: { id: { in: ['g4', 'g7'] } },
+        });
+        expect(res).toHaveLength(1);
+        expect(res[0].id).toBe('g7');
+      });
+
+      it('partitions 200 wedding guests in under 10 milliseconds', async () => {
+        const largeGuestList = Array.from({ length: 200 }, (_, i) => {
+          if (i % 3 === 0) {
+            return { id: `id-${i}`, guestName: `Guest ${i}`, used: true, extraFields: null };
+          }
+          if (i % 3 === 1) {
+            return { id: `id-${i}`, guestName: `Guest ${i}`, used: false, extraFields: { attendanceStatus: 'declined' } };
+          }
+          return { id: `id-${i}`, guestName: `Guest ${i}`, used: false, extraFields: null };
+        });
+
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(largeGuestList);
+
+        const start = performance.now();
+        const pending = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'pending' });
+        const declined = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'declined' });
+        const attending = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'attending' });
+        const elapsed = performance.now() - start;
+
+        expect(pending.length + declined.length + attending.length).toBe(200);
+        expect(elapsed).toBeLessThan(10);
+      });
+    });
   });
 
   describe('renderPreview', () => {
@@ -81,6 +186,26 @@ describe('BroadcastService', () => {
       expect(preview.subject).toBe('Hello Charlie');
       expect(preview.body).toBe('Welcome to Grand Hall, Charlie! Your code is CHARLIE2026.');
       expect(preview.destination).toBe('charlie@example.com');
+    });
+
+    it('displays sample recipient data matching the selected attendance status filter', async () => {
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+        // g1 is declined, g2 is pending
+        { id: 'g1', guestName: 'Declined Guest', code: 'DEC1', email: 'dec@example.com', used: false, extraFields: { attendanceStatus: 'declined' } },
+        { id: 'g2', guestName: 'Pending Guest', code: 'PEN1', email: 'pen@example.com', used: false, extraFields: null },
+      ]);
+
+      const preview = await BroadcastService.renderPreview({
+        channel: 'EMAIL',
+        subject: 'Reminder for {{guestName}}',
+        body: 'Please RSVP {{guestName}} using {{code}}!',
+        targetFilters: { attendanceStatus: 'pending' },
+      });
+
+      expect(preview.sampleGuestName).toBe('Pending Guest');
+      expect(preview.subject).toBe('Reminder for Pending Guest');
+      expect(preview.body).toContain('Pending Guest using PEN1');
+      expect(preview.destination).toBe('pen@example.com');
     });
   });
 
@@ -559,6 +684,366 @@ describe('BroadcastService', () => {
       ).rejects.toThrow('Resend API Key is missing in settings');
 
       spy.mockRestore();
+    });
+  });
+
+  describe('retryFailedRecipients', () => {
+    it('returns broadcast immediately without dispatch or recounting when failed recipients list is empty', async () => {
+      const broadcast = {
+        id: 'b-empty',
+        channel: 'EMAIL',
+        body: 'Hello',
+        recipients: [
+          { id: 'r1', status: 'SENT', destination: 'r1@example.com' },
+        ],
+      };
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue(broadcast);
+
+      const res = await BroadcastService.retryFailedRecipients('b-empty');
+      expect(res).toBe(broadcast);
+      expect(prisma.broadcastRecipient.updateMany).not.toHaveBeenCalled();
+      expect(prisma.broadcastRecipient.update).not.toHaveBeenCalled();
+      expect(prisma.broadcastRecipient.count).not.toHaveBeenCalled();
+      expect(prisma.broadcastMessage.update).not.toHaveBeenCalled();
+    });
+
+    it('throws error when broadcast is not found', async () => {
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        BroadcastService.retryFailedRecipients('nonexistent-id')
+      ).rejects.toThrow('Broadcast message not found.');
+    });
+
+    it('dispatches failed recipients in bounded concurrent batches according to broadcastBatchSize', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 2,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const recipients = Array.from({ length: 5 }, (_, i) => ({
+        id: `r-${i}`,
+        guestName: `Guest ${i}`,
+        destination: `guest${i}@example.com`,
+        status: 'FAILED',
+        invitationCode: null,
+      }));
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-batch',
+        channel: 'EMAIL',
+        body: 'Hello {{guestName}}',
+        recipients,
+      });
+
+      const sendEmailSpy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail').mockResolvedValue({ success: true });
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(5)
+        .mockResolvedValueOnce(0);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-batch',
+        status: 'SENT',
+        sentCount: 5,
+        failedCount: 0,
+        recipients,
+      });
+
+      const res = await BroadcastService.retryFailedRecipients('b-batch');
+
+      expect(sendEmailSpy).toHaveBeenCalledTimes(5);
+      expect(prisma.broadcastRecipient.updateMany).toHaveBeenCalledTimes(3);
+      expect(prisma.broadcastRecipient.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: { in: ['r-0', 'r-1'] } },
+        data: {
+          status: 'SENT',
+          error: null,
+          sentAt: expect.any(Date),
+        },
+      });
+      expect(prisma.broadcastRecipient.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: { in: ['r-2', 'r-3'] } },
+        data: {
+          status: 'SENT',
+          error: null,
+          sentAt: expect.any(Date),
+        },
+      });
+      expect(prisma.broadcastRecipient.updateMany).toHaveBeenNthCalledWith(3, {
+        where: { id: { in: ['r-4'] } },
+        data: {
+          status: 'SENT',
+          error: null,
+          sentAt: expect.any(Date),
+        },
+      });
+
+      expect(res.status).toBe('SENT');
+      sendEmailSpy.mockRestore();
+    });
+
+    it('applies configured rate limit delay between successive batches', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 2,
+        broadcastBatchDelayMs: 20,
+      });
+
+      const recipients = [
+        { id: 'r-0', guestName: 'G0', destination: 'g0@example.com', status: 'FAILED' },
+        { id: 'r-1', guestName: 'G1', destination: 'g1@example.com', status: 'FAILED' },
+        { id: 'r-2', guestName: 'G2', destination: 'g2@example.com', status: 'FAILED' },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-delay',
+        channel: 'EMAIL',
+        body: 'Hello {{guestName}}',
+        recipients,
+      });
+
+      const sendEmailSpy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail').mockResolvedValue({ success: true });
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.broadcastRecipient.count as jest.Mock).mockResolvedValue(0);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({ id: 'b-delay' });
+
+      await BroadcastService.retryFailedRecipients('b-delay');
+
+      expect(sendEmailSpy).toHaveBeenCalledTimes(3);
+      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 20);
+
+      setTimeoutSpy.mockRestore();
+      sendEmailSpy.mockRestore();
+    });
+
+    it('persists successful dispatches via updateMany and writes failed errors concurrently', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const recipients = [
+        { id: 'r-ok-1', guestName: 'Alice', destination: 'alice@example.com', status: 'FAILED' },
+        { id: 'r-fail-1', guestName: 'Bob', destination: 'bob@example.com', status: 'FAILED' },
+        { id: 'r-ok-2', guestName: 'Carol', destination: 'carol@example.com', status: 'FAILED' },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-mixed',
+        channel: 'EMAIL',
+        body: 'Hello {{guestName}}',
+        recipients,
+      });
+
+      const sendEmailSpy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail').mockImplementation(async (opts: { to?: string }) => {
+        if (opts.to === 'bob@example.com') {
+          return { success: false, error: 'Mailbox full' };
+        }
+        return { success: true };
+      });
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.broadcastRecipient.update as jest.Mock).mockResolvedValue({ id: 'r-fail-1' });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(1);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-mixed',
+        status: 'PARTIALLY_SENT',
+        sentCount: 2,
+        failedCount: 1,
+      });
+
+      const res = await BroadcastService.retryFailedRecipients('b-mixed');
+
+      expect(prisma.broadcastRecipient.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['r-ok-1', 'r-ok-2'] } },
+        data: {
+          status: 'SENT',
+          error: null,
+          sentAt: expect.any(Date),
+        },
+      });
+
+      expect(prisma.broadcastRecipient.update).toHaveBeenCalledWith({
+        where: { id: 'r-fail-1' },
+        data: {
+          status: 'FAILED',
+          error: 'Mailbox full',
+        },
+      });
+
+      expect(prisma.broadcastRecipient.findMany).not.toHaveBeenCalled();
+      expect(prisma.broadcastRecipient.count).toHaveBeenCalledWith({
+        where: { broadcastId: 'b-mixed', status: 'SENT' },
+      });
+      expect(prisma.broadcastRecipient.count).toHaveBeenCalledWith({
+        where: { broadcastId: 'b-mixed', status: 'FAILED' },
+      });
+
+      expect(prisma.broadcastMessage.update).toHaveBeenCalledWith({
+        where: { id: 'b-mixed' },
+        data: {
+          status: 'PARTIALLY_SENT',
+          sentCount: 2,
+          failedCount: 1,
+        },
+        include: {
+          recipients: true,
+        },
+      });
+
+      expect(res.status).toBe('PARTIALLY_SENT');
+      sendEmailSpy.mockRestore();
+    });
+
+    it('sets status to FAILED when all retried dispatches fail', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const recipients = [
+        { id: 'r-fail-1', guestName: 'Alice', destination: 'alice@example.com', status: 'FAILED' },
+        { id: 'r-fail-2', guestName: 'Bob', destination: 'bob@example.com', status: 'FAILED' },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-all-fail',
+        channel: 'EMAIL',
+        body: 'Hello {{guestName}}',
+        recipients,
+      });
+
+      const sendEmailSpy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail').mockResolvedValue({
+        success: false,
+        error: 'SMTP timeout',
+      });
+
+      (prisma.broadcastRecipient.update as jest.Mock).mockResolvedValue({ id: 'r-fail-1' });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(2);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-all-fail',
+        status: 'FAILED',
+        sentCount: 0,
+        failedCount: 2,
+      });
+
+      const res = await BroadcastService.retryFailedRecipients('b-all-fail');
+
+      expect(prisma.broadcastRecipient.updateMany).not.toHaveBeenCalled();
+      expect(prisma.broadcastRecipient.update).toHaveBeenCalledTimes(2);
+      expect(prisma.broadcastMessage.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'FAILED', sentCount: 0, failedCount: 2 }),
+        })
+      );
+      expect(res.status).toBe('FAILED');
+      sendEmailSpy.mockRestore();
+    });
+
+    it('filters retries by recipientIds when specified', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const recipients = [
+        { id: 'r-1', guestName: 'Alice', destination: 'alice@example.com', status: 'FAILED' },
+        { id: 'r-2', guestName: 'Bob', destination: 'bob@example.com', status: 'FAILED' },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-filtered',
+        channel: 'EMAIL',
+        body: 'Hello {{guestName}}',
+        recipients,
+      });
+
+      const sendEmailSpy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail').mockResolvedValue({ success: true });
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-filtered',
+        status: 'PARTIALLY_SENT',
+        sentCount: 1,
+        failedCount: 1,
+      });
+
+      await BroadcastService.retryFailedRecipients('b-filtered', ['r-1']);
+
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+      expect(prisma.broadcastRecipient.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['r-1'] } },
+        data: expect.objectContaining({ status: 'SENT' }),
+      });
+
+      sendEmailSpy.mockRestore();
+    });
+
+    it('dispatches SMS channel retries via sendSms', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        smsProvider: 'twilio',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const recipients = [
+        { id: 'r-sms-1', guestName: 'Alice', destination: '+15551234567', status: 'FAILED' },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-sms',
+        channel: 'SMS',
+        body: 'SMS Alert for {{guestName}}',
+        recipients,
+      });
+
+      const sendSmsSpy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendSms').mockResolvedValue({ success: true });
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-sms',
+        status: 'SENT',
+        sentCount: 1,
+        failedCount: 0,
+      });
+
+      await BroadcastService.retryFailedRecipients('b-sms');
+
+      expect(sendSmsSpy).toHaveBeenCalledWith({
+        to: '+15551234567',
+        body: 'SMS Alert for Alice',
+      });
+
+      sendSmsSpy.mockRestore();
     });
   });
 });

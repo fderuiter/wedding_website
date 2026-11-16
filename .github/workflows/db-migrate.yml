@@ -71,9 +71,14 @@ jobs:
       - name: Verify DATABASE_URL secret
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
         run: |
+          if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
+            echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
+            exit 1
+          fi
           if [ -z "$DATABASE_URL" ]; then
-            echo "::error::Missing mandatory DATABASE_URL secret for environment '${{ inputs.environment || 'production' }}'."
+            echo "::error::Missing mandatory DATABASE_URL secret for environment '${TARGET_ENV}'."
             exit 1
           fi
           if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
@@ -131,8 +136,10 @@ jobs:
 
       - name: Summary
         if: success()
+        env:
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
         run: |
-          echo "### ✅ Database Migrations Successfully Applied" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target Environment:** \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Schema Compatibility Status:** \`COMPATIBLE\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Database Migrations Successfully Applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Target Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Schema Compatibility Status:** \`COMPATIBLE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> "$GITHUB_STEP_SUMMARY"
