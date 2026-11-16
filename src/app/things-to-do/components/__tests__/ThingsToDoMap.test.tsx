@@ -46,7 +46,11 @@ const mockMap = {
 };
 
 jest.mock('react-leaflet', () => ({
-  MapContainer: ({ children }: { children: React.ReactNode }) => <div data-testid="map-container">{children}</div>,
+  MapContainer: ({ children, ...props }: React.ComponentPropsWithoutRef<'div'>) => (
+    <div data-testid="map-container" {...props}>
+      {children}
+    </div>
+  ),
   TileLayer: ({ url, attribution }: { url: string; attribution: string }) => (
     <div data-testid="tile-layer" data-url={url} data-attribution={attribution} />
   ),
@@ -204,5 +208,45 @@ describe('ThingsToDoMap', () => {
     expect(directionsLink).toHaveAttribute('href', 'https://maps.example.com/millennium-park');
     expect(directionsLink).toHaveAttribute('target', '_blank');
     expect(directionsLink).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('renders map container with region role and accessible label', () => {
+    render(<ThingsToDoMap attractions={attractions} />);
+
+    const mapRegion = screen.getByRole('region', { name: 'Things to do map' });
+    expect(mapRegion).toBeInTheDocument();
+    expect(mapRegion).toHaveAttribute('data-testid', 'map-container');
+  });
+
+  it('filters out attractions with invalid coordinates when rendering markers', () => {
+    const mixedAttractions = [
+      ...attractions,
+      {
+        id: '3',
+        name: 'Invalid Lat Attraction',
+        description: 'Invalid latitude',
+        latitude: NaN,
+        longitude: -90.0,
+      },
+      {
+        id: '4',
+        name: 'Null Lng Attraction',
+        description: 'Null longitude',
+        latitude: 45.0,
+        longitude: null,
+      },
+      {
+        id: '5',
+        name: 'String Coordinates Attraction',
+        description: 'String coords',
+        latitude: '45.0',
+        longitude: '-90.0',
+      },
+    ] as unknown as Parameters<typeof ThingsToDoMap>[0]['attractions'];
+
+    render(<ThingsToDoMap attractions={mixedAttractions} />);
+
+    const markers = screen.getAllByTestId('marker');
+    expect(markers).toHaveLength(attractions.length);
   });
 });
