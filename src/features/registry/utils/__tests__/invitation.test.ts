@@ -2,6 +2,7 @@ import {
   matchDietaryCategory,
   getAttendanceStatus,
   isAddressComplete,
+  generateRandomCode,
   AttendanceStatus,
   AttendanceStatusItem,
   AddressItem,
@@ -221,6 +222,39 @@ describe('invitation utils', () => {
       expect(isAddressComplete(undefined)).toBe(false);
       expect(isAddressComplete(null)).toBe(false);
       expect(isAddressComplete({})).toBe(false);
+    });
+  });
+
+  describe('generateRandomCode', () => {
+    it('generates an eight-character string', () => {
+      const code = generateRandomCode();
+      expect(typeof code).toBe('string');
+      expect(code).toHaveLength(8);
+    });
+
+    it('contains only uppercase alphanumeric characters (A-Z and 0-9)', () => {
+      const alphanumericUppercaseRegex = /^[A-Z0-9]{8}$/;
+      for (let i = 0; i < 50; i++) {
+        const code = generateRandomCode();
+        expect(code).toHaveLength(8);
+        expect(code).toMatch(alphanumericUppercaseRegex);
+        // Ensure no lowercase characters or special symbols are present
+        expect(code).toBe(code.toUpperCase());
+        expect(/[^A-Z0-9]/.test(code)).toBe(false);
+      }
+    });
+
+    it('generates random codes across successive calls', () => {
+      const sampleSize = 100;
+      const codes = new Set<string>();
+      for (let i = 0; i < sampleSize; i++) {
+        codes.add(generateRandomCode());
+      }
+      expect(codes.size).toBe(sampleSize);
+
+      const code1 = generateRandomCode();
+      const code2 = generateRandomCode();
+      expect(code1).not.toBe(code2);
     });
   });
 });
