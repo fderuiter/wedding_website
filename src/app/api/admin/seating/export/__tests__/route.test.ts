@@ -234,11 +234,11 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     const lines = csvText.trim().split('\n');
 
     expect(lines.length).toBe(5);
-    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code');
-    expect(lines[1]).toBe('Table 1,ROUND,8,1,Alice Smith,CODE1');
-    expect(lines[2]).toBe('Table 1,ROUND,8,2,"Bob Jones, Jr.",CODE2');
-    expect(lines[3]).toBe('"Table 2 (""VIP"")",RECTANGLE,10,,(Unassigned Table),');
-    expect(lines[4]).toBe('Unassigned,,,,Charlie Brown,CODE3');
+    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes');
+    expect(lines[1]).toBe('Table 1,ROUND,8,1,Alice Smith,CODE1,');
+    expect(lines[2]).toBe('Table 1,ROUND,8,2,"Bob Jones, Jr.",CODE2,');
+    expect(lines[3]).toBe('"Table 2 (""VIP"")",RECTANGLE,10,,(Unassigned Table),,');
+    expect(lines[4]).toBe('Unassigned,,,,Charlie Brown,CODE3,');
 
     expect(mockPrisma.seatingTable.findMany).toHaveBeenCalledWith({
       include: {
@@ -265,7 +265,7 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
 
     expect(res.status).toBe(200);
     const csvText = await res.text();
-    expect(csvText).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code\n');
+    expect(csvText).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes\n');
   });
 
   it('executes seatingTable and invitationCode database queries concurrently', async () => {
@@ -347,5 +347,91 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
 
     const pdfText = await res.text();
     expect(pdfText.startsWith('%PDF-')).toBe(true);
+  });
+
+  it('serializes populated dietary notes and escapes special characters in CSV export', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't1',
+        name: 'Garden Terrace',
+        shape: 'RECTANGLE',
+        capacity: 6,
+        invitationCodes: [
+          {
+            id: 'g1',
+            guestName: 'Taylor Morgan',
+            code: 'TM01',
+            seatNumber: 1,
+            tableId: 't1',
+            dietaryNotes: 'Gluten-Free, Peanut Allergy',
+          },
+          {
+            id: 'g2',
+            guestName: 'Jordan Casey',
+            code: 'JC02',
+            seatNumber: 2,
+            tableId: 't1',
+            dietaryNotes: 'Strict "Vegan" Only',
+          },
+          {
+            id: 'g3',
+            guestName: 'Morgan Smith',
+            code: 'MS03',
+            seatNumber: 3,
+            tableId: 't1',
+            dietaryNotes: '',
+          },
+        ],
+      },
+      {
+        id: 't2',
+        name: 'Empty Table',
+        shape: 'ROUND',
+        capacity: 8,
+        invitationCodes: [],
+      },
+    ] as any);
+
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'g4',
+        guestName: 'Riley Reed',
+        code: 'RR04',
+        seatNumber: null,
+        tableId: null,
+        dietaryNotes: 'Shellfish Allergy',
+      },
+      {
+        id: 'g5',
+        guestName: 'Sam Dakota',
+        code: 'SD05',
+        seatNumber: null,
+        tableId: null,
+        dietaryNotes: null,
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/seating/export');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
+
+    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes');
+    // Populated dietary notes with comma escaped in quotes
+    expect(lines[1]).toBe('Garden Terrace,RECTANGLE,6,1,Taylor Morgan,TM01,"Gluten-Free, Peanut Allergy"');
+    // Populated dietary notes with internal quotes escaped as ""
+    expect(lines[2]).toBe('Garden Terrace,RECTANGLE,6,2,Jordan Casey,JC02,"Strict ""Vegan"" Only"');
+    // Empty string dietary notes
+    expect(lines[3]).toBe('Garden Terrace,RECTANGLE,6,3,Morgan Smith,MS03,');
+    // Empty table record
+    expect(lines[4]).toBe('Empty Table,ROUND,8,,(Unassigned Table),,');
+    // Unassigned guest with dietary notes
+    expect(lines[5]).toBe('Unassigned,,,,Riley Reed,RR04,Shellfish Allergy');
+    // Unassigned guest with null dietary notes
+    expect(lines[6]).toBe('Unassigned,,,,Sam Dakota,SD05,');
   });
 });

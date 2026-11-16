@@ -12,6 +12,7 @@ const HEADERS = [
   'Seat Number',
   'Guest Name',
   'Invitation Code',
+  'Dietary Notes',
 ];
 
 interface SeatingExportRecord extends Record<string, unknown> {
@@ -21,6 +22,7 @@ interface SeatingExportRecord extends Record<string, unknown> {
   'Seat Number': string;
   'Guest Name': string;
   'Invitation Code': string;
+  'Dietary Notes': string;
 }
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -89,6 +91,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
         'Seat Number': '',
         'Guest Name': '(Unassigned Table)',
         'Invitation Code': '',
+        'Dietary Notes': '',
       });
     } else {
       for (const guest of table.invitationCodes) {
@@ -99,6 +102,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
           'Seat Number': guest.seatNumber ? String(guest.seatNumber) : '',
           'Guest Name': guest.guestName,
           'Invitation Code': guest.code,
+          'Dietary Notes': guest.dietaryNotes || '',
         });
       }
     }
@@ -112,6 +116,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       'Seat Number': '',
       'Guest Name': guest.guestName,
       'Invitation Code': guest.code,
+      'Dietary Notes': guest.dietaryNotes || '',
     });
   }
 
