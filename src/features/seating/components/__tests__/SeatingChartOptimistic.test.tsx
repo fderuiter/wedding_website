@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SeatingChartAdminPage from '@/app/admin/dashboard/seating-chart/page';
 import { SeatingTableDTO } from '../../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 const initialTables: SeatingTableDTO[] = [
   {
@@ -374,5 +374,142 @@ describe('Optimistic Seating Chart State Updates', () => {
     // Verify local state was reverted back to pre-mutation snapshot (2 unassigned)
     expect(screen.getByText('2 unassigned')).toBeInTheDocument();
     expect(screen.getAllByText('Guest Two').length).toBeGreaterThan(0);
+  });
+
+  it('synchronously updates floorplan canvas and unassigned panel on auto-assign response without GET requests', async () => {
+    // Add auto-assign endpoint mock
+    fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.endsWith('/api/admin/seating-tables')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
+        } as Response);
+      }
+      if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
+        } as Response);
+      }
+      if (urlStr.endsWith('/api/admin/seating/auto-assign') && init?.method === 'POST') {
+        const autoAssignResult = {
+          assignedCount: 2,
+          unassignedCount: 0,
+          assignedGuests: [
+            { id: 'guest-2', guestName: 'Guest Two', tableId: 'table-2', seatNumber: 1 },
+            { id: 'guest-3', guestName: 'Guest Three', tableId: 'table-2', seatNumber: 2 },
+          ],
+        };
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: autoAssignResult }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('2 unassigned')).toBeInTheDocument();
+    });
+
+    fetchMock.mockClear();
+
+    // Click Auto-Assign All button
+    const autoAssignBtn = screen.getByRole('button', { name: /auto-assign all/i });
+    fireEvent.click(autoAssignBtn);
+
+    // Floorplan canvas immediately reflects newly seated guests on Table 2
+    await waitFor(() => {
+      expect(screen.getByTitle(/Seat 1: Guest Two/i)).toBeInTheDocument();
+      expect(screen.getByTitle(/Seat 2: Guest Three/i)).toBeInTheDocument();
+      expect(screen.getByText('0 unassigned')).toBeInTheDocument();
+    });
+
+    // Verify zero GET requests were made post auto-assign
+    const getRequests = fetchMock.mock.calls.filter((call) => {
+      const init = call[1];
+      return !init || !init.method || init.method === 'GET';
+    });
+    expect(getRequests.length).toBe(0);
+  });
+
+  it('preserves concurrent auto-assigned allocations when a subsequent manual assignment fails', async () => {
+    fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.endsWith('/api/admin/seating-tables')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
+        } as Response);
+      }
+      if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
+        } as Response);
+      }
+      if (urlStr.endsWith('/api/admin/seating/auto-assign') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              assignedCount: 2,
+              unassignedCount: 0,
+              assignedGuests: [
+                { id: 'guest-2', guestName: 'Guest Two', tableId: 'table-2', seatNumber: 1 },
+                { id: 'guest-3', guestName: 'Guest Three', tableId: 'table-2', seatNumber: 2 },
+              ],
+            }),
+        } as Response);
+      }
+      if (urlStr.endsWith('/api/admin/seating/assign') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Database timeout' }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+    });
+
+    window.alert = jest.fn();
+
+    render(<SeatingChartAdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('2 unassigned')).toBeInTheDocument();
+    });
+
+    // 1. Run auto-assign
+    const autoAssignBtn = screen.getByRole('button', { name: /auto-assign all/i });
+    fireEvent.click(autoAssignBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Seat 1: Guest Two/i)).toBeInTheDocument();
+      expect(screen.getByTitle(/Seat 2: Guest Three/i)).toBeInTheDocument();
+    });
+
+    // 2. Select Table 1 and unassign Guest One
+    fireEvent.click(screen.getByRole('button', { name: /Table 1/i }));
+    await waitFor(() => {
+      expect(screen.getByTitle('Unassign guest')).toBeInTheDocument();
+    });
+
+    // Attempt to assign Guest One to Table 1 Seat 3 (will fail with 500)
+    fireEvent.click(screen.getByTitle('Unassign guest'));
+
+    await waitFor(() => {
+      expect(window.alert).toHaveBeenCalledWith('Failed to assign guest seat');
+    });
+
+    // Guest One reverts to previous state (remains on Table 1)
+    expect(screen.getByTitle(/Seat 1: Guest One/i)).toBeInTheDocument();
+
+    // CRITICAL: Auto-assigned Guest Two and Guest Three on Table 2 are STILL INTACT!
+    expect(screen.getByTitle(/Seat 1: Guest Two/i)).toBeInTheDocument();
+    expect(screen.getByTitle(/Seat 2: Guest Three/i)).toBeInTheDocument();
   });
 });
