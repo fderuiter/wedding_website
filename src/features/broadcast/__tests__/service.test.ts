@@ -59,6 +59,107 @@ describe('BroadcastService', () => {
         where: { partyTags: { hasSome: ['VIP'] } },
       });
     });
+
+    describe('attendance status filtering via domain utility', () => {
+      const mockGuestList = [
+        // Attending guests
+        { id: 'g1', guestName: 'Alice Attending', used: true, extraFields: null },
+        { id: 'g2', guestName: 'Bob Confirmed', used: false, extraFields: { attendanceStatus: 'attending' } },
+        { id: 'g3', guestName: 'Charlie Yes', used: true, extraFields: { rsvpStatus: 'yes' } },
+        // Declined guests
+        { id: 'g4', guestName: 'David Declined', used: false, extraFields: { attendanceStatus: 'declined' } },
+        { id: 'g5', guestName: 'Eve No', used: false, extraFields: { rsvp: 'no' } },
+        { id: 'g6', guestName: 'Frank Rejected', used: true, extraFields: { attendanceStatus: false } },
+        // Pending guests
+        { id: 'g7', guestName: 'Grace Pending Unused', used: false, extraFields: null },
+        { id: 'g8', guestName: 'Heidi Explicit Pending', used: false, extraFields: { status: 'pending' } },
+      ];
+
+      beforeEach(() => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(mockGuestList);
+      });
+
+      it('excludes declined and attending guests when filtering by pending status', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'pending' });
+
+        expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({ where: {} });
+        const ids = res.map((g) => g.id);
+        expect(ids).toEqual(['g7', 'g8']);
+        expect(res.every((g) => ['Grace Pending Unused', 'Heidi Explicit Pending'].includes(g.guestName))).toBe(true);
+        // Explicitly verify zero declined guests are returned
+        expect(res.some((g) => ['David Declined', 'Eve No', 'Frank Rejected'].includes(g.guestName))).toBe(false);
+      });
+
+      it('excludes pending and attending guests when filtering by declined status', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'declined' });
+
+        const ids = res.map((g) => g.id);
+        expect(ids).toEqual(['g4', 'g5', 'g6']);
+        expect(res.every((g) => ['David Declined', 'Eve No', 'Frank Rejected'].includes(g.guestName))).toBe(true);
+        // Explicitly verify zero pending guests are returned
+        expect(res.some((g) => ['Grace Pending Unused', 'Heidi Explicit Pending'].includes(g.guestName))).toBe(false);
+      });
+
+      it('returns attending guests when filtering by attending status', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'attending' });
+
+        const ids = res.map((g) => g.id);
+        expect(ids).toEqual(['g1', 'g2', 'g3']);
+        expect(res.every((g) => ['Alice Attending', 'Bob Confirmed', 'Charlie Yes'].includes(g.guestName))).toBe(true);
+        expect(res.some((g) => ['David Declined', 'Grace Pending Unused'].includes(g.guestName))).toBe(false);
+      });
+
+      it('returns all guests without attendance filtering when attendanceStatus is all', async () => {
+        const res = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'all' });
+        expect(res).toHaveLength(mockGuestList.length);
+      });
+
+      it('returns all guests when filters is undefined', async () => {
+        const res = await BroadcastService.resolveTargetGuests();
+        expect(res).toHaveLength(mockGuestList.length);
+      });
+
+      it('filters attendance within selectedIds when both are supplied', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+          { id: 'g4', guestName: 'David Declined', used: false, extraFields: { attendanceStatus: 'declined' } },
+          { id: 'g7', guestName: 'Grace Pending Unused', used: false, extraFields: null },
+        ]);
+
+        const res = await BroadcastService.resolveTargetGuests({
+          selectedIds: ['g4', 'g7'],
+          attendanceStatus: 'pending',
+        });
+
+        expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({
+          where: { id: { in: ['g4', 'g7'] } },
+        });
+        expect(res).toHaveLength(1);
+        expect(res[0].id).toBe('g7');
+      });
+
+      it('partitions 200 wedding guests in under 10 milliseconds', async () => {
+        const largeGuestList = Array.from({ length: 200 }, (_, i) => {
+          if (i % 3 === 0) {
+            return { id: `id-${i}`, guestName: `Guest ${i}`, used: true, extraFields: null };
+          }
+          if (i % 3 === 1) {
+            return { id: `id-${i}`, guestName: `Guest ${i}`, used: false, extraFields: { attendanceStatus: 'declined' } };
+          }
+          return { id: `id-${i}`, guestName: `Guest ${i}`, used: false, extraFields: null };
+        });
+
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(largeGuestList);
+
+        const start = performance.now();
+        const pending = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'pending' });
+        const declined = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'declined' });
+        const attending = await BroadcastService.resolveTargetGuests({ attendanceStatus: 'attending' });
+        const elapsed = performance.now() - start;
+
+        expect(pending.length + declined.length + attending.length).toBe(200);
+        expect(elapsed).toBeLessThan(10);
+      });
+    });
   });
 
   describe('renderPreview', () => {
@@ -81,6 +182,26 @@ describe('BroadcastService', () => {
       expect(preview.subject).toBe('Hello Charlie');
       expect(preview.body).toBe('Welcome to Grand Hall, Charlie! Your code is CHARLIE2026.');
       expect(preview.destination).toBe('charlie@example.com');
+    });
+
+    it('displays sample recipient data matching the selected attendance status filter', async () => {
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+        // g1 is declined, g2 is pending
+        { id: 'g1', guestName: 'Declined Guest', code: 'DEC1', email: 'dec@example.com', used: false, extraFields: { attendanceStatus: 'declined' } },
+        { id: 'g2', guestName: 'Pending Guest', code: 'PEN1', email: 'pen@example.com', used: false, extraFields: null },
+      ]);
+
+      const preview = await BroadcastService.renderPreview({
+        channel: 'EMAIL',
+        subject: 'Reminder for {{guestName}}',
+        body: 'Please RSVP {{guestName}} using {{code}}!',
+        targetFilters: { attendanceStatus: 'pending' },
+      });
+
+      expect(preview.sampleGuestName).toBe('Pending Guest');
+      expect(preview.subject).toBe('Reminder for Pending Guest');
+      expect(preview.body).toContain('Pending Guest using PEN1');
+      expect(preview.destination).toBe('pen@example.com');
     });
   });
 

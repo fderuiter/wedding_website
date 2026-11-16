@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
 import { renderBroadcastTemplate } from './template';
+import { getAttendanceStatus } from '@/features/registry/utils/invitation';
 
 const RECIPIENT_CHUNK_SIZE = 250;
 import { MultiChannelMessagingProvider } from './providers';
@@ -29,56 +30,53 @@ export class BroadcastService {
 
     if (filters.selectedIds && filters.selectedIds.length > 0) {
       where.id = { in: filters.selectedIds };
-      return prisma.invitationCode.findMany({ where });
+    } else {
+      if (filters.partyTags && filters.partyTags.length > 0) {
+        where.partyTags = { hasSome: filters.partyTags };
+      }
+
+      if (filters.householdName && filters.householdName.trim()) {
+        where.householdName = {
+          contains: filters.householdName.trim(),
+          mode: 'insensitive',
+        };
+      }
+
+      if (filters.subEventId) {
+        if (filters.subEventRsvpStatus && filters.subEventRsvpStatus !== 'all') {
+          where.subEventRsvps = {
+            some: {
+              subEventId: filters.subEventId,
+              status: filters.subEventRsvpStatus,
+            },
+          };
+        } else {
+          where.subEventAccesses = {
+            some: {
+              subEventId: filters.subEventId,
+            },
+          };
+        }
+      }
+
+      if (filters.searchQuery && filters.searchQuery.trim()) {
+        const q = filters.searchQuery.trim();
+        where.OR = [
+          { guestName: { contains: q, mode: 'insensitive' } },
+          { code: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { householdName: { contains: q, mode: 'insensitive' } },
+        ];
+      }
     }
 
-    if (filters.partyTags && filters.partyTags.length > 0) {
-      where.partyTags = { hasSome: filters.partyTags };
-    }
-
-    if (filters.householdName && filters.householdName.trim()) {
-      where.householdName = {
-        contains: filters.householdName.trim(),
-        mode: 'insensitive',
-      };
-    }
+    let records = await prisma.invitationCode.findMany({ where });
 
     if (filters.attendanceStatus && filters.attendanceStatus !== 'all') {
-      if (filters.attendanceStatus === 'attending') {
-        where.used = true;
-      } else if (filters.attendanceStatus === 'declined' || filters.attendanceStatus === 'pending') {
-        where.used = false;
-      }
+      records = records.filter((item) => getAttendanceStatus(item as any) === filters.attendanceStatus);
     }
 
-    if (filters.subEventId) {
-      if (filters.subEventRsvpStatus && filters.subEventRsvpStatus !== 'all') {
-        where.subEventRsvps = {
-          some: {
-            subEventId: filters.subEventId,
-            status: filters.subEventRsvpStatus,
-          },
-        };
-      } else {
-        where.subEventAccesses = {
-          some: {
-            subEventId: filters.subEventId,
-          },
-        };
-      }
-    }
-
-    if (filters.searchQuery && filters.searchQuery.trim()) {
-      const q = filters.searchQuery.trim();
-      where.OR = [
-        { guestName: { contains: q, mode: 'insensitive' } },
-        { code: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-        { householdName: { contains: q, mode: 'insensitive' } },
-      ];
-    }
-
-    return prisma.invitationCode.findMany({ where });
+    return records;
   }
 
   /**
