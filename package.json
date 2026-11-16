@@ -38,6 +38,9 @@
     "check:env-docs": "npx tsx scripts/verify-env-docs.ts",
     "check:static": "npm run check:env-docs && npm run check:identifiers && npm run check:action-pins && npm run check:links && npm run check:prisma && npm run lint:migrations",
     "check:audit": "npm audit --audit-level=high",
+    "docs:dev": "npx tsx scripts/generate-portal.ts && vitepress dev docs-portal",
+    "docs:build": "npx tsx scripts/generate-portal.ts && vitepress build docs-portal",
+    "docs:preview": "vitepress preview docs-portal",
     "quality": "npx tsx scripts/check-quality.ts",
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
@@ -104,17 +107,22 @@
     "jest-environment-jsdom": "^30.5.2",
     "knip": "^6.27.0",
     "lint-staged": "^17.6.0",
+    "mermaid": "^11.17.2",
     "msw": "^3.0.3",
     "prisma": "^7.10.1",
+    "swagger-ui-dist": "^5.35.0",
     "tailwindcss": "^4.1.18",
     "ts-morph": "^28.0.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitepress": "^1.6.4",
+    "vitepress-plugin-mermaid": "^2.0.17"
   },
   "overrides": {
     "archiver": {
       "minimatch": "^11.0.8"
-    }
+    },
+    "vite": "^6.4.6"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": "eslint --fix"

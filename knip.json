@@ -27,7 +27,14 @@
   ],
   "github-actions": false,
   "ignore": ["next-env.d.ts", ".next/**"],
-  "ignoreDependencies": ["tailwindcss", "lint-staged"],
+  "ignoreDependencies": [
+    "tailwindcss",
+    "lint-staged",
+    "vitepress",
+    "mermaid",
+    "vitepress-plugin-mermaid",
+    "swagger-ui-dist"
+  ],
   "ignoreUnresolved": ["./.next/dev/types/routes.d.ts", ".next/dev/types/routes.d.ts"],
   "rules": {
     "duplicates": "off",
