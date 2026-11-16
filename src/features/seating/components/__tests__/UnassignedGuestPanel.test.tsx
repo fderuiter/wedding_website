@@ -153,7 +153,7 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       expect(autoAssignBtn).not.toBeInTheDocument();
     });
 
-    test('calls auto-assign API route, shows summary toast, updates local state, and notifies parent callback', async () => {
+    test('calls auto-assign API route, shows summary toast, and notifies parent callback', async () => {
       const onAutoAssignComplete = jest.fn();
       const mockResult = {
         assignedCount: 2,
@@ -169,7 +169,7 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
         json: async () => ({ success: true, data: mockResult }),
       } as Response);
 
-      render(
+      const { rerender } = render(
         <ToastProvider>
           <UnassignedGuestPanel
             {...defaultProps}
@@ -199,12 +199,22 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
         ).toBeInTheDocument();
       });
 
-      // Verify local state updated (assigned guests removed from unassigned panel)
+      expect(onAutoAssignComplete).toHaveBeenCalledWith(mockResult);
+
+      // Verify that when parent updates unassignedGuests via centralized state, panel displays empty state
+      rerender(
+        <ToastProvider>
+          <UnassignedGuestPanel
+            {...defaultProps}
+            unassignedGuests={[]}
+            onAutoAssignComplete={onAutoAssignComplete}
+          />
+        </ToastProvider>
+      );
+
       await waitFor(() => {
         expect(screen.getByText(/all guests have been assigned to tables!/i)).toBeInTheDocument();
       });
-
-      expect(onAutoAssignComplete).toHaveBeenCalledWith(mockResult);
     });
 
     test('shows error toast notification when auto-assign API returns an error', async () => {
