@@ -230,4 +230,48 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
       orderBy: { guestName: 'asc' },
     });
   });
+
+  it('neutralizes formula injection characters in invitation codes CSV export fields', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'code-1',
+        guestName: '=HYPERLINK("http://attacker.com")',
+        code: '+INVITE1',
+        email: '-admin@example.com',
+        plusOneFirstName: '@Malicious',
+        plusOneLastName: 'Companion',
+        householdName: '\tHousehold',
+        partyGroup: '\rGroup',
+        partyTags: ['=Tag1', 'Tag2'],
+        addressLine1: '-10 Downing St',
+        addressLine2: null,
+        city: 'London',
+        state: null,
+        zipCode: '+12345',
+        country: 'UK',
+        dietaryNotes: '=ALERT(1)',
+        plusOneAllocations: 1,
+        used: false,
+        extraFields: null,
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/invitation-codes/export');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
+
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
+    expect(lines[1]).toContain('"\'=HYPERLINK(""http://attacker.com"")"');
+    expect(lines[1]).toContain('\'+INVITE1');
+    expect(lines[1]).toContain('\'-admin@example.com');
+    expect(lines[1]).toContain('\'@Malicious Companion');
+    expect(lines[1]).toContain('\'\tHousehold');
+    expect(lines[1]).toContain('"\'\rGroup"');
+    expect(lines[1]).toContain('"\'=Tag1, Tag2"');
+    expect(lines[1]).toContain('\'=ALERT(1)');
+  });
 });
