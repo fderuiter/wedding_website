@@ -6,24 +6,43 @@ import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
 import { Button } from '@/components/ui/Button';
 
-interface PhotoItem {
+export type PhotoCategory = 'curated' | 'guest';
+
+export interface PhotoItem {
   id?: string;
   url: string;
   title?: string;
   isGuestUpload?: boolean;
+  category: PhotoCategory;
 }
 
-interface PhotoGalleryClientProps {
+export interface PhotoGalleryClientProps {
   initialPhotos: string[];
+  defaultTab?: PhotoCategory;
 }
 
-export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
+export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryClientProps) {
   const [photos, setPhotos] = useState<PhotoItem[]>(() =>
-    initialPhotos.map((url) => ({ url }))
+    initialPhotos.map((url, index) => ({
+      id: `curated-${index + 1}`,
+      url,
+      title: `Wedding photo ${index + 1}`,
+      isGuestUpload: false,
+      category: 'curated' as const,
+    }))
+  );
+
+  const [activeTab, setActiveTab] = useState<PhotoCategory>(
+    defaultTab ?? (initialPhotos.length > 0 ? 'curated' : 'guest')
   );
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const triggerButtonRef = useRef<HTMLElement | null>(null);
   const triggerIndexRef = useRef<number | null>(null);
@@ -32,6 +51,17 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
   const galleryGridRef = useRef<HTMLDivElement | null>(null);
   const lightboxModalRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  const tabCuratedRef = useRef<HTMLButtonElement | null>(null);
+  const tabGuestRef = useRef<HTMLButtonElement | null>(null);
+
+  const curatedPhotos = photos.filter((p) => p.category === 'curated');
+  const guestPhotos = photos.filter((p) => p.category === 'guest' || p.isGuestUpload);
+  const visiblePhotos = activeTab === 'curated' ? curatedPhotos : guestPhotos;
+
+  const visibleSelectedUrls = visiblePhotos.filter((p) => selectedUrls.has(p.url));
+  const visibleSelectedCount = visibleSelectedUrls.length;
+  const isAllSelectedInView = visiblePhotos.length > 0 && visibleSelectedCount === visiblePhotos.length;
 
   const openLightbox = (index: number, element?: HTMLElement) => {
     triggerIndexRef.current = index;
@@ -46,9 +76,11 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
         url: uploaded.url,
         title: uploaded.altText || 'Guest Photo',
         isGuestUpload: true,
+        category: 'guest',
       },
       ...prev,
     ]);
+    setActiveTab('guest');
     setSelectedPhotoIndex((prev) => (prev !== null ? prev + 1 : null));
     if (triggerIndexRef.current !== null) {
       triggerIndexRef.current += 1;
@@ -67,14 +99,45 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
     });
   };
 
-  const guestPhotos = photos.filter((p) => p.isGuestUpload);
-  const allDisplayPhotos = photos;
-
   const toggleSelectAll = () => {
-    if (selectedUrls.size === allDisplayPhotos.length) {
-      setSelectedUrls(new Set());
+    if (isAllSelectedInView) {
+      setSelectedUrls((prev) => {
+        const next = new Set(prev);
+        visiblePhotos.forEach((p) => next.delete(p.url));
+        return next;
+      });
     } else {
-      setSelectedUrls(new Set(allDisplayPhotos.map((p) => p.url)));
+      setSelectedUrls((prev) => {
+        const next = new Set(prev);
+        visiblePhotos.forEach((p) => next.add(p.url));
+        return next;
+      });
+    }
+  };
+
+  const handleTabChange = (tab: PhotoCategory) => {
+    setActiveTab(tab);
+    setSelectedPhotoIndex(null);
+  };
+
+  const handleTabKeyDown = (e: React.KeyboardEvent, currentTab: PhotoCategory) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const nextTab: PhotoCategory = currentTab === 'curated' ? 'guest' : 'curated';
+      handleTabChange(nextTab);
+      if (nextTab === 'curated') {
+        tabCuratedRef.current?.focus();
+      } else {
+        tabGuestRef.current?.focus();
+      }
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      handleTabChange('curated');
+      tabCuratedRef.current?.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      handleTabChange('guest');
+      tabGuestRef.current?.focus();
     }
   };
 
@@ -117,43 +180,43 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
   };
 
   const exportSelectedPhotos = () => {
-    if (selectedUrls.size === 0) return;
-    const selectedList = Array.from(selectedUrls);
-    // Find matching photo items
-    const ids = photos
-      .filter((p) => selectedUrls.has(p.url) && p.id)
+    if (visibleSelectedCount === 0) return;
+    const selectedVisible = visiblePhotos.filter((p) => selectedUrls.has(p.url));
+    const ids = selectedVisible
+      .filter((p) => p.id)
       .map((p) => p.id!);
 
     if (ids.length > 0) {
       handleDownload('/api/media/export', { ids }, 'selected-photos.zip');
     } else {
-      handleDownload('/api/media/export', { ids: selectedList }, 'selected-photos.zip');
+      const urls = selectedVisible.map((p) => p.url);
+      handleDownload('/api/media/export', { ids: urls }, 'selected-photos.zip');
     }
   };
 
-  const hasMultiplePhotos = guestPhotos.length > 1;
+  const hasMultiplePhotos = visiblePhotos.length > 1;
   const currentPhoto =
     selectedPhotoIndex !== null &&
     selectedPhotoIndex >= 0 &&
-    selectedPhotoIndex < guestPhotos.length
-      ? guestPhotos[selectedPhotoIndex]
+    selectedPhotoIndex < visiblePhotos.length
+      ? visiblePhotos[selectedPhotoIndex]
       : null;
 
   const handlePrev = useCallback(() => {
     if (!hasMultiplePhotos) return;
     setSelectedPhotoIndex((prev) => {
       if (prev === null) return null;
-      return prev === 0 ? guestPhotos.length - 1 : prev - 1;
+      return prev === 0 ? visiblePhotos.length - 1 : prev - 1;
     });
-  }, [hasMultiplePhotos, guestPhotos.length]);
+  }, [hasMultiplePhotos, visiblePhotos.length]);
 
   const handleNext = useCallback(() => {
     if (!hasMultiplePhotos) return;
     setSelectedPhotoIndex((prev) => {
       if (prev === null) return null;
-      return prev === guestPhotos.length - 1 ? 0 : prev + 1;
+      return prev === visiblePhotos.length - 1 ? 0 : prev + 1;
     });
-  }, [hasMultiplePhotos, guestPhotos.length]);
+  }, [hasMultiplePhotos, visiblePhotos.length]);
 
   useEffect(() => {
     if (selectedPhotoIndex !== null) {
@@ -184,7 +247,9 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
         gallerySectionRef.current.focus();
       } else {
         const fallback =
+          document.querySelector<HTMLElement>('[data-testid="curated-photos-grid"]') ||
           document.querySelector<HTMLElement>('[data-testid="guest-photos-grid"]') ||
+          document.querySelector<HTMLElement>('[data-testid="curated-photos-section"]') ||
           document.querySelector<HTMLElement>('[data-testid="guest-photos-section"]');
         fallback?.focus();
       }
@@ -239,14 +304,80 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
   }, [selectedPhotoIndex, handlePrev, handleNext]);
 
   return (
-    <div className="space-y-10">
-      {/* Upload Dropzone */}
-      <section className="max-w-2xl mx-auto" aria-label="Upload Photos">
-        <GuestPhotoDropzone onUploadSuccess={handleUploadSuccess} />
-      </section>
+    <div className="space-y-8" data-hydrated={isHydrated}>
+      {/* Accessible Tab Bar */}
+      <div
+        role="tablist"
+        aria-label="Photo gallery views"
+        data-testid="photo-gallery-tabs"
+        className="flex items-center justify-center gap-3 border-b border-stone-200 dark:border-stone-800 pb-4 mb-6"
+      >
+        <button
+          ref={tabCuratedRef}
+          id="tab-curated"
+          role="tab"
+          type="button"
+          aria-selected={activeTab === 'curated'}
+          aria-controls="tabpanel-curated"
+          tabIndex={activeTab === 'curated' ? 0 : -1}
+          onClick={() => handleTabChange('curated')}
+          onKeyDown={(e) => handleTabKeyDown(e, 'curated')}
+          data-testid="tab-curated"
+          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+            activeTab === 'curated'
+              ? 'bg-primary text-white shadow-md'
+              : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
+          }`}
+        >
+          <Icon name="Camera" className="w-4 h-4" />
+          <span>Curated Album</span>
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              activeTab === 'curated'
+                ? 'bg-white/25 text-white'
+                : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+            }`}
+          >
+            {curatedPhotos.length}
+          </span>
+        </button>
+
+        <button
+          ref={tabGuestRef}
+          id="tab-guest"
+          role="tab"
+          type="button"
+          aria-selected={activeTab === 'guest'}
+          aria-controls="tabpanel-guest"
+          tabIndex={activeTab === 'guest' ? 0 : -1}
+          onClick={() => handleTabChange('guest')}
+          onKeyDown={(e) => handleTabKeyDown(e, 'guest')}
+          data-testid="tab-guest"
+          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+            activeTab === 'guest'
+              ? 'bg-primary text-white shadow-md'
+              : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
+          }`}
+        >
+          <Icon name="Upload" className="w-4 h-4" />
+          <span>Guest Uploads</span>
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              activeTab === 'guest'
+                ? 'bg-white/25 text-white'
+                : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+            }`}
+          >
+            {guestPhotos.length}
+          </span>
+        </button>
+      </div>
 
       {/* Main Bulk Export Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/60 shadow-sm" data-testid="gallery-export-toolbar">
+      <div
+        className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/60 shadow-sm"
+        data-testid="gallery-export-toolbar"
+      >
         <div className="flex items-center gap-3">
           <Button
             onClick={exportAllGuestPhotos}
@@ -259,7 +390,7 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
             {isExporting ? 'Preparing Archive...' : 'Export All Guest Photos (.zip)'}
           </Button>
 
-          {selectedUrls.size > 0 && (
+          {visibleSelectedCount > 0 && (
             <Button
               onClick={exportSelectedPhotos}
               disabled={isExporting}
@@ -268,12 +399,12 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
               className="flex items-center gap-2"
             >
               <Icon name="Download" className="w-4 h-4" />
-              Export Selected ({selectedUrls.size}) (.zip)
+              Export Selected ({visibleSelectedCount}) (.zip)
             </Button>
           )}
         </div>
 
-        {allDisplayPhotos.length > 0 && (
+        {visiblePhotos.length > 0 && (
           <div className="flex items-center gap-2 text-sm">
             <Button
               variant="ghost"
@@ -281,111 +412,230 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
               onClick={toggleSelectAll}
               data-testid="toggle-select-all-photos-btn"
             >
-              {selectedUrls.size === allDisplayPhotos.length ? 'Deselect All' : 'Select All Photos'}
+              {isAllSelectedInView ? 'Deselect All' : 'Select All Photos'}
             </Button>
-            {selectedUrls.size > 0 && (
+            {visibleSelectedCount > 0 && (
               <span className="text-xs text-stone-500 dark:text-stone-400">
-                ({selectedUrls.size} of {allDisplayPhotos.length} selected)
+                ({visibleSelectedCount} of {visiblePhotos.length} selected)
               </span>
             )}
           </div>
         )}
       </div>
 
-      {/* Guest Uploaded Photos Grid / Gallery Section */}
-      <section
-        ref={gallerySectionRef}
-        tabIndex={-1}
-        className="space-y-4 focus:outline-none"
-        data-testid="guest-photos-section"
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
-            <Icon name="Camera" className="w-6 h-6 text-primary" />
-            Guest Shared Photos{guestPhotos.length > 0 ? ` (${guestPhotos.length})` : ''}
-          </h2>
-        </div>
+      {/* Curated Photos Tab Panel */}
+      {activeTab === 'curated' && (
+        <section
+          ref={gallerySectionRef}
+          tabIndex={-1}
+          id="tabpanel-curated"
+          role="tabpanel"
+          aria-labelledby="tab-curated"
+          className="space-y-4 focus:outline-none"
+          data-testid="curated-photos-section"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
+              <Icon name="Camera" className="w-6 h-6 text-primary" />
+              Curated Wedding Photos{curatedPhotos.length > 0 ? ` (${curatedPhotos.length})` : ''}
+            </h2>
+          </div>
 
-        {guestPhotos.length > 0 ? (
-          <div
-            ref={galleryGridRef}
-            tabIndex={-1}
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 focus:outline-none"
-            data-testid="guest-photos-grid"
-          >
-            {guestPhotos.map((photo, index) => {
-              const isSelected = selectedUrls.has(photo.url);
-              return (
-                <div
-                  key={index}
-                  className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer shadow-md border ${
-                    isSelected
-                      ? 'border-primary ring-2 ring-primary/50'
-                      : 'border-stone-200 dark:border-stone-800'
-                  } bg-stone-100 dark:bg-stone-900 transition-all hover:scale-[1.02]`}
-                >
-                  {/* Selection Checkbox */}
+          {curatedPhotos.length > 0 ? (
+            <div
+              ref={galleryGridRef}
+              tabIndex={-1}
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 focus:outline-none"
+              data-testid="curated-photos-grid"
+            >
+              {curatedPhotos.map((photo, index) => {
+                const isSelected = selectedUrls.has(photo.url);
+                return (
                   <div
-                    className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
-                    onClick={(e) => e.stopPropagation()}
+                    key={photo.id || index}
+                    data-category={photo.category}
+                    className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer shadow-md border ${
+                      isSelected
+                        ? 'border-primary ring-2 ring-primary/50'
+                        : 'border-stone-200 dark:border-stone-800'
+                    } bg-stone-100 dark:bg-stone-900 transition-all hover:scale-[1.02]`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(photo.url)}
-                      aria-label={`Select guest photo ${index + 1}`}
-                      data-testid={`photo-checkbox-${index}`}
-                      className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => openLightbox(index, e.currentTarget)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        openLightbox(index, e.currentTarget);
-                      }
-                    }}
-                    className="w-full h-full cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
-                    aria-label={photo.title ? `View ${photo.title}` : `View guest photo ${index + 1}`}
-                    data-testid={`photo-thumbnail-${index}`}
-                  >
-                    <MediaImage
-                      src={photo.url}
-                      alt={photo.title || `Guest photo ${index + 1}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
-                      <span className="text-xs font-medium text-white truncate">
-                        {photo.title || 'Guest Photo'}
-                      </span>
+                    {/* Selection Checkbox */}
+                    <div
+                      className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(photo.url)}
+                        aria-label={`Select curated photo ${index + 1}`}
+                        data-testid={`photo-checkbox-${index}`}
+                        className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
+                      />
                     </div>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div
-            data-testid="guest-photos-empty-state"
-            className="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/30 p-8 text-center flex flex-col items-center justify-center space-y-3"
+
+                    <button
+                      type="button"
+                      data-category={photo.category}
+                      onClick={(e) => openLightbox(index, e.currentTarget)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openLightbox(index, e.currentTarget);
+                        }
+                      }}
+                      className="w-full h-full cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                      aria-label={photo.title ? `View ${photo.title}` : `View curated photo ${index + 1}`}
+                      data-testid={`photo-thumbnail-${index}`}
+                    >
+                      <MediaImage
+                        src={photo.url}
+                        alt={photo.title || `Curated photo ${index + 1}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
+                        <span className="text-xs font-medium text-white truncate">
+                          {photo.title || `Curated photo ${index + 1}`}
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              data-testid="curated-photos-empty-state"
+              className="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/30 p-8 text-center flex flex-col items-center justify-center space-y-3"
+            >
+              <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
+                <Icon name="ImageOff" className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">
+                  No curated photos yet
+                </h3>
+                <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm">
+                  Curated wedding photos will appear here once published.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Guest Photos Tab Panel */}
+      {activeTab === 'guest' && (
+        <div
+          id="tabpanel-guest"
+          role="tabpanel"
+          aria-labelledby="tab-guest"
+          className="space-y-8"
+        >
+          {/* Upload Dropzone */}
+          <section className="max-w-2xl mx-auto" aria-label="Upload Photos">
+            <GuestPhotoDropzone onUploadSuccess={handleUploadSuccess} />
+          </section>
+
+          {/* Guest Uploaded Photos Grid / Gallery Section */}
+          <section
+            ref={gallerySectionRef}
+            tabIndex={-1}
+            className="space-y-4 focus:outline-none"
+            data-testid="guest-photos-section"
           >
-            <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
-              <Icon name="ImageOff" className="w-8 h-8" />
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
+                <Icon name="Camera" className="w-6 h-6 text-primary" />
+                Guest Shared Photos{guestPhotos.length > 0 ? ` (${guestPhotos.length})` : ''}
+              </h2>
             </div>
-            <div>
-              <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">
-                No guest photos yet
-              </h3>
-              <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm">
-                Be the first to share your favorite memories from the celebration using the upload section above!
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
+
+            {guestPhotos.length > 0 ? (
+              <div
+                ref={galleryGridRef}
+                tabIndex={-1}
+                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 focus:outline-none"
+                data-testid="guest-photos-grid"
+              >
+                {guestPhotos.map((photo, index) => {
+                  const isSelected = selectedUrls.has(photo.url);
+                  return (
+                    <div
+                      key={photo.id || index}
+                      data-category={photo.category}
+                      className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer shadow-md border ${
+                        isSelected
+                          ? 'border-primary ring-2 ring-primary/50'
+                          : 'border-stone-200 dark:border-stone-800'
+                      } bg-stone-100 dark:bg-stone-900 transition-all hover:scale-[1.02]`}
+                    >
+                      {/* Selection Checkbox */}
+                      <div
+                        className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(photo.url)}
+                          aria-label={`Select guest photo ${index + 1}`}
+                          data-testid={`photo-checkbox-${index}`}
+                          className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        data-category={photo.category}
+                        onClick={(e) => openLightbox(index, e.currentTarget)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openLightbox(index, e.currentTarget);
+                          }
+                        }}
+                        className="w-full h-full cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                        aria-label={photo.title ? `View ${photo.title}` : `View guest photo ${index + 1}`}
+                        data-testid={`photo-thumbnail-${index}`}
+                      >
+                        <MediaImage
+                          src={photo.url}
+                          alt={photo.title || `Guest photo ${index + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
+                          <span className="text-xs font-medium text-white truncate">
+                            {photo.title || 'Guest Photo'}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div
+                data-testid="guest-photos-empty-state"
+                className="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/30 p-8 text-center flex flex-col items-center justify-center space-y-3"
+              >
+                <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
+                  <Icon name="ImageOff" className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">
+                    No guest photos yet
+                  </h3>
+                  <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm">
+                    Be the first to share your favorite memories from the celebration using the upload section above!
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {/* Lightbox Modal */}
       {currentPhoto && selectedPhotoIndex !== null && (
@@ -406,9 +656,9 @@ export function PhotoGalleryClient({ initialPhotos }: PhotoGalleryClientProps) {
               className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-black/50 text-white text-sm font-medium tracking-wide"
               data-testid="lightbox-counter"
               aria-live="polite"
-              aria-label={`Photo ${selectedPhotoIndex + 1} of ${guestPhotos.length}`}
+              aria-label={`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}`}
             >
-              {selectedPhotoIndex + 1} / {guestPhotos.length}
+              {selectedPhotoIndex + 1} / {visiblePhotos.length}
             </div>
 
             {/* Close Button */}
