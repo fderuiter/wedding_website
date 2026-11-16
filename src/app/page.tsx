@@ -4,8 +4,6 @@ import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { logisticsService } from '@/features/logistics';
 import { withPageQuery } from '@/lib/query-wrapper';
 
-export const dynamic = 'force-dynamic';
-
 /**
  * Build homepage metadata and embedded schema.org JSON-LD from application configuration.
  *
