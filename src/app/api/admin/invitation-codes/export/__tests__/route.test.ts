@@ -180,7 +180,7 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const lines = csvText.trim().split('\n');
 
     expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
-    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,+15551234567,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused');
+    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,\'+15551234567,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused');
     expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,http://localhost:3000/guest?code=BOB2026,bob@example.com,,,Smiths,Groom,Local,"456 Oak Rd, Austin, TX, 78701, USA","Gluten-Free, Dairy-Free",0,Redeemed');
   });
 
@@ -225,9 +225,9 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[1]).toContain('Serialized Phone Guest,SER2026,http://localhost:3000/guest?code=SER2026,ser@example.com,+1 (555) 987-6543');
-    expect(lines[2]).toContain('Mobile Only Guest,MOB2026,http://localhost:3000/guest?code=MOB2026,mob@example.com,+15553334444');
-    expect(lines[3]).toContain('PhoneNumber Key Guest,PN2026,http://localhost:3000/guest?code=PN2026,pn@example.com,+15554445555');
+    expect(lines[1]).toContain('Serialized Phone Guest,SER2026,http://localhost:3000/guest?code=SER2026,ser@example.com,\'+1 (555) 987-6543');
+    expect(lines[2]).toContain('Mobile Only Guest,MOB2026,http://localhost:3000/guest?code=MOB2026,mob@example.com,\'+15553334444');
+    expect(lines[3]).toContain('PhoneNumber Key Guest,PN2026,http://localhost:3000/guest?code=PN2026,pn@example.com,\'+15554445555');
     expect(lines[4]).toContain('Malformed JSON Guest,MAL2026,http://localhost:3000/guest?code=MAL2026,mal@example.com,,');
   });
 
@@ -311,7 +311,7 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
     expect(lines[1]).toContain('"\'=HYPERLINK(""http://attacker.com"")"');
     expect(lines[1]).toContain('\'+INVITE1');
     expect(lines[1]).toContain('\'-admin@example.com');
