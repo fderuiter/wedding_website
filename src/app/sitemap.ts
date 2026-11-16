@@ -22,23 +22,31 @@ interface SitemapEntry {
  *
  * @returns {Promise<MetadataRoute.Sitemap>} The sitemap data.
  */
+export const dynamic = 'force-static';
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let siteUrl = 'http://localhost:3000';
+  const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                         process.env.STATIC_EXPORT === '1' ||
+                         process.env.npm_lifecycle_event === 'build:export';
+
   try {
     const config = await getAppConfig();
     if (config.baseUrl) {
       siteUrl = config.baseUrl;
     }
-    try {
-      const { headers } = require('next/headers');
-      const headersList = await headers();
-      const host = headersList.get('host');
-      const proto = headersList.get('x-forwarded-proto');
-      if (host) {
-        siteUrl = getValidatedCanonicalUrl(host, proto, siteUrl);
+    if (!isStaticExport) {
+      try {
+        const { headers } = require('next/headers');
+        const headersList = await headers();
+        const host = headersList.get('host');
+        const proto = headersList.get('x-forwarded-proto');
+        if (host) {
+          siteUrl = getValidatedCanonicalUrl(host, proto, siteUrl);
+        }
+      } catch {
+        // Fallback if headers are not available during static generation
       }
-    } catch {
-      // Fallback if headers are not available during static generation
     }
   } catch (err) {
     console.error('Could not load config for sitemap', err);

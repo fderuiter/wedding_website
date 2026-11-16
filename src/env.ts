@@ -83,8 +83,14 @@ const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
   arg.includes('verify-')
 ));
 
+const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                       process.env.STATIC_EXPORT === '1' ||
+                       process.env.npm_lifecycle_event === 'build:export';
+
 const isBuildTime = isEdge ||
+                    isStaticExport ||
                     process.env.npm_lifecycle_event === 'build' ||
+                    process.env.npm_lifecycle_event === 'build:export' ||
                     process.env.npm_lifecycle_event === 'prebuild' ||
                     process.env.npm_lifecycle_event === 'prisma:generate' ||
                     process.env.npm_lifecycle_event === 'db:seed' ||
@@ -109,7 +115,7 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
 
 let _env: z.infer<typeof envSchema>;
 
-if (process.env.NEXT_RUNTIME === 'edge' || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE))) {
+if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE))) {
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',

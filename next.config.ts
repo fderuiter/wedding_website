@@ -32,17 +32,31 @@ const securityHeaders = [
   },
 ];
 
+const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                       process.env.STATIC_EXPORT === '1' ||
+                       process.env.npm_lifecycle_event === 'build:export';
+
+const rawBasePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim();
+const basePath = isStaticExport && rawBasePath && rawBasePath !== '/'
+  ? (rawBasePath.startsWith('/') ? rawBasePath : `/${rawBasePath}`).replace(/\/+$/, '')
+  : undefined;
+
 const nextConfig: NextConfig = {
-  output: 'standalone',
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: securityHeaders,
-      },
-    ];
-  },
+  // Support dual-mode build: output: 'standalone' by default, 'export' for static showcases
+  output: isStaticExport ? 'export' : 'standalone',
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
+  ...(isStaticExport ? {} : {
+    async headers() {
+      return [
+        {
+          source: '/(.*)',
+          headers: securityHeaders,
+        },
+      ];
+    },
+  }),
   images: {
+    unoptimized: isStaticExport ? true : undefined,
     remotePatterns: [
       {
         protocol: 'https',

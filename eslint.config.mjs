@@ -57,7 +57,16 @@ if (reactHooks && reactHooks.rules) {
 
 const eslintConfig = [
   {
-    ignores: ['docs-portal/**', '.next/**', 'coverage/**', 'test-results/**'],
+    ignores: [
+      'docs-portal/**',
+      'storybook-static/**',
+      'public/mockServiceWorker.js',
+      '.next/**',
+      'node_modules/**',
+      'coverage/**',
+      'dist/**',
+      'test-results/**',
+    ],
   },
   ...ensureFlatConfig(nextCoreWebVitals),
   ...ensureFlatConfig(nextTypescript),
