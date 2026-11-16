@@ -51,7 +51,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
 
     fieldErrors,
     codeError,
-    error,
+    submissionError,
 
     setContributorName,
     setEmail,
@@ -246,6 +246,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               onChange={(e) => setContributorName(e.target.value)}
               disabled={isSubmitting}
             />
+            {fieldErrors.name && <FormMessage>{fieldErrors.name}</FormMessage>}
           </FormGroup>
           <FormGroup state={fieldErrors.email ? 'error' : 'default'} className="mb-3">
             <Label>
@@ -258,6 +259,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               onChange={(e) => setEmail(e.target.value)}
               disabled={isSubmitting}
             />
+            {fieldErrors.email && <FormMessage>{fieldErrors.email}</FormMessage>}
           </FormGroup>
           {item.isGroupGift && (
             <FormGroup state={fieldErrors.amount ? 'error' : 'default'} className="mb-3">
@@ -330,6 +332,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
                 max={remainingAmount}
                 disabled={isSubmitting}
               />
+              {fieldErrors.amount && <FormMessage>{fieldErrors.amount}</FormMessage>}
             </FormGroup>
           )}
           {isFund && (
@@ -413,8 +416,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({ item, onClose, onCo
               maxLength={1000}
               rows={3}
             />
+            {fieldErrors.message && <FormMessage>{fieldErrors.message}</FormMessage>}
           </FormGroup>
-          {error && <FormGroup state="error"><FormMessage>{error}</FormMessage></FormGroup>}
+          {submissionError && <FormGroup state="error"><FormMessage>{submissionError}</FormMessage></FormGroup>}
           <Button
             type="submit"
             variant="primary"
