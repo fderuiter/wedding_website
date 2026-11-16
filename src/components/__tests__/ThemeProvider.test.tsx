@@ -1,7 +1,12 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { ThemeProvider, useTheme, optimizeContrast, contrastCache, clearContrastCache } from '../ThemeProvider';
+import { ThemeProvider, useTheme } from '../ThemeProvider';
+import {
+  contrastCache,
+  clearContrastCache,
+  optimizeContrast,
+} from '@/lib/theme/stylesheet';
 
 // Helper component to display theme values
 function TestComponent() {
