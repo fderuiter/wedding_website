@@ -49,7 +49,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
 
   const [isMounted, setIsMounted] = useState(false);
   const [timeLeft, setTimeLeft] = useState<TimeLeft>({});
-  const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
     setIsMounted(true);
@@ -100,13 +100,12 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        setAnnouncement(`Countdown status: ${screenReaderText}`);
+        const message = `Countdown status: ${screenReaderText}`;
+        setAnnouncement((prev) => (prev === message ? `${message}\u00A0` : message));
       }
     },
     [screenReaderText]
   );
-
-  const activeLabel = announcement || screenReaderText;
 
   return (
     <div className="inline-block">
@@ -120,19 +119,22 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
           {formatDate(weddingDate)}
         </div>
       ) : timerComponents.length ? (
-        <div
-          className="text-2xl font-bold text-primary dark:text-primary-text focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-primary-text focus:ring-offset-2 rounded-md transition-shadow"
-          role="timer"
-          aria-live="polite"
-          aria-atomic="true"
-          aria-label={activeLabel}
-          tabIndex={0}
-          onKeyDown={handleKeyDown}
-        >
-          <span aria-hidden="true">
-            {timerComponents} to go!
-          </span>
-        </div>
+        <>
+          <div className="sr-only" role="status" aria-live="polite">
+            {announcement}
+          </div>
+          <div
+            className="text-2xl font-bold text-primary dark:text-primary-text focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-primary-text focus:ring-offset-2 rounded-md transition-shadow"
+            role="timer"
+            aria-label={screenReaderText}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
+          >
+            <span aria-hidden="true">
+              {timerComponents} to go!
+            </span>
+          </div>
+        </>
       ) : (
         <div
           className="text-2xl font-bold text-primary dark:text-primary-text focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-primary-text focus:ring-offset-2 rounded-md"

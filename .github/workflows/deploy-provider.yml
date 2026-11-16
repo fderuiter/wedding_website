@@ -79,11 +79,23 @@ jobs:
 
       - name: Resolve Artifact Image URI
         id: resolve
+        env:
+          TAG: ${{ inputs.image_tag || 'latest' }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
         run: |
-          TAG="${{ inputs.image_tag || 'latest' }}"
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
+            echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
+            exit 1
+          fi
+
+          if [[ ! "$TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+            echo "::error::Invalid image tag '${TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+            exit 1
+          fi
+
+          REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           IMAGE_URI="ghcr.io/${REPO_LOWER}:${TAG}"
-          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
           echo "Resolved deployment target artifact: ${IMAGE_URI}"
 
       - name: Deploy to Google Cloud Run Adapter
@@ -103,37 +115,54 @@ jobs:
 
       - name: Deploy via Generic Webhook Adapter
         if: inputs.provider == 'generic-webhook' && secrets.DEPLOY_WEBHOOK_URL != ''
+        env:
+          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
         run: |
-          echo "Triggering deployment webhook for image ${{ steps.resolve.outputs.image_uri }}..."
-          curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+          echo "Triggering deployment webhook for image ${IMAGE_URI}..."
+          PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg env "$TARGET_ENV" '{image: $image, environment: $env}')
+          curl -X POST "$DEPLOY_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d "{\"image\": \"${{ steps.resolve.outputs.image_uri }}\", \"environment\": \"${{ inputs.environment || 'production' }}\"}"
+            -d "$PAYLOAD"
 
       - name: Dry-run Provider Adapter Validation
         if: secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == ''
+        env:
+          TAG: ${{ inputs.image_tag || 'latest' }}
         run: |
-          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for image tag: ${{ inputs.image_tag || 'latest' }}."
+          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for image tag: ${TAG}."
 
       - name: Resolve Service URL Output
         id: resolve-url
         if: always()
+        env:
+          CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEFAULT_SERVICE_URL: ${{ secrets.SERVICE_URL || 'http://127.0.0.1:3000' }}
         run: |
-          URL="${{ steps.cloudrun.outputs.url }}"
+          URL="$CLOUDRUN_URL"
           IS_DRY_RUN="false"
-          if [ -z "${{ secrets.GCP_SA_KEY }}" ] && [ -z "${{ secrets.DEPLOY_WEBHOOK_URL }}" ]; then
+          if [ -z "$GCP_SA_KEY" ] && [ -z "$DEPLOY_WEBHOOK_URL" ]; then
             IS_DRY_RUN="true"
           fi
           if [ -z "$URL" ]; then
-            URL="${{ secrets.SERVICE_URL || 'http://127.0.0.1:3000' }}"
+            URL="$DEFAULT_SERVICE_URL"
           fi
-          echo "service_url=${URL}" >> $GITHUB_OUTPUT
-          echo "is_dry_run=${IS_DRY_RUN}" >> $GITHUB_OUTPUT
+          echo "service_url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "is_dry_run=${IS_DRY_RUN}" >> "$GITHUB_OUTPUT"
           echo "Resolved deployment service URL: ${URL} (is_dry_run=${IS_DRY_RUN})"
 
       - name: Deployment Summary
+        env:
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          SERVICE_URL: ${{ steps.resolve-url.outputs.service_url }}
         run: |
-          echo "### 🚀 Provider Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** \`${{ inputs.environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Provider:** \`${{ inputs.provider || 'google-cloud-run' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact Image URI:** \`${{ steps.resolve.outputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service URL:** \`${{ steps.resolve-url.outputs.service_url }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Provider Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Provider:** \`${PROVIDER}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Artifact Image URI:** \`${IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Service URL:** \`${SERVICE_URL}\`" >> "$GITHUB_STEP_SUMMARY"

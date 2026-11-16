@@ -477,6 +477,36 @@ describe('ThankYouService', () => {
       expect(csv).toContain('Contributor 1');
       expect(csv).toContain('Contributor 2500');
     });
+
+    it('neutralizes formula injection characters across contributor fields', async () => {
+      const maliciousContributors = [
+        {
+          id: 'c-malicious',
+          name: '=SUM(1,2)',
+          email: '-malicious@example.com',
+          message: '+123456789',
+          amount: 150,
+          date: '2026-06-01T00:00:00.000Z',
+          thankYouStatus: '@AdminStatus',
+          thankYouSentAt: null,
+          thankYouNote: '\tNoteDraft',
+          registryItem: { id: 'item1', name: '\rItemName', category: '=Category' },
+        },
+      ];
+
+      mockPrisma.contributor.findMany.mockResolvedValue(maliciousContributors);
+
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
+
+      expect(csv).toContain('\'=SUM(1,2)');
+      expect(csv).toContain('\'-malicious@example.com');
+      expect(csv).toContain('\'+123456789');
+      expect(csv).toContain('\'@AdminStatus');
+      expect(csv).toContain('\'\tNoteDraft');
+      expect(csv).toContain('"\'\rItemName"');
+      expect(csv).toContain('\'=Category');
+    });
   });
 
   describe('exportThankYouNotesPdf', () => {
