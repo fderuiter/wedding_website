@@ -14,7 +14,7 @@ import {
   ParsedCsvRow,
   ColumnMappingOptions,
 } from '@/utils/csv';
-import { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry/schemas';
+import { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry';
 
 interface CsvImportWizardModalProps {
   isOpen: boolean;

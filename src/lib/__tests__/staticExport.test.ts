@@ -1,5 +1,5 @@
 import { getAppConfig, STATIC_MOCK_CONFIG, isSiteInitialized } from '../config';
-import { logisticsRepository } from '@/features/logistics/repository';
+import { logisticsRepository } from '@/features/logistics';
 import { prisma } from '../prisma';
 
 jest.mock('../prisma', () => ({

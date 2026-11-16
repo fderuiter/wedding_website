@@ -1,7 +1,7 @@
 import { GET } from '../route';
 import { NextRequest } from 'next/server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 import { getAppConfig } from '@/lib/config';
 import { ApiError } from '@/utils/ApiError';
 

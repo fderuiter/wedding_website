@@ -1,6 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { SeatingTableDTO } from './schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 interface GeneratePdfOptions {
   siteTitle?: string;

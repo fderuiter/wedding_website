@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
 import { renderBroadcastTemplate } from './template';
-import { getAttendanceStatus } from '@/features/registry/utils/invitation';
+import { getAttendanceStatus } from '@/features/registry';
 
 const RECIPIENT_CHUNK_SIZE = 250;
 import { MultiChannelMessagingProvider } from './providers';

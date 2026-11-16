@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { rateLimit } from '@/utils/rateLimit';
 import { prisma } from '@/lib/prisma';
-import { PublicAddressCollectSchema, PublicAddressCollectDTO } from '@/features/registry/schemas';
+import { PublicAddressCollectSchema, PublicAddressCollectDTO } from '@/features/registry';
 
 function generateRandomCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

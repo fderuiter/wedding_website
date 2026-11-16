@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "sideEffects": [
+    "*.css",
+    "**/*.css"
+  ],
   "scripts": {
     "dev": "next dev --turbo",
     "prebuild": "npx tsx scripts/generate-docs.ts",

@@ -19,10 +19,12 @@ export {
   ScheduleDataSchema,
   PhotoDataSchema,
   PhotoModerationSchema,
+  BatchPhotoModerationSchema,
   PhotoNodeSchema,
   GenericNodeSchema,
   ContentNodeSchema,
 } from './schemas';
+export { ContentNodeAdminService } from './admin.service';
 export type {
   ContentNodeDTO,
   AppConfigDTO,

@@ -2,7 +2,7 @@
 
 import { generateSeatingChartPdf } from '../pdf.service';
 import { SeatingTableDTO } from '../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 describe('pdf.service - generateSeatingChartPdf', () => {
   const mockTables: SeatingTableDTO[] = [

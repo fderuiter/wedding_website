@@ -4,7 +4,7 @@ import '@testing-library/jest-dom';
 import { FloorplanCanvas } from '../FloorplanCanvas';
 import { UnassignedGuestPanel } from '../UnassignedGuestPanel';
 import { SeatingTableDTO } from '../../schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 
 describe('Guest Indexing and Memoization Hooks', () => {
   const sampleTables: SeatingTableDTO[] = [

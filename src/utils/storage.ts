@@ -1,5 +1,4 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
-import { writeFile, unlink, stat, mkdir } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { getNormalizedExtension } from './validation';
@@ -108,9 +107,10 @@ class LocalStorageProvider implements StorageProvider {
       key = folder ? `${folder}/${fileWithExt}` : fileWithExt;
     }
 
+    const fs = await import('fs/promises');
     const filePath = path.join(this.publicDir, ...key.split('/'));
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, buffer);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, buffer);
 
     const url = this.getPublicUrl(key);
 
@@ -125,10 +125,11 @@ class LocalStorageProvider implements StorageProvider {
   }
 
   async delete(keyOrUrl: string): Promise<void> {
+    const fs = await import('fs/promises');
     const key = this.extractKey(keyOrUrl);
     const filePath = path.join(this.publicDir, ...key.split('/'));
     try {
-      await unlink(filePath);
+      await fs.unlink(filePath);
     } catch (err: unknown) {
       if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code !== 'ENOENT') {
         throw err;
@@ -145,10 +146,11 @@ class LocalStorageProvider implements StorageProvider {
   }
 
   async getMetadata(keyOrUrl: string): Promise<StorageObject | null> {
+    const fs = await import('fs/promises');
     const key = this.extractKey(keyOrUrl);
     const filePath = path.join(this.publicDir, ...key.split('/'));
     try {
-      const stats = await stat(filePath);
+      const stats = await fs.stat(filePath);
       const ext = path.extname(filePath).toLowerCase();
       let mimeType = 'application/octet-stream';
       if (ext === '.png') mimeType = 'image/png';
@@ -168,8 +170,9 @@ class LocalStorageProvider implements StorageProvider {
   }
 
   async validateConfig(): Promise<StorageValidationResult> {
+    const fs = await import('fs/promises');
     try {
-      await mkdir(path.join(this.publicDir, 'uploads'), { recursive: true });
+      await fs.mkdir(path.join(this.publicDir, 'uploads'), { recursive: true });
       return { valid: true };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { BroadcastService } from '@/features/broadcast/service';
+import { BroadcastService } from '@/features/broadcast';
 
 export const DELETE = withApiMiddleware(async (_req: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { id } = await context.params;

@@ -1,7 +1,6 @@
 import { GET as weatherGET } from '@/app/api/weather/route';
 import { GET as mediaGET } from '@/app/api/media/route';
-import { GET as registryGET } from '@/features/registry/api/get-items';
-import { POST as contributePOST } from '@/features/registry/api/contribute';
+import { registryGetItemsGET as registryGET, registryContributePOST as contributePOST } from '@/features/registry';
 import { getAppConfig } from '@/lib/config';
 import { NextRequest } from 'next/server';
 
@@ -75,7 +74,7 @@ describe('API Route Behavior for Disabled Feature Modules', () => {
       });
 
       // Mock registryService.getItemById
-      const { registryService } = await import('@/features/registry/service');
+      const { registryService } = await import('@/features/registry');
       jest.spyOn(registryService, 'getItemById').mockResolvedValue({
         id: 'test-item-id',
         name: 'Mixer',
