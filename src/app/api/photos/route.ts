@@ -10,16 +10,30 @@ import { ApiError } from '@/utils/ApiError';
  * @description Fetches approved public photos for the gallery and live reception slideshow.
  * Backed by contentService.getPublicPhotos() which filters for approved and visible photos.
  *
- * @param {NextRequest} _request - The incoming Next.js request.
+ * @param {NextRequest} request - The incoming Next.js request.
  * @returns {Promise<NextResponse>} JSON response containing approved photos.
  */
-export const GET = withApiMiddleware(async (_request: NextRequest) => {
+export const GET = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
 
-  const nodes = await contentService.getPublicPhotos();
+  const { searchParams } = new URL(request.url);
+  const sinceParam = searchParams.get('since');
+  let sinceDate: Date | undefined;
+
+  if (sinceParam) {
+    const parsed = new Date(sinceParam);
+    if (isNaN(parsed.getTime())) {
+      throw new ApiError(400, 'Invalid "since" parameter. Must be a valid ISO 8601 date string.');
+    }
+    sinceDate = parsed;
+  }
+
+  const nodes = await contentService.getPublicPhotos(
+    sinceDate ? { since: sinceDate } : { limit: 50 }
+  );
 
   const photos = nodes
     .map((node) => {
@@ -39,6 +53,5 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
   return NextResponse.json({
     success: true,
     photos,
-    data: nodes,
   });
 });

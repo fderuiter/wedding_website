@@ -314,6 +314,132 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByText('4')).toBeInTheDocument();
   });
 
+  it('passes ?since= in its 30-second polling requests when initialPhotos include createdAt timestamps', async () => {
+    const photosWithTimestamps = [
+      { id: '1', url: 'https://example.com/photo1.jpg', title: 'First Dance', createdAt: '2026-06-20T18:00:00.000Z' },
+      { id: '2', url: 'https://example.com/photo2.jpg', title: 'Cake Cutting', createdAt: '2026-06-20T18:30:00.000Z' },
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={photosWithTimestamps}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/photos?since=2026-06-20T18%3A30%3A00.000Z'
+    );
+  });
+
+  it('updates timestamp cursor upon receiving new incremental photos and queries with new cursor', async () => {
+    const photosWithTimestamps = [
+      { id: '1', url: 'https://example.com/photo1.jpg', title: 'First Dance', createdAt: '2026-06-20T18:00:00.000Z' },
+    ];
+
+    const mockFetch = jest
+      .fn()
+      // First poll returns a new photo with timestamp 18:45:00
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          photos: [
+            {
+              id: '2',
+              url: 'https://example.com/photo2-guest.jpg',
+              title: 'Guest Cheer',
+              createdAt: '2026-06-20T18:45:00.000Z',
+              isGuestUpload: true,
+            },
+          ],
+        }),
+      })
+      // Second poll returns empty
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          photos: [],
+        }),
+      });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={photosWithTimestamps}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    // First 30s poll
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/photos?since=2026-06-20T18%3A00%3A00.000Z'
+    );
+
+    // Second 30s poll uses the updated cursor
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/photos?since=2026-06-20T18%3A45%3A00.000Z'
+    );
+  });
+
+  it('handles empty incremental response without mutating photo queue', async () => {
+    const photosWithTimestamps = [
+      { id: '1', url: 'https://example.com/photo1.jpg', title: 'First Dance', createdAt: '2026-06-20T18:00:00.000Z' },
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={photosWithTimestamps}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/photos?since=2026-06-20T18%3A00%3A00.000Z'
+    );
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+  });
+
   it('handles network disconnection gracefully by continuing to loop cached photos without crashing', async () => {
     const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const mockFetch = jest.fn().mockRejectedValue(new Error('Network disconnected'));

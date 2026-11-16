@@ -135,6 +135,49 @@ describe('Content Domain Database Integration', () => {
     expect(photoNodes[0].id).toBe('photo-node-1');
   });
 
+  test('getNodesByType executes Prisma query filtering createdAt with cursor and bounding by limit', async () => {
+    const t1 = new Date('2026-06-20T10:00:00.000Z');
+    const t2 = new Date('2026-06-20T11:00:00.000Z');
+    const t3 = new Date('2026-06-20T12:00:00.000Z');
+
+    await realPrisma.contentNode.createMany({
+      data: [
+        {
+          id: 'photo-old',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: 'https://example.com/p1.jpg', isVisible: true, status: 'APPROVED' },
+          createdAt: t1,
+        },
+        {
+          id: 'photo-mid',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: 'https://example.com/p2.jpg', isVisible: true, status: 'APPROVED' },
+          createdAt: t2,
+        },
+        {
+          id: 'photo-new',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: 'https://example.com/p3.jpg', isVisible: true, status: 'APPROVED' },
+          createdAt: t3,
+        },
+      ],
+    });
+
+    // Query since t1 -> should return photo-new and photo-mid (createdAt > t1)
+    const afterT1 = await contentRepo.getNodesByType('Photo', { since: t1 });
+    expect(afterT1).toHaveLength(2);
+    expect(afterT1[0].id).toBe('photo-new');
+    expect(afterT1[1].id).toBe('photo-mid');
+
+    // Query with limit 1
+    const bounded = await contentRepo.getNodesByType('Photo', { limit: 1 });
+    expect(bounded).toHaveLength(1);
+    expect(bounded[0].id).toBe('photo-new');
+  });
+
   test('isolates test database state between test runs', async () => {
     // Confirm database tables are clean from previous test runs
     const snapshots = await realPrisma.snapshotVersion.findMany();

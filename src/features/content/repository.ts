@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import type { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult } from './types';
+import type { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult, GetNodesByTypeOptions } from './types';
 import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
@@ -103,10 +103,28 @@ export class ContentRepository implements IContentRepository {
     });
   }
 
-  async getNodesByType(type: string): Promise<ContentNodeDTO[]> {
-    const nodes = await this.client.contentNode.findMany({
-      where: { type }
-    });
+  async getNodesByType(type: string, options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
+    const where: any = { type };
+    if (options?.since) {
+      const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+      if (!isNaN(sinceDate.getTime())) {
+        where.createdAt = { gt: sinceDate };
+      }
+    }
+
+    const queryArgs: any = {
+      where,
+      orderBy: { createdAt: 'desc' },
+    };
+
+    if (options?.limit !== undefined) {
+      const limit = Math.floor(Number(options.limit));
+      if (!isNaN(limit) && limit > 0) {
+        queryArgs.take = limit > 100 ? 100 : limit;
+      }
+    }
+
+    const nodes = await this.client.contentNode.findMany(queryArgs);
     return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
 

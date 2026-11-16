@@ -167,5 +167,38 @@ describe('ContentService', () => {
       expect(result[0].id).toBe('3');
       expect(result[1].id).toBe('1');
     });
+
+    it('passes options to repository and filters out photos created before since timestamp', async () => {
+      const now = new Date('2026-06-20T18:30:00.000Z');
+      const earlier = new Date('2026-06-20T18:00:00.000Z');
+      const older = new Date('2026-06-20T17:30:00.000Z');
+
+      const mockNodes: ContentNode[] = [
+        {
+          id: '1',
+          type: 'Photo',
+          tags: [],
+          data: { url: 'older.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: older,
+          updatedAt: older,
+        },
+        {
+          id: '2',
+          type: 'Photo',
+          tags: [],
+          data: { url: 'new.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+
+      jest.spyOn(mockRepo, 'getNodesByType').mockResolvedValue(mockNodes);
+
+      const result = await service.getPublicPhotos({ since: earlier });
+
+      expect(mockRepo.getNodesByType).toHaveBeenCalledWith('Photo', { since: earlier });
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('2');
+    });
   });
 });
