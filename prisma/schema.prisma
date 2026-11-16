@@ -172,6 +172,9 @@ model Contributor {
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
   thankYouNote   String?
+  stripePaymentIntentId String?
+  stripeChargeId        String?
+  transactionTimestamp  DateTime?
   registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
   registryItemId String?
   createdAt      DateTime      @default(now())
@@ -179,6 +182,8 @@ model Contributor {
 
   invitationCodeId String?
   invitationCode   InvitationCode? @relation(fields: [invitationCodeId], references: [id])
+
+  @@index([stripePaymentIntentId])
 }
 
 model InvitationCode {

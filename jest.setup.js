@@ -428,3 +428,39 @@ jest.mock('@prisma/client', () => {
   };
 });
 
+jest.mock('@stripe/stripe-js', () => ({
+  loadStripe: jest.fn().mockResolvedValue({
+    elements: jest.fn(),
+    confirmPayment: jest.fn().mockResolvedValue({
+      paymentIntent: { id: 'pi_mock_123', status: 'succeeded' },
+    }),
+    confirmCardPayment: jest.fn().mockResolvedValue({
+      paymentIntent: { id: 'pi_mock_123', status: 'succeeded' },
+    }),
+  }),
+}));
+
+jest.mock('@stripe/react-stripe-js', () => {
+  const React = require('react');
+  return {
+    Elements: ({ children }) => React.createElement('div', { 'data-testid': 'stripe-elements-container' }, children),
+    PaymentElement: (props) =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'stripe-payment-element', ...props },
+        React.createElement('div', { 'data-testid': 'embedded-stripe-elements' }, 'Stripe Payment Element (Cards, Apple Pay, Google Pay)')
+      ),
+    CardElement: (props) => React.createElement('div', { 'data-testid': 'stripe-card-element', ...props }),
+    useStripe: () => ({
+      confirmPayment: jest.fn().mockResolvedValue({
+        paymentIntent: { id: 'pi_test_mock_intent', status: 'succeeded' },
+      }),
+    }),
+    useElements: () => ({
+      submit: jest.fn().mockResolvedValue({}),
+      getElement: jest.fn(),
+    }),
+  };
+});
+
+

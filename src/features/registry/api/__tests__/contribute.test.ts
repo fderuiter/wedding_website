@@ -25,6 +25,19 @@ jest.mock('@/core/auth/guestInviteSession', () => ({
   getGuestInviteSession: jest.fn().mockResolvedValue(null),
 }));
 
+const mockPaymentIntentsRetrieve = jest.fn();
+jest.mock('@/lib/stripe', () => {
+  const actual = jest.requireActual('@/lib/stripe');
+  return {
+    ...actual,
+    getStripeInstance: jest.fn(() => ({
+      paymentIntents: {
+        retrieve: mockPaymentIntentsRetrieve,
+      },
+    })),
+  };
+});
+
 describe('POST /api/registry/contribute', () => {
   const mockItem = {
     id: 'item-123',
@@ -148,5 +161,87 @@ describe('POST /api/registry/contribute', () => {
 
     const body = await response.json();
     expect(body.error).toContain('Sample registry items do not accept contributions');
+  });
+
+  describe('Stripe PaymentIntent Verification (Requirement 4 & Requirement 6)', () => {
+    it('Requirement 4: verifies PaymentIntent status is succeeded before creating contributor records', async () => {
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_verified_999',
+        status: 'succeeded',
+        latest_charge: 'ch_verified_999',
+        created: 1731763200,
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Verified Guest',
+          email: 'verified@example.com',
+          amount: 50,
+          paymentIntentId: 'pi_verified_999',
+          coverFee: true,
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+
+      expect(mockPaymentIntentsRetrieve).toHaveBeenCalledWith('pi_verified_999');
+      expect(registryService.contributeToItem).toHaveBeenCalledWith('item-123', {
+        name: 'Verified Guest',
+        email: 'verified@example.com',
+        amount: 50,
+        code: undefined,
+        message: undefined,
+        coverFee: true,
+        stripePaymentIntentId: 'pi_verified_999',
+        stripeChargeId: 'ch_verified_999',
+        transactionTimestamp: new Date(1731763200 * 1000),
+      });
+    });
+
+    it('rejects contribution when PaymentIntent is not in succeeded status', async () => {
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_declined_111',
+        status: 'requires_payment_method',
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Declined Guest',
+          amount: 50,
+          paymentIntentId: 'pi_declined_111',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toMatch(/Payment must be succeeded before recording contribution/i);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
+
+    it('rejects contribution when Stripe PaymentIntent cannot be retrieved', async () => {
+      mockPaymentIntentsRetrieve.mockRejectedValueOnce(new Error('No such payment_intent'));
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Error Guest',
+          amount: 50,
+          paymentIntentId: 'pi_nonexistent',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toMatch(/Invalid or unresolved Stripe PaymentIntent/i);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
   });
 });

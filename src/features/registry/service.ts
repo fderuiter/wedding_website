@@ -76,7 +76,17 @@ class RegistryService {
    */
   async contributeToItem(
     itemId: string,
-    contribution: { name: string; email?: string | null; amount: number; code?: string; message?: string | null; coverFee?: boolean }
+    contribution: {
+      name: string;
+      email?: string | null;
+      amount: number;
+      code?: string;
+      message?: string | null;
+      coverFee?: boolean;
+      stripePaymentIntentId?: string | null;
+      stripeChargeId?: string | null;
+      transactionTimestamp?: Date | string | null;
+    }
   ) {
     if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {
       throw new Error('Contribution must be a positive number.');

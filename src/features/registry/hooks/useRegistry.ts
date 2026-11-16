@@ -127,8 +127,8 @@ export function useRegistry() {
   }, []);
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string | null; coverFee?: boolean; email?: string | null }) => {
-      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee, email });
+    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string | null; coverFee?: boolean; email?: string | null; paymentIntentId?: string }) => {
+      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
@@ -152,6 +152,9 @@ export function useRegistry() {
                   isPlusOne: false,
                   thankYouStatus: 'Unsent',
                   thankYouSentAt: null,
+                  stripePaymentIntentId: variables.paymentIntentId ?? null,
+                  stripeChargeId: null,
+                  transactionTimestamp: new Date().toISOString(),
                 },
               ],
               purchased: newAmount >= item.price,
@@ -304,10 +307,11 @@ export function useRegistry() {
     code?: string,
     message?: string,
     coverFee?: boolean,
-    email?: string
+    email?: string,
+    paymentIntentId?: string
   ) => {
     return new Promise<void>((resolve, reject) => {
-      contribute({ itemId, purchaserName, amount, code, message, coverFee, email }, {
+      contribute({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }, {
         onSuccess: () => {
           handleCloseModal();
           resolve();
