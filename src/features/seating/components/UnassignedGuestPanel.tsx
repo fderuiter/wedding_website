@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
 
 function useOptionalToast() {
@@ -33,18 +33,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   onAutoAssignComplete,
 }: UnassignedGuestPanelProps) {
   const toast = useOptionalToast();
-  const [optimisticallyAssignedIds, setOptimisticallyAssignedIds] = useState<Set<string>>(new Set());
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
   const [targetSeatNumber, setTargetSeatNumber] = useState<number | undefined>(undefined);
-
-  // Derive active unassigned guests synchronously from props and local optimistic assignments
-  const effectiveUnassignedGuests = useMemo(() => {
-    if (optimisticallyAssignedIds.size === 0) return unassignedGuests;
-    return unassignedGuests.filter((g) => !optimisticallyAssignedIds.has(g.id));
-  }, [unassignedGuests, optimisticallyAssignedIds]);
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -58,15 +51,15 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const filteredGuests = useMemo(() => {
     const term = currentSearchQuery.trim().toLowerCase();
-    if (!term) return effectiveUnassignedGuests;
-    return effectiveUnassignedGuests.filter((guest) => {
+    if (!term) return unassignedGuests;
+    return unassignedGuests.filter((guest) => {
       const matchesName = guest.guestName.toLowerCase().includes(term);
       const matchesCode = guest.code ? guest.code.toLowerCase().includes(term) : false;
       const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
       return matchesName || matchesCode || matchesHousehold || matchesTags;
     });
-  }, [effectiveUnassignedGuests, currentSearchQuery]);
+  }, [unassignedGuests, currentSearchQuery]);
 
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
     e.dataTransfer.setData('text/plain', guestId);
@@ -90,15 +83,6 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       const payload = json.data || json;
       const assignedCount = payload.assignedCount ?? 0;
       const unassignedCount = payload.unassignedCount ?? 0;
-
-      const assignedIds: string[] = (payload.assignedGuests || []).map((g: any) => g.id);
-
-      // Optimistically update local guest state
-      setOptimisticallyAssignedIds((prev) => {
-        const next = new Set(prev);
-        assignedIds.forEach((id) => next.add(id));
-        return next;
-      });
 
       let summaryMsg = `Successfully auto-assigned ${assignedCount} guest${assignedCount === 1 ? '' : 's'} across reception tables.`;
       if (assignedCount === 0) {
@@ -136,11 +120,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         <div>
           <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Unassigned Guests</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            {effectiveUnassignedGuests.length} guest{effectiveUnassignedGuests.length === 1 ? '' : 's'} waiting for seating
+            {unassignedGuests.length} guest{unassignedGuests.length === 1 ? '' : 's'} waiting for seating
           </p>
         </div>
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary">
-          {effectiveUnassignedGuests.length} unassigned
+          {unassignedGuests.length} unassigned
         </span>
       </div>
 
@@ -217,7 +201,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       </div>
 
       {/* Auto-Assign All Action Button */}
-      {effectiveUnassignedGuests.length > 0 && (
+      {unassignedGuests.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <Button
             type="button"

@@ -63,6 +63,8 @@ describe('GET /api/photos', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
+    expect(json.data).toBeUndefined(); // Verifies duplicate raw nodes are excluded
+    expect(mockGetPublicPhotos).toHaveBeenCalledWith({ limit: 50 });
     expect(json.photos).toHaveLength(2);
     expect(json.photos[0]).toEqual({
       id: 'photo-1',
@@ -78,6 +80,32 @@ describe('GET /api/photos', () => {
       altText: 'Cake Cutting',
       createdAt: '2026-06-20T18:30:00.000Z',
     });
+  });
+
+  it('queries only photos created after since cursor when since query parameter is present', async () => {
+    mockGetPublicPhotos.mockResolvedValue([]);
+
+    const req = new NextRequest('http://localhost/api/photos?since=2026-06-20T18:00:00.000Z');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.photos).toEqual([]);
+    expect(json.data).toBeUndefined();
+    expect(mockGetPublicPhotos).toHaveBeenCalledWith({
+      since: new Date('2026-06-20T18:00:00.000Z'),
+    });
+  });
+
+  it('returns 400 when since query parameter is not a valid date', async () => {
+    const req = new NextRequest('http://localhost/api/photos?since=invalid-date');
+    const res = await GET(req);
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    expect(json.error).toContain('Invalid "since" parameter');
   });
 
   it('returns empty array when no approved photos exist', async () => {

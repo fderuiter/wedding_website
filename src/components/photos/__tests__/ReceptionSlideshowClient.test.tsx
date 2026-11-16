@@ -314,6 +314,132 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByText('4')).toBeInTheDocument();
   });
 
+  it('passes ?since= in its 30-second polling requests when initialPhotos include createdAt timestamps', async () => {
+    const photosWithTimestamps = [
+      { id: '1', url: 'https://example.com/photo1.jpg', title: 'First Dance', createdAt: '2026-06-20T18:00:00.000Z' },
+      { id: '2', url: 'https://example.com/photo2.jpg', title: 'Cake Cutting', createdAt: '2026-06-20T18:30:00.000Z' },
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={photosWithTimestamps}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/photos?since=2026-06-20T18%3A30%3A00.000Z'
+    );
+  });
+
+  it('updates timestamp cursor upon receiving new incremental photos and queries with new cursor', async () => {
+    const photosWithTimestamps = [
+      { id: '1', url: 'https://example.com/photo1.jpg', title: 'First Dance', createdAt: '2026-06-20T18:00:00.000Z' },
+    ];
+
+    const mockFetch = jest
+      .fn()
+      // First poll returns a new photo with timestamp 18:45:00
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          photos: [
+            {
+              id: '2',
+              url: 'https://example.com/photo2-guest.jpg',
+              title: 'Guest Cheer',
+              createdAt: '2026-06-20T18:45:00.000Z',
+              isGuestUpload: true,
+            },
+          ],
+        }),
+      })
+      // Second poll returns empty
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          photos: [],
+        }),
+      });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={photosWithTimestamps}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    // First 30s poll
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/photos?since=2026-06-20T18%3A00%3A00.000Z'
+    );
+
+    // Second 30s poll uses the updated cursor
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/photos?since=2026-06-20T18%3A45%3A00.000Z'
+    );
+  });
+
+  it('handles empty incremental response without mutating photo queue', async () => {
+    const photosWithTimestamps = [
+      { id: '1', url: 'https://example.com/photo1.jpg', title: 'First Dance', createdAt: '2026-06-20T18:00:00.000Z' },
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={photosWithTimestamps}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/photos?since=2026-06-20T18%3A00%3A00.000Z'
+    );
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+  });
+
   it('handles network disconnection gracefully by continuing to loop cached photos without crashing', async () => {
     const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const mockFetch = jest.fn().mockRejectedValue(new Error('Network disconnected'));
@@ -493,5 +619,208 @@ describe('ReceptionSlideshowClient', () => {
     // Queue should now have 3 photos: photo2, photo3, and newly approved photo4.
     // The failed photo1 was ignored and NOT re-added to the queue!
     expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('keeps controls visible after 3 seconds when a toolbar button holds keyboard focus', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const header = screen.getByTestId('slideshow-top-header');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    // Header and footer have focus-within classes
+    expect(header).toHaveClass('focus-within:opacity-100');
+    expect(header).toHaveClass('focus-within:pointer-events-auto');
+    expect(controls).toHaveClass('focus-within:opacity-100');
+    expect(controls).toHaveClass('focus-within:pointer-events-auto');
+
+    // Focus play/pause button
+    act(() => {
+      playPauseBtn.focus();
+    });
+
+    // Advance 3 seconds of inactivity
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    // Controls remain visible and cursor default
+    expect(container).toHaveClass('cursor-default');
+    expect(controls).toHaveClass('opacity-100');
+
+    // Advance another 5 seconds
+    act(() => {
+      jest.advanceTimersByTime(5000);
+    });
+
+    expect(container).toHaveClass('cursor-default');
+    expect(controls).toHaveClass('opacity-100');
+  });
+
+  it('hides controls after 3 seconds only when focus moves outside the controls', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const prevBtn = screen.getByTestId('slideshow-prev-btn');
+
+    // Focus previous button
+    act(() => {
+      prevBtn.focus();
+    });
+
+    // Advance 3 seconds - still visible because focus is retained
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(controls).toHaveClass('opacity-100');
+    expect(container).toHaveClass('cursor-default');
+
+    // Blur the button (focus moves outside)
+    act(() => {
+      prevBtn.blur();
+    });
+
+    // Controls are still visible immediately after blur
+    expect(controls).toHaveClass('opacity-100');
+
+    // Advance 3 seconds after focus left
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    // Now controls and cursor hide
+    expect(controls).toHaveClass('opacity-0');
+    expect(container).toHaveClass('cursor-none');
+  });
+
+  it('restarts inactivity timer when tabbing outside the slideshow container', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+
+    const outsideButton = document.createElement('button');
+    outsideButton.setAttribute('data-testid', 'outside-button');
+    document.body.appendChild(outsideButton);
+
+    try {
+      // Focus toolbar button
+      act(() => {
+        nextBtn.focus();
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+      expect(controls).toHaveClass('opacity-100');
+
+      // Tab/focus outside container
+      act(() => {
+        outsideButton.focus();
+      });
+
+      // Still visible before timer elapses
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(controls).toHaveClass('opacity-100');
+
+      // Hides after full 3 seconds
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(controls).toHaveClass('opacity-0');
+      expect(container).toHaveClass('cursor-none');
+    } finally {
+      outsideButton.remove();
+    }
+  });
+
+  it('maintains focus and controls visibility during fullscreen toggle without premature fading', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const fullscreenBtn = screen.getByTestId('slideshow-fullscreen-btn');
+
+    // Focus fullscreen toggle
+    act(() => {
+      fullscreenBtn.focus();
+    });
+
+    // Click toggle to trigger fullscreen transition
+    act(() => {
+      fireEvent.click(fullscreenBtn);
+    });
+
+    // Verify focus is maintained and controls don't prematurely fade after 3 seconds
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    expect(controls).toHaveClass('opacity-100');
+    expect(container).toHaveClass('cursor-default');
+  });
+
+  it('maintains controls visibility when moving focus between toolbar buttons', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const controls = screen.getByTestId('slideshow-controls');
+    const prevBtn = screen.getByTestId('slideshow-prev-btn');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+
+    // Focus previous button
+    act(() => {
+      prevBtn.focus();
+    });
+
+    // Advance 2 seconds
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(controls).toHaveClass('opacity-100');
+
+    // Focus next button
+    act(() => {
+      nextBtn.focus();
+    });
+
+    // Advance 2 more seconds (total 4 seconds since initial focus)
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    // Controls remain visible
+    expect(controls).toHaveClass('opacity-100');
+    expect(container).toHaveClass('cursor-default');
   });
 });

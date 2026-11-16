@@ -11,6 +11,7 @@ export interface SlideshowPhoto {
   title?: string;
   altText?: string;
   isGuestUpload?: boolean;
+  createdAt?: string;
 }
 
 interface ReceptionSlideshowClientProps {
@@ -69,6 +70,39 @@ export function ReceptionSlideshowClient({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isControlsFocusedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const controlsRef = useRef<HTMLElement | null>(null);
+
+  // Derive initial timestamp cursor from provided initial photos
+  const initialLatestTimestamp = useMemo(() => {
+    if (!initialPhotos || !Array.isArray(initialPhotos)) return null;
+    let maxMs = -Infinity;
+    let maxIso: string | null = null;
+    for (const item of initialPhotos) {
+      if (typeof item !== 'string' && item.createdAt) {
+        const ms = new Date(item.createdAt).getTime();
+        if (!isNaN(ms) && ms > maxMs) {
+          maxMs = ms;
+          maxIso = item.createdAt;
+        }
+      }
+    }
+    return maxIso;
+  }, [initialPhotos]);
+
+  const latestTimestampRef = useRef<string | null>(initialLatestTimestamp);
+
+  useEffect(() => {
+    if (initialLatestTimestamp) {
+      const currentMs = latestTimestampRef.current ? new Date(latestTimestampRef.current).getTime() : -Infinity;
+      const initialMs = new Date(initialLatestTimestamp).getTime();
+      if (initialMs > currentMs) {
+        latestTimestampRef.current = initialLatestTimestamp;
+      }
+    }
+  }, [initialLatestTimestamp]);
 
   // Derive resolved upload URL
   const resolvedUploadUrl = useMemo(() => {
@@ -78,6 +112,18 @@ export function ReceptionSlideshowClient({
     }
     return '/photos';
   }, [uploadUrl]);
+
+  // Helper to determine whether an element is an interactive control in the slideshow
+  const isInteractiveControl = useCallback((node: Node | null): boolean => {
+    if (!node || !(node instanceof Element)) return false;
+    if (controlsRef.current?.contains(node) || headerRef.current?.contains(node)) {
+      return true;
+    }
+    if (containerRef.current?.contains(node) && node.closest('button, a, input, select, textarea, [tabindex]')) {
+      return true;
+    }
+    return false;
+  }, []);
 
   // Keep currentIndex in bounds when photos queue size shrinks
   useEffect(() => {
@@ -125,20 +171,48 @@ export function ReceptionSlideshowClient({
     setAreControlsVisible(true);
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
     }
-    inactivityTimerRef.current = setTimeout(() => {
-      setAreControlsVisible(false);
-    }, 3000);
+    if (!isControlsFocusedRef.current) {
+      inactivityTimerRef.current = setTimeout(() => {
+        setAreControlsVisible(false);
+      }, 3000);
+    }
   }, []);
 
   useEffect(() => {
+    if (typeof document !== 'undefined' && isInteractiveControl(document.activeElement)) {
+      isControlsFocusedRef.current = true;
+    }
     handleUserActivity();
 
     const onActivity = () => handleUserActivity();
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as Node | null;
+      if (isInteractiveControl(target)) {
+        isControlsFocusedRef.current = true;
+        handleUserActivity();
+      } else if (isControlsFocusedRef.current) {
+        isControlsFocusedRef.current = false;
+        handleUserActivity();
+      }
+    };
+
+    const handleFocusOut = (e: FocusEvent) => {
+      const nextTarget = e.relatedTarget as Node | null;
+      if (!isInteractiveControl(nextTarget)) {
+        isControlsFocusedRef.current = false;
+        handleUserActivity();
+      }
+    };
+
     window.addEventListener('mousemove', onActivity);
     window.addEventListener('pointermove', onActivity);
     window.addEventListener('touchstart', onActivity);
     window.addEventListener('keydown', onActivity);
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
 
     return () => {
       if (inactivityTimerRef.current) {
@@ -148,8 +222,10 @@ export function ReceptionSlideshowClient({
       window.removeEventListener('pointermove', onActivity);
       window.removeEventListener('touchstart', onActivity);
       window.removeEventListener('keydown', onActivity);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
     };
-  }, [handleUserActivity]);
+  }, [handleUserActivity, isInteractiveControl]);
 
   // Slideshow navigation handlers
   const goToNext = useCallback(() => {
@@ -185,11 +261,25 @@ export function ReceptionSlideshowClient({
   // Periodic polling for approved public photos (every 30 seconds)
   const pollPublicPhotos = useCallback(async () => {
     try {
-      const response = await fetch('/api/photos');
+      const cursor = latestTimestampRef.current;
+      const endpoint = cursor ? `/api/photos?since=${encodeURIComponent(cursor)}` : '/api/photos';
+      const response = await fetch(endpoint);
       if (!response.ok) return;
 
       const data = await response.json();
       if (data?.photos && Array.isArray(data.photos) && data.photos.length > 0) {
+        for (const p of data.photos) {
+          if (p.createdAt) {
+            const ms = new Date(p.createdAt).getTime();
+            if (!isNaN(ms)) {
+              const currentMs = latestTimestampRef.current ? new Date(latestTimestampRef.current).getTime() : -Infinity;
+              if (ms > currentMs) {
+                latestTimestampRef.current = p.createdAt;
+              }
+            }
+          }
+        }
+
         setPhotos((prev) => {
           const existingUrls = new Set(prev.map((p) => p.url));
           const newPhotos: SlideshowPhoto[] = data.photos
@@ -206,6 +296,7 @@ export function ReceptionSlideshowClient({
               title: p.title || p.altText || 'Reception Photo',
               altText: p.altText || p.title,
               isGuestUpload: Boolean(p.isGuestUpload),
+              createdAt: p.createdAt,
             }));
 
           if (newPhotos.length > 0) {
@@ -293,6 +384,7 @@ export function ReceptionSlideshowClient({
 
   return (
     <div
+      ref={containerRef}
       role="region"
       aria-label="Live Wedding Reception Slideshow"
       aria-roledescription="carousel"
@@ -323,7 +415,8 @@ export function ReceptionSlideshowClient({
 
       {/* Top Header Information Overlay */}
       <header
-        className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 ${
+        ref={headerRef}
+        className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
           areControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         data-testid="slideshow-top-header"
@@ -450,9 +543,10 @@ export function ReceptionSlideshowClient({
 
       {/* Bottom Floating Control Bar */}
       <footer
+        ref={controlsRef}
         role="toolbar"
         aria-label="Slideshow Controls"
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-stone-900/85 backdrop-blur-md border border-white/15 shadow-2xl text-white transition-opacity duration-500 ${
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-stone-900/85 backdrop-blur-md border border-white/15 shadow-2xl text-white transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
           areControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         data-testid="slideshow-controls"

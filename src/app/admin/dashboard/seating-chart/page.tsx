@@ -1,88 +1,35 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { SeatingTableDTO } from '@/features/seating/schemas';
-import { InvitationCodeDTO } from '@/features/registry/schemas';
+import { InvitationCodeDTO } from '@/features/registry';
 import { FloorplanCanvas } from '@/features/seating/components/FloorplanCanvas';
 import { UnassignedGuestPanel } from '@/features/seating/components/UnassignedGuestPanel';
 import { TableModal } from '@/features/seating/components/TableModal';
 import { PrintableFloorplan } from '@/features/seating/components/PrintableFloorplan';
+import { useSeatingState } from '@/features/seating/hooks/useSeatingState';
 
 export default function SeatingChartAdminPage() {
-  const [tables, setTables] = useState<SeatingTableDTO[]>([]);
-  const [allGuests, setAllGuests] = useState<InvitationCodeDTO[]>([]);
+  const {
+    tables,
+    allGuests,
+    unassignedGuests,
+    isLoading,
+    errorMsg,
+    assignGuestToTable: handleAssignGuestToTable,
+    unassignGuest: handleUnassignGuest,
+    applyAutoAssignResult,
+    saveTable,
+    deleteTable,
+    updateTablePosition: handleUpdateTablePosition,
+    updateTableRotation: handleUpdateTableRotation,
+  } = useSeatingState();
+
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<SeatingTableDTO | null>(null);
   const [assignSeatTarget, setAssignSeatTarget] = useState<{ tableId: string; seatNumber: number } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Helper to sync tables' nested invitationCodes with allGuests state in a single pass O(G + T)
-  const syncTablesWithGuests = useCallback(
-    (tablesList: SeatingTableDTO[], guestsList: InvitationCodeDTO[]): SeatingTableDTO[] => {
-      const guestsByTableMap = new Map<string, InvitationCodeDTO[]>();
-      for (const guest of guestsList) {
-        if (guest.tableId) {
-          const existing = guestsByTableMap.get(guest.tableId);
-          if (existing) {
-            existing.push(guest);
-          } else {
-            guestsByTableMap.set(guest.tableId, [guest]);
-          }
-        }
-      }
-
-      return tablesList.map((t) => {
-        const assigned = guestsByTableMap.get(t.id) ? [...guestsByTableMap.get(t.id)!] : [];
-        assigned.sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
-        return {
-          ...t,
-          invitationCodes: assigned,
-        };
-      });
-    },
-    []
-  );
-
-  // Fetch tables & invitation codes
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      const [tablesRes, guestsRes] = await Promise.all([
-        fetch('/api/admin/seating-tables'),
-        fetch('/api/admin/invitation-codes'),
-      ]);
-
-      if (!tablesRes.ok || !guestsRes.ok) {
-        throw new Error('Failed to load seating chart data.');
-      }
-
-      const tablesData = await tablesRes.json();
-      const guestsData = await guestsRes.json();
-
-      const rawTables = Array.isArray(tablesData) ? tablesData : [];
-      const rawGuests = Array.isArray(guestsData) ? guestsData : [];
-
-      setAllGuests(rawGuests);
-      setTables(syncTablesWithGuests(rawTables, rawGuests));
-    } catch (err: any) {
-      setErrorMsg(err.message || 'An error occurred while loading data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [syncTablesWithGuests]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Derive unassigned guests with memoization
-  const unassignedGuests = useMemo(() => {
-    return allGuests.filter((g) => !g.tableId);
-  }, [allGuests]);
 
   // Compute search matching stats with memoization
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -130,203 +77,12 @@ export default function SeatingChartAdminPage() {
   };
 
   const handleSaveTable = async (tableData: Partial<SeatingTableDTO>) => {
-    try {
-      if (tableData.id) {
-        // Update existing table
-        const res = await fetch(`/api/admin/seating-tables/${tableData.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tableData),
-        });
-        if (!res.ok) throw new Error('Failed to update table');
-        const updatedTable: SeatingTableDTO = await res.json();
-        setTables((prev) => {
-          const nextTables = prev.map((t) =>
-            t.id === updatedTable.id ? { ...t, ...updatedTable } : t
-          );
-          return syncTablesWithGuests(nextTables, allGuests);
-        });
-      } else {
-        // Create new table with default offset coordinates
-        const defaultX = (tables.length % 4) * 180 + 40;
-        const defaultY = Math.floor(tables.length / 4) * 180 + 40;
-        const res = await fetch('/api/admin/seating-tables', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            x: defaultX,
-            y: defaultY,
-            shape: 'round',
-            capacity: 8,
-            width: 120,
-            height: 120,
-            rotation: 0,
-            ...tableData,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to create table');
-        const createdTable: SeatingTableDTO = await res.json();
-        setTables((prev) =>
-          syncTablesWithGuests([...prev, { ...createdTable, invitationCodes: [] }], allGuests)
-        );
-      }
-    } catch (err: any) {
-      alert(err.message || 'Error saving table');
-    }
+    await saveTable(tableData);
   };
 
   const handleDeleteTable = async (tableId: string) => {
-    const previousTables = tables;
-    const previousGuests = allGuests;
-
-    // Optimistically remove table and unassign affected guests in local memory
-    const nextGuests = allGuests.map((g) =>
-      g.tableId === tableId ? { ...g, tableId: null, seatNumber: null } : g
-    );
-    const nextTables = tables.filter((t) => t.id !== tableId);
-
-    setAllGuests(nextGuests);
-    setTables(syncTablesWithGuests(nextTables, nextGuests));
     setSelectedTableId(null);
-
-    try {
-      const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error('Failed to delete table');
-    } catch (err: any) {
-      setAllGuests(previousGuests);
-      setTables(previousTables);
-      alert(err.message || 'Error deleting table');
-    }
-  };
-
-  const handleUpdateTablePosition = async (tableId: string, x: number, y: number) => {
-    const previousTables = tables;
-
-    // Optimistic update local state
-    setTables((prev) =>
-      prev.map((t) => (t.id === tableId ? { ...t, x, y } : t))
-    );
-
-    // Persist position update
-    try {
-      const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ x, y }),
-      });
-      if (!res.ok) throw new Error('Failed to update table position');
-    } catch (e) {
-      // Revert if error
-      setTables(previousTables);
-    }
-  };
-
-  const handleUpdateTableRotation = async (tableId: string, rotation: number) => {
-    const previousTables = tables;
-
-    // Optimistic update local state
-    setTables((prev) =>
-      prev.map((t) => (t.id === tableId ? { ...t, rotation } : t))
-    );
-
-    // Persist rotation update
-    try {
-      const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rotation }),
-      });
-      if (!res.ok) throw new Error('Failed to update table rotation');
-    } catch (e) {
-      // Revert if error
-      setTables(previousTables);
-    }
-  };
-
-  // Seat assignment handlers
-  const handleAssignGuestToTable = async (
-    guestId: string,
-    tableId: string | null,
-    seatNumber?: number | null
-  ) => {
-    const targetTableId = tableId || null;
-    const targetSeatNumber = targetTableId ? (seatNumber ?? null) : null;
-
-    if (targetTableId) {
-      const targetTable = tables.find((t) => t.id === targetTableId);
-      if (targetTable) {
-        const existingCount = allGuests.filter(
-          (g) => g.tableId === targetTableId && g.id !== guestId
-        ).length;
-        if (existingCount >= targetTable.capacity) {
-          alert(`Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`);
-          return;
-        }
-      }
-    }
-
-    const previousGuests = allGuests;
-    const previousTables = tables;
-
-    // Optimistically update local guest state, accounting for seat swap side-effects
-    const optimisticGuests = allGuests.map((g) => {
-      if (g.id === guestId) {
-        return { ...g, tableId: targetTableId, seatNumber: targetSeatNumber };
-      }
-      if (
-        targetTableId &&
-        targetSeatNumber &&
-        g.tableId === targetTableId &&
-        g.seatNumber === targetSeatNumber
-      ) {
-        return { ...g, seatNumber: null };
-      }
-      return g;
-    });
-
-    setAllGuests(optimisticGuests);
-    setTables(syncTablesWithGuests(tables, optimisticGuests));
-
-    try {
-      const res = await fetch('/api/admin/seating/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invitationCodeId: guestId,
-          tableId: targetTableId,
-          seatNumber: targetSeatNumber,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        if (errorData.error && res.status === 400) {
-          throw new Error(errorData.error);
-        }
-        throw new Error('Failed to assign guest seat');
-      }
-
-      const returnedGuest: InvitationCodeDTO = await res.json();
-      if (returnedGuest && returnedGuest.id) {
-        setAllGuests((currentGuests) => {
-          const mergedGuests = currentGuests.map((g) =>
-            g.id === returnedGuest.id ? { ...g, ...returnedGuest } : g
-          );
-          setTables((currentTables) => syncTablesWithGuests(currentTables, mergedGuests));
-          return mergedGuests;
-        });
-      }
-    } catch (err: any) {
-      setAllGuests(previousGuests);
-      setTables(previousTables);
-      alert(err.message || 'Error assigning guest seat');
-    }
-  };
-
-  const handleUnassignGuest = async (guestId: string) => {
-    await handleAssignGuestToTable(guestId, null);
+    await deleteTable(tableId);
   };
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
@@ -470,7 +226,7 @@ export default function SeatingChartAdminPage() {
               onAssignGuestToTable={handleAssignGuestToTable}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
-              onAutoAssignComplete={fetchData}
+              onAutoAssignComplete={applyAutoAssignResult}
             />
           </div>
 

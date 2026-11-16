@@ -72,6 +72,7 @@ export default async function PhotosSlideshowPage() {
             title: data.title || data.altText || 'Reception Photo',
             altText: data.altText || data.title,
             isGuestUpload: Boolean(data.mediaId),
+            createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : undefined,
           };
         })
         .filter(Boolean) as SlideshowPhoto[]
