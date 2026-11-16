@@ -63,7 +63,7 @@ This project is built with a modern, full-stack TypeScript architecture.
 
 ## Setup & Installation
 
-For production hosting guidelines and minimum runtime requirements across container and cloud environments, see the [Application Runtime Contract](./docs/runtime-contract.md) and [Deployment Documentation](./DEPLOYMENT.md).
+For detailed onboarding, local setup workflows, and testing runbooks, see the [Developer Setup Guide](./docs/developer-setup.md), [Testing Strategy](./.github/TESTING.md), and [Contribution Guidelines](./.github/CONTRIBUTING.md). For production hosting guidelines and minimum runtime requirements across container and cloud environments, see the [Application Runtime Contract](./docs/runtime-contract.md) and [Deployment Documentation](./DEPLOYMENT.md).
 
 ### Prerequisites
 
