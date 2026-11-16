@@ -2,7 +2,8 @@
 
 import React, { useMemo } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
-import { useTheme, optimizeContrast } from '@/components/ThemeProvider';
+import { useTheme } from '@/components/ThemeProvider';
+import { optimizeContrast } from '@/lib/theme/stylesheet';
 import { getPresetTokens } from '@/lib/theme/presets';
 
 export interface ThemedQRCodeProps

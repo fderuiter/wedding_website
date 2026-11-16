@@ -6,27 +6,221 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { logger } from '@/lib/logger';
 
-export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const body = await request.json();
-  const parseResult = ScrapeUrlSchema.safeParse(body);
-  
-  if (!parseResult.success) {
-    throw new ApiError(400, parseResult.error.issues[0].message);
+export interface ScrapedProductData {
+  name: string;
+  description: string;
+  price?: number;
+  imageUrl: string;
+  imageAlt: string;
+  vendorUrl: string;
+  quantity: number;
+  faviconUrl: string;
+}
+
+function extractProductMetadataFromHtml(html: string, url: string): ScrapedProductData {
+  const root = parse(html);
+
+  // 1. JSON-LD structured data extraction
+  let ldName: string | undefined;
+  let ldDescription: string | undefined;
+  let ldImage: string | undefined;
+  let ldImageAlt: string | undefined;
+  let ldPrice: number | undefined;
+
+  const ldScripts = root.querySelectorAll('script[type="application/ld+json"]');
+  for (const script of ldScripts) {
+    try {
+      const text = (script.textContent || script.text || '').trim();
+      if (!text) continue;
+      const json = JSON.parse(text);
+      const product = findProductObject(json);
+      if (product) {
+        if (!ldName && typeof product.name === 'string') {
+          ldName = product.name;
+        }
+        if (!ldDescription && typeof product.description === 'string') {
+          ldDescription = product.description;
+        }
+        if (product.image) {
+          const parsedImg = parseLdImage(product.image);
+          if (!ldImage && parsedImg) {
+            ldImage = parsedImg.url;
+            if (!ldImageAlt && parsedImg.alt) {
+              ldImageAlt = parsedImg.alt;
+            }
+          }
+        }
+        if (ldPrice === undefined) {
+          ldPrice = extractLdPrice(product);
+        }
+      }
+    } catch {
+      // Gracefully wrap parsing in try/catch block to handle malformed JSON structure without failing.
+    }
   }
 
-  const { url } = parseResult.data;
+  const getMetaContent = (property: string) => {
+    return root.querySelector(`meta[property="${property}"]`)?.getAttribute('content') ||
+           root.querySelector(`meta[name="${property}"]`)?.getAttribute('content') || '';
+  };
+
+  const parsedUrl = new URL(url);
+  const hostname = parsedUrl.hostname.toLowerCase();
+
+  const isAmazonDomain = hostname === 'amazon.com' || hostname.endsWith('.amazon.com');
+  const isTargetDomain = hostname === 'target.com' || hostname.endsWith('.target.com');
+  const isCostcoDomain = hostname === 'costco.com' || hostname.endsWith('.costco.com');
+
+  // Vendor specific title heuristics
+  let vendorTitle: string | undefined;
+  if (isAmazonDomain) {
+    vendorTitle = root.querySelector('#productTitle, #title')?.textContent?.trim();
+  } else if (isTargetDomain) {
+    vendorTitle = root.querySelector('h1[data-test="product-title"], h1.pdp-title')?.textContent?.trim();
+  } else if (isCostcoDomain) {
+    vendorTitle = root.querySelector('h1[data-qa="product-title"], .product-h1, h1.product-title')?.textContent?.trim();
+  }
+
+  // Multi-tier price extraction strategy
+  let price: number | undefined = ldPrice;
+
+  if (price === undefined) {
+    const ogPrice = getMetaContent('og:price:amount');
+    price = parsePrice(ogPrice);
+  }
+
+  if (price === undefined) {
+    const productPrice = getMetaContent('product:price:amount');
+    price = parsePrice(productPrice);
+  }
+
+  if (price === undefined) {
+    const twitterLabel1 = getMetaContent('twitter:label1');
+    if (twitterLabel1 && twitterLabel1.toLowerCase().includes('price')) {
+      const twitterData1 = getMetaContent('twitter:data1');
+      price = parsePrice(twitterData1);
+    }
+  }
+
+  if (price === undefined) {
+    const amazonPriceElements = root.querySelectorAll('.a-price .a-offscreen');
+    for (const el of amazonPriceElements) {
+      const parsed = parsePrice(el.textContent);
+      if (parsed !== undefined) {
+        price = parsed;
+        break;
+      }
+    }
+  }
+
+  // Vendor specific description heuristics
+  let vendorDescription: string | undefined;
+  if (isAmazonDomain) {
+    vendorDescription = root.querySelector('#feature-bullets, #productDescription')?.textContent?.trim();
+  } else if (isTargetDomain) {
+    vendorDescription = root.querySelector('div[data-test="item-details-description"], #pdp-tab-description')?.textContent?.trim();
+  } else if (isCostcoDomain) {
+    vendorDescription = root.querySelector('#product-description, .product-info-description')?.textContent?.trim();
+  }
+
+  // Vendor specific image heuristics
+  let vendorImage: string | undefined;
+  let imageAlt = ldImageAlt || getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
+
+  if (isAmazonDomain) {
+    const imgEl = root.querySelector('#imgTagWrapperId img, #landingImage, #main-image, img#landingImage');
+    if (imgEl) {
+      vendorImage = imgEl.getAttribute('src');
+      if (!imageAlt && imgEl.getAttribute('alt')) {
+        imageAlt = imgEl.getAttribute('alt') || '';
+      }
+    }
+  } else if (isTargetDomain) {
+    const imgEl = root.querySelector('div[data-test="product-image"] img, img[data-test="current-image"], picture img');
+    if (imgEl) {
+      vendorImage = imgEl.getAttribute('src');
+      if (!imageAlt && imgEl.getAttribute('alt')) {
+        imageAlt = imgEl.getAttribute('alt') || '';
+      }
+    }
+  } else if (isCostcoDomain) {
+    const imgEl = root.querySelector('#initialLoadedImage, .product-image-canvas img, img[data-qa="product-image"]');
+    if (imgEl) {
+      vendorImage = imgEl.getAttribute('src');
+      if (!imageAlt && imgEl.getAttribute('alt')) {
+        imageAlt = imgEl.getAttribute('alt') || '';
+      }
+    }
+  }
+
+  const ogTitle = getMetaContent('og:title');
+  const titleTag = root.querySelector('title')?.textContent?.trim() || '';
+  const name = ldName || ogTitle || vendorTitle || titleTag || '';
+
+  const description = ldDescription || getMetaContent('og:description') || vendorDescription || '';
+
+  const image = ldImage || getMetaContent('og:image') || getMetaContent('twitter:image') || vendorImage || '';
+
+  // Extract site favicon candidate as fallback
+  let faviconUrl = '';
+  const faviconLink = root.querySelector('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
+  if (faviconLink) {
+    const href = faviconLink.getAttribute('href');
+    if (href) {
+      try {
+        faviconUrl = new URL(href, url).toString();
+      } catch {
+        // ignore
+      }
+    }
+  }
+  if (!faviconUrl) {
+    try {
+      faviconUrl = new URL('/favicon.ico', url).toString();
+    } catch {
+      faviconUrl = `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
+    }
+  }
+
+  return {
+    name,
+    description,
+    ...(price !== undefined ? { price } : {}),
+    imageUrl: image,
+    imageAlt: imageAlt,
+    vendorUrl: url,
+    quantity: 1,
+    faviconUrl,
+  };
+}
+
+export async function scrapeProductUrl(
+  url: string,
+  timeoutMs: number = 4500,
+  externalSignal?: AbortSignal
+): Promise<ScrapedProductData> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const abortHandler = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', abortHandler, { once: true });
+    }
+  }
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
-
     let response: Response;
     try {
       response = await safeFetch(url, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
         },
       });
@@ -35,221 +229,99 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       if (fetchErr instanceof ApiError) {
         throw fetchErr;
       }
-      if (fetchErr && fetchErr.message && (fetchErr.message.startsWith('Blocked:') || fetchErr.message === 'Invalid URL')) {
+      if (
+        fetchErr &&
+        fetchErr.message &&
+        (fetchErr.message.startsWith('Blocked:') || fetchErr.message === 'Invalid URL')
+      ) {
         throw new ApiError(400, fetchErr.message);
       }
-      throw new ApiError(422, 'NETWORK_TIMEOUT: Network request timed out or failed while reaching vendor site.', { errorDomain: 'NETWORK_TIMEOUT' });
+      throw new ApiError(
+        422,
+        'NETWORK_TIMEOUT: Network request timed out or failed while reaching vendor site.',
+        { errorDomain: 'NETWORK_TIMEOUT' }
+      );
     } finally {
       clearTimeout(timeoutId);
+      if (externalSignal) {
+        externalSignal.removeEventListener('abort', abortHandler);
+      }
     }
 
     if (!response.ok) {
       if (response.status === 403 || response.status === 401 || response.status === 429) {
-        throw new ApiError(422, 'BLOCKED_BY_VENDOR: Access to this retailer website was blocked.', { errorDomain: 'BLOCKED_BY_VENDOR' });
+        throw new ApiError(
+          422,
+          'BLOCKED_BY_VENDOR: Access to this retailer website was blocked.',
+          { errorDomain: 'BLOCKED_BY_VENDOR' }
+        );
       } else if (response.status === 404 || response.status === 410) {
-        throw new ApiError(422, 'URL_NOT_FOUND: Product URL could not be found.', { errorDomain: 'URL_NOT_FOUND' });
+        throw new ApiError(422, 'URL_NOT_FOUND: Product URL could not be found.', {
+          errorDomain: 'URL_NOT_FOUND',
+        });
       } else {
-        throw new ApiError(422, 'NETWORK_TIMEOUT: Retailer server error or timeout occurred.', { errorDomain: 'NETWORK_TIMEOUT' });
+        throw new ApiError(
+          422,
+          'NETWORK_TIMEOUT: Retailer server error or timeout occurred.',
+          { errorDomain: 'NETWORK_TIMEOUT' }
+        );
       }
     }
 
     const html = await response.text();
-    const root = parse(html);
-
-    // 1. JSON-LD structured data extraction
-    let ldName: string | undefined;
-    let ldDescription: string | undefined;
-    let ldImage: string | undefined;
-    let ldImageAlt: string | undefined;
-    let ldPrice: number | undefined;
-
-    const ldScripts = root.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of ldScripts) {
-      try {
-        const text = (script.textContent || script.text || '').trim();
-        if (!text) continue;
-        const json = JSON.parse(text);
-        const product = findProductObject(json);
-        if (product) {
-          if (!ldName && typeof product.name === 'string') {
-            ldName = product.name;
-          }
-          if (!ldDescription && typeof product.description === 'string') {
-            ldDescription = product.description;
-          }
-          if (product.image) {
-            const parsedImg = parseLdImage(product.image);
-            if (!ldImage && parsedImg) {
-              ldImage = parsedImg.url;
-              if (!ldImageAlt && parsedImg.alt) {
-                ldImageAlt = parsedImg.alt;
-              }
-            }
-          }
-          if (ldPrice === undefined) {
-            ldPrice = extractLdPrice(product);
-          }
-        }
-      } catch (err) {
-        // Gracefully wrap parsing in try/catch block to handle malformed JSON structure without failing.
-      }
-    }
-
-    const getMetaContent = (property: string) => {
-      return root.querySelector(`meta[property="${property}"]`)?.getAttribute('content') ||
-             root.querySelector(`meta[name="${property}"]`)?.getAttribute('content') || '';
-    };
-
-    const parsedUrl = new URL(url);
-    const hostname = parsedUrl.hostname.toLowerCase();
-
-    const isAmazonDomain = hostname === 'amazon.com' || hostname.endsWith('.amazon.com');
-    const isTargetDomain = hostname === 'target.com' || hostname.endsWith('.target.com');
-    const isCostcoDomain = hostname === 'costco.com' || hostname.endsWith('.costco.com');
-
-    // Vendor specific title heuristics
-    let vendorTitle: string | undefined;
-    if (isAmazonDomain) {
-      vendorTitle = root.querySelector('#productTitle, #title')?.textContent?.trim();
-    } else if (isTargetDomain) {
-      vendorTitle = root.querySelector('h1[data-test="product-title"], h1.pdp-title')?.textContent?.trim();
-    } else if (isCostcoDomain) {
-      vendorTitle = root.querySelector('h1[data-qa="product-title"], .product-h1, h1.product-title')?.textContent?.trim();
-    }
-
-    // Multi-tier price extraction strategy
-    let price: number | undefined = ldPrice;
-
-    if (price === undefined) {
-      const ogPrice = getMetaContent('og:price:amount');
-      price = parsePrice(ogPrice);
-    }
-
-    if (price === undefined) {
-      const productPrice = getMetaContent('product:price:amount');
-      price = parsePrice(productPrice);
-    }
-
-    if (price === undefined) {
-      const twitterLabel1 = getMetaContent('twitter:label1');
-      if (twitterLabel1 && twitterLabel1.toLowerCase().includes('price')) {
-        const twitterData1 = getMetaContent('twitter:data1');
-        price = parsePrice(twitterData1);
-      }
-    }
-
-    if (price === undefined) {
-      const amazonPriceElements = root.querySelectorAll('.a-price .a-offscreen');
-      for (const el of amazonPriceElements) {
-        const parsed = parsePrice(el.textContent);
-        if (parsed !== undefined) {
-          price = parsed;
-          break;
-        }
-      }
-    }
-
-    // Vendor specific description heuristics
-    let vendorDescription: string | undefined;
-    if (isAmazonDomain) {
-      vendorDescription = root.querySelector('#feature-bullets, #productDescription')?.textContent?.trim();
-    } else if (isTargetDomain) {
-      vendorDescription = root.querySelector('div[data-test="item-details-description"], #pdp-tab-description')?.textContent?.trim();
-    } else if (isCostcoDomain) {
-      vendorDescription = root.querySelector('#product-description, .product-info-description')?.textContent?.trim();
-    }
-
-    // Vendor specific image heuristics
-    let vendorImage: string | undefined;
-    let imageAlt = ldImageAlt || getMetaContent('og:image:alt') || getMetaContent('twitter:image:alt') || '';
-
-    if (isAmazonDomain) {
-      const imgEl = root.querySelector('#imgTagWrapperId img, #landingImage, #main-image, img#landingImage');
-      if (imgEl) {
-        vendorImage = imgEl.getAttribute('src');
-        if (!imageAlt && imgEl.getAttribute('alt')) {
-          imageAlt = imgEl.getAttribute('alt') || '';
-        }
-      }
-    } else if (isTargetDomain) {
-      const imgEl = root.querySelector('div[data-test="product-image"] img, img[data-test="current-image"], picture img');
-      if (imgEl) {
-        vendorImage = imgEl.getAttribute('src');
-        if (!imageAlt && imgEl.getAttribute('alt')) {
-          imageAlt = imgEl.getAttribute('alt') || '';
-        }
-      }
-    } else if (isCostcoDomain) {
-      const imgEl = root.querySelector('#initialLoadedImage, .product-image-canvas img, img[data-qa="product-image"]');
-      if (imgEl) {
-        vendorImage = imgEl.getAttribute('src');
-        if (!imageAlt && imgEl.getAttribute('alt')) {
-          imageAlt = imgEl.getAttribute('alt') || '';
-        }
-      }
-    }
-
-    const ogTitle = getMetaContent('og:title');
-    const titleTag = root.querySelector('title')?.textContent?.trim() || '';
-    const name = ldName || ogTitle || vendorTitle || titleTag || '';
-
-    const description = ldDescription || getMetaContent('og:description') || vendorDescription || '';
-
-    const image = ldImage || getMetaContent('og:image') || getMetaContent('twitter:image') || vendorImage || '';
-
-    // Extract site favicon candidate as fallback
-    let faviconUrl = '';
-    const faviconLink = root.querySelector('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
-    if (faviconLink) {
-      const href = faviconLink.getAttribute('href');
-      if (href) {
-        try {
-          faviconUrl = new URL(href, url).toString();
-        } catch {
-          // ignore
-        }
-      }
-    }
-    if (!faviconUrl) {
-      try {
-        faviconUrl = new URL('/favicon.ico', url).toString();
-      } catch {
-        faviconUrl = `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
-      }
-    }
-
-    const scrapedData = {
-      name: name,
-      description: description,
-      ...(price !== undefined ? { price } : {}),
-      imageUrl: image,
-      imageAlt: imageAlt,
-      vendorUrl: url,
-      quantity: 1,
-      faviconUrl: faviconUrl,
-    };
-
-    return NextResponse.json(scrapedData);
+    return extractProductMetadataFromHtml(html, url);
   } catch (error: any) {
     logger.error('Scraping failed:', error);
     if (error instanceof ApiError) {
       throw error;
     }
-    if (error && error.message && (error.message.startsWith('Blocked:') || error.message === 'Invalid URL')) {
+    if (
+      error &&
+      error.message &&
+      (error.message.startsWith('Blocked:') || error.message === 'Invalid URL')
+    ) {
       throw new ApiError(400, error.message);
     }
-    if (error?.name === 'AbortError' || error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT' || error?.code === 'ECONNREFUSED' || error?.message?.includes('fetch failed')) {
-      throw new ApiError(422, 'NETWORK_TIMEOUT: Network request timed out while fetching product info.', { errorDomain: 'NETWORK_TIMEOUT' });
+    if (
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError' ||
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ECONNREFUSED' ||
+      error?.message?.includes('fetch failed')
+    ) {
+      throw new ApiError(
+        422,
+        'NETWORK_TIMEOUT: Network request timed out while fetching product info.',
+        { errorDomain: 'NETWORK_TIMEOUT' }
+      );
     }
-    throw new ApiError(422, 'NETWORK_TIMEOUT: Failed to scrape product info due to network error.', { errorDomain: 'NETWORK_TIMEOUT' });
+    throw new ApiError(
+      422,
+      'NETWORK_TIMEOUT: Failed to scrape product info due to network error.',
+      { errorDomain: 'NETWORK_TIMEOUT' }
+    );
   }
+}
+
+export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const body = await request.json();
+  const parseResult = ScrapeUrlSchema.safeParse(body);
+
+  if (!parseResult.success) {
+    throw new ApiError(400, parseResult.error.issues[0].message);
+  }
+
+  const { url } = parseResult.data;
+  const scrapedData = await scrapeProductUrl(url, 4500);
+
+  return NextResponse.json(scrapedData);
 });
 
 function findProductObject(obj: any): any | null {
   if (!obj || typeof obj !== 'object') {
     return null;
   }
-  
+
   if (Array.isArray(obj)) {
     for (const item of obj) {
       const found = findProductObject(item);
@@ -376,4 +448,3 @@ function extractLdPrice(product: any): number | undefined {
 
   return undefined;
 }
-

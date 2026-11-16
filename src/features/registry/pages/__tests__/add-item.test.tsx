@@ -1,40 +1,83 @@
-import { render, screen } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { ToastProvider } from '@/components/ui/ToastProvider';
 import AddRegistryItemPage from '../add-item';
 
-// Mock the router to prevent actual navigation
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({
+    push: jest.fn(),
+  }),
 }));
 
-// Mock admin auth to always resolve as true
-jest.mock('@/core/auth/auth.client', () => ({
-  checkAdminClient: jest.fn().mockResolvedValue(true),
+jest.mock('@/components/ui/ToastProvider', () => ({
+  useToast: () => ({
+    addToast: jest.fn(),
+  }),
 }));
 
-// Mock RegistryItemForm to confirm it mounts
-jest.mock('../../components/RegistryItemForm', () => {
-  function RegistryItemForm() {
-    return <div data-testid="registry-item-form" />;
-  }
-  return RegistryItemForm;
-});
+jest.mock('@/hooks/admin/useAdminRegistry', () => ({
+  useAdminRegistry: () => ({
+    create: jest.fn(),
+  }),
+}));
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-});
+describe('AddRegistryItemPage Tabbed Navigation', () => {
+  it('renders all three tabs: Single Item, Batch URLs, and CSV Import', () => {
+    render(<AddRegistryItemPage />);
 
-describe('AddRegistryItemPage', () => {
-  it('renders the RegistryItemForm', async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          <AddRegistryItemPage />
-        </ToastProvider>
-      </QueryClientProvider>
-    );
-    expect(await screen.findByTestId('registry-item-form')).toBeInTheDocument();
+    const singleTab = screen.getByRole('tab', { name: /Single Item/i });
+    const batchTab = screen.getByRole('tab', { name: /Batch URLs/i });
+    const csvTab = screen.getByRole('tab', { name: /CSV Import/i });
+
+    expect(singleTab).toBeInTheDocument();
+    expect(batchTab).toBeInTheDocument();
+    expect(csvTab).toBeInTheDocument();
+
+    // Single item is selected by default
+    expect(singleTab).toHaveAttribute('aria-selected', 'true');
+    expect(batchTab).toHaveAttribute('aria-selected', 'false');
+    expect(csvTab).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByTestId('form')).toBeInTheDocument();
+  });
+
+  it('switches to Batch URLs tab when clicked', () => {
+    render(<AddRegistryItemPage />);
+
+    const batchTab = screen.getByRole('tab', { name: /Batch URLs/i });
+    fireEvent.click(batchTab);
+
+    expect(batchTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('batch-url-scraper')).toBeInTheDocument();
+    expect(screen.queryByTestId('form')).not.toBeInTheDocument();
+  });
+
+  it('switches to CSV Import tab when clicked', () => {
+    render(<AddRegistryItemPage />);
+
+    const csvTab = screen.getByRole('tab', { name: /CSV Import/i });
+    fireEvent.click(csvTab);
+
+    expect(csvTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('csv-registry-import')).toBeInTheDocument();
+    expect(screen.queryByTestId('form')).not.toBeInTheDocument();
+  });
+
+  it('supports arrow key keyboard navigation across tabs', () => {
+    render(<AddRegistryItemPage />);
+
+    const singleTab = screen.getByRole('tab', { name: /Single Item/i });
+    fireEvent.keyDown(singleTab, { key: 'ArrowRight' });
+
+    const batchTab = screen.getByRole('tab', { name: /Batch URLs/i });
+    expect(batchTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('batch-url-scraper')).toBeInTheDocument();
+
+    fireEvent.keyDown(batchTab, { key: 'ArrowRight' });
+    const csvTab = screen.getByRole('tab', { name: /CSV Import/i });
+    expect(csvTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('csv-registry-import')).toBeInTheDocument();
+
+    fireEvent.keyDown(csvTab, { key: 'ArrowLeft' });
+    expect(batchTab).toHaveAttribute('aria-selected', 'true');
   });
 });

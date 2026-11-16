@@ -89,6 +89,12 @@ jobs:
 
   publish-artifact:
     name: Publish Release Artifact
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/publish-artifact.yml
     secrets: inherit
 

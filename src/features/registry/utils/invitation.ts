@@ -96,3 +96,16 @@ export function isAddressComplete(item?: AddressItem | null): boolean {
       item?.zipCode?.trim()
   );
 }
+
+/**
+ * Generates an eight-character random alphanumeric string using uppercase characters and numbers.
+ */
+export function generateRandomCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+

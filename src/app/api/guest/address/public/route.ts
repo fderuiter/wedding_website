@@ -2,16 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { rateLimit } from '@/utils/rateLimit';
 import { prisma } from '@/lib/prisma';
-import { PublicAddressCollectSchema, PublicAddressCollectDTO } from '@/features/registry';
-
-function generateRandomCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
+import {
+  PublicAddressCollectSchema,
+  PublicAddressCollectDTO,
+  generateRandomCode,
+} from '@/features/registry';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   // 1. IP Rate Limiting (10 requests per 15 minutes)
