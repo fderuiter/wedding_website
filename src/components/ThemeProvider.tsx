@@ -14,19 +14,8 @@ import {
   sanitizeLayoutToken,
   sanitizeFontToken,
   sanitizeTokenValue,
-  contrastCache,
-  clearContrastCache,
-  optimizeContrast,
-  generateDynamicStyles,
   generateThemeStylesheet,
 } from '@/lib/theme/stylesheet';
-
-export {
-  contrastCache,
-  clearContrastCache,
-  optimizeContrast,
-  generateDynamicStyles,
-};
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
