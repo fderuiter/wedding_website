@@ -1,11 +1,12 @@
 /** @jest-environment node */
 
 import { BaseService } from '../service';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { z } from 'zod';
 
 jest.mock('@/lib/audit', () => ({
   createAuditSnapshot: jest.fn(),
+  createBatchAuditSnapshots: jest.fn(),
 }));
 
 class TestEntityService extends BaseService<{ id: string; name: string }> {
@@ -38,6 +39,15 @@ describe('BaseService Enhancements', () => {
           client: 'mock-tx-client',
           create: jest.fn(async (data) => ({ id: 'new-id', ...data })),
           update: jest.fn(async (id, data) => ({ id, ...data })),
+          findMany: jest.fn(async (args) => {
+            const ids = args?.where?.id?.in || [];
+            return ids.map((id: string) => ({ id, name: `Record ${id}` }));
+          }),
+          updateManyAndReturn: jest.fn(async ({ where, data }) => {
+            const ids = where?.id?.in || [];
+            return ids.map((id: string) => ({ id, ...data }));
+          }),
+          deleteMany: jest.fn(async () => ({ count: 2 })),
         };
         return cb(txRepo);
       }),
@@ -190,7 +200,7 @@ describe('BaseService Enhancements', () => {
       );
     });
 
-    it('should update all items inside an atomic transaction and create individual audit snapshots', async () => {
+    it('should update items using set-based query and create bulk audit snapshot', async () => {
       service.preSaveMock.mockImplementation(async (data) => ({ ...data, saved: true }));
 
       const ids = ['id-1', 'id-2'];
@@ -199,38 +209,31 @@ describe('BaseService Enhancements', () => {
       const results = await service.updateBatch(ids, data, 'TestAuthor');
 
       expect(mockRepo.transaction).toHaveBeenCalledTimes(1);
+      expect(service.validateMock).toHaveBeenCalledTimes(1);
+      expect(service.validateMock).toHaveBeenCalledWith(data, 'mock-tx-client');
+      expect(service.preSaveMock).toHaveBeenCalledTimes(1);
+      expect(service.preSaveMock).toHaveBeenCalledWith(data, 'mock-tx-client', 'TestAuthor');
+
       expect(results).toHaveLength(2);
       expect(results[0]).toEqual({ id: 'id-1', name: 'Batch Updated', saved: true });
       expect(results[1]).toEqual({ id: 'id-2', name: 'Batch Updated', saved: true });
 
-      expect(createAuditSnapshot).toHaveBeenCalledTimes(2);
-      expect(createAuditSnapshot).toHaveBeenNthCalledWith(
-        1,
+      expect(createAuditSnapshot).not.toHaveBeenCalled();
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
         'TestEntity',
-        'id-1',
-        { id: 'id-1', name: 'Batch Updated', saved: true },
-        'TestAuthor',
-        'mock-tx-client'
-      );
-      expect(createAuditSnapshot).toHaveBeenNthCalledWith(
-        2,
-        'TestEntity',
-        'id-2',
-        { id: 'id-2', name: 'Batch Updated', saved: true },
+        results,
         'TestAuthor',
         'mock-tx-client'
       );
     });
 
-    it('should roll back completely if any single update encounters a database failure', async () => {
+    it('should roll back completely if batch update encounters a database failure', async () => {
       mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
         const txRepo = {
           client: 'mock-tx-client',
-          update: jest.fn().mockImplementation(async (id: string, updateData: any) => {
-            if (id === 'fail-id') {
-              throw new Error('Database constraint violation: duplicate unique index');
-            }
-            return { id, ...updateData };
+          updateManyAndReturn: jest.fn().mockImplementation(async () => {
+            throw new Error('Database constraint violation: duplicate unique index');
           }),
         };
         return cb(txRepo);
@@ -240,6 +243,7 @@ describe('BaseService Enhancements', () => {
       await expect(service.updateBatch(ids, { name: 'Will Fail' })).rejects.toThrow(
         'Database constraint violation: duplicate unique index'
       );
+      expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
     });
   });
 
@@ -250,22 +254,71 @@ describe('BaseService Enhancements', () => {
       );
     });
 
-    it('should delete all items inside a transaction', async () => {
+    it('should throw validation error if ids array exceeds 100 items', async () => {
+      const ids = Array.from({ length: 101 }, (_, i) => `id-${i}`);
+      await expect(service.deleteBatch(ids)).rejects.toThrow(
+        'Validation Error: Maximum of 100 items allowed per batch request.'
+      );
+    });
+
+    it('should capture target records, delete them in bulk, and create bulk audit snapshots', async () => {
+      const ids = ['id-1', 'id-2'];
+      const results = await service.deleteBatch(ids, 'Admin');
+
+      expect(mockRepo.transaction).toHaveBeenCalledTimes(1);
+      expect(results).toEqual([
+        { id: 'id-1', name: 'Record id-1' },
+        { id: 'id-2', name: 'Record id-2' },
+      ]);
+
+      expect(createAuditSnapshot).not.toHaveBeenCalled();
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'TestEntity',
+        [
+          { deleted: true, id: 'id-1', name: 'Record id-1' },
+          { deleted: true, id: 'id-2', name: 'Record id-2' },
+        ],
+        'Admin',
+        'mock-tx-client'
+      );
+    });
+
+    it('should return empty array and skip bulk delete and audit snapshot if no target records exist', async () => {
+      mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
+        const deleteManyMock = jest.fn();
+        const txRepo = {
+          client: 'mock-tx-client',
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: deleteManyMock,
+        };
+        const res = await cb(txRepo);
+        expect(deleteManyMock).not.toHaveBeenCalled();
+        return res;
+      });
+
+      const ids = ['non-existent-1', 'non-existent-2'];
+      const results = await service.deleteBatch(ids, 'Admin');
+
+      expect(results).toEqual([]);
+      expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('should roll back completely if bulk deletion encounters a database failure', async () => {
       mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
         const txRepo = {
           client: 'mock-tx-client',
-          delete: jest.fn().mockImplementation(async (id: string) => ({ id, deleted: true })),
+          findMany: jest.fn().mockResolvedValue([{ id: 'id-1' }]),
+          deleteMany: jest.fn().mockRejectedValue(new Error('Foreign key constraint violation')),
         };
         return cb(txRepo);
       });
 
-      const ids = ['id-1', 'id-2'];
-      const results = await service.deleteBatch(ids, 'Admin');
-
-      expect(results).toEqual([
-        { id: 'id-1', deleted: true },
-        { id: 'id-2', deleted: true },
-      ]);
+      const ids = ['id-1'];
+      await expect(service.deleteBatch(ids, 'Admin')).rejects.toThrow(
+        'Foreign key constraint violation'
+      );
+      expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
     });
   });
 
