@@ -82,3 +82,77 @@ describe('ContentRepository.getPendingPhotos', () => {
     expect(result.totalPages).toBe(0);
   });
 });
+
+describe('ContentRepository.getNodesByType', () => {
+  let mockPrisma: any;
+  let repo: ContentRepository;
+
+  beforeEach(() => {
+    mockPrisma = {
+      contentNode: {
+        findMany: jest.fn(),
+      },
+    };
+    repo = new ContentRepository(mockPrisma);
+  });
+
+  it('queries nodes by type with default desc ordering when no options provided', async () => {
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
+
+    await repo.getNodesByType('Photo');
+
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: { type: 'Photo' },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  it('filters createdAt with gt cursor when since is provided as a Date or ISO string', async () => {
+    const sinceDate = new Date('2026-06-20T18:00:00.000Z');
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
+
+    await repo.getNodesByType('Photo', { since: sinceDate });
+
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: {
+        type: 'Photo',
+        createdAt: { gt: sinceDate },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
+    await repo.getNodesByType('Photo', { since: '2026-06-20T18:00:00.000Z' });
+
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: {
+        type: 'Photo',
+        createdAt: { gt: sinceDate },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  it('applies bounded limit when limit option is provided', async () => {
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
+
+    await repo.getNodesByType('Photo', { limit: 20 });
+
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: { type: 'Photo' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
+    await repo.getNodesByType('Photo', { limit: 150 });
+
+    // Capped at 100
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: { type: 'Photo' },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  });
+});
+

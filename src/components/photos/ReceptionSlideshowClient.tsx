@@ -11,6 +11,7 @@ export interface SlideshowPhoto {
   title?: string;
   altText?: string;
   isGuestUpload?: boolean;
+  createdAt?: string;
 }
 
 interface ReceptionSlideshowClientProps {
@@ -69,6 +70,35 @@ export function ReceptionSlideshowClient({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Derive initial timestamp cursor from provided initial photos
+  const initialLatestTimestamp = useMemo(() => {
+    if (!initialPhotos || !Array.isArray(initialPhotos)) return null;
+    let maxMs = -Infinity;
+    let maxIso: string | null = null;
+    for (const item of initialPhotos) {
+      if (typeof item !== 'string' && item.createdAt) {
+        const ms = new Date(item.createdAt).getTime();
+        if (!isNaN(ms) && ms > maxMs) {
+          maxMs = ms;
+          maxIso = item.createdAt;
+        }
+      }
+    }
+    return maxIso;
+  }, [initialPhotos]);
+
+  const latestTimestampRef = useRef<string | null>(initialLatestTimestamp);
+
+  useEffect(() => {
+    if (initialLatestTimestamp) {
+      const currentMs = latestTimestampRef.current ? new Date(latestTimestampRef.current).getTime() : -Infinity;
+      const initialMs = new Date(initialLatestTimestamp).getTime();
+      if (initialMs > currentMs) {
+        latestTimestampRef.current = initialLatestTimestamp;
+      }
+    }
+  }, [initialLatestTimestamp]);
 
   // Derive resolved upload URL
   const resolvedUploadUrl = useMemo(() => {
@@ -185,11 +215,25 @@ export function ReceptionSlideshowClient({
   // Periodic polling for approved public photos (every 30 seconds)
   const pollPublicPhotos = useCallback(async () => {
     try {
-      const response = await fetch('/api/photos');
+      const cursor = latestTimestampRef.current;
+      const endpoint = cursor ? `/api/photos?since=${encodeURIComponent(cursor)}` : '/api/photos';
+      const response = await fetch(endpoint);
       if (!response.ok) return;
 
       const data = await response.json();
       if (data?.photos && Array.isArray(data.photos) && data.photos.length > 0) {
+        for (const p of data.photos) {
+          if (p.createdAt) {
+            const ms = new Date(p.createdAt).getTime();
+            if (!isNaN(ms)) {
+              const currentMs = latestTimestampRef.current ? new Date(latestTimestampRef.current).getTime() : -Infinity;
+              if (ms > currentMs) {
+                latestTimestampRef.current = p.createdAt;
+              }
+            }
+          }
+        }
+
         setPhotos((prev) => {
           const existingUrls = new Set(prev.map((p) => p.url));
           const newPhotos: SlideshowPhoto[] = data.photos
@@ -206,6 +250,7 @@ export function ReceptionSlideshowClient({
               title: p.title || p.altText || 'Reception Photo',
               altText: p.altText || p.title,
               isGuestUpload: Boolean(p.isGuestUpload),
+              createdAt: p.createdAt,
             }));
 
           if (newPhotos.length > 0) {

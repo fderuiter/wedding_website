@@ -1,4 +1,4 @@
-import { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult } from './types';
+import { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult, GetNodesByTypeOptions } from './types';
 import { contentRepository } from './repository';
 
 export class ContentService {
@@ -59,11 +59,25 @@ export class ContentService {
     return [];
   }
 
-  async getPublicPhotos() {
-    const nodes = await this.repo.getNodesByType('Photo');
+  async getPublicPhotos(options?: GetNodesByTypeOptions) {
+    const nodes = options !== undefined
+      ? await this.repo.getNodesByType('Photo', options)
+      : await this.repo.getNodesByType('Photo');
+
+    const sinceDate = options?.since
+      ? options.since instanceof Date
+        ? options.since
+        : new Date(options.since)
+      : null;
+    const sinceTime = sinceDate && !isNaN(sinceDate.getTime()) ? sinceDate.getTime() : null;
+
     // Public gallery endpoints return only photos with status APPROVED or isVisible true (excluding PENDING and REJECTED)
     return nodes
       .filter((node) => {
+        if (sinceTime !== null && node.createdAt && node.createdAt.getTime() <= sinceTime) {
+          return false;
+        }
+
         const data = node.data as any;
         const status = data?.status;
         const isVisible = data?.isVisible;
