@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useRef, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { Overlay } from '@/components/ui/Overlay';
+import { useGuestLoginMachine, getSafeCallbackUrl } from '@/hooks/useGuestLoginMachine';
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 20 },
@@ -19,13 +19,7 @@ const fadeUp: Variants = {
   }
 };
 
-function getSafeCallbackUrl(url: string | null): string {
-  if (!url) return '/';
-  if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) {
-    return url;
-  }
-  return '/';
-}
+export { getSafeCallbackUrl };
 
 function getSafeMailtoUrl(email: string | null | undefined): string {
   const fallback = 'hosts@wedding.example';
@@ -40,122 +34,30 @@ function getSafeMailtoUrl(email: string | null | undefined): string {
 
 function GuestLoginForm() {
   const { contactEmail } = useTheme();
-  const [passcode, setPasscode] = useState('');
-  const [showPasscode, setShowPasscode] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [activeTab, setActiveTab] = useState<'instructions' | 'lookup'>('instructions');
-  const [lookupQuery, setLookupQuery] = useState('');
-  const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupError, setLookupError] = useState('');
-  const [lookupRateLimited, setLookupRateLimited] = useState(false);
-  const [unmatched, setUnmatched] = useState(false);
-  const [matchedGuest, setMatchedGuest] = useState<{ guestName: string; code: string } | null>(null);
-  const redirectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    return () => {
-      if (redirectTimerRef.current) {
-        clearTimeout(redirectTimerRef.current);
-      }
-    };
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      const res = await fetch('/api/guest/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Incorrect passcode. Please try again.');
-      } else {
-        const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
-        router.push(callbackUrl);
-      }
-    } catch {
-      setError('A connection error occurred. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLookup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (redirectTimerRef.current) {
-      clearTimeout(redirectTimerRef.current);
-    }
-    setLookupError('');
-    setUnmatched(false);
-    setLookupRateLimited(false);
-    setMatchedGuest(null);
-
-    const query = lookupQuery.trim();
-    if (!query) {
-      setLookupError('Please enter your name or email address.');
-      return;
-    }
-
-    if (query.includes('@')) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(query)) {
-        setLookupError('Invalid email format.');
-        return;
-      }
-    } else if (query.length < 2) {
-      setLookupError('Name must be at least 2 characters.');
-      return;
-    }
-
-    setLookupLoading(true);
-    try {
-      const res = await fetch('/api/guest/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      });
-
-      const data = await res.json();
-
-      if (res.status === 429) {
-        setLookupRateLimited(true);
-        setLookupError(data.error || 'Too many requests, please try again later.');
-        return;
-      }
-
-      if (!res.ok || !data.success) {
-        setUnmatched(true);
-        setLookupError(data.error || 'No invitation found matching the provided details.');
-        return;
-      }
-
-      const guestName = data.guestName || data.data?.guestName || '';
-      const code = data.code || data.data?.code || '';
-      setMatchedGuest({ guestName, code });
-
-      const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
-      if (redirectTimerRef.current) {
-        clearTimeout(redirectTimerRef.current);
-      }
-      redirectTimerRef.current = setTimeout(() => {
-        router.push(callbackUrl);
-      }, 4000);
-    } catch {
-      setLookupError('A connection error occurred. Please try again.');
-    } finally {
-      setLookupLoading(false);
-    }
-  };
+  const {
+    passcode,
+    showPasscode,
+    error,
+    loading,
+    showHelp,
+    activeTab,
+    lookupQuery,
+    lookupLoading,
+    lookupError,
+    lookupRateLimited,
+    unmatched,
+    matchedGuest,
+    isLoginDisabled,
+    isLookupDisabled,
+    handleLogin,
+    handleLookup,
+    handleContinueToPortal,
+    setPasscode,
+    setShowPasscode,
+    setShowHelp,
+    setActiveTab,
+    setLookupQuery,
+  } = useGuestLoginMachine();
 
   return (
     <>
@@ -196,7 +98,8 @@ function GuestLoginForm() {
               id="passcode"
               value={passcode}
               onChange={(e) => setPasscode(e.target.value)}
-              className="border border-gray-200 dark:border-gray-400 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
+              disabled={isLoginDisabled}
+              className="border border-gray-200 dark:border-gray-400 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
               required
               autoComplete="off"
               placeholder="Enter passcode"
@@ -228,7 +131,7 @@ function GuestLoginForm() {
         <button
           type="submit"
           className="w-full bg-primary bg-gradient-to-r from-primary to-secondary text-white px-6 py-4 rounded-2xl font-bold text-lg shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center overflow-hidden relative"
-          disabled={loading}
+          disabled={isLoginDisabled}
           aria-busy={loading}
         >
           <span className={loading ? 'opacity-0' : 'opacity-100'}>Access Portal</span>
@@ -370,13 +273,7 @@ function GuestLoginForm() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (redirectTimerRef.current) {
-                      clearTimeout(redirectTimerRef.current);
-                    }
-                    const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
-                    router.push(callbackUrl);
-                  }}
+                  onClick={handleContinueToPortal}
                   className="w-full py-2.5 px-4 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   Continue to Portal
@@ -392,15 +289,10 @@ function GuestLoginForm() {
                     type="text"
                     id="lookup-query"
                     value={lookupQuery}
-                    onChange={(e) => {
-                      setLookupQuery(e.target.value);
-                      if (lookupError) setLookupError('');
-                      if (unmatched) setUnmatched(false);
-                      if (lookupRateLimited) setLookupRateLimited(false);
-                    }}
+                    onChange={(e) => setLookupQuery(e.target.value)}
                     placeholder="Enter your name or email"
-                    disabled={lookupLoading || lookupRateLimited}
-                    className="border border-gray-200 dark:border-gray-600 p-3 rounded-xl w-full text-sm bg-gray-50/50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none transition-all disabled:opacity-60"
+                    disabled={isLookupDisabled}
+                    className="border border-gray-200 dark:border-gray-600 p-3 rounded-xl w-full text-sm bg-gray-50/50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     aria-invalid={lookupError ? 'true' : undefined}
                     aria-describedby={lookupError ? 'lookup-error' : undefined}
                   />
@@ -422,7 +314,7 @@ function GuestLoginForm() {
 
                 <button
                   type="submit"
-                  disabled={lookupLoading || lookupRateLimited}
+                  disabled={isLookupDisabled}
                   className="w-full bg-primary text-white py-2.5 px-4 rounded-xl text-sm font-semibold shadow-md hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   {lookupLoading ? (
