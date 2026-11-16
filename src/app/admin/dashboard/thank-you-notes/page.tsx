@@ -11,7 +11,7 @@ import type { ProgressMetrics } from '@/features/registry';
 import {
   THANK_YOU_TEMPLATES,
   substituteThankYouTemplateTokens,
-} from '@/features/registry/types';
+} from '@/features/registry';
 
 export interface ThankYouContributorItem {
   id: string;

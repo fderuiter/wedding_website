@@ -1,6 +1,6 @@
 import { POST } from '../admin/sub-events/access/batch/route';
 import { NextRequest } from 'next/server';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
 jest.mock('@/features/sub-events/service');

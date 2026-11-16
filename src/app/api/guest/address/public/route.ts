@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { rateLimit } from '@/utils/rateLimit';
 import { prisma } from '@/lib/prisma';
-import { PublicAddressCollectSchema, PublicAddressCollectDTO } from '@/features/registry/schemas';
-import { generateRandomCode } from '@/features/registry/utils/invitation';
+import {
+  PublicAddressCollectSchema,
+  PublicAddressCollectDTO,
+  generateRandomCode,
+} from '@/features/registry';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   // 1. IP Rate Limiting (10 requests per 15 minutes)

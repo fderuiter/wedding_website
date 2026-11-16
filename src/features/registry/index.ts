@@ -21,25 +21,32 @@ export {
   GuestAddressUpdateSchema,
   ItemTypeEnum,
   BatchImportInvitationCodesSchema,
+  BatchDeleteInvitationCodesSchema,
   DryRunValidateBatchSchema,
   PaymentIntentRequestSchema,
   BatchScrapeUrlsSchema,
   BatchCreateRegistryItemsSchema,
   translateSnapshotToActive,
+  PublicAddressCollectSchema,
 } from './schemas';
 export type {
   InvitationCodeDTO,
   BatchImportInvitationCodesDTO,
+  BatchDeleteInvitationCodesDTO,
   DryRunValidateBatchDTO,
   DryRunValidatedRow,
   DryRunValidationSummary,
   DryRunValidationResponse,
   GuestAddressUpdateDTO,
   PaymentIntentRequestDTO,
+  PublicAddressCollectDTO,
   ItemType,
   BatchScrapeUrlsDTO,
   BatchCreateRegistryItemsDTO,
 } from './schemas';
+export { InvitationCodeAdminService } from './invitation-code.admin.service';
+export { RegistryItemAdminService } from './admin.service';
+export { useRegistry } from './hooks/useRegistry';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
 export { default as EditItemPage } from './pages/edit-item';

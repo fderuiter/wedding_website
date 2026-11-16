@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PhotosPage from '../page';
+import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
 
 // Mock dependencies
 jest.mock('@/lib/config', () => ({
@@ -23,18 +24,12 @@ jest.mock('@/lib/query-wrapper', () => ({
   withPageQuery: jest.fn().mockImplementation(async (fn) => fn()),
 }));
 
-jest.mock('next/script', () => {
-  return function MockScript() {
-    return null;
-  };
-});
-
 jest.mock('@/components/photos/PhotoGalleryClient', () => ({
-  PhotoGalleryClient: () => <div data-testid="photo-gallery-client" />,
+  PhotoGalleryClient: jest.fn(() => <div data-testid="photo-gallery-client" />),
 }));
 
-describe('PhotosPage Accessibility', () => {
-  it('renders photo gallery embed objects with WCAG-compliant text alternatives and ARIA attributes', async () => {
+describe('PhotosPage', () => {
+  it('renders native photo gallery client and accessible page elements without third-party embed', async () => {
     const pageElement = await PhotosPage();
     const { container } = render(pageElement);
 
@@ -43,23 +38,28 @@ describe('PhotosPage Accessibility', () => {
       screen.getByRole('heading', { level: 1, name: /our wedding photos/i })
     ).toBeInTheDocument();
 
-    // Verify gallery player widget container
+    // Verify native photo gallery client is rendered directly
+    expect(screen.getByTestId('photo-gallery-client')).toBeInTheDocument();
+
+    // Verify initialPhotos prop passed to PhotoGalleryClient contains curated photos
+    expect(PhotoGalleryClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialPhotos: expect.arrayContaining([
+          expect.stringContaining('googleusercontent.com'),
+        ]),
+      }),
+      undefined
+    );
+
+    // Verify third-party embed widget is removed
     const widgetContainer = container.querySelector('.pa-gallery-player-widget');
-    expect(widgetContainer).toBeInTheDocument();
-    expect(widgetContainer).toHaveAttribute('role', 'region');
-    expect(widgetContainer).toHaveAttribute('aria-label', 'Google Photos Gallery Embed');
+    expect(widgetContainer).not.toBeInTheDocument();
 
-    // Verify embedded object elements have role="img", aria-label, title, and body text alternative
-    const objectElements = widgetContainer?.querySelectorAll('object') || [];
-    expect(objectElements.length).toBeGreaterThan(0);
-
-    objectElements.forEach((obj, idx) => {
-      expect(obj).toHaveAttribute('role', 'img');
-      expect(obj).toHaveAttribute('type', 'image/jpeg');
-      expect(obj).toHaveAttribute('aria-label', `Wedding photo ${idx + 1}`);
-      expect(obj).toHaveAttribute('title', `Wedding photo ${idx + 1}`);
-      expect(obj.textContent).toContain(`Wedding photo ${idx + 1}`);
-    });
+    // Verify fallback indicator is rendered when live feeds are unavailable
+    expect(screen.getByTestId('photos-fallback-indicator')).toBeInTheDocument();
+    expect(
+      screen.getByText(/displaying curated photo gallery/i)
+    ).toBeInTheDocument();
 
     // Verify View Full Album link
     const albumLink = screen.getByRole('link', { name: /view full album \(opens in a new tab\)/i });

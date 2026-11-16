@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { prisma } from '@/lib/prisma';
-import { GuestAddressUpdateSchema } from '@/features/registry/schemas';
+import { GuestAddressUpdateSchema } from '@/features/registry';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const session = await getGuestInviteSession(req);

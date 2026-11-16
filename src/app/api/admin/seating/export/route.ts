@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
-import { generateSeatingChartPdf } from '@/features/seating/pdf.service';
+import { generateSeatingChartPdf } from '@/features/seating';
 import { getAppConfig } from '@/lib/config';
 
 const HEADERS = [

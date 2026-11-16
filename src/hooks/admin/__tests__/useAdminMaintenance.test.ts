@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { useAdminMaintenance } from '../useAdminMaintenance';
-import { apiClient } from '@/features/admin/apiClient';
+import { apiClient } from '@/features/admin';
 import { useQueryClient } from '@tanstack/react-query';
 
 jest.mock('@/features/admin/apiClient', () => ({

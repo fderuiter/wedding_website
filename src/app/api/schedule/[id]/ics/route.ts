@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 import { getAppConfig } from '@/lib/config';
 import { formatScheduleEventToCalendarEvent, createIcsFile } from '@/utils/calendar';
 import { ApiError } from '@/utils/ApiError';

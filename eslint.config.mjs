@@ -90,10 +90,8 @@ const eslintConfig = [
       '@stylistic/indent': ['error', 2],
       '@stylistic/semi': ['error', 'always'],
       
-      // Downgrade previously failing rules to warn to avoid breaking CI 
-      // without polluting git history with massive non-stylistic rewrites
       'no-restricted-imports': [
-        'warn',
+        'error',
         {
           patterns: [
             {

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { subEventService } from '@/features/sub-events/service';
+import { subEventService } from '@/features/sub-events';
 import { ApiError } from '@/utils/ApiError';
-import { BatchUpdateSubEventAccessSchema } from '@/features/sub-events/schemas';
+import { BatchUpdateSubEventAccessSchema } from '@/features/sub-events';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const body = await request.json();
