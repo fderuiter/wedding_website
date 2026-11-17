@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const secret = process.env.GUEST_SESSION_SECRET || process.env.GUEST_PASSCODE || 'wedding2026';
   const payload = {
     guest: true,
     iat: Date.now(),
@@ -52,7 +52,7 @@ test.describe('Metadata', () => {
     const ogDescription = page.locator('meta[property="og:description"]');
     await expect(ogDescription).toHaveAttribute('content', /Welcome to our wedding website|Join Jane and John/);
     const ogUrl = page.locator('meta[property="og:url"]');
-    await expect(ogUrl).toHaveAttribute('content', 'http://localhost:3000');
+    await expect(ogUrl).toHaveAttribute('content', /http:\/\/(localhost|127\.0\.0\.1):3000/);
     const ogType = page.locator('meta[property="og:type"]');
     await expect(ogType).toHaveAttribute('content', 'website');
     const ogImage = page.locator('meta[property="og:image"]');

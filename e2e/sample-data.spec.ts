@@ -17,7 +17,7 @@ function generateAdminCookieValue() {
 }
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const secret = process.env.GUEST_SESSION_SECRET || process.env.GUEST_PASSCODE || 'wedding2026';
   const payload = {
     guest: true,
     iat: Date.now(),
