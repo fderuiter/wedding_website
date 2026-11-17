@@ -70,7 +70,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, context: { par
   }
 
   const [total, records] = await Promise.all([
-    serviceData.service.count(),
+    typeof serviceData.service.count === 'function' ? serviceData.service.count() : 0,
     serviceData.service.findMany(queryArgs),
   ]);
 
