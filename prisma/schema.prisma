@@ -157,6 +157,9 @@ model RegistryItem {
   contributors      Contributor[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+
+  @@index([imageId])
+  @@index([category, price])
 }
 
 model Contributor {
@@ -184,6 +187,9 @@ model Contributor {
   invitationCode   InvitationCode? @relation(fields: [invitationCodeId], references: [id])
 
   @@index([stripePaymentIntentId])
+  @@index([registryItemId])
+  @@index([invitationCodeId])
+  @@index([thankYouStatus, date])
 }
 
 model InvitationCode {
@@ -334,5 +340,9 @@ model BroadcastRecipient {
   sentAt           DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+
+  @@index([broadcastId])
+  @@index([invitationCodeId])
+  @@index([broadcastId, status])
 }
 
