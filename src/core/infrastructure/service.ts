@@ -193,11 +193,10 @@ export class BaseService<T extends { id: string }> {
   }
 
   async reorder(orderedIds: string[]): Promise<void> {
-    await this.repo.transaction(async (txRepo) => {
-      await Promise.all(
-        orderedIds.map((id, index) => txRepo.update(id, { order: index }))
-      );
-    });
+    if (!orderedIds || orderedIds.length === 0) {
+      return;
+    }
+    await this.repo.reorder(orderedIds);
   }
 
   async toggleVisibility(id: string, isVisible: boolean): Promise<T> {

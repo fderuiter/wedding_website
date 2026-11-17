@@ -12,7 +12,9 @@ describe('WeddingPartyRepository', () => {
         findMany: jest.fn(),
         update: jest.fn(),
       },
-      $transaction: jest.fn((cb: any) => cb(mockClient)),
+      $transaction: jest.fn((input: any) =>
+        Array.isArray(input) ? Promise.all(input) : input(mockClient)
+      ),
     };
     repo = new WeddingPartyRepository(mockClient);
   });
@@ -93,6 +95,8 @@ describe('WeddingPartyRepository', () => {
         where: { id: 'id-2' },
         data: { order: 1 },
       });
+      expect(mockClient.$transaction).toHaveBeenCalledWith(expect.any(Array));
+      expect(mockClient.$transaction).toHaveBeenCalledTimes(1);
       expect(reordered).toHaveLength(2);
     });
 

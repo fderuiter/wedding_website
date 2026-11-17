@@ -20,7 +20,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     cd wedding_website
     ```
 
-3. **Set Up:** Follow the setup instructions in the main [README.md](https://github.com/fderuiter/wedding_website/blob/main/README.md#getting-started). Make sure you can run the project locally (`npm run dev`).
+3. **Set Up:** Follow the setup instructions in the [Developer Setup Guide](../docs/developer-setup.md) (or root [README.md](../README.md#setup--installation)). Make sure you can run the project locally (`npm run dev`).
 4. **Create a Branch:** Make a new branch for your changes. Name it something descriptive, like `fix/registry-typo` or `feat/add-confetti-button`.
 
     ```bash
@@ -42,6 +42,8 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:prisma` - Validate Prisma schema structure.
      - `npm run check:standalone` - Verify Next.js standalone build & container portability.
      - `npm run check:env-docs` - Ensure environment variables match `.env.example` documentation.
+     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json` and `ARCHITECTURE.md`) is synchronized with codebase schemas without drift.
+     - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
      - `npm run typecheck` - Check TypeScript types across the project.
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.

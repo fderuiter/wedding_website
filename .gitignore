@@ -77,6 +77,7 @@ docs-portal/.vitepress/cache
 docs-portal/.vitepress/.temp
 docs-portal/architecture
 docs-portal/deployment
+docs-portal/development
 docs-portal/features
 docs-portal/security
 docs-portal/guides

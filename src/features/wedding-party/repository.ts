@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { executeInTransaction } from '@/lib/transaction';
 import { WeddingPartyMemberSchema, WeddingPartyMemberDTO } from './schemas';
 
 export class WeddingPartyRepository {
@@ -29,24 +28,26 @@ export class WeddingPartyRepository {
       throw new Error(`Invalid member ID(s): ${missingIds.join(', ')}`);
     }
 
-    return executeInTransaction(this.client, async (tx: any) => {
-      await Promise.all(
-        orderedIds.map((id, index) =>
-          tx.weddingPartyMember.update({
-            where: { id },
-            data: { order: index }
-          })
-        )
-      );
+    const operations = orderedIds.map((id, index) =>
+      this.client.weddingPartyMember.update({
+        where: { id },
+        data: { order: index },
+      })
+    );
 
-      const reorderedMembers = await tx.weddingPartyMember.findMany({
-        where: { id: { in: orderedIds } },
-        orderBy: { order: 'asc' },
-        include: { photo: true }
-      });
+    if (typeof this.client?.$transaction === 'function') {
+      await this.client.$transaction(operations);
+    } else {
+      await Promise.all(operations);
+    }
 
-      return reorderedMembers.map((m: any) => WeddingPartyMemberSchema.parse(m));
+    const reorderedMembers = await this.client.weddingPartyMember.findMany({
+      where: { id: { in: orderedIds } },
+      orderBy: { order: 'asc' },
+      include: { photo: true },
     });
+
+    return reorderedMembers.map((m: any) => WeddingPartyMemberSchema.parse(m));
   }
 }
 
