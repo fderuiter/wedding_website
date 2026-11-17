@@ -51,6 +51,21 @@ const envSchema = z.object({
   S3_ENDPOINT: z.string().optional(),
   S3_PUBLIC_URL: z.string().optional(),
 }).superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production') {
+    if (!data.GUEST_SESSION_SECRET || data.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GUEST_SESSION_SECRET'],
+        message: 'GUEST_SESSION_SECRET is required and must not use the default fallback in production',
+      });
+    } else if (data.GUEST_SESSION_SECRET.length < 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GUEST_SESSION_SECRET'],
+        message: 'GUEST_SESSION_SECRET must be at least 32 characters long in production',
+      });
+    }
+  }
   if (data.GUEST_SESSION_SECRET && data.GUEST_PASSCODE && data.GUEST_SESSION_SECRET === data.GUEST_PASSCODE) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -99,9 +114,28 @@ const isBuildTime = isEdge ||
                     process.env.JEST_WORKER_ID !== undefined;
 
 // In production runtime, strictly require valid environment variables
-if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge' && !process.env.ADMIN_PASSWORD) {
-  console.error('❌ Security Error: ADMIN_PASSWORD environment variable is missing in production environment.');
-  throw new Error('ADMIN_PASSWORD environment variable is required in production.');
+if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge') {
+  if (!process.env.ADMIN_PASSWORD) {
+    console.error('❌ Security Error: ADMIN_PASSWORD environment variable is missing in production environment.');
+    throw new Error('ADMIN_PASSWORD environment variable is required in production.');
+  }
+  if (!process.env.GUEST_SESSION_SECRET) {
+    console.error('❌ Security Error: GUEST_SESSION_SECRET environment variable is missing in production environment.');
+    throw new Error('GUEST_SESSION_SECRET environment variable is required in production.');
+  }
+  if (process.env.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
+    console.error('❌ Security Error: GUEST_SESSION_SECRET must not use the default fallback secret in production.');
+    throw new Error('GUEST_SESSION_SECRET must not use the default fallback secret in production.');
+  }
+  if (process.env.GUEST_SESSION_SECRET.length < 32) {
+    console.error('❌ Security Error: GUEST_SESSION_SECRET must be at least 32 characters long in production.');
+    throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production.');
+  }
+  const effectivePasscode = process.env.GUEST_PASSCODE || 'wedding2026';
+  if (process.env.GUEST_SESSION_SECRET === effectivePasscode) {
+    console.error('❌ Security Error: GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
+    throw new Error('GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
+  }
 }
 
 // Even during build, fail if incomplete S3 credentials are provided explicitly
@@ -115,7 +149,7 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
 
 let _env: z.infer<typeof envSchema>;
 
-if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE))) {
+if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE || !process.env.GUEST_SESSION_SECRET))) {
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',

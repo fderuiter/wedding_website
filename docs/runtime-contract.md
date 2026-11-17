@@ -54,7 +54,7 @@ All runtime configuration is supplied via environment variables. The runtime val
 | `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile site routing. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations during container startup in `docker-entrypoint.sh`. |
 | `GUEST_PASSCODE` | `wedding2026` | Passcode required for guest website access. |
-| `GUEST_SESSION_SECRET` | `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens. |
+| `GUEST_SESSION_SECRET` | Required in production (min 32 chars, distinct); dev default: `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item. |
 | `CRON_SECRET` | *None* | Authorization secret for triggering scheduled background endpoints. |
 

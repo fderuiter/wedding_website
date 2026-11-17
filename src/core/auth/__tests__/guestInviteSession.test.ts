@@ -72,6 +72,80 @@ describe('guestInviteSession', () => {
     }
   });
 
+  it('rejects tokens signed with default-guest-session-secret fallback when distinct secret is configured', async () => {
+    const payload = {
+      code: 'DEFAULT_ATTACK',
+      guestName: 'Attacker Default',
+      iat: Date.now(),
+      exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    };
+    const data = base64urlEncode(JSON.stringify(payload));
+    const forgedSignature = await hmacSha256('default-guest-session-secret', data);
+    const forgedToken = `${data}.${forgedSignature}`;
+
+    const originalSecret = process.env.GUEST_SESSION_SECRET;
+    try {
+      process.env.GUEST_SESSION_SECRET = 'a-secure-production-secret-of-32-chars-or-more';
+      const verified = await verifyGuestInviteSessionToken(forgedToken);
+      expect(verified).toBeNull();
+    } finally {
+      if (originalSecret !== undefined) {
+        process.env.GUEST_SESSION_SECRET = originalSecret;
+      } else {
+        delete process.env.GUEST_SESSION_SECRET;
+      }
+    }
+  });
+
+  describe('production environment secret enforcement', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalSecret = process.env.GUEST_SESSION_SECRET;
+
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+      if (originalSecret !== undefined) {
+        process.env.GUEST_SESSION_SECRET = originalSecret;
+      } else {
+        delete process.env.GUEST_SESSION_SECRET;
+      }
+    });
+
+    it('throws in production when GUEST_SESSION_SECRET is default-guest-session-secret', async () => {
+      process.env.GUEST_SESSION_SECRET = 'default-guest-session-secret';
+      await expect(
+        signGuestInviteSessionToken({
+          code: 'WEDDING2026',
+          guestName: 'Jane Doe',
+        })
+      ).rejects.toThrow('GUEST_SESSION_SECRET must be configured with a distinct secret in production');
+    });
+
+    it('throws in production when GUEST_SESSION_SECRET has fewer than 32 characters', async () => {
+      process.env.GUEST_SESSION_SECRET = 'short-secret-under-32-chars';
+      await expect(
+        signGuestInviteSessionToken({
+          code: 'WEDDING2026',
+          guestName: 'Jane Doe',
+        })
+      ).rejects.toThrow('GUEST_SESSION_SECRET must be at least 32 characters long in production');
+    });
+
+    it('succeeds in production when GUEST_SESSION_SECRET is at least 32 characters', async () => {
+      process.env.GUEST_SESSION_SECRET = 'a-valid-production-secret-with-at-least-32-chars';
+      const token = await signGuestInviteSessionToken({
+        code: 'WEDDING2026',
+        guestName: 'Jane Doe',
+      });
+      expect(typeof token).toBe('string');
+      const payload = await verifyGuestInviteSessionToken(token);
+      expect(payload?.code).toBe('WEDDING2026');
+    });
+  });
+
   it('returns null for an invalid or tampered token', async () => {
     const token = await signGuestInviteSessionToken({
       code: 'WEDDING2026',

@@ -88,7 +88,7 @@ async function main() {
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
-    GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
+    GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'test-standalone-guest-session-secret-32chars',
   };
 
   // Remove any remaining provider flags from env

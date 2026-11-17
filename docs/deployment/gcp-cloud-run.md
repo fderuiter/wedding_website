@@ -54,7 +54,7 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable multi-tenant/multi-profile site routing (`false`). |
 | `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
 | `GUEST_PASSCODE` | No | Secret Manager | Guest passcode (default `wedding2026`). |
-| `GUEST_SESSION_SECRET` | No | Secret Manager | Dedicated server secret for guest invitation session signing (default `default-guest-session-secret`). |
+| `GUEST_SESSION_SECRET` | Yes | Secret Manager | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | Cloud Run Env Var | Retained history limit (e.g. `50`). |
 | `CRON_SECRET` | No | Secret Manager | Authorization key for background cron triggers. |
 | `S3_BUCKET` | Yes* | Secret Manager | Object storage bucket name for uploads. |
