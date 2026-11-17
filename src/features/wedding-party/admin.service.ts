@@ -41,9 +41,7 @@ export class WeddingPartyAdminService extends BaseService<any> {
         throw new Error(`Invalid member ID(s): ${missingIds.join(', ')}`);
       }
 
-      const updatedRecords = await Promise.all(
-        orderedIds.map((id, index) => txRepo.update(id, { order: index }))
-      );
+      const updatedRecords = await txRepo.reorder(orderedIds);
 
       await createBatchAuditSnapshots(
         this.entityType,

@@ -34,6 +34,7 @@ describe('BaseService Enhancements', () => {
   beforeEach(() => {
     mockRepo = {
       findMany: jest.fn(),
+      reorder: jest.fn(),
       transaction: jest.fn(async (cb) => {
         const txRepo = {
           client: 'mock-tx-client',
@@ -127,62 +128,34 @@ describe('BaseService Enhancements', () => {
   });
 
   describe('reorder', () => {
-    it('should dispatch txRepo.update calls concurrently inside a transaction', async () => {
-      let txRepoUpdateMock: jest.Mock;
-
-      mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
-        txRepoUpdateMock = jest.fn().mockImplementation((id, data) => Promise.resolve({ id, ...data }));
-        const txRepo = {
-          client: 'mock-tx-client',
-          update: txRepoUpdateMock,
-        };
-        return cb(txRepo);
-      });
+    it('should call repo.reorder directly with ordered IDs', async () => {
+      mockRepo.reorder.mockResolvedValue([
+        { id: 'id-1', order: 0 },
+        { id: 'id-2', order: 1 },
+        { id: 'id-3', order: 2 },
+      ]);
 
       const orderedIds = ['id-1', 'id-2', 'id-3'];
       await service.reorder(orderedIds);
 
-      expect(mockRepo.transaction).toHaveBeenCalledTimes(1);
-      expect(txRepoUpdateMock!).toHaveBeenCalledTimes(3);
-      expect(txRepoUpdateMock!).toHaveBeenNthCalledWith(1, 'id-1', { order: 0 });
-      expect(txRepoUpdateMock!).toHaveBeenNthCalledWith(2, 'id-2', { order: 1 });
-      expect(txRepoUpdateMock!).toHaveBeenNthCalledWith(3, 'id-3', { order: 2 });
+      expect(mockRepo.reorder).toHaveBeenCalledTimes(1);
+      expect(mockRepo.reorder).toHaveBeenCalledWith(orderedIds);
+      expect(mockRepo.transaction).not.toHaveBeenCalled();
     });
 
-    it('should reject and roll back atomically if any concurrent update fails', async () => {
-      mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
-        const txRepo = {
-          client: 'mock-tx-client',
-          update: jest.fn().mockImplementation(async (id: string) => {
-            if (id === 'invalid-id') {
-              throw new Error('Entity not found');
-            }
-            return { id };
-          }),
-        };
-        return cb(txRepo);
-      });
+    it('should reject and propagate error if repo.reorder fails', async () => {
+      mockRepo.reorder.mockRejectedValue(new Error('Entity not found'));
 
       const orderedIds = ['id-1', 'invalid-id', 'id-3'];
       await expect(service.reorder(orderedIds)).rejects.toThrow('Entity not found');
+      expect(mockRepo.reorder).toHaveBeenCalledWith(orderedIds);
     });
 
-    it('should complete successfully for empty orderedIds list', async () => {
-      let txRepoUpdateMock: jest.Mock;
-
-      mockRepo.transaction.mockImplementationOnce(async (cb: any) => {
-        txRepoUpdateMock = jest.fn();
-        const txRepo = {
-          client: 'mock-tx-client',
-          update: txRepoUpdateMock,
-        };
-        return cb(txRepo);
-      });
-
+    it('should return early without calling repo.reorder for empty orderedIds list', async () => {
       await service.reorder([]);
 
-      expect(mockRepo.transaction).toHaveBeenCalledTimes(1);
-      expect(txRepoUpdateMock!).not.toHaveBeenCalled();
+      expect(mockRepo.reorder).not.toHaveBeenCalled();
+      expect(mockRepo.transaction).not.toHaveBeenCalled();
     });
   });
 

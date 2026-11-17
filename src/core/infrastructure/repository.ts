@@ -15,6 +15,22 @@ export class BaseRepository<T extends { id: string }> {
     return executeInTransaction(this.client, (tx: any) => fn(this.withClient(tx)));
   }
 
+  async reorder(orderedIds: string[]): Promise<T[]> {
+    if (orderedIds.length === 0) {
+      return [];
+    }
+    const operations = orderedIds.map((id, index) =>
+      this.model.update({
+        where: { id },
+        data: { order: index },
+      })
+    );
+    if (typeof this.client?.$transaction === 'function') {
+      return this.client.$transaction(operations);
+    }
+    return Promise.all(operations);
+  }
+
   get model() {
     return (this.client as any)[this.modelName];
   }
