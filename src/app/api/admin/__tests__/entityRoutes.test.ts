@@ -26,6 +26,7 @@ describe('Dynamic Administration Entity API Routes', () => {
     // Default mock service implementation
     mockService = {
       findMany: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn(),
       reorder: jest.fn(),
       findById: jest.fn(),
@@ -88,6 +89,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       test('returns collection with default ordering (createdAt desc)', async () => {
         const mockRecords = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
         mockService.findMany.mockResolvedValue(mockRecords);
+        mockService.count.mockResolvedValue(mockRecords.length);
 
         const req = new NextRequest('http://localhost/api/admin/attractions');
         const res = await GET(req, { params: Promise.resolve({ entity: 'attractions' }) });
@@ -95,9 +97,11 @@ describe('Dynamic Administration Entity API Routes', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body).toEqual({ success: true, data: mockRecords });
-        expect(mockService.findMany).toHaveBeenCalledWith({
-          orderBy: { createdAt: 'desc' },
-        });
+        expect(mockService.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            orderBy: { createdAt: 'desc' },
+          })
+        );
       });
 
       test('respects custom orderBy and orderDir query parameters', async () => {
@@ -105,9 +109,11 @@ describe('Dynamic Administration Entity API Routes', () => {
         const req = new NextRequest('http://localhost/api/admin/attractions?orderBy=name&orderDir=asc');
         
         await GET(req, { params: Promise.resolve({ entity: 'attractions' }) });
-        expect(mockService.findMany).toHaveBeenCalledWith({
-          orderBy: { name: 'asc' },
-        });
+        expect(mockService.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            orderBy: { name: 'asc' },
+          })
+        );
       });
     });
 
