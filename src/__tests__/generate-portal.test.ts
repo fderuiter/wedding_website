@@ -1,9 +1,17 @@
 import fs from 'fs';
 import path from 'path';
-import { ARCHITECTURAL_DOCS, DocMapping } from '../../scripts/generate-portal';
+import { ARCHITECTURAL_DOCS, DocMapping, stagePortalDocs } from '../../scripts/generate-portal';
 
 describe('Portal Documentation Generator & Development Section', () => {
   const rootDir = process.cwd();
+
+  beforeAll(() => {
+    stagePortalDocs();
+  });
+
+  afterAll(() => {
+    fs.rmSync(path.join(rootDir, 'docs-portal/development'), { recursive: true, force: true });
+  });
 
   it('includes Development category documents in ARCHITECTURAL_DOCS', () => {
     const devDocs = ARCHITECTURAL_DOCS.filter(doc => doc.category === 'Development');

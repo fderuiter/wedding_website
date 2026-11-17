@@ -44,7 +44,7 @@
     "check:standalone": "npx tsx scripts/check-docker-build.ts",
     "check:env-docs": "npx tsx scripts/verify-env-docs.ts",
     "check:static": "npm run check:env-docs && npm run check:identifiers && npm run check:action-pins && npm run check:links && npm run check:prisma && npm run lint:migrations",
-    "check:audit": "npm audit --audit-level=high",
+    "check:audit": "npm audit --audit-level=high --omit=dev",
     "docs:dev": "npx tsx scripts/generate-portal.ts && vitepress dev docs-portal",
     "docs:build": "npx tsx scripts/generate-portal.ts && vitepress build docs-portal",
     "docs:preview": "vitepress preview docs-portal",

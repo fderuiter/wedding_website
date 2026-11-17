@@ -2,6 +2,7 @@ import child_process from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +11,22 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PORT = process.env.TEST_PORT || '3001';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+
+async function getAvailableDbPort() {
+  if (process.env.DB_PORT) {
+    return parseInt(process.env.DB_PORT, 10);
+  }
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => {
+      resolve(5433);
+    });
+    server.once('listening', () => {
+      server.close(() => resolve(5432));
+    });
+    server.listen(5432, '127.0.0.1');
+  });
+}
 
 function request(urlPath) {
   return new Promise((resolve, reject) => {
@@ -78,6 +95,13 @@ async function main() {
     fs.cpSync(srcPublicDir, standalonePublicDir, { recursive: true });
   }
 
+  // Clean up any existing leftover containers before selecting ports
+  child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
+
+  const dbPort = await getAvailableDbPort();
+  process.env.DB_PORT = dbPort.toString();
+  console.log(`Using database port ${dbPort} for standalone smoke test...`);
+
   // Prepare environment for standalone server execution
   const env = {
     ...process.env,
@@ -85,7 +109,7 @@ async function main() {
     PORT: PORT,
     HOSTNAME: '127.0.0.1',
     ALLOWED_HOSTS: `127.0.0.1,localhost,127.0.0.1:${PORT}`,
-    DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding',
+    DATABASE_URL: process.env.DATABASE_URL || `postgresql://wedding:wedding123@localhost:${dbPort}/wedding`,
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
     GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
@@ -101,10 +125,20 @@ async function main() {
   if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
     console.log('Ensuring database is ready for standalone execution...');
     try {
-      child_process.spawnSync('docker', ['compose', 'up', '-d', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir });
+      child_process.spawnSync('docker', ['compose', 'up', '-d', 'db'], {
+        stdio: 'inherit',
+        shell: true,
+        cwd: rootDir,
+        env: { ...process.env, DB_PORT: dbPort.toString() }
+      });
       let dbReady = false;
       for (let i = 0; i < 30; i++) {
-        const check = child_process.spawnSync('docker', ['compose', 'exec', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir });
+        const check = child_process.spawnSync('docker', ['compose', 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], {
+          stdio: 'ignore',
+          shell: true,
+          cwd: rootDir,
+          env: { ...process.env, DB_PORT: dbPort.toString() }
+        });
         if (check.status === 0) {
           dbReady = true;
           break;
@@ -112,7 +146,14 @@ async function main() {
         await new Promise(r => setTimeout(r, 1000));
       }
       if (dbReady) {
-        child_process.spawnSync('npx', ['prisma', 'migrate', 'deploy'], { stdio: 'inherit', shell: true, cwd: rootDir, env: { ...process.env, DATABASE_URL: env.DATABASE_URL } });
+        child_process.spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+          stdio: 'inherit',
+          shell: true,
+          cwd: rootDir,
+          env: { ...process.env, DATABASE_URL: env.DATABASE_URL, DB_PORT: dbPort.toString() }
+        });
+      } else {
+        console.warn('⚠️ Database was not ready after 30 seconds.');
       }
     } catch (dbErr) {
       console.warn('⚠️ Database setup check warning:', dbErr.message);
@@ -226,7 +267,12 @@ async function main() {
     process.exitCode = 1;
   } finally {
     cleanup();
-    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
+    child_process.spawnSync('docker', ['compose', 'down', '-v'], {
+      stdio: 'ignore',
+      shell: true,
+      cwd: rootDir,
+      env: { ...process.env, DB_PORT: process.env.DB_PORT || '5432' }
+    });
     // Allow process exit
     setTimeout(() => {
       process.exit(process.exitCode || 0);

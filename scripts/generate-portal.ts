@@ -206,6 +206,30 @@ function escapeVueMustache(content: string): string {
   return parts.join('');
 }
 
+export function stagePortalDocs(): number {
+  let stagedCount = 0;
+
+  for (const doc of ARCHITECTURAL_DOCS) {
+    const srcPath = path.join(ROOT_DIR, doc.src);
+    const destPath = path.join(PORTAL_DIR, doc.dest);
+
+    if (!fs.existsSync(srcPath)) {
+      throw new Error(`Required architectural document missing at: ${srcPath}`);
+    }
+
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+
+    let content = fs.readFileSync(srcPath, 'utf8');
+    content = rewriteMarkdownLinks(content, doc.src);
+    content = escapeVueMustache(content);
+
+    fs.writeFileSync(destPath, content, 'utf8');
+    stagedCount++;
+  }
+
+  return stagedCount;
+}
+
 export async function generatePortal() {
   console.log('--- Step 1: Validating documentation cross-links ---');
   const linkCheckResult = checkDocLinks();
@@ -231,25 +255,7 @@ export async function generatePortal() {
   await generateOpenApiSpec();
 
   console.log(`\n--- Step 3: Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
-  let stagedCount = 0;
-
-  for (const doc of ARCHITECTURAL_DOCS) {
-    const srcPath = path.join(ROOT_DIR, doc.src);
-    const destPath = path.join(PORTAL_DIR, doc.dest);
-
-    if (!fs.existsSync(srcPath)) {
-      throw new Error(`Required architectural document missing at: ${srcPath}`);
-    }
-
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-
-    let content = fs.readFileSync(srcPath, 'utf8');
-    content = rewriteMarkdownLinks(content, doc.src);
-    content = escapeVueMustache(content);
-
-    fs.writeFileSync(destPath, content, 'utf8');
-    stagedCount++;
-  }
+  const stagedCount = stagePortalDocs();
 
   console.log(`✅ Successfully staged all ${stagedCount} architectural specifications into VitePress folders.`);
 
