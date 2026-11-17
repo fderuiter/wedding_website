@@ -19,8 +19,8 @@ function checkGitRepo() {
   }
 }
 
-if (!checkGitRepo()) {
-  console.log('Not inside a Git repository. Skipping Git hooks configuration.');
+if (process.env.CI || process.env.CONTINUOUS_INTEGRATION || !checkGitRepo()) {
+  console.log('CI environment or not inside a Git repository. Skipping Git hooks configuration.');
   process.exit(0);
 }
 
@@ -38,6 +38,6 @@ try {
     console.warn('Warning: .githooks/pre-commit not found.');
   }
 } catch (err) {
-  console.error('Failed to configure Git hooks:', err.message);
-  process.exit(1);
+  console.warn('Warning: Failed to configure Git hooks:', err.message);
+  process.exit(0);
 }
