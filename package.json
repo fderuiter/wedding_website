@@ -144,10 +144,13 @@
     "@storybook/nextjs": {
       "next": "$next"
     },
+    "image-size": "^2.1.0",
     "msw-storybook-addon": {
       "msw": "$msw"
     },
-    "vite": "^6.4.6"
+    "sharp": "$sharp",
+    "vite": "^6.4.6",
+    "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": "eslint --fix"
