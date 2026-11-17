@@ -70,4 +70,18 @@ describe('ThemedQRCode Component', () => {
     const canvas = screen.getByLabelText('Low contrast QR code');
     expect(canvas).toBeInTheDocument();
   });
+
+  it('handles invalid or non-hex color props gracefully by falling back to theme defaults', () => {
+    render(
+      <ThemedQRCode
+        value="https://venmo.com/u/testuser"
+        aria-label="Invalid color QR code"
+        fgColor="not-a-color"
+        bgColor="also-not-a-color"
+      />
+    );
+
+    const canvas = screen.getByLabelText('Invalid color QR code');
+    expect(canvas).toBeInTheDocument();
+  });
 });
