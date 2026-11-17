@@ -73,101 +73,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   } = payloadData;
 
   const normalizedPhone = phone ? phone.trim() : '';
-
-  // 4. Check for Existing InvitationCode Record (Deduplication)
   const normalizedEmail = email ? email.trim() : '';
   const normalizedGuestName = guestName ? guestName.trim() : '';
 
-  let existingRecord = null;
-
-  if (normalizedEmail) {
-    existingRecord = await prisma.invitationCode.findFirst({
-      where: {
-        email: {
-          equals: normalizedEmail,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  if (!existingRecord && normalizedGuestName) {
-    existingRecord = await prisma.invitationCode.findFirst({
-      where: {
-        guestName: {
-          equals: normalizedGuestName,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  if (existingRecord) {
-    const existingTags = Array.isArray(existingRecord.partyTags) ? existingRecord.partyTags : [];
-    const updatedPartyTags = existingTags.includes('address-collection')
-      ? existingTags
-      : [...existingTags, 'address-collection'];
-
-    const existingDietaryNotes = existingRecord.dietaryNotes ? existingRecord.dietaryNotes.trim() : '';
-    const newNotes = notes ? notes.trim() : '';
-    let updatedDietaryNotes: string | null = existingRecord.dietaryNotes;
-
-    if (existingDietaryNotes) {
-      if (newNotes && !existingDietaryNotes.includes(newNotes)) {
-        updatedDietaryNotes = `${existingRecord.dietaryNotes}\n${newNotes}`;
-      }
-    } else if (newNotes) {
-      updatedDietaryNotes = newNotes;
-    }
-
-    const existingExtra =
-      existingRecord.extraFields && typeof existingRecord.extraFields === 'object' && !Array.isArray(existingRecord.extraFields)
-        ? { ...(existingRecord.extraFields as Record<string, any>) }
-        : {};
-
-    const updateData: Record<string, any> = {
-      addressLine1: addressLine1 || null,
-      addressLine2: addressLine2 || null,
-      city: city || null,
-      state: state || null,
-      zipCode: zipCode || null,
-      country: country || null,
-      householdName: householdName || existingRecord.householdName,
-      email: normalizedEmail || existingRecord.email,
-      dietaryNotes: updatedDietaryNotes,
-      partyTags: updatedPartyTags,
-    };
-
-    if (normalizedPhone) {
-      updateData.extraFields = {
-        ...existingExtra,
-        phone: normalizedPhone,
-        mobile: normalizedPhone,
-      };
-    }
-
-    const updatedRecord = await prisma.invitationCode.update({
-      where: { id: existingRecord.id },
-      data: updateData as any,
-    });
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Address submitted successfully.',
-        data: {
-          id: updatedRecord.id,
-          guestName: updatedRecord.guestName,
-          partyTags: updatedRecord.partyTags,
-        },
-      },
-      { status: 200 }
-    );
-  }
-
-  // 5. Generate Unique Invitation Code
+  // 4. Generate Unique Invitation Code
   let uniqueCode = '';
   let attempts = 0;
   while (attempts < 10) {
@@ -189,7 +98,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
-  // 6. Create InvitationCode Record Tagged with 'address-collection'
+  // 5. Create InvitationCode Record Tagged with 'address-collection'
   const createData: Record<string, any> = {
     code: uniqueCode,
     guestName: normalizedGuestName,
