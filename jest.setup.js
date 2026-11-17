@@ -260,6 +260,15 @@ jest.mock('next/server', () => {
     static json = jest.fn((body, init) => {
       const responseCookies = new Map();
       const headers = new Headers();
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          init.headers.forEach((v, k) => headers.set(k, v));
+        } else if (typeof init.headers === 'object') {
+          Object.entries(init.headers).forEach(([k, v]) => {
+            headers.set(k, v);
+          });
+        }
+      }
 
       const cookies = {
         set: jest.fn((key, value, options) => {

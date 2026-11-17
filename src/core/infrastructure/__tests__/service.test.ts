@@ -34,6 +34,7 @@ describe('BaseService Enhancements', () => {
   beforeEach(() => {
     mockRepo = {
       findMany: jest.fn(),
+      count: jest.fn(async () => 42),
       reorder: jest.fn(),
       transaction: jest.fn(async (cb) => {
         const txRepo = {
@@ -384,6 +385,32 @@ describe('BaseService Enhancements', () => {
       // Passes both
       const valid = await extendedService.create({ name: 'Allowed', age: 25 });
       expect(valid).toEqual({ id: 'new-id', name: 'Allowed', age: 25 });
+    });
+  });
+
+  describe('count logic', () => {
+    it('delegates to repo.count without defaultQueryArgs', async () => {
+      const basicService = new BaseService(mockRepo, 'TestEntity');
+      const count = await basicService.count({ where: { isSample: false } });
+      expect(count).toBe(42);
+      expect(mockRepo.count).toHaveBeenCalledWith({ where: { isSample: false } });
+    });
+
+    it('merges defaultQueryArgs where clause with query args where clause', async () => {
+      class ServiceWithWhere extends BaseService<any> {
+        protected defaultQueryArgs = {
+          where: { isDeleted: false },
+        };
+      }
+      const customService = new ServiceWithWhere(mockRepo, 'CustomEntity');
+      const count = await customService.count({ where: { status: 'active' } });
+      expect(count).toBe(42);
+      expect(mockRepo.count).toHaveBeenCalledWith({
+        where: {
+          isDeleted: false,
+          status: 'active',
+        },
+      });
     });
   });
 });

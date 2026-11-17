@@ -39,6 +39,10 @@ export class BaseRepository<T extends { id: string }> {
     return this.model.findMany(args);
   }
 
+  async count(args?: any): Promise<number> {
+    return this.model.count(args);
+  }
+
   async findUnique(id: string): Promise<T | null> {
     return this.model.findUnique({ where: { id } });
   }
