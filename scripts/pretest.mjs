@@ -162,6 +162,9 @@ async function main() {
     // Run Prisma Client generation after db push so it is aligned with the active schema
     console.log('Generating Prisma Client...');
     runCommand('npm', ['run', 'prisma:generate']);
+
+    console.log('Staging documentation portal...');
+    runCommand('npx', ['tsx', 'scripts/generate-portal.ts']);
   } else {
     console.log('Running full build...');
     runCommand('npm', ['run', 'build']);

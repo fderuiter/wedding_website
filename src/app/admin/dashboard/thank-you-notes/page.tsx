@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
@@ -12,6 +12,7 @@ import {
   THANK_YOU_TEMPLATES,
   substituteThankYouTemplateTokens,
 } from '@/features/registry';
+import { useOverlay } from '@/hooks/useOverlay';
 
 export interface ThankYouContributorItem {
   id: string;
@@ -96,6 +97,44 @@ export default function ThankYouNotesPage() {
   };
 
   const [isLabelDropdownOpen, setIsLabelDropdownOpen] = useState(false);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
+  const labelMenuButtonId = useId();
+
+  const { overlayRef } = useOverlay(isLabelDropdownOpen, () => {
+    setIsLabelDropdownOpen(false);
+    exportTriggerRef.current?.focus();
+  });
+
+  const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isLabelDropdownOpen) {
+        setIsLabelDropdownOpen(true);
+      }
+    }
+  };
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]');
+      if (!buttons || buttons.length === 0) return;
+      const index = Array.from(buttons).indexOf(document.activeElement as Element);
+      let nextIndex = 0;
+      if (e.key === 'Home') {
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        nextIndex = buttons.length - 1;
+      } else if (e.key === 'ArrowDown') {
+        nextIndex = index + 1 < buttons.length ? index + 1 : 0;
+      } else if (e.key === 'ArrowUp') {
+        nextIndex = index - 1 >= 0 ? index - 1 : buttons.length - 1;
+      }
+      if (buttons[nextIndex]) {
+        (buttons[nextIndex] as HTMLElement).focus();
+      }
+    }
+  };
 
   const handleExportCsv = () => {
     const params = new URLSearchParams();
@@ -118,6 +157,7 @@ export default function ThankYouNotesPage() {
 
   const handleExportLabels = (template: 'avery_5160' | 'avery_5163') => {
     setIsLabelDropdownOpen(false);
+    exportTriggerRef.current?.focus();
     const params = new URLSearchParams();
     params.set('template', template);
     if (statusFilter !== 'All') {
@@ -370,27 +410,42 @@ export default function ThankYouNotesPage() {
           </Button>
           <div className="relative inline-block text-left">
             <Button
+              ref={exportTriggerRef}
+              id={labelMenuButtonId}
+              type="button"
               variant="secondary"
               onClick={() => setIsLabelDropdownOpen((prev) => !prev)}
+              onKeyDown={handleTriggerKeyDown}
               aria-expanded={isLabelDropdownOpen}
               aria-haspopup="true"
+              aria-controls="export-labels-menu"
             >
               Export Address Labels ▾
             </Button>
             {isLabelDropdownOpen && (
-              <div className="origin-top-right absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 border border-gray-200 dark:border-gray-700 py-1">
+              <div
+                id="export-labels-menu"
+                ref={overlayRef}
+                role="menu"
+                aria-labelledby={labelMenuButtonId}
+                className="origin-top-right absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 border border-gray-200 dark:border-gray-700 py-1"
+              >
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={() => handleExportLabels('avery_5160')}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex flex-col"
+                  onKeyDown={handleMenuKeyDown}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700 flex flex-col"
                 >
                   <span className="font-semibold">Avery 5160 PDF</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">Standard Address Labels (30/sheet)</span>
                 </button>
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={() => handleExportLabels('avery_5163')}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex flex-col"
+                  onKeyDown={handleMenuKeyDown}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700 flex flex-col"
                 >
                   <span className="font-semibold">Avery 5163 PDF</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">Large Shipping Labels (10/sheet)</span>
