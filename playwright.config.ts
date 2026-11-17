@@ -5,13 +5,19 @@ const runWebServer = !process.env.TEST_CONTAINER;
 const defaultChromePath = '/usr/bin/google-chrome';
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (fs.existsSync(defaultChromePath) ? defaultChromePath : undefined);
 
+if (!process.env.GUEST_SESSION_SECRET) {
+  process.env.GUEST_SESSION_SECRET = process.env.TEST_CONTAINER
+    ? 'test-container-guest-session-secret-32chars'
+    : 'playwright-e2e-session-secret-32-chars-min';
+}
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
-    command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
+    command: (process.env.CI || fs.existsSync('.next/standalone/server.js')) ? 'node .next/standalone/server.js' : 'npm run dev',
     url: 'http://127.0.0.1:3000/api/ready',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

@@ -17,7 +17,11 @@ function generateAdminCookieValue() {
 }
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const secret =
+    process.env.GUEST_SESSION_SECRET ||
+    (process.env.TEST_CONTAINER
+      ? 'test-container-guest-session-secret-32chars'
+      : 'playwright-e2e-session-secret-32-chars-min');
   const payload = {
     guest: true,
     iat: Date.now(),
