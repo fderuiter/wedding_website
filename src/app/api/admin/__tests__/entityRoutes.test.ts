@@ -26,7 +26,7 @@ describe('Dynamic Administration Entity API Routes', () => {
     // Default mock service implementation
     mockService = {
       findMany: jest.fn(),
-      count: jest.fn().mockResolvedValue(2),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn(),
       reorder: jest.fn(),
       findById: jest.fn(),
@@ -89,6 +89,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       test('returns collection with default ordering (createdAt desc)', async () => {
         const mockRecords = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
         mockService.findMany.mockResolvedValue(mockRecords);
+        mockService.count.mockResolvedValue(2);
 
         const req = new NextRequest('http://localhost/api/admin/attractions');
         const res = await GET(req, { params: Promise.resolve({ entity: 'attractions' }) });
