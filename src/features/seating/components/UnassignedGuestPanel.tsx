@@ -3,17 +3,9 @@
 import React, { useState, useMemo } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
-import { useToast } from '@/components/ui/ToastProvider';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
-
-function useOptionalToast() {
-  try {
-    return useToast();
-  } catch {
-    return null;
-  }
-}
 
 interface UnassignedGuestPanelProps {
   unassignedGuests: InvitationCodeDTO[];

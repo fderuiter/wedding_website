@@ -1,16 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useToast } from '@/components/ui/ToastProvider';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { RegistryItem } from '../types';
-
-const useOptionalToast = () => {
-  try {
-    return useToast();
-  } catch {
-    return null;
-  }
-};
 
 export interface UseShareItemReturn {
   handleShare: (e?: { stopPropagation?: () => void; preventDefault?: () => void }) => Promise<void>;

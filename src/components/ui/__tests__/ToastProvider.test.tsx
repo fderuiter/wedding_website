@@ -1,5 +1,5 @@
-import { render, screen, act, fireEvent } from '@testing-library/react';
-import { ToastProvider, useToast } from '../ToastProvider';
+import { render, screen, act, fireEvent, renderHook } from '@testing-library/react';
+import { ToastProvider, useToast, useOptionalToast } from '../ToastProvider';
 
 const TestComponent = () => {
   const { addToast } = useToast();
@@ -278,5 +278,61 @@ describe('ToastProvider', () => {
       jest.advanceTimersByTime(5000);
     });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  describe('useOptionalToast', () => {
+    test('returns null cleanly without throwing when rendered outside ToastProvider', () => {
+      const { result } = renderHook(() => useOptionalToast());
+      expect(result.current).toBeNull();
+
+      const OutsideComponent = () => {
+        const toast = useOptionalToast();
+        return <div data-testid="toast-status">{toast === null ? 'null' : 'defined'}</div>;
+      };
+
+      expect(() => {
+        render(<OutsideComponent />);
+      }).not.toThrow();
+
+      expect(screen.getByTestId('toast-status')).toHaveTextContent('null');
+    });
+
+    test('returns active toast context with all helper methods when rendered inside ToastProvider', () => {
+      const { result } = renderHook(() => useOptionalToast(), {
+        wrapper: ToastProvider,
+      });
+
+      expect(result.current).not.toBeNull();
+      expect(typeof result.current?.addToast).toBe('function');
+      expect(typeof result.current?.removeToast).toBe('function');
+      expect(typeof result.current?.confirm).toBe('function');
+      expect(Array.isArray(result.current?.toasts)).toBe(true);
+    });
+
+    test('allows dispatching toasts through useOptionalToast context inside ToastProvider', () => {
+      const InsideComponent = () => {
+        const toast = useOptionalToast();
+        return (
+          <div>
+            <div data-testid="toast-status">{toast ? 'available' : 'null'}</div>
+            {toast && (
+              <button onClick={() => toast.addToast('Optional toast works', 'info')}>
+                Dispatch Optional Toast
+              </button>
+            )}
+          </div>
+        );
+      };
+
+      render(
+        <ToastProvider>
+          <InsideComponent />
+        </ToastProvider>
+      );
+
+      expect(screen.getByTestId('toast-status')).toHaveTextContent('available');
+      fireEvent.click(screen.getByText('Dispatch Optional Toast'));
+      expect(screen.getByRole('status')).toHaveTextContent('Optional toast works');
+    });
   });
 });

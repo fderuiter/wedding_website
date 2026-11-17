@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/apiClient';
-import { useToast } from '@/components/ui/ToastProvider';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
 
 export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
@@ -45,14 +45,6 @@ const defaultContextValue: GuestSessionContextType = {
 };
 
 export const GuestSessionContext = createContext<GuestSessionContextType>(defaultContextValue);
-
-function useOptionalToast() {
-  try {
-    return useToast();
-  } catch {
-    return null;
-  }
-}
 
 export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const toast = useOptionalToast();
