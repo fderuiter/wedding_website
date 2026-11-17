@@ -46,6 +46,23 @@ export class BaseService<T extends { id: string }> {
     return this.repo.findMany(merged);
   }
 
+  async count(args?: any): Promise<number> {
+    if (!this.defaultQueryArgs) {
+      return this.repo.count(args);
+    }
+
+    const merged = { ...args };
+
+    if (this.defaultQueryArgs.where) {
+      merged.where = {
+        ...this.defaultQueryArgs.where,
+        ...(args?.where || {}),
+      };
+    }
+
+    return this.repo.count(merged);
+  }
+
   async findById(id: string): Promise<T | null> {
     return this.repo.findUnique(id);
   }
