@@ -45,7 +45,7 @@ Configure environment variables in a `.env` file on the VPS or pass them directl
 | `MULTISITE_ENABLED` | No | `false` | Enable multi-tenant/multi-profile configuration and subdomain routing. |
 | `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
 | `GUEST_PASSCODE` | No | `wedding2026` | Passcode required for guest website access. |
-| `GUEST_SESSION_SECRET` | No | `default-guest-session-secret` | Dedicated server secret for guest invitation session signing. |
+| `GUEST_SESSION_SECRET` | Yes | — | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | `50` | Maximum history versions to retain per content entry. |
 | `CRON_SECRET` | No | — | Secret authorization key for background cron triggers (e.g., `/api/cron/broadcasts`). |
 | `S3_BUCKET` | No | — | Bucket name for S3 / Cloudflare R2 asset storage. |

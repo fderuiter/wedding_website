@@ -71,7 +71,7 @@ The application requires the following environment variables. These match the ru
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website. *Required.*
   - **Security Requirement**: Must be explicitly defined in production environment settings. Never rely on default passcodes.
 - `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). *Required.*
-  - **Security Requirement**: Must be explicitly defined in production environment settings and kept strictly confidential on the server. Never use the value of `GUEST_PASSCODE` or disclose it to attendees.
+  - **Security Requirement**: Must be explicitly defined in production environment settings with a minimum length of 32 characters and kept strictly confidential on the server. Default fallbacks are rejected at production boot. Never use the value of `GUEST_PASSCODE` or disclose it to attendees.
 - `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
 - `CRON_SECRET`: Secret authorization token for background cron job triggers (e.g., `/api/cron/broadcasts`). *Optional (recommended).*
 - `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*
@@ -452,7 +452,7 @@ The application requires the following environment variables in deployment envir
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
 - `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh` (default: `false`). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access (default: `wedding2026`).
-- `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (default: `default-guest-session-secret`).
+- `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (min 32 characters, distinct from `GUEST_PASSCODE`; default: `default-guest-session-secret` in dev/test only). *Required in production.*
 - `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
 - `CRON_SECRET`: Authorization secret for cron worker endpoints. *Optional.*
 - `S3_BUCKET`: Asset storage bucket name. *Optional.*
