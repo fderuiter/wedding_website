@@ -37,7 +37,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
     if (!isStaticExport) {
       try {
-        const { headers } = require('next/headers');
+        const { headers } = await import('next/headers');
         const headersList = await headers();
         const host = headersList.get('host');
         const proto = headersList.get('x-forwarded-proto');

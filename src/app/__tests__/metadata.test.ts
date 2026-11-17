@@ -1,5 +1,12 @@
 import { generateMetadata, generateViewport } from '../metadata';
 
+const mockHeaders = jest.fn().mockImplementation(() => {
+  throw new Error('Headers not available');
+});
+
+jest.mock('next/headers', () => ({
+  headers: () => mockHeaders(),
+}));
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
@@ -52,6 +59,26 @@ describe('generateMetadata', () => {
       images: ['https://testsite.com/api/og'],
     });
     expect(metadata.metadataBase?.href).toBe('https://testsite.com/');
+  });
+
+  it('resolves canonical URL using host and proto headers when available', async () => {
+    const originalAllowedHosts = process.env.ALLOWED_HOSTS;
+    process.env.ALLOWED_HOSTS = 'canonical.example.com';
+    try {
+      mockHeaders.mockResolvedValueOnce({
+        get: (header: string) => {
+          if (header === 'host') return 'canonical.example.com';
+          if (header === 'x-forwarded-proto') return 'https';
+          return null;
+        },
+      });
+
+      const metadata = await generateMetadata();
+      expect(metadata.openGraph?.url).toBe('https://canonical.example.com');
+      expect(metadata.metadataBase?.href).toBe('https://canonical.example.com/');
+    } finally {
+      process.env.ALLOWED_HOSTS = originalAllowedHosts;
+    }
   });
 });
 
