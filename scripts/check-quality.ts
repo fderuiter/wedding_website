@@ -1,8 +1,22 @@
 import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
 interface Step {
   name: string;
   command: string;
+  remediation?: string;
+}
+
+function cleanupPortalTempDirs(): void {
+  const tempDir = path.join(process.cwd(), 'docs-portal', '.vitepress', '.temp');
+  if (fs.existsSync(tempDir)) {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
 }
 
 const steps: Step[] = [
@@ -15,6 +29,16 @@ const steps: Step[] = [
   { name: 'ESLint Code Linting', command: 'npm run lint' },
   { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },
   { name: 'Verify Migration Compatibility', command: 'npm run lint:migrations' },
+  {
+    name: 'Verify Documentation Synchronization',
+    command: 'npm run check:doc-sync',
+    remediation: 'Documentation drift detected or generation failed.\nRun "npx tsx scripts/generate-openapi.ts" and "npx tsx scripts/generate-docs.ts" to regenerate documentation, then commit changes to "public/openapi.json" and "ARCHITECTURE.md".',
+  },
+  {
+    name: 'Build Static Documentation Portal',
+    command: 'npm run docs:build',
+    remediation: 'VitePress documentation portal compilation failed.\nRun "npm run docs:build" (or "npm run docs:dev") locally to inspect VitePress build errors, check for markdown/vue syntax issues, or broken documentation links.',
+  },
   { name: 'Unit & Integration Tests', command: 'npm test' },
 ];
 
@@ -32,14 +56,19 @@ function main() {
       console.log(`[${i + 1}/${total}] ✅ ${step.name} passed!\n`);
       passed++;
     } catch (error: any) {
+      if (step.command.includes('docs:build')) {
+        cleanupPortalTempDirs();
+      }
       console.error(`\n❌ [${i + 1}/${total}] ${step.name} FAILED!`);
       console.error(`\nCommand: "${step.command}"\n`);
+      const remediationText = step.remediation
+        ? `The quality check step "${step.name}" failed.\n\n${step.remediation}\n\nAlternatively, run '${step.command}' locally to view full details.`
+        : `The quality check step "${step.name}" failed.\nRun '${step.command}' locally to view full details and fix any issues before pushing.`;
       console.error(`
 ================================================================================
 ACTIONABLE REMEDIATION:
 --------------------------------------------------------------------------------
-The quality check step "${step.name}" failed.
-Run '${step.command}' locally to view full details and fix any issues before pushing.
+${remediationText}
 ================================================================================
 `);
       process.exit(1);
