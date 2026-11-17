@@ -49,7 +49,7 @@ async function getSecret(): Promise<string> {
   return env.ADMIN_PASSWORD;
 }
 
-interface AdminTokenPayload {
+export interface AdminTokenPayload {
   isAdmin: boolean;
   iat?: number;
   exp?: number;
@@ -76,27 +76,46 @@ export async function signAdminToken(payload: AdminTokenPayload): Promise<string
  * Validate a base64url-signed admin token and return its decoded payload.
  *
  * @param token - Signed token in the form `base64url(payload).base64url(hmac)` 
- * @returns The parsed `AdminTokenPayload` if the token is valid and the signature matches, `null` otherwise.
+ * @returns The parsed `AdminTokenPayload` if the token is valid, matches HMAC signature, and is not expired; `null` otherwise.
  */
-async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
+export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;
 
-  const secret = await getSecret();
-  if (!secret) return null;
-  const expectedSignature = await hmacSha256(secret, data);
-
-  const signatureBuffer = base64urlDecodeToBytes(signature);
-  const expectedSignatureBuffer = base64urlDecodeToBytes(expectedSignature);
-
-  // Prevent timing attacks using timingSafeEqualJS
-  if (!timingSafeEqualJS(signatureBuffer, expectedSignatureBuffer)) {
-    return null;
-  }
-
   try {
-    return JSON.parse(base64urlDecode(data)) as AdminTokenPayload;
+    const secret = await getSecret();
+    if (!secret) return null;
+    const expectedSignature = await hmacSha256(secret, data);
+
+    const signatureBuffer = base64urlDecodeToBytes(signature);
+    const expectedSignatureBuffer = base64urlDecodeToBytes(expectedSignature);
+
+    // Prevent timing attacks using timingSafeEqualJS
+    if (!timingSafeEqualJS(signatureBuffer, expectedSignatureBuffer)) {
+      return null;
+    }
+
+    const payload = JSON.parse(base64urlDecode(data)) as AdminTokenPayload;
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    // Enforce expiration
+    const now = Date.now();
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+
+    // Fallback for older tokens without 'exp', expire after 8 hours from 'iat'
+    if (!payload.exp && payload.iat) {
+      const defaultExp = payload.iat + 60 * 60 * 8 * 1000;
+      if (defaultExp < now) {
+        return null;
+      }
+    }
+
+    return payload;
   } catch {
     return null;
   }
@@ -132,20 +151,6 @@ export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
 
   if (!payload || payload.isAdmin !== true) {
     return false;
-  }
-
-  // Enforce expiration
-  const now = Date.now();
-  if (payload.exp && payload.exp < now) {
-    return false;
-  }
-
-  // Fallback for older tokens without 'exp', expire after 8 hours from 'iat'
-  if (!payload.exp && payload.iat) {
-    const defaultExp = payload.iat + 60 * 60 * 8 * 1000;
-    if (defaultExp < now) {
-      return false;
-    }
   }
 
   return true;

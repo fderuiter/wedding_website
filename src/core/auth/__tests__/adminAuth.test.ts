@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { ADMIN_COOKIE, getAdminCookieOptions, isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import {
+  ADMIN_COOKIE,
+  getAdminCookieOptions,
+  isAdminRequest,
+  setAdminAuthCookie,
+  signAdminToken,
+  verifyAdminToken,
+} from '@/core/auth/auth.server';
 
 describe('admin authentication helpers', () => {
   const previousAdminPassword = process.env.ADMIN_PASSWORD;
@@ -120,6 +127,38 @@ describe('admin authentication helpers', () => {
         },
       } as unknown as NextRequest;
       await expect(isAdminRequest(req)).resolves.toBe(false);
+    });
+  });
+
+  describe('verifyAdminToken', () => {
+    it('returns the payload when the token is valid and signature matches', async () => {
+      const token = await signAdminToken({ isAdmin: true, iat: Date.now() });
+      const payload = await verifyAdminToken(token);
+      expect(payload).not.toBeNull();
+      expect(payload?.isAdmin).toBe(true);
+    });
+
+    it('returns null when token is invalid or malformed', async () => {
+      expect(await verifyAdminToken('')).toBeNull();
+      expect(await verifyAdminToken('invalid-token')).toBeNull();
+      expect(await verifyAdminToken('invalid.token.structure')).toBeNull();
+      expect(await verifyAdminToken('eyJhbGciOiJIUzI1NiJ9.invalidSig')).toBeNull();
+    });
+
+    it('returns null when token is expired via exp claim', async () => {
+      const expiredToken = await signAdminToken({
+        isAdmin: true,
+        exp: Date.now() - 5000,
+      });
+      expect(await verifyAdminToken(expiredToken)).toBeNull();
+    });
+
+    it('returns null when token without exp has expired past 8 hours via iat', async () => {
+      const expiredIatToken = await signAdminToken({
+        isAdmin: true,
+        iat: Date.now() - (9 * 60 * 60 * 1000),
+      });
+      expect(await verifyAdminToken(expiredIatToken)).toBeNull();
     });
   });
 });
