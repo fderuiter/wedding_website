@@ -211,6 +211,174 @@ describe('ThankYouNotesPage', () => {
     removeChildSpy.mockRestore();
   });
 
+  it('has accessible ARIA attributes and roles for export address labels dropdown', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'true');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveAttribute('aria-controls', 'export-labels-menu');
+    const triggerId = trigger.getAttribute('id');
+    expect(triggerId).toBeTruthy();
+
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu');
+    expect(menu).toBeInTheDocument();
+    expect(menu).toHaveAttribute('id', 'export-labels-menu');
+    expect(menu).toHaveAttribute('aria-labelledby', triggerId);
+
+    const menuItems = within(menu).getAllByRole('menuitem');
+    expect(menuItems).toHaveLength(2);
+    expect(menuItems[0]).toHaveTextContent(/Avery 5160 PDF/);
+    expect(menuItems[1]).toHaveTextContent(/Avery 5163 PDF/);
+  });
+
+  it('closes export address labels dropdown on Escape and returns focus to trigger', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes export address labels dropdown on outside click and returns focus to trigger', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('opens export address labels dropdown with ArrowDown or ArrowUp on trigger button', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('supports arrow key and Home/End navigation between menu items', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    fireEvent.click(trigger);
+
+    const menu = screen.getByRole('menu');
+    const menuItems = within(menu).getAllByRole('menuitem');
+    const firstItem = menuItems[0];
+    const secondItem = menuItems[1];
+
+    firstItem.focus();
+    expect(document.activeElement).toBe(firstItem);
+
+    // ArrowDown moves from first to second
+    fireEvent.keyDown(firstItem, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(secondItem);
+
+    // ArrowDown wraps from second to first
+    fireEvent.keyDown(secondItem, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(firstItem);
+
+    // ArrowUp wraps from first to second
+    fireEvent.keyDown(firstItem, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(secondItem);
+
+    // ArrowUp moves from second to first
+    fireEvent.keyDown(secondItem, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(firstItem);
+
+    // End key moves to last item
+    fireEvent.keyDown(firstItem, { key: 'End' });
+    expect(document.activeElement).toBe(secondItem);
+
+    // Home key moves to first item
+    fireEvent.keyDown(secondItem, { key: 'Home' });
+    expect(document.activeElement).toBe(firstItem);
+  });
+
+  it('restores focus to trigger button when an export option is selected', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    fireEvent.click(trigger);
+
+    const averyOption = screen.getByRole('menuitem', { name: /Avery 5160 PDF/i });
+    const appendChildSpy = jest.spyOn(document.body, 'appendChild');
+    const removeChildSpy = jest.spyOn(document.body, 'removeChild');
+
+    fireEvent.click(averyOption);
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+
+    appendChildSpy.mockRestore();
+    removeChildSpy.mockRestore();
+  });
+
   it('renders pagination controls and triggers page navigation when clicked', async () => {
     (global.fetch as jest.Mock).mockImplementation((url: string) => {
       if (url.includes('/api/admin/thank-you-notes')) {
