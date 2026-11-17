@@ -5,6 +5,7 @@ import { middleware } from '@/middleware';
 import { signGuestToken, isGuestRequest, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { env } from '@/env';
+import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
 
 // Mock next/server completely for clean isolated Jest execution
 jest.mock('next/server', () => {
@@ -151,6 +152,44 @@ describe('Edge-enforced Guest Passcode Gate', () => {
 
       expect(verified).toBe(false);
     });
+
+    it('rejects tokens signed with the shared guest passcode', async () => {
+      const payload = {
+        guest: true,
+        iat: Date.now(),
+        exp: Date.now() + 1000 * 60 * 60,
+      };
+      const data = base64urlEncode(JSON.stringify(payload));
+      const forgedSignature = await hmacSha256(env.GUEST_PASSCODE, data);
+      const forgedToken = `${data}.${forgedSignature}`;
+
+      const verified = await isGuestRequest({
+        cookies: {
+          get: () => ({ value: forgedToken }),
+        },
+        headers: new Headers(),
+      } as any);
+
+      expect(verified).toBe(false);
+    });
+
+    it('throws an error if GUEST_SESSION_SECRET is configured to match GUEST_PASSCODE', async () => {
+      const originalSecret = process.env.GUEST_SESSION_SECRET;
+      try {
+        process.env.GUEST_SESSION_SECRET = env.GUEST_PASSCODE;
+        await expect(
+          signGuestToken({
+            guest: true,
+          })
+        ).rejects.toThrow('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
+      } finally {
+        if (originalSecret !== undefined) {
+          process.env.GUEST_SESSION_SECRET = originalSecret;
+        } else {
+          delete process.env.GUEST_SESSION_SECRET;
+        }
+      }
+    });
   });
 
   describe('Guest Login API Route (POST /api/guest/login)', () => {
@@ -257,6 +296,23 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       const res = await middleware(req);
       expect(res.status).toBe(200);
       expect(res.headers.get('location')).toBeNull();
+    });
+
+    it('rejects forged token signed with passcode in middleware and redirects to /guest/login', async () => {
+      const payload = { guest: true, exp: Date.now() + 1000 * 60 * 60 };
+      const data = base64urlEncode(JSON.stringify(payload));
+      const forgedSignature = await hmacSha256(env.GUEST_PASSCODE, data);
+      const forgedToken = `${data}.${forgedSignature}`;
+
+      const req = new NextRequest('http://localhost/', {
+        cookies: {
+          [GUEST_COOKIE]: forgedToken,
+        },
+      });
+
+      const res = await middleware(req);
+      expect(res.status).toBe(303);
+      expect(res.headers.get('location')).toContain('/guest/login');
     });
 
     it('allows access for authenticated admin session even without guest session', async () => {
