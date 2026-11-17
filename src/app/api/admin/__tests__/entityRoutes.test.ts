@@ -89,6 +89,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       test('returns collection with default ordering (createdAt desc)', async () => {
         const mockRecords = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
         mockService.findMany.mockResolvedValue(mockRecords);
+        mockService.count.mockResolvedValue(2);
 
         const req = new NextRequest('http://localhost/api/admin/attractions');
         const res = await GET(req, { params: Promise.resolve({ entity: 'attractions' }) });
