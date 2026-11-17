@@ -79,7 +79,7 @@ jobs:
           fi
 
       - name: Report Documentation Drift
-        if: always() && github.event_name == 'pull_request' && steps.verify-docs.outcome != 'skipped'
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.verify-docs.outcome != 'skipped'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -133,6 +133,40 @@ jobs:
             } catch (err) {
               console.warn('Failed to report documentation drift via GitHub API:', err);
             }
+
+      - name: Write Documentation Drift Report to Job Summary
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          if [ "${{ steps.verify-docs.outcome }}" = "failure" ]; then
+            if [ -f "drift_files.txt" ]; then
+              {
+                echo "### ⚠️ Documentation Drift Detected"
+                echo ""
+                echo "The committed documentation files do not match the current codebase. The following files are out of sync:"
+                echo ""
+                while IFS= read -r file || [ -n "$file" ]; do
+                  [ -z "$file" ] && continue
+                  echo "- \`$file\`"
+                done < drift_files.txt
+                echo ""
+                echo "**To resolve this locally, run the following commands and commit the changes:**"
+                echo ""
+                echo '```bash'
+                echo "npx tsx scripts/generate-openapi.ts"
+                echo "npx tsx scripts/generate-docs.ts"
+                files_to_add=$(tr '\n' ' ' < drift_files.txt | xargs)
+                echo "git add $files_to_add"
+                echo 'git commit -m "docs: sync documentation with codebase"'
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "### ⚠️ Documentation Generation Failed"
+                echo ""
+                echo "The documentation generation scripts failed to execute. Please check the workflow logs for details on missing schemas or syntax errors."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
 
       - name: Build static documentation portal
         run: npm run docs:build

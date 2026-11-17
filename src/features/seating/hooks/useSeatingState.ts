@@ -376,8 +376,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const tablesData = await tablesRes.json();
       const guestsData = await guestsRes.json();
 
-      const rawTables = Array.isArray(tablesData) ? tablesData : [];
-      const rawGuests = Array.isArray(guestsData) ? guestsData : [];
+      const rawTables = Array.isArray(tablesData) ? tablesData : (Array.isArray(tablesData?.data) ? tablesData.data : []);
+      const rawGuests = Array.isArray(guestsData) ? guestsData : (Array.isArray(guestsData?.data) ? guestsData.data : []);
 
       dispatch({
         type: 'INIT_DATA',

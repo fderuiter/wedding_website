@@ -14,6 +14,7 @@ export interface DialogProps {
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
   className?: string;
+  contentClassName?: string;
   style?: React.CSSProperties;
 }
 
@@ -29,6 +30,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       'aria-labelledby': ariaLabelledby,
       'aria-describedby': ariaDescribedby,
       className,
+      contentClassName,
       style,
     },
     ref
@@ -85,7 +87,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
               {description}
             </div>
           )}
-          <div className="px-6 py-4">{children}</div>
+          <div className={contentClassName ?? 'px-6 py-4'}>{children}</div>
         </div>
       </Overlay>
     );
