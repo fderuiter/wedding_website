@@ -9,19 +9,39 @@ import {
   generateOpenApiSpec,
 } from './generate-docs.ts';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const ROOT_DIR = path.resolve(__dirname, '..');
+const scriptDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = path.resolve(scriptDir, '..');
 const PORTAL_DIR = path.join(ROOT_DIR, 'docs-portal');
 
 export interface DocMapping {
   src: string;
   dest: string;
-  category: 'Architecture' | 'Deployment' | 'Features' | 'Security' | 'Guides';
+  category: 'Architecture' | 'Deployment' | 'Features' | 'Security' | 'Guides' | 'Development';
   title: string;
 }
 
 export const ARCHITECTURAL_DOCS: DocMapping[] = [
+  // Development
+  {
+    src: 'docs/developer-setup.md',
+    dest: 'development/developer-setup.md',
+    category: 'Development',
+    title: 'Local Environment Setup',
+  },
+  {
+    src: '.github/TESTING.md',
+    dest: 'development/testing.md',
+    category: 'Development',
+    title: 'Testing Strategy',
+  },
+  {
+    src: '.github/CONTRIBUTING.md',
+    dest: 'development/contributing.md',
+    category: 'Development',
+    title: 'Contribution Guidelines',
+  },
   // Architecture
   {
     src: 'ARCHITECTURE.md',
@@ -158,7 +178,7 @@ function rewriteMarkdownLinks(content: string, srcRelPath: string): string {
     const resolvedFile = path.resolve(srcDir, pathPart);
     const resolvedRel = path.relative(ROOT_DIR, resolvedFile).replace(/\\/g, '/');
 
-    // If it points to one of our 16 architectural documents
+    // If it points to one of our mapped architectural/portal documents
     if (DOC_LOOKUP.has(resolvedRel)) {
       const targetDoc = DOC_LOOKUP.get(resolvedRel)!;
       const vitepressRoute = '/' + targetDoc.dest.replace(/\.md$/, '');
@@ -210,7 +230,7 @@ export async function generatePortal() {
   updateArchitectureMd();
   await generateOpenApiSpec();
 
-  console.log('\n--- Step 3: Staging 16 architectural specifications into docs-portal ---');
+  console.log(`\n--- Step 3: Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
   let stagedCount = 0;
 
   for (const doc of ARCHITECTURAL_DOCS) {

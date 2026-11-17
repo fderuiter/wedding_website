@@ -11,6 +11,7 @@ export default withMermaid(
       nav: [
         { text: 'Architecture', link: '/architecture/architecture' },
         { text: 'Deployment', link: '/deployment/deployment' },
+        { text: 'Development', link: '/development/developer-setup' },
         { text: 'Features', link: '/features/feature-modules' },
         { text: 'Security', link: '/security/security' },
         { text: 'Guides', link: '/guides/upgrading' },
@@ -35,6 +36,15 @@ export default withMermaid(
             { text: 'Google Cloud Run', link: '/deployment/gcp-cloud-run' },
             { text: 'Railway & Render', link: '/deployment/railway-render' },
             { text: 'Vercel', link: '/deployment/vercel' }
+          ]
+        },
+        {
+          text: 'Development',
+          collapsed: false,
+          items: [
+            { text: 'Local Environment Setup', link: '/development/developer-setup' },
+            { text: 'Testing Strategy', link: '/development/testing' },
+            { text: 'Contribution Guidelines', link: '/development/contributing' }
           ]
         },
         {

@@ -20,6 +20,9 @@ features:
   - title: Multi-Target Deployment
     details: Tier-1 production deployment recipes for Docker VPS, Google Cloud Run, Vercel, and PaaS targets.
     link: /deployment/deployment
+  - title: Developer Onboarding
+    details: Complete local setup guide, isolated test database workflows, testing architecture, and pull request contribution runbooks.
+    link: /development/developer-setup
   - title: Security & Threat Modeling
     details: Defense-in-depth security model, authentication guards, trust boundaries, and vulnerability management.
     link: /security/security
