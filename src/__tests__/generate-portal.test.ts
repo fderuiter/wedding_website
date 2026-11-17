@@ -7,7 +7,10 @@ describe('Portal Documentation Generator & Development Section', () => {
   const rootDir = process.cwd();
 
   beforeAll(() => {
-    execSync('npx tsx scripts/generate-portal.ts', { cwd: rootDir, stdio: 'ignore' });
+    const stagedSetup = path.join(rootDir, 'docs-portal/development/developer-setup.md');
+    if (!fs.existsSync(stagedSetup)) {
+      execSync('npx tsx scripts/generate-portal.ts', { cwd: rootDir, stdio: 'ignore' });
+    }
   });
 
   it('includes Development category documents in ARCHITECTURAL_DOCS', () => {

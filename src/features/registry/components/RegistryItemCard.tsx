@@ -40,12 +40,13 @@ interface RegistryItemCardProps {
     email?: string,
     paymentIntentId?: string
   ) => Promise<void>;
+  titleId?: string;
 }
 
 /**
  * Inner component that interacts with useStripe and useElements inside the Elements provider.
  */
-const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute }) => {
+const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute, titleId }) => {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -271,7 +272,7 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
           className="object-cover rounded bg-gray-100 w-full h-full absolute inset-0"
         />
       </div>
-      <h2 className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
+      <h2 id={titleId || (item ? `registry-item-title-${item.id}` : undefined)} className="text-2xl font-bold mb-2 text-primary">{item.name}</h2>
       <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
       <p className="text-lg font-semibold mb-1 text-secondary">
         {item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND'

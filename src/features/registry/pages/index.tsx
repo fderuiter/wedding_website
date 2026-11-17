@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Overlay } from '@/components/ui/Overlay';
+import { Dialog } from '@/components/ui/Dialog';
 import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
 import RegistryCard from '../components/RegistryCard';
@@ -318,15 +318,27 @@ function RegistryPageContent() {
             )}
           </div>
         )}
-        <Overlay isOpen={!!(selectedItem && isModalOpen)} onClose={handleCloseModal} animationType="scale">
+        <Dialog
+          isOpen={!!(selectedItem && isModalOpen)}
+          onClose={handleCloseModal}
+          aria-labelledby={selectedItem ? `registry-item-title-${selectedItem.id}` : undefined}
+          className="max-w-xl w-full p-0 border-none bg-transparent shadow-none"
+          contentClassName="p-0"
+          style={{
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            boxShadow: 'none',
+          }}
+        >
           {selectedItem && (
             <RegistryItemCard
               item={selectedItem}
+              titleId={`registry-item-title-${selectedItem.id}`}
               onClose={handleCloseModal}
               onContribute={handleContribute}
             />
           )}
-        </Overlay>
+        </Dialog>
       </div>
     </ErrorBoundary>
   );
