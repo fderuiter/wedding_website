@@ -20,7 +20,7 @@ export interface Toast {
   action?: ToastAction;
 }
 
-interface ToastContextValue {
+export interface ToastContextValue {
   toasts: Toast[];
   addToast: (message: string, type?: ToastType, onConfirm?: () => void, onCancel?: () => void, action?: ToastAction) => void;
   removeToast: (id: string) => void;
@@ -252,4 +252,8 @@ export const useToast = () => {
     throw new Error('useToast must be used within a ToastProvider');
   }
   return context;
+};
+
+export const useOptionalToast = (): ToastContextValue | null => {
+  return useContext(ToastContext);
 };
