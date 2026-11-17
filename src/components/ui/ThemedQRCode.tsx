@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useTheme } from '@/components/ThemeProvider';
-import { optimizeContrast } from '@/lib/theme/stylesheet';
+import { optimizeContrast, hexToRgb, getContrastRatio } from '@/lib/theme/stylesheet';
 import { getPresetTokens } from '@/lib/theme/presets';
 
 export interface ThemedQRCodeProps
@@ -34,43 +34,6 @@ function extractHexColor(val: string | undefined | null): string | null {
     return hex;
   }
   return null;
-}
-
-function hexToRgb(hex: string) {
-  const cleanHex = hex.replace(/^#/, '');
-  let r = 0,
-    g = 0,
-    b = 0;
-  if (cleanHex.length === 6) {
-    r = parseInt(cleanHex.substring(0, 2), 16);
-    g = parseInt(cleanHex.substring(2, 4), 16);
-    b = parseInt(cleanHex.substring(4, 6), 16);
-  } else if (cleanHex.length === 3) {
-    r = parseInt(cleanHex[0] + cleanHex[0], 16);
-    g = parseInt(cleanHex[1] + cleanHex[1], 16);
-    b = parseInt(cleanHex[2] + cleanHex[2], 16);
-  }
-  return { r, g, b };
-}
-
-function getLuminance(rgb: { r: number; g: number; b: number }): number {
-  const parts = [rgb.r, rgb.g, rgb.b].map((val) => {
-    const s = val / 255;
-    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2];
-}
-
-function getContrastRatio(hex1: string, hex2: string): number {
-  try {
-    const l1 = getLuminance(hexToRgb(hex1));
-    const l2 = getLuminance(hexToRgb(hex2));
-    const lighter = Math.max(l1, l2);
-    const darker = Math.min(l1, l2);
-    return (lighter + 0.05) / (darker + 0.05);
-  } catch {
-    return 1;
-  }
 }
 
 /**
@@ -131,7 +94,12 @@ export const ThemedQRCode = React.forwardRef<HTMLCanvasElement, ThemedQRCodeProp
     const computedFg = optimizeContrast(resolvedFg, resolvedBg, minContrastRatio);
 
     // Verify final contrast ratio
-    const ratio = getContrastRatio(computedFg, resolvedBg);
+    let ratio = 1;
+    try {
+      ratio = getContrastRatio(hexToRgb(computedFg), hexToRgb(resolvedBg));
+    } catch {
+      ratio = 1;
+    }
 
     if (ratio < minContrastRatio) {
       // Fallback to static high-contrast defaults if theme computation fails or contrast is low (Guardrail 2)
