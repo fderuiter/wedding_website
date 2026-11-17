@@ -1,7 +1,8 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { SeatingTableDTO, AutoAssignResultDTO } from './schemas';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
+import { Prisma } from '@prisma/client';
 
 export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
   static ENTITY_KEY = 'seating-tables';
@@ -315,29 +316,57 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         }
       }
 
-      // Execute all updates inside transaction and record audit snapshot entries
-      const updatedGuests: any[] = [];
-      for (const item of plannedAssignments) {
-        const updated = await client.invitationCode.update({
-          where: { id: item.guestId },
-          data: {
-            tableId: item.tableId,
-            seatNumber: item.seatNumber,
-          },
-        });
-        updatedGuests.push(updated);
+      // Execute batch raw SQL update and bulk audit snapshot inside transaction
+      let updatedGuests: any[] = [];
 
-        await createAuditSnapshot(
-          'InvitationCode',
-          item.guestId,
-          {
+      if (plannedAssignments.length > 0) {
+        const rows = plannedAssignments.map((item) => {
+          return Prisma.sql`(${item.guestId}::text, ${item.tableId}::text, ${item.seatNumber}::integer)`;
+        });
+
+        const values = Prisma.join(rows, ', ');
+
+        const bulkUpdateQuery = Prisma.sql`
+          UPDATE "InvitationCode" AS t
+          SET
+            "tableId" = v."tableId",
+            "seatNumber" = v."seatNumber",
+            "updatedAt" = NOW()
+          FROM (VALUES ${values}) AS v(
+            "id",
+            "tableId",
+            "seatNumber"
+          )
+          WHERE t."id" = v."id"
+        `;
+
+        await client.$executeRaw(bulkUpdateQuery);
+
+        const auditRecords = plannedAssignments.map((item) => ({
+          entityId: item.guestId,
+          data: {
             tableId: item.tableId,
             seatNumber: item.seatNumber,
             action: 'autoAssign',
           },
+        }));
+
+        await createBatchAuditSnapshots(
+          'InvitationCode',
+          auditRecords,
           author,
           client
         );
+
+        const guestMap = new Map<string, any>(unassignedGuests.map((g: any) => [g.id, g]));
+        updatedGuests = plannedAssignments.map((item) => {
+          const guest = guestMap.get(item.guestId) || {};
+          return {
+            ...guest,
+            tableId: item.tableId,
+            seatNumber: item.seatNumber,
+          };
+        });
       }
 
       const assignedCount = updatedGuests.length;

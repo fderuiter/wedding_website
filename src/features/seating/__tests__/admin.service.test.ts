@@ -1,7 +1,7 @@
 /** @jest-environment node */
 
 import { SeatingTableAdminService } from '../admin.service';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 
 const mockTxSeatingTableCreate = jest.fn();
 const mockTxSeatingTableUpdate = jest.fn();
@@ -12,6 +12,7 @@ const mockTxInvitationCodeUpdate = jest.fn();
 const mockTxInvitationCodeUpdateMany = jest.fn();
 const mockTxInvitationCodeFindFirst = jest.fn();
 const mockTxInvitationCodeFindMany = jest.fn();
+const mockTxExecuteRaw = jest.fn();
 
 jest.mock('@/lib/prisma', () => {
   const mockTx = {
@@ -30,7 +31,9 @@ jest.mock('@/lib/prisma', () => {
     },
     snapshotVersion: {
       create: jest.fn(),
+      createMany: jest.fn(),
     },
+    $executeRaw: (...args: any[]) => mockTxExecuteRaw(...args),
   };
 
   return {
@@ -48,6 +51,11 @@ jest.mock('@/lib/prisma', () => {
         findFirst: jest.fn(),
         findMany: jest.fn(),
       },
+      snapshotVersion: {
+        create: jest.fn(),
+        createMany: jest.fn(),
+      },
+      $executeRaw: jest.fn(),
       $transaction: jest.fn((callback) => callback(mockTx)),
     },
   };
@@ -55,6 +63,7 @@ jest.mock('@/lib/prisma', () => {
 
 jest.mock('@/lib/audit', () => ({
   createAuditSnapshot: jest.fn(),
+  createBatchAuditSnapshots: jest.fn(),
 }));
 
 describe('SeatingTableAdminService', () => {
@@ -254,9 +263,7 @@ describe('SeatingTableAdminService', () => {
         { id: 'g7', guestName: 'Grace Johnson', householdName: 'Johnson', tableId: null },
       ]);
 
-      mockTxInvitationCodeUpdate.mockImplementation(({ where, data }) =>
-        Promise.resolve({ id: where.id, ...data })
-      );
+      mockTxExecuteRaw.mockResolvedValue(7);
 
       const result = await service.autoAssignSeats('Admin');
 
@@ -275,12 +282,25 @@ describe('SeatingTableAdminService', () => {
       expect(smithGuests.every((g) => g.tableId === 'table-2')).toBe(true);
       expect(smithGuests.map((g) => g.seatNumber).sort()).toEqual([1, 2, 3]);
 
-      // Verify audit snapshots created for every updated record
-      expect(createAuditSnapshot).toHaveBeenCalledTimes(7);
-      expect(createAuditSnapshot).toHaveBeenCalledWith(
+      // Verify batch raw SQL update executed once instead of sequential individual updates
+      expect(mockTxInvitationCodeUpdate).not.toHaveBeenCalled();
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      const rawQuery = mockTxExecuteRaw.mock.calls[0][0];
+      expect(rawQuery.sql).toContain('UPDATE "InvitationCode" AS t');
+      expect(rawQuery.sql).toContain('WHERE t."id" = v."id"');
+      expect(rawQuery.values).toContain('g1');
+      expect(rawQuery.values).toContain('table-2');
+
+      // Verify single bulk audit snapshot query executed instead of sequential individual snapshots
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
         'InvitationCode',
-        'g1',
-        expect.objectContaining({ tableId: 'table-2', action: 'autoAssign' }),
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityId: 'g1',
+            data: expect.objectContaining({ tableId: 'table-2', action: 'autoAssign' }),
+          }),
+        ]),
         'Admin',
         expect.any(Object)
       );
@@ -297,15 +317,15 @@ describe('SeatingTableAdminService', () => {
         { id: 'g3', guestName: 'Guest 3', householdName: null, tableId: null },
       ]);
 
-      mockTxInvitationCodeUpdate.mockImplementation(({ where, data }) =>
-        Promise.resolve({ id: where.id, ...data })
-      );
+      mockTxExecuteRaw.mockResolvedValue(2);
 
       const result = await service.autoAssignSeats('Admin');
 
       expect(result.assignedCount).toBe(2);
       expect(result.unassignedCount).toBe(1);
-      expect(mockTxInvitationCodeUpdate).toHaveBeenCalledTimes(2);
+      expect(mockTxInvitationCodeUpdate).not.toHaveBeenCalled();
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
     });
 
     it('should retain existing manual assignments and only assign unassigned guests', async () => {
@@ -323,9 +343,7 @@ describe('SeatingTableAdminService', () => {
         { id: 'g2', guestName: 'Guest 2', householdName: 'Solo', tableId: null },
       ]);
 
-      mockTxInvitationCodeUpdate.mockImplementation(({ where, data }) =>
-        Promise.resolve({ id: where.id, ...data })
-      );
+      mockTxExecuteRaw.mockResolvedValue(2);
 
       const result = await service.autoAssignSeats('Admin');
 
@@ -333,6 +351,8 @@ describe('SeatingTableAdminService', () => {
       expect(result.unassignedCount).toBe(0);
       // Assigned seats should be 2 and 3, not overriding seat 1
       expect(result.assignedGuests.map((g) => g.seatNumber).sort()).toEqual([2, 3]);
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
     });
 
     it('should split household members across tables when no single table has sufficient capacity', async () => {
@@ -347,9 +367,7 @@ describe('SeatingTableAdminService', () => {
         { id: 'g3', guestName: 'Fam 3', householdName: 'LargeFamily', tableId: null },
       ]);
 
-      mockTxInvitationCodeUpdate.mockImplementation(({ where, data }) =>
-        Promise.resolve({ id: where.id, ...data })
-      );
+      mockTxExecuteRaw.mockResolvedValue(3);
 
       const result = await service.autoAssignSeats('Admin');
 
@@ -360,6 +378,8 @@ describe('SeatingTableAdminService', () => {
       expect(table1Guests.length).toBeLessThanOrEqual(2);
       expect(table2Guests.length).toBeLessThanOrEqual(2);
       expect(table1Guests.length + table2Guests.length).toBe(3);
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
     });
 
     it('should rollback transaction when an error occurs during auto-assignment', async () => {
@@ -372,11 +392,10 @@ describe('SeatingTableAdminService', () => {
         { id: 'g2', guestName: 'Guest 2', householdName: 'H1', tableId: null },
       ]);
 
-      mockTxInvitationCodeUpdate
-        .mockResolvedValueOnce({ id: 'g1', tableId: 'table-1', seatNumber: 1 })
-        .mockRejectedValueOnce(new Error('Prisma transaction deadlock'));
+      mockTxExecuteRaw.mockRejectedValueOnce(new Error('Prisma transaction deadlock'));
 
       await expect(service.autoAssignSeats('Admin')).rejects.toThrow('Prisma transaction deadlock');
+      expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
     });
 
     it('should complete autoAssignSeats in under 500ms for up to 500 guest records', async () => {
@@ -408,9 +427,7 @@ describe('SeatingTableAdminService', () => {
 
       mockTxSeatingTableFindMany.mockResolvedValue(tables);
       mockTxInvitationCodeFindMany.mockResolvedValue(guests);
-      mockTxInvitationCodeUpdate.mockImplementation(({ where, data }) =>
-        Promise.resolve({ id: where.id, ...data })
-      );
+      mockTxExecuteRaw.mockResolvedValue(500);
 
       const startTime = Date.now();
       const result = await service.autoAssignSeats('Admin');
@@ -418,7 +435,28 @@ describe('SeatingTableAdminService', () => {
 
       expect(result.assignedCount).toBe(500);
       expect(result.unassignedCount).toBe(0);
+      expect(mockTxInvitationCodeUpdate).not.toHaveBeenCalled();
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledTimes(1);
       expect(duration).toBeLessThan(500);
+    });
+
+    it('should not execute raw update or bulk audit when no capacity is available for unassigned guests', async () => {
+      mockTxSeatingTableFindMany.mockResolvedValue([
+        { id: 'table-1', name: 'Table 1', capacity: 1, invitationCodes: [{ id: 'seated-1', seatNumber: 1 }] },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValue([
+        { id: 'g1', guestName: 'Guest 1', householdName: null, tableId: null },
+      ]);
+
+      const result = await service.autoAssignSeats('Admin');
+
+      expect(result.assignedCount).toBe(0);
+      expect(result.unassignedCount).toBe(1);
+      expect(result.assignedGuests).toEqual([]);
+      expect(mockTxExecuteRaw).not.toHaveBeenCalled();
+      expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
     });
   });
 });
