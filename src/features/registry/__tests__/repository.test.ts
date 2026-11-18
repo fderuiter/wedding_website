@@ -110,12 +110,12 @@ describe('RegistryRepository', () => {
       });
     });
 
-    it('should enforce hard maximum limit of 100 items per request', async () => {
+    it('should enforce hard maximum limit of 500 items per request', async () => {
       (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
-      (prisma.registryItem.count as jest.Mock).mockResolvedValue(150);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(600);
 
-      const res = await registryRepository.getAllItems({ page: 1, limit: 500 });
-      expect(res.limit).toBe(100);
+      const res = await registryRepository.getAllItems({ page: 1, limit: 1000 });
+      expect(res.limit).toBe(500);
       expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
         include: { image: true },
         orderBy: [
@@ -124,7 +124,27 @@ describe('RegistryRepository', () => {
           { createdAt: 'desc' },
         ],
         skip: 0,
-        take: 100,
+        take: 500,
+      });
+    });
+
+    it('should allow requesting up to 500 items in a single bounded catalog fetch', async () => {
+      (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([mockRegistryItem]);
+      (prisma.registryItem.count as jest.Mock).mockResolvedValue(250);
+
+      const res = await registryRepository.getAllItems({ page: 1, limit: 500 });
+      expect(res.limit).toBe(500);
+      expect(res.total).toBe(250);
+      expect(res.totalPages).toBe(1);
+      expect(prisma.registryItem.findMany).toHaveBeenCalledWith({
+        include: { image: true },
+        orderBy: [
+          { isMostWanted: 'desc' },
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
+        skip: 0,
+        take: 500,
       });
     });
 

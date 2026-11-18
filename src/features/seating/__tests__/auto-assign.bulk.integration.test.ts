@@ -36,7 +36,7 @@ describe('SeatingTableAdminService Auto-Assign Bulk Integration', () => {
     try {
       await realPrisma.seatingTable.findFirst();
     } catch {
-      const { execSync } = require('child_process');
+      const { execSync } = await import('node:child_process');
       execSync('npx prisma db push', { stdio: 'pipe' });
     }
   });

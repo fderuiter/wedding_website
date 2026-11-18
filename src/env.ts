@@ -68,13 +68,13 @@ const envSchema = z.object({
   if (data.NODE_ENV === 'production') {
     if (!data.GUEST_SESSION_SECRET || data.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['GUEST_SESSION_SECRET'],
         message: 'GUEST_SESSION_SECRET is required and must not use the default fallback in production',
       });
     } else if (data.GUEST_SESSION_SECRET.length < 32) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['GUEST_SESSION_SECRET'],
         message: 'GUEST_SESSION_SECRET must be at least 32 characters long in production',
       });
@@ -82,7 +82,7 @@ const envSchema = z.object({
   }
   if (data.GUEST_SESSION_SECRET && data.GUEST_PASSCODE && data.GUEST_SESSION_SECRET === data.GUEST_PASSCODE) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['GUEST_SESSION_SECRET'],
       message: 'GUEST_SESSION_SECRET must not match GUEST_PASSCODE',
     });
@@ -93,7 +93,7 @@ const envSchema = z.object({
     const missingKeys = keys.filter(key => !data[key]);
     missingKeys.forEach(key => {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: [key],
         message: `Incomplete S3 credentials: ${key} is required when other S3 variables are set`,
       });
@@ -106,14 +106,14 @@ const envSchema = z.object({
 
   if (stripeSecretKey && !stripePublishableKey) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
       message: 'Incomplete Stripe credentials: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is required when STRIPE_SECRET_KEY is set',
     });
   }
   if (stripePublishableKey && !stripeSecretKey) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['STRIPE_SECRET_KEY'],
       message: 'Incomplete Stripe credentials: STRIPE_SECRET_KEY is required when NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is set',
     });
@@ -122,13 +122,13 @@ const envSchema = z.object({
   if (stripeSecretKey) {
     if (!stripeSecretKey.startsWith('sk_') && !stripeSecretKey.startsWith('rk_')) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['STRIPE_SECRET_KEY'],
         message: 'STRIPE_SECRET_KEY must start with sk_ or rk_',
       });
     } else if (data.NODE_ENV !== 'test' && PLACEHOLDER_STRIPE_KEYS.has(stripeSecretKey)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['STRIPE_SECRET_KEY'],
         message: 'STRIPE_SECRET_KEY must not use a placeholder mock key in non-test environments',
       });
@@ -138,13 +138,13 @@ const envSchema = z.object({
   if (stripePublishableKey) {
     if (!stripePublishableKey.startsWith('pk_')) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
         message: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must start with pk_',
       });
     } else if (data.NODE_ENV !== 'test' && PLACEHOLDER_STRIPE_KEYS.has(stripePublishableKey)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
         message: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must not use a placeholder mock key in non-test environments',
       });
@@ -153,7 +153,7 @@ const envSchema = z.object({
 
   if (stripeWebhookSecret && !stripeWebhookSecret.startsWith('whsec_')) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['STRIPE_WEBHOOK_SECRET'],
       message: 'STRIPE_WEBHOOK_SECRET must start with whsec_',
     });
@@ -267,7 +267,7 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
 } else {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
-    const errorDetails = JSON.stringify(parsed.error.flatten().fieldErrors, null, 2);
+    const errorDetails = JSON.stringify(z.flattenError(parsed.error).fieldErrors, null, 2);
     console.error('❌ Invalid environment variables:', errorDetails);
     throw new Error(`Invalid environment variables: ${errorDetails}`);
   }

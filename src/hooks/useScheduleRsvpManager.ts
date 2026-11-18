@@ -26,11 +26,28 @@ export interface UseScheduleRsvpManagerOptions {
   initialEvents?: Array<{
     id: string;
     title?: string;
+    isReadOnly?: boolean;
     userRsvp?: Partial<SubEventRsvpData> | null;
   }>;
+  maxPlusOnes?: number | null;
   apiEndpoint?: string;
   onSuccess?: (_updatedRsvps: any[]) => void;
   onError?: (_error: Error) => void;
+}
+
+function getPlusOneValidationError(
+  plusOneCount: number,
+  maxPlusOnes?: number | null
+): string | null {
+  if (typeof maxPlusOnes !== 'number') return null;
+  const normalizedMax = Math.max(0, maxPlusOnes);
+  if (plusOneCount > normalizedMax) {
+    if (normalizedMax === 0) {
+      return 'Plus-one guests are not allocated for your invitation.';
+    }
+    return `Plus-one count (${plusOneCount}) exceeds your allocated limit of ${normalizedMax}.`;
+  }
+  return null;
 }
 
 function normalizeRsvpData(userRsvp?: Partial<SubEventRsvpData> | null): SubEventRsvpData {
@@ -55,6 +72,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     const map: Record<string, SubEventRsvpItemState> = {};
     if (options?.initialEvents) {
       options.initialEvents.forEach((ev) => {
+        if (ev.isReadOnly) return;
         const baseline = normalizeRsvpData(ev.userRsvp);
         map[ev.id] = {
           id: ev.id,
@@ -81,10 +99,14 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   optionsRef.current = options;
 
   const initializeEvents = useCallback(
-    (events: Array<{ id: string; title?: string; userRsvp?: Partial<SubEventRsvpData> | null }>) => {
+    (events: Array<{ id: string; title?: string; isReadOnly?: boolean; userRsvp?: Partial<SubEventRsvpData> | null }>) => {
       setEventsMap((prev) => {
         const next = { ...prev };
         events.forEach((ev) => {
+          if (ev.isReadOnly) {
+            delete next[ev.id];
+            return;
+          }
           const newBaseline = normalizeRsvpData(ev.userRsvp);
           const existing = prev[ev.id];
           if (!existing) {
@@ -147,13 +169,18 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           error: null,
         };
 
+        const configuredMax = optionsRef.current?.maxPlusOnes;
+        let nextPlusOnes = existing.current.plusOneCount;
+        if (updates.plusOneCount !== undefined) {
+          nextPlusOnes = configuredMax === 0 ? 0 : Math.max(0, updates.plusOneCount);
+        } else if (configuredMax === 0) {
+          nextPlusOnes = 0;
+        }
+
         const newCurrent: SubEventRsvpData = {
           ...existing.current,
           ...updates,
-          plusOneCount:
-            updates.plusOneCount !== undefined
-              ? Math.max(0, updates.plusOneCount)
-              : existing.current.plusOneCount,
+          plusOneCount: nextPlusOnes,
         };
 
         const dirty = isRsvpDirty(newCurrent, existing.baseline);
@@ -243,6 +270,27 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       const item = eventsMap[subEventId];
       if (!item) return false;
 
+      const validationError = getPlusOneValidationError(
+        item.current.plusOneCount,
+        optionsRef.current?.maxPlusOnes
+      );
+      if (validationError) {
+        const err = new Error(validationError);
+        setEventsMap((prev) => ({
+          ...prev,
+          [subEventId]: {
+            ...prev[subEventId],
+            state: 'error',
+            isSubmitting: false,
+            message: validationError,
+            error: validationError,
+          },
+        }));
+        setLiveMessage(`Failed to save RSVP: ${validationError}`);
+        optionsRef.current?.onError?.(err);
+        return false;
+      }
+
       // Update state to submitting
       setEventsMap((prev) => ({
         ...prev,
@@ -328,6 +376,37 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
     if (dirtyItems.length === 0) {
       return true;
+    }
+
+    const configuredMax = optionsRef.current?.maxPlusOnes;
+    const invalidItems = dirtyItems
+      .map((item) => ({
+        id: item.id,
+        error: getPlusOneValidationError(item.current.plusOneCount, configuredMax),
+      }))
+      .filter((entry): entry is { id: string; error: string } => Boolean(entry.error));
+
+    if (invalidItems.length > 0) {
+      const firstError = invalidItems[0].error;
+      setBatchError(firstError);
+      setLiveMessage(`Failed to save RSVPs: ${firstError}`);
+      setEventsMap((prev) => {
+        const next = { ...prev };
+        invalidItems.forEach(({ id, error }) => {
+          if (next[id]) {
+            next[id] = {
+              ...next[id],
+              state: 'error',
+              isSubmitting: false,
+              message: error,
+              error,
+            };
+          }
+        });
+        return next;
+      });
+      optionsRef.current?.onError?.(new Error(firstError));
+      return false;
     }
 
     setIsBatchSubmitting(true);

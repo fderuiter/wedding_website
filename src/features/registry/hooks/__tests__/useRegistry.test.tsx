@@ -3,7 +3,7 @@ import { useRegistry } from '../useRegistry';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import React from 'react';
-import { RegistryItem } from '../../types';
+import { RegistryItem, PaginatedRegistryItems } from '../../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
@@ -166,7 +166,7 @@ describe('useRegistry', () => {
     });
   });
 
-  it('should handle contribution', async () => {
+  it('should handle contribution and keep optimistic update when response has no id', async () => {
     let contributeBody = null;
     server.use(
       http.post('/api/registry/contribute', async ({ request }) => {
@@ -178,11 +178,136 @@ describe('useRegistry', () => {
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    act(() => {
+      result.current.handleCardClick(result.current.items[0]);
+    });
+    expect(result.current.isModalOpen).toBe(true);
+
     await act(async () => {
-      await result.current.handleContribute('1', 'Jane Doe', 50);
+      await result.current.handleContribute('1', 'Jane Doe', 100);
     });
 
-    expect(contributeBody).toEqual({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 });
+    expect(contributeBody).toEqual({ itemId: '1', purchaserName: 'Jane Doe', amount: 100 });
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem?.purchased).toBe(true);
+    expect(result.current.items.find(i => i.id === '1')?.purchased).toBe(true);
+  });
+
+  it('should synchronize PaginatedRegistryItems cache entries and keep modal open after handleContribute', async () => {
+    const paginatedPage1: PaginatedRegistryItems = {
+      items: mockItems.map(item => ({ ...item })),
+      total: 4,
+      page: 1,
+      limit: 20,
+      totalPages: 2,
+    };
+    const secondaryCacheKey = ['registry-items', 1, 20, 'Category A', 0, 1000] as const;
+    queryClient.setQueryData<PaginatedRegistryItems>(secondaryCacheKey, {
+      items: [mockItems[0], mockItems[2]].map(item => ({ ...item })),
+      total: 2,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
+
+    const serverUpdatedItem: RegistryItem = {
+      ...mockItems[0],
+      purchased: true,
+      purchaserName: 'J*** D***',
+    };
+
+    server.use(
+      http.get('/api/registry/items', () => {
+        return HttpResponse.json(paginatedPage1);
+      }),
+      http.post('/api/registry/contribute', () => {
+        return HttpResponse.json(serverUpdatedItem);
+      })
+    );
+
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setShowAvailableOnly(true);
+      result.current.handleCardClick(result.current.items[0]);
+    });
+
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem?.id).toBe('1');
+
+    await act(async () => {
+      await result.current.handleContribute('1', 'Jane Doe', 100);
+    });
+
+    // Modal stays open with updated selectedItem even after showAvailableOnly removes item from filteredItems
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem).toEqual(serverUpdatedItem);
+    expect(result.current.filteredItems.find(i => i.id === '1')).toBeUndefined();
+
+    // Active PaginatedRegistryItems query cache is updated while preserving pagination metadata
+    const activeCached = queryClient.getQueryData<PaginatedRegistryItems>(['registry-items', 1, 500]);
+    expect(activeCached?.total).toBe(4);
+    expect(activeCached?.totalPages).toBe(2);
+    expect(activeCached?.items.find(i => i.id === '1')).toEqual(serverUpdatedItem);
+
+    // Other cached PaginatedRegistryItems pages/filters under ['registry-items'] are also synchronized
+    const secondaryCached = queryClient.getQueryData<PaginatedRegistryItems>(secondaryCacheKey);
+    expect(secondaryCached?.items.find(i => i.id === '1')).toEqual(serverUpdatedItem);
+  });
+
+  it('should roll back PaginatedRegistryItems caches and selectedItem on contribution error', async () => {
+    const paginatedData: PaginatedRegistryItems = {
+      items: mockItems.map(item => ({ ...item })),
+      total: 3,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    };
+    const secondaryCacheKey = ['registry-items', 2, 20, '', 0, 1000] as const;
+    queryClient.setQueryData<PaginatedRegistryItems>(secondaryCacheKey, {
+      items: [{ ...mockItems[2] }],
+      total: 3,
+      page: 2,
+      limit: 20,
+      totalPages: 2,
+    });
+
+    server.use(
+      http.get('/api/registry/items', () => {
+        return HttpResponse.json(paginatedData);
+      }),
+      http.post('/api/registry/contribute', () => {
+        return HttpResponse.json({ error: 'Payment record failed' }, { status: 500 });
+      })
+    );
+
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const targetGroupItem = result.current.items[2];
+    act(() => {
+      result.current.handleCardClick(targetGroupItem);
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.handleContribute('3', 'Jane Doe', 150)
+      ).rejects.toThrow('Payment record failed');
+    });
+
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem?.purchased).toBe(false);
+    expect(result.current.selectedItem?.amountContributed).toBe(150);
+
+    const activeCached = queryClient.getQueryData<PaginatedRegistryItems>(['registry-items', 1, 500]);
+    const revertedItem = activeCached?.items.find(i => i.id === '3') ?? result.current.items.find(i => i.id === '3');
+    expect(revertedItem?.purchased).toBe(false);
+    expect(revertedItem?.amountContributed).toBe(150);
+
+    const secondaryCached = queryClient.getQueryData<PaginatedRegistryItems>(secondaryCacheKey);
+    expect(secondaryCached?.items[0].purchased).toBe(false);
+    expect(secondaryCached?.items[0].amountContributed).toBe(150);
   });
 
   it('should filter items by category', async () => {
@@ -380,6 +505,203 @@ describe('useRegistry', () => {
 
       expect(window.location.search).not.toContain('item=1');
       expect(result.current.isModalOpen).toBe(false);
+    });
+  });
+
+  describe('bounded full-catalog fetch and client faceted filtering', () => {
+    const largeCatalog: RegistryItem[] = Array.from({ length: 35 }, (_, idx) => {
+      const num = idx + 1;
+      const categories = ['Kitchen', 'Bedroom', 'Outdoor', 'Cash Fund'];
+      const category = categories[idx % categories.length];
+      return {
+        id: `gift-${num}`,
+        itemType: category === 'Cash Fund' ? 'CASH_FUND' : 'PHYSICAL',
+        name: num === 35 ? 'Artisan Pizza Oven' : `Registry Gift ${num}`,
+        description: num === 28 ? 'Handcrafted cedar picnic blanket basket' : `Description for item ${num}`,
+        category,
+        price: num === 35 ? 1250 : num * 25,
+        quantity: 1,
+        purchased: num % 5 === 0,
+        isGroupGift: category === 'Cash Fund' || num % 4 === 0,
+        isMostWanted: num === 32 || num === 5,
+        displayOrder: num === 32 ? 1 : num === 5 ? 2 : num,
+        isSample: false,
+        amountContributed: num === 35 ? 250 : 0,
+        contributors: [],
+        imageUrl: '',
+      };
+    });
+
+    it('fetches up to 500 items once without server category or price params and unwraps paginated responses', async () => {
+      const requestedUrls: string[] = [];
+      server.use(
+        http.get('/api/registry/items', ({ request }) => {
+          requestedUrls.push(request.url);
+          return HttpResponse.json({
+            success: true,
+            data: {
+              items: largeCatalog,
+              total: largeCatalog.length,
+              page: 1,
+              limit: 500,
+              totalPages: 1,
+            },
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.items).toHaveLength(35);
+      expect(result.current.filteredItems).toHaveLength(35);
+      expect(result.current.visibleItems).toHaveLength(12);
+      expect(requestedUrls).toHaveLength(1);
+      const parsedUrl = new URL(requestedUrls[0]);
+      expect(parsedUrl.searchParams.get('limit')).toBe('500');
+      expect(parsedUrl.searchParams.get('page')).toBe('1');
+      expect(parsedUrl.searchParams.has('category')).toBe(false);
+      expect(parsedUrl.searchParams.has('minPrice')).toBe(false);
+      expect(parsedUrl.searchParams.has('maxPrice')).toBe(false);
+
+      // Selecting multiple categories keeps all catalog categories visible and does not trigger new fetches
+      act(() => {
+        result.current.setCategoryFilter(['Kitchen', 'Outdoor']);
+      });
+
+      expect(requestedUrls).toHaveLength(1);
+      expect(result.current.categories).toEqual(['Bedroom', 'Cash Fund', 'Kitchen', 'Outdoor']);
+      expect(result.current.categoryFilter).toEqual(['Kitchen', 'Outdoor']);
+      expect(result.current.filteredItems.every(i => i.category === 'Kitchen' || i.category === 'Outdoor')).toBe(true);
+      expect(result.current.filteredItems.some(i => i.category === 'Kitchen')).toBe(true);
+      expect(result.current.filteredItems.some(i => i.category === 'Outdoor')).toBe(true);
+      expect(result.current.filteredItems.some(i => i.id === 'gift-35')).toBe(true);
+    });
+
+    it('keeps minPrice and maxPrice anchored to full catalog bounds and restores items when widening price slider', async () => {
+      server.use(
+        http.get('/api/registry/items', () =>
+          HttpResponse.json({
+            success: true,
+            data: { items: largeCatalog, total: 35, page: 1, limit: 500, totalPages: 1 },
+          })
+        )
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      // Includes $1,250 gift-35 on initial load without clipping at $1,000
+      expect(result.current.minPrice).toBe(25);
+      expect(result.current.maxPrice).toBe(1250);
+      expect(result.current.priceRange).toEqual([25, 1250]);
+      expect(result.current.filteredItems).toHaveLength(35);
+
+      // Combine category + narrow price range
+      act(() => {
+        result.current.setCategoryFilter(['Outdoor']);
+        result.current.setPriceRange([100, 300]);
+      });
+
+      expect(result.current.minPrice).toBe(25);
+      expect(result.current.maxPrice).toBe(1250);
+      expect(result.current.categories).toEqual(['Bedroom', 'Cash Fund', 'Kitchen', 'Outdoor']);
+      const narrowedCount = result.current.filteredItems.length;
+      expect(narrowedCount).toBeGreaterThan(0);
+      expect(result.current.filteredItems.every(i => i.price >= 100 && i.price <= 300 && i.category === 'Outdoor')).toBe(true);
+
+      // Widen price slider outward without clearing filters — excluded Outdoor gifts (including $1,250 gift-35) return immediately
+      act(() => {
+        result.current.setPriceRange([25, 1250]);
+      });
+
+      expect(result.current.categoryFilter).toEqual(['Outdoor']);
+      expect(result.current.filteredItems.length).toBeGreaterThan(narrowedCount);
+      expect(result.current.filteredItems.some(i => i.id === 'gift-35')).toBe(true);
+    });
+
+    it('searches and sorts across all 35 catalog items including items past position 20', async () => {
+      server.use(
+        http.get('/api/registry/items', () =>
+          HttpResponse.json({
+            success: true,
+            data: { items: largeCatalog, total: 35, page: 1, limit: 500, totalPages: 1 },
+          })
+        )
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      // Search name past position 20
+      act(() => {
+        result.current.setSearchQuery('pizza oven');
+      });
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['gift-35']);
+
+      // Search description past position 20
+      act(() => {
+        result.current.setSearchQuery('cedar picnic');
+      });
+      expect(result.current.filteredItems.map(i => i.id)).toEqual(['gift-28']);
+
+      // Clear search and sort across entire 35-item catalog
+      act(() => {
+        result.current.setSearchQuery('');
+        result.current.setSortOption('price-desc');
+      });
+      expect(result.current.filteredItems[0].id).toBe('gift-35');
+      expect(result.current.filteredItems[34].id).toBe('gift-1');
+
+      act(() => {
+        result.current.setSortOption('most-wanted');
+      });
+      expect(result.current.filteredItems[0].id).toBe('gift-32');
+      expect(result.current.filteredItems[1].id).toBe('gift-5');
+    });
+
+    it('opens contribution dialog for ?item= deep link past position 20 and updates availability immediately on contribution', async () => {
+      window.history.replaceState({}, '', '/registry?item=gift-34');
+      server.use(
+        http.get('/api/registry/items', () =>
+          HttpResponse.json({
+            success: true,
+            data: { items: largeCatalog, total: 35, page: 1, limit: 500, totalPages: 1 },
+          })
+        ),
+        http.post('/api/registry/contribute', () =>
+          HttpResponse.json({
+            success: true,
+            data: {
+              ...largeCatalog[33],
+              amountContributed: largeCatalog[33].price,
+              purchased: true,
+            },
+          })
+        )
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      await waitFor(() => {
+        expect(result.current.isModalOpen).toBe(true);
+        expect(result.current.selectedItem?.id).toBe('gift-34');
+      });
+
+      act(() => {
+        result.current.setShowAvailableOnly(true);
+      });
+      expect(result.current.filteredItems.some(i => i.id === 'gift-34')).toBe(true);
+
+      await act(async () => {
+        await result.current.handleContribute('gift-34', 'Alex Rivera', largeCatalog[33].price);
+      });
+
+      expect(result.current.isModalOpen).toBe(true);
+      expect(result.current.selectedItem?.purchased).toBe(true);
+      expect(result.current.items.find(i => i.id === 'gift-34')?.purchased).toBe(true);
+      expect(result.current.filteredItems.some(i => i.id === 'gift-34')).toBe(false);
     });
   });
 });

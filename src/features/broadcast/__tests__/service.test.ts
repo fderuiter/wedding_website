@@ -580,7 +580,6 @@ describe('BroadcastService', () => {
 
   describe('sendTestBroadcast', () => {
     it('dispatches test email with [TEST] prefix and sample placeholders without touching guest records or DB tables', async () => {
-      const { getAppConfig } = require('@/lib/config');
       (getAppConfig as jest.Mock).mockResolvedValueOnce({
         contactEmail: 'host@example.com',
         weddingDate: new Date('2026-10-25'),
@@ -607,7 +606,6 @@ describe('BroadcastService', () => {
     });
 
     it('does not duplicate [TEST] prefix if subject already has it', async () => {
-      const { getAppConfig } = require('@/lib/config');
       (getAppConfig as jest.Mock).mockResolvedValueOnce({
         contactEmail: 'host@example.com',
       });
@@ -668,7 +666,6 @@ describe('BroadcastService', () => {
     });
 
     it('throws error when provider dispatch fails', async () => {
-      const { MultiChannelMessagingProvider } = require('../providers');
       const spy = jest.spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail').mockResolvedValueOnce({
         success: false,
         error: 'Resend API Key is missing in settings',

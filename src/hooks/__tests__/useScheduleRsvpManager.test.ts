@@ -272,4 +272,87 @@ describe('useScheduleRsvpManager', () => {
     expect(updated.error).toBeNull();
     expect(updated.state).toBe('dirty');
   });
+
+  it('excludes read-only fallback events from RSVP tracking', () => {
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: [
+          { id: 'cn-readonly', title: 'Read Only Event', isReadOnly: true, userRsvp: null },
+          { id: 'se-live', title: 'Live Event', isReadOnly: false, userRsvp: null },
+        ],
+      })
+    );
+
+    expect(result.current.eventsMap['cn-readonly']).toBeUndefined();
+    expect(result.current.eventsMap['se-live']).toBeDefined();
+  });
+
+  it('clamps plus-one updates to 0 when maxPlusOnes is 0', () => {
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: sampleEvents,
+        maxPlusOnes: 0,
+      })
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-1', { status: 'attending', plusOneCount: 2 });
+    });
+
+    expect(result.current.getRsvpState('event-1').current.plusOneCount).toBe(0);
+  });
+
+  it('allows plus-ones up to positive maxPlusOnes and blocks submitSingle / submitBatch above limit', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ id: 'r1', subEventId: 'event-1', status: 'attending', plusOneCount: 2, dietaryNotes: '' }],
+      }),
+    });
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: sampleEvents,
+        maxPlusOnes: 2,
+      })
+    );
+
+    // Valid submission at exact cap (2)
+    act(() => {
+      result.current.updateRsvp('event-1', { status: 'attending', plusOneCount: 2 });
+    });
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.submitSingle('event-1');
+    });
+    expect(ok).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // Exceeding cap (3) surfaces error and preserves unsaved input without hitting network
+    act(() => {
+      result.current.updateRsvp('event-1', { status: 'attending', plusOneCount: 3 });
+    });
+
+    let blockedSingle = true;
+    await act(async () => {
+      blockedSingle = await result.current.submitSingle('event-1');
+    });
+    expect(blockedSingle).toBe(false);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(result.current.getRsvpState('event-1').error).toBe(
+      'Plus-one count (3) exceeds your allocated limit of 2.'
+    );
+    expect(result.current.getRsvpState('event-1').current.plusOneCount).toBe(3);
+
+    let blockedBatch = true;
+    await act(async () => {
+      blockedBatch = await result.current.submitBatch();
+    });
+    expect(blockedBatch).toBe(false);
+    expect(result.current.batchError).toBe(
+      'Plus-one count (3) exceeds your allocated limit of 2.'
+    );
+  });
 });

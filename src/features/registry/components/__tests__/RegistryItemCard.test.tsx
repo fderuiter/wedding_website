@@ -1296,4 +1296,29 @@ describe('RegistryItemCard Component', () => {
       });
     });
   });
+
+  describe('Stripe Elements isolation', () => {
+    it('does not mount Elements or call useStripe/useElements for physical items', () => {
+      const stripeReact = jest.requireMock('@stripe/react-stripe-js');
+      const useStripeSpy = jest.spyOn(stripeReact, 'useStripe');
+      const useElementsSpy = jest.spyOn(stripeReact, 'useElements');
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={{ ...mockGroupItem, itemType: 'PHYSICAL' }}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+
+      expect(screen.queryByTestId('stripe-elements-container')).not.toBeInTheDocument();
+      expect(useStripeSpy).not.toHaveBeenCalled();
+      expect(useElementsSpy).not.toHaveBeenCalled();
+
+      useStripeSpy.mockRestore();
+      useElementsSpy.mockRestore();
+    });
+  });
 });

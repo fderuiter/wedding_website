@@ -128,11 +128,6 @@ export class ContentRepository implements IContentRepository {
     return nodes.map((n: any) => ContentNodeSchema.parse(n));
   }
 
-  async getAllNodes(): Promise<ContentNodeDTO[]> {
-    const nodes = await this.client.contentNode.findMany();
-    return nodes.map((n: any) => ContentNodeSchema.parse(n));
-  }
-
   async createNode(data: { type: string; tags?: string[]; data: any }, author: string = 'System'): Promise<ContentNodeDTO> {
     return executeInTransaction(this.client, async (tx) => {
       const node = await tx.contentNode.create({

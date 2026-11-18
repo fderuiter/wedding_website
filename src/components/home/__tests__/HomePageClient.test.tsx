@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import HomePageClient from '../HomePageClient';
 import type { PublicAppConfig } from '@/lib/config';
@@ -75,6 +75,61 @@ describe('HomePageClient', () => {
 
     expect(screen.queryByAltText('Watermark')).not.toBeInTheDocument();
     expect(screen.queryByAltText('Badge')).not.toBeInTheDocument();
+  });
+
+  test('renders public SubEvent schedule timeline when zero Logistics ContentNodes exist', () => {
+    const publicSubEventNodes = [
+      {
+        id: 'se-pub-1',
+        type: 'Schedule' as const,
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Public Garden Ceremony',
+          startTime: '2026-06-20T15:00:00.000Z',
+          endTime: '2026-06-20T16:00:00.000Z',
+          locationName: 'Estate Lawn',
+          categoryTags: ['Ceremony'],
+          isPrivate: false,
+          isReadOnly: false,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    render(<HomePageClient config={mockConfig} contentNodes={publicSubEventNodes} />);
+
+    expect(screen.getByText('Public Garden Ceremony')).toBeInTheDocument();
+    expect(screen.getByText('Estate Lawn')).toBeInTheDocument();
+    expect(screen.queryByText('Details coming soon...')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rsvp-card-se-pub-1')).not.toBeInTheDocument();
+  });
+
+  test('localizes hero formattedDate and AddToCalendar event to venue timezone', () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    const chicagoConfig: PublicAppConfig = {
+      ...mockConfig,
+      heroSubtitle: '',
+      weddingDate: '2026-09-20T00:00:00.000Z',
+      timezone: 'America/Chicago',
+      showAddToCalendar: true,
+      modules: { countdown: true, gallery: true, addToCalendar: true },
+    } as any;
+
+    render(<HomePageClient config={chicagoConfig} />);
+
+    expect(screen.getByText(/September 19, 2026/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Google' }));
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const googleUrl = new URL(openSpy.mock.calls[0][0] as string);
+    expect(googleUrl.searchParams.get('dates')).toBe('20260919T190000/20260920T010000');
+    expect(googleUrl.searchParams.get('ctz')).toBe('America/Chicago');
+
+    openSpy.mockRestore();
   });
 });
 

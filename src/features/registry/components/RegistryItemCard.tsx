@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import type { Stripe as StripeClient, StripeElements } from '@stripe/stripe-js';
+import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
@@ -49,7 +49,7 @@ interface RegistryItemCardProps {
 }
 
 interface StripeControllerHandle {
-  stripe: StripeClient | null;
+  stripe: Stripe | null;
   elements: StripeElements | null;
 }
 
@@ -61,8 +61,6 @@ const StripeCardPaymentSection: React.FC<{
 }> = ({ controllerRef }) => {
   const stripe = useStripe();
   const elements = useElements();
-
-  controllerRef.current = { stripe, elements };
 
   useEffect(() => {
     controllerRef.current = { stripe, elements };
@@ -122,6 +120,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   isAdmin = false,
 }) => {
   const stripeControllerRef = useRef<StripeControllerHandle | null>(null);
+  const directRadioRef = useRef<HTMLButtonElement | null>(null);
+  const cardRadioRef = useRef<HTMLButtonElement | null>(null);
 
   const {
     isValidatingCode,
@@ -234,11 +234,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   );
 
   const stripePromise = useMemo(() => {
-    if (!isCardMode || item.isSample || item.purchased) {
+    if (!isCardMode || item.isSample || (item.purchased && !isSubmitting)) {
       return null;
     }
     return getStripePromise(stripePublishableKey);
-  }, [isCardMode, item.isSample, item.purchased, stripePublishableKey]);
+  }, [isCardMode, item.isSample, item.purchased, isSubmitting, stripePublishableKey]);
 
   // Stripe PaymentIntent state (only used in Card Checkout mode)
   const [paymentIntentData, setPaymentIntentData] = useState<{
@@ -250,7 +250,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
   // Sync PaymentIntent dynamically only when Card Checkout mode is active
   useEffect(() => {
-    if (!isCardMode || item.isSample || item.purchased) return;
+    if (!isCardMode || item.isSample || item.purchased || isSubmitting || isSuccess) return;
     if (baseContributionAmount <= 0) return;
 
     let active = true;
@@ -290,6 +290,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     item.id,
     item.isSample,
     item.purchased,
+    isSubmitting,
+    isSuccess,
     isCardMode,
     baseContributionAmount,
     effectiveCoverFee,
@@ -460,9 +462,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         {isFund ? 'Target Goal:' : 'Price:'} {formatCurrency(item.price)}
       </p>
 
-      {isDualMode && !item.isSample && !isSuccess && !item.purchased && (
+      {isDualMode && !item.isSample && !isSuccess && (!item.purchased || isSubmitting) && (
         <div className="mb-3 mt-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1.5">
+          <p
+            id={`payment-mode-label-${item.id}`}
+            className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-1.5"
+          >
             Choose Payment Method
           </p>
           <div
@@ -472,15 +477,23 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700"
           >
             <button
+              ref={directRadioRef}
               type="button"
               role="radio"
               aria-checked={activePaymentMode === 'direct'}
+              tabIndex={activePaymentMode === 'direct' ? 0 : -1}
               disabled={isSubmitting}
               onClick={() => handleSelectMode('direct')}
               onKeyDown={(e) => {
-                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                if (
+                  e.key === 'ArrowRight' ||
+                  e.key === 'ArrowDown' ||
+                  e.key === 'ArrowLeft' ||
+                  e.key === 'ArrowUp'
+                ) {
                   e.preventDefault();
                   handleSelectMode('card');
+                  cardRadioRef.current?.focus();
                 }
               }}
               className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
@@ -492,15 +505,23 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               Direct Transfer (0% Fee)
             </button>
             <button
+              ref={cardRadioRef}
               type="button"
               role="radio"
               aria-checked={activePaymentMode === 'card'}
+              tabIndex={activePaymentMode === 'card' ? 0 : -1}
               disabled={isSubmitting}
               onClick={() => handleSelectMode('card')}
               onKeyDown={(e) => {
-                if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                if (
+                  e.key === 'ArrowLeft' ||
+                  e.key === 'ArrowUp' ||
+                  e.key === 'ArrowRight' ||
+                  e.key === 'ArrowDown'
+                ) {
                   e.preventDefault();
                   handleSelectMode('direct');
+                  directRadioRef.current?.focus();
                 }
               }}
               className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
@@ -722,7 +743,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             Done
           </Button>
         </div>
-      ) : isUnconfiguredFund && !item.purchased ? (
+      ) : isUnconfiguredFund && !item.purchased && !isSubmitting ? (
         <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
           {isAdmin && (
             <div
@@ -754,7 +775,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </Button>
           </div>
         </div>
-      ) : !item.purchased ? (
+      ) : (!item.purchased || isSubmitting) ? (
         <form noValidate className="mt-5 pt-4 border-t border-primary" onSubmit={handlePaymentSubmit}>
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}

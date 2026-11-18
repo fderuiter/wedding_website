@@ -1,6 +1,18 @@
-import { isProtectedRoute } from '../routes';
+import { isProtectedRoute, getNavLinks } from '../routes';
 
 describe('routes', () => {
+  describe('getNavLinks', () => {
+    it('includes the public Guest Portal (/guest) navigation link for public and admin roles', () => {
+      const publicLinks = getNavLinks('public');
+      expect(publicLinks).toContainEqual({ href: '/guest', label: 'Guest Portal' });
+
+      const adminLinks = getNavLinks('admin');
+      expect(adminLinks).toContainEqual({ href: '/guest', label: 'Guest Portal' });
+
+      expect(isProtectedRoute('/guest', 'GET')).toBe(false);
+    });
+  });
+
   describe('isProtectedRoute', () => {
     it('should test media routes correctly', () => {
       expect(isProtectedRoute('/api/media', 'GET')).toBe(false);

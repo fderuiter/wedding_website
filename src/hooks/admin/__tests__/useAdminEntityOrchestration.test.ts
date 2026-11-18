@@ -5,7 +5,7 @@ import { useAdminEntityOrchestration } from '../useAdminEntityOrchestration';
 import { useAdminAttractions } from '../useAdminAttractions';
 import { useAdminWeddingParty } from '../useAdminWeddingParty';
 import { useAdminContent } from '../useAdminContent';
-import { useAdminRegistry } from '../useAdminRegistry';
+import { useAdminRegistry, useAdminRegistryItem } from '../useAdminRegistry';
 import { useAdminSubEvents } from '../useAdminSubEvents';
 import { useAdminInvitationCodes } from '../useAdminInvitationCodes';
 import { apiClient } from '@/features/admin';
@@ -245,13 +245,30 @@ describe('useAdminEntityOrchestration', () => {
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/admin/content-nodes');
     });
 
-    it('useAdminRegistry queries /api/registry/items', async () => {
+    it('useAdminRegistry queries /api/registry/items?limit=500 while keeping clean mutation paths', async () => {
       mockApiClient.get.mockResolvedValueOnce([]);
+      mockApiClient.put.mockResolvedValueOnce({ message: 'Updated', item: { id: '35', name: 'Gift 35' } });
       const { result } = renderHook(() => useAdminRegistry(), {
         wrapper: createWrapper(queryClient),
       });
       await waitFor(() => expect(result.current.isLoading).toBe(false));
-      expect(mockApiClient.get).toHaveBeenCalledWith('/api/registry/items');
+      expect(mockApiClient.get).toHaveBeenCalledWith('/api/registry/items?limit=500');
+
+      await act(async () => {
+        await result.current.update('35', { name: 'Gift 35' } as any);
+      });
+      expect(mockApiClient.put).toHaveBeenCalledWith('/api/registry/items/35', { name: 'Gift 35' });
+    });
+
+    it('useAdminRegistryItem fetches target item directly via /api/registry/items/:id', async () => {
+      const targetGift = { id: 'gift-35', name: 'Espresso Grinder' };
+      mockApiClient.get.mockResolvedValueOnce(targetGift);
+      const { result } = renderHook(() => useAdminRegistryItem('gift-35'), {
+        wrapper: createWrapper(queryClient),
+      });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(mockApiClient.get).toHaveBeenCalledWith('/api/registry/items/gift-35');
+      expect(result.current.data).toEqual(targetGift);
     });
 
     it('useAdminSubEvents queries /api/admin/sub-events', async () => {

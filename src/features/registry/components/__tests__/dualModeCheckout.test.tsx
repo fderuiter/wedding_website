@@ -12,23 +12,40 @@ const mockConfirmPayment = jest.fn();
 const mockElementsSubmit = jest.fn().mockResolvedValue({});
 
 jest.mock('@stripe/react-stripe-js', () => {
-  const ReactActual = require('react');
+  const ReactActual = jest.requireActual<typeof import('react')>('react');
+  const ElementsContext = ReactActual.createContext(false);
   return {
     Elements: ({ children }: { children: React.ReactNode }) =>
-      ReactActual.createElement('div', { 'data-testid': 'stripe-elements-container' }, children),
+      ReactActual.createElement(
+        ElementsContext.Provider,
+        { value: true },
+        ReactActual.createElement('div', { 'data-testid': 'stripe-elements-container' }, children)
+      ),
     PaymentElement: (props: Record<string, unknown>) =>
       ReactActual.createElement(
         'div',
         { 'data-testid': 'stripe-payment-element', ...props },
         'Stripe Payment Element'
       ),
-    useStripe: () => ({
-      confirmPayment: mockConfirmPayment,
-    }),
-    useElements: () => ({
-      submit: mockElementsSubmit,
-      getElement: jest.fn(),
-    }),
+    useStripe: () => {
+      const inElements = ReactActual.useContext(ElementsContext);
+      if (!inElements) {
+        throw new Error('useStripe must be called inside an <Elements> provider.');
+      }
+      return {
+        confirmPayment: mockConfirmPayment,
+      };
+    },
+    useElements: () => {
+      const inElements = ReactActual.useContext(ElementsContext);
+      if (!inElements) {
+        throw new Error('useElements must be called inside an <Elements> provider.');
+      }
+      return {
+        submit: mockElementsSubmit,
+        getElement: jest.fn(),
+      };
+    },
   };
 });
 
@@ -194,11 +211,13 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       </Overlay>
     );
 
-    // Selector displays both modes and defaults to Direct Transfer (0% Fee)
+    // Selector displays both modes and defaults to Direct Transfer (0% Fee) with WAI-ARIA roving tabIndex
     const directRadio = screen.getByRole('radio', { name: 'Direct Transfer (0% Fee)' });
     const cardRadio = screen.getByRole('radio', { name: 'Card Checkout (2.5% Fee)' });
     expect(directRadio).toHaveAttribute('aria-checked', 'true');
+    expect(directRadio).toHaveAttribute('tabIndex', '0');
     expect(cardRadio).toHaveAttribute('aria-checked', 'false');
+    expect(cardRadio).toHaveAttribute('tabIndex', '-1');
     expect(screen.getByText('Direct Transfer Notice')).toBeInTheDocument();
     expect(screen.queryByTestId('stripe-payment-element')).not.toBeInTheDocument();
 
@@ -209,10 +228,14 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       target: { value: 'Safe travels!' },
     });
 
-    // Switch to Card Checkout (2.5% Fee)
-    fireEvent.click(cardRadio);
+    // Switch to Card Checkout (2.5% Fee) via keyboard ArrowRight (WAI-ARIA radiogroup pattern)
+    directRadio.focus();
+    fireEvent.keyDown(directRadio, { key: 'ArrowRight' });
     expect(cardRadio).toHaveAttribute('aria-checked', 'true');
+    expect(cardRadio).toHaveAttribute('tabIndex', '0');
+    expect(cardRadio).toHaveFocus();
     expect(directRadio).toHaveAttribute('aria-checked', 'false');
+    expect(directRadio).toHaveAttribute('tabIndex', '-1');
 
     // Preserved form inputs
     expect(screen.getByLabelText(/Your Name/i)).toHaveValue('Riley Donor');

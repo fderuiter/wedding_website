@@ -4,6 +4,13 @@ import '@testing-library/jest-dom';
 import MediaDashboardPage from '../page';
 import { apiClient } from '@/lib/apiClient';
 
+const mockPush = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
     get: jest.fn(),
@@ -226,5 +233,58 @@ describe('MediaDashboardPage', () => {
         body: JSON.stringify({ ids: ['1'] }),
       }));
     });
+  });
+
+  it('displays polite live region announcement and skeleton placeholders while media query is pending', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+
+    render(<MediaDashboardPage />);
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText('Loading media library...')).toBeInTheDocument();
+    expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
+    expect(screen.queryByText('No items found')).not.toBeInTheDocument();
+  });
+
+  it('captures API exceptions and renders AdminViewState error card instead of EmptyState, recovering on Retry', async () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/media')) {
+        throw new Error('Storage bucket unreachable');
+      }
+      return [];
+    });
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Error: Storage bucket unreachable')).toBeInTheDocument();
+    expect(screen.queryByText('No items found')).not.toBeInTheDocument();
+    expect(screen.queryByText('No media items available in the library.')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /back to dashboard/i }));
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
+
+    // Now allow retry to succeed
+    mockGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/media')) {
+        return [{ id: 'recovered-1', url: '/uploads/recovered.jpg', altText: 'Recovered Photo', isDecorative: false }];
+      }
+      return [];
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('/uploads/recovered.jpg')).toBeInTheDocument();
+      expect(screen.getByText('Recovered Photo')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    consoleSpy.mockRestore();
   });
 });

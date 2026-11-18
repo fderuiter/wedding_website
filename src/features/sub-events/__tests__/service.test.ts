@@ -53,6 +53,7 @@ describe('SubEventService', () => {
       expect(events).toHaveLength(1);
       expect(events[0].title).toBe('Main Ceremony');
       expect(events[0].isPrivate).toBe(false);
+      expect(events[0].isReadOnly).toBe(false);
       expect(events[0].userRsvp).toBeNull();
     });
 
@@ -117,6 +118,28 @@ describe('SubEventService', () => {
 
       expect(events).toHaveLength(1);
       expect(events[0].title).toBe('Welcome Drinks');
+      expect(events[0].isReadOnly).toBe(true);
+    });
+  });
+
+  describe('getPlusOneAllowanceForGuest', () => {
+    it('returns null when code is missing or invitation is not found', async () => {
+      expect(await service.getPlusOneAllowanceForGuest()).toBeNull();
+
+      mockPrisma.invitationCode.findUnique.mockResolvedValue(null);
+      expect(await service.getPlusOneAllowanceForGuest('UNKNOWN')).toBeNull();
+    });
+
+    it('returns non-negative plusOneAllocations for valid invitation code', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        plusOneAllocations: 2,
+      });
+
+      expect(await service.getPlusOneAllowanceForGuest('VIPGUEST')).toBe(2);
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'VIPGUEST' },
+        select: { plusOneAllocations: true },
+      });
     });
   });
 
@@ -360,6 +383,7 @@ describe('SubEventService', () => {
       mockPrisma.invitationCode.findUnique.mockResolvedValue({
         id: 'inv-123',
         guestName: 'John Doe',
+        plusOneAllocations: 1,
       });
 
       mockPrisma.subEvent.findMany.mockResolvedValue([
@@ -509,6 +533,97 @@ describe('SubEventService', () => {
       ).rejects.toThrow('Database write error');
 
       expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws 400 error if guest attempts to RSVP to a read-only ContentNode fallback item', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-123',
+        guestName: 'John Doe',
+        plusOneAllocations: 1,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([
+        {
+          id: 'cn-fallback-1',
+          type: 'Schedule',
+          data: { title: 'Fallback Schedule Item' },
+        },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('MYCODE', [
+          { subEventId: 'cn-fallback-1', status: 'attending' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'RSVPs cannot be submitted for read-only schedule items.',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects plusOneCount > 0 when guest plusOneAllocations is 0', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-zero',
+        guestName: 'Solo Guest',
+        plusOneAllocations: 0,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Ceremony',
+          isPrivate: false,
+          accesses: [],
+        },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('SOLOCODE', [
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 1 },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Plus-one guests are not allocated for your invitation.',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('allows submitting up to positive plusOneAllocations and rejects above that limit', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-two',
+        guestName: 'Party Guest',
+        plusOneAllocations: 2,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Reception',
+          isPrivate: false,
+          accesses: [],
+        },
+      ]);
+      mockPrisma.subEventRsvp.upsert.mockResolvedValue({
+        id: 'rsvp-ok',
+        subEventId: 'se-1',
+        invitationCodeId: 'inv-two',
+        status: 'attending',
+        plusOneCount: 2,
+        dietaryNotes: '',
+      });
+
+      const okResult = await service.submitSubEventRsvps('PARTY2', [
+        { subEventId: 'se-1', status: 'attending', plusOneCount: 2 },
+      ]);
+      expect(okResult).toHaveLength(1);
+      expect(okResult[0].plusOneCount).toBe(2);
+
+      await expect(
+        service.submitSubEventRsvps('PARTY2', [
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 3 },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Plus-one count (3) exceeds your allocated limit of 2.',
+      });
     });
   });
 

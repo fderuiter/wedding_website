@@ -50,12 +50,17 @@ describe('InvitationQRPreviewModal Component', () => {
     expect(screen.getByText('PEMBERLEY26')).toBeInTheDocument();
   });
 
-  it('displays the personalized RSVP URL in an accessible input', () => {
+  it('displays the personalized guest portal URL in an accessible input and describes RSVPs and address', () => {
     render(<InvitationQRPreviewModal {...defaultProps} />);
 
-    const urlInput = screen.getByLabelText('Personalized RSVP URL') as HTMLInputElement;
+    const urlInput = screen.getByLabelText(
+      'Personalized Guest Portal URL (RSVP & Address)'
+    ) as HTMLInputElement;
     expect(urlInput).toBeInTheDocument();
     expect(urlInput.value).toContain('/guest?code=PEMBERLEY26');
+    expect(
+      screen.getByText(/Scan to open personalized RSVP & mailing address portal/i)
+    ).toBeInTheDocument();
   });
 
   it('renders the high contrast QR code canvas with accessible label', () => {
@@ -76,12 +81,17 @@ describe('InvitationQRPreviewModal Component', () => {
 
     render(<InvitationQRPreviewModal {...defaultProps} />);
 
-    const copyBtn = screen.getByRole('button', { name: /Copy personalized RSVP URL/i });
+    const copyBtn = screen.getByRole('button', {
+      name: /Copy personalized RSVP and address portal URL/i,
+    });
     fireEvent.click(copyBtn);
 
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('/guest?code=PEMBERLEY26'));
-      expect(mockAddToast).toHaveBeenCalledWith('Personalized RSVP link copied to clipboard!', 'success');
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'Personalized RSVP & address portal link copied to clipboard!',
+        'success'
+      );
     });
 
     Object.assign(navigator, { clipboard: originalClipboard });

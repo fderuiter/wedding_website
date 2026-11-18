@@ -7,6 +7,7 @@ import { RegistryItemBaseSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useFormPersist } from '@/hooks/useFormPersist';
+import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 
 /**
  * Props for the RegistryItemForm component.
@@ -107,6 +108,16 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   const imageUrlInputRef = useRef<HTMLInputElement>(null);
 
   const isFund = values.itemType === 'CASH_FUND' || values.itemType === 'EXPERIENCE_FUND';
+  const { cardCheckoutEnabled: detectedCardCheckoutEnabled, isCapabilitiesLoading } =
+    useRegistryCapabilities({
+      enabled: cardCheckoutEnabled === undefined && isFund,
+    });
+  const effectiveCardCheckoutEnabled =
+    cardCheckoutEnabled !== undefined
+      ? cardCheckoutEnabled
+      : isCapabilitiesLoading
+        ? undefined
+        : detectedCardCheckoutEnabled;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -417,7 +428,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
             />
           </FormGroup>
 
-          {cardCheckoutEnabled === false && !(values.paymentHandle && values.paymentHandle.trim()) && (
+          {effectiveCardCheckoutEnabled === false && !(values.paymentHandle && values.paymentHandle.trim()) && (
             <div
               role="alert"
               data-testid="unconfigured-fund-form-warning"

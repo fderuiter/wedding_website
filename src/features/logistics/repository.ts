@@ -57,19 +57,89 @@ export class LogisticsRepository implements ILogisticsRepository {
       return STATIC_MOCK_LOGISTICS_NODES;
     }
 
-    const nodes = await this.client.contentNode.findMany({
-      where: {
-        OR: [
-          { tags: { has: 'Homepage' } },
-          { tags: { has: 'Schedule' } },
-          { tags: { has: 'schedule' } },
-          { type: 'Logistics' },
-          { type: 'Schedule' }
-        ]
+    const [nodes, publicSubEvents] = await Promise.all([
+      this.client.contentNode.findMany({
+        where: {
+          OR: [
+            { tags: { has: 'Homepage' } },
+            { tags: { has: 'Schedule' } },
+            { tags: { has: 'schedule' } },
+            { type: 'Logistics' },
+            { type: 'Schedule' }
+          ]
+        }
+      }),
+      this.client.subEvent?.findMany
+        ? this.client.subEvent.findMany({
+          where: { isPrivate: false },
+          orderBy: { startTime: 'asc' },
+        })
+        : Promise.resolve([]),
+    ]);
+
+    const parsed: ContentNodeDTO[] = nodes.map((n: any) => ContentNodeSchema.parse(n));
+
+    if (Array.isArray(publicSubEvents) && publicSubEvents.length > 0) {
+      const nonScheduleNodes = parsed.filter((n: ContentNodeDTO) => {
+        const data = n.data as any;
+        const isScheduleFallback =
+          n.type === 'Schedule' ||
+          n.tags.includes('Schedule') ||
+          n.tags.includes('schedule') ||
+          Boolean(data?.startTime);
+        return !isScheduleFallback;
+      });
+
+      const subEventNodes: ContentNodeDTO[] = publicSubEvents.map((evt: any) => {
+        const startIso = evt.startTime instanceof Date ? evt.startTime.toISOString() : (evt.startTime || undefined);
+        const endIso = evt.endTime instanceof Date ? evt.endTime.toISOString() : (evt.endTime || undefined);
+        const category = typeof evt.category === 'string' && evt.category.trim() ? evt.category.trim() : undefined;
+
+        return ContentNodeSchema.parse({
+          id: evt.id,
+          type: 'Schedule',
+          tags: ['Homepage', 'Schedule'],
+          data: {
+            title: evt.title,
+            description: evt.description || '',
+            startTime: startIso,
+            endTime: endIso,
+            locationName: evt.locationName || evt.location || '',
+            location: evt.location || '',
+            category,
+            categoryTags: category ? [category] : [],
+            attireRules: evt.attireRules || evt.attire || undefined,
+            isPrivate: false,
+            isReadOnly: false,
+          },
+          createdAt: evt.createdAt ? new Date(evt.createdAt) : new Date(0),
+          updatedAt: evt.updatedAt ? new Date(evt.updatedAt) : new Date(0),
+        });
+      });
+
+      return this.sortNodesChronologically([...nonScheduleNodes, ...subEventNodes]);
+    }
+
+    const fallbackNodes = parsed.map((n: ContentNodeDTO) => {
+      const data = n.data as any;
+      const isScheduleLike =
+        n.type === 'Schedule' ||
+        n.tags.includes('Schedule') ||
+        n.tags.includes('schedule') ||
+        Boolean(data?.startTime);
+      if (isScheduleLike && data?.isReadOnly === undefined && data?.userRsvp === undefined) {
+        return {
+          ...n,
+          data: {
+            ...data,
+            isReadOnly: true,
+          },
+        } as ContentNodeDTO;
       }
+      return n;
     });
-    const parsed = nodes.map((n: any) => ContentNodeSchema.parse(n));
-    return this.sortNodesChronologically(parsed);
+
+    return this.sortNodesChronologically(fallbackNodes);
   }
 
   async getScheduleNodes(): Promise<ContentNodeDTO[]> {
