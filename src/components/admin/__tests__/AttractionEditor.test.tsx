@@ -199,8 +199,10 @@ describe('AttractionEditorForm', () => {
   });
 
   it('supports studio variant defaults without required Name or explicit static IDs', () => {
+    const formRef = React.createRef<HTMLFormElement>();
     render(
       <AttractionEditorForm
+        ref={formRef}
         values={{ name: '' }}
         onChange={jest.fn()}
         onSubmit={jest.fn()}
@@ -209,26 +211,66 @@ describe('AttractionEditorForm', () => {
       />
     );
 
+    expect(formRef.current).toBeInstanceOf(HTMLFormElement);
     const nameInput = screen.getByLabelText('Name');
     expect(nameInput).not.toBeRequired();
     expect(nameInput).not.toHaveAttribute('id', 'attractionName');
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
+
+  it('allows clearing existing nested image URL/alt text and safely handles cleared coordinates without NaN', () => {
+    const handleChange = jest.fn();
+    const existing = createMockAttraction();
+
+    const { rerender } = render(
+      <AttractionEditorForm
+        values={existing}
+        onChange={handleChange}
+        onSubmit={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Image URL')).toHaveValue('https://example.com/museum.jpg');
+    expect(screen.getByLabelText('Image Alt Text')).toHaveValue('Museum facade');
+
+    rerender(
+      <AttractionEditorForm
+        values={{ ...existing, imageUrl: '', imageAlt: '' }}
+        onChange={handleChange}
+        onSubmit={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Image URL')).toHaveValue('');
+    expect(screen.getByLabelText('Image Alt Text')).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Latitude'), { target: { value: '' } });
+    expect(handleChange).toHaveBeenCalledWith({ latitude: 0 });
+
+    fireEvent.change(screen.getByLabelText('Longitude'), { target: { value: '' } });
+    expect(handleChange).toHaveBeenCalledWith({ longitude: 0 });
+  });
 });
 
 describe('AttractionCard', () => {
-  it('renders modal card variant without Sample badge or unnamed fallback', () => {
+  it('renders modal card variant without Sample badge or unnamed fallback and forwards ref', () => {
     const attraction = createMockAttraction({ isSample: true, isVisible: false });
     const handleEdit = jest.fn();
     const handleDelete = jest.fn();
+    const cardRef = React.createRef<HTMLDivElement>();
 
     const { container } = render(
       <AttractionCard
+        ref={cardRef}
         attraction={attraction}
         onEdit={handleEdit}
         onDelete={handleDelete}
       />
     );
+
+    expect(cardRef.current).toBeInstanceOf(HTMLDivElement);
 
     expect(container.querySelector('.bg-white')).toBeInTheDocument();
     expect(screen.getByAltText('Museum facade')).toHaveAttribute('src', 'https://example.com/museum.jpg');
