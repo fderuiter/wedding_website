@@ -145,7 +145,7 @@ function getDeprecationsForFile(filePath) {
 
       if (ts.isExportAssignment(statement)) {
         const expr = statement.expression;
-        let msg = '';
+        let msg = undefined;
         const tags = ts.getJSDocTags(statement);
         const deprecatedTag = tags.find(tag => tag.tagName.text === 'deprecated');
         if (deprecatedTag) {
@@ -164,7 +164,7 @@ function getDeprecationsForFile(filePath) {
           for (const spec of statement.exportClause.elements) {
             const localName = spec.propertyName ? spec.propertyName.text : spec.name.text;
             const exportName = spec.name.text;
-            let msg = '';
+            let msg = undefined;
             const tags = ts.getJSDocTags(spec);
             const deprecatedTag = tags.find(tag => tag.tagName.text === 'deprecated');
             if (deprecatedTag) {
