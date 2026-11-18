@@ -38,7 +38,6 @@ jest.mock('@/features/content', () => {
       getPendingPhotos: jest.fn(),
       moderatePhoto: jest.fn(),
       moderatePhotosBatch: jest.fn(),
-      batchModeratePhotos: jest.fn(),
     },
   };
 });
