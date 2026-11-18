@@ -133,6 +133,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: [
             { guestName: { equals: 'Jane', mode: 'insensitive' } },
             { plusOneFirstName: { equals: 'Jane', mode: 'insensitive' } },
@@ -140,6 +141,34 @@ describe('POST /api/guest/lookup', () => {
           ],
         },
       });
+    });
+
+    it('ignores sample guest records (isSample: true) and issues no guest_invite_session cookie', async () => {
+      mockFindFirst.mockResolvedValue(null);
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
+        body: JSON.stringify({ query: 'Mr. & Mrs. Robert Smith' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('No invitation found matching');
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          isSample: false,
+        }),
+      });
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
     });
   });
 
@@ -288,6 +317,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: expect.arrayContaining([
             { guestName: { equals: 'Samantha', mode: 'insensitive' } },
             { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
@@ -325,6 +355,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: expect.arrayContaining([
             { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
           ]),
@@ -356,6 +387,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: expect.arrayContaining([
             {
               AND: [
@@ -392,6 +424,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: expect.arrayContaining([
             {
               AND: [

@@ -51,10 +51,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const invite = conditions.length > 0
     ? await prisma.invitationCode.findFirst({
-      where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+      where: {
+        isSample: false,
+        ...(conditions.length === 1 ? conditions[0] : { OR: conditions }),
+      },
     })
     : null;
-  if (!invite) {
+  if (!invite || invite.isSample) {
     throw new ApiError(404, 'No invitation found matching the provided details.');
   }
 

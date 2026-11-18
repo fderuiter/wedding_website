@@ -43,6 +43,24 @@ describe('validate-code Route', () => {
     });
   });
 
+  it('returns 404 and sets no guest_invite_session cookie for a sample invitation code', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'sample-invite-1',
+      code: 'SMITH2026',
+      guestName: 'Mr. & Mrs. Robert Smith',
+      used: false,
+      isSample: true,
+    });
+    const req = new Request('http://localhost/api/registry/validate-code?code=smith2026', {
+      method: 'GET',
+    });
+    const res = await validateCodeRoute(req as any);
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toBe('Invalid invitation code.');
+    expect(res.headers.get('set-cookie') || '').not.toContain('guest_invite_session=');
+  });
+
   it('returns 200 with guestName and valid: true for a previously used invitation code', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
