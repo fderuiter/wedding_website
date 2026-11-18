@@ -35,7 +35,7 @@ describe('calendar utils', () => {
   });
 
   describe('createYahooCalendarLink', () => {
-    it('should create a valid Yahoo Calendar link', () => {
+    it('should create a valid Yahoo Calendar link with UTC Z timestamps', () => {
       const link = createYahooCalendarLink(event);
       const url = new URL(link);
       expect(url.hostname).toBe('calendar.yahoo.com');
@@ -43,15 +43,52 @@ describe('calendar utils', () => {
       expect(url.searchParams.get('view')).toBe('d');
       expect(url.searchParams.get('type')).toBe('20');
       expect(url.searchParams.get('title')).toBe(event.name);
-      expect(url.searchParams.get('st')).toBe('20251225T100000');
-      expect(url.searchParams.get('et')).toBe('20251225T110000');
+      expect(url.searchParams.get('st')).toBe('20251225T150000Z');
+      expect(url.searchParams.get('et')).toBe('20251225T160000Z');
       expect(url.searchParams.get('desc')).toBe(event.description);
       expect(url.searchParams.get('in_loc')).toBe(event.location);
+    });
+
+    it('adjusts UTC conversion across America/Chicago daylight saving shifts and invalid timezones', () => {
+      const summerUrl = new URL(
+        createYahooCalendarLink({
+          ...event,
+          startDate: '2026-06-19',
+          startTime: '13:00',
+          endDate: '2026-06-19',
+          endTime: '16:00',
+          timeZone: 'America/Chicago',
+        })
+      );
+      expect(summerUrl.searchParams.get('st')).toBe('20260619T180000Z');
+      expect(summerUrl.searchParams.get('et')).toBe('20260619T210000Z');
+
+      const winterUrl = new URL(
+        createYahooCalendarLink({
+          ...event,
+          startDate: '2026-12-19',
+          startTime: '12:00',
+          endDate: '2026-12-19',
+          endTime: '15:00',
+          timeZone: 'America/Chicago',
+        })
+      );
+      expect(winterUrl.searchParams.get('st')).toBe('20261219T180000Z');
+      expect(winterUrl.searchParams.get('et')).toBe('20261219T210000Z');
+
+      const invalidTzUrl = new URL(
+        createYahooCalendarLink({
+          ...event,
+          timeZone: 'Invalid/Timezone',
+        })
+      );
+      expect(invalidTzUrl.searchParams.get('st')).toBe('20251225T100000Z');
+      expect(invalidTzUrl.searchParams.get('et')).toBe('20251225T110000Z');
     });
   });
 
   describe('createOutlookCalendarLink', () => {
-    it('should create a valid Outlook Calendar link', () => {
+    it('should create a valid Outlook Calendar link with ISO UTC offsets', () => {
       const link = createOutlookCalendarLink(event);
       const url = new URL(link);
       expect(url.hostname).toBe('outlook.live.com');
@@ -59,10 +96,47 @@ describe('calendar utils', () => {
       expect(url.searchParams.get('path')).toBe('/calendar/action/compose');
       expect(url.searchParams.get('rru')).toBe('addevent');
       expect(url.searchParams.get('subject')).toBe(event.name);
-      expect(url.searchParams.get('startdt')).toBe('2025-12-25T10:00:00');
-      expect(url.searchParams.get('enddt')).toBe('2025-12-25T11:00:00');
+      expect(url.searchParams.get('startdt')).toBe('2025-12-25T10:00:00-05:00');
+      expect(url.searchParams.get('enddt')).toBe('2025-12-25T11:00:00-05:00');
       expect(url.searchParams.get('body')).toBe(event.description);
       expect(url.searchParams.get('location')).toBe(event.location);
+    });
+
+    it('appends DST-accurate offsets for America/Chicago and +00:00 for invalid timezones', () => {
+      const summerUrl = new URL(
+        createOutlookCalendarLink({
+          ...event,
+          startDate: '2026-06-19',
+          startTime: '13:00',
+          endDate: '2026-06-19',
+          endTime: '16:00',
+          timeZone: 'America/Chicago',
+        })
+      );
+      expect(summerUrl.searchParams.get('startdt')).toBe('2026-06-19T13:00:00-05:00');
+      expect(summerUrl.searchParams.get('enddt')).toBe('2026-06-19T16:00:00-05:00');
+
+      const winterUrl = new URL(
+        createOutlookCalendarLink({
+          ...event,
+          startDate: '2026-12-19',
+          startTime: '12:00',
+          endDate: '2026-12-19',
+          endTime: '15:00',
+          timeZone: 'America/Chicago',
+        })
+      );
+      expect(winterUrl.searchParams.get('startdt')).toBe('2026-12-19T12:00:00-06:00');
+      expect(winterUrl.searchParams.get('enddt')).toBe('2026-12-19T15:00:00-06:00');
+
+      const invalidTzUrl = new URL(
+        createOutlookCalendarLink({
+          ...event,
+          timeZone: '',
+        })
+      );
+      expect(invalidTzUrl.searchParams.get('startdt')).toBe('2025-12-25T10:00:00+00:00');
+      expect(invalidTzUrl.searchParams.get('enddt')).toBe('2025-12-25T11:00:00+00:00');
     });
   });
 
@@ -96,6 +170,18 @@ describe('calendar utils', () => {
       expect(vtz).toContain('TZOFFSETTO:+0000');
       expect(vtz).toContain('END:VTIMEZONE');
     });
+
+    it('anchors fallback VTIMEZONE offsets to the event date across daylight saving rules', () => {
+      const summerVtz = buildVTimezoneBlock('America/Toronto', '2026-07-15', '14:00');
+      expect(summerVtz).toContain('TZID:America/Toronto');
+      expect(summerVtz).toContain('TZOFFSETFROM:-0400');
+      expect(summerVtz).toContain('TZOFFSETTO:-0400');
+
+      const winterVtz = buildVTimezoneBlock('America/Toronto', '2026-01-15', '14:00');
+      expect(winterVtz).toContain('TZID:America/Toronto');
+      expect(winterVtz).toContain('TZOFFSETFROM:-0500');
+      expect(winterVtz).toContain('TZOFFSETTO:-0500');
+    });
   });
 
   describe('createIcsFile', () => {
@@ -122,6 +208,28 @@ describe('calendar utils', () => {
       expect(veventIndex).toBeGreaterThan(vtimezoneIndex);
     });
 
+    it('passes the event date to buildVTimezoneBlock for seasonal fallback offsets', () => {
+      const summerIcs = createIcsFile({
+        ...event,
+        startDate: '2026-07-15',
+        startTime: '14:00',
+        endDate: '2026-07-15',
+        endTime: '15:00',
+        timeZone: 'Europe/Berlin',
+      });
+      expect(summerIcs).toContain('TZOFFSETTO:+0200');
+
+      const winterIcs = createIcsFile({
+        ...event,
+        startDate: '2026-01-15',
+        startTime: '14:00',
+        endDate: '2026-01-15',
+        endTime: '15:00',
+        timeZone: 'Europe/Berlin',
+      });
+      expect(winterIcs).toContain('TZOFFSETTO:+0100');
+    });
+
     it('should return an empty string if there is an error', () => {
       const invalidEvent = { ...event, startDate: 'invalid-date' };
       const icsString = createIcsFile(invalidEvent);
@@ -130,7 +238,7 @@ describe('calendar utils', () => {
   });
 
   describe('formatScheduleEventToCalendarEvent', () => {
-    it('converts ISO schedule item into CalendarEvent structure with exact start/end times and timezone', () => {
+    it('converts ISO schedule item into CalendarEvent structure with localized wall times and timezone', () => {
       const scheduleItem = {
         id: 'item-123',
         title: 'Rehearsal Dinner',
@@ -146,13 +254,82 @@ describe('calendar utils', () => {
       expect(result.id).toBe('item-123');
       expect(result.name).toBe('Rehearsal Dinner');
       expect(result.startDate).toBe('2026-06-19');
-      expect(result.startTime).toBe('18:00');
+      expect(result.startTime).toBe('13:00');
       expect(result.endDate).toBe('2026-06-19');
-      expect(result.endTime).toBe('21:00');
+      expect(result.endTime).toBe('16:00');
       expect(result.timeZone).toBe('America/Chicago');
       expect(result.location).toBe('The Oak Room');
       expect(result.description).toContain('Dinner for wedding party.');
       expect(result.description).toContain('Attire: Smart Casual');
+    });
+
+    it('handles America/Chicago winter CST offset and default one-hour endTime', () => {
+      const result = formatScheduleEventToCalendarEvent(
+        {
+          id: 'winter-ceremony',
+          title: 'Winter Ceremony',
+          startTime: '2026-12-19T18:00:00.000Z',
+        },
+        undefined,
+        'America/Chicago'
+      );
+
+      expect(result.startDate).toBe('2026-12-19');
+      expect(result.startTime).toBe('12:00');
+      expect(result.endDate).toBe('2026-12-19');
+      expect(result.endTime).toBe('13:00');
+      expect(result.timeZone).toBe('America/Chicago');
+    });
+
+    it('preserves local venue date across UTC midnight rollovers and formats local midnight as 00:00', () => {
+      const eveningRollover = formatScheduleEventToCalendarEvent(
+        {
+          id: 'evening-reception',
+          title: 'Evening Reception',
+          startTime: '2026-09-20T00:00:00.000Z',
+          endTime: '2026-09-20T05:00:00.000Z',
+        },
+        undefined,
+        'America/Chicago'
+      );
+
+      expect(eveningRollover.startDate).toBe('2026-09-19');
+      expect(eveningRollover.startTime).toBe('19:00');
+      expect(eveningRollover.endDate).toBe('2026-09-20');
+      expect(eveningRollover.endTime).toBe('00:00');
+    });
+
+    it('falls back to UTC when timeZone is unrecognized or empty and keeps defaults when startTime is omitted', () => {
+      const invalidTzResult = formatScheduleEventToCalendarEvent(
+        {
+          id: 'fallback-item',
+          title: 'Fallback Event',
+          startTime: '2026-09-19T16:00:00.000Z',
+        },
+        undefined,
+        'Invalid/Timezone'
+      );
+
+      expect(invalidTzResult.startDate).toBe('2026-09-19');
+      expect(invalidTzResult.startTime).toBe('16:00');
+      expect(invalidTzResult.endDate).toBe('2026-09-19');
+      expect(invalidTzResult.endTime).toBe('17:00');
+      expect(invalidTzResult.timeZone).toBe('UTC');
+
+      const missingStartResult = formatScheduleEventToCalendarEvent(
+        {
+          id: 'unscheduled-item',
+          title: 'TBD Event',
+        },
+        '2026-09-19',
+        'America/Chicago'
+      );
+
+      expect(missingStartResult.startDate).toBe('2026-09-19');
+      expect(missingStartResult.startTime).toBe('12:00');
+      expect(missingStartResult.endDate).toBe('2026-09-19');
+      expect(missingStartResult.endTime).toBe('13:00');
+      expect(missingStartResult.timeZone).toBe('America/Chicago');
     });
   });
 });

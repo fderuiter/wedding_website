@@ -9,6 +9,7 @@ import Link from 'next/link';
 import BackToTop from '@/components/BackToTop';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatDate } from '@/utils/intl';
+import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
@@ -80,7 +81,22 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     }
   }, [config]);
 
-  const formattedDate = formatDate(config.weddingDate);
+  let formattedDate: string;
+  try {
+    formattedDate = formatDate(config.weddingDate, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: config.timezone || 'UTC',
+    });
+  } catch {
+    formattedDate = formatDate(config.weddingDate, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
 
   const faqNodes = contentNodes.filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ');
 
@@ -222,16 +238,20 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
   };
 
   const weddingDateObj = new Date(config.weddingDate);
-  const calendarEvent = {
-    name: config.heroTitle || 'Wedding',
-    startDate: weddingDateObj.toISOString().split('T')[0],
-    startTime: weddingDateObj.toISOString().split('T')[1].substring(0, 5),
-    endDate: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endTime: new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString().split('T')[1].substring(0, 5),
-    timeZone: config.timezone,
-    location: `${config.venueName}, ${config.venueCity}, ${config.venueState}`,
-    description: config.heroSubtitle || 'Join us for our wedding!',
-  };
+  const hasValidWeddingDate = !isNaN(weddingDateObj.getTime());
+  const calendarEvent = formatScheduleEventToCalendarEvent(
+    {
+      title: config.heroTitle || 'Wedding',
+      startTime: hasValidWeddingDate ? weddingDateObj.toISOString() : undefined,
+      endTime: hasValidWeddingDate
+        ? new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString()
+        : undefined,
+      location: `${config.venueName}, ${config.venueCity}, ${config.venueState}`,
+      description: config.heroSubtitle || 'Join us for our wedding!',
+    },
+    undefined,
+    config.timezone
+  );
 
   const rawHeroBgUrl = config.heroImageUrl || (presetTokens['--brand-hero-image'] && presetTokens['--brand-hero-image'] !== 'none' ? presetTokens['--brand-hero-image'] : undefined);
   const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl);
