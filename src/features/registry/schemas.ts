@@ -68,7 +68,7 @@ export const ContributionSchema = z.object({
   itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
   name: z.string().trim().optional(),
   purchaserName: z.string().trim().optional(),
-  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).optional().or(z.literal('')).nullable(),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   code: z.string().trim().optional(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
@@ -78,7 +78,7 @@ export const ContributionSchema = z.object({
   const resolvedName = data.name || data.purchaserName;
   if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'Name is required and must be under 100 characters.',
       path: ['name'],
     });
@@ -97,7 +97,7 @@ export const PaymentIntentRequestSchema = z.object({
   coverFee: z.boolean().optional().default(false),
   paymentIntentId: z.string().trim().optional(),
   name: z.string().trim().optional(),
-  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).optional().or(z.literal('')).nullable(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
   code: z.string().trim().optional(),
 });
@@ -120,7 +120,7 @@ export const RegistryItemBaseSchema = z.object({
   displayOrder: z.coerce.number({ message: 'Display order must be an integer.' }).int('Display order must be an integer.').optional().default(0),
   paymentHandleType: z.string().max(100, 'Payment handle type must be under 100 characters.').optional().nullable().or(z.literal('')),
   paymentHandle: z.string().max(255, 'Payment handle must be under 255 characters.').optional().nullable().or(z.literal('')),
-}, { message: 'Invalid request body.' }).merge(createMediaAssociationSchema('image'));
+}, { message: 'Invalid request body.' }).extend(createMediaAssociationSchema('image').shape);
 
 export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   id: z.string(),
@@ -165,7 +165,7 @@ export const InvitationCodeSchema = z.object({
   id: z.string(),
   code: z.string().trim().min(1, 'Code is required.').max(50, 'Code must be under 50 characters.'),
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
-  email: z.string().trim().email('Invalid email address.').nullable().optional().or(z.literal('')),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).nullable().optional().or(z.literal('')),
   addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').nullable().optional().or(z.literal('')),
   addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').nullable().optional().or(z.literal('')),
   city: z.string().trim().max(100, 'City must be under 100 characters.').nullable().optional().or(z.literal('')),
@@ -195,7 +195,7 @@ const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(100, 'Guest name must be under 100 characters.'),
   code: z.string().trim().optional().or(z.literal('')),
   email: z.union([
-    z.string().trim().email('Invalid email address.'),
+    z.string().trim().pipe(z.email('Invalid email address.')),
     z.literal(''),
     z.null(),
     z.undefined()
@@ -298,7 +298,7 @@ const phonePattern = /^\+?[\d\s().\/-]{7,30}$/;
 
 export const PublicAddressCollectSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
-  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).optional().or(z.literal('')).nullable(),
   phone: z
     .string()
     .trim()
