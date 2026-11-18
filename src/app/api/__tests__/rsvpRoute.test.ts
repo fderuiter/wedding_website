@@ -92,4 +92,31 @@ describe('POST /api/rsvp Route', () => {
       },
     ]);
   });
+
+  it('returns 400 when plusOneCount exceeds guest allocation or targets read-only fallback', async () => {
+    const { ApiError } = await import('@/utils/ApiError');
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'VALIDCODE',
+      guestName: 'Jane Smith',
+    });
+    mockSubmitSubEventRsvps.mockRejectedValue(
+      new ApiError(400, 'Plus-one count (3) exceeds your allocated limit of 1.')
+    );
+
+    const req = new NextRequest('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      body: JSON.stringify({
+        subEventId: 'se-1',
+        status: 'attending',
+        plusOneCount: 3,
+      }),
+    });
+
+    const res = await POST(req, {});
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.success).toBe(false);
+    expect(json.error).toBe('Plus-one count (3) exceeds your allocated limit of 1.');
+  });
 });

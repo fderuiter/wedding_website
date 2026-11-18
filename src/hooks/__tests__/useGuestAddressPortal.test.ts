@@ -532,6 +532,47 @@ describe('useGuestAddressPortal hook', () => {
       'success'
     );
   });
+
+  it('surfaces error status on initial 5xx failure and recovers when handleRetry is invoked', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        success: false,
+        error: 'Service temporarily unavailable',
+      }),
+    });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.state.status).toBe('error');
+      expect(result.current.state.error).toBe('Service temporarily unavailable');
+    });
+
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          guestName: 'Recovered Guest',
+          code: 'RECOVER26',
+          addressLine1: '100 Main St',
+        },
+      }),
+    });
+
+    await act(async () => {
+      await result.current.handleRetry();
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.state.guestName).toBe('Recovered Guest');
+    expect(result.current.state.error).toBeNull();
+  });
 });
 
 describe('Helper error utilities', () => {

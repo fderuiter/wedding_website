@@ -543,5 +543,132 @@ describe('InteractiveTimeline Component', () => {
       expect(screen.queryByText('RSVP submitted successfully!')).not.toBeInTheDocument();
       expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
     });
+
+    it('hides RSVP controls on read-only ContentNode fallback schedule items even when guest is signed in', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Jane Bennet',
+              plusOneAllocations: 1,
+              data: [
+                {
+                  id: 'cn-fallback-1',
+                  title: 'Fallback Ceremony',
+                  startTime: '2026-06-20T15:00:00.000Z',
+                  category: 'Ceremony',
+                  isPrivate: false,
+                  isReadOnly: true,
+                  userRsvp: null,
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ success: true, data: [] }) });
+      });
+
+      render(<InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events yet" />);
+
+      expect(await screen.findByText('Fallback Ceremony')).toBeInTheDocument();
+      expect(screen.queryByTestId('rsvp-card-cn-fallback-1')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /save rsvp/i })).not.toBeInTheDocument();
+    });
+
+    it('disables plus-one selection when guest plusOneAllocations is 0', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Solo Guest',
+              plusOneAllocations: 0,
+              data: [
+                {
+                  id: 'se-solo',
+                  title: 'Evening Reception',
+                  startTime: '2026-06-20T18:00:00.000Z',
+                  category: 'Reception',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  userRsvp: { status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ success: true, data: [] }) });
+      });
+
+      render(<InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events" />);
+
+      const card = await screen.findByTestId('rsvp-card-se-solo');
+      const plusOneInput = within(card).getByLabelText(/plus-one count/i) as HTMLInputElement;
+      expect(plusOneInput).toBeDisabled();
+      expect(plusOneInput).toHaveAttribute('max', '0');
+      expect(plusOneInput.value).toBe('0');
+    });
+
+    it('allows submitting plus-ones up to positive allowance and surfaces error above that limit', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'VIP Guest',
+              plusOneAllocations: 2,
+              data: [
+                {
+                  id: 'se-vip',
+                  title: 'Welcome Party',
+                  startTime: '2026-06-19T18:00:00.000Z',
+                  category: 'Welcome',
+                  isPrivate: true,
+                  isReadOnly: false,
+                  userRsvp: { status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+                },
+              ],
+            }),
+          });
+        }
+        if (url === '/api/rsvp') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              data: [{ id: 'r1', subEventId: 'se-vip', status: 'attending', plusOneCount: 2, dietaryNotes: '' }],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      });
+
+      render(<InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events" />);
+
+      const card = await screen.findByTestId('rsvp-card-se-vip');
+      const plusOneInput = within(card).getByLabelText(/plus-one count/i) as HTMLInputElement;
+      expect(plusOneInput).not.toBeDisabled();
+      expect(plusOneInput).toHaveAttribute('max', '2');
+
+      // Submit valid plusOneCount = 2
+      fireEvent.change(plusOneInput, { target: { value: '2' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Save RSVP' }));
+      expect(await screen.findByText('RSVP submitted successfully!')).toBeInTheDocument();
+
+      // Exceed limit with plusOneCount = 3
+      fireEvent.change(plusOneInput, { target: { value: '3' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Save RSVP' }));
+
+      const errorAlert = await within(card).findByRole('alert');
+      expect(errorAlert).toHaveTextContent('Plus-one count (3) exceeds your allocated limit of 2.');
+      expect(plusOneInput.value).toBe('3');
+    });
   });
 });

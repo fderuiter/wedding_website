@@ -43,7 +43,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
     try {
       await navigator.clipboard.writeText(rsvpUrl);
       setCopied(true);
-      addToast('Personalized RSVP link copied to clipboard!', 'success');
+      addToast('Personalized RSVP & address portal link copied to clipboard!', 'success');
       setTimeout(() => setCopied(false), 2000);
     } catch {
       addToast('Failed to copy link to clipboard.', 'error');
@@ -135,14 +135,14 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
             />
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-medium">
-            Scan to pre-authenticate guest session
+            Scan to open personalized RSVP &amp; mailing address portal
           </p>
         </div>
 
-        {/* Personalized RSVP URL */}
+        {/* Personalized Guest Portal URL */}
         <FormGroup className="space-y-1.5">
           <Label htmlFor="personalized-rsvp-url" className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-            Personalized RSVP URL
+            Personalized Guest Portal URL (RSVP &amp; Address)
           </Label>
           <div className="flex items-center gap-2">
             <Input
@@ -157,7 +157,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
               variant="secondary"
               size="sm"
               onClick={handleCopyLink}
-              aria-label="Copy personalized RSVP URL"
+              aria-label="Copy personalized RSVP and address portal URL"
               className="shrink-0 flex items-center gap-1.5"
             >
               <Icon name={copied ? 'Check' : 'Copy'} size={15} />

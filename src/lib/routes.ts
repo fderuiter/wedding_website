@@ -21,6 +21,7 @@ interface AppRoute {
 const APP_ROUTES: AppRoute[] = [
   // Navigation Links
   { path: '/', label: 'Home', roles: ['public', 'admin'], showInNav: true, exact: true },
+  { path: '/guest', label: 'Guest Portal', roles: ['public', 'admin'], showInNav: true, exact: true },
   { path: '/registry', label: 'Registry', roles: ['public', 'admin'], showInNav: true, exact: true, requiredModule: 'registry' },
   { path: '/photos', label: 'Photos', roles: ['public', 'admin'], showInNav: true, requiredModule: 'gallery' },
   { path: '/photos/slideshow', label: 'Slideshow', roles: ['public', 'admin'], showInNav: false, requiredModule: 'gallery' },
