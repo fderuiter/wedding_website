@@ -15,6 +15,7 @@ import {
   ColumnMappingOptions,
 } from '@/utils/csv';
 import { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry';
+import { normalizePartyTags } from '@/utils/invitationValidation';
 
 interface CsvImportWizardModalProps {
   isOpen: boolean;
@@ -190,6 +191,34 @@ function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: 
   );
 
   return { parsed, freqMap };
+}
+
+function buildBatchImportPayload(
+  rows: EditableRow[],
+  collisionStrategy: 'skip' | 'update' | 'reject'
+) {
+  return {
+    records: rows.map((r) => ({
+      guestName: r.guestName,
+      code: r.code || undefined,
+      email: r.email || undefined,
+      addressLine1: r.addressLine1 || undefined,
+      addressLine2: r.addressLine2 || undefined,
+      city: r.city || undefined,
+      state: r.state || undefined,
+      zipCode: r.zipCode || undefined,
+      country: r.country || undefined,
+      dietaryNotes: r.dietaryNotes || undefined,
+      plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
+      plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+      plusOneLastName: r.plusOneLastName.trim() || undefined,
+      householdName: r.householdName.trim() || undefined,
+      partyGroup: r.partyGroup.trim() || undefined,
+      partyTags: r.partyTags ? normalizePartyTags(r.partyTags) : undefined,
+      extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
+    })),
+    collisionStrategy,
+  };
 }
 
 type ExtendedParsedCsvRow = ParsedCsvRow & {
@@ -1344,28 +1373,7 @@ export function CsvImportWizardModal({
       dispatch({ type: 'VALIDATION_START', seq });
 
       try {
-        const payload = {
-          records: rows.map((r) => ({
-            guestName: r.guestName,
-            code: r.code || undefined,
-            email: r.email || undefined,
-            addressLine1: r.addressLine1 || undefined,
-            addressLine2: r.addressLine2 || undefined,
-            city: r.city || undefined,
-            state: r.state || undefined,
-            zipCode: r.zipCode || undefined,
-            country: r.country || undefined,
-            dietaryNotes: r.dietaryNotes || undefined,
-            plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
-            plusOneFirstName: r.plusOneFirstName.trim() || undefined,
-            plusOneLastName: r.plusOneLastName.trim() || undefined,
-            householdName: r.householdName.trim() || undefined,
-            partyGroup: r.partyGroup.trim() || undefined,
-            partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
-            extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
-          })),
-          collisionStrategy: strategy,
-        };
+        const payload = buildBatchImportPayload(rows, strategy);
 
         const res = await fetch('/api/admin/invitation-codes/validate', {
           method: 'POST',
@@ -1582,28 +1590,7 @@ export function CsvImportWizardModal({
 
     dispatch({ type: 'COMMIT_START' });
     try {
-      const payload = {
-        records: latest.editableRows.map((r) => ({
-          guestName: r.guestName,
-          code: r.code || undefined,
-          email: r.email || undefined,
-          addressLine1: r.addressLine1 || undefined,
-          addressLine2: r.addressLine2 || undefined,
-          city: r.city || undefined,
-          state: r.state || undefined,
-          zipCode: r.zipCode || undefined,
-          country: r.country || undefined,
-          dietaryNotes: r.dietaryNotes || undefined,
-          plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
-          plusOneFirstName: r.plusOneFirstName.trim() || undefined,
-          plusOneLastName: r.plusOneLastName.trim() || undefined,
-          householdName: r.householdName.trim() || undefined,
-          partyGroup: r.partyGroup.trim() || undefined,
-          partyTags: r.partyTags ? r.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
-          extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
-        })),
-        collisionStrategy: latest.collisionStrategy,
-      };
+      const payload = buildBatchImportPayload(latest.editableRows, latest.collisionStrategy);
 
       const res = await fetch('/api/admin/invitation-codes/batch', {
         method: 'POST',
