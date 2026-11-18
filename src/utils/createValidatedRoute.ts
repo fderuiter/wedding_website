@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withApiMiddleware } from './withApiMiddleware';
 
-interface ValidatedRouteConfig<T extends z.ZodTypeAny = any> {
+interface ValidatedRouteConfig<T extends z.ZodType = any> {
   schema?: T | ((params: any) => T);
   handler: (
     req: NextRequest,
@@ -10,7 +10,7 @@ interface ValidatedRouteConfig<T extends z.ZodTypeAny = any> {
   ) => Promise<Response> | Response;
 }
 
-export function createValidatedRoute<T extends z.ZodTypeAny>(config: ValidatedRouteConfig<T>) {
+export function createValidatedRoute<T extends z.ZodType>(config: ValidatedRouteConfig<T>) {
   const baseHandler = async (req: NextRequest, context: any) => {
     let body: any = null;
     let params = context?.params || {};
@@ -31,7 +31,7 @@ export function createValidatedRoute<T extends z.ZodTypeAny>(config: ValidatedRo
       }
 
       if (config.schema) {
-        let resolvedSchema: z.ZodTypeAny;
+        let resolvedSchema: z.ZodType;
         if (typeof config.schema === 'function') {
           resolvedSchema = (config.schema as any)(params);
         } else {
@@ -44,7 +44,7 @@ export function createValidatedRoute<T extends z.ZodTypeAny>(config: ValidatedRo
             { 
               success: false, 
               error: 'Validation Error', 
-              details: result.error.format() 
+              details: z.formatError(result.error) 
             },
             { status: 400 }
           );

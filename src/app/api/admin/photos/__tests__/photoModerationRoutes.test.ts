@@ -38,7 +38,6 @@ jest.mock('@/features/content', () => {
       getPendingPhotos: jest.fn(),
       moderatePhoto: jest.fn(),
       moderatePhotosBatch: jest.fn(),
-      batchModeratePhotos: jest.fn(),
     },
   };
 });
@@ -452,6 +451,49 @@ describe('Admin Photo Moderation Routes', () => {
       });
       const res = await patchModerationQueue(req);
       expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when empty batch array is supplied to moderation route', async () => {
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids: [], action: 'approve' }),
+      });
+      const res = await patchModerationQueue(req);
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when action and status are missing on moderation route batch payload', async () => {
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids: ['p1'] }),
+      });
+      const res = await patchModerationQueue(req);
+      expect(res.status).toBe(400);
+    });
+
+    it('supports photoIds and status on moderation route batch payload', async () => {
+      const mockBatchResult = {
+        total: 2,
+        succeededCount: 2,
+        failedCount: 0,
+        results: [
+          { id: 'p1', success: true, action: 'approve' },
+          { id: 'p2', success: true, action: 'approve' },
+        ],
+      };
+      (mockContentService.moderatePhotosBatch as jest.Mock).mockResolvedValueOnce(mockBatchResult);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation', {
+        method: 'PATCH',
+        body: JSON.stringify({ photoIds: ['p1', 'p2'], status: 'APPROVED' }),
+      });
+      const res = await patchModerationQueue(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(json.succeededCount).toBe(2);
+      expect(mockContentService.moderatePhotosBatch).toHaveBeenCalledWith(['p1', 'p2'], 'approve', 'Admin');
     });
   });
 });
