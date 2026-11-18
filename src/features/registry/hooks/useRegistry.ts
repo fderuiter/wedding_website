@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem } from '../types';
+import { RegistryItem, PaginatedRegistryItems } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';
@@ -13,6 +13,69 @@ import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 import { useFilter } from '@/hooks/useFilter';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
+
+type RegistryQueryData = PaginatedRegistryItems | RegistryItem[];
+
+interface ContributeVariables {
+  itemId: string;
+  purchaserName: string;
+  amount: number;
+  code?: string;
+  message?: string | null;
+  coverFee?: boolean;
+  email?: string | null;
+  paymentIntentId?: string;
+}
+
+function applyOptimisticContribution(item: RegistryItem, variables: ContributeVariables): RegistryItem {
+  if (item.id !== variables.itemId) return item;
+  if (item.isGroupGift) {
+    const newAmount = item.amountContributed + variables.amount;
+    return {
+      ...item,
+      amountContributed: Math.min(item.price, newAmount),
+      contributors: [
+        ...item.contributors,
+        {
+          name: variables.purchaserName,
+          amount: variables.amount,
+          coverFee: variables.coverFee ?? false,
+          feeAmount: variables.coverFee ? Math.round(variables.amount * 0.025 * 100) / 100 : 0,
+          date: new Date().toISOString(),
+          isPlusOne: false,
+          thankYouStatus: 'Unsent',
+          thankYouSentAt: null,
+          stripePaymentIntentId: variables.paymentIntentId ?? null,
+          stripeChargeId: null,
+          transactionTimestamp: new Date().toISOString(),
+        },
+      ],
+      purchased: newAmount >= item.price,
+    };
+  }
+  return {
+    ...item,
+    purchased: true,
+    purchaserName: variables.purchaserName,
+  };
+}
+
+function mapRegistryQueryData(
+  data: RegistryQueryData | undefined,
+  updater: (item: RegistryItem) => RegistryItem
+): RegistryQueryData | undefined {
+  if (!data) return data;
+  if (Array.isArray(data)) {
+    return data.map(updater);
+  }
+  if (typeof data === 'object' && Array.isArray(data.items)) {
+    return {
+      ...data,
+      items: data.items.map(updater),
+    };
+  }
+  return data;
+}
 
 export function useRegistry() {
   const queryClient = useQueryClient();
@@ -127,60 +190,44 @@ export function useRegistry() {
   }, []);
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string | null; coverFee?: boolean; email?: string | null; paymentIntentId?: string }) => {
+    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }: ContributeVariables) => {
       return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
-      const previousItems = queryClient.getQueryData<RegistryItem[]>(['registry-items']);
-      if (previousItems) {
-        queryClient.setQueryData<RegistryItem[]>(['registry-items'], prev => prev?.map(item => {
-          if (item.id !== variables.itemId) return item;
-          if (item.isGroupGift) {
-            const newAmount = item.amountContributed + variables.amount;
-            return {
-              ...item,
-              amountContributed: Math.min(item.price, newAmount),
-              contributors: [
-                ...item.contributors,
-                {
-                  name: variables.purchaserName,
-                  amount: variables.amount,
-                  coverFee: variables.coverFee ?? false,
-                  feeAmount: variables.coverFee ? Math.round(variables.amount * 0.025 * 100) / 100 : 0,
-                  date: new Date().toISOString(),
-                  isPlusOne: false,
-                  thankYouStatus: 'Unsent',
-                  thankYouSentAt: null,
-                  stripePaymentIntentId: variables.paymentIntentId ?? null,
-                  stripeChargeId: null,
-                  transactionTimestamp: new Date().toISOString(),
-                },
-              ],
-              purchased: newAmount >= item.price,
-            };
-          } else {
-            return {
-              ...item,
-              purchased: true,
-              purchaserName: variables.purchaserName,
-            };
-          }
-        }) || []);
-      }
-      return { previousItems };
+      const previousQueries = queryClient.getQueriesData<RegistryQueryData>({ queryKey: ['registry-items'] });
+      const previousSelectedItem = selectedItem;
+
+      queryClient.setQueriesData<RegistryQueryData>(
+        { queryKey: ['registry-items'] },
+        (old) => mapRegistryQueryData(old, (item) => applyOptimisticContribution(item, variables))
+      );
+
+      setSelectedItem((prev) =>
+        prev && prev.id === variables.itemId ? applyOptimisticContribution(prev, variables) : prev
+      );
+
+      return { previousQueries, previousSelectedItem };
     },
     onError: (_err, _variables, context) => {
-      if (context?.previousItems) {
-        queryClient.setQueryData(['registry-items'], context.previousItems);
+      if (context?.previousQueries) {
+        for (const [queryKey, previousData] of context.previousQueries) {
+          queryClient.setQueryData(queryKey, previousData);
+        }
+      }
+      if (context && 'previousSelectedItem' in context) {
+        setSelectedItem(context.previousSelectedItem);
       }
     },
-    // Keep onSettled here if it's not strictly part of "standard mutations" mentioned,
-    // actually let's remove onSettled invalidation from contribute as well to follow "mutations perform manual cache snapshots and rollbacks without relying on settlement invalidation".
     onSuccess: (updatedItem) => {
-      queryClient.setQueryData<RegistryItem[]>(['registry-items'], old =>
-        old?.map(item => item.id === updatedItem.id ? updatedItem : item)
-      );
+      if (updatedItem && typeof updatedItem === 'object' && 'id' in updatedItem && updatedItem.id) {
+        const nextItem = updatedItem as RegistryItem;
+        queryClient.setQueriesData<RegistryQueryData>(
+          { queryKey: ['registry-items'] },
+          (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
+        );
+        setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
+      }
     },
     meta: {
       successMessage: 'Thank you for your contribution!',
@@ -313,7 +360,6 @@ export function useRegistry() {
     return new Promise<void>((resolve, reject) => {
       contribute({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }, {
         onSuccess: () => {
-          handleCloseModal();
           resolve();
         },
         onError: (error) => {
@@ -321,7 +367,7 @@ export function useRegistry() {
         }
       });
     });
-  }, [contribute, handleCloseModal]);
+  }, [contribute]);
 
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);
