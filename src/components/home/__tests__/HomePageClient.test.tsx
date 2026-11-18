@@ -77,6 +77,34 @@ describe('HomePageClient', () => {
     expect(screen.queryByAltText('Badge')).not.toBeInTheDocument();
   });
 
+  test('renders public SubEvent schedule timeline when zero Logistics ContentNodes exist', () => {
+    const publicSubEventNodes = [
+      {
+        id: 'se-pub-1',
+        type: 'Schedule' as const,
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Public Garden Ceremony',
+          startTime: '2026-06-20T15:00:00.000Z',
+          endTime: '2026-06-20T16:00:00.000Z',
+          locationName: 'Estate Lawn',
+          categoryTags: ['Ceremony'],
+          isPrivate: false,
+          isReadOnly: false,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    render(<HomePageClient config={mockConfig} contentNodes={publicSubEventNodes} />);
+
+    expect(screen.getByText('Public Garden Ceremony')).toBeInTheDocument();
+    expect(screen.getByText('Estate Lawn')).toBeInTheDocument();
+    expect(screen.queryByText('Details coming soon...')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rsvp-card-se-pub-1')).not.toBeInTheDocument();
+  });
+
   test('localizes hero formattedDate and AddToCalendar event to venue timezone', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
 

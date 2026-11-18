@@ -69,6 +69,7 @@ export const handlers = [
       data: mockScheduleData,
       isGuest: true,
       guestName: 'Alex & Jordan',
+      plusOneAllocations: 2,
     });
   }),
 
