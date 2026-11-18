@@ -14,7 +14,7 @@ interface WeddingPartyManagerModalProps {
 }
 
 export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManagerModalProps) {
-  let toastConfirm: ((msg: string) => Promise<boolean>) | null = null;
+  let toastConfirm: ((_msg: string) => Promise<boolean>) | null = null;
   try {
     const toast = useToast();
     toastConfirm = toast.confirm;

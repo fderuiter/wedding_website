@@ -146,8 +146,10 @@ describe('WeddingPartyEditorForm', () => {
   });
 
   it('supports studio variant defaults without required attributes or static IDs', () => {
+    const formRef = React.createRef<HTMLFormElement>();
     render(
       <WeddingPartyEditorForm
+        ref={formRef}
         values={{ name: '', role: '' }}
         onChange={jest.fn()}
         onSubmit={jest.fn()}
@@ -156,6 +158,7 @@ describe('WeddingPartyEditorForm', () => {
       />
     );
 
+    expect(formRef.current).toBeInstanceOf(HTMLFormElement);
     const nameInput = screen.getByLabelText('Name');
     const roleInput = screen.getByLabelText('Role');
     expect(nameInput).not.toBeRequired();
@@ -163,21 +166,57 @@ describe('WeddingPartyEditorForm', () => {
     expect(nameInput).not.toHaveAttribute('id', 'memberName');
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
+
+  it('allows clearing existing nested photo URL/alt text and safely handles cleared Display Order without NaN', () => {
+    const handleChange = jest.fn();
+    const existing = createMockMember();
+
+    const { rerender } = render(
+      <WeddingPartyEditorForm
+        values={existing}
+        onChange={handleChange}
+        onSubmit={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Photo URL')).toHaveValue('https://example.com/jordan.jpg');
+    expect(screen.getByLabelText('Photo Alt Text')).toHaveValue('Jordan smiling');
+
+    rerender(
+      <WeddingPartyEditorForm
+        values={{ ...existing, photoUrl: '', photoAlt: '' }}
+        onChange={handleChange}
+        onSubmit={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Photo URL')).toHaveValue('');
+    expect(screen.getByLabelText('Photo Alt Text')).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Display Order'), { target: { value: '' } });
+    expect(handleChange).toHaveBeenCalledWith({ order: 0 });
+  });
 });
 
 describe('WeddingPartyCard', () => {
-  it('renders modal card variant without Sample badge or reorder buttons', () => {
+  it('renders modal card variant without Sample badge or reorder buttons and forwards ref', () => {
     const member = createMockMember({ isSample: true });
     const handleEdit = jest.fn();
     const handleDelete = jest.fn();
+    const cardRef = React.createRef<HTMLDivElement>();
 
     const { container } = render(
       <WeddingPartyCard
+        ref={cardRef}
         member={member}
         onEdit={handleEdit}
         onDelete={handleDelete}
       />
     );
+
+    expect(cardRef.current).toBeInstanceOf(HTMLDivElement);
 
     expect(container.querySelector('.bg-white')).toBeInTheDocument();
     expect(screen.getByAltText('Jordan smiling')).toHaveAttribute('src', 'https://example.com/jordan.jpg');

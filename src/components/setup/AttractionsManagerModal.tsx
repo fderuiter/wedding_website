@@ -14,7 +14,7 @@ interface AttractionsManagerModalProps {
 }
 
 export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerModalProps) {
-  let toastConfirm: ((msg: string) => Promise<boolean>) | null = null;
+  let toastConfirm: ((_msg: string) => Promise<boolean>) | null = null;
   try {
     const toast = useToast();
     toastConfirm = toast.confirm;
