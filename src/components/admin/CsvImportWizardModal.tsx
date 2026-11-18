@@ -14,8 +14,13 @@ import {
   ParsedCsvRow,
   ColumnMappingOptions,
 } from '@/utils/csv';
-import { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry';
-import { normalizePartyTags } from '@/utils/invitationValidation';
+import type { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry';
+import {
+  normalizeInvitationCode,
+  normalizePartyTags,
+  type BatchInvitationCodeRecord,
+  type InvitationCollisionStrategy,
+} from '@/utils/invitationValidation';
 
 interface CsvImportWizardModalProps {
   isOpen: boolean;
@@ -68,7 +73,7 @@ interface CsvImportPersistedState {
   partyGroupCol: string;
   partyTagsCol: string;
   selectedExtraCols: string[];
-  collisionStrategy: 'skip' | 'update' | 'reject';
+  collisionStrategy: InvitationCollisionStrategy;
   editableRows: EditableRow[];
   importSummary?: {
     total: number;
@@ -175,7 +180,7 @@ function toRowRecord(r: EditableRow): Record<string, string> {
 function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: Set<string>) {
   const freqMap = new Map<string, number>();
   rows.forEach((r) => {
-    const rawCode = (r.code || '').trim().toUpperCase();
+    const rawCode = normalizeInvitationCode(r.code);
     if (rawCode) {
       freqMap.set(rawCode, (freqMap.get(rawCode) || 0) + 1);
     }
@@ -195,8 +200,8 @@ function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: 
 
 function buildBatchImportPayload(
   rows: EditableRow[],
-  collisionStrategy: 'skip' | 'update' | 'reject'
-) {
+  collisionStrategy: InvitationCollisionStrategy
+): { records: BatchInvitationCodeRecord[]; collisionStrategy: InvitationCollisionStrategy } {
   return {
     records: rows.map((r) => ({
       guestName: r.guestName,

@@ -22,6 +22,8 @@ import {
   InvitationCodeSchema,
   BatchImportInvitationCodesSchema,
   DryRunValidateBatchSchema,
+  GuestAddressUpdateSchema,
+  PublicAddressCollectSchema,
 } from '@/features/registry';
 
 describe('invitationValidation shared helpers', () => {
@@ -85,6 +87,41 @@ describe('invitationValidation shared helpers', () => {
       );
       expect(csvResult.isValid).toBe(true);
       expect(csvResult.errors).toEqual([]);
+    });
+
+    it('enforces shared length constants and native Zod v4 email pipes consistently across all guest schemas', () => {
+      const overMaxAddress = 'A'.repeat(ADDRESS_LINE_MAX_LENGTH + 1);
+      const overMaxZip = '9'.repeat(ZIP_CODE_MAX_LENGTH + 1);
+
+      expect(
+        GuestAddressUpdateSchema.safeParse({ addressLine1: overMaxAddress }).success
+      ).toBe(false);
+      expect(GuestAddressUpdateSchema.safeParse({ zipCode: overMaxZip }).success).toBe(false);
+      expect(
+        PublicAddressCollectSchema.safeParse({
+          guestName: 'Valid Guest',
+          addressLine1: overMaxAddress,
+        }).success
+      ).toBe(false);
+
+      const batchWithTagsAndWhitespaceEmail = BatchImportInvitationCodesSchema.safeParse({
+        records: [
+          {
+            guestName: '  Jane Guest  ',
+            email: '  jane@example.com  ',
+            partyTags: ' VIP , Family , ',
+          },
+        ],
+      });
+      expect(batchWithTagsAndWhitespaceEmail.success).toBe(true);
+      if (batchWithTagsAndWhitespaceEmail.success) {
+        expect(batchWithTagsAndWhitespaceEmail.data.records[0].guestName).toBe('Jane Guest');
+        expect(batchWithTagsAndWhitespaceEmail.data.records[0].email).toBe('jane@example.com');
+        expect(batchWithTagsAndWhitespaceEmail.data.records[0].partyTags).toEqual([
+          'VIP',
+          'Family',
+        ]);
+      }
     });
   });
 
@@ -199,7 +236,7 @@ describe('invitationValidation shared helpers', () => {
       };
     };
     const invokeProtectedValidate = (svc: InvitationCodeAdminService, payload: unknown) =>
-      (svc as unknown as { validate: (d: unknown) => Promise<void> }).validate(payload);
+      (svc as unknown as { validate: (_d: unknown) => Promise<void> }).validate(payload);
 
     beforeEach(() => {
       mockPrismaClient = {
