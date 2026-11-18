@@ -75,9 +75,18 @@ function RegistryPageContent() {
 
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const isLoadingMore = useRef(false);
+  const loadMoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const counterRef = useRef<HTMLParagraphElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const wasButtonFocused = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (loadMoreTimerRef.current) {
+        clearTimeout(loadMoreTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleLoadMore = useCallback(() => {
     if (isLoadingMore.current) return;
@@ -88,9 +97,10 @@ function RegistryPageContent() {
     isLoadingMore.current = true;
     setLiveAnnouncement('Loading more gifts...');
     
-    setTimeout(() => {
-      setVisibleItemsCount(prevCount => prevCount + 8);
+    loadMoreTimerRef.current = setTimeout(() => {
+      setVisibleItemsCount(prevCount => Math.min(prevCount + 8, filteredItems.length));
       isLoadingMore.current = false;
+      loadMoreTimerRef.current = null;
     }, 500);
   }, [setVisibleItemsCount, visibleItems.length, filteredItems.length]);
 
@@ -106,9 +116,6 @@ function RegistryPageContent() {
   }, [visibleItems.length, filteredItems.length]);
 
   const handleClearFilters = useCallback(() => {
-    if (clearFiltersFromHook) {
-      clearFiltersFromHook();
-    }
     setCategoryFilter([]);
     setPriceRange([minPrice, maxPrice]);
     setShowGroupGiftsOnly(false);
@@ -118,6 +125,9 @@ function RegistryPageContent() {
     }
     if (setSortOption) {
       setSortOption('default');
+    }
+    if (clearFiltersFromHook) {
+      clearFiltersFromHook();
     }
   }, [clearFiltersFromHook, setCategoryFilter, setPriceRange, minPrice, maxPrice, setShowGroupGiftsOnly, setShowAvailableOnly, setSearchQuery, setSortOption]);
 

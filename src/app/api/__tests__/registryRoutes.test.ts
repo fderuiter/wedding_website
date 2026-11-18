@@ -229,8 +229,28 @@ describe('Registry API routes', () => {
       expect(json.data).toEqual(paginatedData);
     });
 
+    it('accepts bounded catalog limit=500 while excluding contributors for public guest requests', async () => {
+      mockIsAdminRequest.mockResolvedValue(false);
+      const paginatedData = { items: [{ id: '35', name: 'Gift 35', contributors: [] }], total: 35, page: 1, limit: 500, totalPages: 1 };
+      mockGetAllItems.mockResolvedValue(paginatedData);
+      const req = new Request('http://localhost/api/registry/items?page=1&limit=500');
+      const res = await getItems(req as unknown as NextRequest);
+      expect(res.status).toBe(200);
+      expect(mockGetAllItems).toHaveBeenCalledWith({
+        page: 1,
+        limit: 500,
+        category: undefined,
+        minPrice: undefined,
+        maxPrice: undefined,
+        sortBy: undefined,
+        includeContributors: false,
+      });
+      const json = await res.json();
+      expect(json.data).toEqual(paginatedData);
+    });
+
     it('returns 400 when query parameters fail validation', async () => {
-      const req = new Request('http://localhost/api/registry/items?limit=500');
+      const req = new Request('http://localhost/api/registry/items?limit=501');
       const res = await getItems(req as unknown as NextRequest);
       expect(res.status).toBe(400);
       const json = await res.json();
