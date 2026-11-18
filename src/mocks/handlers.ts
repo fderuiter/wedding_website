@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { getStripeCapability } from '@/lib/stripe';
 
 // 1x1 transparent PNG to mock map tile requests without network access
 const TRANSPARENT_PNG = new Uint8Array([
@@ -62,6 +63,13 @@ const mockScheduleData = [
 ];
 
 export const handlers = [
+  http.get('*/api/registry/capabilities', () => {
+    return HttpResponse.json({
+      success: true,
+      data: getStripeCapability(),
+    });
+  }),
+
   // Schedule API handler for InteractiveTimeline
   http.get('*/api/schedule', () => {
     return HttpResponse.json({

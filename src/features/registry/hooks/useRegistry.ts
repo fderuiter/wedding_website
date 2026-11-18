@@ -11,12 +11,14 @@ import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
+import { useRegistryCapabilities } from './useRegistryCapabilities';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 
 export function useRegistry() {
   const queryClient = useQueryClient();
   const { confirm } = useToast();
+  const { cardCheckoutEnabled, stripePublishableKey } = useRegistryCapabilities();
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(12);
@@ -312,8 +314,10 @@ export function useRegistry() {
   ) => {
     return new Promise<void>((resolve, reject) => {
       contribute({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }, {
-        onSuccess: () => {
-          handleCloseModal();
+        onSuccess: (updatedItem) => {
+          if (updatedItem && typeof updatedItem === 'object' && 'id' in updatedItem) {
+            setSelectedItem((prev) => (prev && prev.id === updatedItem.id ? updatedItem : prev));
+          }
           resolve();
         },
         onError: (error) => {
@@ -321,7 +325,7 @@ export function useRegistry() {
         }
       });
     });
-  }, [contribute, handleCloseModal]);
+  }, [contribute]);
 
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);
@@ -351,6 +355,8 @@ export function useRegistry() {
     visibleItemsCount,
     setVisibleItemsCount,
     isAdmin,
+    cardCheckoutEnabled,
+    stripePublishableKey,
     filteredItems,
     visibleItems,
     categories,

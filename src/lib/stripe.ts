@@ -1,35 +1,142 @@
 import Stripe from 'stripe';
-import { loadStripe, Stripe as StripeClient } from '@stripe/stripe-js';
+import type { Stripe as StripeClient } from '@stripe/stripe-js';
 
-let stripeInstance: Stripe | null = null;
+const PLACEHOLDER_STRIPE_KEYS = new Set([
+  'sk_test_placeholder_mock_key',
+  'pk_test_placeholder_mock_key',
+]);
+
+function isPlaceholderKey(key: string): boolean {
+  return PLACEHOLDER_STRIPE_KEYS.has(key) || key.includes('placeholder_mock_key');
+}
 
 /**
- * Returns a singleton server-side Stripe instance.
+ * Checks whether a candidate Stripe secret key has a valid prefix and is not a placeholder in non-test runtimes.
+ */
+export function isValidStripeSecretKey(
+  key: string | undefined | null,
+  allowTestPlaceholder = false
+): key is string {
+  if (!key) return false;
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return false;
+  if (!trimmed.startsWith('sk_') && !trimmed.startsWith('rk_')) return false;
+  if (!allowTestPlaceholder && isPlaceholderKey(trimmed)) return false;
+  return true;
+}
+
+/**
+ * Checks whether a candidate Stripe publishable key has a valid prefix and is not a placeholder in non-test runtimes.
+ */
+export function isValidStripePublishableKey(
+  key: string | undefined | null,
+  allowTestPlaceholder = false
+): key is string {
+  if (!key) return false;
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return false;
+  if (!trimmed.startsWith('pk_')) return false;
+  if (!allowTestPlaceholder && isPlaceholderKey(trimmed)) return false;
+  return true;
+}
+
+export interface StripeCapability {
+  cardCheckoutEnabled: boolean;
+  stripePublishableKey: string | null;
+}
+
+/**
+ * Detects at runtime whether valid Stripe card processing credentials exist.
+ * Never exposes STRIPE_SECRET_KEY.
+ */
+export function getStripeCapability(): StripeCapability {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const allowTestPlaceholder = process.env.NODE_ENV === 'test';
+  const hasSecret = isValidStripeSecretKey(secretKey, allowTestPlaceholder);
+  const hasPublishable = isValidStripePublishableKey(publishableKey, allowTestPlaceholder);
+  const cardCheckoutEnabled = hasSecret && hasPublishable;
+
+  return {
+    cardCheckoutEnabled,
+    stripePublishableKey: cardCheckoutEnabled && publishableKey ? publishableKey.trim() : null,
+  };
+}
+
+let stripeInstance: Stripe | null = null;
+let cachedSecretKey: string | null = null;
+
+/**
+ * Returns a cached server-side Stripe instance when valid credentials exist.
+ * Throws in non-test runtimes if Stripe credentials are missing or invalid.
  */
 export function getStripeInstance(): Stripe {
-  if (!stripeInstance) {
-    const secretKey = process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder_mock_key';
-    stripeInstance = new Stripe(secretKey, {
+  const isTest = process.env.NODE_ENV === 'test';
+  const rawSecretKey = process.env.STRIPE_SECRET_KEY;
+
+  if (!isTest) {
+    const capability = getStripeCapability();
+    if (!capability.cardCheckoutEnabled || !isValidStripeSecretKey(rawSecretKey, false)) {
+      throw new Error(
+        'Card checkout is not configured on this deployment. Valid STRIPE_SECRET_KEY and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY credentials are required.'
+      );
+    }
+  }
+
+  const effectiveSecretKey = isValidStripeSecretKey(rawSecretKey, isTest)
+    ? rawSecretKey.trim()
+    : isTest && rawSecretKey === undefined
+      ? 'sk_test_unit_environment_only'
+      : null;
+
+  if (!effectiveSecretKey) {
+    throw new Error(
+      'Card checkout is not configured on this deployment. Valid STRIPE_SECRET_KEY and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY credentials are required.'
+    );
+  }
+
+  if (!stripeInstance || cachedSecretKey !== effectiveSecretKey) {
+    stripeInstance = new Stripe(effectiveSecretKey, {
       apiVersion: '2025-02-24.acacia' as any,
       typescript: true,
     });
+    cachedSecretKey = effectiveSecretKey;
   }
+
   return stripeInstance;
 }
 
 let stripePromise: Promise<StripeClient | null> | null = null;
+let cachedPublishableKey: string | null = null;
 
 /**
- * Returns a cached Stripe.js promise for client-side Stripe Elements.
+ * Returns a cached Stripe.js promise for client-side Stripe Elements only when a valid publishable key is available.
+ * Never loads Stripe.js with placeholder keys in non-test runtimes.
  */
-export function getStripePromise(): Promise<StripeClient | null> {
-  if (!stripePromise) {
-    const publishableKey =
-      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-      process.env.STRIPE_PUBLISHABLE_KEY ||
-      'pk_test_placeholder_mock_key';
-    stripePromise = loadStripe(publishableKey);
+export function getStripePromise(explicitPublishableKey?: string | null): Promise<StripeClient | null> {
+  const isTest = process.env.NODE_ENV === 'test';
+  const candidateKey =
+    explicitPublishableKey !== undefined
+      ? explicitPublishableKey
+      : process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
+  const effectivePublishableKey = isValidStripePublishableKey(candidateKey, isTest)
+    ? candidateKey.trim()
+    : isTest && explicitPublishableKey === undefined && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY === undefined
+      ? 'pk_test_unit_environment_only'
+      : null;
+
+  if (!effectivePublishableKey) {
+    return Promise.resolve(null);
   }
+
+  if (!stripePromise || cachedPublishableKey !== effectivePublishableKey) {
+    cachedPublishableKey = effectivePublishableKey;
+    stripePromise = import('@stripe/stripe-js')
+      .then(({ loadStripe }) => loadStripe(effectivePublishableKey))
+      .catch(() => null);
+  }
+
   return stripePromise;
 }
 

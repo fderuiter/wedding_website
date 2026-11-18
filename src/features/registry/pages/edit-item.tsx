@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { RegistryItem } from '../types';
 import RegistryItemForm from '../components/RegistryItemForm';
+import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
 import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -17,6 +18,7 @@ export default function EditRegistryItemPage() {
   const params = useParams();
   const itemId = params?.id as string;
   const { addToast } = useToast();
+  const { cardCheckoutEnabled } = useRegistryCapabilities();
   const { data: items, isLoading: itemsLoading, error: itemsError, update } = useAdminRegistry();
 
   const [itemData, setItemData] = useState<RegistryItem | null>(null);
@@ -76,6 +78,7 @@ export default function EditRegistryItemPage() {
         onSubmit={handleEdit}
         isSubmitting={isSubmitting}
         submitLabel="Save Changes"
+        cardCheckoutEnabled={cardCheckoutEnabled}
       />
     </AdminEditorContainer>
   );

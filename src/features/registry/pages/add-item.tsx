@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import RegistryItemForm from '../components/RegistryItemForm';
+import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 import { BatchUrlScraper } from '../components/BatchUrlScraper';
 import { CsvRegistryImport } from '../components/CsvRegistryImport';
 import { RegistryItem } from '../types';
@@ -30,6 +31,7 @@ export default function AddRegistryItemPage() {
   const [activeTab, setActiveTab] = useState<AddItemTab>('single');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { create } = useAdminRegistry();
+  const { cardCheckoutEnabled } = useRegistryCapabilities();
   const { addToast } = useToast();
 
   const handleAddSingle = async (values: Partial<RegistryItem>) => {
@@ -135,6 +137,7 @@ export default function AddRegistryItemPage() {
             onSubmit={handleAddSingle}
             isSubmitting={isSubmitting}
             submitLabel="Add Item"
+            cardCheckoutEnabled={cardCheckoutEnabled}
           />
         </div>
       )}

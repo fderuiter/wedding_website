@@ -63,6 +63,9 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `S3_SECRET_ACCESS_KEY` | Yes* | Secret Manager | HMAC / S3 API secret key. |
 | `S3_ENDPOINT` | No | Secret Manager | Custom endpoint for Cloudflare R2 / GCS S3 API. |
 | `S3_PUBLIC_URL` | No | Secret Manager | CDN URL prefix for asset delivery. |
+| `STRIPE_SECRET_KEY` | No | Secret Manager | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Cloud Run Env Var | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
+| `STRIPE_WEBHOOK_SECRET` | No | Secret Manager | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
 
 *\* Note: Cloud Run container filesystems are read-only and ephemeral; S3/R2 storage variables are strictly required for file uploads.*
 

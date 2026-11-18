@@ -52,6 +52,9 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | `S3_SECRET_ACCESS_KEY` | No* | S3 API secret access key. |
 | `S3_ENDPOINT` | No | Custom S3 endpoint URL (for Cloudflare R2). |
 | `S3_PUBLIC_URL` | No | CDN prefix URL for serving uploaded assets. |
+| `STRIPE_SECRET_KEY` | No | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
+| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
 
 *\* Note: On Render, you can alternatively mount a Render Persistent Disk at `/app/public/uploads` for local storage.*
 

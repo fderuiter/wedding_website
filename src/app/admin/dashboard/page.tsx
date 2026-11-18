@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
+import { useRegistryCapabilities } from '@/features/registry';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
@@ -65,6 +66,26 @@ export default function AdminDashboardPage() {
   const { data: items, isLoading, error, remove } = useAdminRegistry();
   const { addToast, confirm } = useToast();
 
+  const safeItems = Array.isArray(items) ? items : [];
+  const hasFundWithoutHandle = safeItems.some(
+    (item) =>
+      !item.isSample &&
+      !item.purchased &&
+      (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND') &&
+      !(item.paymentHandle && item.paymentHandle.trim())
+  );
+  const { cardCheckoutEnabled, isCapabilitiesLoading } = useRegistryCapabilities({
+    enabled: !isLoading && !error && hasFundWithoutHandle,
+  });
+  const isUnconfiguredFundItem = (item: (typeof safeItems)[number]) =>
+    !isCapabilitiesLoading &&
+    !cardCheckoutEnabled &&
+    !item.isSample &&
+    !item.purchased &&
+    (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND') &&
+    !(item.paymentHandle && item.paymentHandle.trim());
+  const unconfiguredFunds = safeItems.filter(isUnconfiguredFundItem);
+
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
 
@@ -87,6 +108,25 @@ export default function AdminDashboardPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-primary tracking-tight drop-shadow-lg">Admin Dashboard</h1>
         </div>
+
+        {unconfiguredFunds.length > 0 && (
+          <div
+            role="alert"
+            data-testid="admin-dashboard-unconfigured-funds-warning"
+            className="mb-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-sm"
+          >
+            <p className="font-bold mb-1">
+              Action Required: {unconfiguredFunds.length}{' '}
+              {unconfiguredFunds.length === 1 ? 'fund has' : 'funds have'} checkout disabled
+            </p>
+            <p className="text-xs leading-relaxed">
+              Card processing (`STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) is not configured, and the following{' '}
+              {unconfiguredFunds.length === 1 ? 'fund does' : 'funds do'} not have a direct transfer handle:{' '}
+              <span className="font-semibold">{unconfiguredFunds.map((f) => f.name).join(', ')}</span>. Edit{' '}
+              {unconfiguredFunds.length === 1 ? 'this item' : 'these items'} to add a payment handle or configure Stripe credentials.
+            </p>
+          </div>
+        )}
         
         {/* Responsive Table for Desktop, Cards for Mobile */}
         <div className="hidden md:block">
@@ -109,6 +149,14 @@ export default function AdminDashboardPage() {
                       {item.isSample && (
                         <span className="ml-2 inline-flex items-center text-xs font-medium px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
                           Sample
+                        </span>
+                      )}
+                      {isUnconfiguredFundItem(item) && (
+                        <span
+                          data-testid={`unconfigured-fund-badge-${item.id}`}
+                          className="ml-2 inline-flex items-center text-xs font-medium px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200 border border-red-300 dark:border-red-700"
+                        >
+                          Checkout Disabled
                         </span>
                       )}
                     </TableCell>
@@ -167,6 +215,11 @@ export default function AdminDashboardPage() {
               <div className="flex flex-wrap gap-2 text-xs mb-1">
                 {item.isSample && (
                   <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700 font-medium">Sample</span>
+                )}
+                {isUnconfiguredFundItem(item) && (
+                  <span className="px-2 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200 border border-red-300 dark:border-red-700 font-medium">
+                    Checkout Disabled
+                  </span>
                 )}
                 <span className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.purchased ? 'Claimed' : 'Available'}</span>
               </div>

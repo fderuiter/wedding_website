@@ -19,6 +19,8 @@ interface RegistryCardProps {
   onClick: (item: RegistryItem) => void;
   /** Whether the user is an admin. */
   isAdmin?: boolean;
+  /** Whether runtime Stripe card processing is configured. */
+  cardCheckoutEnabled?: boolean;
   /** Function to call when the edit button is clicked. */
   onEdit?: (id: string) => void;
   /** Function to call when the delete button is clicked. */
@@ -35,9 +37,20 @@ interface RegistryCardProps {
  * @param {RegistryCardProps} props - The props for the component.
  * @returns {React.ReactElement} The rendered registry card.
  */
-const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onEdit, onDelete }) => {
+const RegistryCard: React.FC<RegistryCardProps> = ({
+  item,
+  onClick,
+  isAdmin,
+  cardCheckoutEnabled,
+  onEdit,
+  onDelete,
+}) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
+  const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
+  const hasPaymentHandle = Boolean(item.paymentHandle && item.paymentHandle.trim());
+  const isUnconfiguredFund =
+    isFund && !item.isSample && !hasPaymentHandle && cardCheckoutEnabled === false;
   const isClickable = !isClaimed && !isAdmin;
   const cardClasses = `border border-card-border rounded-[var(--radius-card)] overflow-hidden shadow-card transition relative bg-card text-foreground focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
   const { handleShare, copied } = useShareItem(item);
@@ -145,6 +158,16 @@ const RegistryCard: React.FC<RegistryCardProps> = ({ item, onClick, isAdmin, onE
         {isClaimed && (
           <p className="text-base text-green-700 font-semibold mt-1">
             {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
+          </p>
+        )}
+        {!isClaimed && isUnconfiguredFund && (
+          <p
+            data-testid="unconfigured-fund-card-warning"
+            className="text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded px-2.5 py-1 mt-1"
+          >
+            {isAdmin
+              ? 'Warning: Add a payment handle or Stripe keys to enable checkout'
+              : 'Online checkout currently unavailable'}
           </p>
         )}
         {isAdmin && (
