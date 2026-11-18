@@ -1,3 +1,9 @@
+import {
+  normalizeInvitationCode,
+  normalizePartyTags,
+  validateInvitationGuestFields,
+} from './invitationValidation';
+
 export interface ParsedCsvRow {
   rowIndex: number;
   raw: Record<string, string>;
@@ -557,7 +563,7 @@ export function validateSingleCsvRow(
       guestName = combineFirstAndLastName(firstName, lastName);
     }
   }
-  const code = codeCol ? (r[codeCol] || '').trim().toUpperCase() : '';
+  const code = codeCol ? normalizeInvitationCode(r[codeCol]) : '';
   const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
   const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();
   const addressLine2 = addressLine2Col ? (r[addressLine2Col] || '').trim() : (r['addressLine2'] || r['Address Line 2'] || '').trim();
@@ -572,14 +578,29 @@ export function validateSingleCsvRow(
   const householdName = householdNameCol ? (r[householdNameCol] || '').trim() : (r['householdName'] || r['Household Name'] || r['Household'] || '').trim();
   const partyGroup = partyGroupCol ? (r[partyGroupCol] || '').trim() : (r['partyGroup'] || r['Party Group'] || r['Party Side'] || r['Family Side'] || r['Side'] || '').trim();
   const rawPartyTags = partyTagsCol ? (r[partyTagsCol] || '').trim() : (r['partyTags'] || r['Party Tags'] || r['Tags'] || '').trim();
-  const partyTags = rawPartyTags ? Array.from(new Set(rawPartyTags.split(',').map((t) => t.trim()).filter(Boolean))) : [];
+  const partyTags = normalizePartyTags(rawPartyTags, { dedupe: true });
 
-  const errors: string[] = [];
+  const plusOneAllocations =
+    rawPlusOne !== '' && /^\d+$/.test(rawPlusOne) ? parseInt(rawPlusOne, 10) : undefined;
+  const errors = validateInvitationGuestFields(
+    {
+      guestName,
+      email,
+      plusOneAllocations: rawPlusOne === '' ? undefined : (plusOneAllocations ?? NaN),
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
+      plusOneFirstName,
+      plusOneLastName,
+      householdName,
+      partyGroup,
+    },
+    { mode: 'row' }
+  );
   const warnings: string[] = [];
-
-  if (!guestName) {
-    errors.push('Guest name is required.');
-  }
 
   if (code) {
     if ((codeFrequency.get(code) || 0) > 1) {
@@ -589,57 +610,6 @@ export function validateSingleCsvRow(
     }
   } else {
     warnings.push('Blank code: Auto-generated 8-char code will be assigned.');
-  }
-
-  if (email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      errors.push('Invalid email format.');
-    }
-  }
-
-  if (addressLine1 && addressLine1.length > 150) {
-    errors.push('Address Line 1 must be under 150 characters.');
-  }
-  if (addressLine2 && addressLine2.length > 150) {
-    errors.push('Address Line 2 must be under 150 characters.');
-  }
-  if (city && city.length > 100) {
-    errors.push('City must be under 100 characters.');
-  }
-  if (state && state.length > 100) {
-    errors.push('State must be under 100 characters.');
-  }
-  if (zipCode && zipCode.length > 20) {
-    errors.push('Zip Code must be under 20 characters.');
-  }
-  if (country && country.length > 100) {
-    errors.push('Country must be under 100 characters.');
-  }
-
-  let plusOneAllocations: number | undefined = undefined;
-  if (rawPlusOne !== '') {
-    if (!/^\d+$/.test(rawPlusOne)) {
-      errors.push('Plus-one allocation must be a non-negative integer.');
-    } else {
-      plusOneAllocations = parseInt(rawPlusOne, 10);
-    }
-  }
-
-  if (plusOneFirstName && plusOneFirstName.length > 100) {
-    errors.push('Plus-one first name must be under 100 characters.');
-  }
-
-  if (plusOneLastName && plusOneLastName.length > 100) {
-    errors.push('Plus-one last name must be under 100 characters.');
-  }
-
-  if (householdName && householdName.length > 100) {
-    errors.push('Household name must be under 100 characters.');
-  }
-
-  if (partyGroup && partyGroup.length > 100) {
-    errors.push('Party group must be under 100 characters.');
   }
 
   // Collect extra fields
