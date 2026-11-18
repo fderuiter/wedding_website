@@ -12,6 +12,7 @@ export interface ScheduleEventWithRsvp {
   location?: string | null;
   category?: string | null;
   isPrivate: boolean;
+  isReadOnly?: boolean;
   attireRules?: string | null;
   userRsvp?: {
     status: 'attending' | 'declined' | 'pending';
@@ -31,6 +32,26 @@ export interface AccessMatrixQueryParams {
 
 export class SubEventService {
   constructor(private client: any = prisma) {}
+
+  /**
+   * Retrieves the plus-one allowance assigned to an invitation code, or null if not found.
+   */
+  async getPlusOneAllowanceForGuest(code?: string | null): Promise<number | null> {
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return null;
+    }
+
+    const invite = await this.client.invitationCode.findUnique({
+      where: { code: code.trim().toUpperCase() },
+      select: { plusOneAllocations: true },
+    });
+
+    if (!invite) {
+      return null;
+    }
+
+    return Math.max(0, invite.plusOneAllocations ?? 0);
+  }
 
   /**
    * Retrieves a single sub-event by ID for a visitor or authenticated guest.
@@ -97,15 +118,16 @@ export class SubEventService {
         }
         return {
           id: node.id,
-          title: node.data?.title || 'Scheduled Event',
-          description: node.data?.description || '',
+          title: node.data?.title || node.data?.ceremonyTitle || node.data?.receptionTitle || 'Scheduled Event',
+          description: node.data?.description || node.data?.receptionDetails || '',
           startTime: node.data?.startTime || null,
           endTime: node.data?.endTime || null,
           locationName: node.data?.locationName || node.data?.location || '',
           location: node.data?.location || '',
           category: node.data?.category || '',
           isPrivate: false,
-          attireRules: node.data?.attireRules || node.data?.attire || null,
+          isReadOnly: true,
+          attireRules: node.data?.attireRules || node.data?.attire || node.data?.receptionAttire || null,
           userRsvp: null,
         };
       }
@@ -132,6 +154,7 @@ export class SubEventService {
       location: subEvent.location || '',
       category: subEvent.category || '',
       isPrivate: subEvent.isPrivate,
+      isReadOnly: false,
       attireRules: (subEvent as any).attireRules || (subEvent as any).attire || null,
       userRsvp: rsvp
         ? {
@@ -215,21 +238,26 @@ export class SubEventService {
       return nodes
         .filter((n: any) => {
           const isPriv = Boolean(n.data?.isPrivate);
-          if (!isPriv) return true;
-          // If private, only include if guest has explicit access (or fallback to public)
-          return false;
+          if (isPriv) return false;
+          return (
+            n.type === 'Schedule' ||
+            n.tags?.includes('Schedule') ||
+            n.tags?.includes('schedule') ||
+            Boolean(n.data?.startTime)
+          );
         })
         .map((n: any) => ({
           id: n.id,
-          title: n.data?.title || 'Scheduled Event',
-          description: n.data?.description || '',
+          title: n.data?.title || n.data?.ceremonyTitle || n.data?.receptionTitle || 'Scheduled Event',
+          description: n.data?.description || n.data?.receptionDetails || '',
           startTime: n.data?.startTime || null,
           endTime: n.data?.endTime || null,
           locationName: n.data?.locationName || n.data?.location || '',
           location: n.data?.location || '',
           category: n.data?.category || '',
-          isPrivate: Boolean(n.data?.isPrivate),
-          attireRules: n.data?.attireRules || n.data?.attire || null,
+          isPrivate: false,
+          isReadOnly: true,
+          attireRules: n.data?.attireRules || n.data?.attire || n.data?.receptionAttire || null,
           userRsvp: null,
         }));
     }
@@ -240,12 +268,13 @@ export class SubEventService {
         id: evt.id,
         title: evt.title,
         description: evt.description || '',
-        startTime: evt.startTime ? evt.startTime.toISOString() : null,
-        endTime: evt.endTime ? evt.endTime.toISOString() : null,
+        startTime: evt.startTime instanceof Date ? evt.startTime.toISOString() : (evt.startTime || null),
+        endTime: evt.endTime instanceof Date ? evt.endTime.toISOString() : (evt.endTime || null),
         locationName: evt.locationName || '',
         location: evt.location || '',
         category: evt.category || '',
         isPrivate: evt.isPrivate,
+        isReadOnly: false,
         attireRules: (evt as any).attireRules || (evt as any).attire || null,
         userRsvp: rsvp
           ? {
@@ -271,7 +300,7 @@ export class SubEventService {
 
     const invite = await this.client.invitationCode.findUnique({
       where: { code: code.trim().toUpperCase() },
-      select: { id: true, guestName: true },
+      select: { id: true, guestName: true, plusOneAllocations: true },
     });
 
     if (!invite) {
@@ -281,6 +310,8 @@ export class SubEventService {
     if (!submissions || submissions.length === 0) {
       return [];
     }
+
+    const maxPlusOnes = Math.max(0, invite.plusOneAllocations ?? 0);
 
     // Collect all unique identifiers from the submissions array before query execution
     const subEventIds = Array.from(new Set(submissions.map((s) => s.subEventId)));
@@ -301,8 +332,33 @@ export class SubEventService {
 
     const subEventMap = new Map<string, any>(subEvents.map((se: any) => [se.id, se]));
 
-    // Validate event existence and private permissions in memory
+    // Check if any missing IDs correspond to read-only fallback ContentNode items
+    const missingIds = subEventIds.filter((id) => !subEventMap.has(id));
+    let fallbackNodeIds = new Set<string>();
+    if (missingIds.length > 0 && this.client.contentNode?.findMany) {
+      const fallbackNodes = await this.client.contentNode.findMany({
+        where: {
+          id: { in: missingIds },
+          OR: [
+            { type: 'Schedule' },
+            { type: 'Logistics' },
+            { tags: { has: 'Schedule' } },
+            { tags: { has: 'schedule' } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (Array.isArray(fallbackNodes)) {
+        fallbackNodeIds = new Set(fallbackNodes.map((n: any) => n.id));
+      }
+    }
+
+    // Validate event existence, read-only status, private permissions, and plus-one limits
     for (const sub of submissions) {
+      if (fallbackNodeIds.has(sub.subEventId)) {
+        throw new ApiError(400, 'RSVPs cannot be submitted for read-only schedule items.');
+      }
+
       const subEvent = subEventMap.get(sub.subEventId);
 
       if (!subEvent) {
@@ -312,6 +368,17 @@ export class SubEventService {
       // Check access permission for private sub-events
       if (subEvent.isPrivate && (!subEvent.accesses || subEvent.accesses.length === 0)) {
         throw new ApiError(403, `Forbidden: You do not have access to private event "${subEvent.title}".`);
+      }
+
+      const requestedPlusOnes = sub.plusOneCount ?? 0;
+      if (requestedPlusOnes > maxPlusOnes) {
+        if (maxPlusOnes === 0) {
+          throw new ApiError(400, 'Plus-one guests are not allocated for your invitation.');
+        }
+        throw new ApiError(
+          400,
+          `Plus-one count (${requestedPlusOnes}) exceeds your allocated limit of ${maxPlusOnes}.`
+        );
       }
     }
 

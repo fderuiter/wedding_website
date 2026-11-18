@@ -342,7 +342,11 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
 
         if (!isOk) {
           const isAuth = isAuthError(res.status) || res.status === 404 || res.status === 400;
-          const errMsg = data?.error || 'Invalid or expired invitation code.';
+          const errMsg =
+            data?.error ||
+            (isAuth
+              ? 'Invalid or expired invitation code.'
+              : 'Failed to connect to guest portal. Please try again.');
           addToast(errMsg, 'error');
 
           if (isAutoMount) {
@@ -547,6 +551,19 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     dispatch({ type: 'RESET_ERROR' });
   }, []);
 
+  const handleRetry = useCallback(async () => {
+    cancelInFlightValidation();
+    const controller = new AbortController();
+    validationAbortControllerRef.current = controller;
+
+    const currentCode = stateRef.current.code.trim();
+    if (currentCode) {
+      await validateCode(currentCode, controller.signal, true);
+    } else {
+      await checkInitialSession(controller.signal);
+    }
+  }, [cancelInFlightValidation, checkInitialSession, validateCode]);
+
   const isDirty =
     state.form.addressLine1 !== state.baseline.addressLine1 ||
     state.form.addressLine2 !== state.baseline.addressLine2 ||
@@ -560,6 +577,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     dispatch,
     handleValidateCode,
     handleSaveAddress,
+    handleRetry,
     setField,
     setCode,
     resetError,
