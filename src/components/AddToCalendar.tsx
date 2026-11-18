@@ -3,6 +3,7 @@
 import React, { useState, useRef, useId } from 'react';
 import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
+import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 
 /**
  * @interface AddToCalendarProps
@@ -53,27 +54,7 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
     }
   };
 
-  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
-    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
-      e.preventDefault();
-      const buttons = overlayRef.current?.querySelectorAll('button[role="menuitem"]');
-      if (!buttons || buttons.length === 0) return;
-      const index = Array.from(buttons).indexOf(document.activeElement as Element);
-      let nextIndex = 0;
-      if (e.key === 'Home') {
-        nextIndex = 0;
-      } else if (e.key === 'End') {
-        nextIndex = buttons.length - 1;
-      } else if (e.key === 'ArrowDown') {
-        nextIndex = index + 1 < buttons.length ? index + 1 : 0;
-      } else if (e.key === 'ArrowUp') {
-        nextIndex = index - 1 >= 0 ? index - 1 : buttons.length - 1;
-      }
-      if (buttons[nextIndex]) {
-        (buttons[nextIndex] as HTMLElement).focus();
-      }
-    }
-  };
+  const { handleMenuKeyDown } = useMenuNavigation(overlayRef);
 
   const calendarOptions = ['Google', 'Apple', 'iCal', 'Outlook.com', 'Yahoo'];
 
