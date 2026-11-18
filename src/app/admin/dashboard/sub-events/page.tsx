@@ -342,8 +342,15 @@ function SubEventsMatrixPageContent() {
           );
         }
       }
-    } catch (err: any) {
-      addToast(err?.message || (editingId ? 'Error updating sub-event' : 'Error creating sub-event'), 'error');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : editingId
+            ? 'Error updating sub-event'
+            : 'Error creating sub-event',
+        'error'
+      );
       throw err;
     }
   };
@@ -361,8 +368,11 @@ function SubEventsMatrixPageContent() {
         return next;
       });
       addToast('Sub-event deleted successfully.', 'success');
-    } catch (err: any) {
-      addToast(err?.message || 'Error deleting sub-event', 'error');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message ? err.message : 'Error deleting sub-event',
+        'error'
+      );
       throw err;
     }
   };

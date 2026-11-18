@@ -17,6 +17,6 @@ export const WeddingPartyMemberSchema = z.object({
   isSample: z.boolean().default(false),
   createdAt: z.date(),
   updatedAt: z.date(),
-}).merge(createMediaAssociationSchema('photo'));
+}).extend(createMediaAssociationSchema('photo').shape);
 
 export type WeddingPartyMemberDTO = z.infer<typeof WeddingPartyMemberSchema>;

@@ -5,12 +5,28 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
 import type { InvitationCodeDTO } from '@/features/registry';
+import {
+  ADDRESS_LINE_MAX_LENGTH,
+  CITY_MAX_LENGTH,
+  COUNTRY_MAX_LENGTH,
+  GUEST_NAME_MAX_LENGTH,
+  HOUSEHOLD_NAME_MAX_LENGTH,
+  INVITATION_CODE_MAX_LENGTH,
+  PARTY_GROUP_MAX_LENGTH,
+  PLUS_ONE_NAME_MAX_LENGTH,
+  STATE_MAX_LENGTH,
+  ZIP_CODE_MAX_LENGTH,
+  normalizeInvitationCode,
+  normalizeNullableString,
+  normalizePartyTags,
+  validateInvitationGuestFields,
+} from '@/utils/invitationValidation';
 
 interface GuestEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   guest: InvitationCodeDTO | null;
-  onSave: (id: string, payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+  onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
 }
 
 interface GuestFormState {
@@ -88,8 +104,8 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
 
   if (!isOpen || !guest) return null;
 
-  const originalCodeNormalized = (guest.code || '').trim().toUpperCase();
-  const enteredCodeNormalized = formState.code.trim().toUpperCase();
+  const originalCodeNormalized = normalizeInvitationCode(guest.code);
+  const enteredCodeNormalized = normalizeInvitationCode(formState.code);
   const hasCodeChanged =
     Boolean(originalCodeNormalized) && enteredCodeNormalized !== originalCodeNormalized;
 
@@ -106,16 +122,18 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
       setValidationError('Guest name is required.');
       return;
     }
+    if (trimmedName.length > GUEST_NAME_MAX_LENGTH) {
+      setValidationError(`Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`);
+      return;
+    }
 
-    const trimmedCode = formState.code.trim().toUpperCase();
+    const trimmedCode = normalizeInvitationCode(formState.code);
     if (!trimmedCode) {
       setValidationError('Invitation code is required.');
       return;
     }
-
-    const trimmedEmail = formState.email.trim();
-    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setValidationError('Please enter a valid email address.');
+    if (trimmedCode.length > INVITATION_CODE_MAX_LENGTH) {
+      setValidationError(`Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`);
       return;
     }
 
@@ -129,31 +147,36 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
     const payload: Partial<InvitationCodeDTO> = {
       guestName: trimmedName,
       code: trimmedCode,
-      email: trimmedEmail || null,
-      householdName: formState.householdName.trim() || null,
-      partyGroup: formState.partyGroup.trim() || null,
-      partyTags: formState.partyTags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      email: normalizeNullableString(formState.email),
+      householdName: normalizeNullableString(formState.householdName),
+      partyGroup: normalizeNullableString(formState.partyGroup),
+      partyTags: normalizePartyTags(formState.partyTags, { dedupe: true }),
       plusOneAllocations: parsedAllocations,
-      plusOneFirstName: formState.plusOneFirstName.trim() || null,
-      plusOneLastName: formState.plusOneLastName.trim() || null,
-      dietaryNotes: formState.dietaryNotes.trim() || null,
-      addressLine1: formState.addressLine1.trim() || null,
-      addressLine2: formState.addressLine2.trim() || null,
-      city: formState.city.trim() || null,
-      state: formState.state.trim() || null,
-      zipCode: formState.zipCode.trim() || null,
-      country: formState.country.trim() || null,
+      plusOneFirstName: normalizeNullableString(formState.plusOneFirstName),
+      plusOneLastName: normalizeNullableString(formState.plusOneLastName),
+      dietaryNotes: normalizeNullableString(formState.dietaryNotes),
+      addressLine1: normalizeNullableString(formState.addressLine1),
+      addressLine2: normalizeNullableString(formState.addressLine2),
+      city: normalizeNullableString(formState.city),
+      state: normalizeNullableString(formState.state),
+      zipCode: normalizeNullableString(formState.zipCode),
+      country: normalizeNullableString(formState.country),
     };
+
+    const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
+    if (fieldErrors.length > 0) {
+      setValidationError(fieldErrors[0]);
+      return;
+    }
 
     setIsSaving(true);
     try {
       await onSave(guest.id, payload);
       onClose();
-    } catch (err: any) {
-      setValidationError(err?.message || 'Failed to update guest details.');
+    } catch (err: unknown) {
+      setValidationError(
+        err instanceof Error && err.message ? err.message : 'Failed to update guest details.'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -200,6 +223,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Input
                 type="text"
                 required
+                maxLength={GUEST_NAME_MAX_LENGTH}
                 value={formState.guestName}
                 onChange={(e) => updateField('guestName', e.target.value)}
                 placeholder="e.g. Alice Smith"
@@ -211,6 +235,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Input
                 type="text"
                 required
+                maxLength={INVITATION_CODE_MAX_LENGTH}
                 value={formState.code}
                 onChange={(e) => updateField('code', e.target.value)}
                 className="font-mono uppercase"
@@ -243,6 +268,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Plus-One First Name</Label>
               <Input
                 type="text"
+                maxLength={PLUS_ONE_NAME_MAX_LENGTH}
                 value={formState.plusOneFirstName}
                 onChange={(e) => updateField('plusOneFirstName', e.target.value)}
                 placeholder="e.g. Jordan"
@@ -253,6 +279,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Plus-One Last Name</Label>
               <Input
                 type="text"
+                maxLength={PLUS_ONE_NAME_MAX_LENGTH}
                 value={formState.plusOneLastName}
                 onChange={(e) => updateField('plusOneLastName', e.target.value)}
                 placeholder="e.g. Smith"
@@ -270,6 +297,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Household Name</Label>
               <Input
                 type="text"
+                maxLength={HOUSEHOLD_NAME_MAX_LENGTH}
                 value={formState.householdName}
                 onChange={(e) => updateField('householdName', e.target.value)}
                 placeholder="e.g. The Smith Family"
@@ -280,6 +308,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Party Group</Label>
               <Input
                 type="text"
+                maxLength={PARTY_GROUP_MAX_LENGTH}
                 value={formState.partyGroup}
                 onChange={(e) => updateField('partyGroup', e.target.value)}
                 placeholder="e.g. Bridal Party"
@@ -317,6 +346,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Address Line 1</Label>
               <Input
                 type="text"
+                maxLength={ADDRESS_LINE_MAX_LENGTH}
                 value={formState.addressLine1}
                 onChange={(e) => updateField('addressLine1', e.target.value)}
                 placeholder="123 Main St"
@@ -327,6 +357,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Address Line 2</Label>
               <Input
                 type="text"
+                maxLength={ADDRESS_LINE_MAX_LENGTH}
                 value={formState.addressLine2}
                 onChange={(e) => updateField('addressLine2', e.target.value)}
                 placeholder="Apt 4B"
@@ -337,6 +368,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>City</Label>
               <Input
                 type="text"
+                maxLength={CITY_MAX_LENGTH}
                 value={formState.city}
                 onChange={(e) => updateField('city', e.target.value)}
                 placeholder="Seattle"
@@ -347,6 +379,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>State / Province</Label>
               <Input
                 type="text"
+                maxLength={STATE_MAX_LENGTH}
                 value={formState.state}
                 onChange={(e) => updateField('state', e.target.value)}
                 placeholder="WA"
@@ -357,6 +390,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Zip / Postal Code</Label>
               <Input
                 type="text"
+                maxLength={ZIP_CODE_MAX_LENGTH}
                 value={formState.zipCode}
                 onChange={(e) => updateField('zipCode', e.target.value)}
                 placeholder="98101"
@@ -367,6 +401,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
               <Label>Country</Label>
               <Input
                 type="text"
+                maxLength={COUNTRY_MAX_LENGTH}
                 value={formState.country}
                 onChange={(e) => updateField('country', e.target.value)}
                 placeholder="USA"

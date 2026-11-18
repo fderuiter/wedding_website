@@ -14,6 +14,7 @@ export interface SetupWizardPersistedState {
   partner2Name: string;
   weddingDate: string;
   baseUrl: string;
+  contactEmail?: string;
   venueName: string;
   venueCity: string;
   venueState: string;
@@ -29,6 +30,7 @@ export const initialSetupWizardState: SetupWizardPersistedState = {
   partner2Name: '',
   weddingDate: '',
   baseUrl: '',
+  contactEmail: '',
   venueName: '',
   venueCity: '',
   venueState: '',
@@ -39,6 +41,7 @@ export const initialSetupWizardState: SetupWizardPersistedState = {
 };
 
 export interface SetupWizardMachineState extends SetupWizardPersistedState {
+  contactEmail: string;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -73,6 +76,7 @@ export function createInitialMachineState(
 
   return {
     ...mergedDraft,
+    contactEmail: mergedDraft.contactEmail ?? '',
     step: 1,
     persistedDraftStep: validDraftStep,
     isAuthenticated: false,
@@ -188,6 +192,10 @@ export function setupWizardReducer(
       return {
         ...state,
         ...action.payload,
+        contactEmail:
+          action.payload.contactEmail !== undefined
+            ? action.payload.contactEmail
+            : state.contactEmail,
         step: nextStep,
         persistedDraftStep: nextPersistedDraftStep,
         importedGuestCount:
@@ -290,6 +298,7 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
         partner2Name: state.partner2Name,
         weddingDate: state.weddingDate,
         baseUrl: state.baseUrl,
+        contactEmail: state.contactEmail,
         venueName: state.venueName,
         venueCity: state.venueCity,
         venueState: state.venueState,
@@ -310,6 +319,7 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
     state.partner2Name,
     state.weddingDate,
     state.baseUrl,
+    state.contactEmail,
     state.venueName,
     state.venueCity,
     state.venueState,

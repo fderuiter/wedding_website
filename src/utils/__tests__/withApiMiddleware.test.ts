@@ -1,4 +1,5 @@
 import { withApiMiddleware } from '../withApiMiddleware';
+import { ApiError } from '../ApiError';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 import { resetRateLimitsForTesting } from '../rateLimit';
@@ -182,7 +183,6 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
     });
 
     test('preserves 4xx operational errors (ApiError) without masking or adding referenceId in production', async () => {
-      const { ApiError } = require('../ApiError');
       const handler = jest.fn().mockImplementation(() => {
         throw new ApiError(400, 'Invalid payload: email is required', { field: 'email' });
       });

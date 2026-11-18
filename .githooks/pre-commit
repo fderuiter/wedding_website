@@ -3,10 +3,14 @@
 import { spawnSync } from 'child_process';
 
 let isStashed = false;
+let cleanWorkingTreeBeforeChecks = false;
 
 function hasUnstagedChanges() {
   const statusResult = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' });
-  if (statusResult.status !== 0 || !statusResult.stdout) {
+  if (statusResult.status !== 0) {
+    return null;
+  }
+  if (!statusResult.stdout) {
     return false;
   }
   const lines = statusResult.stdout.split('\n').filter(Boolean);
@@ -14,7 +18,12 @@ function hasUnstagedChanges() {
 }
 
 function pushStash() {
-  if (!hasUnstagedChanges()) {
+  const unstaged = hasUnstagedChanges();
+  if (unstaged === null) {
+    return;
+  }
+  if (!unstaged) {
+    cleanWorkingTreeBeforeChecks = true;
     return;
   }
   console.log('Stashing unstaged changes...');
@@ -25,12 +34,17 @@ function pushStash() {
   );
   if (stashResult.status === 0) {
     isStashed = true;
+    cleanWorkingTreeBeforeChecks = true;
   } else {
     console.warn('⚠️ Warning: Failed to stash unstaged changes.');
   }
 }
 
 function popStash() {
+  if (cleanWorkingTreeBeforeChecks) {
+    cleanWorkingTreeBeforeChecks = false;
+    spawnSync('git', ['checkout', '--', '.'], { stdio: 'ignore' });
+  }
   if (!isStashed) return;
   isStashed = false;
   console.log('Restoring unstaged changes...');
@@ -75,6 +89,7 @@ try {
     { name: 'Documentation relative links check', script: 'check:links' },
     { name: 'Prisma schema validation', script: 'check:prisma' },
     { name: 'Migration compatibility check', script: 'lint:migrations' },
+    { name: 'Documentation synchronization check', script: 'check:doc-sync' },
   ];
 
   for (const check of checks) {

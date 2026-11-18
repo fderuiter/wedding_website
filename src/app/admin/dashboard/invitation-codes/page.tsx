@@ -141,23 +141,27 @@ export default function InvitationCodesDashboardPage() {
 
         if (Array.isArray(data.subEvents)) {
           setSubEvents(data.subEvents);
-          data.subEvents.forEach((evt: any) => {
-            if (Array.isArray(evt.allowedInvitationCodeIds)) {
-              evt.allowedInvitationCodeIds.forEach((invId: string) => {
-                if (!map[invId]) map[invId] = new Set<string>();
-                map[invId].add(evt.id);
-              });
+          data.subEvents.forEach(
+            (evt: { id: string; allowedInvitationCodeIds?: string[] }) => {
+              if (Array.isArray(evt.allowedInvitationCodeIds)) {
+                evt.allowedInvitationCodeIds.forEach((invId: string) => {
+                  if (!map[invId]) map[invId] = new Set<string>();
+                  map[invId].add(evt.id);
+                });
+              }
             }
-          });
+          );
         }
 
         if (Array.isArray(data.invitationCodes)) {
-          data.invitationCodes.forEach((c: any) => {
-            if (Array.isArray(c.allowedSubEventIds)) {
-              if (!map[c.id]) map[c.id] = new Set<string>();
-              c.allowedSubEventIds.forEach((seId: string) => map[c.id].add(seId));
+          data.invitationCodes.forEach(
+            (c: { id: string; allowedSubEventIds?: string[] }) => {
+              if (Array.isArray(c.allowedSubEventIds)) {
+                if (!map[c.id]) map[c.id] = new Set<string>();
+                c.allowedSubEventIds.forEach((seId: string) => map[c.id].add(seId));
+              }
             }
-          });
+          );
         }
 
         const resolvedMatrix: Record<string, string[]> = {};
@@ -198,9 +202,12 @@ export default function InvitationCodesDashboardPage() {
         throw new Error(errJson.error || 'Failed to update event permissions');
       }
       addToast('Sub-event permissions updated.', 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: previousAllowed }));
-      addToast(e.message || 'Failed to update sub-event permissions.', 'error');
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to update sub-event permissions.',
+        'error'
+      );
       fetchSubEventsAndMatrix();
     }
   };
@@ -209,8 +216,11 @@ export default function InvitationCodesDashboardPage() {
     try {
       await update(id, payload);
       addToast('Guest details updated successfully.', 'success');
-    } catch (e: any) {
-      addToast(e?.message || 'Failed to update guest details.', 'error');
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to update guest details.',
+        'error'
+      );
       throw e;
     }
   };
@@ -232,8 +242,15 @@ export default function InvitationCodesDashboardPage() {
         addToast('Sub-event created successfully.', 'success');
       }
       fetchSubEventsAndMatrix();
-    } catch (e: any) {
-      addToast(e?.message || (editingId ? 'Failed to update sub-event.' : 'Failed to create sub-event.'), 'error');
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message
+          ? e.message
+          : editingId
+            ? 'Failed to update sub-event.'
+            : 'Failed to create sub-event.',
+        'error'
+      );
       throw e;
     }
   };
@@ -254,8 +271,11 @@ export default function InvitationCodesDashboardPage() {
       }
       addToast('Sub-event deleted successfully.', 'success');
       fetchSubEventsAndMatrix();
-    } catch (e: any) {
-      addToast(e?.message || 'Failed to delete sub-event.', 'error');
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to delete sub-event.',
+        'error'
+      );
       throw e;
     }
   };

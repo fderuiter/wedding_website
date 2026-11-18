@@ -21,6 +21,6 @@ export const AttractionSchema = z.object({
   isSample: z.boolean().default(false),
   createdAt: z.date(),
   updatedAt: z.date(),
-}).merge(createMediaAssociationSchema('image'));
+}).extend(createMediaAssociationSchema('image').shape);
 
 export type AttractionDTO = z.infer<typeof AttractionSchema>;

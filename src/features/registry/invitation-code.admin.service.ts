@@ -1,10 +1,25 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { InvitationCodeDTO, DryRunValidatedRow, DryRunValidationSummary, DryRunValidationResponse } from './schemas';
+import {
+  InvitationCodeDTO,
+  DryRunValidatedRow,
+  DryRunValidationSummary,
+  DryRunValidationResponse,
+} from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
 import { generateRandomCode } from './utils/invitation';
+import {
+  BatchInvitationCodeRecord,
+  InvitationCollisionStrategy,
+  NormalizedInvitationCodeRecord,
+  normalizeBatchInvitationRecord,
+  normalizeInvitationCode,
+  normalizePartialInvitationFields,
+  normalizePartyTags,
+  validateInvitationGuestFields,
+} from '@/utils/invitationValidation';
 
 export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
   static ENTITY_KEY = 'invitation-codes';
@@ -13,128 +28,29 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     super(new BaseRepository<InvitationCodeDTO>('invitationCode'), 'InvitationCode');
   }
 
-  private validateFields(data: any, isPartial: boolean = false): void {
-    if (!isPartial || data.guestName !== undefined) {
-      if (!data.guestName || typeof data.guestName !== 'string' || data.guestName.trim() === '') {
-        throw new Error('Validation Error: Guest name is required.');
-      }
-    }
-    if (data.code !== undefined && data.code !== null && (typeof data.code !== 'string' || data.code.trim() === '')) {
-      throw new Error('Validation Error: Code cannot be empty.');
-    }
-    if (data.email && typeof data.email === 'string' && data.email.trim() !== '') {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(data.email.trim())) {
-        throw new Error('Validation Error: Invalid email format.');
-      }
-    }
-    if (data.plusOneAllocations !== undefined && data.plusOneAllocations !== null) {
-      if (!Number.isInteger(data.plusOneAllocations) || data.plusOneAllocations < 0) {
-        throw new Error('Validation Error: Plus-one allocation must be a non-negative integer.');
-      }
-    }
-    if (data.addressLine1 && typeof data.addressLine1 === 'string' && data.addressLine1.length > 150) {
-      throw new Error('Validation Error: Address Line 1 must be under 150 characters.');
-    }
-    if (data.addressLine2 && typeof data.addressLine2 === 'string' && data.addressLine2.length > 150) {
-      throw new Error('Validation Error: Address Line 2 must be under 150 characters.');
-    }
-    if (data.city && typeof data.city === 'string' && data.city.length > 100) {
-      throw new Error('Validation Error: City must be under 100 characters.');
-    }
-    if (data.state && typeof data.state === 'string' && data.state.length > 100) {
-      throw new Error('Validation Error: State must be under 100 characters.');
-    }
-    if (data.zipCode && typeof data.zipCode === 'string' && data.zipCode.length > 20) {
-      throw new Error('Validation Error: Zip Code must be under 20 characters.');
-    }
-    if (data.country && typeof data.country === 'string' && data.country.length > 100) {
-      throw new Error('Validation Error: Country must be under 100 characters.');
-    }
-    if (data.plusOneFirstName !== undefined && data.plusOneFirstName !== null) {
-      if (typeof data.plusOneFirstName !== 'string' || data.plusOneFirstName.length > 100) {
-        throw new Error('Validation Error: Plus-one first name must be under 100 characters.');
-      }
-    }
-    if (data.plusOneLastName !== undefined && data.plusOneLastName !== null) {
-      if (typeof data.plusOneLastName !== 'string' || data.plusOneLastName.length > 100) {
-        throw new Error('Validation Error: Plus-one last name must be under 100 characters.');
-      }
-    }
-    if (data.householdName !== undefined && data.householdName !== null) {
-      if (typeof data.householdName !== 'string' || data.householdName.length > 100) {
-        throw new Error('Validation Error: Household name must be under 100 characters.');
-      }
-    }
-    if (data.partyGroup !== undefined && data.partyGroup !== null) {
-      if (typeof data.partyGroup !== 'string' || data.partyGroup.length > 100) {
-        throw new Error('Validation Error: Party group must be under 100 characters.');
-      }
-    }
-    if (data.partyTags !== undefined && data.partyTags !== null) {
-      if (!Array.isArray(data.partyTags)) {
-        throw new Error('Validation Error: Party tags must be an array of strings.');
-      }
+  protected async validate(data: unknown, _client?: Prisma.TransactionClient): Promise<void> {
+    const errors = validateInvitationGuestFields(data, { mode: 'service' });
+    if (errors.length > 0) {
+      throw new Error(errors[0]);
     }
   }
 
-  protected async validate(data: any, _client?: any): Promise<void> {
-    this.validateFields(data, false);
-  }
-
-  private normalizeFields(data: any): any {
-    const finalData = { ...data };
-
-    if (typeof finalData.guestName === 'string') {
-      finalData.guestName = finalData.guestName.trim();
-    }
-
-    const nullableStringFields = [
-      'email',
-      'addressLine1',
-      'addressLine2',
-      'city',
-      'state',
-      'zipCode',
-      'country',
-      'dietaryNotes',
-      'plusOneFirstName',
-      'plusOneLastName',
-      'householdName',
-      'partyGroup',
-    ];
-
-    for (const field of nullableStringFields) {
-      if (finalData[field] !== undefined) {
-        finalData[field] =
-          typeof finalData[field] === 'string' && finalData[field].trim()
-            ? finalData[field].trim()
-            : null;
-      }
-    }
-
-    if (finalData.partyTags !== undefined) {
-      if (Array.isArray(finalData.partyTags)) {
-        finalData.partyTags = finalData.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
-      } else {
-        finalData.partyTags = [];
-      }
-    }
-
-    return finalData;
-  }
-
-  protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
-    const finalData = this.normalizeFields(data);
+  protected async preSave(
+    data: Record<string, unknown>,
+    client?: Prisma.TransactionClient,
+    _author?: string
+  ): Promise<Record<string, unknown>> {
+    const finalData = normalizePartialInvitationFields(data);
     const activeClient = client || this.repo.client;
 
-    if (!finalData.code || typeof finalData.code !== 'string' || finalData.code.trim() === '') {
+    const normalizedCode = normalizeInvitationCode(finalData.code);
+    if (!normalizedCode) {
       let uniqueCode = '';
       let attempts = 0;
       while (attempts < 10) {
         const potentialCode = generateRandomCode();
         const existing = await activeClient.invitationCode.findUnique({
-          where: { code: potentialCode }
+          where: { code: potentialCode },
         });
         if (!existing) {
           uniqueCode = potentialCode;
@@ -147,9 +63,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
       finalData.code = uniqueCode;
     } else {
-      finalData.code = finalData.code.trim().toUpperCase();
+      finalData.code = normalizedCode;
       const existing = await activeClient.invitationCode.findUnique({
-        where: { code: finalData.code }
+        where: { code: finalData.code },
       });
       if (existing) {
         // Handled by Prisma unique constraint or update collision check
@@ -159,21 +75,32 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     return finalData;
   }
 
-  async update(id: string, data: any, author: string = 'Admin'): Promise<InvitationCodeDTO> {
+  async update(
+    id: string,
+    data: Partial<InvitationCodeDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<InvitationCodeDTO> {
     return this.repo.transaction(async (txRepo) => {
-      this.validateFields(data, true);
-      const processedData = this.normalizeFields(data);
+      const errors = validateInvitationGuestFields(data, { mode: 'service', partial: true });
+      if (errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+
+      const processedData = normalizePartialInvitationFields(data);
 
       if (processedData.code !== undefined) {
-        if (!processedData.code || typeof processedData.code !== 'string' || processedData.code.trim() === '') {
+        const normalizedCode = normalizeInvitationCode(processedData.code);
+        if (!normalizedCode) {
           throw new Error('Validation Error: Code cannot be empty.');
         }
-        processedData.code = processedData.code.trim().toUpperCase();
+        processedData.code = normalizedCode;
         const existing = await txRepo.client.invitationCode.findUnique({
-          where: { code: processedData.code },
+          where: { code: normalizedCode },
         });
         if (existing && existing.id !== id) {
-          throw new Error(`Validation Error: Invitation code "${processedData.code}" is already in use.`);
+          throw new Error(
+            `Validation Error: Invitation code "${normalizedCode}" is already in use.`
+          );
         }
       }
 
@@ -183,88 +110,130 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     });
   }
 
+  async updateBatch(
+    ids: string[],
+    data: Partial<InvitationCodeDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<InvitationCodeDTO[]> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error('Validation Error: At least one ID is required.');
+    }
+    if (ids.length > 100) {
+      throw new Error('Validation Error: Maximum of 100 items allowed per batch request.');
+    }
+
+    return this.repo.transaction(async (txRepo) => {
+      const errors = validateInvitationGuestFields(data, { mode: 'service', partial: true });
+      if (errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+
+      const processedData = normalizePartialInvitationFields(data);
+
+      if (processedData.code !== undefined) {
+        if (ids.length > 1) {
+          throw new Error(
+            'Validation Error: Invitation code cannot be shared across multiple guest records.'
+          );
+        }
+        const normalizedCode = normalizeInvitationCode(processedData.code);
+        if (!normalizedCode) {
+          throw new Error('Validation Error: Code cannot be empty.');
+        }
+        processedData.code = normalizedCode;
+        const existing = await txRepo.client.invitationCode.findUnique({
+          where: { code: normalizedCode },
+        });
+        if (existing && existing.id !== ids[0]) {
+          throw new Error(
+            `Validation Error: Invitation code "${normalizedCode}" is already in use.`
+          );
+        }
+      }
+
+      let records: InvitationCodeDTO[];
+      if (typeof txRepo.updateManyAndReturn === 'function') {
+        records = await txRepo.updateManyAndReturn({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+      } else if (typeof txRepo.model?.updateManyAndReturn === 'function') {
+        records = await txRepo.model.updateManyAndReturn({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+      } else if (typeof txRepo.updateMany === 'function') {
+        await txRepo.updateMany({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+        records = await txRepo.findMany({
+          where: { id: { in: ids } },
+        });
+      } else if (typeof txRepo.model?.updateMany === 'function') {
+        await txRepo.model.updateMany({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+        records = await txRepo.findMany({
+          where: { id: { in: ids } },
+        });
+      } else {
+        records = await Promise.all(ids.map((id) => txRepo.update(id, processedData)));
+      }
+
+      await this.createBatchSnapshots(records, author, txRepo.client);
+      return records;
+    });
+  }
+
+  private buildBatchUpdateData(
+    row: BatchInvitationCodeRecord,
+    normalized: NormalizedInvitationCodeRecord
+  ): Record<string, unknown> {
+    const updateData: Record<string, unknown> = { guestName: normalized.guestName };
+    if (row.email !== undefined) updateData.email = normalized.email;
+    if (row.addressLine1 !== undefined) updateData.addressLine1 = normalized.addressLine1;
+    if (row.addressLine2 !== undefined) updateData.addressLine2 = normalized.addressLine2;
+    if (row.city !== undefined) updateData.city = normalized.city;
+    if (row.state !== undefined) updateData.state = normalized.state;
+    if (row.zipCode !== undefined) updateData.zipCode = normalized.zipCode;
+    if (row.country !== undefined) updateData.country = normalized.country;
+    if (row.dietaryNotes !== undefined) updateData.dietaryNotes = normalized.dietaryNotes;
+    if (row.plusOneAllocations !== undefined) {
+      updateData.plusOneAllocations = normalized.plusOneAllocations ?? 0;
+    }
+    if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = normalized.plusOneFirstName;
+    if (row.plusOneLastName !== undefined) updateData.plusOneLastName = normalized.plusOneLastName;
+    if (row.householdName !== undefined) updateData.householdName = normalized.householdName;
+    if (row.partyGroup !== undefined) updateData.partyGroup = normalized.partyGroup;
+    if (row.partyTags !== undefined) updateData.partyTags = normalized.partyTags;
+    if (row.extraFields !== undefined) updateData.extraFields = normalized.extraFields;
+    return updateData;
+  }
+
   async importBatch(
-    records: {
-      guestName: string;
-      code?: string;
-      email?: string | null;
-      addressLine1?: string | null;
-      addressLine2?: string | null;
-      city?: string | null;
-      state?: string | null;
-      zipCode?: string | null;
-      country?: string | null;
-      dietaryNotes?: string | null;
-      plusOneAllocations?: number;
-      plusOneFirstName?: string | null;
-      plusOneLastName?: string | null;
-      householdName?: string | null;
-      partyGroup?: string | null;
-      partyTags?: string[] | string | null;
-      extraFields?: Record<string, any> | null;
-    }[],
-    collisionStrategy: 'skip' | 'update' | 'reject' = 'skip',
+    records: BatchInvitationCodeRecord[],
+    collisionStrategy: InvitationCollisionStrategy = 'skip',
     author: string = 'Admin'
   ) {
     if (!Array.isArray(records) || records.length === 0) {
       throw new Error('Validation Error: Records array cannot be empty.');
     }
 
-    return executeInTransaction(this.repo.client, async (tx: any) => {
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       for (let i = 0; i < records.length; i++) {
-        const item = records[i];
-        if (!item.guestName || typeof item.guestName !== 'string' || item.guestName.trim() === '') {
-          throw new Error(`Validation Error: Row ${i + 1} has an empty guest name.`);
-        }
-        if (item.email && typeof item.email === 'string' && item.email.trim() !== '') {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(item.email.trim())) {
-            throw new Error(`Validation Error: Row ${i + 1} has an invalid email format.`);
-          }
-        }
-        if (item.plusOneAllocations !== undefined && item.plusOneAllocations !== null) {
-          if (!Number.isInteger(item.plusOneAllocations) || item.plusOneAllocations < 0) {
-            throw new Error(`Validation Error: Row ${i + 1} has an invalid plus-one count.`);
-          }
-        }
-        if (item.addressLine1 && typeof item.addressLine1 === 'string' && item.addressLine1.length > 150) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' Address Line 1 must be under 150 characters.');
-        }
-        if (item.addressLine2 && typeof item.addressLine2 === 'string' && item.addressLine2.length > 150) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' Address Line 2 must be under 150 characters.');
-        }
-        if (item.city && typeof item.city === 'string' && item.city.length > 100) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' City must be under 100 characters.');
-        }
-        if (item.state && typeof item.state === 'string' && item.state.length > 100) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' State must be under 100 characters.');
-        }
-        if (item.zipCode && typeof item.zipCode === 'string' && item.zipCode.length > 20) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' Zip Code must be under 20 characters.');
-        }
-        if (item.country && typeof item.country === 'string' && item.country.length > 100) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' Country must be under 100 characters.');
-        }
-        if (item.plusOneFirstName !== undefined && item.plusOneFirstName !== null) {
-          if (typeof item.plusOneFirstName !== 'string' || item.plusOneFirstName.length > 100) {
-            throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one first name.');
-          }
-        }
-        if (item.plusOneLastName !== undefined && item.plusOneLastName !== null) {
-          if (typeof item.plusOneLastName !== 'string' || item.plusOneLastName.length > 100) {
-            throw new Error('Validation Error: Row ' + (i + 1) + ' has an invalid plus-one last name.');
-          }
-        }
-        if (item.householdName && typeof item.householdName === 'string' && item.householdName.length > 100) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' Household name must be under 100 characters.');
-        }
-        if (item.partyGroup && typeof item.partyGroup === 'string' && item.partyGroup.length > 100) {
-          throw new Error('Validation Error: Row ' + (i + 1) + ' Party group must be under 100 characters.');
+        const errors = validateInvitationGuestFields(records[i], {
+          mode: 'batch',
+          rowNumber: i + 1,
+        });
+        if (errors.length > 0) {
+          throw new Error(errors[0]);
         }
       }
 
       const existingDbRecords = await tx.invitationCode.findMany({
-        select: { id: true, code: true, guestName: true }
+        select: { id: true, code: true, guestName: true },
       });
       const dbCodeMap = new Map<string, { id: string; guestName: string }>();
       for (const rec of existingDbRecords) {
@@ -276,13 +245,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       let updated = 0;
       const seenBatchCodes = new Set<string>();
       const allKnownCodes = new Set<string>(dbCodeMap.keys());
-      const toCreate: any[] = [];
-      const toUpdate: { id: string; data: any }[] = [];
+      const toCreate: Prisma.InvitationCodeCreateManyInput[] = [];
+      const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
 
       for (let i = 0; i < records.length; i++) {
         const row = records[i];
-        const guestName = row.guestName.trim();
-        let code = row.code ? row.code.trim().toUpperCase() : '';
+        const normalized = normalizeBatchInvitationRecord(row);
+        const guestName = normalized.guestName;
+        let code = normalized.code;
 
         if (!code) {
           let newCode = '';
@@ -309,27 +279,6 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           throw new Error(`Duplicate invitation code found: ${code}`);
         }
 
-        const rowEmail = row.email && typeof row.email === 'string' && row.email.trim() ? row.email.trim() : null;
-        const rowAddressLine1 = row.addressLine1 && typeof row.addressLine1 === 'string' && row.addressLine1.trim() ? row.addressLine1.trim() : null;
-        const rowAddressLine2 = row.addressLine2 && typeof row.addressLine2 === 'string' && row.addressLine2.trim() ? row.addressLine2.trim() : null;
-        const rowCity = row.city && typeof row.city === 'string' && row.city.trim() ? row.city.trim() : null;
-        const rowState = row.state && typeof row.state === 'string' && row.state.trim() ? row.state.trim() : null;
-        const rowZipCode = row.zipCode && typeof row.zipCode === 'string' && row.zipCode.trim() ? row.zipCode.trim() : null;
-        const rowCountry = row.country && typeof row.country === 'string' && row.country.trim() ? row.country.trim() : null;
-        const rowDietaryNotes = row.dietaryNotes && typeof row.dietaryNotes === 'string' && row.dietaryNotes.trim() ? row.dietaryNotes.trim() : null;
-        const rowPlusOne = typeof row.plusOneAllocations === 'number' ? row.plusOneAllocations : 0;
-        const rowPlusOneFirstName = row.plusOneFirstName && typeof row.plusOneFirstName === 'string' && row.plusOneFirstName.trim() ? row.plusOneFirstName.trim() : null;
-        const rowPlusOneLastName = row.plusOneLastName && typeof row.plusOneLastName === 'string' && row.plusOneLastName.trim() ? row.plusOneLastName.trim() : null;
-        const rowHouseholdName = row.householdName && typeof row.householdName === 'string' && row.householdName.trim() ? row.householdName.trim() : null;
-        const rowPartyGroup = row.partyGroup && typeof row.partyGroup === 'string' && row.partyGroup.trim() ? row.partyGroup.trim() : null;
-        let rowPartyTags: string[] = [];
-        if (Array.isArray(row.partyTags)) {
-          rowPartyTags = row.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
-        } else if (typeof row.partyTags === 'string' && row.partyTags.trim()) {
-          rowPartyTags = row.partyTags.split(',').map((t: string) => t.trim()).filter(Boolean);
-        }
-        const rowExtraFields = row.extraFields && typeof row.extraFields === 'object' && Object.keys(row.extraFields).length > 0 ? row.extraFields : null;
-
         if (existsInBatch) {
           if (collisionStrategy === 'skip') {
             skipped++;
@@ -337,24 +286,10 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           } else if (collisionStrategy === 'update') {
             if (existsInDb) {
               const existingRecord = dbCodeMap.get(code)!;
-              const updateData: any = { guestName };
-              if (row.email !== undefined) updateData.email = rowEmail;
-              if (row.addressLine1 !== undefined) updateData.addressLine1 = rowAddressLine1;
-              if (row.addressLine2 !== undefined) updateData.addressLine2 = rowAddressLine2;
-              if (row.city !== undefined) updateData.city = rowCity;
-              if (row.state !== undefined) updateData.state = rowState;
-              if (row.zipCode !== undefined) updateData.zipCode = rowZipCode;
-              if (row.country !== undefined) updateData.country = rowCountry;
-              if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
-              if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
-              if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
-              if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
-              if (row.householdName !== undefined) updateData.householdName = rowHouseholdName;
-              if (row.partyGroup !== undefined) updateData.partyGroup = rowPartyGroup;
-              if (row.partyTags !== undefined) updateData.partyTags = rowPartyTags;
-              if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
-
-              toUpdate.push({ id: existingRecord.id, data: updateData });
+              toUpdate.push({
+                id: existingRecord.id,
+                data: this.buildBatchUpdateData(row, normalized),
+              });
               updated++;
             }
             continue;
@@ -369,46 +304,32 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             skipped++;
           } else if (collisionStrategy === 'update') {
             const existingRecord = dbCodeMap.get(code)!;
-            const updateData: any = { guestName };
-            if (row.email !== undefined) updateData.email = rowEmail;
-            if (row.addressLine1 !== undefined) updateData.addressLine1 = rowAddressLine1;
-            if (row.addressLine2 !== undefined) updateData.addressLine2 = rowAddressLine2;
-            if (row.city !== undefined) updateData.city = rowCity;
-            if (row.state !== undefined) updateData.state = rowState;
-            if (row.zipCode !== undefined) updateData.zipCode = rowZipCode;
-            if (row.country !== undefined) updateData.country = rowCountry;
-            if (row.dietaryNotes !== undefined) updateData.dietaryNotes = rowDietaryNotes;
-            if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = rowPlusOne;
-            if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = rowPlusOneFirstName;
-            if (row.plusOneLastName !== undefined) updateData.plusOneLastName = rowPlusOneLastName;
-            if (row.householdName !== undefined) updateData.householdName = rowHouseholdName;
-            if (row.partyGroup !== undefined) updateData.partyGroup = rowPartyGroup;
-            if (row.partyTags !== undefined) updateData.partyTags = rowPartyTags;
-            if (row.extraFields !== undefined) updateData.extraFields = rowExtraFields;
-
-            toUpdate.push({ id: existingRecord.id, data: updateData });
+            toUpdate.push({
+              id: existingRecord.id,
+              data: this.buildBatchUpdateData(row, normalized),
+            });
             updated++;
           }
         } else {
           toCreate.push({
             guestName,
             code,
-            email: rowEmail,
-            addressLine1: rowAddressLine1,
-            addressLine2: rowAddressLine2,
-            city: rowCity,
-            state: rowState,
-            zipCode: rowZipCode,
-            country: rowCountry,
-            dietaryNotes: rowDietaryNotes,
-            plusOneAllocations: rowPlusOne,
-            plusOneFirstName: rowPlusOneFirstName,
-            plusOneLastName: rowPlusOneLastName,
-            householdName: rowHouseholdName,
-            partyGroup: rowPartyGroup,
-            partyTags: rowPartyTags,
-            extraFields: rowExtraFields ?? undefined,
-            used: false
+            email: normalized.email,
+            addressLine1: normalized.addressLine1,
+            addressLine2: normalized.addressLine2,
+            city: normalized.city,
+            state: normalized.state,
+            zipCode: normalized.zipCode,
+            country: normalized.country,
+            dietaryNotes: normalized.dietaryNotes,
+            plusOneAllocations: normalized.plusOneAllocations ?? 0,
+            plusOneFirstName: normalized.plusOneFirstName,
+            plusOneLastName: normalized.plusOneLastName,
+            householdName: normalized.householdName,
+            partyGroup: normalized.partyGroup,
+            partyTags: normalized.partyTags,
+            extraFields: (normalized.extraFields as Prisma.InputJsonValue | null) ?? undefined,
+            used: false,
           });
           imported++;
         }
@@ -416,13 +337,13 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
       if (toCreate.length > 0) {
         await tx.invitationCode.createMany({
-          data: toCreate
+          data: toCreate,
         });
       }
 
       if (toUpdate.length > 0) {
         // Consolidate updates by record ID in case multiple rows target the same invitation code
-        const updatesById = new Map<string, any>();
+        const updatesById = new Map<string, Record<string, unknown>>();
         for (const item of toUpdate) {
           const existing = updatesById.get(item.id);
           if (existing) {
@@ -544,32 +465,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         count: records.length,
         imported,
         skipped,
-        updated
+        updated,
       };
     });
   }
 
   async dryRunValidateBatch(
-    records: {
-      guestName: string;
-      code?: string;
-      email?: string | null;
-      addressLine1?: string | null;
-      addressLine2?: string | null;
-      city?: string | null;
-      state?: string | null;
-      zipCode?: string | null;
-      country?: string | null;
-      dietaryNotes?: string | null;
-      plusOneAllocations?: number;
-      plusOneFirstName?: string | null;
-      plusOneLastName?: string | null;
-      householdName?: string | null;
-      partyGroup?: string | null;
-      partyTags?: string[] | string | null;
-      extraFields?: Record<string, any> | null;
-    }[],
-    collisionStrategy: 'skip' | 'update' | 'reject' = 'skip'
+    records: BatchInvitationCodeRecord[],
+    collisionStrategy: InvitationCollisionStrategy = 'skip'
   ): Promise<DryRunValidationResponse> {
     if (!Array.isArray(records) || records.length === 0) {
       throw new Error('Validation Error: Records array cannot be empty.');
@@ -588,8 +491,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
     const batchCodeFreq = new Map<string, number>();
     for (const r of records) {
-      if (r.code && typeof r.code === 'string' && r.code.trim()) {
-        const uppercaseCode = r.code.trim().toUpperCase();
+      const uppercaseCode = normalizeInvitationCode(r.code);
+      if (uppercaseCode) {
         batchCodeFreq.set(uppercaseCode, (batchCodeFreq.get(uppercaseCode) || 0) + 1);
       }
     }
@@ -603,79 +506,10 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     let createdCount = 0;
 
     for (let i = 0; i < records.length; i++) {
-      const item = records[i];
-      const errors: string[] = [];
+      const normalized = normalizeBatchInvitationRecord(records[i]);
+      const errors = validateInvitationGuestFields(normalized, { mode: 'row' });
       const warnings: string[] = [];
-
-      const guestName = (item.guestName || '').trim();
-      const code = item.code ? item.code.trim().toUpperCase() : '';
-      const email = item.email && typeof item.email === 'string' && item.email.trim() ? item.email.trim() : null;
-      const addressLine1 = item.addressLine1 && typeof item.addressLine1 === 'string' && item.addressLine1.trim() ? item.addressLine1.trim() : null;
-      const addressLine2 = item.addressLine2 && typeof item.addressLine2 === 'string' && item.addressLine2.trim() ? item.addressLine2.trim() : null;
-      const city = item.city && typeof item.city === 'string' && item.city.trim() ? item.city.trim() : null;
-      const state = item.state && typeof item.state === 'string' && item.state.trim() ? item.state.trim() : null;
-      const zipCode = item.zipCode && typeof item.zipCode === 'string' && item.zipCode.trim() ? item.zipCode.trim() : null;
-      const country = item.country && typeof item.country === 'string' && item.country.trim() ? item.country.trim() : null;
-      const dietaryNotes = item.dietaryNotes && typeof item.dietaryNotes === 'string' && item.dietaryNotes.trim() ? item.dietaryNotes.trim() : null;
-      const plusOneAllocations = typeof item.plusOneAllocations === 'number' ? item.plusOneAllocations : undefined;
-      const plusOneFirstName = item.plusOneFirstName && typeof item.plusOneFirstName === 'string' && item.plusOneFirstName.trim() ? item.plusOneFirstName.trim() : null;
-      const plusOneLastName = item.plusOneLastName && typeof item.plusOneLastName === 'string' && item.plusOneLastName.trim() ? item.plusOneLastName.trim() : null;
-      const householdName = item.householdName && typeof item.householdName === 'string' && item.householdName.trim() ? item.householdName.trim() : null;
-      const partyGroup = item.partyGroup && typeof item.partyGroup === 'string' && item.partyGroup.trim() ? item.partyGroup.trim() : null;
-
-      let partyTags: string[] = [];
-      if (Array.isArray(item.partyTags)) {
-        partyTags = item.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
-      } else if (typeof item.partyTags === 'string' && item.partyTags.trim()) {
-        partyTags = item.partyTags.split(',').map((t: string) => t.trim()).filter(Boolean);
-      }
-
-      const extraFields = item.extraFields && typeof item.extraFields === 'object' && Object.keys(item.extraFields).length > 0 ? item.extraFields : null;
-
-      if (!guestName) {
-        errors.push('Guest name is required.');
-      }
-      if (email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          errors.push('Invalid email format.');
-        }
-      }
-      if (plusOneAllocations !== undefined) {
-        if (!Number.isInteger(plusOneAllocations) || plusOneAllocations < 0) {
-          errors.push('Plus-one allocation must be a non-negative integer.');
-        }
-      }
-      if (addressLine1 && addressLine1.length > 150) {
-        errors.push('Address Line 1 must be under 150 characters.');
-      }
-      if (addressLine2 && addressLine2.length > 150) {
-        errors.push('Address Line 2 must be under 150 characters.');
-      }
-      if (city && city.length > 100) {
-        errors.push('City must be under 100 characters.');
-      }
-      if (state && state.length > 100) {
-        errors.push('State must be under 100 characters.');
-      }
-      if (zipCode && zipCode.length > 20) {
-        errors.push('Zip Code must be under 20 characters.');
-      }
-      if (country && country.length > 100) {
-        errors.push('Country must be under 100 characters.');
-      }
-      if (plusOneFirstName && plusOneFirstName.length > 100) {
-        errors.push('Plus-one first name must be under 100 characters.');
-      }
-      if (plusOneLastName && plusOneLastName.length > 100) {
-        errors.push('Plus-one last name must be under 100 characters.');
-      }
-      if (householdName && householdName.length > 100) {
-        errors.push('Household name must be under 100 characters.');
-      }
-      if (partyGroup && partyGroup.length > 100) {
-        errors.push('Party group must be under 100 characters.');
-      }
+      const { code } = normalized;
 
       let isDuplicate = false;
       let existingGuestName: string | null = null;
@@ -689,13 +523,19 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           isDuplicate = true;
           existingGuestName = existingInDb.guestName;
           if (collisionStrategy === 'reject') {
-            errors.push(`Code "${code}" already exists in database (belongs to "${existingGuestName}").`);
+            errors.push(
+              `Code "${code}" already exists in database (belongs to "${existingGuestName}").`
+            );
             actionOutcome = 'reject';
           } else if (collisionStrategy === 'skip') {
-            warnings.push(`Code "${code}" already exists in database for guest "${existingGuestName}". Will be skipped.`);
+            warnings.push(
+              `Code "${code}" already exists in database for guest "${existingGuestName}". Will be skipped.`
+            );
             actionOutcome = 'skip';
           } else if (collisionStrategy === 'update') {
-            warnings.push(`Code "${code}" already exists in database for guest "${existingGuestName}". Will be updated.`);
+            warnings.push(
+              `Code "${code}" already exists in database for guest "${existingGuestName}". Will be updated.`
+            );
             actionOutcome = 'update';
           }
         } else if (isBatchDuplicate) {
@@ -729,23 +569,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
       rows.push({
         rowIndex: i + 1,
-        guestName,
-        code,
-        email,
-        addressLine1,
-        addressLine2,
-        city,
-        state,
-        zipCode,
-        country,
-        dietaryNotes,
-        plusOneAllocations,
-        plusOneFirstName,
-        plusOneLastName,
-        householdName,
-        partyGroup,
-        partyTags,
-        extraFields,
+        ...normalized,
         isValid,
         errors,
         warnings,
@@ -781,9 +605,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new Error('Validation Error: IDs array cannot be empty.');
     }
-    const cleanTags = (tags || []).map((t: string) => t.trim()).filter(Boolean);
+    const cleanTags = normalizePartyTags(tags);
 
-    return executeInTransaction(this.repo.client, async (tx: any) => {
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       const dbRecords = await tx.invitationCode.findMany({
         where: { id: { in: ids } },
         select: { id: true, partyTags: true },
@@ -796,7 +620,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           updatedTags = Array.from(new Set(cleanTags));
         } else if (action === 'remove') {
           const removeSet = new Set(cleanTags);
-          updatedTags = existingTags.filter(t => !removeSet.has(t));
+          updatedTags = existingTags.filter((t) => !removeSet.has(t));
         } else {
           updatedTags = Array.from(new Set([...existingTags, ...cleanTags]));
         }
@@ -829,7 +653,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
     }
 
-    return executeInTransaction(this.repo.client, async (tx: any) => {
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       await tx.contributor.updateMany({
         where: { invitationCodeId: { in: ids } },
         data: { invitationCodeId: null },

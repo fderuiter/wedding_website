@@ -1,5 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
+import { isEndTimeBeforeStartTime } from '@/utils/dateTime';
 import { SubEventDTO } from './schemas';
 
 export class SubEventAdminService extends BaseService<SubEventDTO> {
@@ -9,7 +10,7 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
     super(new BaseRepository<SubEventDTO>('subEvent'), 'SubEvent');
   }
 
-  private validateFields(data: any, isPartial: boolean = false): void {
+  private validateFields(data: Record<string, unknown>, isPartial: boolean = false): void {
     if (!isPartial || data.title !== undefined) {
       if (!data.title || typeof data.title !== 'string' || data.title.trim() === '') {
         throw new Error('Validation Error: Title is required.');
@@ -19,8 +20,18 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
     const rawStart = typeof data.startTime === 'string' ? data.startTime.trim() : data.startTime;
     const rawEnd = typeof data.endTime === 'string' ? data.endTime.trim() : data.endTime;
 
-    const start = rawStart ? (rawStart instanceof Date ? rawStart : new Date(rawStart)) : null;
-    const end = rawEnd ? (rawEnd instanceof Date ? rawEnd : new Date(rawEnd)) : null;
+    const start =
+      rawStart instanceof Date
+        ? rawStart
+        : typeof rawStart === 'string' && rawStart
+          ? new Date(rawStart)
+          : null;
+    const end =
+      rawEnd instanceof Date
+        ? rawEnd
+        : typeof rawEnd === 'string' && rawEnd
+          ? new Date(rawEnd)
+          : null;
 
     if (start && Number.isNaN(start.getTime())) {
       throw new Error('Validation Error: Invalid start time.');
@@ -28,17 +39,17 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
     if (end && Number.isNaN(end.getTime())) {
       throw new Error('Validation Error: Invalid end time.');
     }
-    if (start && end && end.getTime() < start.getTime()) {
+    if (start && end && isEndTimeBeforeStartTime(start, end)) {
       throw new Error('Validation Error: End time cannot precede start time.');
     }
   }
 
-  protected async validate(data: any): Promise<void> {
+  protected async validate(data: Record<string, unknown>): Promise<void> {
     this.validateFields(data, false);
   }
 
-  protected async preSave(data: any): Promise<any> {
-    const finalData = { ...data };
+  protected async preSave(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const finalData: Record<string, unknown> = { ...data };
     if (typeof finalData.title === 'string') {
       finalData.title = finalData.title.trim();
     }
@@ -55,9 +66,13 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
     return finalData;
   }
 
-  async update(id: string, data: any, author: string = 'Admin'): Promise<SubEventDTO> {
+  async update(
+    id: string,
+    data: Partial<SubEventDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<SubEventDTO> {
     return this.repo.transaction(async (txRepo) => {
-      let validationInput = data;
+      let validationInput: Record<string, unknown> = data;
       if (
         (data.startTime === undefined && data.endTime !== undefined) ||
         (data.startTime !== undefined && data.endTime === undefined)

@@ -10,7 +10,6 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       getFeatures: jest.fn(),
       updateFeatures: jest.fn(),
       getNodesByType: jest.fn(),
-      getAllNodes: jest.fn(),
       getNodeById: jest.fn(),
       createNode: jest.fn(),
       updateNode: jest.fn(),

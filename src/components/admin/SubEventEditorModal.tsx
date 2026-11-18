@@ -29,10 +29,10 @@ interface SubEventEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingEvent?: EditableSubEvent | null;
-  onSave: (payload: Partial<SubEventDTO>, editingId?: string) => Promise<unknown>;
+  onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
   existingSubEvents?: EditableSubEvent[];
-  onSelectEdit?: (subEvent: EditableSubEvent) => void;
-  onRequestDelete?: (subEvent: EditableSubEvent) => void;
+  onSelectEdit?: (_subEvent: EditableSubEvent | null) => void;
+  onRequestDelete?: (_subEvent: EditableSubEvent) => void;
 }
 
 export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
@@ -116,8 +116,10 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
 
       await onSave(payload, editingEvent?.id);
       onClose();
-    } catch (err: any) {
-      setValidationError(err?.message || 'Failed to save sub-event.');
+    } catch (err: unknown) {
+      setValidationError(
+        err instanceof Error && err.message ? err.message : 'Failed to save sub-event.'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -141,7 +143,7 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
               {isEditMode && onSelectEdit && (
                 <button
                   type="button"
-                  onClick={() => onSelectEdit(null as unknown as EditableSubEvent)}
+                  onClick={() => onSelectEdit(null)}
                   className="text-xs font-semibold text-primary hover:underline"
                 >
                   + Switch to Create New
@@ -321,7 +323,7 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
 interface SubEventDeleteConfirmModalProps {
   subEvent: EditableSubEvent | null;
   onClose: () => void;
-  onConfirm: (subEvent: EditableSubEvent) => Promise<unknown>;
+  onConfirm: (_subEvent: EditableSubEvent) => Promise<unknown>;
 }
 
 export const SubEventDeleteConfirmModal: React.FC<SubEventDeleteConfirmModalProps> = ({
@@ -338,6 +340,8 @@ export const SubEventDeleteConfirmModal: React.FC<SubEventDeleteConfirmModalProp
     try {
       await onConfirm(subEvent);
       onClose();
+    } catch {
+      // Error feedback is handled by parent toast handler; keep modal open on failure
     } finally {
       setIsDeleting(false);
     }

@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { getAppConfig } from '@/lib/config';
 import { GET } from '../route';
 
 jest.mock('next/og', () => {
@@ -107,7 +108,6 @@ describe('/api/og route', () => {
   });
 
   it('respects active themePreset configured in getAppConfig', async () => {
-    const { getAppConfig } = require('@/lib/config');
     (getAppConfig as jest.Mock).mockResolvedValueOnce({
       partner1Name: 'Alice',
       partner2Name: 'Bob',

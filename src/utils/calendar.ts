@@ -61,6 +61,158 @@ function buildCalendarUrl(baseUrl: string, params: Record<string, string>): stri
 }
 
 /**
+ * Validates and normalizes an IANA timezone string, falling back to 'UTC'
+ * when empty or rejected by Intl.DateTimeFormat.
+ */
+function resolveTimeZone(timeZone?: string): string {
+  const candidate = timeZone?.trim();
+  if (!candidate) {
+    return 'UTC';
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * Extracts wall-clock date/time components for a UTC Date instant in a validated timezone.
+ */
+function getZonedDateTimeParts(date: Date, validTimeZone: string): {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+} {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: validTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  const lookup: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      lookup[part.type] = part.value;
+    }
+  }
+
+  const rawHour = lookup.hour || '00';
+  const normalizedHour = rawHour === '24' ? '00' : rawHour.padStart(2, '0');
+
+  return {
+    year: (lookup.year || '1970').padStart(4, '0'),
+    month: (lookup.month || '01').padStart(2, '0'),
+    day: (lookup.day || '01').padStart(2, '0'),
+    hour: normalizedHour,
+    minute: (lookup.minute || '00').padStart(2, '0'),
+    second: (lookup.second || '00').padStart(2, '0'),
+  };
+}
+
+/**
+ * Formats a Date instance into localized YYYY-MM-DD and 24-hour HH:MM strings.
+ */
+function formatDateInTimeZone(date: Date, timeZone?: string): { date: string; time: string } {
+  const validTimeZone = resolveTimeZone(timeZone);
+  const parts = getZonedDateTimeParts(date, validTimeZone);
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
+/**
+ * Computes the UTC offset in minutes at a specific Date instant for a validated timezone.
+ */
+function getOffsetMinutesAtInstant(instant: Date, validTimeZone: string): number {
+  const parts = getZonedDateTimeParts(instant, validTimeZone);
+  const wallUtcMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  const instantSecondsMs = Math.trunc(instant.getTime() / 1000) * 1000;
+  return Math.round((wallUtcMs - instantSecondsMs) / 60000);
+}
+
+/**
+ * Resolves a local YYYY-MM-DD and HH:MM(:SS) wall-clock timestamp in timeZone
+ * into its corresponding UTC Date instant and UTC offset in minutes.
+ */
+function resolveLocalDateTime(
+  date: string,
+  time: string,
+  timeZone?: string
+): { instant: Date; offsetMinutes: number } | null {
+  const dateParts = date.split('-').map(Number);
+  const timeParts = time.split(':').map(Number);
+  if (dateParts.length !== 3 || timeParts.length < 2) {
+    return null;
+  }
+
+  const [year, month, day] = dateParts;
+  const [hour, minute, second = 0] = timeParts;
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
+  }
+
+  const targetWallUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  if (isNaN(targetWallUtcMs)) {
+    return null;
+  }
+
+  const validTimeZone = resolveTimeZone(timeZone);
+
+  // Iteratively converge on the exact UTC instant across potential DST transitions
+  const offset0 = getOffsetMinutesAtInstant(new Date(targetWallUtcMs), validTimeZone);
+  const candidate1Ms = targetWallUtcMs - offset0 * 60000;
+  const offset1 = getOffsetMinutesAtInstant(new Date(candidate1Ms), validTimeZone);
+  const candidate2Ms = targetWallUtcMs - offset1 * 60000;
+  const finalInstant = new Date(candidate2Ms);
+  const finalOffsetMinutes = getOffsetMinutesAtInstant(finalInstant, validTimeZone);
+
+  return {
+    instant: finalInstant,
+    offsetMinutes: finalOffsetMinutes,
+  };
+}
+
+/**
+ * Formats an offset in minutes into ISO (±HH:MM) or RFC 5545 (±HHMM) notation.
+ */
+function formatUtcOffsetMinutes(offsetMinutes: number, withColon: boolean): string {
+  const sign = offsetMinutes < 0 ? '-' : '+';
+  const absMinutes = Math.abs(offsetMinutes);
+  const hours = String(Math.floor(absMinutes / 60)).padStart(2, '0');
+  const minutes = String(absMinutes % 60).padStart(2, '0');
+  return withColon ? `${sign}${hours}:${minutes}` : `${sign}${hours}${minutes}`;
+}
+
+/**
  * Converts a structured schedule event node payload into a CalendarEvent interface.
  * Handles ISO timestamp parsing (e.g. 2026-06-20T15:00:00.000Z) or date/time parameters.
  */
@@ -81,6 +233,7 @@ export function formatScheduleEventToCalendarEvent(
   defaultDateStr?: string,
   timeZone: string = 'UTC'
 ): CalendarEvent {
+  const resolvedTimeZone = resolveTimeZone(timeZone);
   const name = scheduleItem.title || scheduleItem.ceremonyTitle || scheduleItem.receptionTitle || 'Wedding Event';
   const location = scheduleItem.locationName || scheduleItem.location || '';
   const attire = scheduleItem.attireRules || scheduleItem.attire || '';
@@ -95,23 +248,26 @@ export function formatScheduleEventToCalendarEvent(
   if (scheduleItem.startTime) {
     const startDateObj = new Date(scheduleItem.startTime);
     if (!isNaN(startDateObj.getTime())) {
-      startDate = startDateObj.toISOString().split('T')[0];
-      startTime = startDateObj.toISOString().split('T')[1].substring(0, 5);
+      const formattedStart = formatDateInTimeZone(startDateObj, resolvedTimeZone);
+      startDate = formattedStart.date;
+      startTime = formattedStart.time;
     }
   }
 
   if (scheduleItem.endTime) {
     const endDateObj = new Date(scheduleItem.endTime);
     if (!isNaN(endDateObj.getTime())) {
-      endDate = endDateObj.toISOString().split('T')[0];
-      endTime = endDateObj.toISOString().split('T')[1].substring(0, 5);
+      const formattedEnd = formatDateInTimeZone(endDateObj, resolvedTimeZone);
+      endDate = formattedEnd.date;
+      endTime = formattedEnd.time;
     }
   } else if (scheduleItem.startTime) {
     const startDateObj = new Date(scheduleItem.startTime);
     if (!isNaN(startDateObj.getTime())) {
       const defaultEnd = new Date(startDateObj.getTime() + 60 * 60 * 1000);
-      endDate = defaultEnd.toISOString().split('T')[0];
-      endTime = defaultEnd.toISOString().split('T')[1].substring(0, 5);
+      const formattedEnd = formatDateInTimeZone(defaultEnd, resolvedTimeZone);
+      endDate = formattedEnd.date;
+      endTime = formattedEnd.time;
     }
   }
 
@@ -122,7 +278,7 @@ export function formatScheduleEventToCalendarEvent(
     startTime,
     endDate,
     endTime,
-    timeZone,
+    timeZone: resolvedTimeZone,
     location,
     description,
   };
@@ -153,8 +309,16 @@ export function createGoogleCalendarLink(event: CalendarEvent): string {
  * @returns {string} The generated Yahoo Calendar URL.
  */
 export function createYahooCalendarLink(event: CalendarEvent): string {
-  const start = formatDateTimeForUrl(event.startDate, event.startTime);
-  const end = formatDateTimeForUrl(event.endDate, event.endTime);
+  const formatYahooUtcTimestamp = (date: string, time: string): string => {
+    const resolved = resolveLocalDateTime(date, time, event.timeZone);
+    if (!resolved) {
+      return `${formatDateTimeForUrl(date, time)}Z`;
+    }
+    return resolved.instant.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  };
+
+  const start = formatYahooUtcTimestamp(event.startDate, event.startTime);
+  const end = formatYahooUtcTimestamp(event.endDate, event.endTime);
 
   return buildCalendarUrl('https://calendar.yahoo.com/', {
     v: '60',
@@ -175,7 +339,9 @@ export function createYahooCalendarLink(event: CalendarEvent): string {
  */
 export function createOutlookCalendarLink(event: CalendarEvent): string {
   const formatIsoDateTime = (date: string, time: string) => {
-    return `${date}T${time}${time.length === 5 ? ':00' : ''}`;
+    const resolved = resolveLocalDateTime(date, time, event.timeZone);
+    const offset = formatUtcOffsetMinutes(resolved ? resolved.offsetMinutes : 0, true);
+    return `${date}T${time}${time.length === 5 ? ':00' : ''}${offset}`;
   };
 
   const start = formatIsoDateTime(event.startDate, event.startTime);
@@ -193,30 +359,46 @@ export function createOutlookCalendarLink(event: CalendarEvent): string {
 }
 
 /**
- * Calculates the formatted UTC offset (+HHMM or -HHMM) for a given timezone ID using Intl API.
+ * Calculates the formatted UTC offset (+HHMM or -HHMM) for a given timezone ID using Intl API,
+ * anchored to the provided event date/time rather than the current system clock.
  * Falls back to +0000 if timezone is invalid or unrecognized.
  */
-function getUtcOffset(timeZone: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      timeZoneName: 'longOffset',
-    }).formatToParts(new Date());
-
-    const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value;
-    if (!tzPart || tzPart === 'GMT' || tzPart === 'UTC') return '+0000';
-
-    const match = tzPart.match(/GMT([+-])(\d{1,2}):(\d{2})/);
-    if (match) {
-      const sign = match[1];
-      const hours = match[2].padStart(2, '0');
-      const minutes = match[3];
-      return `${sign}${hours}${minutes}`;
-    }
-  } catch {
-    // Unrecognized or invalid timezone string
+function getUtcOffset(
+  timeZone: string,
+  referenceDate?: string | Date,
+  referenceTime: string = '12:00'
+): string {
+  const trimmedTz = timeZone?.trim();
+  if (!trimmedTz) {
+    return '+0000';
   }
-  return '+0000';
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: trimmedTz });
+  } catch {
+    return '+0000';
+  }
+
+  if (referenceDate instanceof Date) {
+    if (!isNaN(referenceDate.getTime())) {
+      return formatUtcOffsetMinutes(getOffsetMinutesAtInstant(referenceDate, trimmedTz), false);
+    }
+  } else if (typeof referenceDate === 'string' && referenceDate.trim()) {
+    const trimmedDate = referenceDate.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+      const resolved = resolveLocalDateTime(trimmedDate, referenceTime, trimmedTz);
+      if (resolved) {
+        return formatUtcOffsetMinutes(resolved.offsetMinutes, false);
+      }
+    } else {
+      const parsed = new Date(trimmedDate);
+      if (!isNaN(parsed.getTime())) {
+        return formatUtcOffsetMinutes(getOffsetMinutesAtInstant(parsed, trimmedTz), false);
+      }
+    }
+  }
+
+  return formatUtcOffsetMinutes(getOffsetMinutesAtInstant(new Date(), trimmedTz), false);
 }
 
 /**
@@ -224,9 +406,15 @@ function getUtcOffset(timeZone: string): string {
  * Supports standard timezones (e.g. America/New_York, UTC) and falls back gracefully to
  * generic VTIMEZONE block definitions for unrecognized or custom timezones.
  * @param {string} timeZone - The timezone string.
+ * @param {string | Date} [referenceDate] - Optional event date to anchor fallback DST offsets.
+ * @param {string} [referenceTime] - Optional event wall time in HH:MM format.
  * @returns {string} Standard VTIMEZONE block string.
  */
-export function buildVTimezoneBlock(timeZone: string): string {
+export function buildVTimezoneBlock(
+  timeZone: string,
+  referenceDate?: string | Date,
+  referenceTime: string = '12:00'
+): string {
   const tz = timeZone.trim() || 'UTC';
 
   // Standard pre-defined timezone blocks for well-known timezones
@@ -415,7 +603,7 @@ export function buildVTimezoneBlock(timeZone: string): string {
   }
 
   // Fallback: Dynamically calculate offset using Intl.DateTimeFormat or default to +0000
-  const offset = getUtcOffset(tz);
+  const offset = getUtcOffset(tz, referenceDate, referenceTime);
   return [
     'BEGIN:VTIMEZONE',
     `TZID:${tz}`,
@@ -460,7 +648,7 @@ export function createIcsFile(event: CalendarEvent): string {
       .replace('DTSTART:', `DTSTART;TZID=${event.timeZone}:`)
       .replace('DTEND:', `DTEND;TZID=${event.timeZone}:`);
 
-    const vtimezoneBlock = buildVTimezoneBlock(event.timeZone);
+    const vtimezoneBlock = buildVTimezoneBlock(event.timeZone, event.startDate, event.startTime);
     icsContent = icsContent.replace('BEGIN:VEVENT', `${vtimezoneBlock}\r\nBEGIN:VEVENT`);
   }
 
