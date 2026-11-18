@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { rateLimit } from '@/utils/rateLimit';
 import { prisma } from '@/lib/prisma';
@@ -51,7 +52,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (!parseResult.success) {
     const errorMsg = parseResult.error.issues[0]?.message || 'Invalid address input.';
     return NextResponse.json(
-      { success: false, error: errorMsg, details: parseResult.error.format() },
+      { success: false, error: errorMsg, details: z.formatError(parseResult.error) },
       { status: 400 }
     );
   }

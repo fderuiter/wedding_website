@@ -11,7 +11,7 @@ export const coordinateSchema = z.union([z.number(), z.string()]).superRefine((v
 
   if (!/^[A-Z_]+$/.test(val)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'Invalid coordinate format. Must be a numeric value or a placeholder.',
     });
   }
@@ -44,17 +44,17 @@ export const GuestLookupSchema = z.object({
 
   if (!query && !name && !email) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'Name or email is required.',
     });
     return;
   }
 
   if (email !== undefined && email !== '') {
-    const emailResult = z.string().email().safeParse(email);
+    const emailResult = z.email().safeParse(email);
     if (!emailResult.success) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['email'],
         message: 'Invalid email format.',
       });
@@ -64,7 +64,7 @@ export const GuestLookupSchema = z.object({
   if (name !== undefined && name !== '') {
     if (name.length < 2) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['name'],
         message: 'Name must be at least 2 characters.',
       });
@@ -73,17 +73,17 @@ export const GuestLookupSchema = z.object({
 
   if (query !== undefined && query !== '') {
     if (query.includes('@')) {
-      const emailResult = z.string().email().safeParse(query);
+      const emailResult = z.email().safeParse(query);
       if (!emailResult.success) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['query'],
           message: 'Invalid email format.',
         });
       }
     } else if (query.length < 2) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['query'],
         message: 'Name must be at least 2 characters.',
       });
@@ -200,7 +200,7 @@ export const AdminEntityUpdateSchema = z.record(z.string(), z.any());
 
 export const AdminEntityBatchUpdateSchema = z.object({
   ids: z.array(z.string().min(1, 'Record identifier cannot be empty')).min(1, 'At least one record identifier is required').max(100, 'Maximum of 100 record identifiers allowed per batch request'),
-}).passthrough();
+}).loose();
 
 export const AdminEntityReorderSchema = z.object({
   action: z.literal('reorder'),
@@ -208,7 +208,10 @@ export const AdminEntityReorderSchema = z.object({
 });
 
 export const ScrapeUrlSchema = z.object({
-  url: z.string({ message: 'URL is required' }).min(1, 'URL is required').url('Invalid URL format')
+  url: z.url({
+    abort: true,
+    error: (issue) => typeof issue.input !== 'string' || issue.input.length === 0 ? 'URL is required' : 'Invalid URL format',
+  }).min(1, 'URL is required')
 });
 
 export const UpdateFeaturesSchema = z.object({
