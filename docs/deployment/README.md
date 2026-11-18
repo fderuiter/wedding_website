@@ -28,7 +28,7 @@ To distinguish officially verified deployment targets from community-maintained 
 | [**Google Cloud Run**](./gcp-cloud-run.md) | Container / Serverless | **Tier 1 — Officially Tested** | Container image + `.github/workflows/deploy.yml` |
 | [**Vercel**](./vercel.md) | Serverless Node / Edge | **Tier 1 — Officially Tested** | Next.js serverless runtime adapter |
 | [**Railway & Render**](./railway-render.md) | PaaS Target | **Tier 2 — Community Supported** | Container image / Nixpacks build |
-| [**GitHub Pages**](../../.github/workflows/pages.yml) | Static Documentation Portal | **Tier 1 — Officially Tested** | Static docs + `.github/workflows/pages.yml` |
+| [**GitHub Pages**](../../.github/workflows/ci.yml) | Static Documentation Portal | **Tier 1 — Officially Tested** | Static docs + `.github/workflows/ci.yml` |
 
 ---
 
@@ -38,13 +38,13 @@ To distinguish officially verified deployment targets from community-maintained 
 *   [**Google Cloud Run Deployment Guide**](./gcp-cloud-run.md): Fully managed serverless container target using Artifact Registry and Cloud SQL.
 *   [**Vercel Deployment Guide**](./vercel.md): Serverless Node.js deployment target with serverless PostgreSQL connection pooling.
 *   [**Railway & Render PaaS Guide**](./railway-render.md): Low-friction PaaS deployment targets with integrated database provisioning.
-*   [**GitHub Pages Workflow**](../../.github/workflows/pages.yml): Automated workflow for publishing static documentation portals with official GitHub Pages actions.
+*   [**GitHub Pages Workflow**](../../.github/workflows/ci.yml): Automated workflow for publishing static documentation portals with official GitHub Pages actions.
 
 ---
 
 ## GitHub Pages Deployment Prerequisites
 
-To publish static documentation portals to GitHub Pages using the automated workflow (`.github/workflows/pages.yml`), ensure the following repository settings are configured in GitHub:
+To publish static documentation portals to GitHub Pages using the automated workflow (`.github/workflows/ci.yml`), ensure the following repository settings are configured in GitHub:
 
 1. **Enable GitHub Actions Pages Source**:
    - In GitHub, navigate to repository **Settings** > **Pages**.
@@ -53,5 +53,5 @@ To publish static documentation portals to GitHub Pages using the automated work
    - Verify that the `github-pages` deployment environment is created or permitted under repository **Settings** > **Environments**.
    - Review or configure deployment branch rules and protection gates if needed (by default, deployments run on pushes to `main`).
 3. **Workflow Permissions**:
-   - The `.github/workflows/pages.yml` workflow explicitly requires `contents: read`, `pages: write`, and `id-token: write`.
+   - The `.github/workflows/ci.yml` workflow explicitly requires `contents: read`, `pages: write`, and `id-token: write` for the `deploy-docs` job.
    - Ensure repository settings under **Settings** > **Actions** > **General** > **Workflow permissions** permit workflows to read and write tokens.
