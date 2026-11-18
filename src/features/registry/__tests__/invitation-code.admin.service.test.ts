@@ -506,4 +506,70 @@ describe('InvitationCodeAdminService', () => {
       );
     });
   });
+
+  describe('update', () => {
+    beforeEach(() => {
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(mockPrismaClient));
+    });
+
+    it('updates profile and address fields, normalizes cleared strings to null, and leaves omitted fields untouched', async () => {
+      mockPrismaClient.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        code: 'ALICE123',
+      });
+      mockPrismaClient.invitationCode.update.mockImplementation(({ where, data }: any) =>
+        Promise.resolve({
+          id: where.id,
+          tableId: 'table-4',
+          seatNumber: 2,
+          used: true,
+          ...data,
+        })
+      );
+
+      const result = await service.update('inv-1', {
+        guestName: '  Alice Smith-Updated  ',
+        code: '  alice123 ',
+        email: '   ',
+        addressLine1: ' 742 Evergreen Terrace ',
+        addressLine2: '',
+        city: 'Springfield',
+        dietaryNotes: '  Gluten-Free ',
+        partyTags: [' VIP ', ' Family ', ''],
+      });
+
+      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'inv-1' },
+        data: {
+          guestName: 'Alice Smith-Updated',
+          code: 'ALICE123',
+          email: null,
+          addressLine1: '742 Evergreen Terrace',
+          addressLine2: null,
+          city: 'Springfield',
+          dietaryNotes: 'Gluten-Free',
+          partyTags: ['VIP', 'Family'],
+        },
+      });
+      expect(result.tableId).toBe('table-4');
+      expect(result.seatNumber).toBe(2);
+      expect(result.used).toBe(true);
+    });
+
+    it('rejects changing code when new code already belongs to a different guest', async () => {
+      mockPrismaClient.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-other',
+        code: 'TAKEN999',
+      });
+
+      await expect(
+        service.update('inv-1', {
+          guestName: 'Alice Smith',
+          code: 'taken999',
+        })
+      ).rejects.toThrow('Validation Error: Invitation code "TAKEN999" is already in use.');
+
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+    });
+  });
 });

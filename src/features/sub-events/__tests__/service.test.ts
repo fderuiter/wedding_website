@@ -717,5 +717,51 @@ describe('SubEventService', () => {
         })
       );
     });
+
+    it('returns full sub-event schedule metadata and uncapped allowedInvitationCodeIds across >100 guests', async () => {
+      const uncappedAccesses = Array.from({ length: 135 }, (_, idx) => ({
+        invitationCodeId: `inv-${idx + 1}`,
+      }));
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-vip',
+          title: 'Rehearsal Dinner',
+          description: 'Bridal party dinner',
+          startTime: new Date('2026-09-18T18:00:00.000Z'),
+          endTime: new Date('2026-09-18T21:00:00.000Z'),
+          locationName: 'Grand Ballroom',
+          location: '100 Main St',
+          category: 'Dining',
+          isPrivate: true,
+          accesses: uncappedAccesses,
+        },
+      ]);
+      mockPrisma.invitationCode.count.mockResolvedValue(135);
+      mockPrisma.invitationCode.findMany.mockImplementation((args: any) => {
+        if (args?.distinct) return Promise.resolve([]);
+        if (args?.select?.partyTags) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+
+      const matrix = await service.getAccessMatrix({ page: 1, limit: 25 });
+
+      expect(matrix.subEvents).toEqual([
+        {
+          id: 'se-vip',
+          title: 'Rehearsal Dinner',
+          description: 'Bridal party dinner',
+          startTime: '2026-09-18T18:00:00.000Z',
+          endTime: '2026-09-18T21:00:00.000Z',
+          locationName: 'Grand Ballroom',
+          location: '100 Main St',
+          category: 'Dining',
+          isPrivate: true,
+          allowedInvitationCodeIds: uncappedAccesses.map((a) => a.invitationCodeId),
+        },
+      ]);
+      expect(matrix.subEvents[0].allowedInvitationCodeIds).toHaveLength(135);
+      expect(matrix.subEvents[0].allowedInvitationCodeIds).toContain('inv-135');
+    });
   });
 });

@@ -610,6 +610,12 @@ export class SubEventService {
       subEvents: (subEvents || []).map((e: any) => ({
         id: e.id,
         title: e.title,
+        description: e.description || '',
+        startTime: e.startTime instanceof Date ? e.startTime.toISOString() : (e.startTime || null),
+        endTime: e.endTime instanceof Date ? e.endTime.toISOString() : (e.endTime || null),
+        locationName: e.locationName || '',
+        location: e.location || '',
+        category: e.category || '',
         isPrivate: e.isPrivate,
         allowedInvitationCodeIds: e.accesses ? e.accesses.map((a: any) => a.invitationCodeId) : [],
       })),

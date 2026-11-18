@@ -13,9 +13,11 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     super(new BaseRepository<InvitationCodeDTO>('invitationCode'), 'InvitationCode');
   }
 
-  protected async validate(data: any, _client?: any): Promise<void> {
-    if (!data.guestName || typeof data.guestName !== 'string' || data.guestName.trim() === '') {
-      throw new Error('Validation Error: Guest name is required.');
+  private validateFields(data: any, isPartial: boolean = false): void {
+    if (!isPartial || data.guestName !== undefined) {
+      if (!data.guestName || typeof data.guestName !== 'string' || data.guestName.trim() === '') {
+        throw new Error('Validation Error: Guest name is required.');
+      }
     }
     if (data.code !== undefined && data.code !== null && (typeof data.code !== 'string' || data.code.trim() === '')) {
       throw new Error('Validation Error: Code cannot be empty.');
@@ -76,22 +78,41 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     }
   }
 
-  protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
-    const finalData = { ...data };
-    const activeClient = client || this.repo.client;
+  protected async validate(data: any, _client?: any): Promise<void> {
+    this.validateFields(data, false);
+  }
 
-    if (finalData.plusOneFirstName !== undefined) {
-      finalData.plusOneFirstName = typeof finalData.plusOneFirstName === 'string' && finalData.plusOneFirstName.trim() ? finalData.plusOneFirstName.trim() : null;
+  private normalizeFields(data: any): any {
+    const finalData = { ...data };
+
+    if (typeof finalData.guestName === 'string') {
+      finalData.guestName = finalData.guestName.trim();
     }
-    if (finalData.plusOneLastName !== undefined) {
-      finalData.plusOneLastName = typeof finalData.plusOneLastName === 'string' && finalData.plusOneLastName.trim() ? finalData.plusOneLastName.trim() : null;
+
+    const nullableStringFields = [
+      'email',
+      'addressLine1',
+      'addressLine2',
+      'city',
+      'state',
+      'zipCode',
+      'country',
+      'dietaryNotes',
+      'plusOneFirstName',
+      'plusOneLastName',
+      'householdName',
+      'partyGroup',
+    ];
+
+    for (const field of nullableStringFields) {
+      if (finalData[field] !== undefined) {
+        finalData[field] =
+          typeof finalData[field] === 'string' && finalData[field].trim()
+            ? finalData[field].trim()
+            : null;
+      }
     }
-    if (finalData.householdName !== undefined) {
-      finalData.householdName = typeof finalData.householdName === 'string' && finalData.householdName.trim() ? finalData.householdName.trim() : null;
-    }
-    if (finalData.partyGroup !== undefined) {
-      finalData.partyGroup = typeof finalData.partyGroup === 'string' && finalData.partyGroup.trim() ? finalData.partyGroup.trim() : null;
-    }
+
     if (finalData.partyTags !== undefined) {
       if (Array.isArray(finalData.partyTags)) {
         finalData.partyTags = finalData.partyTags.map((t: any) => String(t).trim()).filter(Boolean);
@@ -99,6 +120,13 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         finalData.partyTags = [];
       }
     }
+
+    return finalData;
+  }
+
+  protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
+    const finalData = this.normalizeFields(data);
+    const activeClient = client || this.repo.client;
 
     if (!finalData.code || typeof finalData.code !== 'string' || finalData.code.trim() === '') {
       let uniqueCode = '';
@@ -124,11 +152,35 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         where: { code: finalData.code }
       });
       if (existing) {
-        // Handled by Prisma unique constraint if needed
+        // Handled by Prisma unique constraint or update collision check
       }
     }
 
     return finalData;
+  }
+
+  async update(id: string, data: any, author: string = 'Admin'): Promise<InvitationCodeDTO> {
+    return this.repo.transaction(async (txRepo) => {
+      this.validateFields(data, true);
+      const processedData = this.normalizeFields(data);
+
+      if (processedData.code !== undefined) {
+        if (!processedData.code || typeof processedData.code !== 'string' || processedData.code.trim() === '') {
+          throw new Error('Validation Error: Code cannot be empty.');
+        }
+        processedData.code = processedData.code.trim().toUpperCase();
+        const existing = await txRepo.client.invitationCode.findUnique({
+          where: { code: processedData.code },
+        });
+        if (existing && existing.id !== id) {
+          throw new Error(`Validation Error: Invitation code "${processedData.code}" is already in use.`);
+        }
+      }
+
+      const record = await txRepo.update(id, processedData);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
   }
 
   async importBatch(

@@ -1,17 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useContext } from 'react';
+import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
+import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
+import {
+  SubEventEditorModal,
+  SubEventDeleteConfirmModal,
+  type EditableSubEvent,
+} from '@/components/admin/SubEventEditorModal';
+import { formatSubEventSchedule } from '@/utils/dateTime';
+import type { SubEventDTO } from '@/features/sub-events';
 
-interface SubEvent {
-  id: string;
-  title: string;
-  description?: string;
-  locationName?: string;
-  category?: string;
-  isPrivate: boolean;
-}
+type SubEvent = EditableSubEvent;
 
 interface InvitationCode {
   id: string;
@@ -23,8 +25,26 @@ interface InvitationCode {
   allowedSubEventIds?: string[];
 }
 
-export default function SubEventsMatrixPage() {
+function sortSubEventsBySchedule(events: SubEvent[]): SubEvent[] {
+  return [...events].sort((a, b) => {
+    const aTime = a.startTime ? new Date(a.startTime).getTime() : NaN;
+    const bTime = b.startTime ? new Date(b.startTime).getTime() : NaN;
+    const aValid = !Number.isNaN(aTime);
+    const bValid = !Number.isNaN(bTime);
+    if (aValid && bValid) return aTime - bTime;
+    if (aValid && !bValid) return -1;
+    if (!aValid && bValid) return 1;
+    return 0;
+  });
+}
+
+function SubEventsMatrixPageContent() {
   const { addToast } = useToast();
+  const {
+    create: createSubEvent,
+    update: updateSubEvent,
+    remove: removeSubEvent,
+  } = useAdminSubEvents({ enabled: false });
   const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
@@ -52,15 +72,10 @@ export default function SubEventsMatrixPage() {
   // Multi-row selection
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
 
-  // Create Sub-Event Modal
+  // Create / Edit / Delete Sub-Event Modals
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [newSubEvent, setNewSubEvent] = useState({
-    title: '',
-    description: '',
-    locationName: '',
-    category: '',
-    isPrivate: true,
-  });
+  const [editingSubEvent, setEditingSubEvent] = useState<SubEvent | null>(null);
+  const [deletingSubEvent, setDeletingSubEvent] = useState<SubEvent | null>(null);
 
   const fetchMatrix = async () => {
     setIsLoading(true);
@@ -288,34 +303,67 @@ export default function SubEventsMatrixPage() {
     }
   };
 
-  // Create Sub-Event
-  const handleCreateSubEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newSubEvent.title.trim()) {
-      addToast('Title is required for sub-event.', 'error');
-      return;
-    }
-
+  // Create or Update Sub-Event
+  const handleSaveSubEvent = async (payload: Partial<SubEventDTO>, editingId?: string) => {
     try {
-      const res = await fetch('/api/admin/sub-events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newSubEvent.title.trim(),
-          description: newSubEvent.description.trim() || undefined,
-          locationName: newSubEvent.locationName.trim() || undefined,
-          category: newSubEvent.category.trim() || undefined,
-          isPrivate: newSubEvent.isPrivate,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to create sub-event');
-      addToast('Sub-event created successfully!', 'success');
-      setNewSubEvent({ title: '', description: '', locationName: '', category: '', isPrivate: true });
-      setIsModalOpen(false);
-      fetchMatrix();
+      if (editingId) {
+        const updated = await updateSubEvent(editingId, payload);
+        setSubEvents((prev) =>
+          sortSubEventsBySchedule(
+            prev.map((evt) =>
+              evt.id === editingId
+                ? {
+                  ...evt,
+                  ...payload,
+                  ...(updated || {}),
+                }
+                : evt
+            )
+          )
+        );
+        setEditingSubEvent(null);
+        addToast('Sub-event updated successfully.', 'success');
+      } else {
+        const created = await createSubEvent(payload);
+        addToast('Sub-event created successfully!', 'success');
+        await fetchMatrix();
+        if (created && created.id) {
+          setSubEvents((prev) =>
+            prev.some((evt) => evt.id === created.id)
+              ? prev
+              : sortSubEventsBySchedule([
+                ...prev,
+                {
+                  ...payload,
+                  ...created,
+                  isPrivate: Boolean(created.isPrivate ?? payload.isPrivate),
+                } as SubEvent,
+              ])
+          );
+        }
+      }
     } catch (err: any) {
-      addToast(err.message || 'Error creating sub-event', 'error');
+      addToast(err?.message || (editingId ? 'Error updating sub-event' : 'Error creating sub-event'), 'error');
+      throw err;
+    }
+  };
+
+  // Delete Sub-Event after confirmation
+  const handleConfirmDeleteSubEvent = async (target: SubEvent) => {
+    try {
+      await removeSubEvent(target.id);
+      setSubEvents((prev) => prev.filter((evt) => evt.id !== target.id));
+      setAccessMatrix((prev) => {
+        const next: Record<string, string[]> = {};
+        Object.entries(prev).forEach(([invId, ids]) => {
+          next[invId] = ids.filter((id) => id !== target.id);
+        });
+        return next;
+      });
+      addToast('Sub-event deleted successfully.', 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Error deleting sub-event', 'error');
+      throw err;
     }
   };
 
@@ -342,7 +390,10 @@ export default function SubEventsMatrixPage() {
             Manage private sub-event permissions across guest invitation codes in bulk.
           </p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}>
+        <Button onClick={() => {
+          setEditingSubEvent(null);
+          setIsModalOpen(true);
+        }}>
           + Create New Sub-Event
         </Button>
       </div>
@@ -487,53 +538,88 @@ export default function SubEventsMatrixPage() {
                   </th>
 
                   {/* Sub-Events Column Headers */}
-                  {subEvents.map((evt) => (
-                    <th key={evt.id} className="p-3 font-semibold text-gray-900 dark:text-white min-w-[180px] border-l border-gray-200 dark:border-gray-700 align-top">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="truncate font-bold" title={evt.title}>
-                            {evt.title}
-                          </span>
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${
-                              evt.isPrivate
-                                ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
-                                : 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
-                            }`}
-                          >
-                            {evt.isPrivate ? 'Private' : 'Public'}
-                          </span>
-                        </div>
+                  {subEvents.map((evt) => {
+                    const scheduleLabel = formatSubEventSchedule(evt.startTime, evt.endTime);
+                    return (
+                      <th key={evt.id} className="p-3 font-semibold text-gray-900 dark:text-white min-w-[200px] border-l border-gray-200 dark:border-gray-700 align-top">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="truncate font-bold" title={evt.title}>
+                              {evt.title}
+                            </span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                                evt.isPrivate
+                                  ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                                  : 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
+                              }`}
+                            >
+                              {evt.isPrivate ? 'Private' : 'Public'}
+                            </span>
+                          </div>
 
-                        {evt.isPrivate ? (
-                          <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-1">
-                            <span>Bulk:</span>
+                          {scheduleLabel && (
+                            <span
+                              className="text-[11px] font-normal text-gray-500 dark:text-gray-400"
+                              data-testid={`sub-event-schedule-${evt.id}`}
+                            >
+                              {scheduleLabel}
+                            </span>
+                          )}
+
+                          <div className="flex items-center gap-2 text-xs font-normal mt-0.5">
                             <button
                               type="button"
-                              className="text-primary hover:underline font-semibold"
-                              onClick={() => handleColumnToggle(evt.id, 'grant')}
-                              title={`Grant ${evt.title} access to all ${totalRecords} matching guests`}
+                              aria-label={`Edit sub-event ${evt.title}`}
+                              onClick={() => {
+                                setEditingSubEvent(evt);
+                                setIsModalOpen(true);
+                              }}
+                              className="text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-red-300 hover:underline font-medium"
                             >
-                              Grant All
+                              Edit
                             </button>
-                            <span>|</span>
+                            <span className="text-gray-300 dark:text-gray-600">|</span>
                             <button
                               type="button"
-                              className="text-red-600 dark:text-red-400 hover:underline font-semibold"
-                              onClick={() => handleColumnToggle(evt.id, 'revoke')}
-                              title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
+                              aria-label={`Delete sub-event ${evt.title}`}
+                              onClick={() => setDeletingSubEvent(evt)}
+                              className="text-red-600 dark:text-red-400 hover:underline font-medium"
                             >
-                              Revoke All
+                              Delete
                             </button>
                           </div>
-                        ) : (
-                          <span className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-1">
-                            Accessible to all guests
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                  ))}
+
+                          {evt.isPrivate ? (
+                            <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">
+                              <span>Bulk:</span>
+                              <button
+                                type="button"
+                                className="text-primary hover:underline font-semibold"
+                                onClick={() => handleColumnToggle(evt.id, 'grant')}
+                                title={`Grant ${evt.title} access to all ${totalRecords} matching guests`}
+                              >
+                                Grant All
+                              </button>
+                              <span>|</span>
+                              <button
+                                type="button"
+                                className="text-red-600 dark:text-red-400 hover:underline font-semibold"
+                                onClick={() => handleColumnToggle(evt.id, 'revoke')}
+                                title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
+                              >
+                                Revoke All
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-0.5">
+                              Accessible to all guests
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
 
@@ -712,79 +798,44 @@ export default function SubEventsMatrixPage() {
         </div>
       )}
 
-      {/* Create Sub-Event Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700 space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create New Sub-Event</h2>
-            <form onSubmit={handleCreateSubEvent} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
-                <input
-                  type="text"
-                  required
-                  value={newSubEvent.title}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, title: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                  placeholder="e.g. Rehearsal Dinner"
-                />
-              </div>
+      <SubEventEditorModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingSubEvent(null);
+        }}
+        editingEvent={editingSubEvent}
+        onSave={handleSaveSubEvent}
+      />
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location Name</label>
-                <input
-                  type="text"
-                  value={newSubEvent.locationName}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, locationName: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                  placeholder="e.g. The Grand Ballroom"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
-                <input
-                  type="text"
-                  value={newSubEvent.category}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, category: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                  placeholder="e.g. Dining"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                <textarea
-                  value={newSubEvent.description}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, description: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                  rows={2}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="subevent-private"
-                  checked={newSubEvent.isPrivate}
-                  onChange={(e) => setNewSubEvent({ ...newSubEvent, isPrivate: e.target.checked })}
-                  className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                />
-                <label htmlFor="subevent-private" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Private Sub-Event (requires explicit access assignment)
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">Create Sub-Event</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <SubEventDeleteConfirmModal
+        subEvent={deletingSubEvent}
+        onClose={() => setDeletingSubEvent(null)}
+        onConfirm={handleConfirmDeleteSubEvent}
+      />
     </div>
+  );
+}
+
+export default function SubEventsMatrixPage() {
+  const existingQueryClient = useContext(QueryClientContext);
+  const [fallbackQueryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      })
+  );
+
+  if (existingQueryClient) {
+    return <SubEventsMatrixPageContent />;
+  }
+
+  return (
+    <QueryClientProvider client={fallbackQueryClient}>
+      <SubEventsMatrixPageContent />
+    </QueryClientProvider>
   );
 }
