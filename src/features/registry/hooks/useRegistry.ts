@@ -19,6 +19,69 @@ const INITIAL_VISIBLE_ITEMS = 12;
 const REGISTRY_CATALOG_LIMIT = 500;
 const EMPTY_ITEMS: RegistryItem[] = [];
 
+type RegistryQueryData = PaginatedRegistryItems | RegistryItem[];
+
+interface ContributeVariables {
+  itemId: string;
+  purchaserName: string;
+  amount: number;
+  code?: string;
+  message?: string | null;
+  coverFee?: boolean;
+  email?: string | null;
+  paymentIntentId?: string;
+}
+
+function applyOptimisticContribution(item: RegistryItem, variables: ContributeVariables): RegistryItem {
+  if (item.id !== variables.itemId) return item;
+  if (item.isGroupGift) {
+    const newAmount = item.amountContributed + variables.amount;
+    return {
+      ...item,
+      amountContributed: Math.min(item.price, newAmount),
+      contributors: [
+        ...item.contributors,
+        {
+          name: variables.purchaserName,
+          amount: variables.amount,
+          coverFee: variables.coverFee ?? false,
+          feeAmount: variables.coverFee ? Math.round(variables.amount * 0.025 * 100) / 100 : 0,
+          date: new Date().toISOString(),
+          isPlusOne: false,
+          thankYouStatus: 'Unsent',
+          thankYouSentAt: null,
+          stripePaymentIntentId: variables.paymentIntentId ?? null,
+          stripeChargeId: null,
+          transactionTimestamp: new Date().toISOString(),
+        },
+      ],
+      purchased: newAmount >= item.price,
+    };
+  }
+  return {
+    ...item,
+    purchased: true,
+    purchaserName: variables.purchaserName,
+  };
+}
+
+function mapRegistryQueryData(
+  data: RegistryQueryData | undefined,
+  updater: (item: RegistryItem) => RegistryItem
+): RegistryQueryData | undefined {
+  if (!data) return data;
+  if (Array.isArray(data)) {
+    return data.map(updater);
+  }
+  if (typeof data === 'object' && Array.isArray(data.items)) {
+    return {
+      ...data,
+      items: data.items.map(updater),
+    };
+  }
+  return data;
+}
+
 export function useRegistry() {
   const queryClient = useQueryClient();
   const { confirm } = useToast();
@@ -55,20 +118,13 @@ export function useRegistry() {
   }, [page, limit]);
 
   const {
-    data: items = EMPTY_ITEMS,
+    data: queryResult,
     isLoading,
     error,
     refetch,
-  } = useQuery<RegistryItem[], Error>({
+  } = useQuery<RegistryQueryData, Error>({
     queryKey: registryQueryKey,
-    queryFn: async () => {
-      const res = await apiClient.get<PaginatedRegistryItems | RegistryItem[]>(endpoint);
-      if (Array.isArray(res)) return res;
-      if (res && typeof res === 'object' && Array.isArray(res.items)) {
-        return res.items;
-      }
-      return [];
-    },
+    queryFn: async () => apiClient.get<RegistryQueryData>(endpoint),
     placeholderData: (previousData) => previousData,
   });
 
@@ -81,8 +137,28 @@ export function useRegistry() {
     enabled: false,
   });
 
-  const total = items.length;
-  const totalPages = Math.ceil(total / limit) || 1;
+  const items = useMemo<RegistryItem[]>(() => {
+    if (!queryResult) return EMPTY_ITEMS;
+    if (Array.isArray(queryResult)) return queryResult;
+    if (typeof queryResult === 'object' && Array.isArray(queryResult.items)) {
+      return queryResult.items;
+    }
+    return EMPTY_ITEMS;
+  }, [queryResult]);
+
+  const total = useMemo(() => {
+    if (queryResult && typeof queryResult === 'object' && 'total' in queryResult && typeof queryResult.total === 'number') {
+      return queryResult.total;
+    }
+    return items.length;
+  }, [queryResult, items.length]);
+
+  const totalPages = useMemo(() => {
+    if (queryResult && typeof queryResult === 'object' && 'totalPages' in queryResult && typeof queryResult.totalPages === 'number') {
+      return queryResult.totalPages;
+    }
+    return Math.ceil(total / limit) || 1;
+  }, [queryResult, total, limit]);
 
   const {
     categories,
@@ -123,59 +199,43 @@ export function useRegistry() {
   }, []);
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }: { itemId: string; purchaserName: string; amount: number; code?: string; message?: string | null; coverFee?: boolean; email?: string | null; paymentIntentId?: string }) => {
+    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }: ContributeVariables) => {
       return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId });
     },
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: registryQueryKey });
-      const previousItems = queryClient.getQueryData<RegistryItem[]>(registryQueryKey);
-      if (previousItems) {
-        queryClient.setQueryData<RegistryItem[]>(registryQueryKey, prev => prev?.map(item => {
-          if (item.id !== variables.itemId) return item;
-          if (item.isGroupGift) {
-            const newAmount = item.amountContributed + variables.amount;
-            return {
-              ...item,
-              amountContributed: Math.min(item.price, newAmount),
-              contributors: [
-                ...item.contributors,
-                {
-                  name: variables.purchaserName,
-                  amount: variables.amount,
-                  coverFee: variables.coverFee ?? false,
-                  feeAmount: variables.coverFee ? Math.round(variables.amount * 0.025 * 100) / 100 : 0,
-                  date: new Date().toISOString(),
-                  isPlusOne: false,
-                  thankYouStatus: 'Unsent',
-                  thankYouSentAt: null,
-                  stripePaymentIntentId: variables.paymentIntentId ?? null,
-                  stripeChargeId: null,
-                  transactionTimestamp: new Date().toISOString(),
-                },
-              ],
-              purchased: newAmount >= item.price,
-            };
-          } else {
-            return {
-              ...item,
-              purchased: true,
-              purchaserName: variables.purchaserName,
-            };
-          }
-        }) || []);
-      }
-      return { previousItems };
+      await queryClient.cancelQueries({ queryKey: ['registry-items'] });
+      const previousQueries = queryClient.getQueriesData<RegistryQueryData>({ queryKey: ['registry-items'] });
+      const previousSelectedItem = selectedItem;
+
+      queryClient.setQueriesData<RegistryQueryData>(
+        { queryKey: ['registry-items'] },
+        (old) => mapRegistryQueryData(old, (item) => applyOptimisticContribution(item, variables))
+      );
+
+      setSelectedItem((prev) =>
+        prev && prev.id === variables.itemId ? applyOptimisticContribution(prev, variables) : prev
+      );
+
+      return { previousQueries, previousSelectedItem };
     },
     onError: (_err, _variables, context) => {
-      if (context?.previousItems) {
-        queryClient.setQueryData(registryQueryKey, context.previousItems);
+      if (context?.previousQueries) {
+        for (const [queryKey, previousData] of context.previousQueries) {
+          queryClient.setQueryData(queryKey, previousData);
+        }
+      }
+      if (context && 'previousSelectedItem' in context) {
+        setSelectedItem(context.previousSelectedItem);
       }
     },
-    onSuccess: (updatedItem: any) => {
-      if (updatedItem && typeof updatedItem === 'object' && typeof updatedItem.id === 'string') {
-        queryClient.setQueryData<RegistryItem[]>(registryQueryKey, old =>
-          old?.map(item => item.id === updatedItem.id ? updatedItem : item)
+    onSuccess: (updatedItem) => {
+      if (updatedItem && typeof updatedItem === 'object' && 'id' in updatedItem && updatedItem.id) {
+        const nextItem = updatedItem as RegistryItem;
+        queryClient.setQueriesData<RegistryQueryData>(
+          { queryKey: ['registry-items'] },
+          (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
         );
+        setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
       }
       queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
     },
@@ -345,7 +405,6 @@ export function useRegistry() {
     return new Promise<void>((resolve, reject) => {
       contribute({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }, {
         onSuccess: () => {
-          handleCloseModal();
           resolve();
         },
         onError: (error) => {
@@ -353,7 +412,7 @@ export function useRegistry() {
         }
       });
     });
-  }, [contribute, handleCloseModal]);
+  }, [contribute]);
 
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);

@@ -126,9 +126,23 @@ export function useEntityOrchestration<T extends { id: string }>({
     mutationFn: async (id: string) => apiClient.delete(`${endpoint}/${id}`),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey });
-      const previousData = queryClient.getQueryData<T[]>(queryKey);
-      if (previousData) {
+      const previousData = queryClient.getQueryData<unknown>(queryKey);
+      if (Array.isArray(previousData)) {
         queryClient.setQueryData<T[]>(queryKey, old => old?.filter(item => item.id !== id));
+      } else if (
+        previousData &&
+        typeof previousData === 'object' &&
+        Array.isArray((previousData as { items?: T[] }).items)
+      ) {
+        queryClient.setQueryData(queryKey, (old: { items: T[]; total?: number } | undefined) =>
+          old
+            ? {
+              ...old,
+              items: old.items.filter(item => item.id !== id),
+              ...(typeof old.total === 'number' ? { total: Math.max(0, old.total - 1) } : {}),
+            }
+            : old
+        );
       }
       return { previousData };
     },

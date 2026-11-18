@@ -2,6 +2,18 @@ import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports
 import { createMediaAssociationSchema } from '@/features/media/schemas';
 import { createLaxUrlSchema } from '@/utils/validation';
+import {
+  INVITATION_CODE_MAX_LENGTH,
+  GUEST_NAME_MAX_LENGTH,
+  ADDRESS_LINE_MAX_LENGTH,
+  CITY_MAX_LENGTH,
+  STATE_MAX_LENGTH,
+  ZIP_CODE_MAX_LENGTH,
+  COUNTRY_MAX_LENGTH,
+  PLUS_ONE_NAME_MAX_LENGTH,
+  HOUSEHOLD_NAME_MAX_LENGTH,
+  PARTY_GROUP_MAX_LENGTH,
+} from '@/utils/invitationValidation';
 
 export const RegistryQuerySchema = z.object({
   page: z.coerce.number().int({ message: 'Page must be an integer.' }).min(1, 'Page must be at least 1.').default(1),
@@ -68,7 +80,7 @@ export const ContributionSchema = z.object({
   itemId: z.string({ message: 'Missing or invalid itemId.' }).min(1, 'Missing or invalid itemId.'),
   name: z.string().trim().optional(),
   purchaserName: z.string().trim().optional(),
-  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).optional().or(z.literal('')).nullable(),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   code: z.string().trim().optional(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
@@ -78,7 +90,7 @@ export const ContributionSchema = z.object({
   const resolvedName = data.name || data.purchaserName;
   if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'Name is required and must be under 100 characters.',
       path: ['name'],
     });
@@ -97,7 +109,7 @@ export const PaymentIntentRequestSchema = z.object({
   coverFee: z.boolean().optional().default(false),
   paymentIntentId: z.string().trim().optional(),
   name: z.string().trim().optional(),
-  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).optional().or(z.literal('')).nullable(),
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
   code: z.string().trim().optional(),
 });
@@ -120,7 +132,7 @@ export const RegistryItemBaseSchema = z.object({
   displayOrder: z.coerce.number({ message: 'Display order must be an integer.' }).int('Display order must be an integer.').optional().default(0),
   paymentHandleType: z.string().max(100, 'Payment handle type must be under 100 characters.').optional().nullable().or(z.literal('')),
   paymentHandle: z.string().max(255, 'Payment handle must be under 255 characters.').optional().nullable().or(z.literal('')),
-}, { message: 'Invalid request body.' }).merge(createMediaAssociationSchema('image'));
+}, { message: 'Invalid request body.' }).extend(createMediaAssociationSchema('image').shape);
 
 export const RegistryItemSchema = RegistryItemBaseSchema.extend({
   id: z.string(),
@@ -163,21 +175,21 @@ export function translateSnapshotToActive(snapshotData: any) {
 
 export const InvitationCodeSchema = z.object({
   id: z.string(),
-  code: z.string().trim().min(1, 'Code is required.').max(50, 'Code must be under 50 characters.'),
-  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
-  email: z.string().trim().email('Invalid email address.').nullable().optional().or(z.literal('')),
-  addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').nullable().optional().or(z.literal('')),
-  addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').nullable().optional().or(z.literal('')),
-  city: z.string().trim().max(100, 'City must be under 100 characters.').nullable().optional().or(z.literal('')),
-  state: z.string().trim().max(100, 'State must be under 100 characters.').nullable().optional().or(z.literal('')),
-  zipCode: z.string().trim().max(20, 'Zip Code must be under 20 characters.').nullable().optional().or(z.literal('')),
-  country: z.string().trim().max(100, 'Country must be under 100 characters.').nullable().optional().or(z.literal('')),
+  code: z.string().trim().min(1, 'Code is required.').max(INVITATION_CODE_MAX_LENGTH, `Code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`),
+  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, `Guest name is required and must be under ${GUEST_NAME_MAX_LENGTH} characters.`).max(GUEST_NAME_MAX_LENGTH, `Guest name is required and must be under ${GUEST_NAME_MAX_LENGTH} characters.`),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).nullable().optional().or(z.literal('')),
+  addressLine1: z.string().trim().max(ADDRESS_LINE_MAX_LENGTH, `Address Line 1 must be under ${ADDRESS_LINE_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  addressLine2: z.string().trim().max(ADDRESS_LINE_MAX_LENGTH, `Address Line 2 must be under ${ADDRESS_LINE_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  city: z.string().trim().max(CITY_MAX_LENGTH, `City must be under ${CITY_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  state: z.string().trim().max(STATE_MAX_LENGTH, `State must be under ${STATE_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  zipCode: z.string().trim().max(ZIP_CODE_MAX_LENGTH, `Zip Code must be under ${ZIP_CODE_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  country: z.string().trim().max(COUNTRY_MAX_LENGTH, `Country must be under ${COUNTRY_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
   dietaryNotes: z.string().trim().nullable().optional(),
   plusOneAllocations: z.coerce.number().int().nonnegative().optional().default(0),
-  plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').nullable().optional().or(z.literal('')),
-  plusOneLastName: z.string().trim().max(100, 'Plus-one last name must be under 100 characters.').nullable().optional().or(z.literal('')),
-  householdName: z.string().trim().max(100, 'Household name must be under 100 characters.').nullable().optional().or(z.literal('')),
-  partyGroup: z.string().trim().max(100, 'Party group must be under 100 characters.').nullable().optional().or(z.literal('')),
+  plusOneFirstName: z.string().trim().max(PLUS_ONE_NAME_MAX_LENGTH, `Plus-one first name must be under ${PLUS_ONE_NAME_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  plusOneLastName: z.string().trim().max(PLUS_ONE_NAME_MAX_LENGTH, `Plus-one last name must be under ${PLUS_ONE_NAME_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  householdName: z.string().trim().max(HOUSEHOLD_NAME_MAX_LENGTH, `Household name must be under ${HOUSEHOLD_NAME_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
+  partyGroup: z.string().trim().max(PARTY_GROUP_MAX_LENGTH, `Party group must be under ${PARTY_GROUP_MAX_LENGTH} characters.`).nullable().optional().or(z.literal('')),
   partyTags: z.array(z.string().trim()).optional().default([]),
   extraFields: z.record(z.string(), z.any()).nullable().optional(),
   used: z.boolean().default(false),
@@ -192,26 +204,26 @@ export const InvitationCodeSchema = z.object({
 export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
 
 const BatchImportInvitationCodeItemSchema = z.object({
-  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(100, 'Guest name must be under 100 characters.'),
+  guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(GUEST_NAME_MAX_LENGTH, `Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`),
   code: z.string().trim().optional().or(z.literal('')),
   email: z.union([
-    z.string().trim().email('Invalid email address.'),
+    z.string().trim().pipe(z.email('Invalid email address.')),
     z.literal(''),
     z.null(),
     z.undefined()
   ]).optional(),
-  addressLine1: z.string().trim().max(150, 'Address Line 1 must be under 150 characters.').optional().or(z.literal('')).nullable(),
-  addressLine2: z.string().trim().max(150, 'Address Line 2 must be under 150 characters.').optional().or(z.literal('')).nullable(),
-  city: z.string().trim().max(100, 'City must be under 100 characters.').optional().or(z.literal('')).nullable(),
-  state: z.string().trim().max(100, 'State must be under 100 characters.').optional().or(z.literal('')).nullable(),
-  zipCode: z.string().trim().max(20, 'Zip Code must be under 20 characters.').optional().or(z.literal('')).nullable(),
-  country: z.string().trim().max(100, 'Country must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  addressLine1: z.string().trim().max(ADDRESS_LINE_MAX_LENGTH, `Address Line 1 must be under ${ADDRESS_LINE_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  addressLine2: z.string().trim().max(ADDRESS_LINE_MAX_LENGTH, `Address Line 2 must be under ${ADDRESS_LINE_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  city: z.string().trim().max(CITY_MAX_LENGTH, `City must be under ${CITY_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  state: z.string().trim().max(STATE_MAX_LENGTH, `State must be under ${STATE_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  zipCode: z.string().trim().max(ZIP_CODE_MAX_LENGTH, `Zip Code must be under ${ZIP_CODE_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  country: z.string().trim().max(COUNTRY_MAX_LENGTH, `Country must be under ${COUNTRY_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
   dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),
   plusOneAllocations: z.coerce.number().int('Plus-one allocation must be an integer.').nonnegative('Plus-one allocation must be non-negative.').optional(),
-  plusOneFirstName: z.string().trim().max(100, 'Plus-one first name must be under 100 characters.').optional().or(z.literal('')).nullable(),
-  plusOneLastName: z.string().trim().max(100, 'Plus-one last name must be under 100 characters.').optional().or(z.literal('')).nullable(),
-  householdName: z.string().trim().max(100, 'Household name must be under 100 characters.').optional().or(z.literal('')).nullable(),
-  partyGroup: z.string().trim().max(100, 'Party group must be under 100 characters.').optional().or(z.literal('')).nullable(),
+  plusOneFirstName: z.string().trim().max(PLUS_ONE_NAME_MAX_LENGTH, `Plus-one first name must be under ${PLUS_ONE_NAME_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  plusOneLastName: z.string().trim().max(PLUS_ONE_NAME_MAX_LENGTH, `Plus-one last name must be under ${PLUS_ONE_NAME_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  householdName: z.string().trim().max(HOUSEHOLD_NAME_MAX_LENGTH, `Household name must be under ${HOUSEHOLD_NAME_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
+  partyGroup: z.string().trim().max(PARTY_GROUP_MAX_LENGTH, `Party group must be under ${PARTY_GROUP_MAX_LENGTH} characters.`).optional().or(z.literal('')).nullable(),
   partyTags: z.union([
     z.array(z.string()),
     z.string().transform(val => val.split(',').map(s => s.trim()).filter(Boolean))
@@ -298,7 +310,7 @@ const phonePattern = /^\+?[\d\s().\/-]{7,30}$/;
 
 export const PublicAddressCollectSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required and must be under 100 characters.').max(100, 'Guest name is required and must be under 100 characters.'),
-  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  email: z.string().trim().pipe(z.email('Invalid email address.')).optional().or(z.literal('')).nullable(),
   phone: z
     .string()
     .trim()

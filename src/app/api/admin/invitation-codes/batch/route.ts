@@ -7,7 +7,8 @@ import {
   type BatchDeleteInvitationCodesDTO,
 } from '@/features/registry';
 import { InvitationCodeAdminService } from '@/features/registry';
-import { AdminEntityBatchUpdateSchema, formatZodError } from '@/utils/validation';
+import { formatZodError } from '@/utils/validation';
+import { handleBatchUpdate as handleEntityBatchUpdate } from '@/app/api/admin/[entity]/batch/route';
 
 function handleValidationError(error: any): never {
   if (error instanceof ApiError) throw error;
@@ -17,40 +18,10 @@ function handleValidationError(error: any): never {
   throw error;
 }
 
-async function handleBatchUpdate(req: NextRequest) {
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    throw new ApiError(400, 'Invalid JSON payload.');
-  }
-
-  const parseResult = AdminEntityBatchUpdateSchema.safeParse(body);
-  if (!parseResult.success) {
-    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
-  }
-
-  const { ids, ...rest } = parseResult.data;
-  const updateData =
-    rest.payload && typeof rest.payload === 'object' && !Array.isArray(rest.payload)
-      ? rest.payload
-      : rest;
-  const service = new InvitationCodeAdminService();
-
-  try {
-    const updatedRecords = await service.updateBatch(ids, updateData, 'Admin');
-    return NextResponse.json(
-      {
-        success: true,
-        count: updatedRecords.length,
-        updatedCount: updatedRecords.length,
-        records: updatedRecords,
-      },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    handleValidationError(error);
-  }
+function handleBatchUpdate(req: NextRequest) {
+  return handleEntityBatchUpdate(req, {
+    params: Promise.resolve({ entity: 'invitation-codes' }),
+  });
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
@@ -61,7 +32,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(400, 'Invalid JSON payload.');
   }
 
-  if (body && ('ids' in body || !('records' in body))) {
+  if (body && typeof body === 'object' && ('ids' in body || !('records' in body))) {
     return handleBatchUpdate(req);
   }
 

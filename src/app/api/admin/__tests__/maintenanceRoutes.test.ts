@@ -5,7 +5,7 @@ import { POST } from '../maintenance/import/route';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, pruneSnapshotsBulk } from '@/lib/audit';
 
 jest.mock('next/server', () => {
   class MockNextResponse {
@@ -126,7 +126,6 @@ jest.mock('@/lib/audit', () => ({
 const mockPrisma = prisma as any;
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockCreateAuditSnapshot = createAuditSnapshot as jest.MockedFunction<typeof createAuditSnapshot>;
-const { pruneSnapshotsBulk } = require('@/lib/audit');
 const mockPruneSnapshotsBulk = pruneSnapshotsBulk as jest.MockedFunction<typeof pruneSnapshotsBulk>;
 
 describe('Maintenance API Routes Integration Tests', () => {

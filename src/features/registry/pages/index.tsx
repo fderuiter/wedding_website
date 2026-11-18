@@ -342,6 +342,7 @@ function RegistryPageContent() {
         >
           {selectedItem && (
             <RegistryItemCard
+              key={selectedItem.id}
               item={selectedItem}
               titleId={`registry-item-title-${selectedItem.id}`}
               onClose={handleCloseModal}

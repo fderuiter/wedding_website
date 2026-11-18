@@ -4,7 +4,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { AdminEntityBatchUpdateSchema, formatZodError } from '@/utils/validation';
 
-async function handleBatchUpdate(
+export async function handleBatchUpdate(
   request: NextRequest,
   context: { params: Promise<{ entity: string }> }
 ) {
@@ -43,7 +43,7 @@ async function handleBatchUpdate(
     );
   } catch (error: any) {
     if (error instanceof ApiError) throw error;
-    if (error.message && error.message.startsWith('Validation Error:')) {
+    if (error?.message && error.message.startsWith('Validation Error:')) {
       throw new ApiError(400, error.message.replace('Validation Error: ', ''));
     }
     throw error;

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
 import { apiClient } from '@/lib/apiClient';
@@ -19,74 +20,49 @@ interface PendingPhoto {
   data?: any;
 }
 
-export default function MediaDashboardPage() {
-  const [media, setMedia] = useState<MediaDTO[]>([]);
-  const [loading, setLoading] = useState(true);
+interface MediaDashboardContentProps {
+  media: MediaDTO[];
+  loading: boolean;
+  page: number;
+  totalPages: number;
+  total: number;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+  pendingPhotos: PendingPhoto[];
+  setPendingPhotos: React.Dispatch<React.SetStateAction<PendingPhoto[]>>;
+  drawerOpen: boolean;
+  setDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  a11yNotice: string;
+  setA11yNotice: React.Dispatch<React.SetStateAction<string>>;
+  fetchMedia: (_targetPage?: number, _options?: { background?: boolean }) => Promise<void>;
+}
+
+function MediaDashboardContent({
+  media,
+  loading,
+  page,
+  totalPages,
+  total,
+  setPage,
+  pendingPhotos,
+  setPendingPhotos,
+  drawerOpen,
+  setDrawerOpen,
+  a11yNotice,
+  setA11yNotice,
+  fetchMedia,
+}: MediaDashboardContentProps) {
   const [currentMedia, setCurrentMedia] = useState<Partial<MediaDTO>>({});
   const [isEditing, setIsEditing] = useState(false);
-
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
-  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [a11yNotice, setA11yNotice] = useState<string>('');
-
-  const [page, setPage] = useState(1);
-  const [limit] = useState(20);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
-
-  useEffect(() => {
-    fetchMedia(page);
-    fetchPendingPhotos();
-  }, [page]);
-
-  const fetchPendingPhotos = async () => {
-    try {
-      const res = await apiClient.get('/api/admin/photos/moderation');
-      if (res && res.photos && Array.isArray(res.photos)) {
-        setPendingPhotos(res.photos);
-      } else if (res && res.data && Array.isArray(res.data)) {
-        setPendingPhotos(res.data);
-      } else if (Array.isArray(res)) {
-        setPendingPhotos(res);
-      }
-    } catch (e) {
-      console.error('Failed to load pending photos:', e);
-    }
-  };
-
-  const fetchMedia = async (targetPage = page) => {
-    try {
-      setLoading(true);
-      const res = await apiClient.get(`/api/media?page=${targetPage}&limit=${limit}`);
-      if (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data)) {
-        setMedia(res.data);
-        setTotal(res.total ?? 0);
-        setTotalPages(res.totalPages ?? 1);
-        const resPage = res.page ?? targetPage;
-        if (resPage !== page) {
-          setPage(resPage);
-        }
-      } else if (Array.isArray(res)) {
-        setMedia(res);
-        setTotal(res.length);
-        setTotalPages(1);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleApprove = async (id: string) => {
     try {
       await apiClient.patch('/api/admin/photos/moderation', { id, action: 'approve' });
       setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
       setA11yNotice('Photo approved successfully.');
-      fetchMedia(page);
+      fetchMedia(page, { background: true });
     } catch (e) {
       console.error(e);
       setA11yNotice('Failed to approve photo.');
@@ -112,7 +88,7 @@ export default function MediaDashboardPage() {
       setPendingPhotos((prev) => prev.filter((p) => !idsToApprove.includes(p.id)));
       setSelectedPendingIds((prev) => prev.filter((id) => !idsToApprove.includes(id)));
       setA11yNotice(`Successfully approved ${idsToApprove.length} photo(s).`);
-      fetchMedia(page);
+      fetchMedia(page, { background: true });
     } catch (e) {
       console.error(e);
       setA11yNotice('Failed to approve selected photos.');
@@ -164,7 +140,7 @@ export default function MediaDashboardPage() {
         await apiClient.post('/api/media', currentMedia);
       }
       setIsEditing(false);
-      fetchMedia(page);
+      fetchMedia(page, { background: true });
     } catch (e) {
       console.error(e);
     }
@@ -178,7 +154,7 @@ export default function MediaDashboardPage() {
       if (media.length === 1 && page > 1) {
         setPage(p => p - 1);
       } else {
-        fetchMedia(page);
+        fetchMedia(page, { background: true });
       }
     } catch (e) {
       console.error(e);
@@ -488,113 +464,205 @@ export default function MediaDashboardPage() {
         </div>
       )}
 
-      {loading ? <p>Loading...</p> : (
+      {media.length === 0 ? (
+        <EmptyState
+          message="No media items available in the library."
+          actionLabel="Add Media"
+          onAction={() => {
+            setCurrentMedia({ url: '', altText: '', isDecorative: false });
+            setIsEditing(true);
+          }}
+        />
+      ) : (
         <>
-          {media.length === 0 ? (
-            <EmptyState
-              message="No media items available in the library."
-              actionLabel="Add Media"
-              onAction={() => {
-                setCurrentMedia({ url: '', altText: '', isDecorative: false });
-                setIsEditing(true);
-              }}
-            />
-          ) : (
-            <>
-              <div className="flex justify-between items-center mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleSelectAllPage}
-                  data-testid="select-all-media-btn"
+          <div className="flex justify-between items-center mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleSelectAllPage}
+              data-testid="select-all-media-btn"
+            >
+              {media.length > 0 && media.every(m => selectedIds.includes(m.id))
+                ? 'Deselect Page Items'
+                : 'Select Page Items'}
+            </Button>
+            {selectedIds.length > 0 && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                {selectedIds.length} item(s) selected
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {media.map(m => {
+              const isSelected = selectedIds.includes(m.id);
+              return (
+                <div
+                  key={m.id}
+                  className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border flex flex-col relative ${
+                    isSelected ? 'ring-2 ring-primary border-primary' : ''
+                  }`}
                 >
-                  {media.length > 0 && media.every(m => selectedIds.includes(m.id))
-                    ? 'Deselect Page Items'
-                    : 'Select Page Items'}
-                </Button>
-                {selectedIds.length > 0 && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                    {selectedIds.length} item(s) selected
-                  </span>
-                )}
-              </div>
+                  <div className="absolute top-2 left-2 z-10 p-1 bg-white/80 dark:bg-gray-900/80 backdrop-blur rounded">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectMedia(m.id)}
+                      aria-label={`Select media item ${m.altText || m.id}`}
+                      data-testid={`media-checkbox-${m.id}`}
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {media.map(m => {
-                  const isSelected = selectedIds.includes(m.id);
-                  return (
-                    <div
-                      key={m.id}
-                      className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow border flex flex-col relative ${
-                        isSelected ? 'ring-2 ring-primary border-primary' : ''
-                      }`}
+                  <div className="relative h-32 w-full mb-4">
+                    <MediaImage media={m} fallbackUrl="/images/placeholder.png" fallbackAlt="Unlabelled media asset" className="object-cover w-full h-full rounded" />
+                  </div>
+                  <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
+                  <div className="mt-auto flex justify-between gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      aria-label={m.altText ? `Edit media: ${m.altText}` : 'Edit unnamed item'}
+                      onClick={() => { setCurrentMedia(m); setIsEditing(true); }}
+                      className="flex-1"
                     >
-                      <div className="absolute top-2 left-2 z-10 p-1 bg-white/80 dark:bg-gray-900/80 backdrop-blur rounded">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectMedia(m.id)}
-                          aria-label={`Select media item ${m.altText || m.id}`}
-                          data-testid={`media-checkbox-${m.id}`}
-                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="relative h-32 w-full mb-4">
-                        <MediaImage media={m} fallbackUrl="/images/placeholder.png" fallbackAlt="Unlabelled media asset" className="object-cover w-full h-full rounded" />
-                      </div>
-                      <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
-                      <div className="mt-auto flex justify-between gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          aria-label={m.altText ? `Edit media: ${m.altText}` : 'Edit unnamed item'}
-                          onClick={() => { setCurrentMedia(m); setIsEditing(true); }}
-                          className="flex-1"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          aria-label={m.altText ? `Delete media: ${m.altText}` : 'Delete unnamed item'}
-                          onClick={() => handleDelete(m.id)}
-                          className="flex-1"
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          <div className="flex justify-between items-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700" data-testid="media-pagination-controls">
-            <Button
-              variant="secondary"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              aria-label="Previous page"
-            >
-              Previous
-            </Button>
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              Page {page} of {totalPages || 1} ({total} items)
-            </span>
-            <Button
-              variant="secondary"
-              disabled={page >= totalPages || totalPages === 0 || loading}
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              aria-label="Next page"
-            >
-              Next
-            </Button>
+                      Edit
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      aria-label={m.altText ? `Delete media: ${m.altText}` : 'Delete unnamed item'}
+                      onClick={() => handleDelete(m.id)}
+                      className="flex-1"
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
+
+      <div className="flex justify-between items-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700" data-testid="media-pagination-controls">
+        <Button
+          variant="secondary"
+          disabled={page <= 1 || loading}
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          aria-label="Previous page"
+        >
+          Previous
+        </Button>
+        <span className="text-sm text-gray-600 dark:text-gray-300">
+          Page {page} of {totalPages || 1} ({total} items)
+        </span>
+        <Button
+          variant="secondary"
+          disabled={page >= totalPages || totalPages === 0 || loading}
+          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+          aria-label="Next page"
+        >
+          Next
+        </Button>
+      </div>
     </div>
+  );
+}
+
+export default function MediaDashboardPage() {
+  const [media, setMedia] = useState<MediaDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [a11yNotice, setA11yNotice] = useState<string>('');
+
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+
+  const fetchPendingPhotos = async () => {
+    try {
+      const res = await apiClient.get('/api/admin/photos/moderation');
+      if (res && res.photos && Array.isArray(res.photos)) {
+        setPendingPhotos(res.photos);
+      } else if (res && res.data && Array.isArray(res.data)) {
+        setPendingPhotos(res.data);
+      } else if (Array.isArray(res)) {
+        setPendingPhotos(res);
+      }
+    } catch (e) {
+      console.error('Failed to load pending photos:', e);
+    }
+  };
+
+  const fetchMedia = async (targetPage = page, options?: { background?: boolean }) => {
+    if (!options?.background) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const res = await apiClient.get(`/api/media?page=${targetPage}&limit=${limit}`);
+      if (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data)) {
+        setMedia(res.data);
+        setTotal(res.total ?? 0);
+        setTotalPages(res.totalPages ?? 1);
+        const resPage = res.page ?? targetPage;
+        if (resPage !== page) {
+          setPage(resPage);
+        }
+      } else if (Array.isArray(res)) {
+        setMedia(res);
+        setTotal(res.length);
+        setTotalPages(1);
+      }
+      setError(null);
+    } catch (e) {
+      console.error(e);
+      const message = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to load media library.';
+      setError(message || 'Failed to load media library.');
+    } finally {
+      if (!options?.background) {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchMedia(page);
+    fetchPendingPhotos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  const handleRetry = async () => {
+    await Promise.all([fetchMedia(page), fetchPendingPhotos()]);
+  };
+
+  return (
+    <AdminViewState
+      isLoading={loading}
+      error={error}
+      onRetry={handleRetry}
+      loadingMessage="Loading media library..."
+    >
+      <MediaDashboardContent
+        media={media}
+        loading={loading}
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        setPage={setPage}
+        pendingPhotos={pendingPhotos}
+        setPendingPhotos={setPendingPhotos}
+        drawerOpen={drawerOpen}
+        setDrawerOpen={setDrawerOpen}
+        a11yNotice={a11yNotice}
+        setA11yNotice={setA11yNotice}
+        fetchMedia={fetchMedia}
+      />
+    </AdminViewState>
   );
 }

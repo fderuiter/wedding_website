@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import dns from 'dns';
 import { POST } from '@/app/api/registry/scrape/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
@@ -814,7 +815,6 @@ describe('POST /api/registry/scrape', () => {
   });
 
   it('should reject DNS rebinding attempts with HTTP status 400', async () => {
-    const dns = require('dns');
     const originalLookup = dns.promises.lookup;
     try {
       // Simulate DNS resolving to a private IP (rebind)
