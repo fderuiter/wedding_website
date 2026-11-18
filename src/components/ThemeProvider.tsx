@@ -138,7 +138,7 @@ export const useTheme = () => useContext(ThemeContext);
 
 function getSystemTheme(): ResolvedTheme {
   if (typeof window !== 'undefined' && window.matchMedia) {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return window.matchMedia('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light';
   }
   return 'dark';
 }
@@ -302,24 +302,18 @@ export function ThemeProvider({
     if (typeof window === 'undefined' || !window.matchMedia) return;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
+    if (!mediaQuery?.addEventListener) return;
+
+    const handleChange = (e: MediaQueryListEvent) => {
       const newResolved: ResolvedTheme = e.matches ? 'dark' : 'light';
       setResolvedTheme(newResolved);
       applyResolvedTheme(newResolved);
     };
 
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', handleChange);
-    } else if (mediaQuery.addListener) {
-      mediaQuery.addListener(handleChange);
-    }
+    mediaQuery.addEventListener('change', handleChange);
 
     return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', handleChange);
-      } else if (mediaQuery.removeListener) {
-        mediaQuery.removeListener(handleChange);
-      }
+      mediaQuery.removeEventListener?.('change', handleChange);
     };
   }, [themeMode]);
 

@@ -3,7 +3,7 @@ import { useRegistry } from '../useRegistry';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import React from 'react';
-import { RegistryItem } from '../../types';
+import { RegistryItem, PaginatedRegistryItems } from '../../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
@@ -166,7 +166,7 @@ describe('useRegistry', () => {
     });
   });
 
-  it('should handle contribution', async () => {
+  it('should handle contribution and keep optimistic update when response has no id', async () => {
     let contributeBody = null;
     server.use(
       http.post('/api/registry/contribute', async ({ request }) => {
@@ -178,11 +178,136 @@ describe('useRegistry', () => {
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    act(() => {
+      result.current.handleCardClick(result.current.items[0]);
+    });
+    expect(result.current.isModalOpen).toBe(true);
+
     await act(async () => {
-      await result.current.handleContribute('1', 'Jane Doe', 50);
+      await result.current.handleContribute('1', 'Jane Doe', 100);
     });
 
-    expect(contributeBody).toEqual({ itemId: '1', purchaserName: 'Jane Doe', amount: 50 });
+    expect(contributeBody).toEqual({ itemId: '1', purchaserName: 'Jane Doe', amount: 100 });
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem?.purchased).toBe(true);
+    expect(result.current.items.find(i => i.id === '1')?.purchased).toBe(true);
+  });
+
+  it('should synchronize PaginatedRegistryItems cache entries and keep modal open after handleContribute', async () => {
+    const paginatedPage1: PaginatedRegistryItems = {
+      items: mockItems.map(item => ({ ...item })),
+      total: 4,
+      page: 1,
+      limit: 20,
+      totalPages: 2,
+    };
+    const secondaryCacheKey = ['registry-items', 1, 20, 'Category A', 0, 1000] as const;
+    queryClient.setQueryData<PaginatedRegistryItems>(secondaryCacheKey, {
+      items: [mockItems[0], mockItems[2]].map(item => ({ ...item })),
+      total: 2,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
+
+    const serverUpdatedItem: RegistryItem = {
+      ...mockItems[0],
+      purchased: true,
+      purchaserName: 'J*** D***',
+    };
+
+    server.use(
+      http.get('/api/registry/items', () => {
+        return HttpResponse.json(paginatedPage1);
+      }),
+      http.post('/api/registry/contribute', () => {
+        return HttpResponse.json(serverUpdatedItem);
+      })
+    );
+
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setShowAvailableOnly(true);
+      result.current.handleCardClick(result.current.items[0]);
+    });
+
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem?.id).toBe('1');
+
+    await act(async () => {
+      await result.current.handleContribute('1', 'Jane Doe', 100);
+    });
+
+    // Modal stays open with updated selectedItem even after showAvailableOnly removes item from filteredItems
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem).toEqual(serverUpdatedItem);
+    expect(result.current.filteredItems.find(i => i.id === '1')).toBeUndefined();
+
+    // Active PaginatedRegistryItems query cache is updated while preserving pagination metadata
+    const activeCached = queryClient.getQueryData<PaginatedRegistryItems>(['registry-items', 1, 20, '', 0, 1000]);
+    expect(activeCached?.total).toBe(4);
+    expect(activeCached?.totalPages).toBe(2);
+    expect(activeCached?.items.find(i => i.id === '1')).toEqual(serverUpdatedItem);
+
+    // Other cached PaginatedRegistryItems pages/filters under ['registry-items'] are also synchronized
+    const secondaryCached = queryClient.getQueryData<PaginatedRegistryItems>(secondaryCacheKey);
+    expect(secondaryCached?.items.find(i => i.id === '1')).toEqual(serverUpdatedItem);
+  });
+
+  it('should roll back PaginatedRegistryItems caches and selectedItem on contribution error', async () => {
+    const paginatedData: PaginatedRegistryItems = {
+      items: mockItems.map(item => ({ ...item })),
+      total: 3,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    };
+    const secondaryCacheKey = ['registry-items', 2, 20, '', 0, 1000] as const;
+    queryClient.setQueryData<PaginatedRegistryItems>(secondaryCacheKey, {
+      items: [{ ...mockItems[2] }],
+      total: 3,
+      page: 2,
+      limit: 20,
+      totalPages: 2,
+    });
+
+    server.use(
+      http.get('/api/registry/items', () => {
+        return HttpResponse.json(paginatedData);
+      }),
+      http.post('/api/registry/contribute', () => {
+        return HttpResponse.json({ error: 'Payment record failed' }, { status: 500 });
+      })
+    );
+
+    const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const targetGroupItem = result.current.items[2];
+    act(() => {
+      result.current.handleCardClick(targetGroupItem);
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.handleContribute('3', 'Jane Doe', 150)
+      ).rejects.toThrow('Payment record failed');
+    });
+
+    expect(result.current.isModalOpen).toBe(true);
+    expect(result.current.selectedItem?.purchased).toBe(false);
+    expect(result.current.selectedItem?.amountContributed).toBe(150);
+
+    const activeCached = queryClient.getQueryData<PaginatedRegistryItems>(['registry-items', 1, 20, '', 100, 300]);
+    const revertedItem = activeCached?.items.find(i => i.id === '3') ?? result.current.items.find(i => i.id === '3');
+    expect(revertedItem?.purchased).toBe(false);
+    expect(revertedItem?.amountContributed).toBe(150);
+
+    const secondaryCached = queryClient.getQueryData<PaginatedRegistryItems>(secondaryCacheKey);
+    expect(secondaryCached?.items[0].purchased).toBe(false);
+    expect(secondaryCached?.items[0].amountContributed).toBe(150);
   });
 
   it('should filter items by category', async () => {
