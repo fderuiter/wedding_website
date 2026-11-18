@@ -30,6 +30,7 @@ describe('InvitationCodeAdminService', () => {
       },
       snapshotVersion: {
         create: jest.fn().mockResolvedValue({ id: 'snap-1' }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
         findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
@@ -504,6 +505,112 @@ describe('InvitationCodeAdminService', () => {
       await expect(service.batchDelete(['valid-id', ''], 'Admin')).rejects.toThrow(
         'Validation Error: Invalid ID in array.'
       );
+    });
+  });
+
+  describe('update', () => {
+    beforeEach(() => {
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(mockPrismaClient));
+    });
+
+    it('updates profile and address fields, normalizes cleared strings to null, and leaves omitted fields untouched', async () => {
+      mockPrismaClient.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        code: 'ALICE123',
+      });
+      mockPrismaClient.invitationCode.update.mockImplementation(({ where, data }: any) =>
+        Promise.resolve({
+          id: where.id,
+          tableId: 'table-4',
+          seatNumber: 2,
+          used: true,
+          ...data,
+        })
+      );
+
+      const result = await service.update('inv-1', {
+        guestName: '  Alice Smith-Updated  ',
+        code: '  alice123 ',
+        email: '   ',
+        addressLine1: ' 742 Evergreen Terrace ',
+        addressLine2: '',
+        city: 'Springfield',
+        dietaryNotes: '  Gluten-Free ',
+        partyTags: [' VIP ', ' Family ', ''],
+      });
+
+      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'inv-1' },
+        data: {
+          guestName: 'Alice Smith-Updated',
+          code: 'ALICE123',
+          email: null,
+          addressLine1: '742 Evergreen Terrace',
+          addressLine2: null,
+          city: 'Springfield',
+          dietaryNotes: 'Gluten-Free',
+          partyTags: ['VIP', 'Family'],
+        },
+      });
+      expect(result.tableId).toBe('table-4');
+      expect(result.seatNumber).toBe(2);
+      expect(result.used).toBe(true);
+    });
+
+    it('rejects changing code when new code already belongs to a different guest', async () => {
+      mockPrismaClient.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-other',
+        code: 'TAKEN999',
+      });
+
+      await expect(
+        service.update('inv-1', {
+          guestName: 'Alice Smith',
+          code: 'taken999',
+        })
+      ).rejects.toThrow('Validation Error: Invitation code "TAKEN999" is already in use.');
+
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateBatch', () => {
+    beforeEach(() => {
+      mockPrismaClient.$transaction = jest.fn(
+        (cb: (_tx: typeof mockPrismaClient) => unknown) => cb(mockPrismaClient)
+      );
+      mockPrismaClient.invitationCode.updateMany = jest.fn().mockResolvedValue({ count: 2 });
+    });
+
+    it('updates partial fields across multiple records without requiring guestName or generating codes', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: 'inv-1', code: 'CODE1', guestName: 'Guest 1', used: true, householdName: 'Smith' },
+        { id: 'inv-2', code: 'CODE2', guestName: 'Guest 2', used: true, householdName: 'Smith' },
+      ]);
+
+      const updated = await service.updateBatch(['inv-1', 'inv-2'], {
+        used: true,
+        householdName: '  Smith  ',
+      });
+
+      expect(updated).toHaveLength(2);
+      expect(mockPrismaClient.invitationCode.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['inv-1', 'inv-2'] } },
+        data: {
+          used: true,
+          householdName: 'Smith',
+        },
+      });
+      expect(mockPrismaClient.invitationCode.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects assigning a single invitation code across multiple records in updateBatch', async () => {
+      await expect(
+        service.updateBatch(['inv-1', 'inv-2'], { code: 'SHAREDCODE' })
+      ).rejects.toThrow(
+        'Validation Error: Invitation code cannot be shared across multiple guest records.'
+      );
+      expect(mockPrismaClient.invitationCode.updateMany).not.toHaveBeenCalled();
     });
   });
 });

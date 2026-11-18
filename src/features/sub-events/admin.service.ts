@@ -1,5 +1,6 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
+import { isEndTimeBeforeStartTime } from '@/utils/dateTime';
 import { SubEventDTO } from './schemas';
 
 export class SubEventAdminService extends BaseService<SubEventDTO> {
@@ -9,20 +10,87 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
     super(new BaseRepository<SubEventDTO>('subEvent'), 'SubEvent');
   }
 
-  protected async validate(data: any): Promise<void> {
-    if (!data.title || typeof data.title !== 'string' || data.title.trim() === '') {
-      throw new Error('Validation Error: Title is required.');
+  private validateFields(data: Record<string, unknown>, isPartial: boolean = false): void {
+    if (!isPartial || data.title !== undefined) {
+      if (!data.title || typeof data.title !== 'string' || data.title.trim() === '') {
+        throw new Error('Validation Error: Title is required.');
+      }
+    }
+
+    const rawStart = typeof data.startTime === 'string' ? data.startTime.trim() : data.startTime;
+    const rawEnd = typeof data.endTime === 'string' ? data.endTime.trim() : data.endTime;
+
+    const start =
+      rawStart instanceof Date
+        ? rawStart
+        : typeof rawStart === 'string' && rawStart
+          ? new Date(rawStart)
+          : null;
+    const end =
+      rawEnd instanceof Date
+        ? rawEnd
+        : typeof rawEnd === 'string' && rawEnd
+          ? new Date(rawEnd)
+          : null;
+
+    if (start && Number.isNaN(start.getTime())) {
+      throw new Error('Validation Error: Invalid start time.');
+    }
+    if (end && Number.isNaN(end.getTime())) {
+      throw new Error('Validation Error: Invalid end time.');
+    }
+    if (start && end && isEndTimeBeforeStartTime(start, end)) {
+      throw new Error('Validation Error: End time cannot precede start time.');
     }
   }
 
-  protected async preSave(data: any): Promise<any> {
-    const finalData = { ...data };
-    if (finalData.startTime && typeof finalData.startTime === 'string') {
+  protected async validate(data: Record<string, unknown>): Promise<void> {
+    this.validateFields(data, false);
+  }
+
+  protected async preSave(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const finalData: Record<string, unknown> = { ...data };
+    if (typeof finalData.title === 'string') {
+      finalData.title = finalData.title.trim();
+    }
+    if (finalData.startTime === '' || finalData.startTime === null) {
+      finalData.startTime = null;
+    } else if (finalData.startTime && typeof finalData.startTime === 'string') {
       finalData.startTime = new Date(finalData.startTime);
     }
-    if (finalData.endTime && typeof finalData.endTime === 'string') {
+    if (finalData.endTime === '' || finalData.endTime === null) {
+      finalData.endTime = null;
+    } else if (finalData.endTime && typeof finalData.endTime === 'string') {
       finalData.endTime = new Date(finalData.endTime);
     }
     return finalData;
+  }
+
+  async update(
+    id: string,
+    data: Partial<SubEventDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<SubEventDTO> {
+    return this.repo.transaction(async (txRepo) => {
+      let validationInput: Record<string, unknown> = data;
+      if (
+        (data.startTime === undefined && data.endTime !== undefined) ||
+        (data.startTime !== undefined && data.endTime === undefined)
+      ) {
+        const existing = await txRepo.findUnique(id);
+        if (existing) {
+          validationInput = {
+            ...data,
+            startTime: data.startTime !== undefined ? data.startTime : existing.startTime,
+            endTime: data.endTime !== undefined ? data.endTime : existing.endTime,
+          };
+        }
+      }
+      this.validateFields(validationInput, true);
+      const processedData = await this.preSave(data);
+      const record = await txRepo.update(id, processedData);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
   }
 }
