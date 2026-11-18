@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
@@ -17,8 +18,6 @@ import { getStripePromise } from '@/lib/stripe';
 import { apiClient } from '@/lib/apiClient';
 
 const FIXED_PRESETS = [50, 100, 250];
-
-const stripePromise = getStripePromise();
 
 /**
  * @interface RegistryItemCardProps
@@ -43,12 +42,22 @@ interface RegistryItemCardProps {
   titleId?: string;
 }
 
+interface RegistryItemCardInnerProps extends RegistryItemCardProps {
+  stripe?: Stripe | null;
+  elements?: StripeElements | null;
+}
+
 /**
- * Inner component that interacts with useStripe and useElements inside the Elements provider.
+ * Inner component that renders the registry item details, form, and confirmation receipt.
  */
-const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute, titleId }) => {
-  const stripe = useStripe();
-  const elements = useElements();
+const RegistryItemCardInner: React.FC<RegistryItemCardInnerProps> = ({
+  item,
+  onClose,
+  onContribute,
+  titleId,
+  stripe = null,
+  elements = null,
+}) => {
 
   const {
     isValidatingCode,
@@ -428,7 +437,7 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
             Done
           </Button>
         </div>
-      ) : !item.purchased ? (
+      ) : (!item.purchased || isSubmitting) ? (
         <form noValidate className="mt-5 pt-4 border-t border-primary" onSubmit={handlePaymentSubmit}>
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
@@ -714,6 +723,12 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
   );
 };
 
+const RegistryFundCardInner: React.FC<RegistryItemCardProps> = (props) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  return <RegistryItemCardInner {...props} stripe={stripe} elements={elements} />;
+};
+
 /**
  * Root RegistryItemCard component wrapped with Stripe Elements provider for funds.
  */
@@ -723,6 +738,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = (props) => {
   const initialAmount = props.item.isGroupGift
     ? Math.min(100, remainingAmount > 0 ? remainingAmount : props.item.price)
     : props.item.price;
+
+  const stripePromise = useMemo(
+    () => (isFund ? getStripePromise().catch(() => null) : null),
+    [isFund]
+  );
 
   const elementsOptions = useMemo(
     () => ({
@@ -740,7 +760,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = (props) => {
 
   return (
     <Elements stripe={stripePromise} options={elementsOptions}>
-      <RegistryItemCardInner {...props} />
+      <RegistryFundCardInner {...props} />
     </Elements>
   );
 };
