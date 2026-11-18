@@ -1,6 +1,11 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { InvitationCodeDTO, DryRunValidatedRow, DryRunValidationSummary, DryRunValidationResponse } from './schemas';
+import {
+  InvitationCodeDTO,
+  DryRunValidatedRow,
+  DryRunValidationSummary,
+  DryRunValidationResponse,
+} from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
@@ -11,7 +16,7 @@ import {
   NormalizedInvitationCodeRecord,
   normalizeBatchInvitationRecord,
   normalizeInvitationCode,
-  normalizeNullableString,
+  normalizePartialInvitationFields,
   normalizePartyTags,
   validateInvitationGuestFields,
 } from '@/utils/invitationValidation';
@@ -35,26 +40,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     client?: Prisma.TransactionClient,
     _author?: string
   ): Promise<Record<string, unknown>> {
-    const finalData: Record<string, unknown> = { ...data };
+    const finalData = normalizePartialInvitationFields(data);
     const activeClient = client || this.repo.client;
-
-    if (finalData.plusOneFirstName !== undefined) {
-      finalData.plusOneFirstName = normalizeNullableString(finalData.plusOneFirstName);
-    }
-    if (finalData.plusOneLastName !== undefined) {
-      finalData.plusOneLastName = normalizeNullableString(finalData.plusOneLastName);
-    }
-    if (finalData.householdName !== undefined) {
-      finalData.householdName = normalizeNullableString(finalData.householdName);
-    }
-    if (finalData.partyGroup !== undefined) {
-      finalData.partyGroup = normalizeNullableString(finalData.partyGroup);
-    }
-    if (finalData.partyTags !== undefined) {
-      finalData.partyTags = Array.isArray(finalData.partyTags)
-        ? normalizePartyTags(finalData.partyTags)
-        : [];
-    }
 
     const normalizedCode = normalizeInvitationCode(finalData.code);
     if (!normalizedCode) {
@@ -63,7 +50,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       while (attempts < 10) {
         const potentialCode = generateRandomCode();
         const existing = await activeClient.invitationCode.findUnique({
-          where: { code: potentialCode }
+          where: { code: potentialCode },
         });
         if (!existing) {
           uniqueCode = potentialCode;
@@ -78,14 +65,126 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     } else {
       finalData.code = normalizedCode;
       const existing = await activeClient.invitationCode.findUnique({
-        where: { code: finalData.code }
+        where: { code: finalData.code },
       });
       if (existing) {
-        // Handled by Prisma unique constraint if needed
+        // Handled by Prisma unique constraint or update collision check
       }
     }
 
     return finalData;
+  }
+
+  async update(
+    id: string,
+    data: Partial<InvitationCodeDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<InvitationCodeDTO> {
+    return this.repo.transaction(async (txRepo) => {
+      const errors = validateInvitationGuestFields(data, { mode: 'service', partial: true });
+      if (errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+
+      const processedData = normalizePartialInvitationFields(data);
+
+      if (processedData.code !== undefined) {
+        const normalizedCode = normalizeInvitationCode(processedData.code);
+        if (!normalizedCode) {
+          throw new Error('Validation Error: Code cannot be empty.');
+        }
+        processedData.code = normalizedCode;
+        const existing = await txRepo.client.invitationCode.findUnique({
+          where: { code: normalizedCode },
+        });
+        if (existing && existing.id !== id) {
+          throw new Error(
+            `Validation Error: Invitation code "${normalizedCode}" is already in use.`
+          );
+        }
+      }
+
+      const record = await txRepo.update(id, processedData);
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
+  }
+
+  async updateBatch(
+    ids: string[],
+    data: Partial<InvitationCodeDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<InvitationCodeDTO[]> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error('Validation Error: At least one ID is required.');
+    }
+    if (ids.length > 100) {
+      throw new Error('Validation Error: Maximum of 100 items allowed per batch request.');
+    }
+
+    return this.repo.transaction(async (txRepo) => {
+      const errors = validateInvitationGuestFields(data, { mode: 'service', partial: true });
+      if (errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+
+      const processedData = normalizePartialInvitationFields(data);
+
+      if (processedData.code !== undefined) {
+        if (ids.length > 1) {
+          throw new Error(
+            'Validation Error: Invitation code cannot be shared across multiple guest records.'
+          );
+        }
+        const normalizedCode = normalizeInvitationCode(processedData.code);
+        if (!normalizedCode) {
+          throw new Error('Validation Error: Code cannot be empty.');
+        }
+        processedData.code = normalizedCode;
+        const existing = await txRepo.client.invitationCode.findUnique({
+          where: { code: normalizedCode },
+        });
+        if (existing && existing.id !== ids[0]) {
+          throw new Error(
+            `Validation Error: Invitation code "${normalizedCode}" is already in use.`
+          );
+        }
+      }
+
+      let records: InvitationCodeDTO[];
+      if (typeof txRepo.updateManyAndReturn === 'function') {
+        records = await txRepo.updateManyAndReturn({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+      } else if (typeof txRepo.model?.updateManyAndReturn === 'function') {
+        records = await txRepo.model.updateManyAndReturn({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+      } else if (typeof txRepo.updateMany === 'function') {
+        await txRepo.updateMany({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+        records = await txRepo.findMany({
+          where: { id: { in: ids } },
+        });
+      } else if (typeof txRepo.model?.updateMany === 'function') {
+        await txRepo.model.updateMany({
+          where: { id: { in: ids } },
+          data: processedData,
+        });
+        records = await txRepo.findMany({
+          where: { id: { in: ids } },
+        });
+      } else {
+        records = await Promise.all(ids.map((id) => txRepo.update(id, processedData)));
+      }
+
+      await this.createBatchSnapshots(records, author, txRepo.client);
+      return records;
+    });
   }
 
   private buildBatchUpdateData(
@@ -101,7 +200,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (row.zipCode !== undefined) updateData.zipCode = normalized.zipCode;
     if (row.country !== undefined) updateData.country = normalized.country;
     if (row.dietaryNotes !== undefined) updateData.dietaryNotes = normalized.dietaryNotes;
-    if (row.plusOneAllocations !== undefined) updateData.plusOneAllocations = normalized.plusOneAllocations ?? 0;
+    if (row.plusOneAllocations !== undefined) {
+      updateData.plusOneAllocations = normalized.plusOneAllocations ?? 0;
+    }
     if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = normalized.plusOneFirstName;
     if (row.plusOneLastName !== undefined) updateData.plusOneLastName = normalized.plusOneLastName;
     if (row.householdName !== undefined) updateData.householdName = normalized.householdName;
@@ -132,7 +233,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
 
       const existingDbRecords = await tx.invitationCode.findMany({
-        select: { id: true, code: true, guestName: true }
+        select: { id: true, code: true, guestName: true },
       });
       const dbCodeMap = new Map<string, { id: string; guestName: string }>();
       for (const rec of existingDbRecords) {
@@ -228,7 +329,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             partyGroup: normalized.partyGroup,
             partyTags: normalized.partyTags,
             extraFields: (normalized.extraFields as Prisma.InputJsonValue | null) ?? undefined,
-            used: false
+            used: false,
           });
           imported++;
         }
@@ -236,7 +337,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
       if (toCreate.length > 0) {
         await tx.invitationCode.createMany({
-          data: toCreate
+          data: toCreate,
         });
       }
 
@@ -364,7 +465,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         count: records.length,
         imported,
         skipped,
-        updated
+        updated,
       };
     });
   }
@@ -422,13 +523,19 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           isDuplicate = true;
           existingGuestName = existingInDb.guestName;
           if (collisionStrategy === 'reject') {
-            errors.push(`Code "${code}" already exists in database (belongs to "${existingGuestName}").`);
+            errors.push(
+              `Code "${code}" already exists in database (belongs to "${existingGuestName}").`
+            );
             actionOutcome = 'reject';
           } else if (collisionStrategy === 'skip') {
-            warnings.push(`Code "${code}" already exists in database for guest "${existingGuestName}". Will be skipped.`);
+            warnings.push(
+              `Code "${code}" already exists in database for guest "${existingGuestName}". Will be skipped.`
+            );
             actionOutcome = 'skip';
           } else if (collisionStrategy === 'update') {
-            warnings.push(`Code "${code}" already exists in database for guest "${existingGuestName}". Will be updated.`);
+            warnings.push(
+              `Code "${code}" already exists in database for guest "${existingGuestName}". Will be updated.`
+            );
             actionOutcome = 'update';
           }
         } else if (isBatchDuplicate) {
@@ -513,7 +620,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           updatedTags = Array.from(new Set(cleanTags));
         } else if (action === 'remove') {
           const removeSet = new Set(cleanTags);
-          updatedTags = existingTags.filter(t => !removeSet.has(t));
+          updatedTags = existingTags.filter((t) => !removeSet.has(t));
         } else {
           updatedTags = Array.from(new Set([...existingTags, ...cleanTags]));
         }
