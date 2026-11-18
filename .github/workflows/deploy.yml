@@ -19,14 +19,19 @@ on:
           - staging
           - production
       previous_tag:
-        description: 'Previous validated container image tag to restore on failure'
+        description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
         required: false
-        default: 'latest'
+        default: ''
         type: string
       provider:
         description: 'Hosting Provider Adapter'
         required: false
         default: 'google-cloud-run'
+        type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets'
+        required: false
+        default: ''
         type: string
   workflow_call:
     inputs:
@@ -36,14 +41,19 @@ on:
         default: 'all'
         type: string
       previous_tag:
-        description: 'Previous validated container image tag to restore on failure'
+        description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
         required: false
-        default: 'latest'
+        default: ''
         type: string
       provider:
         description: 'Hosting Provider Adapter'
         required: false
         default: 'google-cloud-run'
+        type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets'
+        required: false
+        default: ''
         type: string
     outputs:
       schema_compatibility_status:
@@ -229,7 +239,9 @@ jobs:
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'staging'
-      previous_tag: ${{ inputs.previous_tag || 'latest' }}
+      rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
+      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.staging-deploy-provider.outputs.previous_image_tag }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
       reason: 'Automated staging post-deployment health check failure on /api/health'
     secrets: inherit
 
@@ -374,6 +386,8 @@ jobs:
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'production'
-      previous_tag: ${{ inputs.previous_tag || 'latest' }}
+      rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
+      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.production-deploy-provider.outputs.previous_image_tag }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
       reason: 'Automated post-deployment health check failure on /api/health in production'
     secrets: inherit

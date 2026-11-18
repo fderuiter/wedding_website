@@ -7,75 +7,147 @@ on:
   workflow_dispatch:
     inputs:
       previous_tag:
-        description: 'Target container image tag or SHA to restore'
-        required: false
-        default: 'latest'
+        description: 'Immutable container image tag or commit SHA to restore'
+        required: true
         type: string
       target_environment:
         description: 'Target deployment environment'
         required: false
         default: 'production'
         type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets (defaults to target_environment)'
+        required: false
+        default: ''
+        type: string
+      provider:
+        description: 'Hosting Provider Adapter (google-cloud-run, docker-host, generic-webhook)'
+        required: false
+        default: 'google-cloud-run'
+        type: string
       reason:
         description: 'Reason for triggering automated or manual rollback'
         required: false
         default: 'Automated post-deployment health check failure'
         type: string
+      dry_run:
+        description: 'Run rollback in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       previous_tag:
-        description: 'Target container image tag or SHA to restore'
+        description: 'Immutable container image tag or commit SHA to restore'
         required: false
-        default: 'latest'
+        default: ''
         type: string
       target_environment:
         description: 'Target deployment environment'
         required: false
         default: 'production'
         type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets (defaults to target_environment)'
+        required: false
+        default: ''
+        type: string
+      provider:
+        description: 'Hosting Provider Adapter (google-cloud-run, docker-host, generic-webhook)'
+        required: false
+        default: 'google-cloud-run'
+        type: string
       reason:
         description: 'Reason for triggering automated or manual rollback'
         required: false
         default: 'Automated post-deployment health check failure'
         type: string
+      dry_run:
+        description: 'Run rollback in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      GCP_SA_KEY:
+        required: false
+      GCP_PROJECT_ID:
+        required: false
+      DEPLOY_WEBHOOK_URL:
+        required: false
+      SERVICE_URL:
+        required: false
 
 concurrency:
-  group: rollback-${{ inputs.target_environment || inputs.environment || 'production' }}
+  group: rollback-${{ inputs.target_environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
-  rollback:
-    name: Execute Rollback
+  preflight:
+    name: Validate Inputs & Database Compatibility
     runs-on: ubuntu-latest
-    # Note: Automated rollback intentionally does not declare a protected environment gate
-    # so that post-deployment failure recovery can restore the previous validated container
-    # image immediately without requiring a second manual human approval step.
+    # Note: Automated rollback uses an unguarded rollback_environment (or target_environment)
+    # on provider/probe jobs so post-deployment failure recovery can restore the previous
+    # validated container image immediately without a second manual approval gate.
+    outputs:
+      effective_tag: ${{ steps.validate.outputs.effective_tag }}
+      validation_status: ${{ steps.validate.outputs.validation_status }}
+      db_compatibility_status: ${{ steps.db_safety_check.outputs.db_compatibility_status }}
+      failed_stage: ${{ steps.record_failure.outputs.failed_stage }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Log Rollback Request Details
+        id: validate
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
-          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          ROLLBACK_ENV: ${{ inputs.rollback_environment }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          CURRENT_SHA: ${{ github.sha }}
         run: |
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
             echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
             exit 1
           fi
 
-          if [[ ! "$PREVIOUS_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
-            echo "::error::Invalid image tag '${PREVIOUS_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+          if [ -n "$ROLLBACK_ENV" ] && [[ ! "$ROLLBACK_ENV" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+            echo "::error::Invalid rollback environment '${ROLLBACK_ENV}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+            exit 1
+          fi
+
+          if [[ ! "$PROVIDER" =~ ^(google-cloud-run|docker-host|generic-webhook)$ ]]; then
+            echo "::error::Invalid provider '${PROVIDER}'. Must be one of: google-cloud-run, docker-host, generic-webhook."
+            exit 1
+          fi
+
+          EFFECTIVE_TAG="$PREVIOUS_TAG"
+          if [ "$DRY_RUN" = "true" ]; then
+            if [ -z "$EFFECTIVE_TAG" ]; then
+              EFFECTIVE_TAG="latest"
+            fi
+            if [ "$EFFECTIVE_TAG" = "latest" ] || [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
+              echo "::warning::Explicit dry-run mode enabled: permitting rollback tag '${EFFECTIVE_TAG}' for dry-run validation only."
+            fi
+          else
+            if [ -z "$EFFECTIVE_TAG" ]; then
+              echo "::error::Missing rollback image tag. Specify an immutable previous image tag or commit SHA."
+              exit 1
+            fi
+            if [ "$EFFECTIVE_TAG" = "latest" ]; then
+              echo "::error::Mutable image tag 'latest' is rejected outside explicit dry-run mode. Specify an immutable previous release tag or commit SHA."
+              exit 1
+            fi
+            if [ -n "$CURRENT_SHA" ] && [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
+              echo "::error::Rollback image tag '${EFFECTIVE_TAG}' matches the failing commit SHA '${CURRENT_SHA}'. Specify the previous healthy release tag."
+              exit 1
+            fi
+          fi
+
+          if [[ ! "$EFFECTIVE_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+            echo "::error::Invalid image tag '${EFFECTIVE_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
             exit 1
           fi
 
@@ -88,20 +160,35 @@ jobs:
           SAFE_REASON=$(printf '%s' "$REASON" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
           NOW=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
+          echo "validation_status=passed" >> "$GITHUB_OUTPUT"
+          echo "effective_tag=${EFFECTIVE_TAG}" >> "$GITHUB_OUTPUT"
+
           echo "=================================================="
           echo "           AUTOMATED ROLLBACK INITIATED           "
           echo "=================================================="
           echo "Target Environment: ${TARGET_ENV}"
-          echo "Rollback Image Tag: ${PREVIOUS_TAG}"
+          echo "Rollback Environment: ${ROLLBACK_ENV:-${TARGET_ENV}}"
+          echo "Provider Adapter: ${PROVIDER}"
+          echo "Rollback Image Tag: ${EFFECTIVE_TAG}"
+          echo "Explicit Dry Run: ${DRY_RUN}"
           echo "Rollback Trigger Reason: ${SAFE_REASON}"
           echo "Timestamp: ${NOW}"
           echo "=================================================="
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Pre-Rollback Database Compatibility Safety Gate
         id: db_safety_check
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
-          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          PREVIOUS_TAG: ${{ steps.validate.outputs.effective_tag }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
         run: |
           echo "=================================================="
@@ -112,40 +199,236 @@ jobs:
           echo "db_compatibility_status=verified" >> "$GITHUB_OUTPUT"
           echo "✅ N-1 database schema compatibility validated. Safe to redeploy previous image tag."
 
-      - name: Redeploy Previous Validated Container Image
+      - name: Record Preflight Failure Stage
+        id: record_failure
+        if: failure()
         env:
-          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
-          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
-          REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          DB_CHECK_OUTCOME: ${{ steps.db_safety_check.outcome }}
         run: |
-          echo "Restoring ${TARGET_ENV} deployment to image tag/digest: ${PREVIOUS_TAG}..."
-          echo "Container service successfully restored to previous image tag."
+          if [ "$VALIDATE_OUTCOME" != "success" ]; then
+            echo "failed_stage=Input Validation" >> "$GITHUB_OUTPUT"
+          elif [ "$DB_CHECK_OUTCOME" != "success" ]; then
+            echo "failed_stage=Pre-Rollback Database Compatibility Gate (lint:migrations)" >> "$GITHUB_OUTPUT"
+          else
+            echo "failed_stage=Preflight Dependency Setup" >> "$GITHUB_OUTPUT"
+          fi
 
+  redeploy:
+    name: Redeploy Previous Validated Container Image
+    needs: [preflight]
+    uses: ./.github/workflows/deploy-provider.yml
+    with:
+      environment: ${{ inputs.target_environment || 'production' }}
+      rollback_environment: ${{ inputs.rollback_environment || '' }}
+      image_tag: ${{ needs.preflight.outputs.effective_tag }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
+      dry_run: ${{ inputs.dry_run || false }}
+    secrets: inherit
+
+  verify:
+    name: Verify Restored Container Health
+    needs: [preflight, redeploy]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.rollback_environment || inputs.target_environment || 'production' }}
+    outputs:
+      health_status: ${{ steps.health_probe.outputs.health_status }}
+      service_url: ${{ steps.health_probe.outputs.service_url }}
+      http_status: ${{ steps.health_probe.outputs.http_status }}
+    steps:
+      - name: Poll Restored Service Health
+        id: health_probe
+        env:
+          ENV_SERVICE_URL: ${{ secrets.SERVICE_URL }}
+          PROVIDER_SERVICE_URL: ${{ needs.redeploy.outputs.service_url }}
+          IS_DRY_RUN: ${{ needs.redeploy.outputs.is_dry_run }}
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag }}
+        run: |
+          RESOLVED_URL="${ENV_SERVICE_URL:-$PROVIDER_SERVICE_URL}"
+          TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
+          TARGET_URL="${TARGET_URL%/}"
+
+          if [[ ! "$TARGET_URL" =~ ^https?:// ]]; then
+            echo "::error::Invalid SERVICE_URL '${TARGET_URL}'. Must start with http:// or https://."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "service_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+            echo "http_status=invalid-url" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+
+          echo "=================================================="
+          echo "     POST-ROLLBACK HEALTH VERIFICATION PROBE      "
+          echo "=================================================="
+          echo "Target Environment : ${TARGET_ENV}"
+          echo "Restored Image Tag : ${RESTORED_TAG}"
+          echo "Target Service URL : ${TARGET_URL}"
+          echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
+          echo "Dry Run Environment: ${IS_DRY_RUN}"
+          echo "=================================================="
+
+          MAX_TIMEOUT=55
+          START_TIME=$(date +%s)
+          DELAY=2
+          SUCCESS=false
+          HTTP_STATUS=""
+          RESPONSE_BODY=""
+
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
+              echo "❌ Post-rollback health check timed out after ${MAX_TIMEOUT} seconds."
+              break
+            fi
+
+            echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
+
+            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2)
+            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.status // empty' 2>/dev/null || true)
+              DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.database // empty' 2>/dev/null || true)
+
+              if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
+                echo "✅ Post-rollback health probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
+                SUCCESS=true
+                break
+              else
+                echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
+              fi
+            else
+              echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
+            fi
+
+            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$ENV_SERVICE_URL" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
+              if [ $ELAPSED -ge 2 ]; then
+                echo "::notice::Dry-run rollback environment detected without live endpoint. Dry-run health verification probe validated."
+                SUCCESS=true
+                HTTP_STATUS="200 (dry-run)"
+                RESPONSE_BODY='{"status":"ok","database":"connected","mode":"dry-run"}'
+                break
+              fi
+            fi
+
+            sleep $DELAY
+            DELAY=$((DELAY * 2))
+            if [ $DELAY -gt 8 ]; then
+              DELAY=8
+            fi
+          done
+
+          echo "service_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+          echo "http_status=${HTTP_STATUS:-unreachable}" >> "$GITHUB_OUTPUT"
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            echo "::error::Post-rollback health verification failed for ${HEALTH_ENDPOINT} (last HTTP status: ${HTTP_STATUS:-unreachable})."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+  report:
+    name: Send Rollback Notification
+    needs: [preflight, redeploy, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
       - name: Send Rollback Notification
-        if: always()
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
-          PREVIOUS_TAG: ${{ inputs.previous_tag || 'latest' }}
+          ROLLBACK_ENV: ${{ inputs.rollback_environment }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.effective_tag || inputs.previous_tag }}
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          PREFLIGHT_FAILED_STAGE: ${{ needs.preflight.outputs.failed_stage }}
+          DB_COMPAT_STATUS: ${{ needs.preflight.outputs.db_compatibility_status }}
+          REDEPLOY_RESULT: ${{ needs.redeploy.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          VERIFY_URL: ${{ needs.verify.outputs.service_url }}
+          VERIFY_HTTP_STATUS: ${{ needs.verify.outputs.http_status }}
         run: |
           SAFE_ENV=$(printf '%s' "$TARGET_ENV" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
-          SAFE_TAG=$(printf '%s' "$PREVIOUS_TAG" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_ROLLBACK_ENV=$(printf '%s' "${ROLLBACK_ENV:-$TARGET_ENV}" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_TAG=$(printf '%s' "${PREVIOUS_TAG:-unspecified}" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_PROVIDER=$(printf '%s' "$PROVIDER" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
           SAFE_REASON=$(printf '%s' "$REASON" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_STAGE=$(printf '%s' "$PREFLIGHT_FAILED_STAGE" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_URL=$(printf '%s' "${VERIFY_URL:-unspecified}" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
+          SAFE_HTTP=$(printf '%s' "${VERIFY_HTTP_STATUS:-n/a}" | tr -d '\r\n`$<>\\' | sed -e 's/[;&|]//g')
           NOW=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
-          echo "NOTIFICATION: Rollback completed for environment ${SAFE_ENV} to image tag ${SAFE_TAG}."
+          if [ "$DB_COMPAT_STATUS" = "verified" ]; then
+            DB_GATE_SUMMARY="PASSED (N-1 Schema Compatible)"
+          elif [ "$SAFE_STAGE" = "Input Validation" ]; then
+            DB_GATE_SUMMARY="SKIPPED (Blocked by Input Validation)"
+          else
+            DB_GATE_SUMMARY="FAILED"
+          fi
+
+          if [ "$REDEPLOY_RESULT" = "success" ]; then
+            REDEPLOY_SUMMARY="PASSED"
+          elif [ "$REDEPLOY_RESULT" = "skipped" ]; then
+            REDEPLOY_SUMMARY="SKIPPED"
+          else
+            REDEPLOY_SUMMARY="FAILED (${REDEPLOY_RESULT})"
+          fi
+
+          if [ "$VERIFY_RESULT" = "success" ]; then
+            VERIFY_SUMMARY="PASSED (HTTP ${SAFE_HTTP})"
+          elif [ "$VERIFY_RESULT" = "skipped" ]; then
+            VERIFY_SUMMARY="SKIPPED"
+          else
+            VERIFY_SUMMARY="FAILED (HTTP ${SAFE_HTTP})"
+          fi
+
+          if [ "$PREFLIGHT_RESULT" = "success" ] && [ "$REDEPLOY_RESULT" = "success" ] && [ "$VERIFY_RESULT" = "success" ]; then
+            OVERALL_STATUS="SUCCESS"
+            FAILED_STAGE="None"
+          else
+            OVERALL_STATUS="FAILED"
+            if [ "$PREFLIGHT_RESULT" != "success" ]; then
+              FAILED_STAGE="${SAFE_STAGE:-Preflight Checks (${PREFLIGHT_RESULT})}"
+            elif [ "$REDEPLOY_RESULT" != "success" ]; then
+              FAILED_STAGE="Provider Container Redeployment (${REDEPLOY_RESULT})"
+            elif [ "$VERIFY_RESULT" != "success" ]; then
+              FAILED_STAGE="Post-Rollback Health Verification (/api/health)"
+            else
+              FAILED_STAGE="Unknown"
+            fi
+          fi
+
           cat << EOF >> "$GITHUB_STEP_SUMMARY"
           ### ⏪ Automated Rollback Execution Summary
           - **Target Environment:** \`${SAFE_ENV}\`
+          - **Secret Resolution Environment:** \`${SAFE_ROLLBACK_ENV}\`
+          - **Provider Adapter:** \`${SAFE_PROVIDER}\`
           - **Restored Image Tag:** \`${SAFE_TAG}\`
           - **Trigger Reason:** \`${SAFE_REASON}\`
           - **Timestamp:** \`${NOW}\`
-          - **Pre-Rollback Database Safety Gate:** \`PASSED (N-1 Schema Compatible)\`
+          - **Pre-Rollback Database Safety Gate:** \`${DB_GATE_SUMMARY}\`
+          - **Provider Container Redeployment:** \`${REDEPLOY_SUMMARY}\`
+          - **Post-Rollback Health Probe (\`/api/health\`):** \`${VERIFY_SUMMARY}\` (URL: \`${SAFE_URL}\`)
           - **Database Schema Action:** \`Preserved (Forward-Only / Expand-Migrate-Contract Compliant)\`
-          - **Overall Rollback Status:** \`SUCCESS\`
+          - **Failed Stage:** \`${FAILED_STAGE}\`
+          - **Overall Rollback Status:** \`${OVERALL_STATUS}\`
 
           #### Diagnostic & Safety Details
-          1. **N-1 Backward Compatibility**: Applied database migrations strictly follow Expand-Migrate-Contract rules. Destructive column/table drops or NOT NULL additions without defaults were prevented.
-          2. **Container Restoration**: Previous stable container image \`${SAFE_TAG}\` restored without requiring destructive database schema reversal.
-          3. **Next Steps**: Investigate the root cause of the post-deployment health check failure from release logs before attempting redeployment.
+          1. **N-1 Backward Compatibility**: Database migrations are verified with \`npm run lint:migrations\` before container restoration.
+          2. **Container Restoration**: Reusable workflow \`deploy-provider.yml\` redeploys immutable tag \`${SAFE_TAG}\` and \`verify\` probes \`/api/health\` for \`status == "ok"\` and \`database == "connected"\`.
+          3. **Next Steps**: Inspect the failed stage logs if status is \`FAILED\`, or investigate the root cause of the triggering release failure before re-attempting forward deployment.
           EOF
+
+          if [ "$OVERALL_STATUS" != "SUCCESS" ]; then
+            echo "::error::Rollback failed at stage '${FAILED_STAGE}' for environment '${SAFE_ENV}' (tag '${SAFE_TAG}')."
+            exit 1
+          fi
+
+          echo "NOTIFICATION: Rollback succeeded for environment ${SAFE_ENV} to image tag ${SAFE_TAG}."

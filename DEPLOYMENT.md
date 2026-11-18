@@ -157,7 +157,7 @@ To protect production database integrity and application availability, the deplo
   4. **Environment Secrets**:
      - `DATABASE_URL`: Connection string for the isolated staging PostgreSQL instance (e.g., `postgresql://wedding:staging_pass@staging-db.internal:5432/wedding_staging`).
      - `SERVICE_URL`: Base URL of the staging web service (e.g., `https://staging.wedding.example.com`).
-     - Provider secrets (e.g., `GCP_SA_KEY` or `DEPLOY_WEBHOOK_URL` for staging Cloud Run/hosting service).
+     - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` for staging Cloud Run/hosting service). Because `staging` has no required reviewers, automated staging rollbacks can resolve secrets directly from `staging` (or an optional `STAGING_ROLLBACK_ENVIRONMENT`).
 
 #### 2. Production Environment (`production`)
 - **Purpose**: Live environment hosting attendee traffic, requiring explicit human reviewer approval before executing schema migrations or container updates.
@@ -177,16 +177,24 @@ To protect production database integrity and application availability, the deplo
      - `GUEST_SESSION_SECRET`: Production secret for HMAC session token signing.
      - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL`).
 
-#### 3. Strict Separation of Secrets & Database Credentials
+#### 3. Unguarded Production Rollback Environment (`production-rollback`)
+- **Purpose**: Enables unattended container restoration when `/api/health` fails after a reviewer-approved production rollout, resolving environment-scoped provider credentials without pausing behind `production`'s human reviewer gate.
+- **Environment Setup**:
+  1. Navigate to **Settings** > **Environments** and click **New environment** named `production-rollback`.
+  2. **Protection Rules**: Leave **Required reviewers** **unchecked** so emergency rollbacks execute immediately within the 60-second recovery target. Restrict **Deployment branches** to `main` and release tags (`v*`).
+  3. **Environment Secrets**: Copy only the container deployment and probe secrets required by `.github/workflows/rollback.yml` and `.github/workflows/deploy-provider.yml` (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, and `SERVICE_URL` — `DATABASE_URL` is not needed because rollbacks preserve forward-only N-1 compatible schemas).
+  4. **Pipeline Binding**: Set repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT=production-rollback` under **Settings** > **Secrets and variables** > **Actions** > **Variables** (or pass `rollback_environment: production-rollback` during `workflow_dispatch`). When `rollback_environment` is omitted, `rollback.yml` falls back to `target_environment`.
+
+#### 4. Strict Separation of Secrets & Database Credentials
 - Staging and production **MUST NOT** share database credentials or database instances.
-- Reusable workflows inherit secrets dynamically scoped to the target environment (`secrets: inherit` in `.github/workflows/deploy.yml`).
+- Reusable workflows inherit secrets dynamically (`secrets: inherit` in `.github/workflows/deploy.yml` and `.github/workflows/rollback.yml`) and resolve environment-scoped secrets from `environment` / `rollback_environment`.
 - Staging migrations execute strictly against the staging database; production migrations execute strictly against the production database following reviewer sign-off.
 
 ### 🔄 Staging Promotion & Approval Workflow
 
 1. **Automated Staging Delivery on Merge**:
    - When a pull request is merged into `main`, GitHub Actions triggers `.github/workflows/deploy.yml`.
-   - The workflow verifies N-1 schema backwards compatibility, builds and scans the immutable container artifact, runs migrations on `staging`, deploys to the staging provider, and validates `/api/health`.
+   - The workflow verifies N-1 schema backwards compatibility, builds and scans the immutable container artifact, runs migrations on `staging`, captures the currently serving staging image tag (`previous_image_tag`) before deploying to the staging provider, and validates `/api/health`.
 2. **Pre-Flight Schema Status & DDL Review**:
    - The pipeline generates a detailed **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`.
    - The summary details target environment status, pending migration filenames, altered tables/columns, and complete SQL statements.
@@ -196,9 +204,9 @@ To protect production database integrity and application availability, the deplo
    - Upon selecting the `production` environment and clicking **Approve and deploy**, GitHub Actions unblocks production deployment.
 4. **Production Deployment & Automated Rollback Guard**:
    - Production database migrations execute via `.github/workflows/db-migrate.yml` with advisory locking and preflight verification.
-   - The updated container is deployed via `.github/workflows/deploy-provider.yml`.
+   - Before rolling out the new image, `.github/workflows/deploy-provider.yml` resolves the currently serving container image tag (or last successful release commit SHA) and exports it as `previous_image_tag`.
    - Post-deployment health probes verify `/api/health` with exponential backoff.
-   - **Rollback Guarantee**: If the production health probe fails, `.github/workflows/rollback.yml` is automatically triggered to restore the previous validated container tag (`previous_tag`) **without requiring a second human approval step**.
+   - **Rollback Guarantee**: If the staging or production health probe fails, `.github/workflows/deploy.yml` passes the captured `previous_image_tag`, `provider`, and unguarded `rollback_environment` to `.github/workflows/rollback.yml` instead of mutable `latest`. `rollback.yml` rejects `latest` and the failing `github.sha`, verifies `npm run lint:migrations`, delegates redeployment to `.github/workflows/deploy-provider.yml` **without requiring a second human approval step**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `status == "ok"`, `database == "connected"`) before reporting `SUCCESS`.
 
 ---
 
@@ -240,23 +248,25 @@ To protect production database integrity and application availability, the deplo
   - Emits diagnostic error signaling and resolution guidance if migration fails.
 
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
-- **Triggers**: Release pipeline, manual `workflow_dispatch` with `image_tag` parameter.
-- **Secrets required**: Provider credentials (e.g. `GCP_SA_KEY`, `DEPLOY_WEBHOOK_URL`).
+- **Triggers**: Release pipeline, rollback pipeline, manual `workflow_dispatch` with `image_tag` parameter.
+- **Secrets required**: Provider credentials (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, `SERVICE_URL`).
 - **Outputs**:
   - `service_url`: Target deployment service URL.
   - `is_dry_run`: Boolean flag indicating if deployment executed in dry-run mode.
+  - `previous_image_tag`: Currently serving immutable container image tag or last successful release SHA captured prior to rollout.
 - **Actions**:
-  - Declares `environment: ${{ inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules and reviewer sign-off for `production`.
-  - Consumes a pre-built, tested release artifact tag.
-  - Deploys the container to hosting provider (e.g. Google Cloud Run).
-  - Exports the active service URL as a job output.
+  - Declares `environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules for forward `production` releases while supporting unguarded rollback environments.
+  - Captures `previous_image_tag` before updating the target service revision.
+  - Deploys the container to the hosting provider (Google Cloud Run or generic webhook with `--fail-with-body` HTTP error enforcement).
+  - Exports the active service URL and pre-rollout tag as job outputs.
 
 ### 5. Post-Deployment Verification & Automated Rollback (`deploy.yml` & `rollback.yml`)
-- **Triggers**: Runs automatically in `deploy.yml` post-provider deployment for staging and production.
+- **Triggers**: Runs automatically in `deploy.yml` post-provider deployment for staging and production, or manually via `workflow_dispatch`.
 - **Actions**:
   - `verify-deployment` polls `/api/health` with configurable exponential backoff and a 2-minute maximum timeout.
   - Validates HTTP status code 200 and confirms JSON body `database == 'connected'` and `status == 'ok'`.
-  - Automatically invokes `rollback.yml` if health probes fail or time out, restoring the previous stable OCI image tag without requiring a second manual approval step.
+  - Automatically invokes `rollback.yml` with the captured `previous_image_tag` and `provider` if health probes fail or time out, rejecting mutable `latest` or the failing `github.sha` outside explicit dry-run mode.
+  - `rollback.yml` runs `npm run lint:migrations`, calls `deploy-provider.yml` using the unguarded `rollback_environment`, polls `${SERVICE_URL}/api/health` to confirm restoration, and gates `$GITHUB_STEP_SUMMARY` status reporting so any failed stage logs `FAILED` and exits non-zero.
 
 ---
 
@@ -432,9 +442,11 @@ Configure the following secrets in GitHub Repository Settings (`Settings > Secre
 
 | Secret | Description | Required By |
 |---|---|---|
-| `DATABASE_URL` | Production PostgreSQL connection string | `db-migrate.yml` |
-| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (optional for Cloud Run) | `deploy-provider.yml` |
-| `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (optional for custom hosts) | `deploy-provider.yml` |
+| `DATABASE_URL` | Production/staging PostgreSQL connection string | `db-migrate.yml` |
+| `SERVICE_URL` | Public base URL of the target web service for `/api/health` probes | `deploy-provider.yml`, `rollback.yml` |
+| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (optional for Cloud Run) | `deploy-provider.yml`, `rollback.yml` |
+| `GCP_PROJECT_ID` | Google Cloud Project ID (optional override for Cloud Run) | `deploy-provider.yml`, `rollback.yml` |
+| `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (optional for custom hosts) | `deploy-provider.yml`, `rollback.yml` |
 | `DOCKERHUB_USERNAME` | Docker Hub username (optional secondary registry) | `publish-artifact.yml` |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |
 
