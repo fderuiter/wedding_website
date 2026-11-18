@@ -81,55 +81,101 @@ In the release pipeline ([`.github/workflows/deploy.yml`](../../.github/workflow
 For full architectural diagrams and operational guidance, refer to the canonical release documentation in [DEPLOYMENT.md: Continuous Delivery Pipeline Architecture](../../DEPLOYMENT.md#continuous-delivery-pipeline-architecture) and [DEPLOYMENT.md: Staging Promotion & Approval Workflow](../../DEPLOYMENT.md#staging-promotion--approval-workflow).
 
 ```yaml
-# Staging Environment Pipeline (Automated on push to main or workflow dispatch)
+# Staging Environment Pipeline (Automated via workflow_run after CI succeeds on main push)
 staging-database-migration:
   name: Staging Database Migration
-  needs: [publish-artifact, schema-compatibility]
-  if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+  needs: [ci-gate, publish-artifact, schema-compatibility]
+  if: |
+    (
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    ) ||
+    (
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+    )
   uses: ./.github/workflows/db-migrate.yml
   with:
     environment: 'staging'
+    commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
   secrets: inherit
 
 staging-deploy-provider:
   name: Staging Provider Deployment
-  needs: [publish-artifact, staging-database-migration]
-  if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+  needs: [ci-gate, publish-artifact, staging-database-migration]
+  if: |
+    (
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    ) ||
+    (
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+    )
   uses: ./.github/workflows/deploy-provider.yml
   with:
     environment: 'staging'
-    image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+    image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
   secrets: inherit
 
 # Production Environment Pipeline (Mandatory Reviewer Gate & Promotion)
 production-database-migration:
   name: Production Database Migration
-  needs: [publish-artifact, schema-compatibility, staging-verify-deployment]
+  needs: [ci-gate, publish-artifact, schema-compatibility, staging-verify-deployment]
   if: |
-    always() &&
-    (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
+    !cancelled() &&
+    (
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      ) ||
+      (
+        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+        (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
+      )
+    ) &&
+    (needs.ci-gate.result == 'success') &&
     (needs.schema-compatibility.result == 'success') &&
     (needs.publish-artifact.result == 'success') &&
     (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
   uses: ./.github/workflows/db-migrate.yml
   with:
     environment: 'production'
+    commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
   secrets: inherit
 
 production-deploy-provider:
   name: Production Provider Deployment
-  needs: [publish-artifact, staging-verify-deployment, production-database-migration]
+  needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
   if: |
-    always() &&
-    (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
+    !cancelled() &&
+    (
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      ) ||
+      (
+        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+        (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
+      )
+    ) &&
+    (needs.ci-gate.result == 'success') &&
     (needs.publish-artifact.result == 'success') &&
     (needs.production-database-migration.result == 'success') &&
     (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
   uses: ./.github/workflows/deploy-provider.yml
   with:
     environment: 'production'
-    image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+    image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
   secrets: inherit
 ```
