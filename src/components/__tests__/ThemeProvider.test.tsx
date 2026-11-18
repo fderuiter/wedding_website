@@ -355,38 +355,70 @@ describe('ThemeProvider Theme Mode Hydration & Synchronization', () => {
     expect(document.documentElement.classList.contains('light')).toBe(false);
   });
 
-  it('listens to matchMedia changes when themeMode is system', () => {
-    let mediaListener: ((e: any) => void) | null = null;
-    const matchMediaMock = jest.fn().mockImplementation((query) => ({
+  it('listens to matchMedia changes when themeMode is system and cleans up on unmount', () => {
+    let mediaListener: ((_e: MediaQueryListEvent) => void) | null = null;
+    const removeEventListenerMock = jest.fn();
+    const matchMediaMock = jest.fn().mockImplementation((query: string) => ({
       matches: false,
       media: query,
       onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
-      addEventListener: jest.fn((_event, handler) => {
+      addEventListener: jest.fn((_event: string, handler: (_e: MediaQueryListEvent) => void) => {
         mediaListener = handler;
       }),
-      removeEventListener: jest.fn(),
+      removeEventListener: removeEventListenerMock,
       dispatchEvent: jest.fn(),
     }));
 
     window.matchMedia = matchMediaMock;
 
-    const { getByTestId } = render(
+    const { getByTestId, unmount } = render(
       <ThemeProvider initialThemeMode="system">
         <ThemeModeTestComponent />
       </ThemeProvider>
     );
 
     expect(getByTestId('theme-mode')).toHaveTextContent('system');
+    expect(mediaListener).not.toBeNull();
 
     if (mediaListener) {
       act(() => {
-        (mediaListener as any)({ matches: true } as MediaQueryListEvent);
+        (mediaListener as (_e: MediaQueryListEvent) => void)({ matches: true } as MediaQueryListEvent);
       });
       expect(getByTestId('resolved-theme')).toHaveTextContent('dark');
       expect(document.documentElement.classList.contains('dark')).toBe(true);
     }
+
+    unmount();
+    expect(removeEventListenerMock).toHaveBeenCalledWith('change', mediaListener);
+  });
+
+  it('handles partial matchMedia mocks safely without throwing', () => {
+    const previousMatchMedia = window.matchMedia;
+
+    window.matchMedia = jest.fn().mockReturnValue({
+      matches: false,
+    } as unknown as MediaQueryList);
+
+    const { unmount: unmountWithoutAdd } = render(
+      <ThemeProvider initialThemeMode="system">
+        <ThemeModeTestComponent />
+      </ThemeProvider>
+    );
+    expect(() => unmountWithoutAdd()).not.toThrow();
+
+    window.matchMedia = jest.fn().mockReturnValue({
+      matches: true,
+      addEventListener: jest.fn(),
+    } as unknown as MediaQueryList);
+
+    const { unmount: unmountWithoutRemove } = render(
+      <ThemeProvider initialThemeMode="system">
+        <ThemeModeTestComponent />
+      </ThemeProvider>
+    );
+    expect(() => unmountWithoutRemove()).not.toThrow();
+
+    window.matchMedia = previousMatchMedia;
   });
 });
 
@@ -849,8 +881,6 @@ describe('Blocking Theme Script Execution', () => {
       matches: query.includes('dark') ? false : true,
       media: query,
       onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
       dispatchEvent: jest.fn(),
@@ -867,8 +897,6 @@ describe('Blocking Theme Script Execution', () => {
       matches: query.includes('dark') ? true : false,
       media: query,
       onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
       dispatchEvent: jest.fn(),
@@ -888,8 +916,6 @@ describe('Blocking Theme Script Execution', () => {
       matches: false,
       media: query,
       onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
       dispatchEvent: jest.fn(),
