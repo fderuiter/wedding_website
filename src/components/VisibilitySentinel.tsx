@@ -20,7 +20,7 @@ export const VisibilitySentinel: React.FC<VisibilitySentinelProps> = ({
 
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node) return;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
 
     const observer = new IntersectionObserver(
       (entries) => {

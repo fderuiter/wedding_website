@@ -3,7 +3,9 @@
 import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
 import { signGuestToken, isGuestRequest, GUEST_COOKIE } from '@/core/auth/guest.server';
+import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 import { POST as guestLoginPost } from '@/app/api/guest/login/route';
+import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
 
@@ -231,6 +233,44 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       const cookieHeader = res.headers.get('set-cookie');
       expect(cookieHeader).toContain(GUEST_COOKIE);
     });
+
+    it('returns 200 and sets guest_invite_session cookie for a valid personal invitation code (case-insensitive)', async () => {
+      const prismaWithInvite = prisma as unknown as {
+        invitationCode?: { findFirst: jest.Mock };
+      };
+      const originalInvitationCode = prismaWithInvite.invitationCode;
+      const findFirstMock = jest.fn().mockResolvedValue({
+        id: 'inv-123',
+        code: 'LOVE2026',
+        guestName: 'Jordan Lee',
+      });
+      prismaWithInvite.invitationCode = { findFirst: findFirstMock };
+
+      try {
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: '  love2026  ' }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+        expect(data.sessionType).toBe('invitation');
+        expect(data.guestName).toBe('Jordan Lee');
+
+        expect(findFirstMock).toHaveBeenCalledWith({
+          where: {
+            code: { equals: 'love2026', mode: 'insensitive' },
+          },
+        });
+
+        const cookieHeader = res.headers.get('set-cookie');
+        expect(cookieHeader).toContain(GUEST_INVITE_COOKIE);
+        expect(cookieHeader).not.toContain(`${GUEST_COOKIE}=`);
+      } finally {
+        prismaWithInvite.invitationCode = originalInvitationCode;
+      }
+    });
   });
 
   describe('Middleware Access Controls', () => {
@@ -290,6 +330,24 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       const req = new NextRequest('http://localhost/', {
         cookies: {
           [GUEST_COOKIE]: token,
+        },
+      });
+
+      const res = await middleware(req);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('location')).toBeNull();
+    });
+
+    it('allows access for authenticated personal invitation session (guest_invite_session)', async () => {
+      const inviteToken = await signGuestInviteSessionToken({
+        code: 'LOVE2026',
+        guestName: 'Jordan Lee',
+        iat: Date.now(),
+        exp: Date.now() + 1000 * 60 * 60,
+      });
+      const req = new NextRequest('http://localhost/', {
+        cookies: {
+          [GUEST_INVITE_COOKIE]: inviteToken,
         },
       });
 

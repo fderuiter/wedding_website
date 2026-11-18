@@ -231,12 +231,14 @@ describe('Setup Wizard State Machine Reducer', () => {
           partner1Name: 'Alex',
           weddingDate: '2026-10-10',
           timezone: 'America/New_York',
+          contactEmail: 'hosts@alexandsam.com',
         },
       });
 
       expect(updated.partner1Name).toBe('Alex');
       expect(updated.weddingDate).toBe('2026-10-10');
       expect(updated.timezone).toBe('America/New_York');
+      expect(updated.contactEmail).toBe('hosts@alexandsam.com');
     });
 
     it('toggles sample data modules', () => {

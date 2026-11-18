@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { generateRandomCode } from './utils/invitation';
 import {
   BatchInvitationCodeRecord,
+  InvitationCollisionStrategy,
   NormalizedInvitationCodeRecord,
   normalizeBatchInvitationRecord,
   normalizeInvitationCode,
@@ -22,15 +23,19 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     super(new BaseRepository<InvitationCodeDTO>('invitationCode'), 'InvitationCode');
   }
 
-  protected async validate(data: any, _client?: any): Promise<void> {
+  protected async validate(data: unknown, _client?: Prisma.TransactionClient): Promise<void> {
     const errors = validateInvitationGuestFields(data, { mode: 'service' });
     if (errors.length > 0) {
       throw new Error(errors[0]);
     }
   }
 
-  protected async preSave(data: any, client?: any, _author?: string): Promise<any> {
-    const finalData = { ...data };
+  protected async preSave(
+    data: Record<string, unknown>,
+    client?: Prisma.TransactionClient,
+    _author?: string
+  ): Promise<Record<string, unknown>> {
+    const finalData: Record<string, unknown> = { ...data };
     const activeClient = client || this.repo.client;
 
     if (finalData.plusOneFirstName !== undefined) {
@@ -108,14 +113,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
   async importBatch(
     records: BatchInvitationCodeRecord[],
-    collisionStrategy: 'skip' | 'update' | 'reject' = 'skip',
+    collisionStrategy: InvitationCollisionStrategy = 'skip',
     author: string = 'Admin'
   ) {
     if (!Array.isArray(records) || records.length === 0) {
       throw new Error('Validation Error: Records array cannot be empty.');
     }
 
-    return executeInTransaction(this.repo.client, async (tx: any) => {
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       for (let i = 0; i < records.length; i++) {
         const errors = validateInvitationGuestFields(records[i], {
           mode: 'batch',
@@ -139,8 +144,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       let updated = 0;
       const seenBatchCodes = new Set<string>();
       const allKnownCodes = new Set<string>(dbCodeMap.keys());
-      const toCreate: any[] = [];
-      const toUpdate: { id: string; data: any }[] = [];
+      const toCreate: Prisma.InvitationCodeCreateManyInput[] = [];
+      const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
 
       for (let i = 0; i < records.length; i++) {
         const row = records[i];
@@ -222,7 +227,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             householdName: normalized.householdName,
             partyGroup: normalized.partyGroup,
             partyTags: normalized.partyTags,
-            extraFields: normalized.extraFields ?? undefined,
+            extraFields: (normalized.extraFields as Prisma.InputJsonValue | null) ?? undefined,
             used: false
           });
           imported++;
@@ -237,7 +242,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
       if (toUpdate.length > 0) {
         // Consolidate updates by record ID in case multiple rows target the same invitation code
-        const updatesById = new Map<string, any>();
+        const updatesById = new Map<string, Record<string, unknown>>();
         for (const item of toUpdate) {
           const existing = updatesById.get(item.id);
           if (existing) {
@@ -366,7 +371,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
   async dryRunValidateBatch(
     records: BatchInvitationCodeRecord[],
-    collisionStrategy: 'skip' | 'update' | 'reject' = 'skip'
+    collisionStrategy: InvitationCollisionStrategy = 'skip'
   ): Promise<DryRunValidationResponse> {
     if (!Array.isArray(records) || records.length === 0) {
       throw new Error('Validation Error: Records array cannot be empty.');
@@ -493,9 +498,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new Error('Validation Error: IDs array cannot be empty.');
     }
-    const cleanTags = (tags || []).map((t: string) => t.trim()).filter(Boolean);
+    const cleanTags = normalizePartyTags(tags);
 
-    return executeInTransaction(this.repo.client, async (tx: any) => {
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       const dbRecords = await tx.invitationCode.findMany({
         where: { id: { in: ids } },
         select: { id: true, partyTags: true },
@@ -541,7 +546,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
     }
 
-    return executeInTransaction(this.repo.client, async (tx: any) => {
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       await tx.contributor.updateMany({
         where: { invitationCodeId: { in: ids } },
         data: { invitationCodeId: null },

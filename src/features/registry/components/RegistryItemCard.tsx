@@ -723,6 +723,9 @@ const RegistryItemCardInner: React.FC<RegistryItemCardInnerProps> = ({
   );
 };
 
+/**
+ * Wrapper rendered strictly inside <Elements> so Stripe context hooks are only called for fund items.
+ */
 const RegistryFundCardInner: React.FC<RegistryItemCardProps> = (props) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -740,7 +743,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = (props) => {
     : props.item.price;
 
   const stripePromise = useMemo(
-    () => (isFund ? getStripePromise().catch(() => null) : null),
+    () => (isFund ? getStripePromise()?.catch(() => null) ?? null : null),
     [isFund]
   );
 

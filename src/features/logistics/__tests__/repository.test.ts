@@ -98,5 +98,56 @@ describe('LogisticsRepository Chronological Sorting', () => {
     expect(nodes[0].id).toBe('1');
     expect(nodes[1].id).toBe('2');
     expect((nodes[0].data as any).title).toBe('Afternoon Ceremony');
+    expect((nodes[0].data as any).isReadOnly).toBe(true);
+  });
+
+  it('returns public SubEvents as Schedule nodes even when ContentNode table is empty', async () => {
+    const mockContentFindMany = jest.fn().mockResolvedValue([]);
+    const mockSubEventFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'se-public-1',
+        title: 'Garden Ceremony',
+        description: 'Outdoor vows',
+        startTime: new Date('2026-06-20T15:00:00.000Z'),
+        endTime: new Date('2026-06-20T16:00:00.000Z'),
+        locationName: 'Rose Garden',
+        category: 'Ceremony',
+        attireRules: 'Formal',
+        isPrivate: false,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'se-public-tbd',
+        title: 'Farewell Brunch',
+        description: 'Time TBD',
+        startTime: null,
+        endTime: null,
+        locationName: 'Terrace',
+        category: 'Brunch',
+        isPrivate: false,
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ]);
+
+    const customRepo = new LogisticsRepository({
+      contentNode: { findMany: mockContentFindMany },
+      subEvent: { findMany: mockSubEventFindMany },
+    });
+
+    const nodes = await customRepo.getLogisticsNodes();
+
+    expect(mockSubEventFindMany).toHaveBeenCalledWith({
+      where: { isPrivate: false },
+      orderBy: { startTime: 'asc' },
+    });
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0].id).toBe('se-public-1');
+    expect(nodes[0].type).toBe('Schedule');
+    expect((nodes[0].data as any).isReadOnly).toBe(false);
+    expect((nodes[0].data as any).isPrivate).toBe(false);
+    expect(nodes[1].id).toBe('se-public-tbd');
+    expect(nodes[1].type).toBe('Schedule');
   });
 });

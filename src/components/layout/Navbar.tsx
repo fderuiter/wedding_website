@@ -147,6 +147,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
   const monogram = deriveBrandMonogram(config);
+  const disablePrefetch = pathname === '/guest/login';
 
   return (
     <>
@@ -159,6 +160,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
             <div className="flex-shrink-0 flex items-center h-16">
               <Link
                 href="/"
+                prefetch={disablePrefetch ? false : undefined}
                 className="flex items-center min-h-[24px] min-w-[24px] text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
               >
                 {brandLogoUrl ? (
@@ -180,6 +182,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                     <Link
                       key={link.href}
                       href={link.href}
+                      prefetch={disablePrefetch ? false : undefined}
                       aria-current={active ? 'page' : undefined}
                       onClick={() => {
                         if (link.href.includes('#')) {
@@ -247,6 +250,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               <Link
                 key={link.href}
                 href={link.href}
+                prefetch={disablePrefetch ? false : undefined}
                 onClick={() => {
                   if (link.href.includes('#')) {
                     setActiveHash(link.href.substring(link.href.indexOf('#')));

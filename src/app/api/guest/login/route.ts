@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -13,7 +15,13 @@ function safeComparePasscode(a: string, b: string): boolean {
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: 'Invalid JSON body.' }, { status: 400 });
+  }
+
   const parseResult = GuestLoginSchema.safeParse(body);
 
   if (!parseResult.success) {
@@ -21,31 +29,76 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const { passcode } = parseResult.data;
+  const trimmedCode = passcode.trim();
 
   const expectedPasscode = env.GUEST_PASSCODE;
+  const matchesSharedPasscode =
+    Boolean(expectedPasscode) &&
+    (safeComparePasscode(passcode, expectedPasscode) ||
+      (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
 
-  if (!expectedPasscode || !safeComparePasscode(passcode, expectedPasscode)) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Incorrect passcode. Need help? Try using the host help drawer below for assistance.',
-        helpPrompt: 'Need help finding your passcode? Open the host help drawer below to view recovery instructions or contact your hosts.',
-      },
-      { status: 401 }
-    );
+  if (matchesSharedPasscode) {
+    const iat = Date.now();
+    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+    const token = await signGuestToken({ guest: true, iat, exp });
+
+    const response = NextResponse.json({ success: true, sessionType: 'guest' });
+    response.cookies.set(GUEST_COOKIE, token, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+    return response;
   }
 
-  const iat = Date.now();
-  const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-  const token = await signGuestToken({ guest: true, iat, exp });
+  let invite: { code: string; guestName: string } | null = null;
+  if (trimmedCode.length > 0) {
+    if (typeof prisma.invitationCode?.findFirst === 'function') {
+      invite = await prisma.invitationCode.findFirst({
+        where: {
+          code: { equals: trimmedCode, mode: 'insensitive' },
+        },
+      });
+    } else if (typeof prisma.invitationCode?.findUnique === 'function') {
+      invite = await prisma.invitationCode.findUnique({
+        where: { code: trimmedCode.toUpperCase() },
+      });
+    }
+  }
 
-  const response = NextResponse.json({ success: true });
-  response.cookies.set(GUEST_COOKIE, token, {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
-  });
-  return response;
+  if (invite) {
+    const iat = Date.now();
+    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+    const inviteToken = await signGuestInviteSessionToken({
+      code: invite.code,
+      guestName: invite.guestName,
+      iat,
+      exp,
+    });
+
+    const response = NextResponse.json({
+      success: true,
+      sessionType: 'invitation',
+      guestName: invite.guestName,
+    });
+    response.cookies.set(GUEST_INVITE_COOKIE, inviteToken, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+    return response;
+  }
+
+  return NextResponse.json(
+    {
+      success: false,
+      error: 'Incorrect passcode or invitation code. Need help? Open the help drawer below for assistance.',
+      helpPrompt: 'Need help finding your code? Open the help drawer below for instructions on how to reach the hosts.',
+    },
+    { status: 401 }
+  );
 });

@@ -9,6 +9,12 @@ export const PLUS_ONE_NAME_MAX_LENGTH = 100;
 export const HOUSEHOLD_NAME_MAX_LENGTH = 100;
 export const PARTY_GROUP_MAX_LENGTH = 100;
 
+export const INVITATION_COLLISION_STRATEGIES = ['skip', 'update', 'reject'] as const;
+export type InvitationCollisionStrategy = (typeof INVITATION_COLLISION_STRATEGIES)[number];
+
+/**
+ * Pure, client-bundle-safe input shape for batch invitation validation and import.
+ */
 export interface BatchInvitationCodeRecord {
   guestName: string;
   code?: string;

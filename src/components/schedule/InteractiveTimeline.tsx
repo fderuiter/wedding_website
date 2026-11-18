@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import type { ContentNodeDTO } from '@/features/content';
 import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
@@ -26,6 +26,7 @@ interface ScheduleEventItem {
   attireRules?: string;
   description?: string;
   isPrivate?: boolean;
+  isReadOnly?: boolean;
   userRsvp?: {
     status: 'attending' | 'declined' | 'pending';
     plusOneCount: number;
@@ -39,6 +40,8 @@ interface InteractiveTimelineProps {
   timezone?: string;
   title?: string;
   className?: string;
+  maxPlusOnes?: number | null;
+  emptyStateMessage?: string;
 }
 
 /**
@@ -155,6 +158,8 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         locationName: data?.locationName || data?.location || '',
         attireRules: data?.attireRules || data?.attire || data?.receptionAttire || '',
         description: data?.description || data?.receptionDetails || '',
+        isPrivate: Boolean(data?.isPrivate),
+        isReadOnly: Boolean(data?.isReadOnly),
         userRsvp: data?.userRsvp !== undefined ? data.userRsvp : undefined,
         createdAt: node.createdAt,
       };
@@ -171,10 +176,24 @@ export default function InteractiveTimeline({
   timezone = 'UTC',
   title = 'Schedule of Events',
   className = '',
+  maxPlusOnes,
+  emptyStateMessage,
 }: InteractiveTimelineProps) {
   const [subEventsFromApi, setSubEventsFromApi] = useState<ScheduleEventItem[] | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
+  const [apiMaxPlusOnes, setApiMaxPlusOnes] = useState<number | null | undefined>(undefined);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState<boolean>(
+    () => initialNodes.length === 0 && Boolean(emptyStateMessage)
+  );
+  const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
+
+  const effectiveMaxPlusOnes =
+    apiMaxPlusOnes !== undefined
+      ? apiMaxPlusOnes
+      : typeof maxPlusOnes === 'number'
+        ? Math.max(0, maxPlusOnes)
+        : undefined;
 
   const initialEvents = useMemo(() => {
     return initialNodes.map((node) => {
@@ -182,6 +201,7 @@ export default function InteractiveTimeline({
       return {
         id: node.id,
         title: data?.title || '',
+        isReadOnly: Boolean(data?.isReadOnly),
         userRsvp: data?.userRsvp || null,
       };
     });
@@ -189,47 +209,90 @@ export default function InteractiveTimeline({
 
   const rsvpManager = useScheduleRsvpManager({
     initialEvents,
+    maxPlusOnes: effectiveMaxPlusOnes,
   });
   const { initializeEvents } = rsvpManager;
 
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    async function loadSchedule() {
-      try {
-        const res = await fetch('/api/schedule');
-        if (res.ok) {
-          const json = await res.json();
-          const data = json.data || json;
-          if (Array.isArray(data) && data.length > 0) {
-            const mapped = data.map((item: any) => ({
-              id: item.id,
-              title: item.title,
-              startTime: item.startTime || '',
-              endTime: item.endTime || '',
-              categoryTags: item.category ? [item.category] : ['Events'],
-              locationName: item.locationName || item.location || '',
-              attireRules: item.attireRules || '',
-              description: item.description || '',
-              isPrivate: Boolean(item.isPrivate),
-              userRsvp: item.userRsvp || null,
-            }));
-            setSubEventsFromApi(mapped);
-            if (json.isGuest) {
-              setIsGuest(true);
-              setGuestName(json.guestName || null);
-            }
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-            initializeEvents(mapped);
-          }
+  const loadSchedule = useCallback(async () => {
+    if (initialNodes.length === 0 && emptyStateMessage) {
+      setIsLoadingSchedule(true);
+      setScheduleLoadError(null);
+    }
+    try {
+      const res = await fetch('/api/schedule');
+      if (!isMountedRef.current) return;
+      if (!res) {
+        setIsLoadingSchedule(false);
+        return;
+      }
+      if (res.ok) {
+        const json = await res.json();
+        if (!isMountedRef.current) return;
+        const data = json.data || json;
+        if (typeof json.plusOneAllocations === 'number') {
+          setApiMaxPlusOnes(Math.max(0, json.plusOneAllocations));
+        } else if (json.plusOneAllocations === null) {
+          setApiMaxPlusOnes(null);
         }
-      } catch {
-        // Fallback to initialNodes
+        if (json.isGuest) {
+          setIsGuest(true);
+          setGuestName(json.guestName || null);
+        }
+        if (Array.isArray(data) && (data.length > 0 || initialNodes.length === 0)) {
+          const mapped: ScheduleEventItem[] = data.map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            startTime: item.startTime || '',
+            endTime: item.endTime || '',
+            categoryTags: item.category ? [item.category] : ['Events'],
+            locationName: item.locationName || item.location || '',
+            attireRules: item.attireRules || '',
+            description: item.description || '',
+            isPrivate: Boolean(item.isPrivate),
+            isReadOnly: Boolean(item.isReadOnly),
+            userRsvp: item.userRsvp !== undefined ? item.userRsvp : null,
+          }));
+          setSubEventsFromApi(mapped);
+          initializeEvents(mapped);
+        }
+        setScheduleLoadError(null);
+      } else if (res.status >= 500 && initialNodes.length === 0 && emptyStateMessage) {
+        const errJson = await res.json().catch(() => null);
+        if (!isMountedRef.current) return;
+        setScheduleLoadError(
+          errJson?.error || 'Unable to load your wedding schedule right now. Please try again.'
+        );
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      if (initialNodes.length === 0 && emptyStateMessage) {
+        setScheduleLoadError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Unable to load your wedding schedule right now. Please try again.'
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingSchedule(false);
       }
     }
+  }, [emptyStateMessage, initialNodes.length, initializeEvents]);
+
+  useEffect(() => {
     loadSchedule();
-  }, [initializeEvents]);
+  }, [loadSchedule]);
 
   const normalizedEvents = useMemo(() => {
-    if (subEventsFromApi && subEventsFromApi.length > 0) {
+    if (subEventsFromApi && (subEventsFromApi.length > 0 || initialNodes.length === 0)) {
       return subEventsFromApi;
     }
     return normalizeEvents(initialNodes);
@@ -297,14 +360,42 @@ export default function InteractiveTimeline({
 
 
   if (normalizedEvents.length === 0) {
-    return null;
+    if (!emptyStateMessage) {
+      return null;
+    }
+    return (
+      <section className={`mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
+        <h2 className="text-center type-h2 text-[var(--color-primary-text)] mb-6">{title}</h2>
+        {isLoadingSchedule ? (
+          <p className="text-center text-sm text-gray-600 dark:text-zinc-300" role="status">
+            Loading your wedding schedule...
+          </p>
+        ) : scheduleLoadError ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 p-4 text-sm text-rose-800 dark:text-rose-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          >
+            <span>{scheduleLoadError}</span>
+            <button
+              type="button"
+              onClick={() => loadSchedule()}
+              className="px-4 py-1.5 rounded-lg bg-rose-700 text-white text-xs font-semibold hover:bg-rose-800 transition-colors self-start sm:self-auto"
+            >
+              Retry Schedule
+            </button>
+          </div>
+        ) : (
+          <EmptyState message={emptyStateMessage} />
+        )}
+      </section>
+    );
   }
 
   const categoryLabelText = activeCategory.toLowerCase() === 'all' ? 'All categories' : activeCategory;
 
   return (
     <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
-      <h2 className="text-center type-h2 text-primary mb-8">{title}</h2>
+      <h2 className="text-center type-h2 text-[var(--color-primary-text)] mb-8">{title}</h2>
 
       {/* ARIA Live Status Region for Filter Updates */}
       {categories.length > 1 && (
@@ -380,7 +471,7 @@ export default function InteractiveTimeline({
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               {rsvpManager.dirtyCount > 0 ? (
-                <span className="text-sm font-semibold text-primary">
+                <span className="text-sm font-semibold text-[var(--color-primary-text)]">
                   {rsvpManager.dirtyCount} {rsvpManager.dirtyCount === 1 ? 'event has' : 'events have'} unsaved changes
                 </span>
               ) : (
@@ -479,7 +570,7 @@ export default function InteractiveTimeline({
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
                       <div>
                         {dateHeaderStr && (
-                          <p className="text-xs uppercase tracking-wider font-semibold text-primary mb-1">
+                          <p className="text-xs uppercase tracking-wider font-semibold text-[var(--color-primary-text)] dark:text-red-300 mb-1">
                             {dateHeaderStr}
                           </p>
                         )}
@@ -553,9 +644,14 @@ export default function InteractiveTimeline({
                     </div>
 
                     {/* Interactive RSVP Form for Authenticated Guests */}
-                    {(isGuest || event.userRsvp !== undefined) && (() => {
+                    {!event.isReadOnly && (isGuest || event.userRsvp !== undefined) && (() => {
                       const itemState = rsvpManager.getRsvpState(event.id);
                       const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
+                      const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
+                      const plusOneMaxAttr =
+                        typeof effectiveMaxPlusOnes === 'number'
+                          ? Math.max(0, effectiveMaxPlusOnes)
+                          : 10;
 
                       return (
                         <div
@@ -577,7 +673,11 @@ export default function InteractiveTimeline({
                                 </span>
                               )}
                             </div>
-                            {guestName && <span className="text-xs text-gray-500 font-normal">Welcome, {guestName}</span>}
+                            {guestName && (
+                              <span className="text-xs text-gray-600 dark:text-gray-300 font-normal">
+                                Welcome, {guestName}
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap gap-2 mb-3">
@@ -592,10 +692,10 @@ export default function InteractiveTimeline({
                                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
                                     isSelected
                                       ? st === 'attending'
-                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                        ? 'bg-emerald-700 text-white shadow-sm'
                                         : st === 'declined'
-                                          ? 'bg-rose-600 text-white shadow-sm'
-                                          : 'bg-amber-600 text-white shadow-sm'
+                                          ? 'bg-rose-700 text-white shadow-sm'
+                                          : 'bg-amber-700 text-white shadow-sm'
                                       : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 disabled:opacity-50'
                                   }`}
                                 >
@@ -612,20 +712,28 @@ export default function InteractiveTimeline({
                                 className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
                               >
                                 Plus-One Count
+                                {typeof effectiveMaxPlusOnes === 'number' && (
+                                  <span className="ml-1 font-normal text-gray-600 dark:text-gray-400">
+                                    {effectiveMaxPlusOnes === 0
+                                      ? '(No plus-ones allocated)'
+                                      : `(Max ${effectiveMaxPlusOnes})`}
+                                  </span>
+                                )}
                               </label>
                               <input
                                 id={`rsvp-plus-one-${event.id}`}
                                 type="number"
                                 min={0}
-                                max={10}
-                                disabled={isControlDisabled}
-                                value={itemState.current.plusOneCount}
-                                onChange={(e) =>
+                                max={plusOneMaxAttr}
+                                disabled={isControlDisabled || isZeroPlusOneAllowance}
+                                value={isZeroPlusOneAllowance ? 0 : itemState.current.plusOneCount}
+                                onChange={(e) => {
+                                  if (isZeroPlusOneAllowance) return;
                                   rsvpManager.updateRsvp(event.id, {
                                     plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
-                                  })
-                                }
-                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                  });
+                                }}
+                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                               />
                             </div>
 
@@ -670,7 +778,10 @@ export default function InteractiveTimeline({
                           </div>
 
                           {itemState.error && (
-                            <div className="mt-2 text-xs text-rose-600 dark:text-rose-400 flex items-center justify-between">
+                            <div
+                              role="alert"
+                              className="mt-2 text-xs text-rose-600 dark:text-rose-400 flex items-center justify-between"
+                            >
                               <span>{itemState.error}</span>
                               <button
                                 type="button"
