@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { GET, PUT } from '../settings/route';
+import { GET, PUT, POST } from '../settings/route';
 import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/prisma', () => ({
@@ -442,11 +442,10 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
   });
 
   it('GET with list=true returns only canonical global profile in single-site mode', async () => {
-    const { GET: settingsGET } = require('../settings/route');
     const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
       headers: { cookie: 'admin_auth=valid-token' }
     });
-    const res = await settingsGET(req);
+    const res = await GET(req);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.data).toHaveLength(1);
@@ -454,17 +453,15 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
   });
 
   it('GET with id passes global to getAppConfig in single-site mode', async () => {
-    const { GET: settingsGET } = require('../settings/route');
     const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
       headers: { cookie: 'admin_auth=valid-token' }
     });
-    const res = await settingsGET(req);
+    const res = await GET(req);
     expect(res.status).toBe(200);
     expect(mockGetAppConfig).toHaveBeenCalledWith('global');
   });
 
   it('POST /api/admin/settings rejects profile creation when multisite is disabled', async () => {
-    const { POST: settingsPOST } = require('../settings/route');
     const req = new NextRequest('http://localhost/api/admin/settings', {
       method: 'POST',
       headers: { cookie: 'admin_auth=valid-token' },
@@ -474,7 +471,7 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
         subdomain: 'staging'
       })
     });
-    const res = await settingsPOST(req);
+    const res = await POST(req);
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/Multi-site features are disabled/);
@@ -500,14 +497,12 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
       { ...updatedConfig, id: 'global', partner1Name: 'Abby', partner2Name: 'Fred', brideName: 'Abby' },
       { ...updatedConfig, id: 'profile-1', partner1Name: 'Staging', partner2Name: 'Test', brideName: 'Staging', subdomain: 'staging' }
     ];
-    // We import POST here dynamically to make sure it's defined
-    const { GET: settingsGET } = require('../settings/route');
     const mockFindMany = jest.spyOn(prisma.appConfig, 'findMany').mockResolvedValue(mockConfigs as any);
 
     const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
       headers: { cookie: 'admin_auth=valid-token' }
     });
-    const res = await settingsGET(req);
+    const res = await GET(req);
 
     if (res.status !== 200) {
       console.log('GET list error:', await res.json());
@@ -521,18 +516,16 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
   });
 
   it('GET with id fetches a specific profile', async () => {
-    const { GET: settingsGET } = require('../settings/route');
     const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
       headers: { cookie: 'admin_auth=valid-token' }
     });
-    const res = await settingsGET(req);
+    const res = await GET(req);
 
     expect(res.status).toBe(200);
     expect(mockGetAppConfig).toHaveBeenCalledWith('profile-1');
   });
 
   it('POST /api/admin/settings creates a new profile', async () => {
-    const { POST: settingsPOST } = require('../settings/route');
     const mockCreate = jest.spyOn(prisma.appConfig, 'create').mockResolvedValue({
       ...updatedConfig,
       id: 'profile-new',
@@ -554,7 +547,7 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
         subdomain: 'staging'
       })
     });
-    const res = await settingsPOST(req);
+    const res = await POST(req);
 
     if (res.status !== 200) {
       console.log('POST error:', await res.json());
@@ -568,7 +561,6 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
   });
 
   it('POST /api/admin/settings fails if subdomain is already in use', async () => {
-    const { POST: settingsPOST } = require('../settings/route');
     const mockFindUnique = jest.spyOn(prisma.appConfig, 'findUnique').mockResolvedValue({
       id: 'existing-profile',
       subdomain: 'staging'
@@ -583,7 +575,7 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
         subdomain: 'staging'
       })
     });
-    const res = await settingsPOST(req);
+    const res = await POST(req);
 
     expect(res.status).toBe(400);
     const json = await res.json();

@@ -1,13 +1,10 @@
-import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { env } from '@/env';
 import {
-  base64urlEncode,
-  base64urlDecode,
-  base64urlDecodeToBytes,
-  hmacSha256,
-  timingSafeEqualJS,
-} from '@/utils/crypto';
+  readRequestCookie,
+  signCompactToken,
+  verifyCompactToken,
+} from './tokenCookieHelpers';
 
 export const GUEST_INVITE_COOKIE = 'guest_invite_session';
 
@@ -50,32 +47,19 @@ export async function signGuestInviteSessionToken(payload: Omit<GuestInviteSessi
     iat,
     exp,
   };
-  const data = base64urlEncode(JSON.stringify(fullPayload));
   const secret = await getSecret();
-  const signature = await hmacSha256(secret, data);
-  return `${data}.${signature}`;
+  return signCompactToken(fullPayload, secret);
 }
 
 /**
  * Validates a guest invitation session token and returns the decoded payload if valid.
  */
 export async function verifyGuestInviteSessionToken(token: string): Promise<GuestInviteSessionPayload | null> {
+  if (!token || typeof token !== 'string') return null;
+
   try {
-    if (!token || typeof token !== 'string') return null;
-    const [data, signature] = token.split('.');
-    if (!data || !signature) return null;
-
     const secret = await getSecret();
-    const expectedSignature = await hmacSha256(secret, data);
-
-    const signatureBuffer = base64urlDecodeToBytes(signature);
-    const expectedSignatureBuffer = base64urlDecodeToBytes(expectedSignature);
-
-    if (!timingSafeEqualJS(signatureBuffer, expectedSignatureBuffer)) {
-      return null;
-    }
-
-    const payload = JSON.parse(base64urlDecode(data)) as GuestInviteSessionPayload;
+    const payload = await verifyCompactToken<GuestInviteSessionPayload>(token, secret);
     if (!payload || !payload.code || !payload.guestName) {
       return null;
     }
@@ -95,25 +79,7 @@ export async function verifyGuestInviteSessionToken(token: string): Promise<Gues
  * Retrieve verified guest invitation session from NextRequest or cookieStore.
  */
 export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
-  let cookieValue: string | undefined;
-
-  if (req) {
-    const rawCookie = req.cookies?.get?.(GUEST_INVITE_COOKIE)?.value;
-    if (rawCookie) {
-      cookieValue = rawCookie;
-    } else {
-      const match = req.headers.get('cookie')?.split(';').find(c => c.trim().startsWith(`${GUEST_INVITE_COOKIE}=`));
-      cookieValue = match ? match.trim().slice(GUEST_INVITE_COOKIE.length + 1) : undefined;
-    }
-  } else {
-    try {
-      const cookieStore = await cookies();
-      cookieValue = cookieStore.get(GUEST_INVITE_COOKIE)?.value;
-    } catch {
-      cookieValue = undefined;
-    }
-  }
-
+  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
   if (!cookieValue) return null;
 
   return verifyGuestInviteSessionToken(cookieValue);

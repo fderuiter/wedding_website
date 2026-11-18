@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -9,56 +10,44 @@ import { apiClient } from '@/features/admin';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { Dialog } from '@/components/ui/Dialog';
 
-export default function HistoryTimelinePage() {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'broadcasts'>('timeline');
-  const [versions, setVersions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(50);
-  const [paginationMeta, setPaginationMeta] = useState<{
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  } | null>(null);
+interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
+interface HistoryTimelineContentProps {
+  versions: any[];
+  loading: boolean;
+  page: number;
+  limit: number;
+  paginationMeta: PaginationMeta | null;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+  fetchVersions: (_currentPage?: number, _currentLimit?: number, _options?: { background?: boolean }) => Promise<void>;
+}
+
+function HistoryTimelineContent({
+  versions,
+  loading,
+  page,
+  limit,
+  paginationMeta,
+  setPage,
+  fetchVersions,
+}: HistoryTimelineContentProps) {
+  const [activeTab, setActiveTab] = useState<'timeline' | 'broadcasts'>('timeline');
   const [selectedBroadcast, setSelectedBroadcast] = useState<any>(null);
 
   const { addToast, confirm } = useToast();
   const { history: broadcastHistory, loadingHistory, retryBroadcast, retrying, cancelScheduledBroadcast, cancelling } = useAdminBroadcast();
-
-  const fetchVersions = async (currentPage = page, currentLimit = limit) => {
-    setLoading(true);
-    try {
-      const data = await apiClient.get<any>(`/api/admin/versions?page=${currentPage}&limit=${currentLimit}`);
-      if (Array.isArray(data)) {
-        setVersions(data);
-        setPaginationMeta(null);
-      } else if (data && Array.isArray(data.items)) {
-        setVersions(data.items);
-        setPaginationMeta(data.pagination || null);
-      } else {
-        setVersions([]);
-        setPaginationMeta(null);
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchVersions(page, limit);
-  }, [page, limit]);
 
   const handleRestore = async (versionId: string) => {
     if (!(await confirm('Are you sure you want to restore this version? This will instantly replace the Live content.'))) return;
     try {
       await apiClient.post(`/api/admin/versions/${versionId}/restore`);
       addToast('Restored successfully.', 'success');
-      fetchVersions(page, limit);
+      fetchVersions(page, limit, { background: true });
     } catch (e: any) {
       addToast(e.message || 'Failed to restore.', 'error');
     }
@@ -88,9 +77,6 @@ export default function HistoryTimelinePage() {
       addToast(e.message || 'Failed to cancel scheduled broadcast.', 'error');
     }
   };
-
-  if (loading && versions.length === 0) return <div className="p-8 text-center">Loading history...</div>;
-  if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
 
   const totalPages = paginationMeta?.totalPages ?? 1;
   const totalItems = paginationMeta?.total ?? versions.length;
@@ -374,5 +360,69 @@ export default function HistoryTimelinePage() {
         </Dialog>
       )}
     </div>
+  );
+}
+
+export default function HistoryTimelinePage() {
+  const [versions, setVersions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [paginationMeta, setPaginationMeta] = useState<PaginationMeta | null>(null);
+
+  const fetchVersions = useCallback(async (
+    currentPage = page,
+    currentLimit = limit,
+    options?: { background?: boolean }
+  ) => {
+    if (!options?.background) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const data = await apiClient.get<any>(`/api/admin/versions?page=${currentPage}&limit=${currentLimit}`);
+      if (Array.isArray(data)) {
+        setVersions(data);
+        setPaginationMeta(null);
+      } else if (data && Array.isArray(data.items)) {
+        setVersions(data.items);
+        setPaginationMeta(data.pagination || null);
+      } else {
+        setVersions([]);
+        setPaginationMeta(null);
+      }
+      setError(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to load version history.';
+      setError(message || 'Failed to load version history.');
+    } finally {
+      if (!options?.background) {
+        setLoading(false);
+      }
+    }
+  }, [page, limit]);
+
+  useEffect(() => {
+    fetchVersions(page, limit);
+  }, [fetchVersions, page, limit]);
+
+  return (
+    <AdminViewState
+      isLoading={loading}
+      error={error}
+      onRetry={() => fetchVersions(page, limit)}
+      loadingMessage="Loading history..."
+    >
+      <HistoryTimelineContent
+        versions={versions}
+        loading={loading}
+        page={page}
+        limit={limit}
+        paginationMeta={paginationMeta}
+        setPage={setPage}
+        fetchVersions={fetchVersions}
+      />
+    </AdminViewState>
   );
 }

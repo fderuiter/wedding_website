@@ -56,7 +56,11 @@ interface IconProps extends React.SVGProps<SVGSVGElement> {
   size?: number | string;
 }
 
-export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, width, height, className, ...props }, ref) => {
+export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, width, height, className, 'aria-hidden': ariaHidden, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledby, role, ...props }, ref) => {
+  const hasLabel = Boolean(ariaLabel || ariaLabelledby);
+  const resolvedAriaHidden = ariaHidden !== undefined ? ariaHidden : hasLabel ? undefined : 'true';
+  const resolvedRole = role ?? (hasLabel ? 'img' : undefined);
+
   const commonProps = {
     ref,
     xmlns: 'http://www.w3.org/2000/svg',
@@ -69,6 +73,10 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
     strokeLinecap: 'round',
     strokeLinejoin: 'round',
     className: cn(className),
+    'aria-hidden': resolvedAriaHidden,
+    'aria-label': ariaLabel,
+    'aria-labelledby': ariaLabelledby,
+    role: resolvedRole,
     ...props
   };
 

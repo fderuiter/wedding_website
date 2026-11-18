@@ -1,6 +1,4 @@
 const JSDOMEnvironment = require('jest-environment-jsdom').default;
-const { TransformStream, ReadableStream, WritableStream } = require('node:stream/web');
-const { BroadcastChannel } = require('node:worker_threads');
 
 class CustomEnvironment extends JSDOMEnvironment {
   constructor(config, context) {

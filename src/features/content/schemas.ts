@@ -95,7 +95,9 @@ export const RawUpdateAppConfigSchema = z.object({
     const d = new Date(val);
     return !isNaN(d.getTime());
   }, { message: 'Invalid chronological date format.' }).transform(val => new Date(val)),
-  baseUrl: z.string().url('Invalid URL format').or(z.literal('')),
+  baseUrl: z.url({
+    error: (issue) => issue.code === 'invalid_type' ? undefined : 'Invalid URL format',
+  }).or(z.literal('')),
   venueName: z.string(),
   venueAddress: z.string(),
   venueCity: z.string(),
@@ -110,7 +112,7 @@ export const RawUpdateAppConfigSchema = z.object({
   heroSubtitle: z.string(),
   seoTitle: z.string(),
   seoDescription: z.string(),
-  contactEmail: z.string().refine(val => !val || val === '' || z.string().email().safeParse(val).success, { message: 'Invalid email address format' }).optional(),
+  contactEmail: z.string().refine(val => !val || val === '' || z.email().safeParse(val).success, { message: 'Invalid email address format' }).optional(),
   faviconUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
   ogImageUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
   brandMonogram: z.string().nullable().optional(),
@@ -180,7 +182,7 @@ export const RawUpdateAppConfigSchema = z.object({
     if (typeof key === 'string' && key.toLowerCase().includes('color') && typeof value === 'string' && value !== '') {
       if (!hexColorRegex.test(value)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: [key],
           message: `Invalid hex color format for ${key}. Must be a valid hex code (e.g. #RRGGBB).`,
         });
@@ -325,7 +327,7 @@ export const ScheduleDataSchema = z.object({
   attireRules: z.string().optional(),
   attire: z.string().optional(),
   description: z.string().optional(),
-}).passthrough().transform((data) => {
+}).loose().transform((data) => {
   const extractedColors: Record<string, z.infer<typeof CategoryColorSchema>> = {
     ...(data.categoryColors || {}),
   };
@@ -357,7 +359,7 @@ export const ScheduleDataSchema = z.object({
     const end = new Date(val.endTime).getTime();
     if (!isNaN(start) && !isNaN(end) && end < start) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['endTime'],
         message: 'endTime must be chronologically equal to or after startTime.',
       });
@@ -388,7 +390,7 @@ export const FAQNodeSchema = BaseContentNode.extend({
       }
       return val;
     }),
-  }).passthrough(),
+  }).loose(),
 });
 
 export const LogisticsNodeSchema = BaseContentNode.extend({
@@ -410,7 +412,7 @@ export const LogisticsNodeSchema = BaseContentNode.extend({
     location: z.string().optional(),
     attireRules: z.string().optional(),
     attire: z.string().optional(),
-  }).passthrough(),
+  }).loose(),
 });
 
 export const PhotoDataSchema = z.object({
@@ -420,7 +422,7 @@ export const PhotoDataSchema = z.object({
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional().default('PENDING'),
   isVisible: z.boolean().optional().default(false),
   mediaId: z.string().optional(),
-}).passthrough();
+}).loose();
 
 export const PhotoModerationSchema = z.object({
   id: z.string().optional(),
@@ -436,24 +438,24 @@ export const BatchPhotoModerationSchema = z.object({
   nodeIds: z.array(z.string()).optional(),
   action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
-}).passthrough().superRefine((data, ctx) => {
+}).loose().superRefine((data, ctx) => {
   const idsList = data.ids || data.photoIds || data.nodeIds;
   if (!idsList || !Array.isArray(idsList) || idsList.length === 0) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['ids'],
       message: 'At least one photo ID (ids, photoIds, or nodeIds) is required',
     });
   } else if (idsList.length > 100) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['ids'],
       message: 'Maximum of 100 photos allowed per batch request',
     });
   }
   if (!data.action && !data.status) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['action'],
       message: "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required",
     });

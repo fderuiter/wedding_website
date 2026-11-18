@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SeatingChartAdminPage from '@/app/admin/dashboard/seating-chart/page';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 
@@ -351,7 +352,11 @@ describe('Optimistic Seating Chart State Updates', () => {
 
     window.alert = jest.fn();
 
-    render(<SeatingChartAdminPage />);
+    render(
+      <ToastProvider>
+        <SeatingChartAdminPage />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getAllByText('Guest Two').length).toBeGreaterThan(0);
@@ -368,8 +373,9 @@ describe('Optimistic Seating Chart State Updates', () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Failed to assign guest seat');
+      expect(screen.getByRole('alert')).toHaveTextContent('Failed to assign guest seat');
     });
+    expect(window.alert).not.toHaveBeenCalled();
 
     // Verify local state was reverted back to pre-mutation snapshot (2 unassigned)
     expect(screen.getByText('2 unassigned')).toBeInTheDocument();
@@ -477,7 +483,11 @@ describe('Optimistic Seating Chart State Updates', () => {
 
     window.alert = jest.fn();
 
-    render(<SeatingChartAdminPage />);
+    render(
+      <ToastProvider>
+        <SeatingChartAdminPage />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('2 unassigned')).toBeInTheDocument();
@@ -502,8 +512,9 @@ describe('Optimistic Seating Chart State Updates', () => {
     fireEvent.click(screen.getByTitle('Unassign guest'));
 
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Failed to assign guest seat');
+      expect(screen.getByRole('alert')).toHaveTextContent('Failed to assign guest seat');
     });
+    expect(window.alert).not.toHaveBeenCalled();
 
     // Guest One reverts to previous state (remains on Table 1)
     expect(screen.getByTitle(/Seat 1: Guest One/i)).toBeInTheDocument();

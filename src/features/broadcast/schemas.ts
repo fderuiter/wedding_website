@@ -38,7 +38,7 @@ export const SendTestBroadcastSchema = z.object({
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(data.destination.trim())) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['destination'],
           message: 'Invalid email address format',
         });
@@ -47,7 +47,7 @@ export const SendTestBroadcastSchema = z.object({
       const e164Regex = /^\+[1-9]\d{1,14}$/;
       if (!e164Regex.test(data.destination.trim())) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['destination'],
           message: 'Invalid phone number format. Must be in E.164 format (e.g. +15551234567)',
         });

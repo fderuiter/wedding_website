@@ -21,15 +21,19 @@ const fadeUp: Variants = {
 
 export { getSafeCallbackUrl };
 
-function getSafeMailtoUrl(email: string | null | undefined): string {
-  const fallback = 'hosts@wedding.example';
+function getSafeMailtoUrl(email: string | null | undefined): string | null {
   if (!email || typeof email !== 'string') {
-    return `mailto:${fallback}?subject=Passcode%20Assistance%20-%20Guest%20Portal`;
+    return null;
   }
   const trimmed = email.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'hosts@wedding.example') {
+    return null;
+  }
   const isValidEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed);
-  const safeEmail = isValidEmail ? trimmed : fallback;
-  return `mailto:${safeEmail}?subject=Passcode%20Assistance%20-%20Guest%20Portal`;
+  if (!isValidEmail) {
+    return null;
+  }
+  return `mailto:${trimmed}?subject=Guest%20Portal%20Sign-In%20Help`;
 }
 
 function GuestLoginForm() {
@@ -40,24 +44,14 @@ function GuestLoginForm() {
     error,
     loading,
     showHelp,
-    activeTab,
-    lookupQuery,
-    lookupLoading,
-    lookupError,
-    lookupRateLimited,
-    unmatched,
-    matchedGuest,
     isLoginDisabled,
-    isLookupDisabled,
     handleLogin,
-    handleLookup,
-    handleContinueToPortal,
     setPasscode,
     setShowPasscode,
     setShowHelp,
-    setActiveTab,
-    setLookupQuery,
   } = useGuestLoginMachine();
+
+  const mailtoUrl = getSafeMailtoUrl(contactEmail);
 
   return (
     <>
@@ -71,8 +65,8 @@ function GuestLoginForm() {
           <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary dark:from-primary-light dark:to-secondary-light tracking-tight py-1">
             Guest Portal
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Please enter the passcode shared on your invitation to access logistics and schedules.
+          <p className="text-gray-600 dark:text-gray-300 text-sm">
+            Enter your event passcode or personal invitation code to view schedules, event details, and your RSVP.
           </p>
         </div>
 
@@ -90,7 +84,7 @@ function GuestLoginForm() {
 
         <div className="flex flex-col gap-2">
           <label htmlFor="passcode" className="block text-gray-700 dark:text-gray-300 font-semibold text-sm ml-1">
-            Guest Passcode
+            Passcode or Invitation Code
           </label>
           <div className="relative group">
             <input
@@ -102,15 +96,15 @@ function GuestLoginForm() {
               className="border border-gray-200 dark:border-gray-400 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
               required
               autoComplete="off"
-              placeholder="Enter passcode"
+              placeholder="Enter passcode or invitation code"
               aria-invalid={error ? 'true' : undefined}
               aria-describedby={error ? 'login-error' : undefined}
             />
             <button
               type="button"
               onClick={() => setShowPasscode(!showPasscode)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
-              aria-label={showPasscode ? 'Hide passcode' : 'Show passcode'}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-primary dark:text-gray-300 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
+              aria-label={showPasscode ? 'Hide code' : 'Show code'}
             >
               {showPasscode ? <Icon name="EyeOff" size={22} /> : <Icon name="Eye" size={22} />}
             </button>
@@ -123,7 +117,7 @@ function GuestLoginForm() {
               aria-controls="guest-help-drawer"
               className="text-xs sm:text-sm font-medium text-primary hover:underline dark:text-primary-light transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg px-1 py-0.5"
             >
-              Need help finding your passcode?
+              Need help finding your code?
             </button>
           </div>
         </div>
@@ -157,200 +151,55 @@ function GuestLoginForm() {
           <div className="flex items-center gap-2">
             <Icon name="HelpCircle" className="w-5 h-5 text-primary" />
             <h2 id="help-drawer-title" className="text-lg font-bold text-gray-900 dark:text-white">
-              Passcode Assistance
+              Sign-In Help
             </h2>
           </div>
           <button
             type="button"
             onClick={() => setShowHelp(false)}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white p-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label="Close help drawer"
           >
             <Icon name="X" className="w-5 h-5" />
           </button>
         </div>
 
-        <div role="tablist" aria-label="Passcode assistance options" className="flex border-b border-gray-100 dark:border-gray-700 gap-2 pb-1">
-          <button
-            type="button"
-            role="tab"
-            id="tab-instructions"
-            aria-selected={activeTab === 'instructions'}
-            aria-controls="panel-instructions"
-            onClick={() => setActiveTab('instructions')}
-            className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-              activeTab === 'instructions'
-                ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-light font-bold'
-                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            Instructions
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="tab-lookup"
-            aria-selected={activeTab === 'lookup'}
-            aria-controls="panel-lookup"
-            onClick={() => setActiveTab('lookup')}
-            className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-              activeTab === 'lookup'
-                ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-light font-bold'
-                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            Look Up Invitation
-          </button>
-        </div>
-
-        {activeTab === 'instructions' && (
-          <div
-            role="tabpanel"
-            id="panel-instructions"
-            aria-labelledby="tab-instructions"
-            className="space-y-4"
-          >
-            <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-              <p className="font-medium text-gray-900 dark:text-gray-100">
-                How to locate your guest passcode:
-              </p>
-              <ul className="list-disc pl-5 space-y-1.5 text-xs sm:text-sm">
-                <li>Check your physical wedding invitation or save-the-date card.</li>
-                <li>Look for a digital invitation or confirmation email sent by the hosts.</li>
-                <li>Ensure the passcode is entered accurately (passcodes are case-sensitive).</li>
-              </ul>
-            </div>
-
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
-              <p className="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200">
-                Need direct host help?
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                If you cannot find your invitation or passcode, reach out directly to the event hosts.
-              </p>
-              <a
-                href={getSafeMailtoUrl(contactEmail)}
-                className="inline-flex items-center justify-center gap-2 w-full mt-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-              >
-                <Icon name="Mail" className="w-4 h-4" />
-                <span>Contact Host</span>
-              </a>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'lookup' && (
-          <div
-            role="tabpanel"
-            id="panel-lookup"
-            aria-labelledby="tab-lookup"
-            className="space-y-4"
-          >
-            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-              Misplaced your invitation? Enter your name or email to look up your details and access the portal.
+        <div className="space-y-4">
+          <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+            <p className="font-medium text-gray-900 dark:text-gray-100">
+              Where to find your code:
             </p>
+            <ul className="list-disc pl-5 space-y-1.5 text-xs sm:text-sm">
+              <li>Check your physical wedding invitation or save-the-date card.</li>
+              <li>Look for a digital invitation or confirmation email sent by the hosts.</li>
+              <li>Enter either the shared event passcode or your personal invitation code in the sign-in box.</li>
+            </ul>
+          </div>
 
-            {matchedGuest ? (
-              <div
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 rounded-2xl space-y-3 text-center"
-              >
-                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
-                  <Icon name="Check" className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-100">
-                    Invitation Found!
-                  </h3>
-                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                    Welcome, <strong>{matchedGuest.guestName}</strong>.{matchedGuest.code ? <> Your invitation passcode is <strong>{matchedGuest.code}</strong>.</> : null}
-                  </p>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Session hydrated. Entering guest portal...
-                </p>
-                <button
-                  type="button"
-                  onClick={handleContinueToPortal}
-                  className="w-full py-2.5 px-4 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  Continue to Portal
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleLookup} className="space-y-3">
-                <div className="space-y-1">
-                  <label htmlFor="lookup-query" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 ml-1">
-                    Guest Name or Email
-                  </label>
-                  <input
-                    type="text"
-                    id="lookup-query"
-                    value={lookupQuery}
-                    onChange={(e) => setLookupQuery(e.target.value)}
-                    placeholder="Enter your name or email"
-                    disabled={isLookupDisabled}
-                    className="border border-gray-200 dark:border-gray-600 p-3 rounded-xl w-full text-sm bg-gray-50/50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                    aria-invalid={lookupError ? 'true' : undefined}
-                    aria-describedby={lookupError ? 'lookup-error' : undefined}
-                  />
-                </div>
-
-                {lookupError && (
-                  <div
-                    id="lookup-error"
-                    role="alert"
-                    className={`p-3 rounded-xl text-xs sm:text-sm font-medium ${
-                      lookupRateLimited
-                        ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
-                        : 'bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-primary-text'
-                    }`}
-                  >
-                    {lookupError}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLookupDisabled}
-                  className="w-full bg-primary text-white py-2.5 px-4 rounded-xl text-sm font-semibold shadow-md hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  {lookupLoading ? (
-                    <>
-                      <Icon name="Loader2" className="w-4 h-4 animate-spin" />
-                      <span>Searching...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Icon name="Search" className="w-4 h-4" />
-                      <span>Look Up Invitation</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
-
-            {unmatched && (
-              <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
-                <p className="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200">
-                  Still cannot find your invitation?
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  If your invitation details cannot be found, you can reach out directly to the hosts for assistance.
+          <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
+            <p className="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200">
+              Still can&apos;t find your code?
+            </p>
+            {mailtoUrl ? (
+              <>
+                <p className="text-xs text-gray-600 dark:text-gray-300">
+                  Send a quick email to the hosts and they can share your code with you.
                 </p>
                 <a
-                  href={getSafeMailtoUrl(contactEmail)}
+                  href={mailtoUrl}
                   className="inline-flex items-center justify-center gap-2 w-full mt-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
                   <Icon name="Mail" className="w-4 h-4" />
                   <span>Contact Host</span>
                 </a>
-              </div>
+              </>
+            ) : (
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                Please message the hosts directly by text or phone so they can share your code with you.
+              </p>
             )}
           </div>
-        )}
+        </div>
 
         <div className="pt-1 flex justify-end">
           <button

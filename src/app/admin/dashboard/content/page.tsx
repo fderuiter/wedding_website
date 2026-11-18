@@ -8,40 +8,34 @@ import { useAdminContent } from '@/hooks/admin/useAdminContent';
 import { apiClient } from '@/features/admin/apiClient';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
 
-/**
- * Admin interface for listing, creating, editing, deleting, and previewing content nodes.
- *
- * Renders a dashboard UI that enforces admin authentication, shows existing content nodes,
- * provides an inline editor for node metadata and dynamic key/value fields, supports
- * creating and removing nodes, and offers a preview integration (including optional
- * photo metadata scraping when a node is of type `Photo`).
- *
- * @returns A React element rendering the content dashboard UI with list, editor, and preview controls.
- */
-export default function ContentDashboardPage() {
+interface ContentDashboardContentProps {
+  nodes: ContentNodeDTO[];
+  fetchAll: () => unknown;
+  create: (_payload: Partial<ContentNodeDTO>) => Promise<ContentNodeDTO>;
+  update: (_id: string, _payload: Partial<ContentNodeDTO>) => Promise<ContentNodeDTO>;
+  remove: (_id: string) => Promise<unknown>;
+}
+
+function ContentDashboardContent({
+  nodes,
+  fetchAll,
+  create,
+  update,
+  remove,
+}: ContentDashboardContentProps) {
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   const { confirm, addToast } = useToast();
 
-  const {
-    data: nodes,
-    isLoading,
-    error,
-    fetchAll,
-    create,
-    update,
-    remove
-  } = useAdminContent();
-
   const [isEditing, setIsEditing] = useState(false);
   const [currentNode, setCurrentNode] = useState<Partial<ContentNodeDTO>>({});
   const [dynamicData, setDynamicData] = useState<{key: string, value: string}[]>([]);
-
 
   const handleSave = async () => {
     try {
@@ -121,9 +115,6 @@ export default function ContentDashboardPage() {
     newData[index][field] = val;
     setDynamicData(newData);
   };
-
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Loading...</p></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
   const draftDataObj: Record<string, string> = {};
   dynamicData.forEach(item => {
@@ -305,6 +296,45 @@ export default function ContentDashboardPage() {
         </div>
       </div>
     </AdminPreviewLayout>
+  );
+}
+
+/**
+ * Admin interface for listing, creating, editing, deleting, and previewing content nodes.
+ *
+ * Renders a dashboard UI that enforces admin authentication, shows existing content nodes,
+ * provides an inline editor for node metadata and dynamic key/value fields, supports
+ * creating and removing nodes, and offers a preview integration (including optional
+ * photo metadata scraping when a node is of type `Photo`).
+ *
+ * @returns A React element rendering the content dashboard UI with list, editor, and preview controls.
+ */
+export default function ContentDashboardPage() {
+  const {
+    data: nodes,
+    isLoading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove
+  } = useAdminContent();
+
+  return (
+    <AdminViewState
+      isLoading={isLoading}
+      error={error}
+      onRetry={fetchAll}
+      loadingMessage="Loading content..."
+    >
+      <ContentDashboardContent
+        nodes={nodes}
+        fetchAll={fetchAll}
+        create={create}
+        update={update}
+        remove={remove}
+      />
+    </AdminViewState>
   );
 }
 

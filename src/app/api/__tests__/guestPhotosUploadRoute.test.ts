@@ -3,6 +3,8 @@
 import { POST } from '../guest/photos/upload/route';
 import { resetStorageProvider } from '@/utils/storage';
 import { writeFile } from 'fs/promises';
+import { mediaRepository } from '@/features/media';
+import { contentRepository } from '@/features/content';
 
 jest.mock('fs/promises', () => {
   const actual = jest.requireActual('fs/promises');
@@ -220,8 +222,6 @@ describe('POST /api/guest/photos/upload', () => {
       expect(json.data[0].isVisible).toBe(false);
 
       expect(mockWriteFile).toHaveBeenCalledTimes(1);
-      const { mediaRepository } = require('@/features/media');
-      const { contentRepository } = require('@/features/content');
       expect(mediaRepository.createMedia).toHaveBeenCalledTimes(1);
       expect(contentRepository.createNode).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -264,7 +264,6 @@ describe('POST /api/guest/photos/upload', () => {
       expect(json.data[0].status).toBe('PENDING');
       expect(json.data[1].status).toBe('PENDING');
 
-      const { mediaRepository } = require('@/features/media');
       expect(mediaRepository.createMedia).toHaveBeenCalledTimes(2);
     });
 

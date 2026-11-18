@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import HomePageClient from '../HomePageClient';
 import type { PublicAppConfig } from '@/lib/config';
@@ -103,6 +103,33 @@ describe('HomePageClient', () => {
     expect(screen.getByText('Estate Lawn')).toBeInTheDocument();
     expect(screen.queryByText('Details coming soon...')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rsvp-card-se-pub-1')).not.toBeInTheDocument();
+  });
+
+  test('localizes hero formattedDate and AddToCalendar event to venue timezone', () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    const chicagoConfig: PublicAppConfig = {
+      ...mockConfig,
+      heroSubtitle: '',
+      weddingDate: '2026-09-20T00:00:00.000Z',
+      timezone: 'America/Chicago',
+      showAddToCalendar: true,
+      modules: { countdown: true, gallery: true, addToCalendar: true },
+    } as any;
+
+    render(<HomePageClient config={chicagoConfig} />);
+
+    expect(screen.getByText(/September 19, 2026/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Google' }));
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const googleUrl = new URL(openSpy.mock.calls[0][0] as string);
+    expect(googleUrl.searchParams.get('dates')).toBe('20260919T190000/20260920T010000');
+    expect(googleUrl.searchParams.get('ctz')).toBe('America/Chicago');
+
+    openSpy.mockRestore();
   });
 });
 

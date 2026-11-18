@@ -199,7 +199,7 @@ const BackupContributorSchema = z.object({
   name: ContributorSchema.shape.name,
 
   // Optional/Nullable fields
-  email: z.string().email().max(255).nullable().optional().or(z.literal('')),
+  email: z.email().max(255).nullable().optional().or(z.literal('')),
   isPlusOne: z.boolean().optional(),
   amount: z.number().min(0).optional(),
   date: z.date().optional(),

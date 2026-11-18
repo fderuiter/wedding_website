@@ -30,7 +30,7 @@ describe('Registry Gift Contribution Concurrency & Row-Level Locking', () => {
     try {
       await realPrisma.registryItem.findFirst();
     } catch {
-      const { execSync } = require('child_process');
+      const { execSync } = await import('node:child_process');
       execSync('npx prisma db push', { stdio: 'pipe' });
     }
   });

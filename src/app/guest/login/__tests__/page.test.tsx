@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestLoginPage from '../page';
@@ -15,12 +15,13 @@ jest.mock('next/navigation', () => ({
 const globalWithFetch = global as unknown as { fetch?: typeof fetch };
 const originalFetch = globalWithFetch.fetch;
 
-describe('Guest Login Page with Help Drawer', () => {
+describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
   const mockPush = jest.fn();
   const mockGetParam = jest.fn().mockReturnValue(null);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetParam.mockReturnValue(null);
     (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
     (useSearchParams as jest.Mock).mockReturnValue({ get: mockGetParam });
   });
@@ -34,13 +35,14 @@ describe('Guest Login Page with Help Drawer', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders login form and help trigger button', async () => {
+  it('renders unified login form and help trigger button with no accessibility violations', async () => {
     const { container } = render(<GuestLoginPage />);
 
     expect(screen.getByRole('heading', { name: /guest portal/i })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Enter passcode')).toBeInTheDocument();
+    expect(screen.getByLabelText(/passcode or invitation code/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Enter passcode or invitation code')).toBeInTheDocument();
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     expect(helpTrigger).toBeInTheDocument();
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'false');
     expect(helpTrigger).toHaveAttribute('aria-controls', 'guest-help-drawer');
@@ -49,10 +51,10 @@ describe('Guest Login Page with Help Drawer', () => {
     expect(results).toHaveNoViolations();
   });
 
-  it('opens help drawer when clicking help trigger and displays recovery instructions and host contact option', async () => {
+  it('opens help drawer without unauthenticated lookup tab and hides mailto when contactEmail is not configured', async () => {
     const { container } = render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     fireEvent.click(helpTrigger);
 
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'true');
@@ -61,62 +63,95 @@ describe('Guest Login Page with Help Drawer', () => {
     expect(drawer).toBeInTheDocument();
     expect(drawer).toHaveAttribute('aria-modal', 'true');
 
-    expect(screen.getByRole('heading', { name: /passcode assistance/i })).toBeInTheDocument();
-    expect(screen.getByText(/how to locate your guest passcode:/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /sign-in help/i })).toBeInTheDocument();
+    expect(screen.getByText(/where to find your code:/i)).toBeInTheDocument();
     expect(screen.getByText(/check your physical wedding invitation/i)).toBeInTheDocument();
 
-    const contactBtn = screen.getByRole('link', { name: /contact host/i });
-    expect(contactBtn).toBeInTheDocument();
-    expect(contactBtn).toHaveAttribute('href', 'mailto:hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+    // Unauthenticated lookup tab and internal technical copy must not appear
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /look up invitation/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/session hydrated/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unauthorized/i)).not.toBeInTheDocument();
+
+    // No mailto link or placeholder hosts@wedding.example when contactEmail is empty
+    expect(screen.queryByRole('link', { name: /contact host/i })).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('hosts@wedding.example');
+    expect(screen.getByText(/please message the hosts directly/i)).toBeInTheDocument();
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
 
-  it('uses configured contact email from ThemeProvider in mailto link', async () => {
-    render(
-      <ThemeProvider config={{ contactEmail: 'custom-hosts@wedding.example' }}>
+  it('hides mailto link when contactEmail is invalid or set to placeholder hosts@wedding.example', () => {
+    const { rerender, container } = render(
+      <ThemeProvider config={{ contactEmail: 'hosts@wedding.example' }}>
         <GuestLoginPage />
       </ThemeProvider>
     );
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    fireEvent.click(screen.getByRole('button', { name: /need help finding your code\?/i }));
+    expect(screen.queryByRole('link', { name: /contact host/i })).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('hosts@wedding.example');
+    expect(screen.getByText(/please message the hosts directly/i)).toBeInTheDocument();
+
+    rerender(
+      <ThemeProvider config={{ contactEmail: 'not-an-email' }}>
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+    expect(screen.queryByRole('link', { name: /contact host/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/please message the hosts directly/i)).toBeInTheDocument();
+  });
+
+  it('renders working mailto link when a valid contactEmail is configured', async () => {
+    const { container } = render(
+      <ThemeProvider config={{ contactEmail: 'hosts@ourwedding.com' }}>
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     fireEvent.click(helpTrigger);
 
     const contactBtn = screen.getByRole('link', { name: /contact host/i });
-    expect(contactBtn).toHaveAttribute('href', 'mailto:custom-hosts@wedding.example?subject=Passcode%20Assistance%20-%20Guest%20Portal');
+    expect(contactBtn).toBeInTheDocument();
+    expect(contactBtn).toHaveAttribute(
+      'href',
+      'mailto:hosts@ourwedding.com?subject=Guest%20Portal%20Sign-In%20Help'
+    );
+    expect(screen.queryByText(/please message the hosts directly/i)).not.toBeInTheDocument();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
-  it('moves focus inside the dialog when opened', async () => {
+  it('moves focus inside the dialog when opened', () => {
     render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     fireEvent.click(helpTrigger);
 
     const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
     expect(document.activeElement).toBe(closeBtn);
   });
 
-  it('traps focus within drawer controls on Tab and Shift+Tab', async () => {
+  it('traps focus within drawer controls on Tab and Shift+Tab', () => {
     render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     fireEvent.click(helpTrigger);
 
     const closeBtn = screen.getByRole('button', { name: /close help drawer/i });
     const gotItBtn = screen.getByRole('button', { name: /got it, thanks/i });
 
-    // Focus initial (close button)
     expect(document.activeElement).toBe(closeBtn);
 
-    // Focus last element manually and press Tab
     gotItBtn.focus();
     expect(document.activeElement).toBe(gotItBtn);
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: false });
     expect(document.activeElement).toBe(closeBtn);
 
-    // Press Shift+Tab on first element
     closeBtn.focus();
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(gotItBtn);
@@ -125,14 +160,13 @@ describe('Guest Login Page with Help Drawer', () => {
   it('closes help drawer when clicking backdrop and restores focus', async () => {
     render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     helpTrigger.focus();
     fireEvent.click(helpTrigger);
 
     const dialog = screen.getByRole('dialog');
     expect(dialog).toBeInTheDocument();
 
-    // Click backdrop (dialog itself)
     fireEvent.click(dialog);
 
     await waitFor(() => {
@@ -144,7 +178,7 @@ describe('Guest Login Page with Help Drawer', () => {
   it('closes help drawer when pressing Escape key', async () => {
     render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     fireEvent.click(helpTrigger);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -159,7 +193,7 @@ describe('Guest Login Page with Help Drawer', () => {
   it('restores focus to the trigger button when help drawer is closed', async () => {
     render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     helpTrigger.focus();
     expect(document.activeElement).toBe(helpTrigger);
 
@@ -178,7 +212,7 @@ describe('Guest Login Page with Help Drawer', () => {
   it('closes help drawer when clicking close button or dismiss button', async () => {
     render(<GuestLoginPage />);
 
-    const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
+    const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     fireEvent.click(helpTrigger);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -191,7 +225,6 @@ describe('Guest Login Page with Help Drawer', () => {
     });
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'false');
 
-    // Reopen and test dismiss button ("Got it, thanks")
     fireEvent.click(helpTrigger);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
@@ -203,382 +236,73 @@ describe('Guest Login Page with Help Drawer', () => {
     });
   });
 
-  it('shows error prompt when login fails', async () => {
+  it('toggles code visibility when show/hide button is clicked', () => {
+    render(<GuestLoginPage />);
+
+    const input = screen.getByPlaceholderText('Enter passcode or invitation code');
+    expect(input).toHaveAttribute('type', 'password');
+
+    fireEvent.click(screen.getByRole('button', { name: /show code/i }));
+    expect(input).toHaveAttribute('type', 'text');
+
+    fireEvent.click(screen.getByRole('button', { name: /hide code/i }));
+    expect(input).toHaveAttribute('type', 'password');
+  });
+
+  it('shows plain-language error alert and stays on /guest/login when code is unrecognized', async () => {
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
       ok: false,
+      status: 401,
       json: async () => ({
         success: false,
-        error: 'Incorrect passcode. Need help? Try using the host help drawer below for assistance.',
-        helpPrompt: 'Need help finding your passcode? Open the host help drawer below.',
+        error: 'Incorrect passcode or invitation code. Need help? Open the help drawer below for assistance.',
+        helpPrompt: 'Need help finding your code? Open the help drawer below for instructions on how to reach the hosts.',
       }),
     } as unknown as Response);
     globalWithFetch.fetch = fetchMock;
 
-    render(<GuestLoginPage />);
+    const { container } = render(<GuestLoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText('Enter passcode'), {
-      target: { value: 'wrongpass' },
+    fireEvent.change(screen.getByPlaceholderText('Enter passcode or invitation code'), {
+      target: { value: 'wrongcode' },
     });
     fireEvent.click(screen.getByRole('button', { name: /access portal/i }));
 
     const errorAlert = await screen.findByRole('alert');
     expect(errorAlert).toBeInTheDocument();
-    expect(errorAlert).toHaveTextContent(/incorrect passcode/i);
-    expect(errorAlert).toHaveTextContent(/host help drawer/i);
+    expect(errorAlert).toHaveTextContent(/incorrect passcode or invitation code/i);
+    expect(errorAlert).toHaveTextContent(/help drawer/i);
+    expect(mockPush).not.toHaveBeenCalled();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
-  it('redirects on successful login', async () => {
+  it('redirects to callbackUrl on successful sign-in with shared passcode or personal invitation code', async () => {
+    mockGetParam.mockReturnValue('/rsvp');
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true }),
+      status: 200,
+      json: async () => ({ success: true, sessionType: 'invitation', guestName: 'Jordan Lee' }),
     } as unknown as Response);
     globalWithFetch.fetch = fetchMock;
 
     render(<GuestLoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText('Enter passcode'), {
-      target: { value: 'wedding2026' },
+    fireEvent.change(screen.getByPlaceholderText('Enter passcode or invitation code'), {
+      target: { value: 'love2026' },
     });
     fireEvent.click(screen.getByRole('button', { name: /access portal/i }));
 
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/');
-    });
-  });
-
-  describe('Self-Service Invitation Lookup Tab', () => {
-    it('displays interactive Look Up Invitation tab in help drawer', async () => {
-      const { container } = render(<GuestLoginPage />);
-
-      const helpTrigger = screen.getByRole('button', { name: /need help finding your passcode\?/i });
-      fireEvent.click(helpTrigger);
-
-      const lookupTab = screen.getByRole('tab', { name: /look up invitation/i });
-      expect(lookupTab).toBeInTheDocument();
-      expect(lookupTab).toHaveAttribute('aria-selected', 'false');
-
-      fireEvent.click(lookupTab);
-      expect(lookupTab).toHaveAttribute('aria-selected', 'true');
-
-      expect(screen.getByLabelText(/guest name or email/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /look up invitation/i })).toBeInTheDocument();
-
-      const results = await axe(container);
-      expect(results).toHaveNoViolations();
-    });
-
-    it('validates input requires at least 2 characters for names or valid email format', async () => {
-      render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      const submitBtn = screen.getByRole('button', { name: /look up invitation/i });
-
-      // Empty submission
-      fireEvent.click(submitBtn);
-      expect(await screen.findByText(/please enter your name or email address/i)).toBeInTheDocument();
-
-      // Short name (<2 chars)
-      fireEvent.change(queryInput, { target: { value: 'A' } });
-      fireEvent.click(submitBtn);
-      expect(await screen.findByText(/name must be at least 2 characters/i)).toBeInTheDocument();
-
-      // Invalid email
-      fireEvent.change(queryInput, { target: { value: 'bademail@' } });
-      fireEvent.click(submitBtn);
-      expect(await screen.findByText(/invalid email format/i)).toBeInTheDocument();
-    });
-
-    it('submitting a valid guest name or email displays matching invitation details and grants access', async () => {
-      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          success: true,
-          guestName: 'Taylor Swift',
-          code: 'LOVER13',
-          data: {
-            guestName: 'Taylor Swift',
-            code: 'LOVER13',
-          },
-        }),
-      } as unknown as Response);
-      globalWithFetch.fetch = fetchMock;
-
-      render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
-      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-
-      expect(fetchMock).toHaveBeenCalledWith('/api/guest/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: 'Taylor Swift' }),
-        signal: expect.any(AbortSignal),
-      });
-
-      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
-      const statusCard = screen.getByRole('status');
-      expect(statusCard).toBeInTheDocument();
-      expect(statusCard).toHaveAttribute('aria-live', 'polite');
-      expect(statusCard).toHaveAttribute('aria-atomic', 'true');
-      expect(screen.getByText(/Taylor Swift/i)).toBeInTheDocument();
-      expect(screen.getByText(/LOVER13/i)).toBeInTheDocument();
-      expect(screen.getByText(/session hydrated/i)).toBeInTheDocument();
-
-      const continueBtn = screen.getByRole('button', { name: /continue to portal/i });
-      expect(continueBtn).toBeInTheDocument();
-      fireEvent.click(continueBtn);
-      expect(mockPush).toHaveBeenCalledWith('/');
-    });
-
-    it('automatically navigates to callback URL after extended 4000ms timeout window', async () => {
-      jest.useFakeTimers();
-      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          success: true,
-          guestName: 'Taylor Swift',
-          code: 'LOVER13',
-          data: {
-            guestName: 'Taylor Swift',
-            code: 'LOVER13',
-          },
-        }),
-      } as unknown as Response);
-      globalWithFetch.fetch = fetchMock;
-
-      render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-      });
-
-      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
-      expect(mockPush).not.toHaveBeenCalled();
-
-      act(() => {
-        jest.advanceTimersByTime(3999);
-      });
-      expect(mockPush).not.toHaveBeenCalled();
-
-      act(() => {
-        jest.advanceTimersByTime(1);
-      });
-      expect(mockPush).toHaveBeenCalledTimes(1);
-      expect(mockPush).toHaveBeenCalledWith('/');
-
-      jest.useRealTimers();
-    });
-
-    it('cancels the redirect timer if manual continue button is clicked', async () => {
-      jest.useFakeTimers();
-      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          success: true,
-          guestName: 'Taylor Swift',
-          code: 'LOVER13',
-          data: {
-            guestName: 'Taylor Swift',
-            code: 'LOVER13',
-          },
-        }),
-      } as unknown as Response);
-      globalWithFetch.fetch = fetchMock;
-
-      render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-      });
-
-      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
-      const continueBtn = screen.getByRole('button', { name: /continue to portal/i });
-      fireEvent.click(continueBtn);
-      expect(mockPush).toHaveBeenCalledTimes(1);
-
-      act(() => {
-        jest.advanceTimersByTime(4000);
-      });
-      expect(mockPush).toHaveBeenCalledTimes(1);
-
-      jest.useRealTimers();
-    });
-
-    it('cleans up redirect timer on unmount', async () => {
-      jest.useFakeTimers();
-      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          success: true,
-          guestName: 'Taylor Swift',
-          code: 'LOVER13',
-          data: {
-            guestName: 'Taylor Swift',
-            code: 'LOVER13',
-          },
-        }),
-      } as unknown as Response);
-      globalWithFetch.fetch = fetchMock;
-
-      const { unmount } = render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Taylor Swift' } });
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-      });
-
-      expect(await screen.findByText(/invitation found!/i)).toBeInTheDocument();
-      unmount();
-
-      act(() => {
-        jest.advanceTimersByTime(4000);
-      });
-      expect(mockPush).not.toHaveBeenCalled();
-
-      jest.useRealTimers();
-    });
-
-    it('unmatched searches present clear error notice and direct host contact fallback button', async () => {
-      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-        ok: false,
-        status: 404,
-        json: async () => ({
-          success: false,
-          error: 'No invitation found matching the provided details.',
-        }),
-      } as unknown as Response);
-      globalWithFetch.fetch = fetchMock;
-
-      render(
-        <ThemeProvider config={{ contactEmail: 'hosts@example.com' }}>
-          <GuestLoginPage />
-        </ThemeProvider>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/guest/login',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'love2026' }),
+        })
       );
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Unknown Person' } });
-      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-
-      expect(await screen.findByText(/no invitation found matching/i)).toBeInTheDocument();
-      expect(screen.getByText(/still cannot find your invitation\?/i)).toBeInTheDocument();
-
-      const contactBtn = screen.getByRole('link', { name: /contact host/i });
-      expect(contactBtn).toBeInTheDocument();
-      expect(contactBtn).toHaveAttribute('href', expect.stringContaining('mailto:hosts@example.com'));
-    });
-
-    it('handles rate-limit 429 response and blocks further searches', async () => {
-      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-        ok: false,
-        status: 429,
-        json: async () => ({
-          success: false,
-          error: 'Too many requests, please try again later.',
-        }),
-      } as unknown as Response);
-      globalWithFetch.fetch = fetchMock;
-
-      render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Spam Search' } });
-      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-
-      expect(await screen.findByText(/too many requests, please try again later/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /look up invitation/i })).toBeDisabled();
-      expect(queryInput).toBeDisabled();
-    });
-
-    it('disables passcode form controls and submit button when lookup is active', async () => {
-      let resolveLookup: (() => void) | null = null;
-      const fetchMock = jest.fn<typeof fetch>().mockImplementation((url) => {
-        if (url === '/api/guest/lookup') {
-          return new Promise((resolve) => {
-            resolveLookup = () => resolve({
-              ok: true,
-              status: 200,
-              json: async () => ({ success: true, guestName: 'Alice', code: 'CODE1' }),
-            } as unknown as Response);
-          });
-        }
-        return Promise.reject(new Error('Unknown url'));
-      });
-      globalWithFetch.fetch = fetchMock;
-
-      render(<GuestLoginPage />);
-
-      const passcodeField = screen.getByPlaceholderText('Enter passcode');
-      const loginButton = screen.getByRole('button', { name: /access portal/i });
-      expect(passcodeField).not.toBeDisabled();
-      expect(loginButton).not.toBeDisabled();
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      const queryInput = screen.getByLabelText(/guest name or email/i);
-      fireEvent.change(queryInput, { target: { value: 'Alice Smith' } });
-      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-
-      // Passcode controls must be disabled during active lookup
-      expect(passcodeField).toBeDisabled();
-      expect(loginButton).toBeDisabled();
-
-      // Resolve lookup
-      if (resolveLookup) {
-        await act(async () => {
-          resolveLookup!();
-        });
-      }
-    });
-
-    it('resets lookup errors when switching tabs between instructions and lookup', async () => {
-      render(<GuestLoginPage />);
-
-      fireEvent.click(screen.getByRole('button', { name: /need help finding your passcode\?/i }));
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-
-      // Trigger validation error
-      fireEvent.click(screen.getByRole('button', { name: /look up invitation/i }));
-      expect(await screen.findByText(/please enter your name or email address/i)).toBeInTheDocument();
-
-      // Switch to instructions tab
-      fireEvent.click(screen.getByRole('tab', { name: /instructions/i }));
-      expect(screen.queryByText(/please enter your name or email address/i)).not.toBeInTheDocument();
-
-      // Switch back to lookup tab - error must remain cleared
-      fireEvent.click(screen.getByRole('tab', { name: /look up invitation/i }));
-      expect(screen.queryByText(/please enter your name or email address/i)).not.toBeInTheDocument();
+      expect(mockPush).toHaveBeenCalledWith('/rsvp');
     });
   });
 });
