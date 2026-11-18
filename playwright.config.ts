@@ -8,6 +8,7 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (fs.ex
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
+  outputDir: 'test-results/playwright',
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
