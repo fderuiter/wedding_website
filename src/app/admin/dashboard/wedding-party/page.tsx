@@ -6,9 +6,8 @@ import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { AdminViewState } from '@/components/admin/AdminViewState';
+import { WeddingPartyEditorForm, WeddingPartyCard } from '@/components/admin/WeddingPartyEditor';
 import { Button } from '@/components/ui/Button';
-import { Icon } from '@/components/ui/Icon';
-import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -50,7 +49,7 @@ function WeddingPartyDashboardContent({
       setAnnouncement(
         `Moved ${movedItem.name || 'member'} ${direction} to position ${targetIndex + 1} of ${members.length}`
       );
-    } catch (e: any) {
+    } catch {
       // Error handled by entity orchestration / toast
     }
   };
@@ -63,7 +62,7 @@ function WeddingPartyDashboardContent({
         await create(currentMember);
       }
       setIsEditing(false);
-    } catch (e: any) {
+    } catch {
       // Error handled globally
     }
   };
@@ -76,7 +75,7 @@ function WeddingPartyDashboardContent({
     }
     try {
       await remove(id);
-    } catch (e: any) {
+    } catch {
       // Error handled globally
     }
   };
@@ -88,9 +87,9 @@ function WeddingPartyDashboardContent({
     bio: currentMember.bio || '',
     side: currentMember.side || null,
     photo: {
-      url: currentMember.photoUrl || (currentMember.photo as any)?.url || '',
-      altText: currentMember.photoAlt || (currentMember.photo as any)?.altText || '',
-      isDecorative: currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false,
+      url: currentMember.photoUrl || currentMember.photo?.url || '',
+      altText: currentMember.photoAlt || currentMember.photo?.altText || '',
+      isDecorative: currentMember.photoDecorative || currentMember.photo?.isDecorative || false,
     },
     link: currentMember.link || '',
     order: currentMember.order || 0,
@@ -129,58 +128,13 @@ function WeddingPartyDashboardContent({
         {isEditing && (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">{currentMember.id ? 'Edit' : 'Create'} Member</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <FormGroup>
-                <Label>Name</Label>
-                <Input type="text" value={currentMember.name || ''} onChange={e => setCurrentMember({...currentMember, name: e.target.value})} />
-              </FormGroup>
-              <FormGroup>
-                <Label>Role</Label>
-                <Input type="text" value={currentMember.role || ''} onChange={e => setCurrentMember({...currentMember, role: e.target.value})} />
-              </FormGroup>
-              <FormGroup>
-                <Label>Side</Label>
-                <Select
-                  value={currentMember.side || ''}
-                  onChange={e => setCurrentMember({...currentMember, side: (e.target.value || null) as any})}
-                >
-                  <option value="">None / Joint</option>
-                  <option value="BRIDE">Bride</option>
-                  <option value="GROOM">Groom</option>
-                  <option value="JOINT">Joint</option>
-                </Select>
-              </FormGroup>
-              <FormGroup className="md:col-span-2">
-                <Label>Bio</Label>
-                <Textarea value={currentMember.bio || ''} onChange={e => setCurrentMember({...currentMember, bio: e.target.value})} />
-              </FormGroup>
-              <FormGroup>
-                <Label>Photo URL</Label>
-                <Input type="text" value={currentMember.photoUrl || (currentMember.photo as any)?.url || ''} onChange={e => setCurrentMember({...currentMember, photoUrl: e.target.value})} />
-              </FormGroup>
-              <FormGroup>
-                <Label>Photo Alt Text</Label>
-                <Input type="text" value={currentMember.photoAlt || (currentMember.photo as any)?.altText || ''} onChange={e => setCurrentMember({...currentMember, photoAlt: e.target.value})} disabled={currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative} />
-              </FormGroup>
-              <FormGroup className="md:col-span-2">
-                <div className="flex items-center">
-                  <Checkbox checked={currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false} onChange={e => setCurrentMember({...currentMember, photoDecorative: e.target.checked})} className="mr-2" />
-                  <Label className="mb-0">Decorative (no alt text)</Label>
-                </div>
-              </FormGroup>
-              <FormGroup>
-                <Label>Social Link</Label>
-                <Input type="text" value={currentMember.link || ''} onChange={e => setCurrentMember({...currentMember, link: e.target.value})} />
-              </FormGroup>
-              <FormGroup>
-                <Label>Order</Label>
-                <Input type="number" value={currentMember.order || 0} onChange={e => setCurrentMember({...currentMember, order: parseInt(e.target.value) || 0})} />
-              </FormGroup>
-            </div>
-            <div className="flex gap-4 mt-6">
-              <Button onClick={handleSave} variant="primary">Save</Button>
-              <Button onClick={() => setIsEditing(false)} variant="ghost">Cancel</Button>
-            </div>
+            <WeddingPartyEditorForm
+              values={currentMember}
+              onChange={(updated) => setCurrentMember((prev) => ({ ...prev, ...updated }))}
+              onSubmit={handleSave}
+              onCancel={() => setIsEditing(false)}
+              submitLabel="Save"
+            />
           </div>
         )}
 
@@ -190,66 +144,21 @@ function WeddingPartyDashboardContent({
 
         <div className="grid gap-4 pb-10" ref={containerRef}>
           {members.map((member, index) => (
-            <div key={member.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                {member.photo && <img src={(member.photo as any)?.url || '/images/placeholder.png'} alt={(member.photo as any)?.isDecorative ? '' : ((member.photo as any)?.altText || member.name)} className="w-16 h-16 rounded-full object-cover" />}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-lg">{member.name}</span>
-                    {member.isSample && (
-                      <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700">
-                        Sample
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm font-semibold text-primary">{member.role}</div>
-                  <div className="text-sm mt-1 text-gray-700 dark:text-gray-300">
-                    {member.bio}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Move ${member.name || 'member'} up`}
-                  disabled={index === 0 || member.id.startsWith('temp-')}
-                  onClick={() => handleMove(index, 'up')}
-                >
-                  <Icon name="ArrowUp" className="h-4 w-4 mr-1 sm:inline" /> Move Up
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Move ${member.name || 'member'} down`}
-                  disabled={index === members.length - 1 || member.id.startsWith('temp-')}
-                  onClick={() => handleMove(index, 'down')}
-                >
-                  <Icon name="ArrowDown" className="h-4 w-4 mr-1 sm:inline" /> Move Down
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  aria-label={member.name ? `Edit wedding party member: ${member.name}` : 'Edit unnamed item'}
-                  disabled={member.id.startsWith('temp-')}
-                  onClick={() => { 
-                    setCurrentMember(member); 
-                    setIsEditing(true); 
-                  }}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  aria-label={member.name ? `Delete wedding party member: ${member.name}` : 'Delete unnamed item'}
-                  disabled={member.id.startsWith('temp-')}
-                  onClick={(e) => handleDelete(member.id, e as React.MouseEvent<HTMLButtonElement>)}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
+            <WeddingPartyCard
+              key={member.id}
+              member={member}
+              showSampleBadge
+              unnamedAriaFallback
+              onMove={(direction) => handleMove(index, direction)}
+              disableMoveUp={index === 0}
+              disableMoveDown={index === members.length - 1}
+              className="dark:bg-gray-800 rounded-xl shadow border-primary dark:border-primary"
+              onEdit={(item) => {
+                setCurrentMember(item);
+                setIsEditing(true);
+              }}
+              onDelete={handleDelete}
+            />
           ))}
           {members.length === 0 && <p className="text-gray-500 dark:text-gray-400">No wedding party members found.</p>}
         </div>

@@ -60,7 +60,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   // Determine if this request is submitting site setup configuration
-  const hasConfigPayload = body.brideName !== undefined || body.groomName !== undefined || body.baseUrl !== undefined;
+  const hasConfigPayload =
+    body.brideName !== undefined ||
+    body.groomName !== undefined ||
+    body.partner1Name !== undefined ||
+    body.partner2Name !== undefined ||
+    body.baseUrl !== undefined;
 
   if (!hasConfigPayload) {
     // Auth-only check for step 1
@@ -74,10 +79,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   // Validate setup configuration payload
   const parseResult = UpdateAppConfigSchema.safeParse({
-    brideName: body.brideName ?? '',
-    groomName: body.groomName ?? '',
+    ...(body.partner1Name !== undefined ? { partner1Name: body.partner1Name } : {}),
+    ...(body.partner2Name !== undefined ? { partner2Name: body.partner2Name } : {}),
+    brideName: body.brideName ?? body.partner1Name ?? '',
+    groomName: body.groomName ?? body.partner2Name ?? '',
     weddingDate: body.weddingDate ?? new Date().toISOString(),
     baseUrl: body.baseUrl ?? '',
+    ...(body.contactEmail !== undefined
+      ? { contactEmail: typeof body.contactEmail === 'string' ? body.contactEmail.trim() : body.contactEmail }
+      : {}),
     venueName: fallbackVenueField(body.venueName),
     venueAddress: fallbackVenueField(body.venueAddress),
     venueCity: fallbackVenueField(body.venueCity),
