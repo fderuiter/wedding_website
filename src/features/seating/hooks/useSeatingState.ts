@@ -514,7 +514,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           });
         }
         return true;
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Granular entity rollback: reverts only the affected guest and displaced seat occupant
         dispatch({
           type: 'REVERT_ASSIGN_GUEST',
@@ -525,7 +525,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             displacedGuest,
           },
         });
-        alert(err.message || 'Error assigning guest seat');
+        const message = err instanceof Error && err.message ? err.message : 'Error assigning guest seat';
+        toast?.addToast(message, 'error');
         return false;
       }
     },
@@ -581,12 +582,13 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           });
           return true;
         }
-      } catch (err: any) {
-        alert(err.message || 'Error saving table');
+      } catch (err: unknown) {
+        const message = err instanceof Error && err.message ? err.message : 'Error saving table';
+        toast?.addToast(message, 'error');
         return false;
       }
     },
-    [state.tables.length]
+    [state.tables.length, toast]
   );
 
   const deleteTable = useCallback(
@@ -613,7 +615,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         });
         if (!res.ok) throw new Error('Failed to delete table');
         return true;
-      } catch (err: any) {
+      } catch (err: unknown) {
         dispatch({
           type: 'REVERT_DELETE_TABLE',
           payload: {
@@ -621,11 +623,12 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             affectedGuests,
           },
         });
-        alert(err.message || 'Error deleting table');
+        const message = err instanceof Error && err.message ? err.message : 'Error deleting table';
+        toast?.addToast(message, 'error');
         return false;
       }
     },
-    [state.tables, state.guests]
+    [state.tables, state.guests, toast]
   );
 
   const updateTablePosition = useCallback(
