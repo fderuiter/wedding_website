@@ -1,4 +1,11 @@
-import { AdminEntityBatchUpdateSchema, AdminLoginSchema, ScrapeUrlSchema, safeUrlSchema, sanitizeUrl } from '../validation';
+import {
+  AdminEntityBatchUpdateSchema,
+  AdminLoginSchema,
+  GuestPhotoUploadSchema,
+  ScrapeUrlSchema,
+  safeUrlSchema,
+  sanitizeUrl,
+} from '../validation';
 
 test('AdminLoginSchema is defined', () => {
   expect(AdminLoginSchema).toBeDefined();
@@ -35,8 +42,6 @@ describe('safeUrlSchema', () => {
 });
 
 describe('GuestPhotoUploadSchema', () => {
-  const { GuestPhotoUploadSchema } = require('../validation');
-
   it('validates valid 10MB JPEG, PNG, and WebP files', () => {
     const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
     const validJpeg = { size: 1024, type: 'image/jpeg', name: 'photo.jpg' };

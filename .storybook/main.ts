@@ -1,4 +1,5 @@
 import path from 'path';
+import tailwindcssPostcss from '@tailwindcss/postcss';
 import type { StorybookConfig } from '@storybook/react-webpack5';
 
 const config: StorybookConfig = {
@@ -53,7 +54,7 @@ const config: StorybookConfig = {
           options: {
             postcssOptions: {
               plugins: [
-                require('@tailwindcss/postcss'),
+                tailwindcssPostcss,
               ],
             },
           },
