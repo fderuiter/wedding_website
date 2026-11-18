@@ -12,8 +12,43 @@ import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
 
+const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
+
 function fallbackVenueField(value: unknown): string {
   return typeof value === 'string' && value.trim() ? value.trim() : 'TBD';
+}
+
+function normalizeOptionalName(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isReservedPartnerPair(partner1Name: string, partner2Name: string): boolean {
+  const p1Lower = partner1Name.trim().toLowerCase();
+  const p2Lower = partner2Name.trim().toLowerCase();
+  return (
+    RESERVED_PARTNER_PLACEHOLDERS.has(p1Lower) ||
+    RESERVED_PARTNER_PLACEHOLDERS.has(p2Lower) ||
+    (p1Lower === 'abbigayle' && p2Lower === 'frederick')
+  );
+}
+
+function isReservedBaseUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return true;
+  if (trimmed.toLowerCase().includes('wedding.example')) return true;
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase();
+    return (
+      host === 'wedding.example' ||
+      host.endsWith('.wedding.example') ||
+      host === 'example.com' ||
+      host.endsWith('.example.com')
+    );
+  } catch {
+    return true;
+  }
 }
 
 export const GET = withApiMiddleware(async () => {
@@ -60,7 +95,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   // Determine if this request is submitting site setup configuration
-  const hasConfigPayload = body.brideName !== undefined || body.groomName !== undefined || body.baseUrl !== undefined;
+  const hasConfigPayload =
+    body.partner1Name !== undefined ||
+    body.partner2Name !== undefined ||
+    body.brideName !== undefined ||
+    body.groomName !== undefined ||
+    body.baseUrl !== undefined;
 
   if (!hasConfigPayload) {
     // Auth-only check for step 1
@@ -74,10 +114,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   // Validate setup configuration payload
   const parseResult = UpdateAppConfigSchema.safeParse({
-    brideName: body.brideName ?? '',
-    groomName: body.groomName ?? '',
+    partner1Name: normalizeOptionalName(body.partner1Name),
+    partner2Name: normalizeOptionalName(body.partner2Name),
+    brideName: normalizeOptionalName(body.brideName),
+    groomName: normalizeOptionalName(body.groomName),
     weddingDate: body.weddingDate ?? new Date().toISOString(),
-    baseUrl: body.baseUrl ?? '',
+    baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl.trim() : (body.baseUrl ?? ''),
     venueName: fallbackVenueField(body.venueName),
     venueAddress: fallbackVenueField(body.venueAddress),
     venueCity: fallbackVenueField(body.venueCity),
@@ -123,6 +165,20 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const validData = parseResult.data;
+
+  if (!validData.partner1Name.trim() || !validData.partner2Name.trim()) {
+    throw new ApiError(400, 'Validation Error: Partner names are required to complete setup.');
+  }
+  if (isReservedPartnerPair(validData.partner1Name, validData.partner2Name)) {
+    throw new ApiError(400, 'Validation Error: Partner names cannot use reserved placeholder values.');
+  }
+  if (!validData.baseUrl.trim()) {
+    throw new ApiError(400, 'Validation Error: Site base URL is required to complete setup.');
+  }
+  if (isReservedBaseUrl(validData.baseUrl)) {
+    throw new ApiError(400, 'Validation Error: Site base URL cannot use a reserved placeholder domain.');
+  }
+
   const targetId = 'global';
   const dbPayload = toAppConfigDbPayload(validData);
 

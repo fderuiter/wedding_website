@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/forms';
@@ -39,6 +39,16 @@ function isDefaultUrl(url: string): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+function syncAdminLoginState() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('isAdminLoggedIn', 'true');
+    window.dispatchEvent(new Event('storage'));
+  } catch {
+    // Ignore storage errors in restricted browser environments
   }
 }
 
@@ -111,7 +121,16 @@ function SetupWizardContent() {
   const [layoutCardPadding, setLayoutCardPadding] = useState('2rem');
   const [layoutBorderRadius, setLayoutBorderRadius] = useState('1rem');
   const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
+  const [step2ErrorField, setStep2ErrorField] = useState<'partner1' | 'partner2' | 'siteUrl'>('siteUrl');
+  const partner1InputRef = useRef<HTMLInputElement>(null);
+  const partner2InputRef = useRef<HTMLInputElement>(null);
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      syncAdminLoginState();
+    }
+  }, [isAuthenticated]);
 
   const handleThemeChange = (fields: Record<string, any>) => {
     if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
@@ -136,6 +155,7 @@ function SetupWizardContent() {
         body: JSON.stringify({ password }),
       });
       if (res.ok) {
+        syncAdminLoginState();
         loginSuccess();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -152,9 +172,27 @@ function SetupWizardContent() {
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedPartner1 = partner1Name.trim();
+    const trimmedPartner2 = partner2Name.trim();
+    const trimmedBaseUrl = baseUrl.trim();
+
+    if (!trimmedPartner1 || !trimmedPartner2) {
+      if (!trimmedPartner1) {
+        setStep2ErrorField('partner1');
+        setError('Please enter names for both partners.');
+        partner1InputRef.current?.focus();
+      } else {
+        setStep2ErrorField('partner2');
+        setError('Please enter names for both partners.');
+        partner2InputRef.current?.focus();
+      }
+      return;
+    }
+
     try {
-      new URL(baseUrl);
-      if (isDefaultUrl(baseUrl)) {
+      new URL(trimmedBaseUrl);
+      if (isDefaultUrl(trimmedBaseUrl)) {
+        setStep2ErrorField('siteUrl');
         setError('Please use your own URL, not a sample or default domain.');
         siteUrlInputRef.current?.focus();
         return;
@@ -162,21 +200,27 @@ function SetupWizardContent() {
     } catch (err) {
       // If it's not a valid URL, it will fail backend validation anyway.
       // But we can also set an error here.
+      setStep2ErrorField('siteUrl');
       setError('Please enter a valid URL.');
       siteUrlInputRef.current?.focus();
       return;
     }
 
+    updateDraft({
+      partner1Name: trimmedPartner1,
+      partner2Name: trimmedPartner2,
+      baseUrl: trimmedBaseUrl,
+    });
     startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          partner1Name,
-          partner2Name,
+          partner1Name: trimmedPartner1,
+          partner2Name: trimmedPartner2,
           weddingDate,
-          baseUrl,
+          baseUrl: trimmedBaseUrl,
           venueName: venueName?.trim() || 'TBD',
           venueAddress: 'TBD',
           venueCity: venueCity?.trim() || 'TBD',
@@ -190,8 +234,8 @@ function SetupWizardContent() {
           travelAdvice: 'Travel advice...',
           heroTitle: 'We Tied the Knot!',
           heroSubtitle: 'Thank you for celebrating with us!',
-          seoTitle: `${partner1Name} & ${partner2Name}'s Wedding`,
-          seoDescription: `Join ${partner1Name} and ${partner2Name} for their wedding celebration.`,
+          seoTitle: `${trimmedPartner1} & ${trimmedPartner2}'s Wedding`,
+          seoDescription: `Join ${trimmedPartner1} and ${trimmedPartner2} for their wedding celebration.`,
           themePreset,
           colorPrimary,
           colorSecondary,
@@ -203,13 +247,16 @@ function SetupWizardContent() {
         }),
       });
       if (res.ok) {
+        syncAdminLoginState();
         setStep(3);
       } else {
         const data = await res.json().catch(() => ({}));
+        setStep2ErrorField('siteUrl');
         setError(data.error || 'Failed to save configuration.');
         siteUrlInputRef.current?.focus();
       }
     } catch (err: any) {
+      setStep2ErrorField('siteUrl');
       setError(err.message || 'Failed to save config.');
       siteUrlInputRef.current?.focus();
     }
@@ -278,13 +325,33 @@ function SetupWizardContent() {
             <p className="mb-4 text-gray-700">Let&apos;s start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <FormGroup>
+                <FormGroup state={!!error && step === 2 && step2ErrorField === 'partner1' ? 'error' : 'default'}>
                   <Label htmlFor="partner1">Partner 1</Label>
-                  <Input id="partner1" type="text" value={partner1Name} onChange={(e) => setPartner1Name(e.target.value)} required />
+                  <Input
+                    ref={partner1InputRef}
+                    id="partner1"
+                    type="text"
+                    value={partner1Name}
+                    onChange={(e) => setPartner1Name(e.target.value)}
+                    required
+                  />
+                  {error && step === 2 && step2ErrorField === 'partner1' ? (
+                    <FormMessage>{error}</FormMessage>
+                  ) : null}
                 </FormGroup>
-                <FormGroup>
+                <FormGroup state={!!error && step === 2 && step2ErrorField === 'partner2' ? 'error' : 'default'}>
                   <Label htmlFor="partner2">Partner 2</Label>
-                  <Input id="partner2" type="text" value={partner2Name} onChange={(e) => setPartner2Name(e.target.value)} required />
+                  <Input
+                    ref={partner2InputRef}
+                    id="partner2"
+                    type="text"
+                    value={partner2Name}
+                    onChange={(e) => setPartner2Name(e.target.value)}
+                    required
+                  />
+                  {error && step === 2 && step2ErrorField === 'partner2' ? (
+                    <FormMessage>{error}</FormMessage>
+                  ) : null}
                 </FormGroup>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -297,7 +364,7 @@ function SetupWizardContent() {
                   <Input id="timezone" type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. America/Chicago" required />
                 </FormGroup>
               </div>
-              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2) ? 'error' : 'default'}>
+              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2 && step2ErrorField === 'siteUrl') ? 'error' : 'default'}>
                 <Label htmlFor="siteUrl">Site URL (e.g. https://ourwedding.com)</Label>
                 <Input 
                   ref={siteUrlInputRef}
@@ -309,7 +376,7 @@ function SetupWizardContent() {
                 />
                 {isDefaultUrl(baseUrl) ? (
                   <FormMessage>Please use your own URL.</FormMessage>
-                ) : (error && step === 2) ? (
+                ) : (error && step === 2 && step2ErrorField === 'siteUrl') ? (
                   <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>
@@ -590,6 +657,7 @@ function SetupWizardContent() {
               </Button>
               <Button
                 onClick={() => {
+                  syncAdminLoginState();
                   clearPersistedState();
                   window.location.href = '/admin/dashboard';
                 }}
@@ -603,22 +671,26 @@ function SetupWizardContent() {
         </Container>
       </AccessibleStep>
 
-      <WeddingPartyManagerModal
-        isOpen={activeModal === 'weddingParty'}
-        onClose={closeModal}
-      />
+      {isAuthenticated && (
+        <>
+          <WeddingPartyManagerModal
+            isOpen={activeModal === 'weddingParty'}
+            onClose={closeModal}
+          />
 
-      <AttractionsManagerModal
-        isOpen={activeModal === 'attractions'}
-        onClose={closeModal}
-      />
+          <AttractionsManagerModal
+            isOpen={activeModal === 'attractions'}
+            onClose={closeModal}
+          />
 
-      <CsvImportWizardModal
-        isOpen={activeModal === 'csv'}
-        onClose={closeModal}
-        onImportComplete={handleGuestImportComplete}
-        existingCodes={invitationCodes.map((c) => c.code)}
-      />
+          <CsvImportWizardModal
+            isOpen={activeModal === 'csv'}
+            onClose={closeModal}
+            onImportComplete={handleGuestImportComplete}
+            existingCodes={invitationCodes.map((c) => c.code)}
+          />
+        </>
+      )}
     </main>
   );
 }
