@@ -8,7 +8,7 @@ import type { RegistryItem } from '@/features/registry';
 const mockConfirmPayment = jest.fn();
 
 jest.mock('@stripe/react-stripe-js', () => {
-  const React = require('react');
+  const React = jest.requireActual('react');
   return {
     Elements: ({ children }: any) => React.createElement('div', { 'data-testid': 'stripe-elements-container' }, children),
     PaymentElement: (props: any) =>

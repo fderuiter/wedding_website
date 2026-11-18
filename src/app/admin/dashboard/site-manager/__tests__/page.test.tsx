@@ -2,12 +2,13 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
+import DragDropContainer from '../components/DragDropContainer';
 import SiteManagerPage from '../page';
 
 expect.extend(toHaveNoViolations);
 
 jest.mock('framer-motion', () => {
-  const React = require('react');
+  const React = jest.requireActual('react');
   return {
     __esModule: true,
     motion: new Proxy({}, {
@@ -28,7 +29,6 @@ jest.mock('next/dynamic', () => {
   return {
     __esModule: true,
     default: () => {
-      const DragDropContainer = require('../components/DragDropContainer').default;
       return function MockDynamic(props: any) {
         return <DragDropContainer {...props} />;
       };
@@ -111,7 +111,6 @@ describe('SiteManagerPage and DragDropContainer', () => {
   it('correctly isolates dragHandleProps to the drag handle and activates action buttons without conflicting drag listeners', () => {
     const parentClickSpy = jest.fn();
     const mockToggleVisibility = jest.fn();
-    const DragDropContainer = require('../components/DragDropContainer').default;
 
     render(
       <div onClick={parentClickSpy}>
@@ -145,8 +144,6 @@ describe('SiteManagerPage and DragDropContainer', () => {
   });
 
   it('falls back to feature identifier for drag handle aria-label when title is missing', () => {
-    const DragDropContainer = require('../components/DragDropContainer').default;
-
     render(
       <DragDropContainer
         features={[
@@ -162,8 +159,6 @@ describe('SiteManagerPage and DragDropContainer', () => {
   });
 
   it('passes axe accessibility audit without nested button violations', async () => {
-    const DragDropContainer = require('../components/DragDropContainer').default;
-
     const { container } = render(
       <DragDropContainer
         features={mockFeatures}
@@ -316,7 +311,6 @@ describe('SiteManagerPage and DragDropContainer', () => {
   it('stops propagation on Delete button click to prevent drag triggers', () => {
     const parentClickSpy = jest.fn();
     const mockOnDeleteSection = jest.fn();
-    const DragDropContainer = require('../components/DragDropContainer').default;
 
     const customFeatures = [
       { id: 'custom-1', type: 'custom', title: 'Health & Safety', visible: true },
@@ -380,7 +374,6 @@ describe('SiteManagerPage and DragDropContainer', () => {
   });
 
   it('falls back to feature.id in drag handle aria-label when title is empty', () => {
-    const DragDropContainer = require('../components/DragDropContainer').default;
     const untitledFeatures = [
       { id: 'custom-unnamed', type: 'custom', title: '', visible: true },
     ];
