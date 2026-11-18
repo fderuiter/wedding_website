@@ -447,5 +447,46 @@ describe('Setup API Route (/api/admin/setup)', () => {
         }),
       });
     });
+
+    test('uninitialized setup saves optional contactEmail when provided', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      const mockSavedConfig = {
+        ...uninitializedConfig,
+        brideName: 'Alice',
+        groomName: 'Bob',
+        weddingDate: new Date('2026-06-20T16:00:00.000Z'),
+        baseUrl: 'https://ourwedding.com',
+        contactEmail: 'hosts@ourwedding.com',
+      };
+
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://ourwedding.com',
+          contactEmail: '  hosts@ourwedding.com  ',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
+        where: { id: 'global' },
+        update: expect.objectContaining({
+          contactEmail: 'hosts@ourwedding.com',
+        }),
+        create: expect.objectContaining({
+          id: 'global',
+          contactEmail: 'hosts@ourwedding.com',
+        }),
+      });
+    });
   });
 });
