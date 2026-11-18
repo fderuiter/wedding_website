@@ -89,7 +89,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       test('returns collection with default ordering (createdAt desc)', async () => {
         const mockRecords = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
         mockService.findMany.mockResolvedValue(mockRecords);
-        mockService.count.mockResolvedValue(2);
+        mockService.count.mockResolvedValue(mockRecords.length);
 
         const req = new NextRequest('http://localhost/api/admin/attractions');
         const res = await GET(req, { params: Promise.resolve({ entity: 'attractions' }) });
@@ -105,6 +105,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       });
 
       test('respects custom orderBy and orderDir query parameters', async () => {
+        mockService.count.mockResolvedValue(0);
         mockService.findMany.mockResolvedValue([]);
         const req = new NextRequest('http://localhost/api/admin/attractions?orderBy=name&orderDir=asc');
         

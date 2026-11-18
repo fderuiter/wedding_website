@@ -470,7 +470,8 @@ describe('useSeatingState & seatingReducer', () => {
         await result.current.assignGuestToTable('g-3', 'table-2', 1);
       });
 
-      expect(window.alert).toHaveBeenCalledWith('Failed to assign guest seat');
+      expect(mockAddToast).toHaveBeenCalledWith('Failed to assign guest seat', 'error');
+      expect(window.alert).not.toHaveBeenCalled();
 
       // Guest 3 must be reverted to unassigned
       expect(result.current.unassignedGuests).toHaveLength(1);
@@ -480,6 +481,139 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.tables[0].invitationCodes).toHaveLength(2);
       expect(result.current.tables[0].invitationCodes![0].id).toBe('g-1');
       expect(result.current.tables[0].invitationCodes![1].id).toBe('g-2');
+    });
+
+    it('dispatches error toast instead of window.alert when saveTable fails on create and update', async () => {
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // 1. Fail table creation (POST /api/admin/seating-tables)
+      fetchMock.mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+        } as Response)
+      );
+
+      let createResult = true;
+      await act(async () => {
+        createResult = await result.current.saveTable({ name: 'New Table', capacity: 8 });
+      });
+
+      expect(createResult).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith('Failed to create table', 'error');
+      expect(window.alert).not.toHaveBeenCalled();
+      expect(result.current.tables).toHaveLength(2);
+
+      mockAddToast.mockClear();
+
+      // 2. Fail table update (PUT /api/admin/seating-tables/table-1)
+      fetchMock.mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+        } as Response)
+      );
+
+      let updateResult = true;
+      await act(async () => {
+        updateResult = await result.current.saveTable({ id: 'table-1', name: 'Renamed Table 1' });
+      });
+
+      expect(updateResult).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith('Failed to update table', 'error');
+      expect(window.alert).not.toHaveBeenCalled();
+      expect(result.current.tables.find((t) => t.id === 'table-1')?.name).toBe('Table 1');
+    });
+
+    it('reverts optimistic table deletion and dispatches error toast instead of window.alert when deleteTable fails', async () => {
+      fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockTable1, mockTable2]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                { ...mockGuest1, tableId: 'table-1', seatNumber: 1 },
+                mockGuest2,
+              ]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating-tables/table-1') && init?.method === 'DELETE') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.tables).toHaveLength(2);
+      expect(result.current.tables.find((t) => t.id === 'table-1')?.invitationCodes).toHaveLength(1);
+
+      let deleteResult = true;
+      await act(async () => {
+        deleteResult = await result.current.deleteTable('table-1');
+      });
+
+      expect(deleteResult).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith('Failed to delete table', 'error');
+      expect(window.alert).not.toHaveBeenCalled();
+
+      // Table 1 and its seated guest must be restored after failure
+      const restoredTable1 = result.current.tables.find((t) => t.id === 'table-1');
+      expect(restoredTable1).toBeDefined();
+      expect(restoredTable1?.invitationCodes).toHaveLength(1);
+      expect(restoredTable1?.invitationCodes![0].id).toBe('g-1');
+      expect(result.current.unassignedGuests).toHaveLength(1);
+      expect(result.current.unassignedGuests[0].id).toBe('g-2');
+    });
+
+    it('handles mutation rejections cleanly without throwing when rendered outside ToastProvider', async () => {
+      mockUseToastError = new Error('useToast must be used within a ToastProvider');
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // Fail assignGuestToTable, saveTable, and deleteTable outside ToastProvider
+      fetchMock
+        .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response))
+        .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 } as Response))
+        .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 } as Response));
+
+      let assignOk = true;
+      let saveOk = true;
+      let deleteOk = true;
+
+      await act(async () => {
+        assignOk = await result.current.assignGuestToTable('g-1', 'table-1', 1);
+        saveOk = await result.current.saveTable({ name: 'Table 3' });
+        deleteOk = await result.current.deleteTable('table-1');
+      });
+
+      expect(assignOk).toBe(false);
+      expect(saveOk).toBe(false);
+      expect(deleteOk).toBe(false);
+      expect(mockAddToast).not.toHaveBeenCalled();
+      expect(window.alert).not.toHaveBeenCalled();
     });
 
     it('updates position and rotation optimistically and reverts on network failure', async () => {

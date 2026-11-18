@@ -7,36 +7,33 @@ import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { AttractionEditorForm, AttractionCard } from '@/components/admin/AttractionEditor';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 
-/**
- * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
- *
- * The page enforces an admin check on mount, displays loading/error states, integrates a live preview via AdminPreviewLayout, and provides an editor panel and list view for attractions.
- *
- * @returns The React element for the Attractions admin dashboard page.
- */
-export default function AttractionsDashboardPage() {
+interface AttractionsDashboardContentProps {
+  attractions: AttractionDTO[];
+  fetchAll: () => unknown;
+  create: (_payload: Partial<AttractionDTO>) => Promise<AttractionDTO>;
+  update: (_id: string, _payload: Partial<AttractionDTO>) => Promise<AttractionDTO>;
+  remove: (_id: string) => Promise<unknown>;
+}
+
+function AttractionsDashboardContent({
+  attractions,
+  fetchAll,
+  create,
+  update,
+  remove,
+}: AttractionsDashboardContentProps) {
   const router = useRouter();
   const { confirm } = useToast();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
 
-  const {
-    data: attractions,
-    isLoading,
-    error,
-    fetchAll,
-    create,
-    update,
-    remove
-  } = useAdminAttractions();
-
   const [isEditing, setIsEditing] = useState(false);
   const [currentAttraction, setCurrentAttraction] = useState<Partial<AttractionDTO>>({});
-
 
   const handleSave = async () => {
     try {
@@ -46,7 +43,7 @@ export default function AttractionsDashboardPage() {
         await create(currentAttraction);
       }
       setIsEditing(false);
-    } catch (e: any) {
+    } catch {
       // Error is handled by global MutationCache
     }
   };
@@ -60,22 +57,19 @@ export default function AttractionsDashboardPage() {
     }
     try {
       await remove(id);
-    } catch (e: any) {
+    } catch {
       // Error is handled by global MutationCache
     }
   };
-
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Loading...</p></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
   const draftAttraction = {
     id: currentAttraction.id || 'draft',
     name: currentAttraction.name || '',
     description: currentAttraction.description || '',
     image: {
-      url: currentAttraction.imageUrl || (currentAttraction.image as any)?.url || '',
-      altText: currentAttraction.imageAlt || (currentAttraction.image as any)?.altText || '',
-      isDecorative: currentAttraction.imageDecorative || (currentAttraction.image as any)?.isDecorative || false,
+      url: currentAttraction.imageUrl || currentAttraction.image?.url || '',
+      altText: currentAttraction.imageAlt || currentAttraction.image?.altText || '',
+      isDecorative: currentAttraction.imageDecorative || currentAttraction.image?.isDecorative || false,
     },
     category: currentAttraction.category || 'food',
     website: currentAttraction.website || '',
@@ -150,5 +144,41 @@ export default function AttractionsDashboardPage() {
         </div>
       </div>
     </AdminPreviewLayout>
+  );
+}
+
+/**
+ * Renders the Attractions admin page: an authenticated CRUD interface for creating, editing, previewing, and deleting attractions.
+ *
+ * The page enforces an admin check on mount, displays loading/error states, integrates a live preview via AdminPreviewLayout, and provides an editor panel and list view for attractions.
+ *
+ * @returns The React element for the Attractions admin dashboard page.
+ */
+export default function AttractionsDashboardPage() {
+  const {
+    data: attractions,
+    isLoading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove
+  } = useAdminAttractions();
+
+  return (
+    <AdminViewState
+      isLoading={isLoading}
+      error={error}
+      onRetry={fetchAll}
+      loadingMessage="Loading attractions..."
+    >
+      <AttractionsDashboardContent
+        attractions={attractions}
+        fetchAll={fetchAll}
+        create={create}
+        update={update}
+        remove={remove}
+      />
+    </AdminViewState>
   );
 }

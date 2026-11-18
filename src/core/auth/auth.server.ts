@@ -1,13 +1,10 @@
-import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
 import {
-  base64urlEncode,
-  base64urlDecode,
-  base64urlDecodeToBytes,
-  hmacSha256,
-  timingSafeEqualJS,
-} from '@/utils/crypto';
+  readRequestCookie,
+  signCompactToken,
+  verifyCompactToken,
+} from './tokenCookieHelpers';
 
 export const ADMIN_COOKIE = 'admin_auth';
 
@@ -63,13 +60,11 @@ export interface AdminTokenPayload {
  * @returns A signed token string in the format `base64url(payload).base64url(signature)`.
  */
 export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
-  const data = base64urlEncode(JSON.stringify(payload));
   const secret = await getSecret();
   if (!secret) {
     throw new Error('Admin auth secret is not configured');
   }
-  const signature = await hmacSha256(secret, data);
-  return `${data}.${signature}`;
+  return signCompactToken(payload, secret);
 }
 
 /**
@@ -80,24 +75,13 @@ export async function signAdminToken(payload: AdminTokenPayload): Promise<string
  */
 export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
-  const [data, signature] = token.split('.');
-  if (!data || !signature) return null;
 
   try {
     const secret = await getSecret();
     if (!secret) return null;
-    const expectedSignature = await hmacSha256(secret, data);
 
-    const signatureBuffer = base64urlDecodeToBytes(signature);
-    const expectedSignatureBuffer = base64urlDecodeToBytes(expectedSignature);
-
-    // Prevent timing attacks using timingSafeEqualJS
-    if (!timingSafeEqualJS(signatureBuffer, expectedSignatureBuffer)) {
-      return null;
-    }
-
-    const payload = JSON.parse(base64urlDecode(data)) as AdminTokenPayload;
-    if (!payload || typeof payload !== 'object') {
+    const payload = await verifyCompactToken<AdminTokenPayload>(token, secret);
+    if (!payload) {
       return null;
     }
 
@@ -128,23 +112,7 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
  * @returns `true` if the request/session represents an authenticated admin, `false` otherwise.
  */
 export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
-  let cookieValue: string | undefined;
-
-  if (req) {
-    // API Route (Edge or Node)
-    const rawCookie = req.cookies?.get?.(ADMIN_COOKIE)?.value;
-    if (rawCookie) {
-      cookieValue = rawCookie;
-    } else {
-      const match = req.headers.get('cookie')?.split(';').find(c => c.trim().startsWith(`${ADMIN_COOKIE}=`));
-      cookieValue = match ? match.trim().slice(ADMIN_COOKIE.length + 1) : undefined;
-    }
-  } else {
-    // Server Component (App Router)
-    const cookieStore = await cookies();
-    cookieValue = cookieStore.get(ADMIN_COOKIE)?.value;
-  }
-
+  const cookieValue = await readRequestCookie(ADMIN_COOKIE, req);
   if (!cookieValue) return false;
 
   const payload = await verifyAdminToken(cookieValue);

@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 
 const features = [
   { icon: '📱', label: 'Responsive design for mobile devices' },
@@ -52,15 +53,13 @@ const ProjectInfo = () => {
         <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
           This website provides information about our wedding and demonstrates my full-stack development capabilities. It includes a landing page, a functional registry, and open-source code available for reuse.
         </p>
-        <a
+        <AccessibleExternalLink
           href="https://github.com/fderuiter/wedding_website"
-          target="_blank"
-          rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-6 py-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary text-white font-semibold shadow-lg hover:scale-105 transition-transform"
         >
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
           View on GitHub
-        </a>
+        </AccessibleExternalLink>
       </motion.div>
 
       {/* Features & Tech Stack */}
@@ -121,24 +120,24 @@ const ProjectInfo = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-primary">Deployment</h2>
           <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
-            <li>Deploy using Docker, Node.js hosting providers, or platforms like <a href='https://vercel.com/' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>Vercel</a> or <a href='https://www.netlify.com/' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>Netlify</a>.</li>
+            <li>Deploy using Docker, Node.js hosting providers, or platforms like <AccessibleExternalLink href="https://vercel.com/" className="underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary">Vercel</AccessibleExternalLink> or <AccessibleExternalLink href="https://www.netlify.com/" className="underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary">Netlify</AccessibleExternalLink>.</li>
             <li>Run <code>npm install</code> and <code>npm run dev</code> to start locally.</li>
             <li>Configure environment variables via <code>.env.example</code>.</li>
-            <li>See <a href='https://github.com/fderuiter/wedding_website#readme' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>README</a> for full setup instructions.</li>
+            <li>See <AccessibleExternalLink href="https://github.com/fderuiter/wedding_website#readme" className="underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary">README</AccessibleExternalLink> for full setup instructions.</li>
           </ul>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-secondary">Contributing</h2>
           <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li>The project is open source and available on GitHub.</li>
-            <li>See <a href='https://github.com/fderuiter/wedding_website' className='underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary' target='_blank' rel='noopener noreferrer'>CONTRIBUTING.md</a> for guidelines.</li>
+            <li>See <AccessibleExternalLink href="https://github.com/fderuiter/wedding_website" className="underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary">CONTRIBUTING.md</AccessibleExternalLink> for guidelines.</li>
             <li>Report issues or submit improvements through pull requests.</li>
           </ul>
         </div>
       </div>
 
       <div className="text-center text-gray-500 dark:text-gray-400 mt-16 text-sm">
-        Made with <span className="text-primary">♥</span> &bull; Open Source on <a className="underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary" href="https://github.com/fderuiter/wedding_website" target="_blank" rel="noopener noreferrer">GitHub</a>
+        Made with <span className="text-primary">♥</span> &bull; Open Source on <AccessibleExternalLink className="underline text-primary dark:text-primary hover:text-primary dark:hover:text-primary" href="https://github.com/fderuiter/wedding_website">GitHub</AccessibleExternalLink>
       </div>
     </div>
   );

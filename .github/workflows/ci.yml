@@ -286,6 +286,8 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+    env:
+      GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
     services:
       db:
         image: postgres:15-alpine

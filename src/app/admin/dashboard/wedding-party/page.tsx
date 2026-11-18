@@ -5,34 +5,31 @@ import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { WeddingPartyEditorForm, WeddingPartyCard } from '@/components/admin/WeddingPartyEditor';
 import { Button } from '@/components/ui/Button';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
 
-/**
- * Render the admin CRUD interface and live preview for wedding-party members.
- *
- * Renders an admin page that lists wedding party members, provides create/edit/delete/reorder controls,
- * shows an inline form for drafting a member, and supplies a preview via AdminPreviewLayout.
- *
- * @returns The React element for the Wedding Party admin dashboard and preview.
- */
-export default function WeddingPartyDashboardPage() {
-  
+interface WeddingPartyDashboardContentProps {
+  members: WeddingPartyMemberDTO[];
+  fetchAll: () => unknown;
+  create: (_payload: Partial<WeddingPartyMemberDTO>) => Promise<WeddingPartyMemberDTO>;
+  update: (_id: string, _payload: Partial<WeddingPartyMemberDTO>) => Promise<WeddingPartyMemberDTO>;
+  remove: (_id: string) => Promise<unknown>;
+  reorder: (_orderedIds: string[]) => Promise<unknown>;
+}
+
+function WeddingPartyDashboardContent({
+  members,
+  fetchAll,
+  create,
+  update,
+  remove,
+  reorder,
+}: WeddingPartyDashboardContentProps) {
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   const { confirm } = useToast();
-  
-  const {
-    data: members,
-    isLoading,
-    error,
-    fetchAll,
-    create,
-    update,
-    remove,
-    reorder
-  } = useAdminWeddingParty();
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});
@@ -52,11 +49,10 @@ export default function WeddingPartyDashboardPage() {
       setAnnouncement(
         `Moved ${movedItem.name || 'member'} ${direction} to position ${targetIndex + 1} of ${members.length}`
       );
-    } catch (e: any) {
+    } catch {
       // Error handled by entity orchestration / toast
     }
   };
-
 
   const handleSave = async () => {
     try {
@@ -66,7 +62,7 @@ export default function WeddingPartyDashboardPage() {
         await create(currentMember);
       }
       setIsEditing(false);
-    } catch (e: any) {
+    } catch {
       // Error handled globally
     }
   };
@@ -79,13 +75,10 @@ export default function WeddingPartyDashboardPage() {
     }
     try {
       await remove(id);
-    } catch (e: any) {
+    } catch {
       // Error handled globally
     }
   };
-
-  if (isLoading) return <div className="min-h-[50vh] flex items-center justify-center"><p>Loading...</p></div>;
-  if (error) return <div className="min-h-[50vh] flex items-center justify-center"><p className="text-red-500">Error: {error.message}</p></div>;
 
   const draftMember = {
     id: currentMember.id || 'draft',
@@ -94,9 +87,9 @@ export default function WeddingPartyDashboardPage() {
     bio: currentMember.bio || '',
     side: currentMember.side || null,
     photo: {
-      url: currentMember.photoUrl || (currentMember.photo as any)?.url || '',
-      altText: currentMember.photoAlt || (currentMember.photo as any)?.altText || '',
-      isDecorative: currentMember.photoDecorative || (currentMember.photo as any)?.isDecorative || false,
+      url: currentMember.photoUrl || currentMember.photo?.url || '',
+      altText: currentMember.photoAlt || currentMember.photo?.altText || '',
+      isDecorative: currentMember.photoDecorative || currentMember.photo?.isDecorative || false,
     },
     link: currentMember.link || '',
     order: currentMember.order || 0,
@@ -171,5 +164,44 @@ export default function WeddingPartyDashboardPage() {
         </div>
       </div>
     </AdminPreviewLayout>
+  );
+}
+
+/**
+ * Render the admin CRUD interface and live preview for wedding-party members.
+ *
+ * Renders an admin page that lists wedding party members, provides create/edit/delete/reorder controls,
+ * shows an inline form for drafting a member, and supplies a preview via AdminPreviewLayout.
+ *
+ * @returns The React element for the Wedding Party admin dashboard and preview.
+ */
+export default function WeddingPartyDashboardPage() {
+  const {
+    data: members,
+    isLoading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove,
+    reorder
+  } = useAdminWeddingParty();
+
+  return (
+    <AdminViewState
+      isLoading={isLoading}
+      error={error}
+      onRetry={fetchAll}
+      loadingMessage="Loading wedding party..."
+    >
+      <WeddingPartyDashboardContent
+        members={members}
+        fetchAll={fetchAll}
+        create={create}
+        update={update}
+        remove={remove}
+        reorder={reorder}
+      />
+    </AdminViewState>
   );
 }

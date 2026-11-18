@@ -102,7 +102,7 @@ const eslintConfig = [
         }
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-require-imports': 'warn',
+      '@typescript-eslint/no-require-imports': 'error',
       'prefer-const': 'warn',
       'react/no-unescaped-entities': 'warn',
 
@@ -113,6 +113,12 @@ const eslintConfig = [
         { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
       ]
     }
+  },
+  {
+    files: ['**/*.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   }
 ];
 
