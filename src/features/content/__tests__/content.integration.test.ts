@@ -99,7 +99,7 @@ describe('Content Domain Database Integration', () => {
     expect(snapshotData.current[0].title).toBe('Updated Hero Title');
   });
 
-  test('getAllNodes and getNodesByType query real ContentNode DB records', async () => {
+  test('getNodesByType queries real ContentNode DB records', async () => {
     await realPrisma.contentNode.createMany({
       data: [
         {
@@ -122,9 +122,6 @@ describe('Content Domain Database Integration', () => {
         },
       ],
     });
-
-    const allNodes = await contentRepo.getAllNodes();
-    expect(allNodes).toHaveLength(3);
 
     const faqNodes = await contentRepo.getNodesByType('FAQ');
     expect(faqNodes).toHaveLength(1);

@@ -935,4 +935,159 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(screen.getByLabelText(/Partner 1/i)).toHaveValue('Alex');
     expect(screen.getByLabelText(/Partner 2/i)).toHaveValue('Sam');
   });
+
+  test('saves optional Host Contact Email in Step 2 and preserves it on Back navigation', async () => {
+    let savedPayload: Record<string, unknown> | null = null;
+    let callCount = 0;
+    global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      if (init?.body) {
+        savedPayload = JSON.parse(init.body as string);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    const contactEmailInput = screen.getByLabelText(/Host Contact Email \(Optional\)/i);
+    expect(contactEmailInput).not.toHaveAttribute('required');
+
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+    fireEvent.change(contactEmailInput, { target: { value: '  hosts@alexandsam.com  ' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+    expect(savedPayload).toBeTruthy();
+    expect(savedPayload!.contactEmail).toBe('hosts@alexandsam.com');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+    expect(screen.getByLabelText(/Host Contact Email \(Optional\)/i)).toHaveValue('hosts@alexandsam.com');
+  });
+
+  test('rejects placeholder hosts@wedding.example in Host Contact Email and shifts focus with ARIA attributes', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    const siteUrlInput = screen.getByLabelText(/Site URL/i);
+    fireEvent.change(siteUrlInput, { target: { value: 'https://alexandsam.com' } });
+
+    const contactEmailInput = screen.getByLabelText(/Host Contact Email \(Optional\)/i);
+    fireEvent.change(contactEmailInput, { target: { value: 'hosts@wedding.example' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Please enter a valid contact email address or leave it blank.')
+      ).toBeInTheDocument();
+    });
+
+    expect(document.activeElement).toBe(contactEmailInput);
+    expect(contactEmailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  test('routes backend Step 2 field errors for contactEmail and partner names to the corresponding input with exclusive ARIA state', async () => {
+    let callCount = 0;
+    global.fetch = jest.fn(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      if (callCount === 2) {
+        return Promise.resolve({
+          ok: false,
+          json: () =>
+            Promise.resolve({
+              error: 'Validation Error: contactEmail: Invalid email address format',
+            }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: false,
+        json: () =>
+          Promise.resolve({
+            error: 'Validation Error: Partner names cannot use reserved placeholder values.',
+          }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    const partner1Input = screen.getByLabelText(/Partner 1/i);
+    const partner2Input = screen.getByLabelText(/Partner 2/i);
+    const siteUrlInput = screen.getByLabelText(/Site URL/i);
+    const contactEmailInput = screen.getByLabelText(/Host Contact Email \(Optional\)/i);
+
+    fireEvent.change(partner1Input, { target: { value: 'Partner 1' } });
+    fireEvent.change(partner2Input, { target: { value: 'Partner 2' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(siteUrlInput, { target: { value: 'https://alexandsam.com' } });
+    fireEvent.change(contactEmailInput, { target: { value: 'hosts@alexandsam.com' } });
+
+    // Backend rejects contactEmail -> only contactEmail receives focus and aria-invalid
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText('Validation Error: contactEmail: Invalid email address format')
+      ).toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(contactEmailInput);
+    expect(contactEmailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
+    expect(partner1Input).not.toHaveAttribute('aria-invalid', 'true');
+
+    // Backend rejects partner names -> only partner1 receives focus and aria-invalid
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText('Validation Error: Partner names cannot use reserved placeholder values.')
+      ).toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(partner1Input);
+    expect(partner1Input).toHaveAttribute('aria-invalid', 'true');
+    expect(contactEmailInput).not.toHaveAttribute('aria-invalid', 'true');
+    expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
+  });
 });

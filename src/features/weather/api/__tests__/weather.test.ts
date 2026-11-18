@@ -1,5 +1,5 @@
 import { GET } from '@/app/api/weather/route';
-import { getWeatherForecast } from '@/features/weather';
+import { getWeatherForecast, getLocalizedClimateFallback } from '@/features/weather';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 import { getAppConfig, APP_DEFAULTS } from '@/lib/config';
@@ -268,8 +268,6 @@ describe('Weather API Route', () => {
   });
 
   describe('getLocalizedClimateFallback', () => {
-    const { getLocalizedClimateFallback } = require('@/features/weather/api/weather-proxy');
-
     it('should return tropical matrix estimates for tropical latitudes in July', () => {
       const fallback = getLocalizedClimateFallback(20.0, -157.0, '2027-07-15', '2027-06-29');
       expect(fallback.isLiveForecast).toBe(false);

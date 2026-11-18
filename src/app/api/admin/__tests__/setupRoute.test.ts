@@ -386,6 +386,24 @@ describe('Setup API Route (/api/admin/setup)', () => {
         label: 'reserved example.com baseUrl',
         payload: { partner1Name: 'Alex', partner2Name: 'Sam', baseUrl: 'https://example.com' },
       },
+      {
+        label: 'reserved placeholder contactEmail',
+        payload: {
+          partner1Name: 'Alex',
+          partner2Name: 'Sam',
+          baseUrl: 'https://ourwedding.com',
+          contactEmail: 'hosts@wedding.example',
+        },
+      },
+      {
+        label: 'malformed contactEmail',
+        payload: {
+          partner1Name: 'Alex',
+          partner2Name: 'Sam',
+          baseUrl: 'https://ourwedding.com',
+          contactEmail: 'not-an-email',
+        },
+      },
     ])('rejects invalid setup payload ($label) with 400 before upserting AppConfig', async ({ payload }) => {
       (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
 
@@ -613,6 +631,47 @@ describe('Setup API Route (/api/admin/setup)', () => {
           venueCity: 'TBD',
           venueState: 'TBD',
           venueZip: 'TBD',
+        }),
+      });
+    });
+
+    test('uninitialized setup saves optional contactEmail when provided', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      const mockSavedConfig = {
+        ...uninitializedConfig,
+        brideName: 'Alice',
+        groomName: 'Bob',
+        weddingDate: new Date('2026-06-20T16:00:00.000Z'),
+        baseUrl: 'https://ourwedding.com',
+        contactEmail: 'hosts@ourwedding.com',
+      };
+
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://ourwedding.com',
+          contactEmail: '  hosts@ourwedding.com  ',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
+        where: { id: 'global' },
+        update: expect.objectContaining({
+          contactEmail: 'hosts@ourwedding.com',
+        }),
+        create: expect.objectContaining({
+          id: 'global',
+          contactEmail: 'hosts@ourwedding.com',
         }),
       });
     });

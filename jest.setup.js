@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import moduleModule from 'node:module';
 import { pathToFileURL } from 'node:url';
+import nodeCrypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 // Polyfill Promise.withResolvers for MSW interceptors in Jest VM
 if (typeof Promise.withResolvers !== 'function') {
@@ -53,8 +55,6 @@ moduleModule.createRequire = function (filename) {
 })();
 
 // Provide standard crypto mock in Jest test environments:
-const nodeCrypto = require('node:crypto');
-const { AsyncLocalStorage } = require('node:async_hooks');
 const testRequestStore = new AsyncLocalStorage();
 const globalFallbackStore = new Map();
 globalThis.globalFallbackStore = globalFallbackStore;
@@ -450,7 +450,7 @@ jest.mock('@stripe/stripe-js', () => ({
 }));
 
 jest.mock('@stripe/react-stripe-js', () => {
-  const React = require('react');
+  const React = jest.requireActual('react');
   return {
     Elements: ({ children }) => React.createElement('div', { 'data-testid': 'stripe-elements-container' }, children),
     PaymentElement: (props) =>

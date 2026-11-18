@@ -2,6 +2,9 @@ import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { logisticsService } from '@/features/logistics';
+import { subEventService } from '@/features/sub-events';
+import { ContentNodeSchema, type ContentNodeDTO } from '@/features/content';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { withPageQuery } from '@/lib/query-wrapper';
 
 /**
@@ -83,10 +86,76 @@ export default async function HomePage() {
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
 
-  const contentNodes = await withPageQuery(
+  let contentNodes = await withPageQuery(
     () => logisticsService.getHomepageLogistics(),
     []
   );
+
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
+
+  if (!isStaticExport) {
+    const guestSession = await getGuestInviteSession();
+    if (guestSession?.code) {
+      const guestSchedule = await withPageQuery(
+        () => subEventService.getScheduleForGuest(guestSession.code),
+        []
+      );
+
+      if (guestSchedule.length > 0) {
+        const nonScheduleNodes = contentNodes.filter((n) => {
+          const data = n.data as any;
+          return !(
+            n.type === 'Schedule' ||
+            n.tags.includes('Schedule') ||
+            n.tags.includes('schedule') ||
+            Boolean(data?.startTime)
+          );
+        });
+
+        const authorizedScheduleNodes: ContentNodeDTO[] = guestSchedule.map((evt) => {
+          const startIso =
+            evt.startTime instanceof Date
+              ? evt.startTime.toISOString()
+              : evt.startTime || undefined;
+          const endIso =
+            evt.endTime instanceof Date
+              ? evt.endTime.toISOString()
+              : evt.endTime || undefined;
+          const category =
+            typeof evt.category === 'string' && evt.category.trim()
+              ? evt.category.trim()
+              : undefined;
+
+          return ContentNodeSchema.parse({
+            id: evt.id,
+            type: 'Schedule',
+            tags: ['Homepage', 'Schedule'],
+            data: {
+              title: evt.title,
+              description: evt.description || '',
+              startTime: startIso,
+              endTime: endIso,
+              locationName: evt.locationName || evt.location || '',
+              location: evt.location || '',
+              category,
+              categoryTags: category ? [category] : [],
+              attireRules: evt.attireRules || undefined,
+              isPrivate: Boolean(evt.isPrivate),
+              isReadOnly: Boolean(evt.isReadOnly),
+              userRsvp: evt.userRsvp ?? undefined,
+            },
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          });
+        });
+
+        contentNodes = [...nonScheduleNodes, ...authorizedScheduleNodes];
+      }
+    }
+  }
 
   return <HomePageClient config={publicConfig} contentNodes={contentNodes} />;
 }

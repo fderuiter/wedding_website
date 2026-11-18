@@ -1,4 +1,11 @@
-import { AdminLoginSchema, safeUrlSchema, sanitizeUrl } from '../validation';
+import {
+  AdminEntityBatchUpdateSchema,
+  AdminLoginSchema,
+  GuestPhotoUploadSchema,
+  ScrapeUrlSchema,
+  safeUrlSchema,
+  sanitizeUrl,
+} from '../validation';
 
 test('AdminLoginSchema is defined', () => {
   expect(AdminLoginSchema).toBeDefined();
@@ -35,8 +42,6 @@ describe('safeUrlSchema', () => {
 });
 
 describe('GuestPhotoUploadSchema', () => {
-  const { GuestPhotoUploadSchema } = require('../validation');
-
   it('validates valid 10MB JPEG, PNG, and WebP files', () => {
     const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
     const validJpeg = { size: 1024, type: 'image/jpeg', name: 'photo.jpg' };
@@ -105,6 +110,53 @@ describe('GuestPhotoUploadSchema', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0].message).toBe('File extension does not match the declared MIME type');
+    }
+  });
+});
+
+describe('ScrapeUrlSchema and AdminEntityBatchUpdateSchema', () => {
+  it('returns URL is required for missing or empty URLs and Invalid URL format for malformed URLs', () => {
+    const missing = ScrapeUrlSchema.safeParse({});
+    expect(missing.success).toBe(false);
+    if (!missing.success) {
+      expect(missing.error.issues[0].message).toBe('URL is required');
+    }
+
+    const empty = ScrapeUrlSchema.safeParse({ url: '' });
+    expect(empty.success).toBe(false);
+    if (!empty.success) {
+      expect(empty.error.issues[0].message).toBe('URL is required');
+    }
+
+    const malformed = ScrapeUrlSchema.safeParse({ url: 'not-a-valid-url' });
+    expect(malformed.success).toBe(false);
+    if (!malformed.success) {
+      expect(malformed.error.issues[0].message).toBe('Invalid URL format');
+    }
+
+    const valid = ScrapeUrlSchema.safeParse({ url: 'https://example.com/item' });
+    expect(valid.success).toBe(true);
+
+    const jsonSchema = ScrapeUrlSchema.toJSONSchema({ unrepresentable: 'any' }) as {
+      properties?: { url?: { minLength?: number; format?: string } };
+    };
+    expect(jsonSchema.properties?.url?.minLength).toBe(1);
+    expect(jsonSchema.properties?.url?.format).toBe('uri');
+  });
+
+  it('preserves unknown batch update properties via .loose()', () => {
+    const parsed = AdminEntityBatchUpdateSchema.safeParse({
+      ids: ['id-1', 'id-2'],
+      isVisible: true,
+      category: 'Featured',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).toEqual({
+        ids: ['id-1', 'id-2'],
+        isVisible: true,
+        category: 'Featured',
+      });
     }
   });
 });

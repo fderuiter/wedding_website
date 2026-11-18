@@ -9,7 +9,7 @@ export class BaseService<T extends { id: string }> {
   constructor(
     public repo: BaseRepository<T>,
     public entityType: string,
-    protected schema?: z.ZodSchema<any>
+    protected schema?: z.ZodType<any>
   ) {}
 
   async findMany(args?: any): Promise<T[]> {

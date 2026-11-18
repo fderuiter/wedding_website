@@ -51,6 +51,8 @@ describe('GET /api/schedule/[id]/ics Route', () => {
     expect(icsContent).toContain('TZID:America/New_York');
     expect(icsContent).toContain('BEGIN:VEVENT');
     expect(icsContent).toContain('SUMMARY:Main Ceremony');
+    expect(icsContent).toContain('DTSTART;TZID=America/New_York:20260620T110000');
+    expect(icsContent).toContain('DTEND;TZID=America/New_York:20260620T120000');
     expect(icsContent).toContain('LOCATION:Grace Church');
     expect(icsContent).toContain('Attire: Formal Black Tie Optional');
     expect(icsContent).toContain('END:VEVENT');
@@ -134,5 +136,69 @@ describe('GET /api/schedule/[id]/ics Route', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('content-disposition')).toBe('attachment; filename="The Grand Gala.ics"');
+  });
+
+  it('localizes DTSTART and DTEND across America/Chicago daylight shifts and UTC midnight rollovers', async () => {
+    mockGetGuestInviteSession.mockResolvedValue(null);
+    mockGetAppConfig.mockResolvedValue({
+      timezone: 'America/Chicago',
+    } as any);
+
+    mockGetSubEventByIdForGuest.mockResolvedValueOnce({
+      id: 'se-evening',
+      title: 'Evening Reception',
+      startTime: '2026-09-20T00:00:00.000Z',
+      endTime: '2026-09-20T04:00:00.000Z',
+      isPrivate: false,
+    });
+
+    const summerRes = await GET(
+      new NextRequest('http://localhost:3000/api/schedule/se-evening/ics'),
+      { params: Promise.resolve({ id: 'se-evening' }) }
+    );
+    const summerIcs = await summerRes.text();
+    expect(summerIcs).toContain('TZID:America/Chicago');
+    expect(summerIcs).toContain('DTSTART;TZID=America/Chicago:20260919T190000');
+    expect(summerIcs).toContain('DTEND;TZID=America/Chicago:20260919T230000');
+
+    mockGetSubEventByIdForGuest.mockResolvedValueOnce({
+      id: 'se-winter',
+      title: 'Winter Brunch',
+      startTime: '2026-12-19T17:00:00.000Z',
+      endTime: '2026-12-19T19:00:00.000Z',
+      isPrivate: false,
+    });
+
+    const winterRes = await GET(
+      new NextRequest('http://localhost:3000/api/schedule/se-winter/ics'),
+      { params: Promise.resolve({ id: 'se-winter' }) }
+    );
+    const winterIcs = await winterRes.text();
+    expect(winterIcs).toContain('DTSTART;TZID=America/Chicago:20261219T110000');
+    expect(winterIcs).toContain('DTEND;TZID=America/Chicago:20261219T130000');
+  });
+
+  it('falls back to UTC when app config contains an invalid timezone', async () => {
+    mockGetGuestInviteSession.mockResolvedValue(null);
+    mockGetAppConfig.mockResolvedValue({
+      timezone: 'Invalid/Timezone',
+    } as any);
+    mockGetSubEventByIdForGuest.mockResolvedValue({
+      id: 'se-fallback',
+      title: 'Fallback Ceremony',
+      startTime: '2026-09-19T16:00:00.000Z',
+      endTime: '2026-09-19T17:00:00.000Z',
+      isPrivate: false,
+    });
+
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/schedule/se-fallback/ics'),
+      { params: Promise.resolve({ id: 'se-fallback' }) }
+    );
+    expect(res.status).toBe(200);
+    const icsContent = await res.text();
+    expect(icsContent).toContain('TZID:UTC');
+    expect(icsContent).toContain('DTSTART;TZID=UTC:20260919T160000');
+    expect(icsContent).toContain('DTEND;TZID=UTC:20260919T170000');
   });
 });

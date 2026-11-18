@@ -42,6 +42,8 @@ function isDefaultUrl(url: string): boolean {
   }
 }
 
+type Step2ErrorField = 'partner1' | 'partner2' | 'siteUrl' | 'contactEmail';
+
 function syncAdminLoginState() {
   if (typeof window === 'undefined') return;
   try {
@@ -50,6 +52,27 @@ function syncAdminLoginState() {
   } catch {
     // Ignore storage errors in restricted browser environments
   }
+}
+
+function isValidOptionalContactEmail(email: string): boolean {
+  const trimmed = email.trim();
+  if (!trimmed) return true;
+  if (trimmed.toLowerCase() === 'hosts@wedding.example') return false;
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed);
+}
+
+function resolveStep2BackendErrorField(message: string): Step2ErrorField {
+  const lower = message.toLowerCase();
+  if (lower.includes('contactemail') || lower.includes('contact email')) {
+    return 'contactEmail';
+  }
+  if (lower.includes('partner2name')) {
+    return 'partner2';
+  }
+  if (lower.includes('partner1name') || lower.includes('partner name')) {
+    return 'partner1';
+  }
+  return 'siteUrl';
 }
 
 function SetupWizardContent() {
@@ -76,6 +99,7 @@ function SetupWizardContent() {
     partner2Name,
     weddingDate,
     baseUrl,
+    contactEmail = '',
     venueName,
     venueCity,
     venueState,
@@ -89,6 +113,7 @@ function SetupWizardContent() {
   const setPartner2Name = (val: string) => updateDraft({ partner2Name: val });
   const setWeddingDate = (val: string) => updateDraft({ weddingDate: val });
   const setBaseUrl = (val: string) => updateDraft({ baseUrl: val });
+  const setContactEmail = (val: string) => updateDraft({ contactEmail: val });
   const setVenueName = (val: string) => updateDraft({ venueName: val });
   const setVenueCity = (val: string) => updateDraft({ venueCity: val });
   const setVenueState = (val: string) => updateDraft({ venueState: val });
@@ -121,10 +146,29 @@ function SetupWizardContent() {
   const [layoutCardPadding, setLayoutCardPadding] = useState('2rem');
   const [layoutBorderRadius, setLayoutBorderRadius] = useState('1rem');
   const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
-  const [step2ErrorField, setStep2ErrorField] = useState<'partner1' | 'partner2' | 'siteUrl'>('siteUrl');
+  const [step2ErrorField, setStep2ErrorField] = useState<Step2ErrorField>('siteUrl');
   const partner1InputRef = useRef<HTMLInputElement>(null);
   const partner2InputRef = useRef<HTMLInputElement>(null);
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
+  const contactEmailInputRef = useRef<HTMLInputElement>(null);
+
+  const focusStep2Field = (field: Step2ErrorField) => {
+    switch (field) {
+      case 'partner1':
+        partner1InputRef.current?.focus();
+        break;
+      case 'partner2':
+        partner2InputRef.current?.focus();
+        break;
+      case 'contactEmail':
+        contactEmailInputRef.current?.focus();
+        break;
+      case 'siteUrl':
+      default:
+        siteUrlInputRef.current?.focus();
+        break;
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -206,11 +250,21 @@ function SetupWizardContent() {
       return;
     }
 
+    const trimmedContactEmail = contactEmail.trim();
+    if (!isValidOptionalContactEmail(trimmedContactEmail)) {
+      setStep2ErrorField('contactEmail');
+      setError('Please enter a valid contact email address or leave it blank.');
+      contactEmailInputRef.current?.focus();
+      return;
+    }
+
     updateDraft({
       partner1Name: trimmedPartner1,
       partner2Name: trimmedPartner2,
       baseUrl: trimmedBaseUrl,
+      contactEmail: trimmedContactEmail,
     });
+
     startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
@@ -221,6 +275,7 @@ function SetupWizardContent() {
           partner2Name: trimmedPartner2,
           weddingDate,
           baseUrl: trimmedBaseUrl,
+          contactEmail: trimmedContactEmail,
           venueName: venueName?.trim() || 'TBD',
           venueAddress: 'TBD',
           venueCity: venueCity?.trim() || 'TBD',
@@ -251,9 +306,14 @@ function SetupWizardContent() {
         setStep(3);
       } else {
         const data = await res.json().catch(() => ({}));
-        setStep2ErrorField('siteUrl');
-        setError(data.error || 'Failed to save configuration.');
-        siteUrlInputRef.current?.focus();
+        const errMsg =
+          typeof data.error === 'string' && data.error
+            ? data.error
+            : 'Failed to save configuration.';
+        const targetField = resolveStep2BackendErrorField(errMsg);
+        setStep2ErrorField(targetField);
+        setError(errMsg);
+        focusStep2Field(targetField);
       }
     } catch (err: any) {
       setStep2ErrorField('siteUrl');
@@ -377,6 +437,20 @@ function SetupWizardContent() {
                 {isDefaultUrl(baseUrl) ? (
                   <FormMessage>Please use your own URL.</FormMessage>
                 ) : (error && step === 2 && step2ErrorField === 'siteUrl') ? (
+                  <FormMessage>{error}</FormMessage>
+                ) : null}
+              </FormGroup>
+              <FormGroup state={!!error && step === 2 && step2ErrorField === 'contactEmail' ? 'error' : 'default'}>
+                <Label htmlFor="contactEmail">Host Contact Email (Optional)</Label>
+                <Input
+                  ref={contactEmailInputRef}
+                  id="contactEmail"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="e.g. hosts@ourwedding.com"
+                />
+                {error && step === 2 && step2ErrorField === 'contactEmail' ? (
                   <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>

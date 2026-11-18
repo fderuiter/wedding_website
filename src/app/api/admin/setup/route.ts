@@ -100,7 +100,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     body.partner2Name !== undefined ||
     body.brideName !== undefined ||
     body.groomName !== undefined ||
-    body.baseUrl !== undefined;
+    body.baseUrl !== undefined ||
+    body.contactEmail !== undefined;
 
   if (!hasConfigPayload) {
     // Auth-only check for step 1
@@ -120,6 +121,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     groomName: normalizeOptionalName(body.groomName),
     weddingDate: body.weddingDate ?? new Date().toISOString(),
     baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl.trim() : (body.baseUrl ?? ''),
+    ...(body.contactEmail !== undefined
+      ? { contactEmail: typeof body.contactEmail === 'string' ? body.contactEmail.trim() : body.contactEmail }
+      : {}),
     venueName: fallbackVenueField(body.venueName),
     venueAddress: fallbackVenueField(body.venueAddress),
     venueCity: fallbackVenueField(body.venueCity),
@@ -177,6 +181,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
   if (isReservedBaseUrl(validData.baseUrl)) {
     throw new ApiError(400, 'Validation Error: Site base URL cannot use a reserved placeholder domain.');
+  }
+  if (validData.contactEmail && validData.contactEmail.trim().toLowerCase() === 'hosts@wedding.example') {
+    throw new ApiError(400, 'Validation Error: Contact email cannot use a reserved placeholder address.');
   }
 
   const targetId = 'global';

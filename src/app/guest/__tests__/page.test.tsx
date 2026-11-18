@@ -15,6 +15,7 @@ global.fetch = globalFetch;
 
 describe('GuestAddressPage (/guest)', () => {
   beforeEach(() => {
+    global.fetch = globalFetch;
     globalFetch.mockReset();
     mockAddToast.mockReset();
     window.history.pushState({}, '', '/guest');
@@ -30,9 +31,9 @@ describe('GuestAddressPage (/guest)', () => {
 
     render(<GuestAddressPage />);
 
-    expect(await screen.findByText('Guest Mailing Address Portal')).toBeInTheDocument();
+    expect(await screen.findByText('Guest RSVP & Address Portal')).toBeInTheDocument();
     expect(screen.getByLabelText('Invitation Code')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Access Address Portal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Access Guest Portal/i })).toBeInTheDocument();
   });
 
   it('pre-authenticates session when code query parameter is provided in URL', async () => {
@@ -126,7 +127,7 @@ describe('GuestAddressPage (/guest)', () => {
       }),
     });
 
-    const submitBtn = screen.getByRole('button', { name: /Access Address Portal/i });
+    const submitBtn = screen.getByRole('button', { name: /Access Guest Portal/i });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -343,7 +344,130 @@ describe('GuestAddressPage (/guest)', () => {
     });
 
     // Session is reset, returns to invitation code entry form
-    expect(await screen.findByText('Guest Mailing Address Portal')).toBeInTheDocument();
+    expect(await screen.findByText('Guest RSVP & Address Portal')).toBeInTheDocument();
     expect(screen.getByLabelText('Invitation Code')).toBeInTheDocument();
+  });
+
+  it('renders both personalized RSVP controls (public + authorized private SubEvents) and mailing address form when visiting /guest?code=<valid_code>', async () => {
+    window.history.pushState({}, '', '/guest?code=UNIFIED26');
+
+    globalFetch.mockImplementation(async (input: any) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/registry/validate-code?code=UNIFIED26')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valid: true,
+            guestName: 'Elizabeth Bennet',
+            code: 'UNIFIED26',
+          }),
+        };
+      }
+      if (url.includes('/api/guest/address')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Elizabeth Bennet',
+              code: 'UNIFIED26',
+              addressLine1: 'Longbourn House',
+              city: 'Meryton',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: true,
+            guestName: 'Elizabeth Bennet',
+            plusOneAllocations: 1,
+            data: [
+              {
+                id: 'se-pub',
+                title: 'Wedding Ceremony',
+                startTime: '2026-06-20T15:00:00.000Z',
+                category: 'Ceremony',
+                isPrivate: false,
+                isReadOnly: false,
+                userRsvp: null,
+              },
+              {
+                id: 'se-priv',
+                title: 'Private Rehearsal Dinner',
+                startTime: '2026-06-19T18:00:00.000Z',
+                category: 'Rehearsal',
+                isPrivate: true,
+                isReadOnly: false,
+                userRsvp: { status: 'attending', plusOneCount: 1, dietaryNotes: '' },
+              },
+            ],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true, data: [] }) };
+    });
+
+    render(<GuestAddressPage />);
+
+    const primaryRsvpSection = await screen.findByTestId('guest-rsvp-primary-section');
+    const secondaryAddressSection = screen.getByTestId('guest-address-secondary-section');
+
+    // Verify RSVP section comes before secondary Mailing Address section in DOM order
+    expect(
+      primaryRsvpSection.compareDocumentPosition(secondaryAddressSection) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    expect(await screen.findByText('Wedding Ceremony')).toBeInTheDocument();
+    expect(screen.getByText('Private Rehearsal Dinner')).toBeInTheDocument();
+    expect(screen.getByTestId('rsvp-card-se-pub')).toBeInTheDocument();
+    expect(screen.getByTestId('rsvp-card-se-priv')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Longbourn House')).toBeInTheDocument();
+  });
+
+  it('displays an accessible error alert (role="alert") and recovers via Retry when initial session verification fails with 5xx or network error', async () => {
+    // 1. Initial GET /api/guest/address fails with 503
+    globalFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        success: false,
+        error: 'Gateway unavailable during session check.',
+      }),
+    });
+
+    render(<GuestAddressPage />);
+
+    const alertBanner = await screen.findByRole('alert');
+    expect(alertBanner).toHaveTextContent('Gateway unavailable during session check.');
+
+    const retryBtn = screen.getByRole('button', { name: /^Retry$/i });
+    expect(retryBtn).toBeInTheDocument();
+
+    // 2. Connection restored: GET /api/guest/address returns 200 authenticated
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          guestName: 'Fitzwilliam Darcy',
+          code: 'DARCY26',
+          addressLine1: 'Pemberley',
+        },
+      }),
+    });
+
+    fireEvent.click(retryBtn);
+
+    expect(await screen.findByText('Mailing Address')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Pemberley')).toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { z } from 'zod';
 import { mediaRepository } from '@/features/media';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { MediaCreateSchema } from '@/features/media';
@@ -31,7 +32,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   const parsed = MediaCreateSchema.safeParse(body);
   
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Validation failed', details: parsed.error.format() }, { status: 400 });
+    return NextResponse.json({ error: 'Validation failed', details: z.formatError(parsed.error) }, { status: 400 });
   }
 
   const newMedia = await mediaRepository.createMedia(parsed.data);

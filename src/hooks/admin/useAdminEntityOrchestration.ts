@@ -8,6 +8,8 @@ export interface AdminHookOptions {
 export interface UseAdminEntityOrchestrationOptions {
   queryKey: (string | number)[];
   endpoint: string;
+  fetchEndpoint?: string;
+  invalidateQueryKeys?: (string | number)[][];
   entityName: string;
   options?: AdminHookOptions;
   enabled?: boolean;
@@ -16,6 +18,8 @@ export interface UseAdminEntityOrchestrationOptions {
 export function useAdminEntityOrchestration<T extends { id: string }>({
   queryKey,
   endpoint,
+  fetchEndpoint,
+  invalidateQueryKeys,
   entityName,
   options,
   enabled,
@@ -24,6 +28,8 @@ export function useAdminEntityOrchestration<T extends { id: string }>({
   return useEntityOrchestration<T>({
     queryKey,
     endpoint,
+    fetchEndpoint,
+    invalidateQueryKeys,
     entityName,
     apiClient,
     enabled: resolvedEnabled,
