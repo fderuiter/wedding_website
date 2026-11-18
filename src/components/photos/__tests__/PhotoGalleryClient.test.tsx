@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { PhotoGalleryClient } from '../PhotoGalleryClient';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 const originalFetch = global.fetch;
 
@@ -87,6 +88,109 @@ describe('PhotoGalleryClient', () => {
         method: 'POST',
         body: JSON.stringify({ ids: ['upload-1'] }),
       }));
+    });
+  });
+
+  describe('Photo Export Failure Notifications', () => {
+    let consoleErrorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('displays an error toast and resets export loading state when network request rejects', async () => {
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network offline'));
+
+      render(
+        <ToastProvider>
+          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />
+        </ToastProvider>
+      );
+
+      const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
+      fireEvent.click(exportBtn);
+
+      const alertToast = await screen.findByRole('alert');
+      expect(alertToast).toHaveTextContent(/failed to export photos.*retry/i);
+
+      await waitFor(() => {
+        expect(exportBtn).not.toBeDisabled();
+        expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
+      });
+      expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+    });
+
+    it('displays an error toast and resets export spinner when server returns HTTP 500', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+      } as unknown as Response);
+
+      render(
+        <ToastProvider>
+          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />
+        </ToastProvider>
+      );
+
+      const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
+      fireEvent.click(exportBtn);
+
+      const alertToast = await screen.findByRole('alert');
+      expect(alertToast).toHaveTextContent(/failed to export photos.*retry/i);
+
+      await waitFor(() => {
+        expect(exportBtn).not.toBeDisabled();
+        expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
+      });
+      expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+    });
+
+    it('displays an error toast and preserves selection when exporting selected photos fails', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+      } as unknown as Response);
+
+      render(
+        <ToastProvider>
+          <PhotoGalleryClient initialPhotos={['/curated/photo1.jpg', '/curated/photo2.jpg']} />
+        </ToastProvider>
+      );
+
+      fireEvent.click(screen.getByTestId('photo-checkbox-0'));
+      const exportSelectedBtn = screen.getByTestId('export-selected-photos-btn');
+      fireEvent.click(exportSelectedBtn);
+
+      const alertToast = await screen.findByRole('alert');
+      expect(alertToast).toHaveTextContent(/failed to export photos.*retry/i);
+
+      await waitFor(() => {
+        expect(exportSelectedBtn).not.toBeDisabled();
+        expect(exportSelectedBtn).toHaveTextContent('Export Selected (1) (.zip)');
+      });
+    });
+
+    it('handles export failure safely without crashing when rendered outside ToastProvider', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+      } as unknown as Response);
+
+      render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />);
+
+      const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
+      fireEvent.click(exportBtn);
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/media/export?tag=guest-upload');
+        expect(exportBtn).not.toBeDisabled();
+        expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
+      });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
   });
 

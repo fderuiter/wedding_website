@@ -5,6 +5,7 @@ import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
 import { Button } from '@/components/ui/Button';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 
 export type PhotoCategory = 'curated' | 'guest';
 
@@ -22,6 +23,7 @@ export interface PhotoGalleryClientProps {
 }
 
 export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryClientProps) {
+  const toast = useOptionalToast();
   const [photos, setPhotos] = useState<PhotoItem[]>(() =>
     initialPhotos.map((url, index) => ({
       id: `curated-${index + 1}`,
@@ -170,6 +172,7 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
       URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error('Failed to export photos archive:', err);
+      toast?.addToast('Failed to export photos. Please retry the download.', 'error');
     } finally {
       setIsExporting(false);
     }
