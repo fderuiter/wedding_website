@@ -128,7 +128,7 @@ describe('AdminDashboardPage', () => {
   it('deletes item successfully', async () => {
     let items = [mockItem];
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/registry/items') {
+      if (url === '/api/registry/items?limit=500') {
         return Promise.resolve({ ok: true, json: async () => items });
       }
       if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {
@@ -157,7 +157,7 @@ describe('AdminDashboardPage', () => {
 
   it('shows error and keeps item when delete fails', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
-      if (url === '/api/registry/items') {
+      if (url === '/api/registry/items?limit=500') {
         return Promise.resolve({ ok: true, json: async () => [mockItem] });
       }
       if (url === `/api/registry/items/${mockItem.id}` && options?.method === 'DELETE') {

@@ -18,8 +18,6 @@ import { apiClient } from '@/lib/apiClient';
 
 const FIXED_PRESETS = [50, 100, 250];
 
-const stripePromise = getStripePromise();
-
 /**
  * @interface RegistryItemCardProps
  * @description Defines the props for the RegistryItemCard component.
@@ -43,12 +41,22 @@ interface RegistryItemCardProps {
   titleId?: string;
 }
 
+interface RegistryItemCardInnerProps extends RegistryItemCardProps {
+  stripe?: ReturnType<typeof useStripe>;
+  elements?: ReturnType<typeof useElements>;
+}
+
 /**
- * Inner component that interacts with useStripe and useElements inside the Elements provider.
+ * Inner component that renders gift details and contribution controls.
  */
-const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose, onContribute, titleId }) => {
-  const stripe = useStripe();
-  const elements = useElements();
+const RegistryItemCardInner: React.FC<RegistryItemCardInnerProps> = ({
+  item,
+  onClose,
+  onContribute,
+  titleId,
+  stripe = null,
+  elements = null,
+}) => {
 
   const {
     isValidatingCode,
@@ -715,10 +723,20 @@ const RegistryItemCardInner: React.FC<RegistryItemCardProps> = ({ item, onClose,
 };
 
 /**
+ * Wrapper rendered strictly inside <Elements> so Stripe context hooks are only called for fund items.
+ */
+const RegistryFundItemCard: React.FC<RegistryItemCardProps> = (props) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  return <RegistryItemCardInner {...props} stripe={stripe} elements={elements} />;
+};
+
+/**
  * Root RegistryItemCard component wrapped with Stripe Elements provider for funds.
  */
 const RegistryItemCard: React.FC<RegistryItemCardProps> = (props) => {
   const isFund = props.item.itemType === 'CASH_FUND' || props.item.itemType === 'EXPERIENCE_FUND';
+  const stripePromise = useMemo(() => (isFund ? getStripePromise() : null), [isFund]);
   const remainingAmount = props.item.price - props.item.amountContributed;
   const initialAmount = props.item.isGroupGift
     ? Math.min(100, remainingAmount > 0 ? remainingAmount : props.item.price)
@@ -740,7 +758,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = (props) => {
 
   return (
     <Elements stripe={stripePromise} options={elementsOptions}>
-      <RegistryItemCardInner {...props} />
+      <RegistryFundItemCard {...props} />
     </Elements>
   );
 };

@@ -7,19 +7,37 @@ const EMPTY_ARRAY: readonly any[] = Object.freeze([]);
 interface UseEntityOrchestrationOptions {
   queryKey: (string | number)[];
   endpoint: string;
+  fetchEndpoint?: string;
+  invalidateQueryKeys?: (string | number)[][];
   entityName: string;
   apiClient: ApiClient;
   enabled?: boolean;
 }
 
+function unwrapEntityResponse<T>(res: unknown): T {
+  if (res && typeof res === 'object' && 'item' in res && (res as { item?: unknown }).item) {
+    return (res as { item: T }).item;
+  }
+  return res as T;
+}
+
 export function useEntityOrchestration<T extends { id: string }>({
   queryKey,
   endpoint,
+  fetchEndpoint,
+  invalidateQueryKeys,
   entityName,
   apiClient,
   enabled,
 }: UseEntityOrchestrationOptions) {
   const queryClient = useQueryClient();
+
+  const invalidateRelatedQueries = () => {
+    if (!invalidateQueryKeys) return;
+    for (const key of invalidateQueryKeys) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
 
   const {
     data = EMPTY_ARRAY as unknown as T[],
@@ -30,7 +48,7 @@ export function useEntityOrchestration<T extends { id: string }>({
   } = useQuery<T[], Error>({
     queryKey,
     queryFn: async () => {
-      const res = await apiClient.get<any>(endpoint);
+      const res = await apiClient.get<any>(fetchEndpoint ?? endpoint);
       if (res && typeof res === 'object' && Array.isArray(res.items)) {
         return res.items as T[];
       }
@@ -40,7 +58,10 @@ export function useEntityOrchestration<T extends { id: string }>({
   });
 
   const { mutateAsync: createItem } = useMutation({
-    mutationFn: async (payload: Partial<T>) => apiClient.post<T>(endpoint, payload),
+    mutationFn: async (payload: Partial<T>) => {
+      const res = await apiClient.post<T>(endpoint, payload);
+      return unwrapEntityResponse<T>(res);
+    },
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
@@ -63,6 +84,7 @@ export function useEntityOrchestration<T extends { id: string }>({
         }
         return [newItem, ...old];
       });
+      invalidateRelatedQueries();
     },
     meta: {
       successMessage: `Created ${entityName} successfully.`,
@@ -70,7 +92,10 @@ export function useEntityOrchestration<T extends { id: string }>({
   });
 
   const { mutateAsync: updateItem } = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => apiClient.put<T>(`${endpoint}/${id}`, payload),
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<T> }) => {
+      const res = await apiClient.put<T>(`${endpoint}/${id}`, payload);
+      return unwrapEntityResponse<T>(res);
+    },
     onMutate: async ({ id, payload }) => {
       await queryClient.cancelQueries({ queryKey });
       const previousData = queryClient.getQueryData<T[]>(queryKey);
@@ -90,6 +115,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       queryClient.setQueryData<T[]>(queryKey, old =>
         old?.map(item => item.id === updatedItem.id ? updatedItem : item)
       );
+      invalidateRelatedQueries();
     },
     meta: {
       successMessage: `Updated ${entityName} successfully.`,
@@ -105,6 +131,9 @@ export function useEntityOrchestration<T extends { id: string }>({
         queryClient.setQueryData<T[]>(queryKey, old => old?.filter(item => item.id !== id));
       }
       return { previousData };
+    },
+    onSuccess: () => {
+      invalidateRelatedQueries();
     },
     onError: (_err, _variables, context) => {
       if (context?.previousData) {
@@ -130,6 +159,7 @@ export function useEntityOrchestration<T extends { id: string }>({
     onSuccess: (_data, ids) => {
       const idSet = new Set(ids);
       queryClient.setQueryData<T[]>(queryKey, old => old?.filter(item => !idSet.has(item.id)));
+      invalidateRelatedQueries();
     },
     onError: (_err, _variables, context) => {
       if (context?.previousData) {
@@ -160,6 +190,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       queryClient.setQueryData<T[]>(queryKey, old =>
         old?.map(item => idSet.has(item.id) ? { ...item, ...variables.payload } : item)
       );
+      invalidateRelatedQueries();
     },
     onError: (_err, _variables, context) => {
       if (context?.previousData) {
@@ -190,6 +221,9 @@ export function useEntityOrchestration<T extends { id: string }>({
         queryClient.setQueryData<T[]>(queryKey, reordered);
       }
       return { previousData };
+    },
+    onSuccess: () => {
+      invalidateRelatedQueries();
     },
     onError: (_err, _variables, context) => {
       if (context?.previousData) {

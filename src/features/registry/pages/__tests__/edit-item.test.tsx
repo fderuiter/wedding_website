@@ -4,6 +4,7 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import EditRegistryItemPage from '../edit-item';
 
 const mockPush = jest.fn();
+let mockParamId = '1';
 const mockItem = {
   id: '1',
   name: 'Mock Item',
@@ -18,15 +19,17 @@ const mockItem = {
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
-  useParams: () => ({ id: mockItem.id }),
+  useParams: () => ({ id: mockParamId }),
 }));
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-});
+const createQueryClient = () =>
+  new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
 
 describe('EditRegistryItemPage', () => {
   beforeEach(() => {
+    mockParamId = mockItem.id;
     (global.fetch as jest.Mock) = jest.fn((url: RequestInfo) => {
       if (typeof url === 'string') {
         if (url.includes('/api/admin/me')) {
@@ -52,7 +55,7 @@ describe('EditRegistryItemPage', () => {
 
   it('prefills form fields with fetched data', async () => {
     render(
-      <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={createQueryClient()}>
         <ToastProvider>
           <EditRegistryItemPage />
         </ToastProvider>
@@ -63,5 +66,65 @@ describe('EditRegistryItemPage', () => {
     expect(screen.getByLabelText(/price/i)).toHaveValue(mockItem.price);
     expect(screen.getByLabelText(/quantity/i)).toHaveValue(mockItem.quantity);
     expect(screen.getByLabelText(/category/i)).toHaveValue(mockItem.category);
+  });
+
+  it('fetches gift past position 20 directly via /api/registry/items/:id single-item endpoint', async () => {
+    mockParamId = 'gift-35';
+    const gift35 = {
+      ...mockItem,
+      id: 'gift-35',
+      name: 'Cast Iron Dutch Oven',
+      price: 380,
+      category: 'Kitchen',
+    };
+
+    const requestedUrls: string[] = [];
+    (global.fetch as jest.Mock) = jest.fn((url: RequestInfo) => {
+      const urlStr = String(url);
+      requestedUrls.push(urlStr);
+      if (urlStr === '/api/registry/items/gift-35') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: gift35 }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${urlStr}`));
+    }) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByLabelText(/item name/i)).toHaveValue('Cast Iron Dutch Oven');
+    expect(screen.getByLabelText(/price/i)).toHaveValue(380);
+    expect(requestedUrls).toEqual(['/api/registry/items/gift-35']);
+  });
+
+  it('displays error message instead of hanging on loading when target item is not found', async () => {
+    mockParamId = 'missing-gift-999';
+    (global.fetch as jest.Mock) = jest.fn((url: RequestInfo) => {
+      if (String(url) === '/api/registry/items/missing-gift-999') {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({ success: false, error: 'Item not found' }),
+        });
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    }) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText(/Error: Item not found/i)).toBeInTheDocument();
   });
 });

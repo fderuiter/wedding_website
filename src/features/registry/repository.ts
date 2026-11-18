@@ -29,7 +29,7 @@ class RegistryRepository implements IRegistryRepository {
     } = options;
 
     const normalizedPage = Math.max(1, Math.floor(page || 1));
-    const normalizedLimit = Math.min(100, Math.max(1, Math.floor(limit || 20)));
+    const normalizedLimit = Math.min(500, Math.max(1, Math.floor(limit || 20)));
     const skip = (normalizedPage - 1) * normalizedLimit;
     const take = normalizedLimit;
 
