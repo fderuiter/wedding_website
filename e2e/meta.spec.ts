@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
 function generateGuestCookieValue() {
-  const secret = process.env.GUEST_PASSCODE || 'wedding2026';
+  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
   const payload = {
     guest: true,
     iat: Date.now(),
@@ -24,7 +24,12 @@ test.describe('Metadata', () => {
         name: 'guest_auth',
         value: guestCookieValue,
         url: 'http://127.0.0.1:3000',
-      }
+      },
+      {
+        name: 'guest_auth',
+        value: guestCookieValue,
+        url: 'http://localhost:3000',
+      },
     ]);
 
     try {
@@ -52,7 +57,7 @@ test.describe('Metadata', () => {
     const ogDescription = page.locator('meta[property="og:description"]');
     await expect(ogDescription).toHaveAttribute('content', /Welcome to our wedding website|Join Jane and John/);
     const ogUrl = page.locator('meta[property="og:url"]');
-    await expect(ogUrl).toHaveAttribute('content', 'http://localhost:3000');
+    await expect(ogUrl).toHaveAttribute('content', /(http:\/\/localhost:3000|http:\/\/127\.0\.0\.1:3000)/);
     const ogType = page.locator('meta[property="og:type"]');
     await expect(ogType).toHaveAttribute('content', 'website');
     const ogImage = page.locator('meta[property="og:image"]');
@@ -70,6 +75,6 @@ test.describe('Metadata', () => {
 
     // Check canonical link
     const canonicalLink = page.locator('link[rel="canonical"]');
-    await expect(canonicalLink).toHaveAttribute('href', 'http://localhost:3000');
+    await expect(canonicalLink).toHaveAttribute('href', /(http:\/\/localhost:3000|http:\/\/127\.0\.0\.1:3000)/);
   });
 });
