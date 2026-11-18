@@ -319,14 +319,19 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
 
 ### Migration Backwards Compatibility Linter
 
-Automated linter checks (`npm run lint:migrations`) run during local builds, in PR CI workflows (`ci.yml`), and during deployment (`db-migrate.yml`). The linter scans SQL migrations in `prisma/migrations/` for destructive DDL operations.
+Automated linter checks (`npm run lint:migrations`) run during pre-commit hooks, local builds, PR CI workflows (`ci.yml`), migration executions (`db-migrate.yml`), releases (`deploy.yml`), and rollbacks (`rollback.yml`). The linter (`scripts/verify-migration-compatibility.ts`) tokenizes SQL migrations in `prisma/migrations/` into semicolon-delimited statements—including multi-line statements, comma-separated `ALTER TABLE` clauses, and inner SQL inside PL/pgSQL `DO $$ ... $$` blocks—and flags destructive or N-1 incompatible DDL operations:
 
-If a destructive migration is intentionally required (e.g., during a contract cleanup phase after code removal), include an inline bypass annotation:
+- **Destructive DDL**: `DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `RENAME TO`, `DROP CONSTRAINT`, `DROP TYPE`, and `TRUNCATE`
+- **Breaking Column Constraints & Type Mutations**: `ADD COLUMN` with `NOT NULL` lacking `DEFAULT`, `SET NOT NULL`, and `SET DATA TYPE`
+
+If a breaking change is intentionally required (e.g., during a contract cleanup phase after code removal), annotate that specific statement with `-- allow-destructive: <reason>` including a mandatory non-empty `<reason>`:
 
 ```sql
 -- allow-destructive: Contract phase dropping deprecated legacy_column after code migration
 ALTER TABLE "User" DROP COLUMN "legacy_column";
 ```
+
+Each `-- allow-destructive: <reason>` directive scopes strictly to the single statement that immediately follows or contains it (or an outer `DO` block / individual inner statement inside a `DO` block) and resets after that statement. Annotations missing `<reason>` text, or appearing inside block comments (`/* ... */`) or string literals, are ignored.
 
 ### Backup & Restore Guidelines
 Before applying schema migrations to production, always perform a database snapshot or logical backup:
@@ -350,8 +355,8 @@ Before applying schema migrations to production, always perform a database snaps
 To maintain zero database downtime and support continuous delivery, all database mutations must strictly adhere to the three-phase **Expand-Migrate-Contract** pattern across releases:
 
 1. **Phase 1: Expand**
-   - **Permitted Changes**: Add new tables, nullable columns (`NULL`), or optional fields. Non-null columns (`NOT NULL`) are permitted **ONLY** when accompanied by an explicit `DEFAULT` value (e.g., `ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'GUEST';`).
-   - **Prohibitions**: Never drop tables, drop columns, rename columns, or add `NOT NULL` columns without default values.
+   - **Permitted Changes**: Add new tables, nullable columns (`NULL`), or optional fields, or drop `NOT NULL` constraints (`DROP NOT NULL`). Non-null columns (`NOT NULL`) on existing tables are permitted **ONLY** when accompanied by an explicit `DEFAULT` value (e.g., `ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'GUEST';`).
+   - **Prohibitions**: Never drop tables (`DROP TABLE`), drop columns (`DROP COLUMN`), drop constraints (`DROP CONSTRAINT`), drop types (`DROP TYPE`), truncate tables (`TRUNCATE`), rename tables (`RENAME TO`) or columns (`RENAME COLUMN`), alter column types (`SET DATA TYPE`), tighten nullability (`SET NOT NULL`), or add `NOT NULL` columns without default values.
    - **Automated Pre-Deployment Verification**: Preflight CI/CD linting (`npm run lint:migrations` executing `scripts/verify-migration-compatibility.ts`) inspects every SQL migration in `prisma/migrations/`. Any non-backwards-compatible statement immediately blocks the pipeline in PR checks (`ci.yml`), migration executions (`db-migrate.yml`), and deployment pipelines (`deploy.yml`).
 
 2. **Phase 2: Migrate**
@@ -361,7 +366,7 @@ To maintain zero database downtime and support continuous delivery, all database
 
 3. **Phase 3: Contract**
    - **Multi-Release Coordination**: Only after all running application instances have migrated to the new schema and no active container version queries the obsolete columns or tables, deploy a subsequent release that safely removes the deprecated structures.
-   - **Explicit Bypass Annotation**: Destructive DDL operations (`DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `DROP CONSTRAINT`) in this phase require explicit multi-release phased contract cleanup annotations (`-- allow-destructive: <reason>`) above or on the statement to pass the migration compatibility linter.
+   - **Explicit Statement-Scoped Bypass Annotation**: Breaking DDL operations (`DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `RENAME TO`, `DROP CONSTRAINT`, `DROP TYPE`, `TRUNCATE`, `SET NOT NULL`, `SET DATA TYPE`, and `ADD COLUMN ... NOT NULL` without `DEFAULT`) in this phase require an explicit statement-scoped `-- allow-destructive: <reason>` annotation with a non-empty `<reason>` above or on each breaking statement to pass the migration compatibility linter.
 
 ### N-1 Application Container Compatibility Requirements
 Continuous deployment and automated rollback architectures depend on **N-1 compatibility**:
