@@ -42,6 +42,13 @@ function isDefaultUrl(url: string): boolean {
   }
 }
 
+function isValidOptionalContactEmail(email: string): boolean {
+  const trimmed = email.trim();
+  if (!trimmed) return true;
+  if (trimmed.toLowerCase() === 'hosts@wedding.example') return false;
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed);
+}
+
 function SetupWizardContent() {
   const {
     state,
@@ -66,6 +73,7 @@ function SetupWizardContent() {
     partner2Name,
     weddingDate,
     baseUrl,
+    contactEmail = '',
     venueName,
     venueCity,
     venueState,
@@ -79,6 +87,7 @@ function SetupWizardContent() {
   const setPartner2Name = (val: string) => updateDraft({ partner2Name: val });
   const setWeddingDate = (val: string) => updateDraft({ weddingDate: val });
   const setBaseUrl = (val: string) => updateDraft({ baseUrl: val });
+  const setContactEmail = (val: string) => updateDraft({ contactEmail: val });
   const setVenueName = (val: string) => updateDraft({ venueName: val });
   const setVenueCity = (val: string) => updateDraft({ venueCity: val });
   const setVenueState = (val: string) => updateDraft({ venueState: val });
@@ -112,6 +121,7 @@ function SetupWizardContent() {
   const [layoutBorderRadius, setLayoutBorderRadius] = useState('1rem');
   const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
+  const contactEmailInputRef = useRef<HTMLInputElement>(null);
 
   const handleThemeChange = (fields: Record<string, any>) => {
     if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
@@ -167,6 +177,13 @@ function SetupWizardContent() {
       return;
     }
 
+    const trimmedContactEmail = contactEmail.trim();
+    if (!isValidOptionalContactEmail(trimmedContactEmail)) {
+      setError('Please enter a valid contact email address or leave it blank.');
+      contactEmailInputRef.current?.focus();
+      return;
+    }
+
     startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
@@ -177,6 +194,7 @@ function SetupWizardContent() {
           partner2Name,
           weddingDate,
           baseUrl,
+          contactEmail: trimmedContactEmail,
           venueName: venueName?.trim() || 'TBD',
           venueAddress: 'TBD',
           venueCity: venueCity?.trim() || 'TBD',
@@ -206,8 +224,13 @@ function SetupWizardContent() {
         setStep(3);
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Failed to save configuration.');
-        siteUrlInputRef.current?.focus();
+        const errMsg = data.error || 'Failed to save configuration.';
+        setError(errMsg);
+        if (typeof errMsg === 'string' && errMsg.toLowerCase().includes('contactemail')) {
+          contactEmailInputRef.current?.focus();
+        } else {
+          siteUrlInputRef.current?.focus();
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Failed to save config.');
@@ -240,6 +263,12 @@ function SetupWizardContent() {
       setError(err.message || 'Error configuring sample data.');
     }
   };
+
+  const isContactEmailError = Boolean(
+    error &&
+      step === 2 &&
+      (error.toLowerCase().includes('contact email') || error.toLowerCase().includes('contactemail'))
+  );
 
   return (
     <main id="main-content" tabIndex={-1} className="min-h-screen py-12 flex flex-col justify-center items-center">
@@ -297,7 +326,7 @@ function SetupWizardContent() {
                   <Input id="timezone" type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. America/Chicago" required />
                 </FormGroup>
               </div>
-              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2) ? 'error' : 'default'}>
+              <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2 && !isContactEmailError) ? 'error' : 'default'}>
                 <Label htmlFor="siteUrl">Site URL (e.g. https://ourwedding.com)</Label>
                 <Input 
                   ref={siteUrlInputRef}
@@ -309,7 +338,21 @@ function SetupWizardContent() {
                 />
                 {isDefaultUrl(baseUrl) ? (
                   <FormMessage>Please use your own URL.</FormMessage>
-                ) : (error && step === 2) ? (
+                ) : (error && step === 2 && !isContactEmailError) ? (
+                  <FormMessage>{error}</FormMessage>
+                ) : null}
+              </FormGroup>
+              <FormGroup state={isContactEmailError ? 'error' : 'default'}>
+                <Label htmlFor="contactEmail">Host Contact Email (Optional)</Label>
+                <Input
+                  ref={contactEmailInputRef}
+                  id="contactEmail"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="e.g. hosts@ourwedding.com"
+                />
+                {isContactEmailError && error ? (
                   <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>
