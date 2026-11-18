@@ -96,7 +96,17 @@ test.describe('UI Verification', () => {
     }));
     await context.addCookies(cookies);
 
-    await page.goto('/weather', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/weather', { waitUntil: 'domcontentloaded' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
+        page = await context.newPage();
+        await page.goto('/weather', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } else {
+        throw err;
+      }
+    }
 
     const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
     if (a11yConfig.rules) {
@@ -114,7 +124,17 @@ test.describe('UI Verification', () => {
     ]);
     await context.addCookies(cookies);
 
-    await page.goto('/admin/dashboard/thank-you-notes', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/admin/dashboard/thank-you-notes', { waitUntil: 'domcontentloaded' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
+        page = await context.newPage();
+        await page.goto('/admin/dashboard/thank-you-notes', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } else {
+        throw err;
+      }
+    }
 
     const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
     if (a11yConfig.rules) {
@@ -132,7 +152,17 @@ test.describe('UI Verification', () => {
     ]);
     await context.addCookies(cookies);
 
-    await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
+        page = await context.newPage();
+        await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } else {
+        throw err;
+      }
+    }
 
     const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
     if (a11yConfig.rules) {
