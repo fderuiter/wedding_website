@@ -210,24 +210,16 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
     className: `${cardClasses} h-full`,
     style: { cursor: isClickable ? 'pointer' : 'default', minHeight: 'calc(340px * var(--scale-factor, 1))' },
     'data-testid': 'registry-card',
-    'aria-label': `${item.name}, ${formatCurrency(item.price)}${
-      isClaimed
-        ? ', Claimed'
-        : item.isGroupGift
-          ? `, ${fundingPercentage}% funded`
-          : ''
-    }`,
     tabIndex: isClickable ? -1 : undefined,
-    role: isClickable ? 'region' : undefined,
   };
 
   if (isAdmin) {
-    return <div {...commonProps}>{innerContent}</div>;
+    return <article {...commonProps}>{innerContent}</article>;
   }
 
   return (
     <Interactive3DCard
-      as="div"
+      as="article"
       {...commonProps}
       onClick={isClickable ? () => onClick(item) : undefined}
     >

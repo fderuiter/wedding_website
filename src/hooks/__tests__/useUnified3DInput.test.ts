@@ -200,4 +200,31 @@ describe('useUnified3DInput', () => {
 
     expect(getBoundingClientRectSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('skips aria-describedby instructions and live regions when accessibility options are omitted', () => {
+    const { result } = renderHook(() =>
+      useUnified3DInput({
+        domRef: { current: mockElement },
+      })
+    );
+
+    expect(result.current.AccessibleElements).toBeNull();
+    expect((result.current.mixedHandlers as Record<string, unknown>)['aria-describedby']).toBeUndefined();
+    expect(result.current.getInteractiveProps({ id: 'card' })).toEqual({ id: 'card' });
+  });
+
+  it('includes aria-describedby instructions and AccessibleElements when accessibility options are provided', () => {
+    const { result } = renderHook(() =>
+      useUnified3DInput({
+        domRef: { current: mockElement },
+        accessibility: {
+          instructions: 'Use arrow keys to move the heart.',
+          labels: { up: 'Moved up' },
+        },
+      })
+    );
+
+    expect(result.current.AccessibleElements).not.toBeNull();
+    expect((result.current.mixedHandlers as Record<string, unknown>)['aria-describedby']).toMatch(/^3d-instructions-/);
+  });
 });

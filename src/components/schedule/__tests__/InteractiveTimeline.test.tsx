@@ -668,6 +668,11 @@ describe('InteractiveTimeline Component', () => {
       const errorAlert = await within(card).findByRole('alert');
       expect(errorAlert).toHaveTextContent('Plus-one count (3) exceeds your allocated limit of 2.');
       expect(plusOneInput.value).toBe('3');
+
+      // Selecting Declined resets plus-one count to 0 and disables the input
+      fireEvent.click(within(card).getByRole('button', { name: /^declined$/i }));
+      expect(plusOneInput).toBeDisabled();
+      expect(plusOneInput.value).toBe('0');
     });
   });
 });

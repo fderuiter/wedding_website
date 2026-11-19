@@ -5,6 +5,7 @@ import type { ContentNodeDTO } from '@/features/content';
 import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
+import { MAX_RSVP_PLUS_ONE_COUNT } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 
 interface CategoryColorStyle {
@@ -662,10 +663,13 @@ export default function InteractiveTimeline({
                       const itemState = rsvpManager.getRsvpState(event.id);
                       const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
                       const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
+                      const isDeclined = itemState.current.status === 'declined';
+                      const isPlusOneDisabled =
+                        isControlDisabled || isZeroPlusOneAllowance || isDeclined;
                       const plusOneMaxAttr =
                         typeof effectiveMaxPlusOnes === 'number'
-                          ? Math.max(0, effectiveMaxPlusOnes)
-                          : 10;
+                          ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, effectiveMaxPlusOnes))
+                          : MAX_RSVP_PLUS_ONE_COUNT;
 
                       return (
                         <div
@@ -739,10 +743,14 @@ export default function InteractiveTimeline({
                                 type="number"
                                 min={0}
                                 max={plusOneMaxAttr}
-                                disabled={isControlDisabled || isZeroPlusOneAllowance}
-                                value={isZeroPlusOneAllowance ? 0 : itemState.current.plusOneCount}
+                                disabled={isPlusOneDisabled}
+                                value={
+                                  isZeroPlusOneAllowance || isDeclined
+                                    ? 0
+                                    : itemState.current.plusOneCount
+                                }
                                 onChange={(e) => {
-                                  if (isZeroPlusOneAllowance) return;
+                                  if (isZeroPlusOneAllowance || isDeclined) return;
                                   rsvpManager.updateRsvp(event.id, {
                                     plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
                                   });

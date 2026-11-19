@@ -25,7 +25,7 @@ export default defineConfig({
       POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public',
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
       ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost,example.com,*.example.com',
-      GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
+      GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'playwright-e2e-guest-passcode',
       GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
       E2E_TEST: 'true',
     },
