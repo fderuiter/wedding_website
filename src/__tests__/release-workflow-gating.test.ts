@@ -162,8 +162,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployWorkflow).toContain('WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}');
     expect(deployWorkflow).toContain('CURRENT_SHA: ${{ github.sha }}');
 
-    // Resolved SHA passed to checkout and workflow calls
-    expect(deployWorkflow).toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
+    // Resolved SHA aligned in schema-compatibility only on workflow_run after ancestry check (preventing default-branch cache poisoning on workflow_dispatch) and passed to workflow calls
+    expect(deployWorkflow).not.toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(deployWorkflow).toMatch(
+      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run'[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
+    );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
