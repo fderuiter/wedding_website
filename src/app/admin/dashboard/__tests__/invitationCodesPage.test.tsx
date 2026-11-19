@@ -631,8 +631,9 @@ describe('InvitationCodesDashboardPage', () => {
       fireEvent.click(deleteSelectedBtn);
 
       // Modal open
-      const modal = screen.getByRole('dialog', { name: 'Confirm Batch Deletion' });
+      const modal = screen.getByRole('alertdialog', { name: 'Confirm Batch Deletion' });
       expect(modal).toBeInTheDocument();
+      expect(modal).toHaveAttribute('aria-modal', 'true');
       expect(within(modal).getByText('Alice Smith')).toBeInTheDocument();
       expect(within(modal).getByText('Bob Jones')).toBeInTheDocument();
 
@@ -643,9 +644,9 @@ describe('InvitationCodesDashboardPage', () => {
       await waitFor(() => {
         expect(mockRemoveBatch).toHaveBeenCalledWith(['code-1', 'code-2']);
         expect(screen.getByText('Successfully deleted 2 invitation code(s).')).toBeInTheDocument();
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
       });
 
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(screen.queryByRole('region', { name: 'Batch actions toolbar' })).not.toBeInTheDocument();
     });
 
@@ -1117,6 +1118,266 @@ describe('InvitationCodesDashboardPage', () => {
 
       expect(zoeRehearsalCheckbox).not.toBeChecked();
       expect(zoeWelcomeCheckbox).toBeChecked();
+    });
+  });
+
+  describe('Central Dialog Accessibility, Focus Containment, and Dismissal', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('Set Household modal exposes accessible Dialog semantics, traps Tab focus, passes jest-axe, and closes on Escape/backdrop restoring focus', async () => {
+      const { container } = renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      const triggerBtn = screen.getByRole('button', { name: 'Set Household' });
+      triggerBtn.focus();
+      fireEvent.click(triggerBtn);
+
+      const dialog = screen.getByRole('dialog', { name: 'Set Household Name (1 Selected)' });
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      const labelledBy = dialog.getAttribute('aria-labelledby');
+      expect(labelledBy).toBeTruthy();
+      expect(within(dialog).getByRole('heading', { level: 2 })).toHaveAttribute('id', labelledBy);
+
+      const householdInput = within(dialog).getByLabelText('Household Name');
+      const cancelBtn = within(dialog).getByRole('button', { name: 'Cancel' });
+      const applyBtn = within(dialog).getByRole('button', { name: 'Apply Household Name' });
+
+      // Initial focus moves immediately into input field
+      expect(householdInput).toHaveFocus();
+
+      // Tab wraps from last element to first, Shift+Tab wraps from first to last
+      applyBtn.focus();
+      fireEvent.keyDown(applyBtn, { key: 'Tab' });
+      expect(householdInput).toHaveFocus();
+
+      fireEvent.keyDown(householdInput, { key: 'Tab', shiftKey: true });
+      expect(applyBtn).toHaveFocus();
+      expect(cancelBtn).toBeInTheDocument();
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      // Escape closes modal and restores focus to initiating control
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /Set Household Name/i })).not.toBeInTheDocument();
+      });
+      expect(triggerBtn).toHaveFocus();
+
+      // Re-open and dismiss via backdrop click
+      fireEvent.click(triggerBtn);
+      const reopenedDialog = screen.getByRole('dialog', { name: 'Set Household Name (1 Selected)' });
+      const backdrop = reopenedDialog.parentElement?.parentElement as HTMLElement;
+      fireEvent.click(backdrop);
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /Set Household Name/i })).not.toBeInTheDocument();
+      });
+      expect(mockUpdateBatch).not.toHaveBeenCalled();
+    });
+
+    it('Manage Party Tags modal exposes accessible Dialog semantics, traps Tab focus, passes jest-axe, and closes on Escape/backdrop', async () => {
+      const { container } = renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      const triggerBtn = screen.getByRole('button', { name: 'Manage Tags' });
+      triggerBtn.focus();
+      fireEvent.click(triggerBtn);
+
+      const dialog = screen.getByRole('dialog', { name: 'Manage Party Tags (1 Selected)' });
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      const labelledBy = dialog.getAttribute('aria-labelledby');
+      expect(within(dialog).getByRole('heading', { level: 2 })).toHaveAttribute('id', labelledBy);
+
+      const addRadio = within(dialog).getByRole('radio', { name: 'Add Tag' });
+      const applyBtn = within(dialog).getByRole('button', { name: 'Apply Tag Changes' });
+
+      expect(addRadio).toHaveFocus();
+      applyBtn.focus();
+      fireEvent.keyDown(applyBtn, { key: 'Tab' });
+      expect(addRadio).toHaveFocus();
+      fireEvent.keyDown(addRadio, { key: 'Tab', shiftKey: true });
+      expect(applyBtn).toHaveFocus();
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /Manage Party Tags/i })).not.toBeInTheDocument();
+      });
+      expect(triggerBtn).toHaveFocus();
+
+      // Re-open and dismiss via backdrop click
+      fireEvent.click(triggerBtn);
+      const reopenedDialog = screen.getByRole('dialog', { name: 'Manage Party Tags (1 Selected)' });
+      fireEvent.click(reopenedDialog.parentElement?.parentElement as HTMLElement);
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /Manage Party Tags/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it('Batch Sub-Event Access modal exposes accessible Dialog semantics, traps Tab focus, passes jest-axe, submits batch update, and supports Escape/backdrop dismissal', async () => {
+      global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
+        if (url === '/api/admin/sub-events/access' && (!options?.method || options.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                success: true,
+                data: {
+                  subEvents: [
+                    { id: 'se-1', title: 'Rehearsal Dinner', isPrivate: true, allowedInvitationCodeIds: [] },
+                  ],
+                  invitationCodes: [],
+                },
+              }),
+          });
+        }
+        if (url === '/api/admin/sub-events/access/batch' && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true, data: { count: 1 } }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }) as any;
+
+      const { container } = renderComponent();
+      await screen.findByRole('checkbox', { name: 'Toggle access for Rehearsal Dinner on Alice Smith' });
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      const triggerBtn = screen.getByRole('button', { name: 'Sub-Event Access' });
+      triggerBtn.focus();
+      fireEvent.click(triggerBtn);
+
+      const dialog = screen.getByRole('dialog', { name: 'Batch Sub-Event Access (1 Guests Selected)' });
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+
+      const actionSelect = within(dialog).getByLabelText('Batch sub-event action');
+      const applyBtn = within(dialog).getByRole('button', { name: 'Apply Batch Access' });
+      expect(actionSelect).toHaveFocus();
+
+      applyBtn.focus();
+      fireEvent.keyDown(applyBtn, { key: 'Tab' });
+      expect(actionSelect).toHaveFocus();
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      // Dismiss via Escape and restore focus
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /Batch Sub-Event Access/i })).not.toBeInTheDocument();
+      });
+      expect(triggerBtn).toHaveFocus();
+
+      // Re-open, select event, and submit form
+      fireEvent.click(triggerBtn);
+      const reopened = screen.getByRole('dialog', { name: 'Batch Sub-Event Access (1 Guests Selected)' });
+      fireEvent.change(within(reopened).getByLabelText('Batch sub-event action'), {
+        target: { value: 'revoke' },
+      });
+      fireEvent.click(within(reopened).getByRole('checkbox', { name: /Rehearsal Dinner/i }));
+      fireEvent.click(within(reopened).getByRole('button', { name: 'Apply Batch Access' }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/admin/sub-events/access/batch',
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              invitationCodeIds: ['code-1'],
+              subEventIds: ['se-1'],
+              action: 'revoke',
+            }),
+          })
+        );
+        expect(screen.queryByRole('dialog', { name: /Batch Sub-Event Access/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it('Confirm Batch Deletion modal uses alertdialog role, traps focus, passes jest-axe, and dismisses via Escape or backdrop without deleting', async () => {
+      const { container } = renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
+      const triggerBtn = screen.getByRole('button', { name: 'Delete Selected' });
+      triggerBtn.focus();
+      fireEvent.click(triggerBtn);
+
+      const alertDialog = screen.getByRole('alertdialog', { name: 'Confirm Batch Deletion' });
+      expect(alertDialog).toHaveAttribute('aria-modal', 'true');
+      expect(alertDialog).toHaveAttribute('aria-describedby', 'batch-delete-modal-desc');
+
+      const cancelBtn = within(alertDialog).getByRole('button', { name: 'Cancel' });
+      const deleteBtn = within(alertDialog).getByRole('button', { name: 'Delete 1 Code(s)' });
+      expect(cancelBtn).toHaveFocus();
+
+      deleteBtn.focus();
+      fireEvent.keyDown(deleteBtn, { key: 'Tab' });
+      expect(cancelBtn).toHaveFocus();
+      fireEvent.keyDown(cancelBtn, { key: 'Tab', shiftKey: true });
+      expect(deleteBtn).toHaveFocus();
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      // Backdrop click dismisses without deleting
+      fireEvent.click(alertDialog.parentElement?.parentElement as HTMLElement);
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      });
+      expect(mockRemoveBatch).not.toHaveBeenCalled();
+
+      // Re-open and dismiss via Escape restoring focus
+      triggerBtn.focus();
+      fireEvent.click(triggerBtn);
+      expect(screen.getByRole('alertdialog', { name: 'Confirm Batch Deletion' })).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      });
+      expect(triggerBtn).toHaveFocus();
+      expect(mockRemoveBatch).not.toHaveBeenCalled();
+    });
+
+    it('Timeline Sub-Event modal traps focus, passes jest-axe, and restores focus to Manage Sub-Events on Escape and backdrop click', async () => {
+      const { container } = renderComponent();
+
+      const triggerBtn = screen.getByRole('button', { name: 'Manage Sub-Events' });
+      triggerBtn.focus();
+      fireEvent.click(triggerBtn);
+
+      const dialog = screen.getByRole('dialog', { name: 'Create New Sub-Event' });
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+
+      const titleInput = within(dialog).getByLabelText('Title *');
+      const submitBtn = within(dialog).getByRole('button', { name: 'Create Sub-Event' });
+      expect(titleInput).toHaveFocus();
+
+      submitBtn.focus();
+      fireEvent.keyDown(submitBtn, { key: 'Tab' });
+      expect(titleInput).toHaveFocus();
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: 'Create New Sub-Event' })).not.toBeInTheDocument();
+      });
+      expect(triggerBtn).toHaveFocus();
+
+      // Backdrop dismissal
+      fireEvent.click(triggerBtn);
+      const reopened = screen.getByRole('dialog', { name: 'Create New Sub-Event' });
+      fireEvent.click(reopened.parentElement?.parentElement as HTMLElement);
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: 'Create New Sub-Event' })).not.toBeInTheDocument();
+      });
     });
   });
 

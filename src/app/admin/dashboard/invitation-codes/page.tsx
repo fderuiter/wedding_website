@@ -6,6 +6,7 @@ import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -1341,199 +1342,230 @@ export default function InvitationCodesDashboardPage() {
           </div>
         )}
 
-        {bulkHouseholdModalOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        <Dialog
+          isOpen={bulkHouseholdModalOpen}
+          onClose={() => setBulkHouseholdModalOpen(false)}
+          title={`Set Household Name (${selectedIds.length} Selected)`}
+          className="max-w-md w-full"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleBulkSetHousehold();
+            }}
+            className="space-y-4"
           >
-            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Set Household Name ({selectedIds.length} Selected)
-              </h2>
-              <FormGroup>
-                <Label>Household Name</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Smith Household"
-                  value={bulkHouseholdInput}
-                  onChange={(e) => setBulkHouseholdInput(e.target.value)}
+            <FormGroup>
+              <Label>Household Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Smith Household"
+                value={bulkHouseholdInput}
+                onChange={(e) => setBulkHouseholdInput(e.target.value)}
+              />
+            </FormGroup>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setBulkHouseholdModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary">
+                Apply Household Name
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+
+        <Dialog
+          isOpen={bulkTagModalOpen}
+          onClose={() => setBulkTagModalOpen(false)}
+          title={`Manage Party Tags (${selectedIds.length} Selected)`}
+          className="max-w-md w-full"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleBulkUpdateTags();
+            }}
+            className="space-y-4"
+          >
+            <div className="flex gap-4" role="radiogroup" aria-label="Party tag action">
+              <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="radio"
+                  name="tagAction"
+                  checked={bulkTagAction === 'add'}
+                  onChange={() => setBulkTagAction('add')}
                 />
-              </FormGroup>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={() => setBulkHouseholdModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" onClick={handleBulkSetHousehold}>
-                  Apply Household Name
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {bulkTagModalOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          >
-            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Manage Party Tags ({selectedIds.length} Selected)
-              </h2>
-              <div className="flex gap-4">
-                <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
-                  <input
-                    type="radio"
-                    name="tagAction"
-                    checked={bulkTagAction === 'add'}
-                    onChange={() => setBulkTagAction('add')}
-                  />
-                  <span>Add Tag</span>
-                </label>
-                <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
-                  <input
-                    type="radio"
-                    name="tagAction"
-                    checked={bulkTagAction === 'remove'}
-                    onChange={() => setBulkTagAction('remove')}
-                  />
-                  <span>Remove Tag</span>
-                </label>
-              </div>
-              <FormGroup>
-                <Label>Tag Name</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. VIP"
-                  value={bulkTagInput}
-                  onChange={(e) => setBulkTagInput(e.target.value)}
+                <span>Add Tag</span>
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="radio"
+                  name="tagAction"
+                  checked={bulkTagAction === 'remove'}
+                  onChange={() => setBulkTagAction('remove')}
                 />
-              </FormGroup>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={() => setBulkTagModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" onClick={handleBulkUpdateTags}>
-                  Apply Tag Changes
-                </Button>
+                <span>Remove Tag</span>
+              </label>
+            </div>
+            <FormGroup>
+              <Label>Tag Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. VIP"
+                value={bulkTagInput}
+                onChange={(e) => setBulkTagInput(e.target.value)}
+              />
+            </FormGroup>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setBulkTagModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary">
+                Apply Tag Changes
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+
+        <Dialog
+          isOpen={bulkSubEventModalOpen}
+          onClose={() => setBulkSubEventModalOpen(false)}
+          title={`Batch Sub-Event Access (${selectedIds.length} Guests Selected)`}
+          className="max-w-md w-full"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleBatchSubEventAccess();
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label htmlFor="batch-sub-event-action" className="block text-sm font-semibold mb-1">
+                Action:
+              </label>
+              <select
+                id="batch-sub-event-action"
+                aria-label="Batch sub-event action"
+                value={bulkSubEventAction}
+                onChange={(e) => setBulkSubEventAction(e.target.value as any)}
+                className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600"
+              >
+                <option value="grant">Grant Access</option>
+                <option value="revoke">Revoke Access</option>
+                <option value="set">Set Access (Replace)</option>
+              </select>
+            </div>
+
+            <div>
+              <span id="batch-sub-events-list-label" className="block text-sm font-semibold mb-2">
+                Select Private Sub-Events:
+              </span>
+              <div
+                role="group"
+                aria-labelledby="batch-sub-events-list-label"
+                className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 p-3 rounded-lg"
+              >
+                {subEvents.length === 0 ? (
+                  <p className="text-xs text-gray-600 dark:text-gray-300 italic">No sub-events found.</p>
+                ) : (
+                  subEvents.map((se) => {
+                    const isChecked = bulkSelectedSubEventIds.includes(se.id);
+                    return (
+                      <label key={se.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setBulkSelectedSubEventIds([...bulkSelectedSubEventIds, se.id]);
+                            } else {
+                              setBulkSelectedSubEventIds(
+                                bulkSelectedSubEventIds.filter((id) => id !== se.id)
+                              );
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <span>
+                          {se.title} {se.isPrivate ? '(Private)' : '(Public)'}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
               </div>
             </div>
-          </div>
-        )}
 
-        {bulkSubEventModalOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          >
-            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Batch Sub-Event Access ({selectedIds.length} Guests Selected)
-              </h2>
-
-              <div>
-                <label className="block text-sm font-semibold mb-1">Action:</label>
-                <select
-                  aria-label="Batch sub-event action"
-                  value={bulkSubEventAction}
-                  onChange={(e) => setBulkSubEventAction(e.target.value as any)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600"
-                >
-                  <option value="grant">Grant Access</option>
-                  <option value="revoke">Revoke Access</option>
-                  <option value="set">Set Access (Replace)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Select Private Sub-Events:</label>
-                <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
-                  {subEvents.length === 0 ? (
-                    <p className="text-xs text-gray-500 italic">No sub-events found.</p>
-                  ) : (
-                    subEvents.map((se) => {
-                      const isChecked = bulkSelectedSubEventIds.includes(se.id);
-                      return (
-                        <label key={se.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setBulkSelectedSubEventIds([...bulkSelectedSubEventIds, se.id]);
-                              } else {
-                                setBulkSelectedSubEventIds(
-                                  bulkSelectedSubEventIds.filter((id) => id !== se.id)
-                                );
-                              }
-                            }}
-                            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                          />
-                          <span>
-                            {se.title} {se.isPrivate ? '(Private)' : '(Public)'}
-                          </span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={() => setBulkSubEventModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" onClick={handleBatchSubEventAccess}>
-                  Apply Batch Access
-                </Button>
-              </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setBulkSubEventModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary">
+                Apply Batch Access
+              </Button>
             </div>
-          </div>
-        )}
+          </form>
+        </Dialog>
 
-        {isBatchDeleteModalOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="batch-delete-modal-title"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          >
-            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-              <h2 id="batch-delete-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
-                Confirm Batch Deletion
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                Are you sure you want to delete <span className="font-bold text-red-600 dark:text-red-400">{selectedIds.length}</span> selected invitation code(s)? This action cannot be undone.
+        <Dialog
+          isOpen={isBatchDeleteModalOpen}
+          onClose={() => setIsBatchDeleteModalOpen(false)}
+          role="alertdialog"
+          title="Confirm Batch Deletion"
+          aria-describedby="batch-delete-modal-desc"
+          className="max-w-lg w-full"
+        >
+          <div className="space-y-4">
+            <p id="batch-delete-modal-desc" className="text-sm text-gray-600 dark:text-gray-300">
+              Are you sure you want to delete <span className="font-bold text-red-700 dark:text-red-400">{selectedIds.length}</span> selected invitation code(s)? This action cannot be undone.
+            </p>
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
+              <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-2">
+                Selected Guests:
               </p>
-              <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                  Selected Guests:
-                </p>
-                <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
-                  {codes
-                    .filter((c) => selectedIdsSet.has(c.id))
-                    .map((c) => (
-                      <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                        <span className="font-medium">{c.guestName}</span>
-                        <code className="text-xs font-mono text-gray-500 dark:text-gray-400">{c.code}</code>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={() => setIsBatchDeleteModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button variant="danger" onClick={handleConfirmBatchDelete}>
-                  Delete {selectedIds.length} Code(s)
-                </Button>
-              </div>
+              <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
+                {codes
+                  .filter((c) => selectedIdsSet.has(c.id))
+                  .map((c) => (
+                    <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                      <span className="font-medium">{c.guestName}</span>
+                      <code className="text-xs font-mono text-gray-600 dark:text-gray-300">{c.code}</code>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsBatchDeleteModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={handleConfirmBatchDelete}
+              >
+                Delete {selectedIds.length} Code(s)
+              </Button>
             </div>
           </div>
-        )}
+        </Dialog>
 
         <GuestEditorModal
           isOpen={Boolean(editingGuest)}
