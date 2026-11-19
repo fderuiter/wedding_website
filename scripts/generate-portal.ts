@@ -10,6 +10,7 @@ import {
   scanLinksAndCodeInLine,
 } from './check-doc-links';
 import {
+  generateApiRoutesSection,
   generateConfigTable,
   generateRoutesDiagram,
   updateArchitectureMd,
@@ -398,11 +399,12 @@ export async function generatePortal() {
   console.log(`✅ Pre-compilation link check passed (${linkCheckResult.count} Markdown files verified).`);
 
   console.log('\n--- Step 2: Synchronizing architecture & OpenAPI specifications ---');
-  // Explicitly invoke generateConfigTable and generateRoutesDiagram as required by Requirement 4
+  // Explicitly invoke generateConfigTable, generateRoutesDiagram, and generateApiRoutesSection
   const configTable = generateConfigTable();
   const routesDiagram = generateRoutesDiagram();
-  if (!configTable || !routesDiagram) {
-    throw new Error('Failed to generate configuration table or route diagram');
+  const apiRoutesSection = generateApiRoutesSection();
+  if (!configTable || !routesDiagram || !apiRoutesSection) {
+    throw new Error('Failed to generate configuration table, route diagram, or API routes inventory');
   }
 
   // Update ARCHITECTURE.md and OpenAPI specification
