@@ -1,6 +1,9 @@
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { render, screen, act, fireEvent, createEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { ReceptionSlideshowClient, DEFAULT_FALLBACK_PHOTOS } from '../ReceptionSlideshowClient';
+
+expect.extend(toHaveNoViolations);
 
 // Mock ThemedQRCode
 jest.mock('@/components/ui/ThemedQRCode', () => ({
@@ -238,7 +241,7 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
   });
 
-  it('hides controls and cursor after 3 seconds of user inactivity, and reveals on mouse movement', () => {
+  it('hides secondary controls, header, and stage cursor after 3 seconds of user inactivity while keeping pause accessible', () => {
     render(
       <ReceptionSlideshowClient
         initialPhotos={samplePhotos}
@@ -247,35 +250,56 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     const container = screen.getByTestId('slideshow-container');
+    const header = screen.getByTestId('slideshow-top-header');
     const controls = screen.getByTestId('slideshow-controls');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    const expectPauseOutsideHiddenWrappers = () => {
+      let current: HTMLElement | null = playPauseBtn;
+      while (current) {
+        expect(current).not.toHaveClass('opacity-0');
+        expect(current).not.toHaveClass('pointer-events-none');
+        current = current.parentElement;
+      }
+      expect(playPauseBtn).toHaveClass('cursor-pointer');
+    };
 
     // Initially visible
     expect(container).toHaveClass('cursor-default');
-    expect(controls).toHaveClass('opacity-100');
+    expect(header).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
+    expect(controls).not.toHaveClass('opacity-0');
+    expectPauseOutsideHiddenWrappers();
 
-    // Advance 3 seconds of inactivity
+    // Advance 3 seconds of inactivity during auto-play
     act(() => {
       jest.advanceTimersByTime(3000);
     });
 
     expect(container).toHaveClass('cursor-none');
-    expect(controls).toHaveClass('opacity-0');
+    expect(header).toHaveClass('opacity-0', 'pointer-events-none');
+    expect(secondaryControls).toHaveClass('opacity-0', 'pointer-events-none');
+    expectPauseOutsideHiddenWrappers();
 
-    // Mouse movement activity reveals controls immediately
+    // Mouse movement activity reveals header and secondary controls immediately
     act(() => {
       fireEvent.mouseMove(window);
     });
 
     expect(container).toHaveClass('cursor-default');
-    expect(controls).toHaveClass('opacity-100');
+    expect(header).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
 
-    // Inactivity hides again after 3 seconds
+    // Inactivity hides secondary controls again after 3 seconds while pause stays accessible
     act(() => {
       jest.advanceTimersByTime(3000);
     });
 
     expect(container).toHaveClass('cursor-none');
-    expect(controls).toHaveClass('opacity-0');
+    expect(header).toHaveClass('opacity-0', 'pointer-events-none');
+    expect(secondaryControls).toHaveClass('opacity-0', 'pointer-events-none');
+    expectPauseOutsideHiddenWrappers();
   });
 
   it('periodically polls API and appends new approved photos to the presentation queue', async () => {
@@ -630,15 +654,17 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     const container = screen.getByTestId('slideshow-container');
-    const controls = screen.getByTestId('slideshow-controls');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
     const header = screen.getByTestId('slideshow-top-header');
     const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
 
-    // Header and footer have focus-within classes
+    // Header and secondary controls have focus-within classes
     expect(header).toHaveClass('focus-within:opacity-100');
     expect(header).toHaveClass('focus-within:pointer-events-auto');
-    expect(controls).toHaveClass('focus-within:opacity-100');
-    expect(controls).toHaveClass('focus-within:pointer-events-auto');
+    expect(secondaryControls).toHaveClass('focus-within:opacity-100');
+    expect(secondaryControls).toHaveClass('focus-within:pointer-events-auto');
+    expect(secondaryControls).toHaveClass('group-focus-within:opacity-100');
+    expect(secondaryControls).toHaveClass('group-focus-within:pointer-events-auto');
 
     // Focus play/pause button
     act(() => {
@@ -652,7 +678,8 @@ describe('ReceptionSlideshowClient', () => {
 
     // Controls remain visible and cursor default
     expect(container).toHaveClass('cursor-default');
-    expect(controls).toHaveClass('opacity-100');
+    expect(header).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
 
     // Advance another 5 seconds
     act(() => {
@@ -660,10 +687,11 @@ describe('ReceptionSlideshowClient', () => {
     });
 
     expect(container).toHaveClass('cursor-default');
-    expect(controls).toHaveClass('opacity-100');
+    expect(header).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
   });
 
-  it('hides controls after 3 seconds only when focus moves outside the controls', () => {
+  it('hides secondary controls after 3 seconds only when focus moves outside the controls', () => {
     render(
       <ReceptionSlideshowClient
         initialPhotos={samplePhotos}
@@ -672,7 +700,8 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     const container = screen.getByTestId('slideshow-container');
-    const controls = screen.getByTestId('slideshow-controls');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
     const prevBtn = screen.getByTestId('slideshow-prev-btn');
 
     // Focus previous button
@@ -684,7 +713,7 @@ describe('ReceptionSlideshowClient', () => {
     act(() => {
       jest.advanceTimersByTime(3000);
     });
-    expect(controls).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
     expect(container).toHaveClass('cursor-default');
 
     // Blur the button (focus moves outside)
@@ -693,16 +722,18 @@ describe('ReceptionSlideshowClient', () => {
     });
 
     // Controls are still visible immediately after blur
-    expect(controls).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
 
     // Advance 3 seconds after focus left
     act(() => {
       jest.advanceTimersByTime(3000);
     });
 
-    // Now controls and cursor hide
-    expect(controls).toHaveClass('opacity-0');
+    // Secondary controls and cursor hide while pause remains accessible
+    expect(secondaryControls).toHaveClass('opacity-0', 'pointer-events-none');
     expect(container).toHaveClass('cursor-none');
+    expect(playPauseBtn).not.toHaveClass('opacity-0');
+    expect(playPauseBtn).not.toHaveClass('pointer-events-none');
   });
 
   it('restarts inactivity timer when tabbing outside the slideshow container', () => {
@@ -714,7 +745,8 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     const container = screen.getByTestId('slideshow-container');
-    const controls = screen.getByTestId('slideshow-controls');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
     const nextBtn = screen.getByTestId('slideshow-next-btn');
 
     const outsideButton = document.createElement('button');
@@ -730,7 +762,7 @@ describe('ReceptionSlideshowClient', () => {
       act(() => {
         jest.advanceTimersByTime(3000);
       });
-      expect(controls).toHaveClass('opacity-100');
+      expect(secondaryControls).toHaveClass('opacity-100');
 
       // Tab/focus outside container
       act(() => {
@@ -741,14 +773,15 @@ describe('ReceptionSlideshowClient', () => {
       act(() => {
         jest.advanceTimersByTime(1500);
       });
-      expect(controls).toHaveClass('opacity-100');
+      expect(secondaryControls).toHaveClass('opacity-100');
 
-      // Hides after full 3 seconds
+      // Hides secondary controls after full 3 seconds while pause stays accessible
       act(() => {
         jest.advanceTimersByTime(1500);
       });
-      expect(controls).toHaveClass('opacity-0');
+      expect(secondaryControls).toHaveClass('opacity-0', 'pointer-events-none');
       expect(container).toHaveClass('cursor-none');
+      expect(playPauseBtn).not.toHaveClass('opacity-0');
     } finally {
       outsideButton.remove();
     }
@@ -763,7 +796,7 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     const container = screen.getByTestId('slideshow-container');
-    const controls = screen.getByTestId('slideshow-controls');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
     const fullscreenBtn = screen.getByTestId('slideshow-fullscreen-btn');
 
     // Focus fullscreen toggle
@@ -781,7 +814,7 @@ describe('ReceptionSlideshowClient', () => {
       jest.advanceTimersByTime(3000);
     });
 
-    expect(controls).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
     expect(container).toHaveClass('cursor-default');
   });
 
@@ -794,7 +827,7 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     const container = screen.getByTestId('slideshow-container');
-    const controls = screen.getByTestId('slideshow-controls');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
     const prevBtn = screen.getByTestId('slideshow-prev-btn');
     const nextBtn = screen.getByTestId('slideshow-next-btn');
 
@@ -807,7 +840,7 @@ describe('ReceptionSlideshowClient', () => {
     act(() => {
       jest.advanceTimersByTime(2000);
     });
-    expect(controls).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
 
     // Focus next button
     act(() => {
@@ -820,7 +853,295 @@ describe('ReceptionSlideshowClient', () => {
     });
 
     // Controls remain visible
-    expect(controls).toHaveClass('opacity-100');
+    expect(secondaryControls).toHaveClass('opacity-100');
     expect(container).toHaveClass('cursor-default');
+  });
+
+  it('reveals faded header and secondary toolbar controls when focus moves into a faded secondary button', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const header = screen.getByTestId('slideshow-top-header');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(header).toHaveClass('opacity-0', 'pointer-events-none');
+    expect(secondaryControls).toHaveClass('opacity-0', 'pointer-events-none');
+
+    act(() => {
+      nextBtn.focus();
+    });
+
+    expect(header).toHaveClass('opacity-100', 'pointer-events-auto');
+    expect(secondaryControls).toHaveClass('opacity-100', 'pointer-events-auto');
+  });
+
+  it('keeps all toolbar controls and header visible whenever playback is paused', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const container = screen.getByTestId('slideshow-container');
+    const header = screen.getByTestId('slideshow-top-header');
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    // Pause playback
+    fireEvent.click(playPauseBtn);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Play slideshow');
+
+    // Advance well past 3-second inactivity threshold while paused
+    act(() => {
+      jest.advanceTimersByTime(10000);
+    });
+
+    expect(container).toHaveClass('cursor-default');
+    expect(header).toHaveClass('opacity-100', 'pointer-events-auto');
+    expect(secondaryControls).toHaveClass('opacity-100', 'pointer-events-auto');
+
+    // Resume playback -> controls remain visible initially, then fade after 3 seconds
+    fireEvent.click(playPauseBtn);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+    expect(secondaryControls).toHaveClass('opacity-100');
+
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(secondaryControls).toHaveClass('opacity-0', 'pointer-events-none');
+  });
+
+  it('preserves native Space activation on focused buttons without double-toggling playback', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+    const backLink = screen.getByTestId('slideshow-back-link');
+
+    // Pressing Space on focused play/pause button must not preventDefault or pre-toggle state
+    act(() => {
+      playPauseBtn.focus();
+    });
+    const spaceOnPlayPause = createEvent.keyDown(playPauseBtn, { key: ' ', code: 'Space' });
+    fireEvent(playPauseBtn, spaceOnPlayPause);
+    expect(spaceOnPlayPause.defaultPrevented).toBe(false);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+
+    // Native button click resulting from Space toggles playback once
+    fireEvent.click(playPauseBtn);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Play slideshow');
+
+    // Resume playback
+    fireEvent.click(playPauseBtn);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+
+    // Pressing Space, f, or q on another focused button or link does not trigger global shortcuts
+    act(() => {
+      nextBtn.focus();
+    });
+    const spaceOnNext = createEvent.keyDown(nextBtn, { key: ' ', code: 'Space' });
+    fireEvent(nextBtn, spaceOnNext);
+    expect(spaceOnNext.defaultPrevented).toBe(false);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+
+    const qOnNext = createEvent.keyDown(nextBtn, { key: 'q' });
+    fireEvent(nextBtn, qOnNext);
+    expect(qOnNext.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
+
+    act(() => {
+      backLink.focus();
+    });
+    const qOnLink = createEvent.keyDown(backLink, { key: 'q' });
+    fireEvent(backLink, qOnLink);
+    expect(qOnLink.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
+
+    // Editable elements also skip shortcuts
+    const editableDiv = document.createElement('div');
+    editableDiv.setAttribute('contenteditable', 'true');
+    document.body.appendChild(editableDiv);
+    try {
+      const qOnEditable = createEvent.keyDown(editableDiv, { key: 'q' });
+      fireEvent(editableDiv, qOnEditable);
+      expect(qOnEditable.defaultPrevented).toBe(false);
+      expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
+    } finally {
+      editableDiv.remove();
+    }
+  });
+
+  it('passes through modified key combinations such as Ctrl+F, Meta+F, Alt+Q, and Ctrl+Space', () => {
+    const requestFullscreenMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      writable: true,
+      value: requestFullscreenMock,
+    });
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    const ctrlF = createEvent.keyDown(window, { key: 'f', ctrlKey: true });
+    fireEvent(window, ctrlF);
+    expect(ctrlF.defaultPrevented).toBe(false);
+    expect(requestFullscreenMock).not.toHaveBeenCalled();
+
+    const metaF = createEvent.keyDown(window, { key: 'f', metaKey: true });
+    fireEvent(window, metaF);
+    expect(metaF.defaultPrevented).toBe(false);
+    expect(requestFullscreenMock).not.toHaveBeenCalled();
+
+    const altQ = createEvent.keyDown(window, { key: 'q', altKey: true });
+    fireEvent(window, altQ);
+    expect(altQ.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
+
+    const ctrlSpace = createEvent.keyDown(window, { key: ' ', code: 'Space', ctrlKey: true });
+    fireEvent(window, ctrlSpace);
+    expect(ctrlSpace.defaultPrevented).toBe(false);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+  });
+
+  it('allows turning off Space, f, and q shortcuts via the toolbar toggle while preserving Arrow and Escape keys', () => {
+    const requestFullscreenMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      writable: true,
+      value: requestFullscreenMock,
+    });
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const shortcutsBtn = screen.getByTestId('slideshow-shortcuts-toggle-btn');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    expect(shortcutsBtn.tagName).toBe('BUTTON');
+    expect(shortcutsBtn).toHaveAttribute('type', 'button');
+    expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(shortcutsBtn).toHaveAttribute('aria-label', 'Keyboard shortcuts (Space, F, Q)');
+
+    // Turn off single-key shortcuts
+    fireEvent.click(shortcutsBtn);
+    expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'false');
+
+    // Unmodified Space, f, and q are now ignored
+    const spaceEvt = createEvent.keyDown(window, { key: ' ', code: 'Space' });
+    fireEvent(window, spaceEvt);
+    expect(spaceEvt.defaultPrevented).toBe(false);
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+
+    const fEvt = createEvent.keyDown(window, { key: 'f' });
+    fireEvent(window, fEvt);
+    expect(fEvt.defaultPrevented).toBe(false);
+    expect(requestFullscreenMock).not.toHaveBeenCalled();
+
+    const qEvt = createEvent.keyDown(window, { key: 'q' });
+    fireEvent(window, qEvt);
+    expect(qEvt.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
+
+    // ArrowRight, ArrowLeft, and Escape still work when character shortcuts are disabled
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo2.jpg'
+    );
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('slideshow-qr-overlay')).not.toBeInTheDocument();
+
+    // Re-enable single-key shortcuts and verify they work again
+    fireEvent.click(shortcutsBtn);
+    expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.keyDown(window, { key: 'q' });
+    expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: ' ', code: 'Space' });
+    expect(playPauseBtn).toHaveAttribute('aria-label', 'Play slideshow');
+  });
+
+  it('sets aria-live to off during automatic playback and restores polite when paused', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const liveRegion = screen.getByTestId('slideshow-live-region');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+    const nextBtn = screen.getByTestId('slideshow-next-btn');
+
+    // Silenced during auto-play
+    expect(liveRegion).toHaveAttribute('aria-live', 'off');
+    expect(liveRegion).toHaveTextContent('Photo 1 of 3: First Dance');
+
+    // Pause restores polite announcements for manual navigation
+    fireEvent.click(playPauseBtn);
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+
+    fireEvent.click(nextBtn);
+    expect(liveRegion).toHaveTextContent('Photo 2 of 3: Cake Cutting');
+
+    // Resuming playback silences automatic live announcements again
+    fireEvent.click(playPauseBtn);
+    expect(liveRegion).toHaveAttribute('aria-live', 'off');
+  });
+
+  it('has no automated axe accessibility violations on slideshow controls in playing or paused states', async () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(50);
+    });
+    jest.useRealTimers();
+
+    const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
+    const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+
+    expect(await axe(secondaryControls)).toHaveNoViolations();
+    expect(await axe(playPauseBtn)).toHaveNoViolations();
+
+    fireEvent.click(playPauseBtn);
+    expect(await axe(secondaryControls)).toHaveNoViolations();
+    expect(await axe(playPauseBtn)).toHaveNoViolations();
   });
 });
