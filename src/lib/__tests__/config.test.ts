@@ -563,4 +563,29 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     expect(resolved.brideName).toBe('Taylor');
     expect(resolved.groomName).toBe('Morgan');
   });
+
+  it('omits rsvpGracePeriodHours from toPublicAppConfig while exposing it in toAdminAppConfig', async () => {
+    const { toPublicAppConfig, toAdminAppConfig } = await import('../config');
+    const rawWithGrace = {
+      ...baseConfig,
+      id: 'global',
+      timezone: 'America/Chicago',
+      rsvpOpen: true,
+      rsvpDeadlineDate: '2099-08-15',
+      rsvpGracePeriodHours: 48,
+      rsvpClosedMessage: '<script>evil()</script>Please reach out to hosts@example.com',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const pub = toPublicAppConfig(rawWithGrace) as Record<string, unknown>;
+    expect(pub.rsvpGracePeriodHours).toBeUndefined();
+    expect(pub.rsvpDeadlineDate).toBe('2099-08-15');
+    expect(pub.isRsvpOpen).toBe(true);
+    expect(pub.rsvpClosedMessage).toBe('evil()Please reach out to hosts@example.com');
+
+    const admin = toAdminAppConfig(rawWithGrace);
+    expect(admin.rsvpGracePeriodHours).toBe(48);
+    expect(admin.rsvpOpen).toBe(true);
+  });
 });

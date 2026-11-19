@@ -87,6 +87,12 @@ export const handlers = [
       isGuest: true,
       guestName: 'Alex & Jordan',
       plusOneAllocations: 2,
+      rsvpOpen: true,
+      rsvpDeadlineDate: null,
+      rsvpFormattedDeadline: null,
+      timezone: 'America/Chicago',
+      rsvpClosedMessage:
+        'Online RSVPs are now closed. Please contact the hosts directly if your plans or dietary needs have changed.',
     });
   }),
 

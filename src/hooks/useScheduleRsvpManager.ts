@@ -36,6 +36,7 @@ export interface UseScheduleRsvpManagerOptions {
   apiEndpoint?: string;
   onSuccess?: (_updatedRsvps: any[]) => void;
   onError?: (_error: Error) => void;
+  onRsvpClosed?: (_message: string) => void;
 }
 
 function getPlusOneValidationError(
@@ -331,7 +332,11 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
         const json = await res.json();
         if (!res.ok) {
-          throw new Error(json.error || 'Failed to submit RSVP.');
+          const httpErr = Object.assign(
+            new Error(json.error || 'Failed to submit RSVP.'),
+            { status: res.status }
+          );
+          throw httpErr;
         }
 
         const returnedRecords = Array.isArray(json.data) ? json.data : [];
@@ -364,6 +369,8 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         return true;
       } catch (err: any) {
         const errorMessage = err.message || 'Error submitting RSVP.';
+        const isRsvpClosedError =
+          err?.status === 403 && !/^Forbidden:\s*You do not have access/i.test(errorMessage);
         setEventsMap((prev) => ({
           ...prev,
           [subEventId]: {
@@ -375,7 +382,12 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             error: errorMessage,
           },
         }));
-        setLiveMessage(`Failed to save RSVP: ${errorMessage}`);
+        setLiveMessage(
+          isRsvpClosedError ? errorMessage : `Failed to save RSVP: ${errorMessage}`
+        );
+        if (isRsvpClosedError) {
+          optionsRef.current?.onRsvpClosed?.(errorMessage);
+        }
         optionsRef.current?.onError?.(err);
         return false;
       }
@@ -463,7 +475,11 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.error || 'Failed to submit batch RSVPs.');
+        const httpErr = Object.assign(
+          new Error(json.error || 'Failed to submit batch RSVPs.'),
+          { status: res.status }
+        );
+        throw httpErr;
       }
 
       const returnedRecords: any[] = Array.isArray(json.data) ? json.data : [];
@@ -502,8 +518,14 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       return true;
     } catch (err: any) {
       const errorMessage = err.message || 'Error submitting batch RSVPs.';
+      const isRsvpClosedError =
+        err?.status === 403 && !/^Forbidden:\s*You do not have access/i.test(errorMessage);
       setBatchError(errorMessage);
-      setLiveMessage(`Failed to save RSVPs: ${errorMessage}. Please try again.`);
+      setLiveMessage(
+        isRsvpClosedError
+          ? errorMessage
+          : `Failed to save RSVPs: ${errorMessage}. Please try again.`
+      );
 
       setEventsMap((prev) => {
         const next = { ...prev };
@@ -520,6 +542,9 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         return next;
       });
 
+      if (isRsvpClosedError) {
+        optionsRef.current?.onRsvpClosed?.(errorMessage);
+      }
       optionsRef.current?.onError?.(err);
       return false;
     } finally {

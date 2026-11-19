@@ -496,4 +496,149 @@ describe('GuestAddressPage (/guest)', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  it('renders the formatted deadline and venue timezone banner above the schedule while RSVPs remain open', async () => {
+    globalFetch.mockImplementation(async (input: any) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/address')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Emma Woodhouse',
+              code: 'HARTFIELD26',
+              addressLine1: 'Hartfield Estate',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: true,
+            guestName: 'Emma Woodhouse',
+            plusOneAllocations: 1,
+            rsvpOpen: true,
+            rsvpDeadlineDate: '2026-08-15',
+            rsvpFormattedDeadline: 'August 15, 2026',
+            timezone: 'America/Chicago',
+            rsvpClosedMessage: 'Online RSVPs are closed.',
+            data: [
+              {
+                id: 'se-1',
+                title: 'Ceremony',
+                startTime: '2026-09-19T16:00:00.000Z',
+                category: 'Ceremony',
+                isPrivate: false,
+                isReadOnly: false,
+                userRsvp: { status: 'attending', plusOneCount: 1, dietaryNotes: '' },
+              },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+
+    render(<GuestAddressPage />);
+
+    const deadlineBanner = await screen.findByTestId('guest-rsvp-deadline-banner');
+    expect(deadlineBanner).toHaveTextContent('August 15, 2026');
+    expect(deadlineBanner).toHaveTextContent('America/Chicago');
+    expect(screen.getByTestId('rsvp-card-se-1')).toBeInTheDocument();
+  });
+
+  it('renders the closed banner above the read-only schedule while keeping the mailing address form editable after RSVPs close', async () => {
+    let addressPatchSaved = false;
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/address') && init?.method === 'PUT') {
+        addressPatchSaved = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Emma Woodhouse',
+              code: 'HARTFIELD26',
+              addressLine1: 'Donwell Abbey',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/guest/address')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Emma Woodhouse',
+              code: 'HARTFIELD26',
+              addressLine1: 'Hartfield Estate',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: true,
+            guestName: 'Emma Woodhouse',
+            plusOneAllocations: 1,
+            rsvpOpen: false,
+            rsvpDeadlineDate: '2026-08-15',
+            rsvpFormattedDeadline: 'August 15, 2026',
+            timezone: 'America/Chicago',
+            rsvpClosedMessage: 'Online RSVPs have closed. Please email couple@example.com for meal changes.',
+            data: [
+              {
+                id: 'se-1',
+                title: 'Reception Dinner',
+                startTime: '2026-09-19T18:00:00.000Z',
+                category: 'Reception',
+                isPrivate: false,
+                isReadOnly: false,
+                userRsvp: { status: 'attending', plusOneCount: 1, dietaryNotes: 'Nut allergy' },
+              },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+
+    render(<GuestAddressPage />);
+
+    const closedBanner = await screen.findByTestId('guest-rsvp-closed-banner');
+    expect(closedBanner).toHaveTextContent(
+      'Online RSVPs have closed. Please email couple@example.com for meal changes.'
+    );
+
+    // Saved RSVP is displayed in read-only mode with no Save RSVP button
+    const readOnlyCard = await screen.findByTestId('rsvp-readonly-se-1');
+    expect(readOnlyCard).toHaveTextContent('Attending');
+    expect(readOnlyCard).toHaveTextContent('1');
+    expect(readOnlyCard).toHaveTextContent('Nut allergy');
+    expect(screen.queryByRole('button', { name: /Save RSVP/i })).not.toBeInTheDocument();
+
+    // Mailing address form remains editable and submittable
+    const addressInput = screen.getByLabelText('Address Line 1') as HTMLInputElement;
+    expect(addressInput).not.toBeDisabled();
+    fireEvent.change(addressInput, { target: { value: 'Donwell Abbey' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Mailing Address/i }));
+
+    await waitFor(() => {
+      expect(addressPatchSaved).toBe(true);
+    });
+  });
 });

@@ -161,4 +161,42 @@ describe('POST /api/rsvp Route', () => {
     expect(batchJson.error).toContain('Plus-one count cannot exceed 20.');
     expect(mockSubmitSubEventRsvps).not.toHaveBeenCalled();
   });
+
+  it('returns 403 with closing message when RSVPs are manually closed or past grace window', async () => {
+    const mockGetRsvpStatus = subEventService.getRsvpStatus as jest.MockedFunction<
+      typeof subEventService.getRsvpStatus
+    >;
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'VALIDCODE',
+      guestName: 'Jane Smith',
+    });
+    mockGetRsvpStatus.mockResolvedValue({
+      isOpen: false,
+      isManuallyLocked: true,
+      isPastDeadline: false,
+      isInGraceWindow: false,
+      deadlineDate: '2026-08-15',
+      formattedDeadline: 'August 15, 2026',
+      timezone: 'America/Chicago',
+      closedMessage: 'Online RSVPs are locked. Please email hosts@example.com.',
+    });
+
+    const req = new NextRequest('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      body: JSON.stringify({
+        subEventId: 'se-1',
+        status: 'attending',
+        plusOneCount: 0,
+        dietaryNotes: 'No dairy',
+      }),
+    });
+
+    const res = await POST(req, {});
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json.success).toBe(false);
+    expect(json.error).toBe('Online RSVPs are locked. Please email hosts@example.com.');
+    expect(mockSubmitSubEventRsvps).not.toHaveBeenCalled();
+  });
 });

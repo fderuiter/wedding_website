@@ -2337,6 +2337,47 @@
                         "showAddToCalendar": {
                           "type": "boolean"
                         },
+                        "rsvpOpen": {
+                          "type": "boolean"
+                        },
+                        "rsvpDeadlineDate": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "nullable": true,
+                              "enum": [
+                                null
+                              ]
+                            }
+                          ]
+                        },
+                        "rsvpGracePeriodHours": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "rsvpClosedMessage": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "nullable": true,
+                              "enum": [
+                                null
+                              ]
+                            }
+                          ]
+                        },
                         "emailProvider": {
                           "type": "string",
                           "maxLength": 100
@@ -4282,6 +4323,47 @@
                   "showAddToCalendar": {
                     "type": "boolean"
                   },
+                  "rsvpOpen": {
+                    "type": "boolean"
+                  },
+                  "rsvpDeadlineDate": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          null
+                        ]
+                      }
+                    ]
+                  },
+                  "rsvpGracePeriodHours": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "rsvpClosedMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          null
+                        ]
+                      }
+                    ]
+                  },
                   "emailProvider": {
                     "default": "smtp",
                     "type": "string"
@@ -4899,6 +4981,47 @@
                   },
                   "showAddToCalendar": {
                     "type": "boolean"
+                  },
+                  "rsvpOpen": {
+                    "type": "boolean"
+                  },
+                  "rsvpDeadlineDate": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          null
+                        ]
+                      }
+                    ]
+                  },
+                  "rsvpGracePeriodHours": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "rsvpClosedMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          null
+                        ]
+                      }
+                    ]
                   },
                   "emailProvider": {
                     "default": "smtp",

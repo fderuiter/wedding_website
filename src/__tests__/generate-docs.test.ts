@@ -121,11 +121,16 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodType(shape.typographyScale)).toBe('object');
       expect(getZodType(shape.brandLogoWidth)).toBe('string');
       expect(getZodType(shape.showCountdown)).toBe('boolean');
+      expect(getZodType(shape.rsvpOpen)).toBe('boolean');
+      expect(getZodType(shape.isRsvpOpen)).toBe('boolean');
+      expect(getZodType(shape.rsvpDeadlineDate)).toBe('string');
+      expect(getZodType(shape.rsvpGracePeriodHours)).toBe('number');
+      expect(getZodType(shape.rsvpClosedMessage)).toBe('string');
       expect(getZodType(shape.modules)).toBe('object');
       expect(getZodType(shape.features)).toBe('object[]');
 
       const entries = Object.entries(shape);
-      expect(entries).toHaveLength(81);
+      expect(entries).toHaveLength(86);
 
       for (const [key, value] of entries) {
         const type = getZodType(value);
@@ -160,7 +165,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 66 Prisma columns, 15 virtual DTO fields, 64 public fields, 13 admin-only fields, and 4 masked secrets', () => {
+    it('distinguishes 70 Prisma columns, 16 virtual DTO fields, 68 public fields, 14 admin-only fields, and 4 masked secrets', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
 
@@ -168,7 +173,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
         .trim()
         .split('\n')
         .slice(2);
-      expect(rows).toHaveLength(81);
+      expect(rows).toHaveLength(86);
 
       const prismaRows = rows.filter((r) => r.includes('| `Prisma` |'));
       const virtualRows = rows.filter((r) => r.includes('| `Virtual DTO` |'));
@@ -176,10 +181,10 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
 
-      expect(prismaRows).toHaveLength(66);
-      expect(virtualRows).toHaveLength(15);
-      expect(publicRows).toHaveLength(64);
-      expect(adminOnlyRows).toHaveLength(13);
+      expect(prismaRows).toHaveLength(70);
+      expect(virtualRows).toHaveLength(16);
+      expect(publicRows).toHaveLength(68);
+      expect(adminOnlyRows).toHaveLength(14);
       expect(maskedSecretRows).toHaveLength(4);
 
       expect(table).toContain('`Masked secret (hasSmtpPass)`');

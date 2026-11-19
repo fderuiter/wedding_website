@@ -1,10 +1,18 @@
 'use client';
 
-import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
+import { useMemo, useState } from 'react';
+import InteractiveTimeline, {
+  type ScheduleRsvpStatusInfo,
+} from '@/components/schedule/InteractiveTimeline';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
-import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
+import {
+  GuestHelpTrigger,
+  getSafeHostEmailLink,
+  getSafeHostPhoneLink,
+} from '@/components/guest/GuestHelpModal';
+import { useTheme } from '@/components/ThemeProvider';
 import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
 
 export default function GuestAddressPage() {
@@ -20,6 +28,17 @@ export default function GuestAddressPage() {
     isSaving,
     isAuthenticated,
   } = useGuestAddressPortal();
+  const theme = useTheme();
+  const [rsvpStatus, setRsvpStatus] = useState<ScheduleRsvpStatusInfo | null>(null);
+
+  const emailContact = useMemo(
+    () => getSafeHostEmailLink(theme.contactEmail),
+    [theme.contactEmail]
+  );
+  const phoneContact = useMemo(
+    () => getSafeHostPhoneLink(theme.contactPhone),
+    [theme.contactPhone]
+  );
 
   const { form, code, guestName, error, status } = state;
 
@@ -126,9 +145,106 @@ export default function GuestAddressPage() {
                 <span className="font-mono tracking-wider">{code}</span>
               </div>
             )}
-            <GuestHelpTrigger defaultCategory="dietary" label="Need Help?" />
+            <GuestHelpTrigger
+              defaultCategory="dietary"
+              label="Need Help?"
+              config={
+                rsvpStatus
+                  ? {
+                    rsvpOpen: rsvpStatus.rsvpOpen,
+                    isRsvpOpen: rsvpStatus.rsvpOpen,
+                    rsvpDeadlineDate: rsvpStatus.rsvpDeadlineDate,
+                    rsvpClosedMessage: rsvpStatus.rsvpClosedMessage,
+                    timezone: rsvpStatus.timezone,
+                  }
+                  : undefined
+              }
+            />
           </div>
         </header>
+
+        {/* RSVP Deadline or Closed Status Banner */}
+        {rsvpStatus && rsvpStatus.rsvpOpen && rsvpStatus.rsvpFormattedDeadline && (
+          <section
+            aria-label="RSVP deadline notice"
+            data-testid="guest-rsvp-deadline-banner"
+            className="rounded-3xl border border-amber-200 dark:border-amber-800/80 bg-amber-50/90 dark:bg-amber-950/30 p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          >
+            <div className="flex items-start gap-3">
+              <Icon
+                name="Calendar"
+                className="h-5 w-5 text-amber-800 dark:text-amber-300 shrink-0 mt-0.5"
+              />
+              <div className="text-sm text-amber-950 dark:text-amber-100 space-y-0.5">
+                <p className="font-bold">
+                  RSVP Deadline: {rsvpStatus.rsvpFormattedDeadline}
+                </p>
+                <p>
+                  Online RSVPs remain open through midnight on{' '}
+                  <strong>{rsvpStatus.rsvpFormattedDeadline}</strong> ({rsvpStatus.timezone}).
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {rsvpStatus && !rsvpStatus.rsvpOpen && (
+          <section
+            aria-label="Online RSVPs closed"
+            data-testid="guest-rsvp-closed-banner"
+            className="rounded-3xl border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-6 shadow-md space-y-4"
+          >
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Icon
+                  name="Calendar"
+                  className="h-5 w-5 text-[var(--color-primary-text)] dark:text-red-300 shrink-0"
+                />
+                <h2 className="text-lg font-bold text-gray-900 dark:text-zinc-100">
+                  Online RSVPs Are Closed
+                </h2>
+              </div>
+              <p className="text-sm text-gray-700 dark:text-zinc-200 leading-relaxed">
+                {rsvpStatus.rsvpClosedMessage}
+              </p>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-zinc-300">
+                Your saved responses remain visible below in read-only mode, and you can still
+                update your mailing address below.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              {emailContact && (
+                <a
+                  href={emailContact.href}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold bg-[var(--btn-primary-bg,var(--color-primary,#B91C1C))] text-[var(--btn-primary-text,#ffffff)] shadow-sm hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary,#B91C1C)]"
+                >
+                  <Icon name="Mail" className="h-4 w-4 shrink-0" />
+                  <span>Email {emailContact.email}</span>
+                </a>
+              )}
+              {phoneContact && (
+                <a
+                  href={phoneContact.href}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 hover:bg-gray-100 dark:hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary,#B91C1C)]"
+                >
+                  <Icon name="Phone" className="h-4 w-4 shrink-0" />
+                  <span>Call {phoneContact.displayPhone}</span>
+                </a>
+              )}
+              <GuestHelpTrigger
+                defaultCategory="dietary"
+                label="Host Contact Details & Help"
+                config={{
+                  rsvpOpen: false,
+                  isRsvpOpen: false,
+                  rsvpClosedMessage: rsvpStatus.rsvpClosedMessage,
+                  timezone: rsvpStatus.timezone,
+                }}
+              />
+            </div>
+          </section>
+        )}
 
         {/* Primary Section: Personalized Event Schedule & RSVPs */}
         <div
@@ -140,6 +256,8 @@ export default function GuestAddressPage() {
             title="Your Wedding Schedule & RSVPs"
             className="!px-0 !py-2"
             emptyStateMessage="Wedding schedule events will appear here as soon as they are published."
+            hideStatusBanner
+            onRsvpStatusChange={setRsvpStatus}
           />
         </div>
 

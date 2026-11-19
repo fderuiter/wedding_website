@@ -173,6 +173,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     timezone: data.timezone ?? 'UTC',
     showCountdown: data.showCountdown ?? true,
     showAddToCalendar: data.showAddToCalendar ?? true,
+    rsvpOpen: data.rsvpOpen,
+    rsvpDeadlineDate: data.rsvpDeadlineDate,
+    rsvpGracePeriodHours: data.rsvpGracePeriodHours,
+    rsvpClosedMessage: data.rsvpClosedMessage,
     subdomain: data.subdomain || null,
   });
 

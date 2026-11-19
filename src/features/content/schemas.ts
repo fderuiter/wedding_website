@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { coordinateSchema, isSafeConfigAssetUrl, isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '@/lib/modules';
+import {
+  isValidRsvpDeadlineDate,
+  isValidRsvpGracePeriodHours,
+  sanitizeRsvpClosedMessage,
+} from '@/utils/rsvpDeadline';
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
@@ -148,6 +153,33 @@ export const RawUpdateAppConfigSchema = z.object({
   fontMono: fontTokenSchema,
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  rsvpOpen: z.boolean().optional(),
+  rsvpDeadlineDate: z
+    .union([z.string(), z.null()])
+    .refine(
+      (val) => val === null || val.trim() === '' || isValidRsvpDeadlineDate(val.trim()),
+      { message: 'Invalid RSVP deadline date. Expected YYYY-MM-DD.' }
+    )
+    .transform((val) => (val === null ? '' : val.trim()))
+    .optional(),
+  rsvpGracePeriodHours: z
+    .union([
+      z.number(),
+      z
+        .string()
+        .refine((v) => /^\d+$/.test(v.trim()), {
+          message: 'Grace period must be 0, 12, 24, 48, 72, or 168 hours.',
+        })
+        .transform((v) => parseInt(v.trim(), 10)),
+    ])
+    .refine((val) => isValidRsvpGracePeriodHours(val), {
+      message: 'Grace period must be 0, 12, 24, 48, 72, or 168 hours.',
+    })
+    .optional(),
+  rsvpClosedMessage: z
+    .union([z.string(), z.null()])
+    .transform((val) => sanitizeRsvpClosedMessage(val))
+    .optional(),
   emailProvider: z.string().optional().default('smtp'),
   smtpHost: z.string().nullable().optional().default(''),
   smtpPort: z.union([z.number(), z.string().transform(v => parseInt(v, 10))]).nullable().optional().default(587),
@@ -260,6 +292,10 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     timezone: data.timezone,
     showCountdown: data.showCountdown,
     showAddToCalendar: data.showAddToCalendar,
+    rsvpOpen: data.rsvpOpen,
+    rsvpDeadlineDate: data.rsvpDeadlineDate,
+    rsvpGracePeriodHours: data.rsvpGracePeriodHours,
+    rsvpClosedMessage: data.rsvpClosedMessage,
     emailProvider: data.emailProvider ?? 'smtp',
     smtpHost: data.smtpHost ?? '',
     smtpPort: data.smtpPort ?? 587,
@@ -559,6 +595,11 @@ export const AppConfigSchema = z.object({
   timezone: z.string().default('America/Chicago').describe('IANA timezone identifier used to format event schedules and countdown timers.'),
   showCountdown: z.boolean().default(true).describe('Toggle controlling whether the live wedding countdown widget renders on public pages.'),
   showAddToCalendar: z.boolean().default(true).describe('Toggle controlling whether Add-to-Calendar links and ICS downloads are shown.'),
+  rsvpOpen: z.boolean().default(true).describe('Manual toggle controlling whether online guest RSVP submissions and edits are enabled.'),
+  isRsvpOpen: z.boolean().optional().describe('Virtual server-evaluated flag indicating whether online RSVPs are currently open after evaluating manual lock, cutoff date, and grace period.'),
+  rsvpDeadlineDate: z.string().default('').describe('Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone.'),
+  rsvpGracePeriodHours: z.number().int().default(0).describe('Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs.'),
+  rsvpClosedMessage: z.string().default('').transform((val) => sanitizeRsvpClosedMessage(val)).describe('Sanitized custom message displayed to guests and returned by RSVP APIs once online RSVPs close.'),
   emailProvider: z.string().default('smtp').describe('Active outbound email transport provider identifier (smtp, resend, or sendgrid).'),
   smtpHost: z.string().nullable().optional().default('').describe('Hostname of the outbound SMTP relay server for guest broadcasts.'),
   smtpPort: z.number().nullable().optional().default(587).describe('TCP port number used when connecting to the outbound SMTP server.'),
@@ -654,6 +695,10 @@ export const PublicAppConfigSchema = z.object({
   timezone: z.string().default('America/Chicago'),
   showCountdown: z.boolean().default(true),
   showAddToCalendar: z.boolean().default(true),
+  rsvpOpen: z.boolean().default(true),
+  isRsvpOpen: z.boolean().optional(),
+  rsvpDeadlineDate: z.string().default(''),
+  rsvpClosedMessage: z.string().default('').transform((val) => sanitizeRsvpClosedMessage(val)),
   modules: AppConfigSchema.shape.modules,
   features: AppConfigSchema.shape.features,
   createdAt: z.coerce.date(),

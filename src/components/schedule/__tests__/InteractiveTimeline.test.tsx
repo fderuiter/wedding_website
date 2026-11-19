@@ -706,5 +706,127 @@ describe('InteractiveTimeline Component', () => {
       const results = await axe(container);
       expect(results).toHaveNoViolations();
     });
+
+    it('displays formatted deadline and venue timezone when open, and switches to read-only saved summary with calendar export when closed', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Taylor Swift',
+              plusOneAllocations: 2,
+              rsvpOpen: false,
+              rsvpDeadlineDate: '2026-08-15',
+              rsvpFormattedDeadline: 'August 15, 2026',
+              timezone: 'America/Chicago',
+              rsvpClosedMessage: 'RSVPs are closed. Contact hosts@example.com.',
+              data: [
+                {
+                  id: 'se-closed-1',
+                  title: 'Evening Reception',
+                  startTime: '2026-09-19T18:00:00.000Z',
+                  category: 'Reception',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  userRsvp: { status: 'attending', plusOneCount: 2, dietaryNotes: 'Gluten-free' },
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ success: true, data: [] }) });
+      });
+
+      const { container } = render(
+        <InteractiveTimeline events={[]} timezone="America/Chicago" emptyStateMessage="No events" />
+      );
+
+      expect(await screen.findByTestId('schedule-rsvp-closed-banner')).toHaveTextContent(
+        'RSVPs are closed. Contact hosts@example.com.'
+      );
+
+      const readOnlySummary = screen.getByTestId('rsvp-readonly-se-closed-1');
+      expect(readOnlySummary).toHaveTextContent('Attending');
+      expect(readOnlySummary).toHaveTextContent('2');
+      expect(readOnlySummary).toHaveTextContent('Gluten-free');
+
+      // Editable RSVP inputs and batch bar are hidden
+      expect(screen.queryByTestId('rsvp-card-se-closed-1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('rsvp-batch-bar')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Save RSVP/i })).not.toBeInTheDocument();
+
+      // Calendar export remains available
+      expect(screen.getByRole('button', { name: /add to calendar/i })).toBeInTheDocument();
+
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('announces HTTP 403 closing message in polite live region and locks RSVP inputs when cutoff expires mid-session', async () => {
+      (global.fetch as jest.Mock).mockImplementation((url) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Late Guest',
+              plusOneAllocations: 1,
+              rsvpOpen: true,
+              rsvpDeadlineDate: '2026-08-15',
+              rsvpFormattedDeadline: 'August 15, 2026',
+              timezone: 'America/Chicago',
+              data: [
+                {
+                  id: 'se-mid-1',
+                  title: 'Ceremony',
+                  startTime: '2026-09-19T16:00:00.000Z',
+                  category: 'Ceremony',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  userRsvp: { status: 'attending', plusOneCount: 0, dietaryNotes: 'No peanuts' },
+                },
+              ],
+            }),
+          });
+        }
+        if (url === '/api/rsvp') {
+          return Promise.resolve({
+            ok: false,
+            status: 403,
+            json: async () => ({
+              success: false,
+              error: 'RSVP cutoff has passed. Please contact the hosts directly.',
+            }),
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+      });
+
+      render(<InteractiveTimeline events={[]} timezone="America/Chicago" emptyStateMessage="No events" />);
+
+      expect(await screen.findByTestId('schedule-rsvp-deadline-banner')).toHaveTextContent(
+        'August 15, 2026'
+      );
+
+      const card = await screen.findByTestId('rsvp-card-se-mid-1');
+      fireEvent.click(within(card).getByRole('radio', { name: /^declined$/i }));
+      expect(screen.getByTestId('rsvp-batch-bar')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('rsvp-save-all-button'));
+
+      const liveRegion = await screen.findByTestId('rsvp-live-status');
+      expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+      expect(liveRegion).toHaveTextContent(
+        'RSVP cutoff has passed. Please contact the hosts directly.'
+      );
+
+      // Transitions to read-only saved baseline response ("Attending", "No peanuts") and hides batch bar
+      const readOnly = await screen.findByTestId('rsvp-readonly-se-mid-1');
+      expect(readOnly).toHaveTextContent('Attending');
+      expect(readOnly).toHaveTextContent('No peanuts');
+      expect(screen.queryByTestId('rsvp-batch-bar')).not.toBeInTheDocument();
+    });
   });
 });

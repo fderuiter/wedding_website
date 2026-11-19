@@ -14,6 +14,12 @@ import { Button } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useTheme } from '@/components/ThemeProvider';
 import { sanitizeUrl } from '@/utils/validation';
+import {
+  DEFAULT_RSVP_CLOSED_MESSAGE,
+  evaluateRsvpCutoff,
+  formatRsvpDeadlineDate,
+  sanitizeRsvpClosedMessage,
+} from '@/utils/rsvpDeadline';
 import { cn } from '@/utils/cn';
 
 export type GuestHelpCategory = 'passcode' | 'dietary' | 'registry';
@@ -26,6 +32,11 @@ export interface GuestHelpConfig {
   partner2Name?: string | null;
   brideName?: string | null;
   groomName?: string | null;
+  rsvpOpen?: boolean | null;
+  isRsvpOpen?: boolean | null;
+  rsvpDeadlineDate?: string | null;
+  rsvpClosedMessage?: string | null;
+  timezone?: string | null;
 }
 
 const SAFE_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -160,6 +171,9 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
     const baseId = useId();
     const titleId = `help-title-${baseId}`;
     const descId = `help-desc-${baseId}`;
+    const contactSectionId = `help-contacts-${baseId}`;
+    const contactHeadingId = `help-contacts-heading-${baseId}`;
+    const contactSectionRef = useRef<HTMLElement | null>(null);
     const theme = useTheme();
     const modalKey = `${isOpen ? 'open' : 'closed'}-${initialCategory}`;
     const [categoryOverride, setCategoryOverride] = useState<{
@@ -195,7 +209,77 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
       [config?.contactPhone, config?.twilioFromNumber, theme.contactPhone]
     );
 
-    const activeTab = HELP_TABS.find((t) => t.id === activeCategory) ?? HELP_TABS[0];
+    const rsvpCutoffEvaluation = useMemo(
+      () =>
+        evaluateRsvpCutoff({
+          rsvpOpen: config?.rsvpOpen,
+          rsvpDeadlineDate: config?.rsvpDeadlineDate,
+          rsvpClosedMessage: config?.rsvpClosedMessage,
+          timezone: config?.timezone,
+        }),
+      [
+        config?.rsvpOpen,
+        config?.rsvpDeadlineDate,
+        config?.rsvpClosedMessage,
+        config?.timezone,
+      ]
+    );
+    const isRsvpCurrentlyOpen =
+      typeof config?.isRsvpOpen === 'boolean'
+        ? config.isRsvpOpen
+        : rsvpCutoffEvaluation.isOpen;
+    const formattedCutoffDate = useMemo(
+      () => formatRsvpDeadlineDate(config?.rsvpDeadlineDate),
+      [config?.rsvpDeadlineDate]
+    );
+    const sanitizedTimezone = sanitizeConfigText(config?.timezone, 64);
+    const sanitizedClosedMessage =
+      sanitizeRsvpClosedMessage(config?.rsvpClosedMessage) || DEFAULT_RSVP_CLOSED_MESSAGE;
+
+    const resolvedTabs = useMemo(() => {
+      return HELP_TABS.map((tab) => {
+        if (tab.id !== 'dietary') return tab;
+        if (!isRsvpCurrentlyOpen) {
+          return {
+            ...tab,
+            heading: 'Online RSVPs Are Closed — Host Contact Guidance',
+            items: [
+              ['Online RSVPs are closed', sanitizedClosedMessage],
+              [
+                'Requesting attendance or Dietary Requirements / Notes updates',
+                'Online changes to attendance, plus-one counts, and Dietary Requirements / Notes are locked. Please reach out to the hosts below for urgent headcount or allergy updates.',
+              ],
+              [
+                'Saved responses & mailing address',
+                'You can still view your saved RSVP summary, export calendar events, and update your postal mailing address in the Guest Portal.',
+              ],
+            ] as [string, string][],
+          };
+        }
+        if (formattedCutoffDate) {
+          const tzDetail = sanitizedTimezone ? ` (midnight in ${sanitizedTimezone})` : '';
+          return {
+            ...tab,
+            items: [
+              tab.items[0],
+              [
+                'RSVP deadline & updating responses',
+                `Please submit or update your attendance, allocated plus-ones, or allergy notes by ${formattedCutoffDate}${tzDetail}.`,
+              ],
+              tab.items[2],
+            ] as [string, string][],
+          };
+        }
+        return tab;
+      });
+    }, [
+      isRsvpCurrentlyOpen,
+      sanitizedClosedMessage,
+      formattedCutoffDate,
+      sanitizedTimezone,
+    ]);
+
+    const activeTab = resolvedTabs.find((t) => t.id === activeCategory) ?? resolvedTabs[0];
 
     const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {
       const len = HELP_TABS.length;
@@ -296,29 +380,55 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
               role="tabpanel"
               id={`${baseId}-panel-${activeTab.id}`}
               aria-labelledby={`${baseId}-tab-${activeTab.id}`}
+              data-testid={
+                activeTab.id === 'dietary' && !isRsvpCurrentlyOpen
+                  ? 'help-modal-rsvp-closed'
+                  : undefined
+              }
               tabIndex={0}
               className={cn('space-y-3 rounded-lg', FOCUS_RING)}
             >
               <h3 className={cn('text-sm sm:text-base', HEADING_SM_CLS)}>{activeTab.heading}</h3>
               <ul className="space-y-2">
-                {activeTab.items.map(([title, detail]) => (
+                {activeTab.items.map(([title, detail], idx) => (
                   <li
                     key={title}
                     className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/50 p-3 text-xs sm:text-sm"
                   >
                     <p className="font-semibold text-gray-900 dark:text-zinc-100">{title}</p>
                     <p className="mt-0.5 text-gray-600 dark:text-zinc-300 leading-relaxed">{detail}</p>
+                    {activeTab.id === 'dietary' && !isRsvpCurrentlyOpen && idx === 0 && (
+                      <a
+                        href={`#${contactSectionId}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          contactSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+                          contactSectionRef.current?.focus();
+                        }}
+                        className={cn(
+                          'mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-primary-text,var(--color-primary,#B91C1C))] dark:text-red-300 underline',
+                          FOCUS_RING
+                        )}
+                      >
+                        <span>Contact the hosts below</span>
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
             </div>
 
             <section
-              aria-label="Contact the hosts"
+              ref={contactSectionRef}
+              id={contactSectionId}
+              tabIndex={-1}
+              aria-labelledby={contactHeadingId}
               className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/70 p-4 space-y-2.5"
             >
-              <h3 className={cn('text-xs sm:text-sm', HEADING_SM_CLS)}>
-                Still need help? Reach out to the hosts
+              <h3 id={contactHeadingId} className={cn('text-xs sm:text-sm', HEADING_SM_CLS)}>
+                {isRsvpCurrentlyOpen
+                  ? 'Still need help? Reach out to the hosts'
+                  : 'Need to update a closed RSVP? Contact the hosts'}
               </h3>
               {emailContact || phoneContact ? (
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2.5">
@@ -374,8 +484,9 @@ interface GuestHelpContextValue {
   hasProvider: boolean;
   isOpen: boolean;
   activeCategory: GuestHelpCategory;
-  openHelp: (_category?: GuestHelpCategory) => void;
+  openHelp: (_category?: GuestHelpCategory, _configOverride?: GuestHelpConfig | null) => void;
   closeHelp: () => void;
+  syncLiveConfig: (_liveConfig: Partial<GuestHelpConfig> | null) => void;
 }
 
 const GuestHelpContext = createContext<GuestHelpContextValue>({
@@ -384,6 +495,7 @@ const GuestHelpContext = createContext<GuestHelpContextValue>({
   activeCategory: 'passcode',
   openHelp: () => {},
   closeHelp: () => {},
+  syncLiveConfig: () => {},
 });
 
 export function useGuestHelp(): GuestHelpContextValue {
@@ -401,17 +513,37 @@ export function GuestHelpProvider({ children, config, pathname }: GuestHelpProvi
   const [activeCategory, setActiveCategory] = useState<GuestHelpCategory>(() =>
     resolveHelpCategoryForPath(pathname)
   );
+  const [liveConfig, setLiveConfig] = useState<Partial<GuestHelpConfig> | null>(null);
+  const [triggerConfig, setTriggerConfig] = useState<GuestHelpConfig | null>(null);
+
   const openHelp = useCallback(
-    (category?: GuestHelpCategory) => {
+    (category?: GuestHelpCategory, configOverride?: GuestHelpConfig | null) => {
       setActiveCategory(category ?? resolveHelpCategoryForPath(pathname));
+      setTriggerConfig(configOverride ?? null);
       setIsOpen(true);
     },
     [pathname]
   );
-  const closeHelp = useCallback(() => setIsOpen(false), []);
+  const closeHelp = useCallback(() => {
+    setIsOpen(false);
+    setTriggerConfig(null);
+  }, []);
+  const syncLiveConfig = useCallback((nextLiveConfig: Partial<GuestHelpConfig> | null) => {
+    setLiveConfig(nextLiveConfig);
+  }, []);
+
+  const mergedConfig = useMemo<GuestHelpConfig | null>(() => {
+    if (!config && !liveConfig && !triggerConfig) return null;
+    return {
+      ...(config ?? {}),
+      ...(liveConfig ?? {}),
+      ...(triggerConfig ?? {}),
+    };
+  }, [config, liveConfig, triggerConfig]);
+
   const value = useMemo<GuestHelpContextValue>(
-    () => ({ hasProvider: true, isOpen, activeCategory, openHelp, closeHelp }),
-    [isOpen, activeCategory, openHelp, closeHelp]
+    () => ({ hasProvider: true, isOpen, activeCategory, openHelp, closeHelp, syncLiveConfig }),
+    [isOpen, activeCategory, openHelp, closeHelp, syncLiveConfig]
   );
 
   return (
@@ -421,7 +553,7 @@ export function GuestHelpProvider({ children, config, pathname }: GuestHelpProvi
         isOpen={isOpen}
         onClose={closeHelp}
         initialCategory={activeCategory}
-        config={config}
+        config={mergedConfig}
       />
     </GuestHelpContext.Provider>
   );
@@ -470,7 +602,7 @@ export const GuestHelpTrigger = React.forwardRef<HTMLButtonElement, GuestHelpTri
           aria-expanded={context.hasProvider ? context.isOpen : localOpen}
           onClick={() => {
             onTrigger?.();
-            if (context.hasProvider) context.openHelp(defaultCategory);
+            if (context.hasProvider) context.openHelp(defaultCategory, config);
             else setLocalOpen(true);
           }}
           className={cn('transition-colors', FOCUS_RING, VARIANT_CLS[variant], className)}

@@ -18,6 +18,10 @@ import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { cssTokenKeyRegex, isValidCssTokenValue } from '@/features/content';
+import {
+  DEFAULT_RSVP_CLOSED_MESSAGE,
+  RSVP_GRACE_PERIOD_HOURS_OPTIONS,
+} from '@/utils/rsvpDeadline';
 
 interface SearchableTimezoneSelectProps {
   value: string;
@@ -612,6 +616,136 @@ export default function AdminSettingsPage() {
                     <Input required type="number" step="any" name="longitude" value={localConfig.longitude || 0} onChange={handleChange} />
                   </FormGroup>
                 </div>
+              </section>
+
+              <section
+                aria-labelledby="rsvp-access-control-heading"
+                className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4"
+              >
+                <div>
+                  <h2 id="rsvp-access-control-heading" className="text-xl font-semibold">
+                    RSVP Deadline &amp; Access Control
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Configure a global midnight RSVP cutoff in your venue timezone, an optional silent grace window, or manually lock online RSVP edits while keeping all saved guest responses.
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex items-start justify-between gap-4">
+                  <div>
+                    <label
+                      htmlFor="rsvp-open-toggle"
+                      className="font-semibold text-gray-900 dark:text-gray-100 cursor-pointer"
+                    >
+                      Accept Online RSVPs
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Turn off to freeze online RSVP submissions and edits immediately while keeping all stored guest responses intact.
+                    </p>
+                  </div>
+                  <input
+                    id="rsvp-open-toggle"
+                    name="rsvpOpen"
+                    type="checkbox"
+                    checked={localConfig.rsvpOpen !== false}
+                    onChange={(e) =>
+                      setLocalConfig((prev: any) => ({
+                        ...prev,
+                        rsvpOpen: e.target.checked,
+                      }))
+                    }
+                    className="h-5 w-5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer mt-1"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormGroup>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="rsvp-deadline-date" className="mb-0">
+                        Global RSVP Cutoff Date
+                      </Label>
+                      {localConfig.rsvpDeadlineDate && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            setLocalConfig((prev: any) => ({
+                              ...prev,
+                              rsvpDeadlineDate: '',
+                            }))
+                          }
+                        >
+                          Clear Cutoff Date
+                        </Button>
+                      )}
+                    </div>
+                    <Input
+                      id="rsvp-deadline-date"
+                      type="date"
+                      name="rsvpDeadlineDate"
+                      value={localConfig.rsvpDeadlineDate || ''}
+                      onChange={handleChange}
+                    />
+                    <FormMessage>
+                      Closes online RSVPs at midnight at the end of this date in {localConfig.timezone || 'UTC'}. Leave blank for no automatic deadline.
+                    </FormMessage>
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="rsvp-grace-period-hours">Silent Grace Period</Label>
+                    <Select
+                      id="rsvp-grace-period-hours"
+                      name="rsvpGracePeriodHours"
+                      value={String(localConfig.rsvpGracePeriodHours ?? 0)}
+                      onChange={(e) =>
+                        setLocalConfig((prev: any) => ({
+                          ...prev,
+                          rsvpGracePeriodHours: Number(e.target.value),
+                        }))
+                      }
+                    >
+                      {RSVP_GRACE_PERIOD_HOURS_OPTIONS.map((hours) => {
+                        const label =
+                          hours === 0
+                            ? '0 hours (close immediately at midnight)'
+                            : hours === 24
+                              ? '24 hours (1 day)'
+                              : hours === 48
+                                ? '48 hours (2 days)'
+                                : hours === 72
+                                  ? '72 hours (3 days)'
+                                  : hours === 168
+                                    ? '168 hours (7 days)'
+                                    : `${hours} hours`;
+                        return (
+                          <option key={hours} value={String(hours)}>
+                            {label}
+                          </option>
+                        );
+                      })}
+                    </Select>
+                    <FormMessage>
+                      Silently accepts late responses after the published cutoff date without revealing the grace window to guests.
+                    </FormMessage>
+                  </FormGroup>
+                </div>
+
+                <FormGroup>
+                  <Label htmlFor="rsvp-closed-message">RSVP Closed Message</Label>
+                  <Textarea
+                    id="rsvp-closed-message"
+                    name="rsvpClosedMessage"
+                    rows={3}
+                    maxLength={500}
+                    value={localConfig.rsvpClosedMessage || ''}
+                    onChange={handleChange}
+                    placeholder={DEFAULT_RSVP_CLOSED_MESSAGE}
+                  />
+                  <FormMessage>
+                    Shown to guests once RSVPs close so late guests know how to reach the hosts for urgent changes.
+                  </FormMessage>
+                </FormGroup>
               </section>
 
               <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">

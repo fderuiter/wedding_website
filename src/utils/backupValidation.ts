@@ -117,6 +117,10 @@ const BackupAppConfigSchema = z.object({
   timezone: RawUpdateAppConfigSchema.shape.timezone.optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  rsvpOpen: z.boolean().optional(),
+  rsvpDeadlineDate: RawUpdateAppConfigSchema.shape.rsvpDeadlineDate,
+  rsvpGracePeriodHours: RawUpdateAppConfigSchema.shape.rsvpGracePeriodHours,
+  rsvpClosedMessage: RawUpdateAppConfigSchema.shape.rsvpClosedMessage,
 
   // Non-secret delivery & broadcast configuration columns
   emailProvider: z.string().max(100).optional(),

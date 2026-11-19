@@ -685,3 +685,77 @@ describe('AdminSettingsPage ARIA Bindings and Accessibility', () => {
   });
 });
 
+describe('AdminSettingsPage RSVP Deadline & Access Control', () => {
+  it('loads, edits, clears, and saves cutoff date, grace window, open toggle, and closing message', async () => {
+    let savedPayload: any = null;
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (options?.method === 'PUT') {
+          savedPayload = JSON.parse(String(options.body));
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              ...mockConfig,
+              ...savedPayload,
+            }),
+          });
+        }
+        const loaded = {
+          ...mockConfig,
+          timezone: 'America/Chicago',
+          rsvpOpen: true,
+          rsvpDeadlineDate: '2026-08-15',
+          rsvpGracePeriodHours: 24,
+          rsvpClosedMessage: 'Initial closed message',
+        };
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [loaded] });
+        }
+        return Promise.resolve({ ok: true, json: async () => loaded });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const openToggle = screen.getByLabelText(/Accept Online RSVPs/i) as HTMLInputElement;
+    const deadlineInput = screen.getByLabelText(/Global RSVP Cutoff Date/i) as HTMLInputElement;
+    const graceSelect = screen.getByLabelText(/Silent Grace Period/i) as HTMLSelectElement;
+    const closedMsgTextarea = screen.getByLabelText(/RSVP Closed Message/i) as HTMLTextAreaElement;
+
+    expect(openToggle.checked).toBe(true);
+    expect(deadlineInput.value).toBe('2026-08-15');
+    expect(graceSelect.value).toBe('24');
+    expect(closedMsgTextarea.value).toBe('Initial closed message');
+
+    // Clear cutoff date button clears the date input, then set a new date, 48h grace window, lock RSVPs, and update message
+    fireEvent.click(screen.getByRole('button', { name: /Clear Cutoff Date/i }));
+    expect(deadlineInput.value).toBe('');
+
+    fireEvent.change(deadlineInput, { target: { name: 'rsvpDeadlineDate', value: '2026-09-01' } });
+    fireEvent.change(graceSelect, { target: { value: '48' } });
+    fireEvent.click(openToggle);
+    fireEvent.change(closedMsgTextarea, {
+      target: { name: 'rsvpClosedMessage', value: 'RSVPs closed — contact hosts@example.com' },
+    });
+
+    const form = deadlineInput.closest('form')!;
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    await waitFor(() => {
+      expect(savedPayload).not.toBeNull();
+    });
+
+    expect(savedPayload.rsvpOpen).toBe(false);
+    expect(savedPayload.rsvpDeadlineDate).toBe('2026-09-01');
+    expect(savedPayload.rsvpGracePeriodHours).toBe(48);
+    expect(savedPayload.rsvpClosedMessage).toBe('RSVPs closed — contact hosts@example.com');
+  });
+});
+

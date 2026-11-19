@@ -12,6 +12,14 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(401, 'Unauthorized: Please log in with your invitation code to submit RSVPs.');
   }
 
+  const rsvpStatus =
+    typeof subEventService.getRsvpStatus === 'function'
+      ? await subEventService.getRsvpStatus()
+      : undefined;
+  if (rsvpStatus && !rsvpStatus.isOpen) {
+    throw new ApiError(403, rsvpStatus.closedMessage);
+  }
+
   const body = await request.json();
 
   let submissions = [];
