@@ -406,6 +406,11 @@ describe('SubEventsMatrixPage', () => {
       configurable: true,
     });
 
+    Object.defineProperty(region, 'scrollHeight', {
+      get: () => 480,
+      configurable: true,
+    });
+
     region.focus();
     expect(region).toHaveFocus();
 

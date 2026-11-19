@@ -234,6 +234,100 @@ export function optimizeContrast(baseHex: string, bgHex: string, minRatio: numbe
   return computedHex;
 }
 
+const NEUTRAL_SURFACE_FAMILIES = ['gray', 'slate', 'zinc', 'stone', 'neutral'] as const;
+const BASE_DARK_SHADES = ['800', '900', '950'] as const;
+
+function resolveDarkSurfaceBg(minDarkBgHex: string, candidateBgHex?: string | null): string {
+  const minLum = getLuminance(hexToRgb(minDarkBgHex));
+  if (!candidateBgHex || !hexColorRegex.test(candidateBgHex)) {
+    return minDarkBgHex;
+  }
+  const candLum = getLuminance(hexToRgb(candidateBgHex));
+  if (candLum > minLum && candLum <= 0.5) {
+    return candidateBgHex;
+  }
+  return minDarkBgHex;
+}
+
+interface DarkSurfaceTokenSet {
+  primaryText: string;
+  secondaryText: string;
+  errorText: string;
+  focusRing: string;
+  surfaceBorder: string;
+  mutedText: string;
+  warningBg: string;
+  warningBorder: string;
+  warningText: string;
+  statusWarningText: string;
+  statusSuccessText: string;
+  statusInfoText: string;
+}
+
+function calibrateDarkSurfaceTokens(
+  safePrimary: string,
+  safeSecondary: string,
+  surfaceBgHex: string
+): DarkSurfaceTokenSet {
+  return {
+    primaryText: optimizeContrast(safePrimary, surfaceBgHex, 4.5),
+    secondaryText: optimizeContrast(safeSecondary, surfaceBgHex, 4.5),
+    errorText: optimizeContrast('#EF4444', surfaceBgHex, 4.5),
+    focusRing: optimizeContrast(safePrimary, surfaceBgHex, 3.0),
+    surfaceBorder: optimizeContrast('#9CA3AF', surfaceBgHex, 3.0),
+    mutedText: optimizeContrast('#9CA3AF', surfaceBgHex, 4.5),
+    warningBg: 'rgba(245, 158, 11, 0.15)',
+    warningBorder: 'rgba(245, 158, 11, 0.35)',
+    warningText: optimizeContrast('#FDE68A', surfaceBgHex, 4.5),
+    statusWarningText: optimizeContrast('#FCD34D', surfaceBgHex, 4.5),
+    statusSuccessText: optimizeContrast('#86EFAC', surfaceBgHex, 4.5),
+    statusInfoText: optimizeContrast('#93C5FD', surfaceBgHex, 4.5),
+  };
+}
+
+function renderDarkContainerDeclarations(
+  solidPrimary: string,
+  solidSecondary: string,
+  tokens: DarkSurfaceTokenSet
+): string {
+  return `      --color-primary: ${solidPrimary};
+      --color-secondary: ${solidSecondary};
+      --color-primary-text: ${tokens.primaryText};
+      --color-secondary-text: ${tokens.secondaryText};
+      --color-error-text: ${tokens.errorText};
+      --color-focus-ring: ${tokens.focusRing};
+      --color-surface-border: ${tokens.surfaceBorder};
+      --color-muted-text: ${tokens.mutedText};
+      --color-text-muted: ${tokens.mutedText};
+      --color-warning-bg: ${tokens.warningBg};
+      --color-warning-border: ${tokens.warningBorder};
+      --color-warning-text: ${tokens.warningText};
+      --color-status-warning-text: ${tokens.statusWarningText};
+      --color-status-unsent-text: ${tokens.statusWarningText};
+      --color-status-success-text: ${tokens.statusSuccessText};
+      --color-status-sent-text: ${tokens.statusSuccessText};
+      --color-status-info-text: ${tokens.statusInfoText};
+      --color-status-not-needed-text: ${tokens.statusInfoText};`;
+}
+
+function buildShadeSelectors(shades: readonly string[]): string[] {
+  const darkPrefixed: string[] = [];
+  const unprefixed: string[] = [];
+
+  for (const family of NEUTRAL_SURFACE_FAMILIES) {
+    for (const shade of shades) {
+      darkPrefixed.push(`    .dark .dark\\:bg-${family}-${shade}`);
+      darkPrefixed.push(`    .dark [class^="dark:bg-${family}-${shade}/"]`);
+      darkPrefixed.push(`    .dark [class*=" dark:bg-${family}-${shade}/"]`);
+      unprefixed.push(`    .bg-${family}-${shade}`);
+      unprefixed.push(`    [class^="bg-${family}-${shade}/"]`);
+      unprefixed.push(`    [class*=" bg-${family}-${shade}/"]`);
+    }
+  }
+
+  return [...darkPrefixed, ...unprefixed];
+}
+
 export function generateDynamicStyles(
   primaryColor: string,
   secondaryColor: string,
@@ -276,6 +370,16 @@ export function generateDynamicStyles(
     }
   }
 
+  const darkCustomTokenOverrides: Record<string, string> = {};
+  for (const [k, v] of Object.entries(sanitizedCustomTokens)) {
+    const defaultLightRaw = (baseLightTokens as unknown as Record<string, unknown>)[k];
+    const defaultLightSanitized =
+      typeof defaultLightRaw === 'string' ? sanitizeTokenValue(defaultLightRaw) : undefined;
+    if (defaultLightSanitized === undefined || v !== defaultLightSanitized) {
+      darkCustomTokenOverrides[k] = v;
+    }
+  }
+
   const lightPresetTokens = {
     ...baseLightTokens,
     ...sanitizedCustomTokens,
@@ -283,7 +387,7 @@ export function generateDynamicStyles(
 
   const darkPresetTokens = {
     ...baseDarkTokens,
-    ...sanitizedCustomTokens,
+    ...darkCustomTokenOverrides,
   };
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
@@ -310,54 +414,61 @@ export function generateDynamicStyles(
   const statusSuccessTextLight = optimizeContrast('#166534', '#F0FDF4', 4.5);
   const statusInfoTextLight = optimizeContrast('#1E40AF', '#EFF6FF', 4.5);
 
-  const primaryTextDark = optimizeContrast(safePrimary, '#111827', 4.5);
-  const secondaryTextDark = optimizeContrast(safeSecondary, '#111827', 4.5);
-  const errorTextDark = optimizeContrast('#EF4444', '#111827', 4.5);
-  const focusRingDark = optimizeContrast(safePrimary, '#111827', 3.0);
-  const surfaceBorderDark = optimizeContrast('#9CA3AF', '#111827', 3.0);
-  const mutedTextDark = optimizeContrast('#9CA3AF', '#111827', 4.5);
+  // #1D293D (Tailwind v4 slate-800) bounds #1F2937 and #1E2939 (Tailwind v4 gray-800) so all 800 card surfaces >= 4.5:1
+  const darkCardSurfaceBg = resolveDarkSurfaceBg(
+    resolveDarkSurfaceBg('#1D293D', darkPresetTokens['--card-bg']),
+    darkPresetTokens['--schedule-card-bg']
+  );
+  // #44403B (Tailwind v4 stone-700) bounds #374151 and #364153 (Tailwind v4 gray-700) so all 700 surfaces >= 4.5:1
+  const dark700SurfaceBg = resolveDarkSurfaceBg('#44403B', darkCardSurfaceBg);
+  const dark600SurfaceBg = resolveDarkSurfaceBg('#4B5563', dark700SurfaceBg);
 
-  const warningBgDark = 'rgba(245, 158, 11, 0.15)';
-  const warningBorderDark = 'rgba(245, 158, 11, 0.35)';
-  const warningTextDark = optimizeContrast('#FDE68A', '#111827', 4.5);
-
-  const statusWarningTextDark = optimizeContrast('#FCD34D', '#111827', 4.5);
-  const statusSuccessTextDark = optimizeContrast('#86EFAC', '#111827', 4.5);
-  const statusInfoTextDark = optimizeContrast('#93C5FD', '#111827', 4.5);
+  const baseDarkTokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, darkCardSurfaceBg);
+  const dark700TokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, dark700SurfaceBg);
+  const dark600TokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, dark600SurfaceBg);
 
   const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
-  const seatAssignedTextDark = optimizeContrast('#ffffff', safePrimary, 4.5);
+  const seatAssignedTextDark = optimizeContrast('#ffffff', primaryTextLight, 4.5);
 
   const lightPresetCssRules = Object.entries(lightPresetTokens)
-    .filter(([key]) => key !== 'darkTokens')
+    .filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
     .map(([key, value]) => `      ${key}: ${value};`)
     .join('\n');
 
   const darkPresetCssRules = Object.entries(darkPresetTokens)
-    .filter(([key]) => key !== 'darkTokens')
+    .filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
     .map(([key, value]) => `      ${key}: ${value};`)
     .join('\n');
 
+  const baseDarkContainerSelectors = [
+    '    .dark .dark\\:bg-black',
+    '    .dark [class^="dark:bg-black/"]',
+    '    .dark [class*=" dark:bg-black/"]',
+    '    .dark [data-surface="dark"]',
+    ...buildShadeSelectors(BASE_DARK_SHADES).filter((sel) => sel.startsWith('    .dark ')),
+    '    .bg-black',
+    '    [data-surface="dark"]',
+    ...buildShadeSelectors(BASE_DARK_SHADES).filter((sel) => !sel.startsWith('    .dark ')),
+  ].join(',\n');
+
+  const dark700ContainerSelectors = [
+    ...buildShadeSelectors(['700']),
+    '    .dark .bg-primary\\/5',
+    '    .dark .bg-primary\\/10',
+    '    .dark .bg-primary\\/20',
+    '    .dark .dark\\:bg-primary\\/10',
+    '    .dark .dark\\:bg-primary\\/20',
+    '    .dark [class^="dark:bg-red-900/"]',
+    '    .dark [class*=" dark:bg-red-900/"]',
+    '    .dark [class^="dark:bg-red-950/"]',
+    '    .dark [class*=" dark:bg-red-950/"]',
+  ].join(',\n');
+
+  const dark600ContainerSelectors = buildShadeSelectors(['600']).join(',\n');
+
   return `
     :root {
-      --color-primary: ${safePrimary};
-      --color-secondary: ${safeSecondary};
-      --color-primary-text: ${primaryTextDark};
-      --color-secondary-text: ${secondaryTextDark};
-      --color-error-text: ${errorTextDark};
-      --color-focus-ring: ${focusRingDark};
-      --color-surface-border: ${surfaceBorderDark};
-      --color-muted-text: ${mutedTextDark};
-      --color-text-muted: ${mutedTextDark};
-      --color-warning-bg: ${warningBgDark};
-      --color-warning-border: ${warningBorderDark};
-      --color-warning-text: ${warningTextDark};
-      --color-status-warning-text: ${statusWarningTextDark};
-      --color-status-unsent-text: ${statusWarningTextDark};
-      --color-status-success-text: ${statusSuccessTextDark};
-      --color-status-sent-text: ${statusSuccessTextDark};
-      --color-status-info-text: ${statusInfoTextDark};
-      --color-status-not-needed-text: ${statusInfoTextDark};
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
 ${lightPresetCssRules}
       --font-heading: ${safeFontHeading};
       --font-body: ${safeFontBody};
@@ -392,6 +503,15 @@ ${lightPresetCssRules}
       --color-status-info-text: ${statusInfoTextLight};
       --color-status-not-needed-text: ${statusInfoTextLight};
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
+    }
+
+    .dark {
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
+${darkPresetCssRules}
+      --container-max-w: ${safeContainerMaxWidth};
+      --grid-gap: ${safeGridGap};
+      --card-padding: ${safeCardPadding};
+      --radius-card: ${safeBorderRadius};
     }
 
     /* Light containers in any document mode */
@@ -442,105 +562,19 @@ ${lightPresetCssRules}
       --color-status-not-needed-text: ${statusInfoTextLight};
     }
 
-    /* Re-assert dark mode variables for dark backgrounds under dark mode */
-    .dark .dark\\:bg-black,
-    .dark [data-surface="dark"],
-    .dark .dark\\:bg-gray-600,
-    .dark .dark\\:bg-gray-700,
-    .dark .dark\\:bg-gray-800,
-    .dark .dark\\:bg-gray-900,
-    .dark .dark\\:bg-gray-950,
-    .dark .dark\\:bg-slate-600,
-    .dark .dark\\:bg-slate-700,
-    .dark .dark\\:bg-slate-800,
-    .dark .dark\\:bg-slate-900,
-    .dark .dark\\:bg-slate-950,
-    .dark .dark\\:bg-zinc-600,
-    .dark .dark\\:bg-zinc-700,
-    .dark .dark\\:bg-zinc-800,
-    .dark .dark\\:bg-zinc-900,
-    .dark .dark\\:bg-zinc-950,
-    .dark .dark\\:bg-stone-600,
-    .dark .dark\\:bg-stone-700,
-    .dark .dark\\:bg-stone-800,
-    .dark .dark\\:bg-stone-900,
-    .dark .dark\\:bg-stone-950,
-    .dark .dark\\:bg-neutral-600,
-    .dark .dark\\:bg-neutral-700,
-    .dark .dark\\:bg-neutral-800,
-    .dark .dark\\:bg-neutral-900,
-    .dark .dark\\:bg-neutral-950,
-    .bg-black,
-    [data-surface="dark"],
-    .bg-gray-600,
-    .bg-gray-700,
-    .bg-gray-800,
-    .bg-gray-900,
-    .bg-gray-950,
-    .bg-slate-600,
-    .bg-slate-700,
-    .bg-slate-800,
-    .bg-slate-900,
-    .bg-slate-950,
-    .bg-zinc-600,
-    .bg-zinc-700,
-    .bg-zinc-800,
-    .bg-zinc-900,
-    .bg-zinc-950,
-    .bg-stone-600,
-    .bg-stone-700,
-    .bg-stone-800,
-    .bg-stone-900,
-    .bg-stone-950,
-    .bg-neutral-600,
-    .bg-neutral-700,
-    .bg-neutral-800,
-    .bg-neutral-900,
-    .bg-neutral-950 {
-      --color-primary: ${safePrimary};
-      --color-secondary: ${safeSecondary};
-      --color-primary-text: ${primaryTextDark};
-      --color-secondary-text: ${secondaryTextDark};
-      --color-error-text: ${errorTextDark};
-      --color-focus-ring: ${focusRingDark};
-      --color-surface-border: ${surfaceBorderDark};
-      --color-muted-text: ${mutedTextDark};
-      --color-text-muted: ${mutedTextDark};
-      --color-warning-bg: ${warningBgDark};
-      --color-warning-border: ${warningBorderDark};
-      --color-warning-text: ${warningTextDark};
-      --color-status-warning-text: ${statusWarningTextDark};
-      --color-status-unsent-text: ${statusWarningTextDark};
-      --color-status-success-text: ${statusSuccessTextDark};
-      --color-status-sent-text: ${statusSuccessTextDark};
-      --color-status-info-text: ${statusInfoTextDark};
-      --color-status-not-needed-text: ${statusInfoTextDark};
+    /* Re-assert dark mode variables for base dark backgrounds (black / 800–950) */
+${baseDarkContainerSelectors} {
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
     }
 
-    .dark {
-      --color-primary: ${safePrimary};
-      --color-secondary: ${safeSecondary};
-      --color-primary-text: ${primaryTextDark};
-      --color-secondary-text: ${secondaryTextDark};
-      --color-error-text: ${errorTextDark};
-      --color-focus-ring: ${focusRingDark};
-      --color-surface-border: ${surfaceBorderDark};
-      --color-muted-text: ${mutedTextDark};
-      --color-text-muted: ${mutedTextDark};
-      --color-warning-bg: ${warningBgDark};
-      --color-warning-border: ${warningBorderDark};
-      --color-warning-text: ${warningTextDark};
-      --color-status-warning-text: ${statusWarningTextDark};
-      --color-status-unsent-text: ${statusWarningTextDark};
-      --color-status-success-text: ${statusSuccessTextDark};
-      --color-status-sent-text: ${statusSuccessTextDark};
-      --color-status-info-text: ${statusInfoTextDark};
-      --color-status-not-needed-text: ${statusInfoTextDark};
-${darkPresetCssRules}
-      --container-max-w: ${safeContainerMaxWidth};
-      --grid-gap: ${safeGridGap};
-      --card-padding: ${safeCardPadding};
-      --radius-card: ${safeBorderRadius};
+    /* Elevated dark surfaces (700 tier: #374151 and low-alpha accent badges) */
+${dark700ContainerSelectors} {
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, dark700TokensCalibrated)}
+    }
+
+    /* Elevated dark surfaces (600 tier: #4B5563) */
+${dark600ContainerSelectors} {
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, dark600TokensCalibrated)}
     }
   `;
 }
