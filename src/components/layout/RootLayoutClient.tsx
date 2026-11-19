@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import Navbar from './Navbar';
+import { GuestHelpProvider } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MotionGlobalConfig } from 'framer-motion';
@@ -119,19 +120,20 @@ export default function RootLayoutClient({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <GlobalRadialGlow />
-      {!isStandalonePage && (
-        <Navbar
-          headerRef={headerRef}
-          isAdmin={isAdmin}
-          handleLogout={handleLogout}
-          config={config}
-        />
-      )}
-      <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-        {children}
-      </main>
-
+      <GuestHelpProvider config={config} pathname={pathname}>
+        <GlobalRadialGlow />
+        {!isStandalonePage && (
+          <Navbar
+            headerRef={headerRef}
+            isAdmin={isAdmin}
+            handleLogout={handleLogout}
+            config={config}
+          />
+        )}
+        <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+          {children}
+        </main>
+      </GuestHelpProvider>
     </QueryClientProvider>
   );
 }
