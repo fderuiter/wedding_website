@@ -255,14 +255,14 @@ describe('useAdminEntityOrchestration', () => {
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/registry/items?limit=500');
 
       await act(async () => {
-        await result.current.update('35', { name: 'Gift 35' } as any);
+        await result.current.update('35', { name: 'Gift 35' });
       });
       expect(mockApiClient.put).toHaveBeenCalledWith('/api/registry/items/35', { name: 'Gift 35' });
     });
 
-    it('useAdminRegistryItem fetches target item directly via /api/registry/items/:id', async () => {
+    it('useAdminRegistryItem fetches target item directly via /api/registry/items/:id and unwraps { item } envelopes', async () => {
       const targetGift = { id: 'gift-35', name: 'Espresso Grinder' };
-      mockApiClient.get.mockResolvedValueOnce(targetGift);
+      mockApiClient.get.mockResolvedValueOnce({ item: targetGift });
       const { result } = renderHook(() => useAdminRegistryItem('gift-35'), {
         wrapper: createWrapper(queryClient),
       });

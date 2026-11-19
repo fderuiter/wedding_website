@@ -222,17 +222,23 @@ describe('Rollback & Provider Deployment Workflows', () => {
       expect(rollbackYml).not.toContain('Container service successfully restored to previous image tag.');
     });
 
-    it('passes previous_image_tag and provider from deploy.yml to rollback.yml without defaulting to latest', () => {
+    it('passes previous_image_tag, previous_image_digest, and provider from deploy.yml to rollback.yml without defaulting to latest', () => {
       expect(deployYml).toContain('needs.staging-deploy-provider.outputs.previous_image_tag');
       expect(deployYml).toContain('needs.production-deploy-provider.outputs.previous_image_tag');
+      expect(deployYml).toContain('needs.staging-deploy-provider.outputs.previous_image_digest');
+      expect(deployYml).toContain('needs.production-deploy-provider.outputs.previous_image_digest');
       expect(deployYml).not.toContain("previous_tag: ${{ inputs.previous_tag || 'latest' }}");
       expect(deployProviderYml).toContain('previous_image_tag:');
+      expect(deployProviderYml).toContain('previous_image_digest:');
       expect(deployProviderYml).toContain('--fail-with-body');
+      expect(rollbackYml).toContain(
+        '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+      );
     });
   });
 
   describe('deploy-provider.yml executable step behavior', () => {
-    it('captures the currently serving Cloud Run image tag before rollout and strips @sha256 digests', () => {
+    it('captures the currently serving Cloud Run image tag and digest before rollout (including digest-only revisions)', () => {
       const script = extractStepRunScript(deployProviderYml, 'Capture Active Image Tag Before Rollout');
       const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-gcloud-'));
 
@@ -246,7 +252,7 @@ if [[ "$*" == *"services describe"* ]]; then
 {"status":{"traffic":[{"revisionName":"wedding-website-00008-xyz","percent":100}]},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/example/wedding_website:1111111111111111111111111111111111111111"}]}}}}
 JSON
 elif [[ "$*" == *"revisions describe wedding-website-00008-xyz"* ]]; then
-  echo "ghcr.io/example/wedding_website:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  echo "\${MOCK_REVISION_IMAGE:-ghcr.io/example/wedding_website:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
 fi
 `,
           { mode: 0o755 }
@@ -256,6 +262,7 @@ fi
           PATH: `${binDir}:${process.env.PATH || ''}`,
           PROVIDER: 'google-cloud-run',
           INCOMING_TAG: 'cccccccccccccccccccccccccccccccccccccccc',
+          INCOMING_DIGEST: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           CURRENT_SHA: 'cccccccccccccccccccccccccccccccccccccccc',
           DRY_RUN: 'false',
           GCP_SA_KEY: '{"project_id":"demo-project"}',
@@ -266,7 +273,30 @@ fi
 
         expect(res.status).toBe(0);
         expect(res.outputs.previous_image_tag).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        expect(res.outputs.previous_image_digest).toBe(
+          'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+        );
         expect(res.outputs.previous_tag_source).toBe('cloud-run');
+
+        const digestOnlyRes = runBashStep(script, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          MOCK_REVISION_IMAGE:
+            'ghcr.io/example/wedding_website@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+          PROVIDER: 'google-cloud-run',
+          INCOMING_TAG: 'cccccccccccccccccccccccccccccccccccccccc',
+          INCOMING_DIGEST: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          CURRENT_SHA: 'cccccccccccccccccccccccccccccccccccccccc',
+          DRY_RUN: 'false',
+          GCP_SA_KEY: '{"project_id":"demo-project"}',
+          GCP_PROJECT_ID: 'demo-project',
+          GITHUB_TOKEN: '',
+          GITHUB_REPOSITORY: '',
+        });
+
+        expect(digestOnlyRes.status).toBe(0);
+        expect(digestOnlyRes.outputs.previous_image_digest).toBe(
+          'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+        );
       } finally {
         fs.rmSync(binDir, { recursive: true, force: true });
       }

@@ -114,6 +114,7 @@ flowchart LR
     node_api_admin_maintenance_export["export"]
     node_api_admin_maintenance_import["import"]
     node_api_admin_me["me"]
+    node_api_admin_onboardingmilestones["onboarding-milestones"]
     node_api_admin_photos["photos"]
     node_api_admin_photos_id["[id]"]
     node_api_admin_photos_moderation["moderation"]
@@ -227,6 +228,7 @@ flowchart LR
     node_api_admin_maintenance --> node_api_admin_maintenance_export
     node_api_admin_maintenance --> node_api_admin_maintenance_import
     node_api_admin --> node_api_admin_me
+    node_api_admin --> node_api_admin_onboardingmilestones
     node_api_admin --> node_api_admin_photos
     node_api_admin_photos --> node_api_admin_photos_id
     node_api_admin_photos --> node_api_admin_photos_moderation
@@ -334,6 +336,7 @@ flowchart LR
     class node_api_admin_maintenance_export api;
     class node_api_admin_maintenance_import api;
     class node_api_admin_me api;
+    class node_api_admin_onboardingmilestones api;
     class node_api_admin_photos_id api;
     class node_api_admin_photos_moderation api;
     class node_api_admin_photos_moderation_batch api;

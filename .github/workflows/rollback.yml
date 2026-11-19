@@ -10,6 +10,11 @@ on:
         description: 'Immutable container image tag or commit SHA to restore'
         required: true
         type: string
+      previous_digest:
+        description: 'Optional immutable container image digest (sha256:<64-hex>) to restore'
+        required: false
+        default: ''
+        type: string
       target_environment:
         description: 'Target deployment environment'
         required: false
@@ -39,6 +44,11 @@ on:
     inputs:
       previous_tag:
         description: 'Immutable container image tag or commit SHA to restore'
+        required: false
+        default: ''
+        type: string
+      previous_digest:
+        description: 'Optional immutable container image digest (sha256:<64-hex>) to restore'
         required: false
         default: ''
         type: string
@@ -90,6 +100,7 @@ jobs:
     # validated container image immediately without a second manual approval gate.
     outputs:
       effective_tag: ${{ steps.validate.outputs.effective_tag }}
+      effective_digest: ${{ steps.validate.outputs.effective_digest }}
       validation_status: ${{ steps.validate.outputs.validation_status }}
       db_compatibility_status: ${{ steps.db_safety_check.outputs.db_compatibility_status }}
       failed_stage: ${{ steps.record_failure.outputs.failed_stage }}
@@ -103,6 +114,7 @@ jobs:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           ROLLBACK_ENV: ${{ inputs.rollback_environment }}
           PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          PREVIOUS_DIGEST: ${{ inputs.previous_digest }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
@@ -123,16 +135,22 @@ jobs:
             exit 1
           fi
 
+          EFFECTIVE_DIGEST="${PREVIOUS_DIGEST:-}"
+          if [ -n "$EFFECTIVE_DIGEST" ] && [[ ! "$EFFECTIVE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Invalid rollback image digest '${EFFECTIVE_DIGEST}'. Must match ^sha256:[a-f0-9]{64}$."
+            exit 1
+          fi
+
           EFFECTIVE_TAG="$PREVIOUS_TAG"
           if [ "$DRY_RUN" = "true" ]; then
-            if [ -z "$EFFECTIVE_TAG" ]; then
+            if [ -z "$EFFECTIVE_TAG" ] && [ -z "$EFFECTIVE_DIGEST" ]; then
               EFFECTIVE_TAG="latest"
             fi
             if [ "$EFFECTIVE_TAG" = "latest" ] || [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
               echo "::warning::Explicit dry-run mode enabled: permitting rollback tag '${EFFECTIVE_TAG}' for dry-run validation only."
             fi
           else
-            if [ -z "$EFFECTIVE_TAG" ]; then
+            if [ -z "$EFFECTIVE_TAG" ] && [ -z "$EFFECTIVE_DIGEST" ]; then
               echo "::error::Missing rollback image tag. Specify an immutable previous image tag or commit SHA."
               exit 1
             fi
@@ -146,7 +164,7 @@ jobs:
             fi
           fi
 
-          if [[ ! "$EFFECTIVE_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+          if [ -n "$EFFECTIVE_TAG" ] && [[ ! "$EFFECTIVE_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
             echo "::error::Invalid image tag '${EFFECTIVE_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
             exit 1
           fi
@@ -162,6 +180,7 @@ jobs:
 
           echo "validation_status=passed" >> "$GITHUB_OUTPUT"
           echo "effective_tag=${EFFECTIVE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "effective_digest=${EFFECTIVE_DIGEST}" >> "$GITHUB_OUTPUT"
 
           echo "=================================================="
           echo "           AUTOMATED ROLLBACK INITIATED           "
@@ -169,7 +188,8 @@ jobs:
           echo "Target Environment: ${TARGET_ENV}"
           echo "Rollback Environment: ${ROLLBACK_ENV:-${TARGET_ENV}}"
           echo "Provider Adapter: ${PROVIDER}"
-          echo "Rollback Image Tag: ${EFFECTIVE_TAG}"
+          echo "Rollback Image Tag: ${EFFECTIVE_TAG:-none}"
+          echo "Rollback Image Digest: ${EFFECTIVE_DIGEST:-none}"
           echo "Explicit Dry Run: ${DRY_RUN}"
           echo "Rollback Trigger Reason: ${SAFE_REASON}"
           echo "Timestamp: ${NOW}"
@@ -216,11 +236,16 @@ jobs:
 
   redeploy:
     name: Redeploy Previous Validated Container Image
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [preflight]
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: ${{ inputs.target_environment || 'production' }}
       rollback_environment: ${{ inputs.rollback_environment || '' }}
+      image_digest: ${{ needs.preflight.outputs.effective_digest || '' }}
       image_tag: ${{ needs.preflight.outputs.effective_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       dry_run: ${{ inputs.dry_run || false }}

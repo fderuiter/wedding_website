@@ -13,6 +13,7 @@ import {
   normalizeNullableString,
   normalizeInvitationCode,
   normalizePartyTags,
+  normalizePartialInvitationFields,
   normalizeBatchInvitationRecord,
   validateInvitationGuestFields,
 } from '../invitationValidation';
@@ -436,6 +437,34 @@ describe('invitationValidation shared helpers', () => {
       expect(rawQuery.values).toContain('Second Update');
       expect(rawQuery.values).toContain('Boston');
       expect(rawQuery.values).toContain('MA');
+    });
+
+    it('supports partial validation and partial field normalization without touching omitted fields', () => {
+      expect(
+        validateInvitationGuestFields({ used: true, city: 'Seattle' }, { mode: 'service', partial: true })
+      ).toEqual([]);
+
+      expect(
+        validateInvitationGuestFields({ guestName: '   ' }, { mode: 'service', partial: true })
+      ).toEqual(['Validation Error: Guest name is required.']);
+
+      expect(
+        validateInvitationGuestFields({ code: null }, { mode: 'service', partial: true })
+      ).toEqual(['Validation Error: Code cannot be empty.']);
+
+      expect(
+        normalizePartialInvitationFields({
+          guestName: '  Alice Smith  ',
+          email: '   ',
+          city: ' Seattle ',
+          partyTags: [' VIP ', ''],
+        })
+      ).toEqual({
+        guestName: 'Alice Smith',
+        email: null,
+        city: 'Seattle',
+        partyTags: ['VIP'],
+      });
     });
   });
 });
