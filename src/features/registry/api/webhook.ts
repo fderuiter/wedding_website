@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { registryService } from '../service';
 import { getStripeInstance } from '@/lib/stripe';
+import { StripeWebhookEventSchema } from '@/utils/validation';
 
 /**
  * Stripe webhook handler for registry contributions.
@@ -34,7 +35,8 @@ export async function POST(request: NextRequest) {
     return new NextResponse(`Webhook signature verification failed: ${err.message}`, { status: 400 });
   }
 
-  if (event.type === 'payment_intent.succeeded') {
+  const parsedEvent = StripeWebhookEventSchema.safeParse(event);
+  if (parsedEvent.success && event.type === 'payment_intent.succeeded') {
     const paymentIntent = event.data.object as Stripe.PaymentIntent;
     const metadata = paymentIntent.metadata || {};
     const itemId = metadata.itemId;

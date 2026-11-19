@@ -30,6 +30,7 @@ import { ApiError } from '@/utils/ApiError';
 import { safeFetch } from '@/utils/safeFetch';
 import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { MediaExportSchema } from '@/utils/validation';
 
 export interface ExportMediaItem {
   id?: string;
@@ -183,14 +184,16 @@ async function handleExport(req: NextRequest) {
   if (req.method === 'POST') {
     try {
       const body = await req.json();
-      if (body && typeof body === 'object') {
-        if (Array.isArray(body.ids)) {
-          ids = body.ids.map(String).filter(Boolean);
-        } else if (typeof body.ids === 'string') {
-          ids = body.ids.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const parsed = MediaExportSchema.safeParse(body);
+      if (parsed.success) {
+        const data = parsed.data;
+        if (Array.isArray(data.ids)) {
+          ids = data.ids.map(String).filter(Boolean);
+        } else if (typeof data.ids === 'string') {
+          ids = data.ids.split(',').map((s: string) => s.trim()).filter(Boolean);
         }
-        if (typeof body.tag === 'string') tag = body.tag.trim();
-        if (typeof body.category === 'string') category = body.category.trim();
+        if (typeof data.tag === 'string') tag = data.tag.trim();
+        if (typeof data.category === 'string') category = data.category.trim();
       }
     } catch {
       // Body parsing failed or empty

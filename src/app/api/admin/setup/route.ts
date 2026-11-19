@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
-import { formatZodError } from '@/utils/validation';
+import { AdminSetupSchema, formatZodError } from '@/utils/validation';
 import { isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
 import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
@@ -94,6 +94,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
+  const setupBodyResult = AdminSetupSchema.safeParse(body);
+  if (!setupBodyResult.success) {
+    throw new ApiError(400, `Validation Error: ${formatZodError(setupBodyResult.error)}`);
+  }
+
   // Determine if this request is submitting site setup configuration
   const hasConfigPayload =
     body.partner1Name !== undefined ||
@@ -114,7 +119,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   // Validate setup configuration payload
-  const parseResult = UpdateAppConfigSchema.safeParse({
+  const normalizedSetupConfig = {
     partner1Name: normalizeOptionalName(body.partner1Name),
     partner2Name: normalizeOptionalName(body.partner2Name),
     brideName: normalizeOptionalName(body.brideName),
@@ -162,7 +167,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     showCountdown: body.showCountdown ?? true,
     showAddToCalendar: body.showAddToCalendar ?? true,
     subdomain: body.subdomain || null,
-  });
+  };
+  const parseResult = UpdateAppConfigSchema.safeParse(normalizedSetupConfig);
 
   if (!parseResult.success) {
     throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
