@@ -53,7 +53,8 @@ All runtime configuration is supplied via environment variables. The runtime val
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled database connection string for Prisma migrations. |
 | `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile site routing. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations during container startup in `docker-entrypoint.sh`. |
-| `GUEST_PASSCODE` | `wedding2026` | Passcode required for guest website access. |
+| `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or positive integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
+| `GUEST_PASSCODE` | Required in production (unique, non-default); dev default: `wedding2026` | Passcode required for guest website access. |
 | `GUEST_SESSION_SECRET` | Required in production (min 32 chars, distinct); dev default: `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item. |
 | `CRON_SECRET` | *None* | Authorization secret for triggering scheduled background endpoints. |
@@ -102,6 +103,8 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
   - `middleware.ts` validates `X-Forwarded-Host` (first IP/host if comma-separated) or `Host` against `ALLOWED_HOSTS`. Requests with invalid or unapproved host headers are rejected with `HTTP 400 Bad Request`.
 - **Protocol Header Forwarding**:
   - Proxies should forward `X-Forwarded-Proto` (`https` or `http`) to enable accurate canonical URL generation.
+- **Client IP Header Forwarding (`TRUST_PROXY`)**:
+  - By default (`TRUST_PROXY=false`), the rate limiter ignores `X-Forwarded-For` and `X-Real-IP` headers so direct callers cannot spoof IP headers to bypass lockouts. Enable `TRUST_PROXY=true` (or set `TRUST_PROXY` to the trusted proxy hop count) when the ingress controller strips or overwrites untrusted forwarded IP headers.
 
 ---
 

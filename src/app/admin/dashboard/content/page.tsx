@@ -222,14 +222,20 @@ function ContentDashboardContent({
                 </div>
               )}
               
-              <div>
-                <label className="block text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">Dynamic Data Fields</label>
+              <fieldset className="min-w-0 border-0 p-0 m-0">
+                <legend className="block text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
+                  Dynamic Data Fields
+                </legend>
                 {dynamicData.map((field, idx) => (
                   <div key={idx} className="flex gap-2 mb-2 items-center">
                     <FormGroup className="w-1/3">
+                      <Label className="sr-only">{`Dynamic field ${idx + 1} key`}</Label>
                       <Input type="text" placeholder="Key" value={field.key} onChange={(e) => updateField(idx, 'key', e.target.value)} />
                     </FormGroup>
                     <FormGroup className="w-2/3">
+                      <Label className="sr-only">
+                        {field.key ? `Dynamic field ${idx + 1} value (${field.key})` : `Dynamic field ${idx + 1} value`}
+                      </Label>
                       <Input type="text" placeholder="Value" value={field.value} onChange={(e) => updateField(idx, 'value', e.target.value)} />
                     </FormGroup>
                     <Button
@@ -243,7 +249,7 @@ function ContentDashboardContent({
                   </div>
                 ))}
                 <Button variant="outline" size="sm" onClick={addField} className="mt-2">+ Add Field</Button>
-              </div>
+              </fieldset>
 
             </div>
             <div className="flex gap-4 mt-6">

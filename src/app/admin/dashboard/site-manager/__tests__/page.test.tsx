@@ -134,7 +134,13 @@ describe('SiteManagerPage and DragDropContainer', () => {
     expect(dragHandles[0].className).toContain('focus:ring-2');
     expect(dragHandles[0].className).toContain('focus:ring-primary');
 
-    const visibleBtn = screen.getByRole('button', { name: 'Visible' });
+    const visibleBtn = screen.getByRole('button', { name: 'Our Story: Visible' });
+    const hiddenBtn = screen.getByRole('button', { name: 'Wedding Day Details: Hidden' });
+    expect(visibleBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(visibleBtn.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+    expect(hiddenBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(hiddenBtn.querySelector('svg[aria-hidden="true"]')).toBeNull();
+
     fireEvent.click(visibleBtn);
 
     // parent onClick spy should NOT have been called due to e.stopPropagation()

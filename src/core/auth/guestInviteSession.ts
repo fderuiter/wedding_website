@@ -16,10 +16,14 @@ export interface GuestInviteSessionPayload {
 }
 
 async function getSecret(): Promise<string> {
-  const isProduction = (env.NODE_ENV || process.env.NODE_ENV) === 'production';
+  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
   const fallback = isProduction ? '' : 'default-guest-session-secret';
-  const secret = env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || fallback;
-  const passcode = env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026';
+  const secret = isProduction
+    ? (process.env.GUEST_SESSION_SECRET || fallback)
+    : (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || fallback);
+  const passcode = isProduction
+    ? (process.env.GUEST_PASSCODE || 'wedding2026')
+    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
 
   if (isProduction) {
     if (!secret || secret === 'default-guest-session-secret') {

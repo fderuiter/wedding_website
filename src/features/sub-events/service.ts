@@ -370,7 +370,7 @@ export class SubEventService {
         throw new ApiError(403, `Forbidden: You do not have access to private event "${subEvent.title}".`);
       }
 
-      const requestedPlusOnes = sub.plusOneCount ?? 0;
+      const requestedPlusOnes = sub.status === 'declined' ? 0 : (sub.plusOneCount ?? 0);
       if (requestedPlusOnes > maxPlusOnes) {
         if (maxPlusOnes === 0) {
           throw new ApiError(400, 'Plus-one guests are not allocated for your invitation.');
@@ -385,8 +385,9 @@ export class SubEventService {
     // Execute all upsert operations within a single Prisma transaction
     const results = await this.client.$transaction(async (tx: any) => {
       return Promise.all(
-        submissions.map((sub) =>
-          tx.subEventRsvp.upsert({
+        submissions.map((sub) => {
+          const normalizedPlusOneCount = sub.status === 'declined' ? 0 : (sub.plusOneCount ?? 0);
+          return tx.subEventRsvp.upsert({
             where: {
               subEventId_invitationCodeId: {
                 subEventId: sub.subEventId,
@@ -397,16 +398,16 @@ export class SubEventService {
               subEventId: sub.subEventId,
               invitationCodeId: invite.id,
               status: sub.status,
-              plusOneCount: sub.plusOneCount ?? 0,
+              plusOneCount: normalizedPlusOneCount,
               dietaryNotes: sub.dietaryNotes || '',
             },
             update: {
               status: sub.status,
-              plusOneCount: sub.plusOneCount ?? 0,
+              plusOneCount: normalizedPlusOneCount,
               dietaryNotes: sub.dietaryNotes || '',
             },
-          })
-        )
+          });
+        })
       );
     });
 

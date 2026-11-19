@@ -1,11 +1,13 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { axe } from 'jest-axe';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import InvitationCodesDashboardPage from '../invitation-codes/page';
 import { getAttendanceStatus } from '@/features/registry';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
+
+expect.extend(toHaveNoViolations);
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -1376,6 +1378,104 @@ describe('InvitationCodesDashboardPage', () => {
       await waitFor(() => {
         expect(screen.queryByRole('dialog', { name: 'Create New Sub-Event' })).not.toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Accessible Filter Primitives (ToggleButtonGroup and SegmentedTabs)', () => {
+    it('exposes labelled group roles, aria-pressed states, SegmentedTabs keyboard navigation, and passes jest-axe', async () => {
+      const taggedCodes = [
+        {
+          id: 'c1',
+          guestName: 'Alice Smith',
+          code: 'ALICE1',
+          used: true,
+          partyTags: ['VIP', 'Family'],
+          addressLine1: '100 Main St',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60601',
+          country: 'USA',
+          extraFields: { attendanceStatus: 'attending' },
+        },
+        {
+          id: 'c2',
+          guestName: 'Bob Jones',
+          code: 'BOB2',
+          used: false,
+          partyTags: ['Friends'],
+          extraFields: { attendanceStatus: 'pending' },
+        },
+      ];
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: taggedCodes,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        fetchAll: mockFetchAll,
+      });
+
+      const { container } = renderComponent();
+
+      // 1. Party Tags group
+      const tagsGroup = screen.getByRole('group', { name: /Party Tags/i });
+      const allTagsBtn = within(tagsGroup).getByRole('button', { name: 'All Tags' });
+      const vipTagBtn = within(tagsGroup).getByRole('button', { name: '#VIP' });
+
+      expect(allTagsBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(vipTagBtn).toHaveAttribute('aria-pressed', 'false');
+
+      fireEvent.click(vipTagBtn);
+      expect(vipTagBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(allTagsBtn).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+
+      // Clicking active tag again toggles back to All Tags
+      fireEvent.click(vipTagBtn);
+      expect(allTagsBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(vipTagBtn).toHaveAttribute('aria-pressed', 'false');
+
+      // 2. Address filter group
+      const addressGroup = screen.getByRole('group', { name: /Address/i });
+      const allAddrBtn = within(addressGroup).getByRole('button', { name: 'All Addresses' });
+      const completeAddrBtn = within(addressGroup).getByRole('button', { name: /Address Complete/i });
+      expect(allAddrBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(completeAddrBtn).toHaveAttribute('aria-pressed', 'false');
+
+      fireEvent.click(completeAddrBtn);
+      expect(completeAddrBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(allAddrBtn).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(allAddrBtn);
+
+      // 3. Attendance filter group
+      const attendanceGroup = screen.getByRole('group', { name: /Attendance/i });
+      const allAttendBtn = within(attendanceGroup).getByRole('button', { name: /All attendance/i });
+      const attendingBtn = within(attendanceGroup).getByRole('button', { name: /Attending/i });
+      expect(allAttendBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(attendingBtn).toHaveAttribute('aria-pressed', 'false');
+
+      // 4. Redemption SegmentedTabs + tabpanel linkage & keyboard navigation
+      const allStatusTab = screen.getByRole('tab', { name: 'All (2)' });
+      const redeemedStatusTab = screen.getByRole('tab', { name: 'Redeemed (1)' });
+      const resultsPanel = screen.getByRole('tabpanel');
+
+      expect(allStatusTab).toHaveAttribute('aria-controls', 'invitation-codes-results-panel');
+      expect(resultsPanel).toHaveAttribute('id', 'invitation-codes-results-panel');
+      expect(resultsPanel).toHaveAttribute('aria-labelledby', 'redemption-status-tab-all');
+
+      allStatusTab.focus();
+      fireEvent.keyDown(allStatusTab, { key: 'ArrowRight' });
+      expect(redeemedStatusTab).toHaveFocus();
+      expect(redeemedStatusTab).toHaveAttribute('aria-selected', 'true');
+      expect(resultsPanel).toHaveAttribute('aria-labelledby', 'redemption-status-tab-redeemed');
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

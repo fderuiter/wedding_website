@@ -1,7 +1,9 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { axe } from 'jest-axe';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import SubEventsMatrixPage from '../page';
 import { useToast } from '@/components/ui/ToastProvider';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('@/components/ui/ToastProvider', () => ({
   useToast: jest.fn(),
@@ -391,5 +393,107 @@ describe('SubEventsMatrixPage', () => {
       expect(screen.queryByRole('dialog', { name: 'Create New Sub-Event' })).not.toBeInTheDocument();
     });
     expect(global.fetch).not.toHaveBeenCalledWith('/api/admin/sub-events', expect.anything());
+  });
+
+  test('exposes accessible scrollable region with tabIndex=0 even when table fits within viewport', async () => {
+    const { container } = render(<SubEventsMatrixPage />);
+
+    const region = await screen.findByRole('region', { name: 'Sub-events access matrix' });
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveAttribute('tabindex', '0');
+
+    Object.defineProperty(region, 'scrollWidth', {
+      get: () => 800,
+      configurable: true,
+    });
+    Object.defineProperty(region, 'clientWidth', {
+      get: () => 800,
+      configurable: true,
+    });
+
+    expect(screen.getByRole('region', { name: 'Sub-events access matrix' })).toHaveAttribute('tabindex', '0');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  test('scrolls table container with keyboard keys when focused without interfering with nested checkboxes', async () => {
+    render(<SubEventsMatrixPage />);
+
+    const region = await screen.findByRole('region', { name: 'Sub-events access matrix' });
+    const aliceAccessCheckbox = screen.getByLabelText('Toggle access for Rehearsal Dinner on Alice Smith');
+    const bobAccessCheckbox = screen.getByLabelText('Toggle access for Rehearsal Dinner on Bob Jones');
+    const selectAllCheckbox = screen.getByLabelText('Select all page guests');
+
+    expect(aliceAccessCheckbox).toBeChecked();
+    expect(bobAccessCheckbox).not.toBeChecked();
+    expect(selectAllCheckbox).not.toBeChecked();
+
+    let scrollLeft = 40;
+    let scrollTop = 20;
+
+    Object.defineProperty(region, 'scrollLeft', {
+      get: () => scrollLeft,
+      set: (val: number) => {
+        scrollLeft = val;
+      },
+      configurable: true,
+    });
+
+    Object.defineProperty(region, 'scrollTop', {
+      get: () => scrollTop,
+      set: (val: number) => {
+        scrollTop = val;
+      },
+      configurable: true,
+    });
+
+    Object.defineProperty(region, 'scrollWidth', {
+      get: () => 640,
+      configurable: true,
+    });
+
+    Object.defineProperty(region, 'scrollHeight', {
+      get: () => 480,
+      configurable: true,
+    });
+
+    region.focus();
+    expect(region).toHaveFocus();
+
+    fireEvent.keyDown(region, { key: 'ArrowRight' });
+    expect(scrollLeft).toBe(80);
+
+    fireEvent.keyDown(region, { key: 'ArrowLeft' });
+    expect(scrollLeft).toBe(40);
+
+    fireEvent.keyDown(region, { key: 'End' });
+    expect(scrollLeft).toBe(640);
+
+    fireEvent.keyDown(region, { key: 'Home' });
+    expect(scrollLeft).toBe(0);
+
+    fireEvent.keyDown(region, { key: 'ArrowDown' });
+    expect(scrollTop).toBe(60);
+
+    fireEvent.keyDown(region, { key: 'ArrowUp' });
+    expect(scrollTop).toBe(20);
+
+    // Ensure arrow/home/end scrolling did not mutate nested checkbox states or trigger access updates
+    expect(aliceAccessCheckbox).toBeChecked();
+    expect(bobAccessCheckbox).not.toBeChecked();
+    expect(selectAllCheckbox).not.toBeChecked();
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      '/api/admin/sub-events/access',
+      expect.objectContaining({ method: 'PUT' })
+    );
+
+    // Nested checkboxes remain operable independently
+    fireEvent.click(bobAccessCheckbox);
+    expect(bobAccessCheckbox).toBeChecked();
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/sub-events/access',
+      expect.objectContaining({ method: 'PUT' })
+    );
   });
 });

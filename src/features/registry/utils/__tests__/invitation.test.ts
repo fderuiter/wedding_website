@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import {
   matchDietaryCategory,
   getAttendanceStatus,
@@ -255,6 +256,22 @@ describe('invitation utils', () => {
       const code1 = generateRandomCode();
       const code2 = generateRandomCode();
       expect(code1).not.toBe(code2);
+    });
+
+    it('uses crypto.randomInt rather than Math.random', () => {
+      const randomIntSpy = jest.spyOn(crypto, 'randomInt');
+      const mathRandomSpy = jest.spyOn(Math, 'random');
+
+      try {
+        const code = generateRandomCode();
+        expect(code).toMatch(/^[A-Z0-9]{8}$/);
+        expect(randomIntSpy).toHaveBeenCalledTimes(8);
+        expect(randomIntSpy).toHaveBeenCalledWith(0, 36);
+        expect(mathRandomSpy).not.toHaveBeenCalled();
+      } finally {
+        randomIntSpy.mockRestore();
+        mathRandomSpy.mockRestore();
+      }
     });
   });
 });

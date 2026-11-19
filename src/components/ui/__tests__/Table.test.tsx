@@ -82,7 +82,7 @@ describe('Table Component Accessibility & Functionality', () => {
     expect(region).toHaveAttribute('aria-labelledby', 'table-heading');
   });
 
-  test('handles keyboard arrow navigation on container', () => {
+  test('handles keyboard arrow navigation on overflowing container', () => {
     const onKeyDownMock = jest.fn();
     render(
       <Table containerProps={{ onKeyDown: onKeyDownMock }}>
@@ -115,30 +115,207 @@ describe('Table Component Accessibility & Functionality', () => {
       configurable: true,
     });
 
+    Object.defineProperty(region, 'clientWidth', {
+      get: () => 100,
+      configurable: true,
+    });
+
     Object.defineProperty(region, 'scrollWidth', {
       get: () => 200,
       configurable: true,
     });
 
-    fireEvent.keyDown(region, { key: 'ArrowRight' });
+    Object.defineProperty(region, 'clientHeight', {
+      get: () => 100,
+      configurable: true,
+    });
+
+    Object.defineProperty(region, 'scrollHeight', {
+      get: () => 200,
+      configurable: true,
+    });
+
+    expect(fireEvent.keyDown(region, { key: 'ArrowRight' })).toBe(false);
     expect(scrollLeft).toBe(90);
 
-    fireEvent.keyDown(region, { key: 'ArrowLeft' });
+    expect(fireEvent.keyDown(region, { key: 'ArrowLeft' })).toBe(false);
     expect(scrollLeft).toBe(50);
 
-    fireEvent.keyDown(region, { key: 'ArrowDown' });
+    expect(fireEvent.keyDown(region, { key: 'ArrowDown' })).toBe(false);
     expect(scrollTop).toBe(90);
 
-    fireEvent.keyDown(region, { key: 'ArrowUp' });
+    expect(fireEvent.keyDown(region, { key: 'ArrowUp' })).toBe(false);
     expect(scrollTop).toBe(50);
 
-    fireEvent.keyDown(region, { key: 'End' });
+    expect(fireEvent.keyDown(region, { key: 'End' })).toBe(false);
     expect(scrollLeft).toBe(200);
 
-    fireEvent.keyDown(region, { key: 'Home' });
+    expect(fireEvent.keyDown(region, { key: 'Home' })).toBe(false);
     expect(scrollLeft).toBe(0);
 
-    expect(onKeyDownMock).toHaveBeenCalled();
+    expect(fireEvent.keyDown(region, { key: 'Tab' })).toBe(true);
+    expect(onKeyDownMock).toHaveBeenCalledTimes(7);
+  });
+
+  test('skips scrolling and preventDefault when keys bubble from child controls', () => {
+    const onKeyDownMock = jest.fn();
+    render(
+      <Table containerProps={{ onKeyDown: onKeyDownMock }}>
+        <TableBody>
+          <TableRow>
+            <TableCell>
+              <input aria-label="Text input" defaultValue="Sample" />
+              <input type="date" aria-label="Sent date" defaultValue="2026-06-15" />
+              <textarea aria-label="Note draft" defaultValue="Thank you!" />
+              <select aria-label="Thank-you status" defaultValue="Unsent">
+                <option value="Unsent">Unsent</option>
+                <option value="Sent">Sent</option>
+              </select>
+              <button type="button">Edit</button>
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    );
+
+    const region = screen.getByRole('region', { name: 'Scrollable table' });
+    let scrollLeft = 50;
+    let scrollTop = 50;
+
+    Object.defineProperty(region, 'scrollLeft', {
+      get: () => scrollLeft,
+      set: (val) => {
+        scrollLeft = val;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(region, 'scrollTop', {
+      get: () => scrollTop,
+      set: (val) => {
+        scrollTop = val;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(region, 'clientWidth', { get: () => 100, configurable: true });
+    Object.defineProperty(region, 'scrollWidth', { get: () => 300, configurable: true });
+    Object.defineProperty(region, 'clientHeight', { get: () => 100, configurable: true });
+    Object.defineProperty(region, 'scrollHeight', { get: () => 300, configurable: true });
+
+    const controls = [
+      screen.getByLabelText('Text input'),
+      screen.getByLabelText('Sent date'),
+      screen.getByLabelText('Note draft'),
+      screen.getByLabelText('Thank-you status'),
+      screen.getByRole('button', { name: 'Edit' }),
+    ];
+    const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+
+    for (const control of controls) {
+      for (const key of keys) {
+        const notPrevented = fireEvent.keyDown(control, { key });
+        expect(notPrevented).toBe(true);
+        expect(scrollLeft).toBe(50);
+        expect(scrollTop).toBe(50);
+      }
+    }
+
+    expect(onKeyDownMock).toHaveBeenCalledTimes(controls.length * keys.length);
+  });
+
+  test('skips scrolling and preventDefault on non-overflowing axes', () => {
+    render(
+      <Table>
+        <TableBody>
+          <TableRow>
+            <TableCell>Static Data</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    );
+
+    const region = screen.getByRole('region', { name: 'Scrollable table' });
+    let scrollLeft = 50;
+    let scrollTop = 50;
+    let scrollWidth = 100;
+    let scrollHeight = 100;
+
+    Object.defineProperty(region, 'scrollLeft', {
+      get: () => scrollLeft,
+      set: (val) => {
+        scrollLeft = val;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(region, 'scrollTop', {
+      get: () => scrollTop,
+      set: (val) => {
+        scrollTop = val;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(region, 'clientWidth', { get: () => 100, configurable: true });
+    Object.defineProperty(region, 'scrollWidth', { get: () => scrollWidth, configurable: true });
+    Object.defineProperty(region, 'clientHeight', { get: () => 100, configurable: true });
+    Object.defineProperty(region, 'scrollHeight', { get: () => scrollHeight, configurable: true });
+
+    // Neither axis overflows
+    for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']) {
+      expect(fireEvent.keyDown(region, { key })).toBe(true);
+    }
+    expect(scrollLeft).toBe(50);
+    expect(scrollTop).toBe(50);
+
+    // Only horizontal axis overflows: vertical keys still allow native page scroll
+    scrollWidth = 250;
+    expect(fireEvent.keyDown(region, { key: 'ArrowUp' })).toBe(true);
+    expect(fireEvent.keyDown(region, { key: 'ArrowDown' })).toBe(true);
+    expect(scrollTop).toBe(50);
+    expect(fireEvent.keyDown(region, { key: 'ArrowRight' })).toBe(false);
+    expect(scrollLeft).toBe(90);
+
+    // Only vertical axis overflows: horizontal keys allow native behavior
+    scrollWidth = 100;
+    scrollHeight = 250;
+    expect(fireEvent.keyDown(region, { key: 'ArrowLeft' })).toBe(true);
+    expect(fireEvent.keyDown(region, { key: 'ArrowRight' })).toBe(true);
+    expect(fireEvent.keyDown(region, { key: 'Home' })).toBe(true);
+    expect(fireEvent.keyDown(region, { key: 'End' })).toBe(true);
+    expect(scrollLeft).toBe(90);
+    expect(fireEvent.keyDown(region, { key: 'ArrowDown' })).toBe(false);
+    expect(scrollTop).toBe(90);
+  });
+
+  test('respects defaultPrevented from containerProps.onKeyDown', () => {
+    const onKeyDownMock = jest.fn((e: React.KeyboardEvent<HTMLDivElement>) => {
+      e.preventDefault();
+    });
+
+    render(
+      <Table containerProps={{ onKeyDown: onKeyDownMock }}>
+        <TableBody>
+          <TableRow>
+            <TableCell>Custom Handled Data</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    );
+
+    const region = screen.getByRole('region', { name: 'Scrollable table' });
+    let scrollLeft = 50;
+
+    Object.defineProperty(region, 'scrollLeft', {
+      get: () => scrollLeft,
+      set: (val) => {
+        scrollLeft = val;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(region, 'clientWidth', { get: () => 100, configurable: true });
+    Object.defineProperty(region, 'scrollWidth', { get: () => 200, configurable: true });
+
+    expect(fireEvent.keyDown(region, { key: 'ArrowRight' })).toBe(false);
+    expect(scrollLeft).toBe(50);
+    expect(onKeyDownMock).toHaveBeenCalledTimes(1);
   });
 });
 

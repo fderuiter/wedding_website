@@ -248,7 +248,8 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     });
 
     // Background card in the registry grid immediately reflects the updated cache state
-    const fundCard = screen.getByLabelText(/Tokyo Honeymoon Fund, \$200\.00, Claimed/i);
+    const fundCard = screen.getByRole('heading', { level: 3, name: 'Tokyo Honeymoon Fund' }).closest('article')!;
+    expect(fundCard).toBeInTheDocument();
     expect(within(fundCard).getByText('Fully Funded')).toBeInTheDocument();
 
     // Clicking Done closes the modal and clears ?item= from the URL
@@ -290,7 +291,8 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     });
 
     // Underlying RegistryCard is immediately marked Claimed
-    const claimedCard = screen.getByLabelText(/Pour-Over Electric Kettle, \$120\.00, Claimed/i);
+    const claimedCard = screen.getByRole('heading', { level: 3, name: 'Pour-Over Electric Kettle' }).closest('article')!;
+    expect(claimedCard).toBeInTheDocument();
     expect(within(claimedCard).getByText('Claimed')).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
@@ -334,18 +336,16 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     expect(await within(dialog).findByText('Temporary server error')).toBeInTheDocument();
     expect(nameInput).toHaveValue('Alex Retry');
     expect(messageInput).toHaveValue('Best wishes!');
-    expect(
-      screen.queryByLabelText(/Pour-Over Electric Kettle, \$120\.00, Claimed/i)
-    ).not.toBeInTheDocument();
+    const kettleCardBeforeRetry = screen.getByRole('heading', { level: 3, name: 'Pour-Over Electric Kettle' }).closest('article')!;
+    expect(within(kettleCardBeforeRetry).queryByText('Claimed')).not.toBeInTheDocument();
 
     // Retry succeeds
     fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
     await waitFor(() => {
       expect(within(dialog).getByText('Contribution Confirmed!')).toBeInTheDocument();
     });
-    expect(
-      screen.getByLabelText(/Pour-Over Electric Kettle, \$120\.00, Claimed/i)
-    ).toBeInTheDocument();
+    const kettleCardAfterRetry = screen.getByRole('heading', { level: 3, name: 'Pour-Over Electric Kettle' }).closest('article')!;
+    expect(within(kettleCardAfterRetry).getByText('Claimed')).toBeInTheDocument();
   });
 
   test('resets contribution state when URL popstate switches selectedItem to a different item', async () => {

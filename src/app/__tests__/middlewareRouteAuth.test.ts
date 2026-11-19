@@ -208,5 +208,26 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       const photosRes = await middleware(new NextRequest('http://localhost:3000/api/photos', { headers: guestHeaders }));
       expect(photosRes.status).toBe(200);
     });
+
+    it('enforces auth checks on /api/* paths ending with image suffixes while still excluding public static images', async () => {
+      const adminPngReq = new NextRequest('http://localhost:3000/api/admin/evict/key-0.png', {
+        headers: { host: 'localhost:3000' },
+      });
+      const adminPngRes = await middleware(adminPngReq);
+      expect(adminPngRes.status).toBe(401);
+
+      const apiPhotoSvgReq = new NextRequest('http://localhost:3000/api/photos/banner.svg', {
+        headers: { host: 'localhost:3000' },
+      });
+      const apiPhotoSvgRes = await middleware(apiPhotoSvgReq);
+      expect(apiPhotoSvgRes.status).toBe(401);
+
+      const publicImgReq = new NextRequest('http://localhost:3000/images/sunset-embrace.jpg', {
+        headers: { host: 'localhost:3000' },
+      });
+      const publicImgRes = await middleware(publicImgReq);
+      expect(publicImgRes.status).toBe(200);
+      expect(publicImgRes.headers.get('location')).toBeNull();
+    });
   });
 });

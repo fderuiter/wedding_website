@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
+import { Table } from '@/components/ui/Table';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import {
   SubEventEditorModal,
@@ -598,229 +599,231 @@ function SubEventsMatrixPageContent() {
             No invitation codes match your filter criteria.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-100 dark:bg-gray-700/60 border-b border-gray-200 dark:border-gray-700">
-                  {/* Select All Checkbox */}
-                  <th className="p-3 w-10 text-center">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all page guests"
-                      checked={isAllPaginatedSelected}
-                      onChange={(e) => handleToggleSelectAllPaginated(e.target.checked)}
-                      className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                    />
-                  </th>
+          <Table
+            containerAriaLabel="Sub-events access matrix"
+            containerClassName="focus-visible:ring-inset"
+            className="text-left border-collapse"
+          >
+            <thead>
+              <tr className="bg-gray-100 dark:bg-gray-700/60 border-b border-gray-200 dark:border-gray-700">
+                {/* Select All Checkbox */}
+                <th scope="col" className="p-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all page guests"
+                    checked={isAllPaginatedSelected}
+                    onChange={(e) => handleToggleSelectAllPaginated(e.target.checked)}
+                    className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                  />
+                </th>
 
-                  {/* Guest Header */}
-                  <th className="p-3 font-semibold text-gray-900 dark:text-white min-w-[220px]">
-                    Guest / Code Details
-                  </th>
+                {/* Guest Header */}
+                <th scope="col" className="p-3 font-semibold text-gray-900 dark:text-white min-w-[220px]">
+                  Guest / Code Details
+                </th>
 
-                  {/* Sub-Events Column Headers */}
-                  {subEvents.map((evt) => {
-                    const scheduleLabel = formatSubEventSchedule(evt.startTime, evt.endTime);
-                    return (
-                      <th key={evt.id} className="p-3 font-semibold text-gray-900 dark:text-white min-w-[200px] border-l border-gray-200 dark:border-gray-700 align-top">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="truncate font-bold" title={evt.title}>
-                              {evt.title}
-                            </span>
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${
-                                evt.isPrivate
-                                  ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
-                                  : 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
-                              }`}
-                            >
-                              {evt.isPrivate ? 'Private' : 'Public'}
-                            </span>
-                          </div>
-
-                          {scheduleLabel && (
-                            <span
-                              className="text-[11px] font-normal text-gray-500 dark:text-gray-400"
-                              data-testid={`sub-event-schedule-${evt.id}`}
-                            >
-                              {scheduleLabel}
-                            </span>
-                          )}
-
-                          <div className="flex items-center gap-2 text-xs font-normal mt-0.5">
-                            <button
-                              type="button"
-                              aria-label={`Edit sub-event ${evt.title}`}
-                              onClick={() => {
-                                setEditingSubEvent(evt);
-                                setIsModalOpen(true);
-                              }}
-                              className="text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-red-300 hover:underline font-medium"
-                            >
-                              Edit
-                            </button>
-                            <span className="text-gray-300 dark:text-gray-600">|</span>
-                            <button
-                              type="button"
-                              aria-label={`Delete sub-event ${evt.title}`}
-                              onClick={() => setDeletingSubEvent(evt)}
-                              className="text-red-600 dark:text-red-400 hover:underline font-medium"
-                            >
-                              Delete
-                            </button>
-                          </div>
-
-                          {evt.isPrivate ? (
-                            <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">
-                              <span>Bulk:</span>
-                              <button
-                                type="button"
-                                className="text-primary hover:underline font-semibold"
-                                onClick={() => handleColumnToggle(evt.id, 'grant')}
-                                title={`Grant ${evt.title} access to all ${totalRecords} matching guests`}
-                              >
-                                Grant All
-                              </button>
-                              <span>|</span>
-                              <button
-                                type="button"
-                                className="text-red-600 dark:text-red-400 hover:underline font-semibold"
-                                onClick={() => handleColumnToggle(evt.id, 'revoke')}
-                                title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
-                              >
-                                Revoke All
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-0.5">
-                              Accessible to all guests
-                            </span>
-                          )}
-                        </div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedCodes.map((code) => {
-                  const allowedIds = accessMatrix[code.id] || [];
-                  const isSelectedRow = selectedRowIds.includes(code.id);
-
+                {/* Sub-Events Column Headers */}
+                {subEvents.map((evt) => {
+                  const scheduleLabel = formatSubEventSchedule(evt.startTime, evt.endTime);
                   return (
-                    <tr
-                      key={code.id}
-                      className={`hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors ${
-                        isSelectedRow ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''
-                      }`}
-                    >
-                      {/* Row Checkbox */}
-                      <td className="p-3 text-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select row for ${code.guestName}`}
-                          checked={isSelectedRow}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedRowIds([...selectedRowIds, code.id]);
-                            } else {
-                              setSelectedRowIds(selectedRowIds.filter((id) => id !== code.id));
-                            }
-                          }}
-                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                        />
-                      </td>
-
-                      {/* Guest Info Header Cell */}
-                      <td className="p-3 font-medium text-gray-900 dark:text-white">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-gray-900 dark:text-white">{code.guestName}</span>
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-mono">
-                              {code.code}
-                            </span>
-                          </div>
-
-                          {(code.householdName || code.partyGroup || (code.partyTags && code.partyTags.length > 0)) && (
-                            <div className="flex flex-wrap gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-                              {code.householdName && (
-                                <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                                  H: {code.householdName}
-                                </span>
-                              )}
-                              {code.partyGroup && (
-                                <span className="bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
-                                  G: {code.partyGroup}
-                                </span>
-                              )}
-                              {code.partyTags?.map((tag) => (
-                                <span key={tag} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded">
-                                  #{tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Row Bulk Toggle Controls */}
-                          {privateSubEvents.length > 0 && (
-                            <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-1">
-                              <span>Row:</span>
-                              <button
-                                type="button"
-                                className="text-primary hover:underline font-semibold"
-                                onClick={() => handleRowToggle(code.id, 'grant')}
-                              >
-                                Grant All
-                              </button>
-                              <span>|</span>
-                              <button
-                                type="button"
-                                className="text-red-600 dark:text-red-400 hover:underline font-semibold"
-                                onClick={() => handleRowToggle(code.id, 'revoke')}
-                              >
-                                Revoke All
-                              </button>
-                            </div>
-                          )}
+                    <th key={evt.id} scope="col" className="p-3 font-semibold text-gray-900 dark:text-white min-w-[200px] border-l border-gray-200 dark:border-gray-700 align-top">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="truncate font-bold" title={evt.title}>
+                            {evt.title}
+                          </span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                              evt.isPrivate
+                                ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                                : 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
+                            }`}
+                          >
+                            {evt.isPrivate ? 'Private' : 'Public'}
+                          </span>
                         </div>
-                      </td>
 
-                      {/* Sub-Event Access Matrix Cells */}
-                      {subEvents.map((evt) => {
-                        const isAllowed = allowedIds.includes(evt.id);
+                        {scheduleLabel && (
+                          <span
+                            className="text-[11px] font-normal text-gray-500 dark:text-gray-400"
+                            data-testid={`sub-event-schedule-${evt.id}`}
+                          >
+                            {scheduleLabel}
+                          </span>
+                        )}
 
-                        if (!evt.isPrivate) {
-                          return (
-                            <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center bg-gray-50/50 dark:bg-gray-800/50">
-                              <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
-                                ✓ Public
-                              </span>
-                            </td>
-                          );
-                        }
+                        <div className="flex items-center gap-2 text-xs font-normal mt-0.5">
+                          <button
+                            type="button"
+                            aria-label={`Edit sub-event ${evt.title}`}
+                            onClick={() => {
+                              setEditingSubEvent(evt);
+                              setIsModalOpen(true);
+                            }}
+                            className="text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-red-300 hover:underline font-medium"
+                          >
+                            Edit
+                          </button>
+                          <span className="text-gray-300 dark:text-gray-600">|</span>
+                          <button
+                            type="button"
+                            aria-label={`Delete sub-event ${evt.title}`}
+                            onClick={() => setDeletingSubEvent(evt)}
+                            className="text-red-600 dark:text-red-400 hover:underline font-medium"
+                          >
+                            Delete
+                          </button>
+                        </div>
 
-                        return (
-                          <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center align-middle">
-                            <label className="inline-flex items-center justify-center p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isAllowed}
-                                aria-label={`Toggle access for ${evt.title} on ${code.guestName}`}
-                                onChange={(e) => handleToggleCell(code.id, evt.id, e.target.checked)}
-                                className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
-                              />
-                            </label>
-                          </td>
-                        );
-                      })}
-                    </tr>
+                        {evt.isPrivate ? (
+                          <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">
+                            <span>Bulk:</span>
+                            <button
+                              type="button"
+                              className="text-primary hover:underline font-semibold"
+                              onClick={() => handleColumnToggle(evt.id, 'grant')}
+                              title={`Grant ${evt.title} access to all ${totalRecords} matching guests`}
+                            >
+                              Grant All
+                            </button>
+                            <span>|</span>
+                            <button
+                              type="button"
+                              className="text-red-600 dark:text-red-400 hover:underline font-semibold"
+                              onClick={() => handleColumnToggle(evt.id, 'revoke')}
+                              title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
+                            >
+                              Revoke All
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-0.5">
+                            Accessible to all guests
+                          </span>
+                        )}
+                      </div>
+                    </th>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {paginatedCodes.map((code) => {
+                const allowedIds = accessMatrix[code.id] || [];
+                const isSelectedRow = selectedRowIds.includes(code.id);
+
+                return (
+                  <tr
+                    key={code.id}
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors ${
+                      isSelectedRow ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''
+                    }`}
+                  >
+                    {/* Row Checkbox */}
+                    <td className="p-3 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select row for ${code.guestName}`}
+                        checked={isSelectedRow}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRowIds([...selectedRowIds, code.id]);
+                          } else {
+                            setSelectedRowIds(selectedRowIds.filter((id) => id !== code.id));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                      />
+                    </td>
+
+                    {/* Guest Info Header Cell */}
+                    <td className="p-3 font-medium text-gray-900 dark:text-white">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 dark:text-white">{code.guestName}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-mono">
+                            {code.code}
+                          </span>
+                        </div>
+
+                        {(code.householdName || code.partyGroup || (code.partyTags && code.partyTags.length > 0)) && (
+                          <div className="flex flex-wrap gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                            {code.householdName && (
+                              <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                                H: {code.householdName}
+                              </span>
+                            )}
+                            {code.partyGroup && (
+                              <span className="bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                                G: {code.partyGroup}
+                              </span>
+                            )}
+                            {code.partyTags?.map((tag) => (
+                              <span key={tag} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Row Bulk Toggle Controls */}
+                        {privateSubEvents.length > 0 && (
+                          <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-1">
+                            <span>Row:</span>
+                            <button
+                              type="button"
+                              className="text-primary hover:underline font-semibold"
+                              onClick={() => handleRowToggle(code.id, 'grant')}
+                            >
+                              Grant All
+                            </button>
+                            <span>|</span>
+                            <button
+                              type="button"
+                              className="text-red-600 dark:text-red-400 hover:underline font-semibold"
+                              onClick={() => handleRowToggle(code.id, 'revoke')}
+                            >
+                              Revoke All
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Sub-Event Access Matrix Cells */}
+                    {subEvents.map((evt) => {
+                      const isAllowed = allowedIds.includes(evt.id);
+
+                      if (!evt.isPrivate) {
+                        return (
+                          <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center bg-gray-50/50 dark:bg-gray-800/50">
+                            <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
+                              ✓ Public
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center align-middle">
+                          <label className="inline-flex items-center justify-center p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isAllowed}
+                              aria-label={`Toggle access for ${evt.title} on ${code.guestName}`}
+                              onChange={(e) => handleToggleCell(code.id, evt.id, e.target.checked)}
+                              className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                            />
+                          </label>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
         )}
 
         {/* Pagination Footer */}

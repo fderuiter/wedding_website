@@ -711,6 +711,102 @@ describe('SubEventService', () => {
         message: 'Plus-one count (3) exceeds your allocated limit of 2.',
       });
     });
+
+    it('treats null or undefined plusOneAllocations on legacy InvitationCode rows as 0', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-legacy',
+        guestName: 'Legacy Guest',
+        plusOneAllocations: null,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Ceremony',
+          isPrivate: false,
+          accesses: [],
+        },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('LEGACYCODE', [
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 1, dietaryNotes: '' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Plus-one guests are not allocated for your invitation.',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects batch submission before transaction if any item exceeds plusOneAllocations', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-batch',
+        guestName: 'Batch Guest',
+        plusOneAllocations: 1,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Ceremony', isPrivate: false, accesses: [] },
+        { id: 'se-2', title: 'Reception', isPrivate: false, accesses: [] },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('BATCHCODE', [
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 1, dietaryNotes: '' },
+          { subEventId: 'se-2', status: 'attending', plusOneCount: 2, dietaryNotes: '' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Plus-one count (2) exceeds your allocated limit of 1.',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.subEventRsvp.upsert).not.toHaveBeenCalled();
+    });
+
+    it('resets plusOneCount to 0 when status is declined even after plusOneAllocations is lowered', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-declined',
+        guestName: 'Declining Guest',
+        plusOneAllocations: 0,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Reception', isPrivate: false, accesses: [] },
+      ]);
+      mockPrisma.subEventRsvp.upsert.mockResolvedValue({
+        id: 'rsvp-declined',
+        subEventId: 'se-1',
+        invitationCodeId: 'inv-declined',
+        status: 'declined',
+        plusOneCount: 0,
+        dietaryNotes: 'Cannot make it',
+      });
+
+      const results = await service.submitSubEventRsvps('DECLINECODE', [
+        { subEventId: 'se-1', status: 'declined', plusOneCount: 2, dietaryNotes: 'Cannot make it' },
+      ]);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].plusOneCount).toBe(0);
+      expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledWith({
+        where: {
+          subEventId_invitationCodeId: {
+            subEventId: 'se-1',
+            invitationCodeId: 'inv-declined',
+          },
+        },
+        create: {
+          subEventId: 'se-1',
+          invitationCodeId: 'inv-declined',
+          status: 'declined',
+          plusOneCount: 0,
+          dietaryNotes: 'Cannot make it',
+        },
+        update: {
+          status: 'declined',
+          plusOneCount: 0,
+          dietaryNotes: 'Cannot make it',
+        },
+      });
+    });
   });
 
   describe('updateInvitationSubEventAccess', () => {

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import type { BrowserContext } from '@playwright/test';
 
 const DEFAULT_E2E_GUEST_SESSION_SECRET = 'playwright-e2e-session-secret-32-chars-min';
-const DEFAULT_E2E_GUEST_PASSCODE = 'wedding2026';
+const DEFAULT_E2E_GUEST_PASSCODE = 'playwright-e2e-guest-passcode';
 const DEFAULT_E2E_ADMIN_PASSWORD = 'scrypt:c2FsdA==:aGFzaA==';
 const DEFAULT_E2E_ORIGINS = ['http://127.0.0.1:3000', 'http://localhost:3000'];
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -37,6 +37,25 @@ export function generateGuestCookieValue(): string {
   return signCompactE2EToken(
     {
       guest: true,
+      iat: now,
+      exp: now + SESSION_TTL_MS,
+    },
+    secret
+  );
+}
+
+export function generateGuestInviteSessionCookieValue(code: string, guestName: string): string {
+  const secret = process.env.GUEST_SESSION_SECRET || DEFAULT_E2E_GUEST_SESSION_SECRET;
+  const passcode = process.env.GUEST_PASSCODE || DEFAULT_E2E_GUEST_PASSCODE;
+  if (secret === passcode) {
+    throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
+  }
+
+  const now = Date.now();
+  return signCompactE2EToken(
+    {
+      code,
+      guestName,
       iat: now,
       exp: now + SESSION_TTL_MS,
     },

@@ -47,6 +47,8 @@ function request(urlPath) {
 }
 
 function printLogs() {
+  console.error('\n=== Actionable Migration Container Logs ===');
+  child_process.spawnSync('docker', ['compose', 'logs', 'migration'], { stdio: 'inherit', shell: true, cwd: rootDir });
   console.error('\n=== Actionable App Container Logs ===');
   child_process.spawnSync('docker', ['compose', 'logs', 'app'], { stdio: 'inherit', shell: true, cwd: rootDir });
   console.error('\n=== Actionable DB Container Logs ===');

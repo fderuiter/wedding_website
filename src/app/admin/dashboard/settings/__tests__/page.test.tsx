@@ -1,10 +1,13 @@
 import React from 'react';
 import { render as tlRender, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import AdminSettingsPage from '../page';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+
+expect.extend(toHaveNoViolations);
 
 const render = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
@@ -614,6 +617,62 @@ describe('AdminSettingsPage - SearchableTimezoneSelect accessibility & keyboard 
       fireEvent.keyDown(input, { key: 'End' });
       fireEvent.keyDown(input, { key: 'Enter' });
     }).not.toThrow();
+  });
+});
+
+describe('AdminSettingsPage ARIA Bindings and Accessibility', () => {
+  it('exposes unique labels and non-duplicate IDs for profile switcher, split URL/file inputs, and JSON tokens error state', async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              { ...mockConfig, multisiteEnabled: true },
+              { ...mockConfig, id: 'secondary', siteSlug: 'secondary-site', multisiteEnabled: true },
+            ],
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ ...mockConfig, multisiteEnabled: true }) });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    const { container } = render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    // Multisite profile switcher has explicit Label + Select binding
+    const profileSelect = await screen.findByLabelText(/Active Branding Profile/i);
+    expect(profileSelect).toHaveAttribute('id', 'brandingProfileSelect');
+
+    // Paired URL and file inputs expose distinct labels
+    expect(screen.getByLabelText('Brand Logo Image (Header Navigation)')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Upload Brand Logo File')).toHaveAttribute('type', 'file');
+    expect(screen.getByLabelText('Hero Visual Background Image')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Upload Hero Background File')).toHaveAttribute('type', 'file');
+    expect(screen.getByLabelText('Brand Watermark Graphic')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Upload Brand Watermark File')).toHaveAttribute('type', 'file');
+    expect(screen.getByLabelText('Badge Graphic Image')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Upload Badge Graphic File')).toHaveAttribute('type', 'file');
+
+    // Custom CSS Theme Tokens (JSON) propagates error state to FormGroup & Textarea
+    const jsonTextarea = screen.getByLabelText(/Custom CSS Theme Tokens \(JSON\)/i);
+    expect(jsonTextarea).toHaveAttribute('aria-invalid', 'false');
+    fireEvent.change(jsonTextarea, { target: { value: '{broken-json' } });
+    expect(jsonTextarea).toHaveAttribute('aria-invalid', 'true');
+    const jsonErrorId = jsonTextarea.getAttribute('aria-describedby') || '';
+    expect(jsonErrorId).toBeTruthy();
+    expect(document.getElementById(jsonErrorId)).toHaveTextContent(/Invalid JSON format/i);
+
+    // Zero duplicate IDs in DOM
+    const ids = Array.from(container.querySelectorAll('[id]')).map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
   });
 });
 

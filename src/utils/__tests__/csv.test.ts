@@ -402,6 +402,37 @@ describe('CSV Parser Utility', () => {
 
       expect(result.guestName).toBe('Dr. John Doe');
     });
+
+    it('maps row validation errors to individual columns in fieldErrors', () => {
+      const freqMap = new Map([['DUP100', 2]]);
+      const dbCodes = new Set<string>();
+
+      const result = validateSingleCsvRow(
+        {
+          'Guest Name': '',
+          Code: 'DUP100',
+          Email: 'not-an-email',
+          'Plus Ones': '-2',
+        },
+        0,
+        {
+          guestNameCol: 'Guest Name',
+          codeCol: 'Code',
+          emailCol: 'Email',
+          plusOneCol: 'Plus Ones',
+        },
+        freqMap,
+        dbCodes
+      );
+
+      expect(result.isValid).toBe(false);
+      expect(result.fieldErrors).toEqual({
+        guestName: ['Guest name is required.'],
+        email: ['Invalid email format.'],
+        plusOneAllocations: ['Plus-one allocation must be a non-negative integer.'],
+        code: ['Duplicate code "DUP100" within CSV file.'],
+      });
+    });
   });
 
   describe('combineFirstAndLastName', () => {

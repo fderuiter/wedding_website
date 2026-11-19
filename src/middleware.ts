@@ -55,6 +55,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const isApiRoute = normalizedPath === '/api' || normalizedPath.startsWith('/api/');
+
   const isExcluded = 
     normalizedPath === '/guest' ||
     normalizedPath === '/guest/login' ||
@@ -71,7 +73,7 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/robots.txt' ||
     normalizedPath === '/favicon.ico' ||
     normalizedPath.startsWith('/_next/') ||
-    /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(normalizedPath);
+    (!isApiRoute && /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(normalizedPath));
 
   if (isProtectedRoute(normalizedPath, method)) {
     const isAuth = await isAdminRequest(request);
@@ -105,9 +107,10 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Run middleware on all requests except static files and images
+// Run middleware on all API routes and all non-static page requests
 export const config = {
   matcher: [
+    '/api/:path*',
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

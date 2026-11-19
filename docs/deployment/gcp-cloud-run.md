@@ -53,7 +53,8 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). |
 | `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable multi-tenant/multi-profile site routing (`false`). |
 | `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
-| `GUEST_PASSCODE` | No | Secret Manager | Guest passcode (default `wedding2026`). |
+| `TRUST_PROXY` | No | Cloud Run Env Var | Trust `X-Forwarded-For` / `X-Real-IP` from Cloud Run ingress (`true` or hop count; default `false`). |
+| `GUEST_PASSCODE` | Yes | Secret Manager | Unique guest passcode required in production (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | Secret Manager | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | Cloud Run Env Var | Retained history limit (e.g. `50`). |
 | `CRON_SECRET` | No | Secret Manager | Authorization key for background cron triggers. |
@@ -306,6 +307,8 @@ The repository includes `.github/workflows/deploy.yml`. Set up the following Git
 *   `GCP_SA_KEY`: Google Cloud Service Account JSON Key (or configure Workload Identity Federation).
 *   `DATABASE_URL`: Connection string.
 *   `ADMIN_PASSWORD`: Administrative password hash.
+*   `GUEST_PASSCODE`: Unique production guest passcode.
+*   `GUEST_SESSION_SECRET`: Dedicated server secret for guest session signing (min 32 characters, distinct from `GUEST_PASSCODE`).
 
 ### Manual CLI Deployment
 ```bash
@@ -324,7 +327,7 @@ gcloud run deploy wedding-service \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
     --set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
-    --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest" \
+    --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 ```
 

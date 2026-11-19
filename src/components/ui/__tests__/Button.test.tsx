@@ -1,7 +1,10 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { Button } from '../Button';
+import { axe, toHaveNoViolations } from 'jest-axe';
+import { Button, type ButtonProps } from '../Button';
+
+expect.extend(toHaveNoViolations);
 
 describe('Button', () => {
   test('Button renders without crashing', () => {
@@ -69,6 +72,38 @@ describe('Button', () => {
 
     button.click();
     expect(handleClick).not.toHaveBeenCalled();
+  });
+
+  test('supports pressed prop with aria-pressed, non-color check icon and ring, and passes jest-axe', async () => {
+    const toggleProps: ButtonProps = {
+      variant: 'outline',
+      pressed: true,
+      'aria-label': 'Our Story: Visible',
+    };
+    const { container, getByRole, rerender } = render(
+      <Button {...toggleProps}>Visible</Button>
+    );
+
+    let button = getByRole('button', { name: 'Our Story: Visible' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(button).toHaveClass('ring-2');
+    expect(button.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    rerender(
+      <Button variant="ghost" pressed={false} aria-label="Our Story: Hidden">
+        Hidden
+      </Button>
+    );
+    button = getByRole('button', { name: 'Our Story: Hidden' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    expect(button).not.toHaveClass('ring-current');
+    expect(button.querySelector('svg[aria-hidden="true"]')).toBeNull();
+
+    rerender(<Button>Standard Action</Button>);
+    button = getByRole('button', { name: 'Standard Action' });
+    expect(button).not.toHaveAttribute('aria-pressed');
   });
 });
 

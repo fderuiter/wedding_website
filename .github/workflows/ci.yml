@@ -374,7 +374,7 @@ jobs:
       - name: Run e2e tests
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
-          GUEST_PASSCODE: wedding2026
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: npx playwright test
 
@@ -453,7 +453,7 @@ jobs:
         timeout-minutes: 10
         env:
           DB_PORT: "5433"
-          GUEST_PASSCODE: wedding2026
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: |
           lsof -ti:3000 | xargs kill -9 2>/dev/null || true
@@ -478,7 +478,7 @@ jobs:
         timeout-minutes: 3
         env:
           TEST_CONTAINER: "true"
-          GUEST_PASSCODE: wedding2026
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: npx playwright test
 

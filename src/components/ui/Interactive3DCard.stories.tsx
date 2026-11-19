@@ -17,7 +17,10 @@ type Story = StoryObj<typeof Interactive3DCard>;
 export const DefaultCard: Story = {
   render: () => (
     <div className="flex justify-center p-8">
-      <Interactive3DCard className="w-80 rounded-2xl bg-white dark:bg-gray-800 p-6 shadow-xl border border-gray-200 dark:border-gray-700">
+      <Interactive3DCard
+        as="article"
+        className="w-80 rounded-2xl bg-white dark:bg-gray-800 p-6 shadow-xl border border-gray-200 dark:border-gray-700"
+      >
         <div className="space-y-4">
           <div className="h-40 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-white text-3xl font-serif">
             Save The Date
@@ -31,7 +34,7 @@ export const DefaultCard: Story = {
             </p>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Hover and drag over this card to experience the 3D perspective tilt physics.
+            Drag across this card with a pointer to experience 3D perspective tilt while preserving native heading and button semantics.
           </p>
           <Button variant="primary" className="w-full">
             RSVP Online
