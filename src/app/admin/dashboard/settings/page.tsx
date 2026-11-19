@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 // eslint-disable-next-line no-restricted-imports
@@ -32,17 +32,12 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
     }
   }, []);
 
-  const [search, setSearch] = useState(value || 'America/Chicago');
+  const [draftSearch, setDraftSearch] = useState<string | null>(null);
+  const search = draftSearch ?? (value || 'America/Chicago');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  useEffect(() => {
-    if (value) {
-      setSearch(value);
-    }
-  }, [value]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -51,14 +46,13 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
         setHighlightedIndex(-1);
         if (ianaTimezones.includes(search)) {
           onChange(search);
-        } else {
-          setSearch(value || 'America/Chicago');
         }
+        setDraftSearch(null);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [search, value, ianaTimezones, onChange]);
+  }, [search, ianaTimezones, onChange]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -68,13 +62,13 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
 
   const handleSelect = (tz: string) => {
     onChange(tz);
-    setSearch(tz);
+    setDraftSearch(null);
     setIsOpen(false);
     setHighlightedIndex(-1);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearch(e.target.value);
+    setDraftSearch(e.target.value);
     setIsOpen(true);
     setHighlightedIndex(-1);
   };
@@ -106,7 +100,7 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
         e.preventDefault();
         setIsOpen(false);
         setHighlightedIndex(-1);
-        setSearch(value || 'America/Chicago');
+        setDraftSearch(null);
       }
     } else if (e.key === 'Home') {
       if (isOpen && filtered.length > 0) {
@@ -190,6 +184,18 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
   );
 }
 
+function formatThemeTokens(cfg: any): string {
+  if (!cfg?.themeTokens) return '{}';
+  try {
+    const tokensObj = typeof cfg.themeTokens === 'string'
+      ? JSON.parse(cfg.themeTokens)
+      : cfg.themeTokens;
+    return JSON.stringify(tokensObj, null, 2);
+  } catch {
+    return '{}';
+  }
+}
+
 export default function AdminSettingsPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -209,6 +215,32 @@ export default function AdminSettingsPage() {
   } = useAdminSettings(selectedProfileId);
 
   const { testConnection, testingConnection } = useAdminBroadcast();
+
+  const [configOverride, setConfigOverride] = useState<{ base: any; value: any } | null>(null);
+  const [tokensTextOverride, setTokensTextOverride] = useState<{ base: any; text: string } | null>(null);
+  const [themeTokensError, setThemeTokensError] = useState('');
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
+  const [createError, setCreateError] = useState('');
+
+  const localConfig = configOverride && configOverride.base === initialConfig
+    ? configOverride.value
+    : (initialConfig ?? null);
+  const themeTokensText = tokensTextOverride && tokensTextOverride.base === initialConfig
+    ? tokensTextOverride.text
+    : formatThemeTokens(initialConfig);
+
+  const setLocalConfig = useCallback((updater: any) => {
+    setConfigOverride((prev) => {
+      const current = prev && prev.base === initialConfig ? prev.value : (initialConfig ?? null);
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      return { base: initialConfig, value: next };
+    });
+  }, [initialConfig]);
+
+  const setThemeTokensText = useCallback((text: string) => {
+    setTokensTextOverride({ base: initialConfig, text });
+  }, [initialConfig]);
 
   const handleTestConnection = async (type: 'email' | 'sms') => {
     try {
@@ -239,31 +271,6 @@ export default function AdminSettingsPage() {
       addToast(`Connection test failed: ${err.message}`, 'error');
     }
   };
-
-  const [localConfig, setLocalConfig] = useState<any>(null);
-  const [themeTokensText, setThemeTokensText] = useState('{}');
-  const [themeTokensError, setThemeTokensError] = useState('');
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
-  const [createError, setCreateError] = useState('');
-
-  useEffect(() => {
-    if (initialConfig) {
-      setLocalConfig(initialConfig);
-      if (initialConfig.themeTokens) {
-        try {
-          const tokensObj = typeof initialConfig.themeTokens === 'string'
-            ? JSON.parse(initialConfig.themeTokens)
-            : initialConfig.themeTokens;
-          setThemeTokensText(JSON.stringify(tokensObj, null, 2));
-        } catch {
-          setThemeTokensText('{}');
-        }
-      } else {
-        setThemeTokensText('{}');
-      }
-    }
-  }, [initialConfig]);
 
   const handleTokensChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;

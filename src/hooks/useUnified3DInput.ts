@@ -195,7 +195,11 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
 
   // Combine accessibility props with pointer events if both are needed on the same element
   // (like DOM elements in Framer Motion). But for R3F, they might be separated.
-  const interactiveProps = a11y.getInteractiveProps(pointerHandlers as any);
+  const a11yProps = a11y.getInteractiveProps();
+  const interactiveProps = {
+    ...pointerHandlers,
+    ...a11yProps,
+  };
 
   return {
     handlers: pointerHandlers, // Just pointer events

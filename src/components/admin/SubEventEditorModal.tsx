@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Checkbox } from '@/components/ui/forms';
@@ -35,50 +35,39 @@ interface SubEventEditorModalProps {
   onRequestDelete?: (_subEvent: EditableSubEvent) => void;
 }
 
-export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
-  isOpen,
+interface SubEventEditorFormProps {
+  editingEvent: EditableSubEvent | null;
+  onClose: () => void;
+  onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
+}
+
+const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
+  editingEvent,
   onClose,
-  editingEvent = null,
   onSave,
-  existingSubEvents,
-  onSelectEdit,
-  onRequestDelete,
 }) => {
   const { addToast } = useToast();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [locationName, setLocationName] = useState('');
-  const [category, setCategory] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [isPrivate, setIsPrivate] = useState(true);
+  const [title, setTitle] = useState(() => (editingEvent ? (editingEvent.title ?? '') : ''));
+  const [description, setDescription] = useState(() =>
+    editingEvent ? (editingEvent.description ?? '') : ''
+  );
+  const [locationName, setLocationName] = useState(() =>
+    editingEvent ? (editingEvent.locationName ?? '') : ''
+  );
+  const [category, setCategory] = useState(() =>
+    editingEvent ? (editingEvent.category ?? '') : ''
+  );
+  const [startTime, setStartTime] = useState(() =>
+    editingEvent ? toDateTimeLocalValue(editingEvent.startTime) : ''
+  );
+  const [endTime, setEndTime] = useState(() =>
+    editingEvent ? toDateTimeLocalValue(editingEvent.endTime) : ''
+  );
+  const [isPrivate, setIsPrivate] = useState(() =>
+    editingEvent ? Boolean(editingEvent.isPrivate) : true
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    if (editingEvent) {
-      setTitle(editingEvent.title ?? '');
-      setDescription(editingEvent.description ?? '');
-      setLocationName(editingEvent.locationName ?? '');
-      setCategory(editingEvent.category ?? '');
-      setStartTime(toDateTimeLocalValue(editingEvent.startTime));
-      setEndTime(toDateTimeLocalValue(editingEvent.endTime));
-      setIsPrivate(Boolean(editingEvent.isPrivate));
-    } else {
-      setTitle('');
-      setDescription('');
-      setLocationName('');
-      setCategory('');
-      setStartTime('');
-      setEndTime('');
-      setIsPrivate(true);
-    }
-    setValidationError(null);
-    setIsSaving(false);
-  }, [isOpen, editingEvent]);
-
-  if (!isOpen) return null;
 
   const isEditMode = Boolean(editingEvent);
   const scheduleInvalid = isEndTimeBeforeStartTime(startTime, endTime);
@@ -124,6 +113,131 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
       setIsSaving(false);
     }
   };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {(validationError || scheduleInvalid) && (
+        <div
+          role="alert"
+          className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 px-3.5 py-2.5 text-sm text-red-700 dark:text-red-300 font-medium"
+        >
+          {validationError || 'End time cannot precede start time.'}
+        </div>
+      )}
+
+      <FormGroup>
+        <Label>Title *</Label>
+        <Input
+          type="text"
+          required
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            if (validationError) setValidationError(null);
+          }}
+          placeholder="e.g. Rehearsal Dinner"
+        />
+      </FormGroup>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <FormGroup>
+          <Label>Start Time (Optional)</Label>
+          <Input
+            type="datetime-local"
+            value={startTime}
+            onChange={(e) => {
+              setStartTime(e.target.value);
+              if (validationError) setValidationError(null);
+            }}
+          />
+        </FormGroup>
+
+        <FormGroup state={scheduleInvalid ? 'error' : 'default'}>
+          <Label>End Time (Optional)</Label>
+          <Input
+            type="datetime-local"
+            value={endTime}
+            min={startTime || undefined}
+            onChange={(e) => {
+              setEndTime(e.target.value);
+              if (validationError) setValidationError(null);
+            }}
+          />
+        </FormGroup>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <FormGroup>
+          <Label>Location Name</Label>
+          <Input
+            type="text"
+            value={locationName}
+            onChange={(e) => setLocationName(e.target.value)}
+            placeholder="e.g. The Grand Ballroom"
+          />
+        </FormGroup>
+
+        <FormGroup>
+          <Label>Category</Label>
+          <Input
+            type="text"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="e.g. Dining"
+          />
+        </FormGroup>
+      </div>
+
+      <FormGroup>
+        <Label>Description</Label>
+        <Textarea
+          rows={2}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="e.g. Invitation-only dinner for wedding party"
+        />
+      </FormGroup>
+
+      <FormGroup>
+        <div className="flex items-center gap-2 pt-1">
+          <Checkbox
+            checked={isPrivate}
+            onChange={(e) => setIsPrivate(e.target.checked)}
+          />
+          <Label className="font-medium cursor-pointer">
+            Private Sub-Event (requires explicit access assignment)
+          </Label>
+        </div>
+      </FormGroup>
+
+      <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-zinc-800">
+        <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isSaving}>
+          {isSaving
+            ? 'Saving...'
+            : isEditMode
+              ? 'Save Changes'
+              : 'Create Sub-Event'}
+        </Button>
+      </div>
+    </form>
+  );
+};
+
+export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
+  isOpen,
+  onClose,
+  editingEvent = null,
+  onSave,
+  existingSubEvents,
+  onSelectEdit,
+  onRequestDelete,
+}) => {
+  if (!isOpen) return null;
+
+  const isEditMode = Boolean(editingEvent);
 
   return (
     <Dialog
@@ -207,114 +321,12 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {(validationError || scheduleInvalid) && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 px-3.5 py-2.5 text-sm text-red-700 dark:text-red-300 font-medium"
-            >
-              {validationError || 'End time cannot precede start time.'}
-            </div>
-          )}
-
-          <FormGroup>
-            <Label>Title *</Label>
-            <Input
-              type="text"
-              required
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                if (validationError) setValidationError(null);
-              }}
-              placeholder="e.g. Rehearsal Dinner"
-            />
-          </FormGroup>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup>
-              <Label>Start Time (Optional)</Label>
-              <Input
-                type="datetime-local"
-                value={startTime}
-                onChange={(e) => {
-                  setStartTime(e.target.value);
-                  if (validationError) setValidationError(null);
-                }}
-              />
-            </FormGroup>
-
-            <FormGroup state={scheduleInvalid ? 'error' : 'default'}>
-              <Label>End Time (Optional)</Label>
-              <Input
-                type="datetime-local"
-                value={endTime}
-                min={startTime || undefined}
-                onChange={(e) => {
-                  setEndTime(e.target.value);
-                  if (validationError) setValidationError(null);
-                }}
-              />
-            </FormGroup>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup>
-              <Label>Location Name</Label>
-              <Input
-                type="text"
-                value={locationName}
-                onChange={(e) => setLocationName(e.target.value)}
-                placeholder="e.g. The Grand Ballroom"
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Category</Label>
-              <Input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. Dining"
-              />
-            </FormGroup>
-          </div>
-
-          <FormGroup>
-            <Label>Description</Label>
-            <Textarea
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Invitation-only dinner for wedding party"
-            />
-          </FormGroup>
-
-          <FormGroup>
-            <div className="flex items-center gap-2 pt-1">
-              <Checkbox
-                checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
-              />
-              <Label className="font-medium cursor-pointer">
-                Private Sub-Event (requires explicit access assignment)
-              </Label>
-            </div>
-          </FormGroup>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-zinc-800">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving
-                ? 'Saving...'
-                : isEditMode
-                  ? 'Save Changes'
-                  : 'Create Sub-Event'}
-            </Button>
-          </div>
-        </form>
+        <SubEventEditorForm
+          key={editingEvent?.id ?? 'create'}
+          editingEvent={editingEvent}
+          onClose={onClose}
+          onSave={onSave}
+        />
       </div>
     </Dialog>
   );

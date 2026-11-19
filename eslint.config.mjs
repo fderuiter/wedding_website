@@ -24,37 +24,6 @@ const ensureFlatConfig = (config) => {
   return compat.config(config);
 };
 
-// Prune invalid and non-existent React Hooks rules that do not exist in standard packages by making them no-ops
-const noopRule = {
-  meta: {
-    type: 'suggestion',
-    docs: {
-      description: 'noop',
-    },
-    schema: {
-      type: 'array',
-      additionalProperties: true,
-    },
-  },
-  create() {
-    return {};
-  },
-};
-
-const nonStandardRules = [
-  'set-state-in-effect',
-  'immutability',
-  'static-components',
-  'purity',
-  'refs'
-];
-
-if (reactHooks && reactHooks.rules) {
-  nonStandardRules.forEach((ruleName) => {
-    reactHooks.rules[ruleName] = noopRule;
-  });
-}
-
 const eslintConfig = [
   {
     ignores: [

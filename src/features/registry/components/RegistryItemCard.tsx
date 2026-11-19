@@ -175,13 +175,18 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isDualMode = isFund && hasPaymentHandle && effectiveCardCheckoutEnabled;
   const isUnconfiguredFund = isFund && !hasPaymentHandle && !effectiveCardCheckoutEnabled;
 
-  const [selectedMode, setSelectedMode] = useState<'direct' | 'card'>(() =>
-    hasPaymentHandle ? 'direct' : 'card'
-  );
+  const modeBaseKey = `${item.id}-${hasPaymentHandle ? 'handle' : 'nohandle'}`;
+  const [selectedModeOverride, setSelectedModeOverride] = useState<{
+    key: string;
+    mode: 'direct' | 'card';
+  } | null>(null);
 
-  useEffect(() => {
-    setSelectedMode(hasPaymentHandle ? 'direct' : 'card');
-  }, [item.id, hasPaymentHandle]);
+  const selectedMode: 'direct' | 'card' =
+    selectedModeOverride && selectedModeOverride.key === modeBaseKey
+      ? selectedModeOverride.mode
+      : hasPaymentHandle
+        ? 'direct'
+        : 'card';
 
   const activePaymentMode: FundPaymentMode | null = useMemo(() => {
     if (!isFund) return null;
@@ -195,7 +200,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isCardMode = isFund && activePaymentMode === 'card';
 
   const handleSelectMode = (mode: 'direct' | 'card') => {
-    setSelectedMode(mode);
+    setSelectedModeOverride({ key: modeBaseKey, mode });
     setSubmissionError(null);
     if (mode === 'direct') {
       setCoverFee(false);

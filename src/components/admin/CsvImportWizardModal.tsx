@@ -1065,17 +1065,23 @@ export function CsvImportWizardModal({
   );
 
   const existingDbSetRef = useRef(existingDbSet);
-  existingDbSetRef.current = existingDbSet;
 
   const [state, rawDispatch] = useReducer(
-    (s: WizardState, a: WizardAction) => wizardReducer(s, a, existingDbSetRef.current),
+    (s: WizardState, a: WizardAction) => wizardReducer(s, a, existingDbSet),
     initialWizardState,
     (init) => initWizardState(init, existingDbSet)
   );
 
   const stateRef = useRef(state);
-  stateRef.current = state;
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    existingDbSetRef.current = existingDbSet;
+  }, [existingDbSet]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const dispatch = useCallback((action: WizardAction) => {
     stateRef.current = wizardReducer(stateRef.current, action, existingDbSetRef.current);

@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { cn } from '@/utils/cn';
 
 export const ONBOARDING_CHECKLIST_COLLAPSED_KEY = 'admin_onboarding_checklist_collapsed';
+
+const emptySubscribe = () => () => {};
+const getHydratedClientSnapshot = () => true;
+const getHydratedServerSnapshot = () => false;
 
 export interface OnboardingMilestone {
   id: string;
@@ -41,38 +45,48 @@ function writePersistedCollapsedState(collapsed: boolean): void {
 
 export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps) {
   const router = useRouter();
+  const isHydrated = useSyncExternalStore(
+    emptySubscribe,
+    getHydratedClientSnapshot,
+    getHydratedServerSnapshot
+  );
   const [milestones, setMilestones] = useState<OnboardingMilestone[] | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(null);
+
+  const isCollapsed =
+    collapsedOverride ?? (isHydrated ? readPersistedCollapsedState() : false);
 
   useEffect(() => {
-    setIsCollapsed(readPersistedCollapsedState());
-  }, []);
+    let cancelled = false;
 
-  const fetchMilestones = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/onboarding-milestones');
-      if (!res || !res.ok || typeof res.json !== 'function') return;
-      const raw = await res.json();
-      const payload = raw && typeof raw === 'object' && 'data' in raw && raw.data ? raw.data : raw;
+    const loadMilestones = async () => {
+      try {
+        const res = await fetch('/api/admin/onboarding-milestones');
+        if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
+        const raw = await res.json();
+        if (cancelled) return;
+        const payload =
+          raw && typeof raw === 'object' && 'data' in raw && raw.data ? raw.data : raw;
 
-      if (payload && Array.isArray(payload.milestones)) {
-        setMilestones(payload.milestones);
+        if (payload && Array.isArray(payload.milestones)) {
+          setMilestones(payload.milestones);
+        }
+      } catch {
+        // Gracefully ignore network or mock errors so dashboard remains usable
       }
-    } catch {
-      // Gracefully ignore network or mock errors so dashboard remains usable
-    }
-  }, []);
+    };
 
-  useEffect(() => {
-    void fetchMilestones();
-  }, [fetchMilestones, refreshTrigger]);
+    void loadMilestones();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTrigger]);
 
   const handleToggleCollapse = () => {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      writePersistedCollapsedState(next);
-      return next;
-    });
+    const next = !isCollapsed;
+    writePersistedCollapsedState(next);
+    setCollapsedOverride(next);
   };
 
   if (!milestones || milestones.length === 0) {

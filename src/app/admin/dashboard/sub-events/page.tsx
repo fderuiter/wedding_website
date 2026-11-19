@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
@@ -77,7 +77,7 @@ function SubEventsMatrixPageContent() {
   const [editingSubEvent, setEditingSubEvent] = useState<SubEvent | null>(null);
   const [deletingSubEvent, setDeletingSubEvent] = useState<SubEvent | null>(null);
 
-  const fetchMatrix = async () => {
+  const fetchMatrix = useCallback(async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
@@ -114,18 +114,61 @@ function SubEventsMatrixPageContent() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-    setSelectedRowIds([]);
-  }, [searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, pageSize]);
+  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, addToast]);
 
   // Fetch matrix when page or filters or pageSize change
   useEffect(() => {
-    fetchMatrix();
-  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter]);
+    let cancelled = false;
+
+    const loadMatrix = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('page', currentPage.toString());
+        params.set('limit', pageSize.toString());
+        if (searchQuery.trim()) params.set('search', searchQuery.trim());
+        if (selectedTagFilter !== 'all') params.set('partyTag', selectedTagFilter);
+        if (selectedGroupFilter !== 'all') params.set('partyGroup', selectedGroupFilter);
+        if (selectedHouseholdFilter !== 'all') params.set('householdName', selectedHouseholdFilter);
+
+        const res = await fetch(`/api/admin/sub-events/access?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to load access matrix');
+        const json = await res.json();
+        if (cancelled) return;
+
+        const data = json.data || json;
+        const events: SubEvent[] = data.subEvents || [];
+        const codes: InvitationCode[] = data.invitationCodes || [];
+        const pagination = data.pagination || { total: codes.length, page: currentPage, limit: pageSize, totalPages: 1 };
+        const opts = data.filterOptions || { partyTags: [], partyGroups: [], householdNames: [] };
+
+        const matrixMap: Record<string, string[]> = {};
+        codes.forEach((c) => {
+          matrixMap[c.id] = c.allowedSubEventIds || [];
+        });
+
+        setSubEvents(events);
+        setInvitationCodes(codes);
+        setTotalRecords(pagination.total ?? codes.length);
+        setTotalPages(pagination.totalPages ?? 1);
+        setFilterOptions(opts);
+        setAccessMatrix(matrixMap);
+      } catch (e: any) {
+        if (!cancelled) {
+          addToast(e.message || 'Error fetching access matrix', 'error');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadMatrix();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, addToast]);
 
   // Unique filter values
   const allTags = useMemo(() => {
@@ -421,7 +464,12 @@ function SubEventsMatrixPageContent() {
               type="text"
               placeholder="Search guest, code, household..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+                setSelectedRowIds([]);
+                setIsLoading(true);
+              }}
               className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary text-gray-900 dark:text-white"
             />
           </div>
@@ -431,7 +479,12 @@ function SubEventsMatrixPageContent() {
             <select
               aria-label="Filter by Party Tag"
               value={selectedTagFilter}
-              onChange={(e) => setSelectedTagFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedTagFilter(e.target.value);
+                setCurrentPage(1);
+                setSelectedRowIds([]);
+                setIsLoading(true);
+              }}
               className="px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
             >
               <option value="all">All Party Tags ({allTags.length})</option>
@@ -448,7 +501,12 @@ function SubEventsMatrixPageContent() {
             <select
               aria-label="Filter by Party Group"
               value={selectedGroupFilter}
-              onChange={(e) => setSelectedGroupFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedGroupFilter(e.target.value);
+                setCurrentPage(1);
+                setSelectedRowIds([]);
+                setIsLoading(true);
+              }}
               className="px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
             >
               <option value="all">All Party Groups ({allGroups.length})</option>
@@ -465,7 +523,12 @@ function SubEventsMatrixPageContent() {
             <select
               aria-label="Filter by Household"
               value={selectedHouseholdFilter}
-              onChange={(e) => setSelectedHouseholdFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedHouseholdFilter(e.target.value);
+                setCurrentPage(1);
+                setSelectedRowIds([]);
+                setIsLoading(true);
+              }}
               className="px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
             >
               <option value="all">All Households ({allHouseholds.length})</option>
@@ -490,6 +553,9 @@ function SubEventsMatrixPageContent() {
                 setSelectedTagFilter('all');
                 setSelectedGroupFilter('all');
                 setSelectedHouseholdFilter('all');
+                setCurrentPage(1);
+                setSelectedRowIds([]);
+                setIsLoading(true);
               }}
             >
               Clear Filters
@@ -503,7 +569,12 @@ function SubEventsMatrixPageContent() {
           <select
             aria-label="Rows per page"
             value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setCurrentPage(1);
+              setSelectedRowIds([]);
+              setIsLoading(true);
+            }}
             className="px-2 py-1 border rounded text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600"
           >
             <option value={10}>10</option>
@@ -765,7 +836,10 @@ function SubEventsMatrixPageContent() {
                 variant="secondary"
                 size="sm"
                 disabled={currentPage <= 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => {
+                  setIsLoading(true);
+                  setCurrentPage((p) => Math.max(1, p - 1));
+                }}
               >
                 Previous
               </Button>
@@ -776,7 +850,10 @@ function SubEventsMatrixPageContent() {
                 variant="secondary"
                 size="sm"
                 disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => {
+                  setIsLoading(true);
+                  setCurrentPage((p) => Math.min(totalPages, p + 1));
+                }}
               >
                 Next
               </Button>
