@@ -19,6 +19,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
   const validAdminPassword = 'scrypt:c2FsdA==:aGFzaA==';
   const validDatabaseUrl = 'postgresql://wedding:wedding123@localhost:5432/wedding';
   const validGuestSessionSecret = 'a-secure-guest-session-secret-32-chars-minimum!';
+  const validGuestPasscode = 'custom-production-guest-passcode-2026';
 
   function runEnvBoot(envOverrides: Record<string, string | undefined>) {
     const cleanEnv: Record<string, string> = {
@@ -44,6 +45,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
         DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
         GUEST_SESSION_SECRET: validGuestSessionSecret,
         STRIPE_SECRET_KEY: 'sk_live_valid_secret_key_12345',
       });
@@ -58,6 +60,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
         DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
         GUEST_SESSION_SECRET: validGuestSessionSecret,
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_live_valid_publishable_key_12345',
       });
@@ -72,6 +75,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
         DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
         GUEST_SESSION_SECRET: validGuestSessionSecret,
         STRIPE_SECRET_KEY: 'sk_test_placeholder_mock_key',
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_placeholder_mock_key',
@@ -97,6 +101,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
         DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
         GUEST_SESSION_SECRET: validGuestSessionSecret,
         STRIPE_SECRET_KEY: 'invalid_secret_prefix',
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'invalid_pub_prefix',
@@ -114,6 +119,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
         DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
         GUEST_SESSION_SECRET: validGuestSessionSecret,
       });
 
@@ -125,6 +131,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
         DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
         GUEST_SESSION_SECRET: validGuestSessionSecret,
         STRIPE_SECRET_KEY: 'sk_live_real_secret_key_987654321',
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_live_real_publishable_key_987654321',

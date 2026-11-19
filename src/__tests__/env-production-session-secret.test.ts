@@ -8,6 +8,7 @@ describe('Production Boot Guest Session Secret Validation', () => {
   const validAdminPassword = 'scrypt:c2FsdA==:aGFzaA==';
   const validDatabaseUrl = 'postgresql://wedding:wedding123@localhost:5432/wedding';
   const valid32Secret = 'a-secure-guest-session-secret-32-chars-minimum!';
+  const validGuestPasscode = 'custom-production-guest-passcode-2026';
 
   function runEnvBoot(envOverrides: Record<string, string | undefined>) {
     // Construct clean env object
@@ -94,7 +95,7 @@ describe('Production Boot Guest Session Secret Validation', () => {
       expect(res.stderr).toContain('GUEST_SESSION_SECRET must not match GUEST_PASSCODE');
     });
 
-    it('succeeds when a distinct secret of at least 32 characters is present', () => {
+    it('halts startup when GUEST_PASSCODE is unset', () => {
       const res = runEnvBoot({
         NODE_ENV: 'production',
         ADMIN_PASSWORD: validAdminPassword,
@@ -102,7 +103,60 @@ describe('Production Boot Guest Session Secret Validation', () => {
         GUEST_SESSION_SECRET: valid32Secret,
       });
 
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('GUEST_PASSCODE environment variable is missing in production environment');
+    });
+
+    it('halts startup when GUEST_PASSCODE is empty or whitespace', () => {
+      const res = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: '   ',
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('GUEST_PASSCODE environment variable is missing in production environment');
+    });
+
+    it('halts startup when GUEST_PASSCODE equals default wedding2026', () => {
+      const res = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: 'wedding2026',
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('GUEST_PASSCODE must not use the default fallback passcode in production');
+    });
+
+    it('succeeds when a distinct secret of at least 32 characters and unique GUEST_PASSCODE are present', () => {
+      const res = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+
       expect(res.status).toBe(0);
+    });
+
+    it('preserves build-time and static-export bypasses in NODE_ENV=production without runtime secrets', () => {
+      const buildRes = runEnvBoot({
+        NODE_ENV: 'production',
+        npm_lifecycle_event: 'build',
+      });
+      expect(buildRes.status).toBe(0);
+
+      const exportRes = runEnvBoot({
+        NODE_ENV: 'production',
+        STATIC_EXPORT: 'true',
+      });
+      expect(exportRes.status).toBe(0);
     });
   });
 
