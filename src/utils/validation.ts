@@ -296,6 +296,164 @@ export const safeUrlSchema = createLaxUrlSchema('URL');
 export const safeImageUrlSchema = createLaxUrlSchema('Image URL');
 
 /**
+ * Iteratively percent-decodes a URL path up to 3 rounds (including per-segment decoding
+ * so malformed percent sequences in one segment cannot mask encoded traversal in another),
+ * rejecting null bytes and backslashes in raw or decoded forms, as well as >3x multi-encoding.
+ */
+export function decodeUrlPathSafely(rawInput: string): string | null {
+  if (typeof rawInput !== 'string' || rawInput.length === 0) {
+    return null;
+  }
+
+  if (rawInput.includes('\0') || rawInput.includes('\\')) {
+    return null;
+  }
+
+  const rawPath = rawInput.split('?')[0].split('#')[0];
+  if (!rawPath) {
+    return null;
+  }
+
+  if (/%(?:00|5c)/i.test(rawPath)) {
+    return null;
+  }
+
+  let decoded = rawPath;
+  let prev = '';
+  let count = 0;
+
+  while (decoded !== prev && count < 3) {
+    prev = decoded;
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      decoded = decoded
+        .split('/')
+        .map((segment) => {
+          try {
+            return decodeURIComponent(segment);
+          } catch {
+            return segment;
+          }
+        })
+        .join('/');
+    }
+
+    if (decoded.includes('\0') || decoded.includes('\\') || /%(?:00|5c)/i.test(decoded)) {
+      return null;
+    }
+    count++;
+  }
+
+  try {
+    if (decodeURIComponent(decoded) !== decoded) {
+      return null;
+    }
+  } catch {
+    // Ignore URIError when decoded path legitimately contains a literal '%'
+  }
+
+  return decoded;
+}
+
+/**
+ * Validates that a local URL path contains no parent traversal (`..`), empty/protocol-relative
+ * double slashes (`//`), backslashes (`\`), or null bytes (`\0`) in raw or percent-decoded forms.
+ */
+export function isSafeLocalPathUrl(
+  val: string,
+  options: { requireLeadingSlash?: boolean } = {}
+): boolean {
+  if (typeof val !== 'string' || val.length === 0) {
+    return false;
+  }
+
+  if (val.includes('\0') || val.includes('\\')) {
+    return false;
+  }
+
+  const rawPath = val.split('?')[0].split('#')[0];
+  if (!rawPath) {
+    return false;
+  }
+
+  if (options.requireLeadingSlash && !rawPath.startsWith('/')) {
+    return false;
+  }
+
+  if (rawPath.includes('//') || rawPath.includes('..') || /%(?:00|5c)/i.test(rawPath)) {
+    return false;
+  }
+
+  const decoded = decodeUrlPathSafely(val);
+  if (decoded === null) {
+    return false;
+  }
+
+  if (options.requireLeadingSlash && !decoded.startsWith('/')) {
+    return false;
+  }
+
+  if (decoded.includes('//') || decoded.includes('..')) {
+    return false;
+  }
+
+  return true;
+}
+
+function isValidHttpOrHttpsUrl(val: string): boolean {
+  if (val.includes('\0')) {
+    return false;
+  }
+  if (!val.startsWith('http://') && !val.startsWith('https://')) {
+    return false;
+  }
+  try {
+    const parsed = new URL(val);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates AppConfig branding/OpenGraph/favicon URLs:
+ * allows empty string, valid http(s) URLs, or safe root-relative local URLs starting with '/'.
+ */
+export function isSafeConfigAssetUrl(val: string): boolean {
+  if (val === '') {
+    return true;
+  }
+  if (isValidHttpOrHttpsUrl(val)) {
+    return true;
+  }
+  return isSafeLocalPathUrl(val, { requireLeadingSlash: true });
+}
+
+/**
+ * Validates Media and Photo ContentNode URLs:
+ * allows empty string, valid http(s) URLs, safe data:image/ URLs, or safe local URLs without '..', '//', '\', or '\0'.
+ */
+export function isSafeMediaOrPhotoUrl(val: string): boolean {
+  if (val === '') {
+    return true;
+  }
+  if (val.includes('\0')) {
+    return false;
+  }
+  if (val.startsWith('http://') || val.startsWith('https://')) {
+    return isValidHttpOrHttpsUrl(val);
+  }
+  if (val.startsWith('data:')) {
+    return /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/.test(val);
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(val)) {
+    return false;
+  }
+  return isSafeLocalPathUrl(val, { requireLeadingSlash: false });
+}
+
+/**
  * Programmatically derives an administrative input/edit request validation schema from a base model schema.
  * Dynamically excludes system-generated metadata and sensitive identifiers (id, createdAt, updatedAt)
  * and makes remaining fields partial to support flexible creation and update payloads.

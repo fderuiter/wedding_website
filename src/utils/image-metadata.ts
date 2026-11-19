@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { resolveContainedExistingPath } from './pathContainment';
 
 /**
  * @internal
@@ -14,19 +15,41 @@ interface ImageDimensions {
  * Uses surgical byte-offset reading to avoid loading full image buffers into memory.
  */
 export async function getLocalImageDimensions(imageUrl: string): Promise<ImageDimensions | null> {
-  if (!imageUrl || imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+  if (
+    !imageUrl ||
+    imageUrl.startsWith('http://') ||
+    imageUrl.startsWith('https://') ||
+    !imageUrl.startsWith('/') ||
+    imageUrl.startsWith('//')
+  ) {
     return null;
   }
 
-  let absolutePath = imageUrl;
-  if (imageUrl.startsWith('/')) {
-    absolutePath = path.join(process.cwd(), 'public', imageUrl);
-  }
+  const publicRoot = path.resolve(process.cwd(), 'public');
 
   let fileHandle: fs.promises.FileHandle | null = null;
   try {
-    fileHandle = await fs.promises.open(absolutePath, 'r');
-    const ext = path.extname(absolutePath).toLowerCase();
+    const resolved = await resolveContainedExistingPath(imageUrl, {
+      baseDir: publicRoot,
+      containmentRoot: publicRoot,
+      requireLeadingSlash: true,
+    });
+    if (!resolved.exists) {
+      return null;
+    }
+
+    const stat = await fs.promises.stat(resolved.realPath);
+    if (!stat.isFile()) {
+      return null;
+    }
+
+    fileHandle = await fs.promises.open(resolved.realPath, 'r');
+    const handleStat = await fileHandle.stat();
+    if (!handleStat.isFile()) {
+      return null;
+    }
+
+    const ext = path.extname(resolved.realPath).toLowerCase();
 
     if (ext === '.png') {
       const buffer = Buffer.alloc(24);

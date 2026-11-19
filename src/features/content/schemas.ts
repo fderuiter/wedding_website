@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { coordinateSchema } from '@/utils/validation';
+import { coordinateSchema, isSafeConfigAssetUrl, isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
@@ -113,16 +113,16 @@ export const RawUpdateAppConfigSchema = z.object({
   seoTitle: z.string(),
   seoDescription: z.string(),
   contactEmail: z.string().refine(val => !val || val === '' || z.email().safeParse(val).success, { message: 'Invalid email address format' }).optional(),
-  faviconUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
-  ogImageUrl: z.string().refine(val => val === '' || val.startsWith('/') || val.startsWith('http'), { message: 'Invalid URL format' }),
+  faviconUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
+  ogImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
   brandMonogram: z.string().nullable().optional(),
-  brandLogoUrl: z.string().refine(val => !val || val === '' || (val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) || val.startsWith('http://') || val.startsWith('https://'), { message: 'Invalid URL format' }).nullable().optional(),
+  brandLogoUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional(),
   brandLogoAlt: z.string().nullable().optional(),
-  heroImageUrl: z.string().refine(val => !val || val === '' || (val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) || val.startsWith('http://') || val.startsWith('https://'), { message: 'Invalid URL format' }).nullable().optional(),
+  heroImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional(),
   heroImageAlt: z.string().nullable().optional(),
-  brandWatermarkUrl: z.string().refine(val => !val || val === '' || (val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) || val.startsWith('http://') || val.startsWith('https://'), { message: 'Invalid URL format' }).nullable().optional(),
+  brandWatermarkUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional(),
   brandWatermarkAlt: z.string().nullable().optional(),
-  badgeGraphicUrl: z.string().refine(val => !val || val === '' || (val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) || val.startsWith('http://') || val.startsWith('https://'), { message: 'Invalid URL format' }).nullable().optional(),
+  badgeGraphicUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional(),
   badgeGraphicAlt: z.string().nullable().optional(),
   seoKeywords: z.string(),
   colorPrimary: z.string().regex(hexColorRegex).optional(),
@@ -416,7 +416,7 @@ export const LogisticsNodeSchema = BaseContentNode.extend({
 });
 
 export const PhotoDataSchema = z.object({
-  url: z.string().optional(),
+  url: z.string().refine(isSafeMediaOrPhotoUrl, { message: 'Invalid photo URL format' }).optional(),
   title: z.string().optional(),
   altText: z.string().optional(),
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional().default('PENDING'),
@@ -467,8 +467,12 @@ export const PhotoNodeSchema = BaseContentNode.extend({
   data: PhotoDataSchema,
 });
 
+const TYPED_CONTENT_NODE_TYPES = new Set(['FAQ', 'Logistics', 'Schedule', 'Photo']);
+
 export const GenericNodeSchema = BaseContentNode.extend({
-  type: z.string(),
+  type: z.string().refine((val) => !TYPED_CONTENT_NODE_TYPES.has(val), {
+    message: 'Known content node types must conform to their specific schema.',
+  }),
   data: z.any(),
 });
 

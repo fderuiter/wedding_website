@@ -1,8 +1,9 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
-import { GET } from '../route';
+import { GET, POST } from '../route';
 import { getEntityService } from '@/features/admin';
+import { ContentNodeAdminService } from '@/features/content';
 import { signAdminToken } from '@/core/auth/auth.server';
 
 jest.mock('@/features/admin', () => ({
@@ -284,6 +285,40 @@ describe('GET /api/admin/[entity] - Server-Side Pagination', () => {
         success: true,
         data: [],
       });
+    });
+  });
+
+  describe('POST /api/admin/content-nodes Photo URL path guards', () => {
+    it('returns HTTP 400 when a Photo node specifies parent or percent-encoded traversal URL', async () => {
+      const realService = new ContentNodeAdminService();
+      jest
+        .spyOn(realService.repo, 'transaction')
+        .mockImplementation(async (fn) => fn(realService.repo));
+      const createSpy = jest.spyOn(realService.repo, 'create');
+
+      (getEntityService as jest.Mock).mockResolvedValue({
+        service: realService,
+      });
+
+      for (const badUrl of ['/../canary-outside-public.txt', '/%2e%2e/canary-outside-public.txt']) {
+        const req = new NextRequest('http://localhost/api/admin/content-nodes', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: adminAuthCookie,
+          },
+          body: JSON.stringify({
+            type: 'Photo',
+            tags: ['gallery'],
+            data: { url: badUrl, status: 'PENDING', isVisible: false },
+          }),
+        });
+
+        const res = await POST(req, { params: Promise.resolve({ entity: 'content-nodes' }) });
+        expect(res.status).toBe(400);
+      }
+
+      expect(createSpy).not.toHaveBeenCalled();
     });
   });
 });

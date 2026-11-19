@@ -154,5 +154,35 @@ describe('ContentRepository.getNodesByType', () => {
       take: 100,
     });
   });
+
+  it('loads pre-existing Photo rows with legacy invalid URLs on getNodeById and getPendingPhotos so moderation can reject them', async () => {
+    const legacyRow = {
+      id: 'legacy-photo-1',
+      type: 'Photo',
+      tags: ['gallery'],
+      data: { url: '/../canary-outside-public.txt', status: 'PENDING', isVisible: false },
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+    };
+
+    const repoWithFindUnique = new ContentRepository({
+      contentNode: {
+        count: jest.fn().mockResolvedValueOnce(1),
+        findMany: jest.fn().mockResolvedValueOnce([legacyRow]),
+        findUnique: jest.fn().mockResolvedValueOnce(legacyRow),
+      },
+    });
+
+    const node = await repoWithFindUnique.getNodeById('legacy-photo-1');
+    expect(node).toEqual(expect.objectContaining({
+      id: 'legacy-photo-1',
+      type: 'Photo',
+      data: expect.objectContaining({ url: '/../canary-outside-public.txt' }),
+    }));
+
+    const pending = await repoWithFindUnique.getPendingPhotos();
+    expect(pending.photos).toHaveLength(1);
+    expect(pending.photos[0].id).toBe('legacy-photo-1');
+  });
 });
 
