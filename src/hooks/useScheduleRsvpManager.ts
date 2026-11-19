@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { SubEventRsvpSubmissionItem } from '@/features/sub-events';
+import {
+  MAX_RSVP_PLUS_ONE_COUNT,
+  type SubEventRsvpSubmissionItem,
+} from '@/features/sub-events';
 
 export type EventRsvpFiniteState = 'idle' | 'dirty' | 'submitting' | 'success' | 'error';
 
@@ -39,13 +42,17 @@ function getPlusOneValidationError(
   plusOneCount: number,
   maxPlusOnes?: number | null
 ): string | null {
-  if (typeof maxPlusOnes !== 'number') return null;
-  const normalizedMax = Math.max(0, maxPlusOnes);
-  if (plusOneCount > normalizedMax) {
-    if (normalizedMax === 0) {
-      return 'Plus-one guests are not allocated for your invitation.';
+  if (typeof maxPlusOnes === 'number') {
+    const normalizedMax = Math.max(0, maxPlusOnes);
+    if (plusOneCount > normalizedMax) {
+      if (normalizedMax === 0) {
+        return 'Plus-one guests are not allocated for your invitation.';
+      }
+      return `Plus-one count (${plusOneCount}) exceeds your allocated limit of ${normalizedMax}.`;
     }
-    return `Plus-one count (${plusOneCount}) exceeds your allocated limit of ${normalizedMax}.`;
+  }
+  if (plusOneCount > MAX_RSVP_PLUS_ONE_COUNT) {
+    return `Plus-one count cannot exceed ${MAX_RSVP_PLUS_ONE_COUNT}.`;
   }
   return null;
 }
@@ -171,9 +178,12 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           error: null,
         };
 
+        const nextStatus = updates.status ?? existing.current.status;
         const configuredMax = optionsRef.current?.maxPlusOnes;
         let nextPlusOnes = existing.current.plusOneCount;
-        if (updates.plusOneCount !== undefined) {
+        if (nextStatus === 'declined') {
+          nextPlusOnes = 0;
+        } else if (updates.plusOneCount !== undefined) {
           nextPlusOnes = configuredMax === 0 ? 0 : Math.max(0, updates.plusOneCount);
         } else if (configuredMax === 0) {
           nextPlusOnes = 0;
@@ -272,8 +282,10 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       const item = eventsMap[subEventId];
       if (!item) return false;
 
+      const effectivePlusOneCount =
+        item.current.status === 'declined' ? 0 : item.current.plusOneCount;
       const validationError = getPlusOneValidationError(
-        item.current.plusOneCount,
+        effectivePlusOneCount,
         optionsRef.current?.maxPlusOnes
       );
       if (validationError) {
@@ -312,7 +324,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           body: JSON.stringify({
             subEventId,
             status: item.current.status,
-            plusOneCount: item.current.plusOneCount,
+            plusOneCount: effectivePlusOneCount,
             dietaryNotes: item.current.dietaryNotes,
           }),
         });
@@ -384,7 +396,10 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     const invalidItems = dirtyItems
       .map((item) => ({
         id: item.id,
-        error: getPlusOneValidationError(item.current.plusOneCount, configuredMax),
+        error: getPlusOneValidationError(
+          item.current.status === 'declined' ? 0 : item.current.plusOneCount,
+          configuredMax
+        ),
       }))
       .filter((entry): entry is { id: string; error: string } => Boolean(entry.error));
 
@@ -434,7 +449,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       rsvps: dirtyItems.map((item) => ({
         subEventId: item.id,
         status: item.current.status,
-        plusOneCount: item.current.plusOneCount,
+        plusOneCount: item.current.status === 'declined' ? 0 : item.current.plusOneCount,
         dietaryNotes: item.current.dietaryNotes,
       })),
     };

@@ -1,7 +1,10 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { CsvImportWizardModal } from '../CsvImportWizardModal';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { validateSingleCsvRow } from '@/utils/csv';
+
+expect.extend(toHaveNoViolations);
 
 class MockFileReader {
   onload: ((e: any) => void) | null = null;
@@ -1309,5 +1312,86 @@ describe('CsvImportWizardModal Component', () => {
       expect(closeWizardBtn).toHaveFocus();
     });
     expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  test('marks only the failing column Input invalid with aria-describedby and passes jest-axe', async () => {
+    window.sessionStorage.clear();
+    const csvData = 'Guest Name,Invitation Code,Email\nAlice Valid,ALICE10,not-an-email';
+    const file = new File([csvData], 'single-cell-error.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 1,
+          validCount: 0,
+          invalidCount: 1,
+          duplicateCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          createdCount: 0,
+        },
+        rows: [
+          {
+            rowIndex: 1,
+            guestName: 'Alice Valid',
+            code: 'ALICE10',
+            email: 'not-an-email',
+            isValid: false,
+            errors: ['Invalid email format.'],
+            fieldErrors: { email: ['Invalid email format.'] },
+            warnings: [],
+            isDuplicate: false,
+            actionOutcome: 'invalid',
+          },
+        ],
+      }),
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <CsvImportWizardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onImportComplete={mockOnImportComplete}
+        />
+      </ToastProvider>
+    );
+
+    const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+      expect(screen.getByText(/Invalid email format\./i)).toBeInTheDocument();
+    });
+
+    const emailInput = screen.getByLabelText('Email for row 1');
+    const guestInput = screen.getByLabelText('Guest Name for row 1');
+    const codeInput = screen.getByLabelText('Invitation Code for row 1');
+    const cityInput = screen.getByLabelText('City for row 1');
+
+    expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(emailInput).toHaveAttribute('aria-describedby', 'csv-row-1-error-0');
+    expect(document.getElementById('csv-row-1-error-0')).toHaveTextContent('Invalid email format.');
+
+    // Sibling valid columns remain aria-invalid="false" without aria-describedby
+    expect(guestInput).toHaveAttribute('aria-invalid', 'false');
+    expect(guestInput).not.toHaveAttribute('aria-describedby');
+    expect(codeInput).toHaveAttribute('aria-invalid', 'false');
+    expect(codeInput).not.toHaveAttribute('aria-describedby');
+    expect(cityInput).toHaveAttribute('aria-invalid', 'false');
+    expect(cityInput).not.toHaveAttribute('aria-describedby');
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
   });
 });

@@ -118,4 +118,46 @@ describe('Registry Zod v4 Schema Validation', () => {
       expect(parsed.data.imageUrl).toBe('https://example.com/espresso.jpg');
     }
   });
+
+  it('rejects HTML brackets and control characters in PublicAddressCollectSchema guestName and householdName', () => {
+    expect(
+      PublicAddressCollectSchema.safeParse({
+        guestName: '<b data-canary="guest-html-marker">CanaryGuest</b>',
+      }).success
+    ).toBe(false);
+
+    expect(
+      PublicAddressCollectSchema.safeParse({
+        guestName: 'Valid Guest',
+        householdName: '<i data-canary="household-html-marker">CanaryHousehold</i>',
+      }).success
+    ).toBe(false);
+
+    expect(
+      PublicAddressCollectSchema.safeParse({
+        guestName: 'Guest\r\nHeader',
+      }).success
+    ).toBe(false);
+
+    expect(
+      PublicAddressCollectSchema.safeParse({
+        guestName: 'Valid Guest',
+        householdName: 'Household\u0000Null',
+      }).success
+    ).toBe(false);
+  });
+
+  it('allows apostrophes, hyphens, periods, and international letters in PublicAddressCollectSchema', () => {
+    const parsed = PublicAddressCollectSchema.safeParse({
+      guestName: "  Élodie O'Connor-St. Clair, Jr.  ",
+      householdName: "  Famille O'Connor & Müller-Søren.  ",
+      email: 'elodie@example.com',
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.guestName).toBe("Élodie O'Connor-St. Clair, Jr.");
+      expect(parsed.data.householdName).toBe("Famille O'Connor & Müller-Søren.");
+    }
+  });
 });

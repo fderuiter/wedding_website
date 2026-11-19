@@ -1,9 +1,11 @@
 import React from 'react';
 import { cn } from '@/utils/cn';
+import { Icon } from './Icon';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
+  pressed?: boolean;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -12,21 +14,32 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       className,
       variant = 'primary',
       size = 'md',
+      pressed,
       style,
       disabled,
       type,
       onClick,
       onKeyDown,
+      children,
       'aria-disabled': ariaDisabledProp,
+      'aria-pressed': ariaPressedProp,
       ...props
     },
     ref
   ) => {
     const isAriaDisabled = ariaDisabledProp === true || ariaDisabledProp === 'true';
     const isDisabled = Boolean(disabled) || isAriaDisabled;
+    const resolvedAriaPressed = pressed !== undefined ? pressed : ariaPressedProp;
+    const isPressed =
+      pressed === true ||
+      (pressed === undefined && (ariaPressedProp === true || ariaPressedProp === 'true'));
 
     const baseStyles =
       'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
+
+    const pressedStyles = isPressed
+      ? 'ring-2 ring-offset-1 ring-current forced-colors:outline forced-colors:outline-2'
+      : '';
 
     const variants = {
       primary:
@@ -71,16 +84,26 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         type={type}
         disabled={disabled}
         aria-disabled={isDisabled ? true : undefined}
+        aria-pressed={resolvedAriaPressed}
         style={{
           borderRadius: 'var(--btn-radius, 0.375rem)',
           fontWeight: 'var(--btn-font-weight, 500)',
           ...style,
         }}
-        className={cn(baseStyles, variants[variant], sizes[size], className)}
+        className={cn(baseStyles, variants[variant], sizes[size], pressedStyles, className)}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         {...props}
-      />
+      >
+        {isPressed && (
+          <Icon
+            name="Check"
+            className="mr-1.5 h-3.5 w-3.5 shrink-0"
+            aria-hidden="true"
+          />
+        )}
+        {children}
+      </button>
     );
   }
 );

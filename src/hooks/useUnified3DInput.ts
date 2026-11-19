@@ -25,15 +25,18 @@ interface UseUnified3DInputOptions {
   accessibility?: Use3DInteractionOptions;
 }
 
+const EMPTY_ACCESSIBILITY_OPTIONS: Use3DInteractionOptions = {
+  instructions: '',
+  labels: {},
+};
+
 export function useUnified3DInput(options: UseUnified3DInputOptions) {
   const reduceMotion = useReducedMotion();
   const [isDestroyed, setIsDestroyed] = useState(false);
-  
-  // 3D interaction hook injection
-  const a11y = use3DInteraction(options.accessibility || {
-    instructions: '',
-    labels: {},
-  });
+  const hasAccessibility = Boolean(options.accessibility);
+
+  // 3D interaction hook injection (called unconditionally to preserve Rules of Hooks)
+  const a11y = use3DInteraction(options.accessibility || EMPTY_ACCESSIBILITY_OPTIONS);
   
   const dragState = useRef({
     active: false,
@@ -195,7 +198,10 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
 
   // Combine accessibility props with pointer events if both are needed on the same element
   // (like DOM elements in Framer Motion). But for R3F, they might be separated.
-  const a11yProps = a11y.getInteractiveProps();
+  const getInteractiveProps = (originalProps: any = {}) =>
+    hasAccessibility ? a11y.getInteractiveProps(originalProps) : { ...originalProps };
+
+  const a11yProps = hasAccessibility ? a11y.getInteractiveProps() : {};
   const interactiveProps = {
     ...pointerHandlers,
     ...a11yProps,
@@ -203,9 +209,9 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
 
   return {
     handlers: pointerHandlers, // Just pointer events
-    getInteractiveProps: a11y.getInteractiveProps, // Just keyboard/focus + optional injected
+    getInteractiveProps, // Just keyboard/focus + optional injected
     mixedHandlers: interactiveProps, // Both combined (useful for DOM elements)
-    AccessibleElements: a11y.AccessibleElements,
+    AccessibleElements: hasAccessibility ? a11y.AccessibleElements : null,
     reduceMotion,
     lifecycle: {
       isDestroyed,

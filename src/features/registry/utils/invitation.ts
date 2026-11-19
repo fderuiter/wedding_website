@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 export type AttendanceStatus = 'attending' | 'declined' | 'pending';
 
 export interface AttendanceStatusItem {
@@ -98,13 +100,13 @@ export function isAddressComplete(item?: AddressItem | null): boolean {
 }
 
 /**
- * Generates an eight-character random alphanumeric string using uppercase characters and numbers.
+ * Generates an eight-character cryptographically random alphanumeric string using uppercase characters and numbers.
  */
 export function generateRandomCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
   for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(crypto.randomInt(0, chars.length));
   }
   return result;
 }

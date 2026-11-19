@@ -263,6 +263,59 @@ interface EditableTableRowProps {
   onDeleteRow: (index: number) => void;
 }
 
+function inferCsvErrorField(err: string): EditableField | null {
+  const lower = err.toLowerCase();
+  if (lower.includes('plus-one first') || lower.includes('plus one first')) {
+    return 'plusOneFirstName';
+  }
+  if (lower.includes('plus-one last') || lower.includes('plus one last')) {
+    return 'plusOneLastName';
+  }
+  if (lower.includes('plus-one') || lower.includes('plus one')) {
+    return 'plusOneAllocations';
+  }
+  if (lower.includes('household')) {
+    return 'householdName';
+  }
+  if (lower.includes('party group')) {
+    return 'partyGroup';
+  }
+  if (lower.includes('party tag')) {
+    return 'partyTags';
+  }
+  if (lower.includes('guest name')) {
+    return 'guestName';
+  }
+  if (lower.includes('email')) {
+    return 'email';
+  }
+  if (lower.includes('address line 1')) {
+    return 'addressLine1';
+  }
+  if (lower.includes('address line 2')) {
+    return 'addressLine2';
+  }
+  if (lower.includes('city')) {
+    return 'city';
+  }
+  if (lower.includes('state')) {
+    return 'state';
+  }
+  if (lower.includes('zip') || lower.includes('postal')) {
+    return 'zipCode';
+  }
+  if (lower.includes('country')) {
+    return 'country';
+  }
+  if (lower.includes('dietary')) {
+    return 'dietaryNotes';
+  }
+  if (lower.includes('code')) {
+    return 'code';
+  }
+  return null;
+}
+
 const EditableTableRow = React.memo(function EditableTableRow({
   row,
   editableRow,
@@ -271,12 +324,53 @@ const EditableTableRow = React.memo(function EditableTableRow({
   onExtraFieldEdit,
   onDeleteRow,
 }: EditableTableRowProps) {
-  const rowState: 'error' | 'warning' | 'default' =
-    !row.isValid || row.actionOutcome === 'invalid'
-      ? 'error'
-      : row.warnings && row.warnings.length > 0
-        ? 'warning'
-        : 'default';
+  const cellErrorIds: Partial<Record<EditableField, string[]>> = {};
+  if (row.errors && row.errors.length > 0) {
+    for (let ei = 0; ei < row.errors.length; ei++) {
+      const err = row.errors[ei];
+      const errorId = `csv-row-${row.rowIndex}-error-${ei}`;
+      let matched = false;
+      if (row.fieldErrors) {
+        const entries = Object.entries(row.fieldErrors) as Array<[EditableField, string[] | undefined]>;
+        for (let k = 0; k < entries.length; k++) {
+          const [fieldKey, msgs] = entries[k];
+          if (msgs && msgs.includes(err)) {
+            if (!cellErrorIds[fieldKey]) {
+              cellErrorIds[fieldKey] = [errorId];
+            } else {
+              cellErrorIds[fieldKey]!.push(errorId);
+            }
+            matched = true;
+          }
+        }
+      }
+      if (!matched) {
+        const inferredField = inferCsvErrorField(err);
+        if (inferredField) {
+          if (!cellErrorIds[inferredField]) {
+            cellErrorIds[inferredField] = [errorId];
+          } else {
+            cellErrorIds[inferredField]!.push(errorId);
+          }
+        }
+      }
+    }
+  }
+
+  const getCellState = (field: EditableField): 'error' | 'warning' | 'default' => {
+    if (cellErrorIds[field] && cellErrorIds[field]!.length > 0) {
+      return 'error';
+    }
+    if (field === 'code' && row.warnings && row.warnings.length > 0) {
+      return 'warning';
+    }
+    return 'default';
+  };
+
+  const getCellDescribedBy = (field: EditableField): string | undefined => {
+    const ids = cellErrorIds[field];
+    return ids && ids.length > 0 ? ids.join(' ') : undefined;
+  };
 
   return (
     <tr
@@ -296,9 +390,10 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.guestName || ''}
           aria-label={`Guest Name for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('guestName')}
           onChange={(e) => onCellEdit(index, 'guestName', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('guestName')}
         />
       </td>
       <td className="p-2">
@@ -306,10 +401,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.code || ''}
           aria-label={`Invitation Code for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('code')}
           placeholder="Auto-generate"
           onChange={(e) => onCellEdit(index, 'code', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('code')}
           className="font-mono uppercase"
         />
       </td>
@@ -318,10 +414,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="email"
           value={editableRow?.email || ''}
           aria-label={`Email for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('email')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'email', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('email')}
         />
       </td>
       <td className="p-2">
@@ -329,10 +426,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.addressLine1 || ''}
           aria-label={`Address Line 1 for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('addressLine1')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'addressLine1', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('addressLine1')}
         />
       </td>
       <td className="p-2">
@@ -340,10 +438,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.addressLine2 || ''}
           aria-label={`Address Line 2 for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('addressLine2')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'addressLine2', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('addressLine2')}
         />
       </td>
       <td className="p-2">
@@ -351,10 +450,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.city || ''}
           aria-label={`City for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('city')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'city', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('city')}
         />
       </td>
       <td className="p-2">
@@ -362,10 +462,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.state || ''}
           aria-label={`State for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('state')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'state', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('state')}
         />
       </td>
       <td className="p-2">
@@ -373,10 +474,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.zipCode || ''}
           aria-label={`ZIP Code for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('zipCode')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'zipCode', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('zipCode')}
         />
       </td>
       <td className="p-2">
@@ -384,10 +486,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.country || ''}
           aria-label={`Country for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('country')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'country', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('country')}
         />
       </td>
       <td className="p-2">
@@ -395,10 +498,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.dietaryNotes || ''}
           aria-label={`Dietary Notes for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('dietaryNotes')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'dietaryNotes', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('dietaryNotes')}
         />
       </td>
       <td className="p-2 text-center">
@@ -407,9 +511,10 @@ const EditableTableRow = React.memo(function EditableTableRow({
           min="0"
           value={editableRow?.plusOneAllocations ?? '0'}
           aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('plusOneAllocations')}
           onChange={(e) => onCellEdit(index, 'plusOneAllocations', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('plusOneAllocations')}
           className="w-14 text-center px-1"
         />
       </td>
@@ -418,10 +523,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.plusOneFirstName || ''}
           aria-label={`Plus-One First Name for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('plusOneFirstName')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'plusOneFirstName', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('plusOneFirstName')}
         />
       </td>
       <td className="p-2">
@@ -429,10 +535,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.plusOneLastName || ''}
           aria-label={`Plus-One Last Name for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('plusOneLastName')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'plusOneLastName', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('plusOneLastName')}
         />
       </td>
       <td className="p-2">
@@ -440,10 +547,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.householdName || ''}
           aria-label={`Household Name for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('householdName')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'householdName', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('householdName')}
         />
       </td>
       <td className="p-2">
@@ -451,10 +559,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.partyGroup || ''}
           aria-label={`Party Group for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('partyGroup')}
           placeholder="Optional"
           onChange={(e) => onCellEdit(index, 'partyGroup', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('partyGroup')}
         />
       </td>
       <td className="p-2">
@@ -462,10 +571,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
           type="text"
           value={editableRow?.partyTags || ''}
           aria-label={`Party Tags for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('partyTags')}
           placeholder="Comma-separated"
           onChange={(e) => onCellEdit(index, 'partyTags', e.target.value)}
           sizeVariant="compact"
-          state={rowState}
+          state={getCellState('partyTags')}
         />
       </td>
       <td className="p-2">
@@ -482,7 +592,7 @@ const EditableTableRow = React.memo(function EditableTableRow({
                   aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
                   onChange={(e) => onExtraFieldEdit(index, k, e.target.value)}
                   sizeVariant="compact"
-                  state={rowState}
+                  state="default"
                   className="w-20 text-[11px] h-6 px-1.5 py-0.5"
                 />
               </div>
@@ -531,6 +641,7 @@ const EditableTableRow = React.memo(function EditableTableRow({
         {row.errors && row.errors.map((err, ei) => (
           <span
             key={ei}
+            id={`csv-row-${row.rowIndex}-error-${ei}`}
             className="block text-[10px] font-semibold text-red-600 dark:text-red-400"
           >
             ✕ {err}

@@ -4,10 +4,12 @@ import type { BrowserContext } from '@playwright/test';
 import {
   generateAdminCookieValue,
   generateGuestCookieValue,
+  generateGuestInviteSessionCookieValue,
   seedAdminAndGuestAuthCookies,
   seedGuestAuthCookies,
 } from '../../e2e/helpers/auth';
 import { GUEST_COOKIE, isGuestRequest } from '@/core/auth/guest.server';
+import { GUEST_INVITE_COOKIE, getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { ADMIN_COOKIE, isAdminRequest } from '@/core/auth/auth.server';
 
 describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
@@ -48,6 +50,26 @@ describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
     } as never);
 
     expect(accepted).toBe(true);
+  });
+
+  it('signs guest_invite_session tokens with GUEST_SESSION_SECRET accepted by getGuestInviteSession', async () => {
+    process.env.GUEST_PASSCODE = 'wedding2026';
+    process.env.GUEST_SESSION_SECRET = 'playwright-e2e-session-secret-32-chars-min';
+
+    const token = generateGuestInviteSessionCookieValue('VIP100', 'Alice');
+    const session = await getGuestInviteSession({
+      cookies: {
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: token } : undefined),
+      },
+      headers: new Headers(),
+    } as never);
+
+    expect(session).toEqual(
+      expect.objectContaining({
+        code: 'VIP100',
+        guestName: 'Alice',
+      })
+    );
   });
 
   it('rejects GUEST_SESSION_SECRET values that match GUEST_PASSCODE', () => {

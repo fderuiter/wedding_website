@@ -87,7 +87,7 @@ async function main() {
     ALLOWED_HOSTS: `127.0.0.1,localhost,127.0.0.1:${PORT}`,
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
-    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
+    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'test-standalone-guest-passcode',
     GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'test-standalone-guest-session-secret-32chars',
   };
 

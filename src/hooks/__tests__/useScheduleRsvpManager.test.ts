@@ -355,4 +355,50 @@ describe('useScheduleRsvpManager', () => {
       'Plus-one count (3) exceeds your allocated limit of 2.'
     );
   });
+
+  it('resets plusOneCount to 0 when declining even if maxPlusOnes was lowered below baseline plusOneCount', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ id: 'r2', subEventId: 'event-2', status: 'declined', plusOneCount: 0, dietaryNotes: 'Vegetarian' }],
+      }),
+    });
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: [
+          {
+            id: 'event-2',
+            title: 'Reception',
+            userRsvp: { status: 'attending', plusOneCount: 2, dietaryNotes: 'Vegetarian' },
+          },
+        ],
+        maxPlusOnes: 0,
+      })
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-2', { status: 'declined' });
+    });
+
+    expect(result.current.getRsvpState('event-2').current.plusOneCount).toBe(0);
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.submitSingle('event-2');
+    });
+
+    expect(ok).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith('/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subEventId: 'event-2',
+        status: 'declined',
+        plusOneCount: 0,
+        dietaryNotes: 'Vegetarian',
+      }),
+    });
+  });
 });
