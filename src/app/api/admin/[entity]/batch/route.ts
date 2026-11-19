@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AdminEntityBatchUpdateSchema, formatZodError } from '@/utils/validation';
+import {
+  AdminEntityBatchUpdateSchema,
+  AdminEntityBatchDeleteSchema,
+  formatZodError,
+} from '@/utils/validation';
 
 export async function handleBatchUpdate(
   request: NextRequest,
@@ -71,17 +75,18 @@ export const DELETE = withApiMiddleware(
       throw new ApiError(400, 'At least one record identifier is required');
     }
 
-    if (body.ids.length > 100) {
-      throw new ApiError(400, 'Maximum of 100 record identifiers allowed per batch request');
+    const parseResult = AdminEntityBatchDeleteSchema.safeParse(body);
+    if (!parseResult.success) {
+      throw new ApiError(400, parseResult.error.issues[0]?.message || 'Validation failed');
     }
 
     try {
       if (typeof serviceData.service.batchDelete === 'function') {
-        const result = await serviceData.service.batchDelete(body.ids);
+        const result = await serviceData.service.batchDelete(parseResult.data.ids);
         return NextResponse.json(result, { status: 200 });
       }
 
-      const results = await serviceData.service.deleteBatch(body.ids);
+      const results = await serviceData.service.deleteBatch(parseResult.data.ids);
       return NextResponse.json({ success: true, count: results.length }, { status: 200 });
     } catch (error: any) {
       if (error instanceof ApiError) throw error;

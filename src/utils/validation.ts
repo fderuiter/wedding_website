@@ -202,6 +202,75 @@ export const AdminEntityBatchUpdateSchema = z.object({
   ids: z.array(z.string().min(1, 'Record identifier cannot be empty')).min(1, 'At least one record identifier is required').max(100, 'Maximum of 100 record identifiers allowed per batch request'),
 }).loose();
 
+export const AdminEntityBatchDeleteSchema = z.object({
+  ids: z.array(z.string().min(1, 'Record identifier cannot be empty')).min(1, 'At least one record identifier is required').max(100, 'Maximum of 100 record identifiers allowed per batch request'),
+});
+
+export const MediaExportSchema = z.object({
+  ids: z.union([z.array(z.string()), z.string()]).optional(),
+  tag: z.string().optional(),
+  category: z.string().optional(),
+});
+
+export const AdminSetupSchema = z.object({
+  password: z.string().optional(),
+  sampleArchetype: z.enum(['classic', 'destination', 'romantic']).optional(),
+  sampleModules: z.array(z.string()).optional(),
+  partner1Name: z.string().optional(),
+  partner2Name: z.string().optional(),
+  brideName: z.string().optional(),
+  groomName: z.string().optional(),
+  weddingDate: z.string().optional(),
+  baseUrl: z.string().optional(),
+  contactEmail: z.string().optional(),
+  venueName: z.string().optional(),
+  venueAddress: z.string().optional(),
+  venueCity: z.string().optional(),
+  venueState: z.string().optional(),
+  venueZip: z.string().optional(),
+  latitude: z.union([z.number(), z.string()]).optional(),
+  longitude: z.union([z.number(), z.string()]).optional(),
+  storyText: z.string().optional(),
+  venueDescription: z.string().optional(),
+  travelAdvice: z.string().optional(),
+  heroTitle: z.string().optional(),
+  heroSubtitle: z.string().optional(),
+  seoTitle: z.string().optional(),
+  seoDescription: z.string().optional(),
+  faviconUrl: z.string().optional(),
+  ogImageUrl: z.string().optional(),
+  brandMonogram: z.string().nullable().optional(),
+  brandLogoUrl: z.string().nullable().optional(),
+  brandLogoAlt: z.string().nullable().optional(),
+  heroImageUrl: z.string().nullable().optional(),
+  heroImageAlt: z.string().nullable().optional(),
+  brandWatermarkUrl: z.string().nullable().optional(),
+  brandWatermarkAlt: z.string().nullable().optional(),
+  badgeGraphicUrl: z.string().nullable().optional(),
+  badgeGraphicAlt: z.string().nullable().optional(),
+  seoKeywords: z.string().optional(),
+  colorPrimary: z.string().optional(),
+  colorSecondary: z.string().optional(),
+  themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).optional(),
+  themeTokens: z.record(z.string(), z.string()).optional(),
+  layoutContainerMaxWidth: z.string().optional(),
+  layoutGridGap: z.string().optional(),
+  layoutCardPadding: z.string().optional(),
+  layoutBorderRadius: z.string().optional(),
+  timezone: z.string().optional(),
+  showCountdown: z.boolean().optional(),
+  showAddToCalendar: z.boolean().optional(),
+  subdomain: z.string().nullable().optional(),
+});
+
+export const StripeWebhookEventSchema = z.object({
+  id: z.string().optional(),
+  type: z.string(),
+  data: z.object({
+    object: z.record(z.string(), z.any()),
+  }).loose(),
+}).loose();
+
 export const AdminEntityReorderSchema = z.object({
   action: z.literal('reorder'),
   orderedIds: z.array(z.string())
