@@ -209,4 +209,139 @@ describe('SubEventsMatrixPage', () => {
       expect(mockAddToast).toHaveBeenCalledWith('Sub-event created successfully!', 'success');
     });
   });
+
+  test('validates startTime and endTime in sub-event modal before submitting', async () => {
+    render(<SubEventsMatrixPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Create New Sub-Event/i }));
+
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. Rehearsal Dinner/i), {
+      target: { value: 'Cocktail Hour' },
+    });
+    fireEvent.change(screen.getByLabelText('Start Time (Optional)'), {
+      target: { value: '2026-09-19T18:00' },
+    });
+    fireEvent.change(screen.getByLabelText('End Time (Optional)'), {
+      target: { value: '2026-09-19T16:30' },
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('End time cannot precede start time.');
+
+    fireEvent.click(screen.getByRole('button', { name: /Create Sub-Event/i }));
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/admin/sub-events', expect.anything());
+
+    fireEvent.change(screen.getByLabelText('End Time (Optional)'), {
+      target: { value: '2026-09-19T19:30' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Create Sub-Event/i }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/sub-events',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"startTime":'),
+        })
+      );
+    });
+  });
+
+  test('edits a sub-event from matrix column header and updates header title and schedule', async () => {
+    const baseFetch = global.fetch as jest.Mock;
+    global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
+      if (url === '/api/admin/sub-events/se-rehearsal' && options?.method === 'PUT') {
+        const body = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                id: 'se-rehearsal',
+                ...body,
+              },
+            }),
+        });
+      }
+      return baseFetch(url, options);
+    }) as any;
+
+    render(<SubEventsMatrixPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sub-event Rehearsal Dinner' }));
+
+    expect(screen.getByRole('heading', { name: 'Edit Sub-Event' })).toBeInTheDocument();
+    const titleInput = screen.getByLabelText('Title *');
+    expect(titleInput).toHaveValue('Rehearsal Dinner');
+
+    fireEvent.change(titleInput, { target: { value: 'Rehearsal Dinner & Toasts' } });
+    fireEvent.change(screen.getByLabelText('Start Time (Optional)'), {
+      target: { value: '2026-09-18T18:00' },
+    });
+    fireEvent.change(screen.getByLabelText('End Time (Optional)'), {
+      target: { value: '2026-09-18T21:00' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/sub-events/se-rehearsal',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.stringContaining('"title":"Rehearsal Dinner & Toasts"'),
+        })
+      );
+      expect(mockAddToast).toHaveBeenCalledWith('Sub-event updated successfully.', 'success');
+      expect(screen.getByText('Rehearsal Dinner & Toasts')).toBeInTheDocument();
+      expect(screen.getByTestId('sub-event-schedule-se-rehearsal')).toBeInTheDocument();
+    });
+  });
+
+  test('deletes a sub-event from matrix column header only after confirmation', async () => {
+    const baseFetch = global.fetch as jest.Mock;
+    global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
+      if (url === '/api/admin/sub-events/se-rehearsal' && options?.method === 'DELETE') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: { id: 'se-rehearsal' } }),
+        });
+      }
+      return baseFetch(url, options);
+    }) as any;
+
+    render(<SubEventsMatrixPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
+    });
+
+    // Click Delete in header -> opens confirmation alertdialog
+    fireEvent.click(screen.getByRole('button', { name: 'Delete sub-event Rehearsal Dinner' }));
+    const confirmDialog = screen.getByRole('alertdialog', { name: 'Delete Sub-Event' });
+    expect(confirmDialog).toBeInTheDocument();
+
+    // Cancel keeps column intact
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/admin/sub-events/se-rehearsal', expect.anything());
+
+    // Open again and confirm deletion
+    fireEvent.click(screen.getByRole('button', { name: 'Delete sub-event Rehearsal Dinner' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Sub-Event' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/sub-events/se-rehearsal',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+      expect(mockAddToast).toHaveBeenCalledWith('Sub-event deleted successfully.', 'success');
+      expect(screen.queryByText('Rehearsal Dinner')).not.toBeInTheDocument();
+    });
+  });
 });

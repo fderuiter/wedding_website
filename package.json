@@ -27,7 +27,7 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",
-    "test:a11y": "rm -rf test-results && npm test; npx playwright test; node scripts/a11y-report.mjs",
+    "test:a11y": "node scripts/a11y-report.mjs --run",
     "test:standalone": "node scripts/test-standalone.mjs",
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -c development -- prisma migrate dev",

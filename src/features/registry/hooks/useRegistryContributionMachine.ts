@@ -81,10 +81,15 @@ export interface UseRegistryContributionMachineReturn {
   setSubmissionError: (error: string | null) => void;
 
   // Actions
+  validateContribution: () => boolean;
   handleCodeChange: (e: React.ChangeEvent<HTMLInputElement> | string) => void;
   handleVerifyCode: () => Promise<boolean>;
   handleClearCode: () => Promise<void>;
-  handleSubmit: (e?: React.FormEvent, paymentIntentId?: string) => Promise<void>;
+  handleSubmit: (
+    e?: React.FormEvent,
+    paymentIntentId?: string,
+    options?: { coverFeeOverride?: boolean }
+  ) => Promise<void>;
   handlePresetClick: (presetValue: number) => void;
 }
 
@@ -106,34 +111,42 @@ export function useRegistryContributionMachine({
     clearSession,
   } = useGuestSession();
 
-  const [phase, setPhase] = useState<ContributionPhase>('idle');
+  const [phaseState, setPhase] = useState<ContributionPhase>('idle');
 
   // Form fields
-  const [contributorName, setContributorNameState] = useState(initialContributorName);
+  const [contributorNameState, setContributorNameState] = useState(initialContributorName);
+  const [hasEditedContributorName, setHasEditedContributorName] = useState(false);
   const [email, setEmailState] = useState(initialEmail);
   const [amount, setAmountState] = useState<number | string>(initialAmount);
   const [message, setMessageState] = useState(initialMessage);
   const [coverFee, setCoverFeeState] = useState(initialCoverFee);
-  const [invitationCode, setInvitationCodeState] = useState(initialInvitationCode);
+  const [invitationCodeState, setInvitationCodeState] = useState(initialInvitationCode);
+  const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
 
   // Partitioned error states
   const [fieldErrors, setFieldErrors] = useState<ContributionFieldErrors>({});
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeErrorState, setCodeError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [paymentTransactionId, setPaymentTransactionId] = useState<string | null>(null);
 
   // AbortController for cancelling in-flight validation requests
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Synchronize session state from GuestSessionContext
-  useEffect(() => {
-    if (isSessionVerified && sessionCode) {
-      setInvitationCodeState(sessionCode);
-      setContributorNameState((prev) => prev || sessionGuestName || '');
-      setPhase('code_locked');
-      setCodeError(null);
-    }
-  }, [isSessionVerified, sessionCode, sessionGuestName]);
+  const currentSessionKey =
+    isSessionVerified && sessionCode ? `${sessionCode}:${sessionGuestName || ''}` : null;
+  const isSessionSynced = Boolean(
+    currentSessionKey && dismissedSessionKey !== currentSessionKey
+  );
+
+  const phase: ContributionPhase =
+    isSessionSynced && (phaseState === 'idle' || phaseState === 'validating_code')
+      ? 'code_locked'
+      : phaseState;
+  const invitationCode = isSessionSynced && sessionCode ? sessionCode : invitationCodeState;
+  const contributorName = hasEditedContributorName
+    ? contributorNameState
+    : contributorNameState || (isSessionSynced ? sessionGuestName || '' : '');
+  const codeError = isSessionSynced ? null : codeErrorState;
 
   // Clean up any pending validation request on unmount
   useEffect(() => {
@@ -147,6 +160,7 @@ export function useRegistryContributionMachine({
 
   // Setters with error clearing
   const setContributorName = useCallback((name: string) => {
+    setHasEditedContributorName(true);
     setContributorNameState(name);
     setFieldErrors((prev) => {
       if (!prev.name) return prev;
@@ -194,9 +208,15 @@ export function useRegistryContributionMachine({
     setCoverFeeState(val);
   }, []);
 
-  const setInvitationCode = useCallback((code: string) => {
-    setInvitationCodeState(code);
-  }, []);
+  const setInvitationCode = useCallback(
+    (code: string) => {
+      if (currentSessionKey && code !== sessionCode) {
+        setDismissedSessionKey(currentSessionKey);
+      }
+      setInvitationCodeState(code);
+    },
+    [currentSessionKey, sessionCode]
+  );
 
   const handlePresetClick = useCallback((presetValue: number) => {
     setAmountState(presetValue);
@@ -241,12 +261,15 @@ export function useRegistryContributionMachine({
         }
 
         if (data && data.valid) {
+          const verifiedCode = data.code || code;
+          setInvitationCodeState(verifiedCode);
           if (data.guestName) {
             setContributorNameState(data.guestName);
           }
+          setDismissedSessionKey(null);
           setPhase('code_locked');
           setSession({
-            invitationCode: data.code || code,
+            invitationCode: verifiedCode,
             guestName: data.guestName || '',
             isVerified: true,
           });
@@ -284,6 +307,10 @@ export function useRegistryContributionMachine({
         abortControllerRef.current = null;
       }
 
+      if (currentSessionKey && val !== sessionCode) {
+        setDismissedSessionKey(currentSessionKey);
+      }
+
       setInvitationCodeState(val);
       setCodeError(null);
 
@@ -300,7 +327,7 @@ export function useRegistryContributionMachine({
         setPhase('idle');
       }
     },
-    [phase, verifyCode]
+    [currentSessionKey, sessionCode, phase, verifyCode]
   );
 
   // Action: Manual verification
@@ -314,18 +341,79 @@ export function useRegistryContributionMachine({
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (currentSessionKey) {
+      setDismissedSessionKey(currentSessionKey);
+    }
     await clearSession();
     setPhase('idle');
     setInvitationCodeState('');
+    setHasEditedContributorName(false);
     setContributorNameState('');
     setCodeError(null);
     setFieldErrors({});
     setSubmissionError(null);
-  }, [clearSession]);
+  }, [clearSession, currentSessionKey]);
+
+  const validateContribution = useCallback((): boolean => {
+    setFieldErrors({});
+    setSubmissionError(null);
+
+    const rawAmount = item.isGroupGift ? amount : item.price;
+
+    const result = ContributionSchema.safeParse({
+      itemId: item.id,
+      name: contributorName,
+      email: email || undefined,
+      amount: rawAmount,
+      code: invitationCode || undefined,
+      message: message || undefined,
+      coverFee,
+    });
+
+    if (!result.success) {
+      const errors: ContributionFieldErrors = {};
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as keyof ContributionFieldErrors;
+        if (field && !errors[field]) {
+          errors[field] = issue.message;
+        }
+      }
+      setFieldErrors(errors);
+      setPhase('error');
+      return false;
+    }
+
+    if (item.isGroupGift) {
+      const remainingAmount = item.price - item.amountContributed;
+      if (result.data.amount > remainingAmount) {
+        const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
+        setFieldErrors({ amount: msg });
+        setPhase('error');
+        return false;
+      }
+    }
+
+    return true;
+  }, [
+    item.isGroupGift,
+    item.price,
+    item.amountContributed,
+    item.id,
+    amount,
+    contributorName,
+    email,
+    invitationCode,
+    message,
+    coverFee,
+  ]);
 
   // Action: Submit contribution
   const handleSubmit = useCallback(
-    async (e?: React.FormEvent, paymentIntentId?: string) => {
+    async (
+      e?: React.FormEvent,
+      paymentIntentId?: string,
+      options?: { coverFeeOverride?: boolean }
+    ) => {
       if (e) {
         e.preventDefault();
       }
@@ -339,6 +427,8 @@ export function useRegistryContributionMachine({
       setSubmissionError(null);
 
       const rawAmount = item.isGroupGift ? amount : item.price;
+      const effectiveCoverFee =
+        options?.coverFeeOverride !== undefined ? options.coverFeeOverride : coverFee;
 
       const result = ContributionSchema.safeParse({
         itemId: item.id,
@@ -347,7 +437,7 @@ export function useRegistryContributionMachine({
         amount: rawAmount,
         code: invitationCode || undefined,
         message: message || undefined,
-        coverFee,
+        coverFee: effectiveCoverFee,
         paymentIntentId,
       });
 
@@ -411,9 +501,7 @@ export function useRegistryContributionMachine({
         } else {
           await onContribute(item.id, validData.name, finalAmount);
         }
-        if (paymentIntentId) {
-          setPaymentTransactionId(paymentIntentId);
-        }
+        setPaymentTransactionId(paymentIntentId ?? null);
         setPhase('success');
       } catch (err: unknown) {
         setPhase('error');
@@ -486,6 +574,7 @@ export function useRegistryContributionMachine({
     setPhase,
     setSubmissionError,
 
+    validateContribution,
     handleCodeChange,
     handleVerifyCode,
     handleClearCode,

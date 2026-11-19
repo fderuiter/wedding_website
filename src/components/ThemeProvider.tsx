@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   ThemePreset,
   THEME_PRESETS,
@@ -51,6 +51,7 @@ export type ThemeLighting = {
 
 type ThemeContextType = {
   contactEmail: string;
+  contactPhone: string;
   themePrimary: string;
   themeSecondary: string;
   themeAccent: string;
@@ -82,6 +83,7 @@ type ThemeContextType = {
 
 const ThemeContext = createContext<ThemeContextType>({
   contactEmail: '',
+  contactPhone: '',
   themePrimary: '#B91C1C',
   themeSecondary: '#B45309',
   themeAccent: '#D4AF37',
@@ -136,6 +138,8 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const useTheme = () => useContext(ThemeContext);
 
+const emptySubscribe = () => () => {};
+
 function getSystemTheme(): ResolvedTheme {
   if (typeof window !== 'undefined' && window.matchMedia) {
     return window.matchMedia('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light';
@@ -167,6 +171,8 @@ type ThemeProviderProps = {
   children: React.ReactNode;
   config?: {
     contactEmail?: string | null;
+    contactPhone?: string | null;
+    twilioFromNumber?: string | null;
     colorPrimary?: string | null;
     colorSecondary?: string | null;
     themePreset?: ThemePreset | string | null;
@@ -193,14 +199,10 @@ type ThemeProviderProps = {
   hasServerStylesheet?: boolean;
 };
 
-export function ThemeProvider({ 
-  children,
-  config: propConfig,
-  initialThemeMode = 'system',
-  hasServerStylesheet = false,
-}: ThemeProviderProps) {
-  const [config, setConfig] = useState(() => ({
+function normalizeThemeConfig(propConfig?: ThemeProviderProps['config']) {
+  return {
     contactEmail: propConfig?.contactEmail || '',
+    contactPhone: propConfig?.contactPhone || propConfig?.twilioFromNumber || '',
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
@@ -222,65 +224,79 @@ export function ThemeProvider({
     fontHeading: propConfig?.fontHeading,
     fontBody: propConfig?.fontBody,
     fontMono: propConfig?.fontMono,
-  }));
+  };
+}
+
+type NormalizedThemeConfig = ReturnType<typeof normalizeThemeConfig>;
+
+export function ThemeProvider({ 
+  children,
+  config: propConfig,
+  initialThemeMode = 'system',
+  hasServerStylesheet = false,
+}: ThemeProviderProps) {
+  const baseConfig = useMemo(() => normalizeThemeConfig(propConfig), [propConfig]);
+  const [draftConfigOverride, setDraftConfigOverride] = useState<{
+    base: NormalizedThemeConfig;
+    value: NormalizedThemeConfig;
+  } | null>(null);
+
+  const config =
+    draftConfigOverride && draftConfigOverride.base === baseConfig
+      ? draftConfigOverride.value
+      : baseConfig;
 
   const stylesString = useMemo(() => {
     return generateThemeStylesheet(config);
   }, [config]);
 
-  const [themeMode, setThemeModeState] = useState<ThemeMode>(initialThemeMode);
+  const isHydrated = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
-    if (initialThemeMode === 'light') return 'light';
-    if (initialThemeMode === 'dark') return 'dark';
-    return 'dark';
-  });
+  const [userThemeMode, setUserThemeMode] = useState<ThemeMode | null>(null);
+  const [systemThemeOverride, setSystemThemeOverride] = useState<ResolvedTheme | null>(null);
 
-  const [theme, setTheme] = useState({
-    themePrimary: '#B91C1C',
-    themeSecondary: '#B45309',
-    themeAccent: '#D4AF37',
-    themeOutline: '#000000',
-    themePreset: DEFAULT_THEME_PRESET,
-    layoutContainerMaxWidth: '64rem',
-    layoutGridGap: '1.5rem',
-    layoutCardPadding: '2rem',
-    layoutBorderRadius: '1rem',
-  });
-
-  // Client hydration check & sync with localStorage if no explicit initialThemeMode was supplied
-  useEffect(() => {
-    let currentMode = themeMode;
-    try {
-      const saved = localStorage.getItem('theme_mode');
-      if (saved === 'light' || saved === 'dark' || saved === 'system') {
-        if (!initialThemeMode || initialThemeMode === 'system') {
-          currentMode = saved as ThemeMode;
-          setThemeModeState(currentMode);
-        }
-      }
-    } catch {}
-
-    let resolved: ResolvedTheme = 'dark';
-    if (currentMode === 'light') {
-      resolved = 'light';
-    } else if (currentMode === 'dark') {
-      resolved = 'dark';
-    } else {
-      if (
-        typeof document !== 'undefined' &&
-        (document.documentElement.classList.contains('dark') ||
-          document.documentElement.classList.contains('light'))
-      ) {
-        resolved = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-      } else {
-        resolved = getSystemTheme();
-      }
+  const themeMode = useMemo<ThemeMode>(() => {
+    if (userThemeMode !== null) {
+      return userThemeMode;
     }
+    if (!isHydrated) {
+      return initialThemeMode;
+    }
+    if (!initialThemeMode || initialThemeMode === 'system') {
+      try {
+        const saved = localStorage.getItem('theme_mode');
+        if (saved === 'light' || saved === 'dark' || saved === 'system') {
+          return saved;
+        }
+      } catch {}
+    }
+    return initialThemeMode;
+  }, [userThemeMode, isHydrated, initialThemeMode]);
 
-    setResolvedTheme(resolved);
-    applyResolvedTheme(resolved);
-  }, [initialThemeMode]);
+  const resolvedTheme = useMemo<ResolvedTheme>(() => {
+    if (themeMode === 'light') return 'light';
+    if (themeMode === 'dark') return 'dark';
+    if (!isHydrated) return 'dark';
+    if (systemThemeOverride !== null) {
+      return systemThemeOverride;
+    }
+    if (
+      typeof document !== 'undefined' &&
+      (document.documentElement.classList.contains('dark') ||
+        document.documentElement.classList.contains('light'))
+    ) {
+      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    }
+    return getSystemTheme();
+  }, [themeMode, isHydrated, systemThemeOverride]);
+
+  useEffect(() => {
+    applyResolvedTheme(resolvedTheme);
+  }, [resolvedTheme]);
 
   // Reconcile and synchronize existing stylesheet on client hydration and dynamic updates
   useEffect(() => {
@@ -306,7 +322,7 @@ export function ThemeProvider({
 
     const handleChange = (e: MediaQueryListEvent) => {
       const newResolved: ResolvedTheme = e.matches ? 'dark' : 'light';
-      setResolvedTheme(newResolved);
+      setSystemThemeOverride(newResolved);
       applyResolvedTheme(newResolved);
     };
 
@@ -318,7 +334,8 @@ export function ThemeProvider({
   }, [themeMode]);
 
   const setThemeMode = (newMode: ThemeMode) => {
-    setThemeModeState(newMode);
+    setUserThemeMode(newMode);
+    setSystemThemeOverride(newMode === 'system' ? getSystemTheme() : null);
 
     try {
       localStorage.setItem('theme_mode', newMode);
@@ -337,38 +354,8 @@ export function ThemeProvider({
       resolved = getSystemTheme();
     }
 
-    setResolvedTheme(resolved);
     applyResolvedTheme(resolved);
   };
-
-  useEffect(() => {
-    if (propConfig) {
-      setConfig({
-        contactEmail: propConfig.contactEmail || '',
-        colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
-        colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
-        themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
-        themeTokens: propConfig.themeTokens || {},
-        typographyScale: propConfig.typographyScale || {},
-        spacingScale: propConfig.spacingScale || {},
-        borderTreatment: propConfig.borderTreatment || {},
-        brandDimensions: propConfig.brandDimensions || {},
-        brandLogoWidth: propConfig.brandLogoWidth || null,
-        brandLogoHeight: propConfig.brandLogoHeight || null,
-        brandHeroHeight: propConfig.brandHeroHeight || null,
-        brandWatermarkWidth: propConfig.brandWatermarkWidth || null,
-        brandWatermarkOpacity: propConfig.brandWatermarkOpacity || null,
-        brandBadgeSize: propConfig.brandBadgeSize || null,
-        layoutContainerMaxWidth: sanitizeLayoutToken(propConfig.layoutContainerMaxWidth, '64rem'),
-        layoutGridGap: sanitizeLayoutToken(propConfig.layoutGridGap, '1.5rem'),
-        layoutCardPadding: sanitizeLayoutToken(propConfig.layoutCardPadding, '2rem'),
-        layoutBorderRadius: sanitizeLayoutToken(propConfig.layoutBorderRadius, '1rem'),
-        fontHeading: propConfig.fontHeading,
-        fontBody: propConfig.fontBody,
-        fontMono: propConfig.fontMono,
-      });
-    }
-  }, [propConfig]);
 
   useEffect(() => {
     // Only listen for messages if inside an iframe
@@ -376,18 +363,22 @@ export function ThemeProvider({
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'config') {
           const draftData = event.data.draftData || {};
-          setConfig((prev) => {
-            const next = { ...prev, ...draftData };
+          setDraftConfigOverride((prev) => {
+            const current = prev && prev.base === baseConfig ? prev.value : baseConfig;
+            const next = { ...current, ...draftData };
             return {
-              ...next,
-              colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
-              colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
-              themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
-              themeTokens: next.themeTokens || {},
-              layoutContainerMaxWidth: sanitizeLayoutToken(next.layoutContainerMaxWidth, '64rem'),
-              layoutGridGap: sanitizeLayoutToken(next.layoutGridGap, '1.5rem'),
-              layoutCardPadding: sanitizeLayoutToken(next.layoutCardPadding, '2rem'),
-              layoutBorderRadius: sanitizeLayoutToken(next.layoutBorderRadius, '1rem'),
+              base: baseConfig,
+              value: {
+                ...next,
+                colorPrimary: sanitizeColor(next.colorPrimary, '#B91C1C'),
+                colorSecondary: sanitizeColor(next.colorSecondary, '#B45309'),
+                themePreset: sanitizePreset(next.themePreset, DEFAULT_THEME_PRESET),
+                themeTokens: next.themeTokens || {},
+                layoutContainerMaxWidth: sanitizeLayoutToken(next.layoutContainerMaxWidth, '64rem'),
+                layoutGridGap: sanitizeLayoutToken(next.layoutGridGap, '1.5rem'),
+                layoutCardPadding: sanitizeLayoutToken(next.layoutCardPadding, '2rem'),
+                layoutBorderRadius: sanitizeLayoutToken(next.layoutBorderRadius, '1rem'),
+              },
             };
           });
         }
@@ -395,9 +386,9 @@ export function ThemeProvider({
       window.addEventListener('message', handleMessage);
       return () => window.removeEventListener('message', handleMessage);
     }
-  }, []);
+  }, [baseConfig]);
 
-  useEffect(() => {
+  const theme = useMemo(() => {
     let primary = '#B91C1C';
     let secondary = '#B45309';
     let accent = '#D4AF37';
@@ -428,7 +419,7 @@ export function ThemeProvider({
       // Gracefully recover from unreadable styling contexts or missing layout capabilities
     }
 
-    setTheme({
+    return {
       themePrimary: sanitizeColor(config?.colorPrimary, sanitizeColor(primary, '#B91C1C')),
       themeSecondary: sanitizeColor(config?.colorSecondary, sanitizeColor(secondary, '#B45309')),
       themeAccent: sanitizeColor(accent, '#D4AF37'),
@@ -438,7 +429,7 @@ export function ThemeProvider({
       layoutGridGap: sanitizeLayoutToken(config?.layoutGridGap, sanitizeLayoutToken(gridGap, '1.5rem')),
       layoutCardPadding: sanitizeLayoutToken(config?.layoutCardPadding, sanitizeLayoutToken(cardPadding, '2rem')),
       layoutBorderRadius: sanitizeLayoutToken(config?.layoutBorderRadius, sanitizeLayoutToken(borderRadius, '1rem')),
-    });
+    };
   }, [config]);
 
   const themePreset = config?.themePreset;
@@ -521,6 +512,7 @@ export function ThemeProvider({
 
   const contextValue: ThemeContextType = {
     contactEmail: config.contactEmail || '',
+    contactPhone: config.contactPhone || '',
     ...theme,
     fontHeading,
     fontBody,

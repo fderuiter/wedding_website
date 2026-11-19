@@ -268,12 +268,46 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         expect(findFirstMock).toHaveBeenCalledWith({
           where: {
             code: { equals: 'love2026', mode: 'insensitive' },
+            isSample: false,
           },
         });
 
         const cookieHeader = res.headers.get('set-cookie');
         expect(cookieHeader).toContain(GUEST_INVITE_COOKIE);
         expect(cookieHeader).not.toContain(`${GUEST_COOKIE}=`);
+      } finally {
+        prismaWithInvite.invitationCode = originalInvitationCode;
+      }
+    });
+
+    it('returns 401 and sets no session cookie for a sample invitation code', async () => {
+      const prismaWithInvite = prisma as unknown as {
+        invitationCode?: { findFirst: jest.Mock };
+      };
+      const originalInvitationCode = prismaWithInvite.invitationCode;
+      const findFirstMock = jest.fn().mockResolvedValue(null);
+      prismaWithInvite.invitationCode = { findFirst: findFirstMock };
+
+      try {
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'SMITH2026' }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(401);
+        const data = await res.json();
+        expect(data.success).toBe(false);
+
+        expect(findFirstMock).toHaveBeenCalledWith({
+          where: {
+            code: { equals: 'SMITH2026', mode: 'insensitive' },
+            isSample: false,
+          },
+        });
+
+        const cookieHeader = res.headers.get('set-cookie') || '';
+        expect(cookieHeader).not.toContain(GUEST_INVITE_COOKIE);
+        expect(cookieHeader).not.toContain(GUEST_COOKIE);
       } finally {
         prismaWithInvite.invitationCode = originalInvitationCode;
       }

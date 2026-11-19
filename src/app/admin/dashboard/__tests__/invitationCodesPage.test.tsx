@@ -74,6 +74,7 @@ const mockCodes = [
 
 describe('InvitationCodesDashboardPage', () => {
   const mockCreate = jest.fn();
+  const mockUpdate = jest.fn();
   const mockRemove = jest.fn();
   const mockRemoveBatch = jest.fn();
   const mockUpdateBatch = jest.fn();
@@ -86,6 +87,7 @@ describe('InvitationCodesDashboardPage', () => {
       isLoading: false,
       error: null,
       create: mockCreate,
+      update: mockUpdate,
       remove: mockRemove,
       removeBatch: mockRemoveBatch,
       updateBatch: mockUpdateBatch,
@@ -810,6 +812,308 @@ describe('InvitationCodesDashboardPage', () => {
         expect(mockUpdateBatch).toHaveBeenCalledWith(['code-1'], { householdName: 'Smith-Jones Household' });
         expect(screen.getByText('Updated household name for 1 code(s).')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Modal Editors and Full Permission Sync', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('opens GuestEditorModal pre-filled with guest profile & address fields, warns on code edit, and saves without altering seating or redemption fields', async () => {
+      const richGuest = {
+        id: 'code-rich',
+        guestName: 'Alice Smith',
+        code: 'ALICE123',
+        email: 'alice@example.com',
+        householdName: 'Smith Family',
+        partyGroup: 'Bridal Party',
+        partyTags: ['VIP', 'Out of Town'],
+        plusOneAllocations: 1,
+        plusOneFirstName: 'Jordan',
+        plusOneLastName: 'Smith',
+        dietaryNotes: 'Gluten Free',
+        addressLine1: '123 Maple St',
+        addressLine2: 'Apt 2B',
+        city: 'Seattle',
+        state: 'WA',
+        zipCode: '98101',
+        country: 'USA',
+        used: true,
+        tableId: 'table-9',
+        seatNumber: 5,
+        extraFields: { attendanceStatus: 'attending' },
+      };
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [richGuest],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate.mockResolvedValueOnce({ ...richGuest, guestName: 'Alice M. Smith', code: 'ALICE999' }),
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit guest Alice Smith' }));
+
+      const dialog = screen.getByRole('dialog', { name: 'Edit Guest Details' });
+      expect(dialog).toBeInTheDocument();
+
+      // Verify pre-filled values across profile and address fields
+      expect(within(dialog).getByLabelText('Guest Name *')).toHaveValue('Alice Smith');
+      expect(within(dialog).getByLabelText('Invitation Code *')).toHaveValue('ALICE123');
+      expect(within(dialog).getByLabelText('Email')).toHaveValue('alice@example.com');
+      expect(within(dialog).getByLabelText('Household Name')).toHaveValue('Smith Family');
+      expect(within(dialog).getByLabelText('Party Group')).toHaveValue('Bridal Party');
+      expect(within(dialog).getByLabelText('Party Tags (Comma-Separated)')).toHaveValue('VIP, Out of Town');
+      expect(within(dialog).getByLabelText('Plus-One Allocations')).toHaveValue(1);
+      expect(within(dialog).getByLabelText('Plus-One First Name')).toHaveValue('Jordan');
+      expect(within(dialog).getByLabelText('Plus-One Last Name')).toHaveValue('Smith');
+      expect(within(dialog).getByLabelText('Dietary Notes')).toHaveValue('Gluten Free');
+      expect(within(dialog).getByLabelText('Address Line 1')).toHaveValue('123 Maple St');
+      expect(within(dialog).getByLabelText('Address Line 2')).toHaveValue('Apt 2B');
+      expect(within(dialog).getByLabelText('City')).toHaveValue('Seattle');
+      expect(within(dialog).getByLabelText('State / Province')).toHaveValue('WA');
+      expect(within(dialog).getByLabelText('Zip / Postal Code')).toHaveValue('98101');
+      expect(within(dialog).getByLabelText('Country')).toHaveValue('USA');
+
+      // Warning is hidden when code matches original
+      expect(within(dialog).queryByTestId('code-change-warning')).not.toBeInTheDocument();
+
+      // Changing code triggers QR invalidation warning
+      fireEvent.change(within(dialog).getByLabelText('Invitation Code *'), {
+        target: { value: 'alice999' },
+      });
+      const warning = within(dialog).getByTestId('code-change-warning');
+      expect(warning).toHaveTextContent('printed QR links');
+      expect(warning).toHaveTextContent('ALICE123');
+
+      // Edit guest name and city, clear address line 2
+      fireEvent.change(within(dialog).getByLabelText('Guest Name *'), {
+        target: { value: 'Alice M. Smith' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Address Line 2'), {
+        target: { value: '' },
+      });
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save Guest Changes' }));
+
+      await waitFor(() => {
+        expect(mockUpdate).toHaveBeenCalledWith('code-rich', {
+          guestName: 'Alice M. Smith',
+          code: 'ALICE999',
+          email: 'alice@example.com',
+          householdName: 'Smith Family',
+          partyGroup: 'Bridal Party',
+          partyTags: ['VIP', 'Out of Town'],
+          plusOneAllocations: 1,
+          plusOneFirstName: 'Jordan',
+          plusOneLastName: 'Smith',
+          dietaryNotes: 'Gluten Free',
+          addressLine1: '123 Maple St',
+          addressLine2: null,
+          city: 'Seattle',
+          state: 'WA',
+          zipCode: '98101',
+          country: 'USA',
+        });
+        expect(screen.getByText('Guest details updated successfully.')).toBeInTheDocument();
+      });
+
+      // Verify payload does NOT touch tableId, seatNumber, used, or extraFields
+      const savedPayload = mockUpdate.mock.calls[0][1];
+      expect(savedPayload).not.toHaveProperty('tableId');
+      expect(savedPayload).not.toHaveProperty('seatNumber');
+      expect(savedPayload).not.toHaveProperty('used');
+      expect(savedPayload).not.toHaveProperty('extraFields');
+    });
+
+    it('validates startTime and endTime in Manage Sub-Events modal and saves schedule times', async () => {
+      global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
+        if (url.startsWith('/api/admin/sub-events/access')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                success: true,
+                data: {
+                  subEvents: [
+                    {
+                      id: 'se-1',
+                      title: 'Welcome Drinks',
+                      startTime: '2026-09-18T17:00:00.000Z',
+                      endTime: '2026-09-18T19:00:00.000Z',
+                      isPrivate: true,
+                      allowedInvitationCodeIds: [],
+                    },
+                  ],
+                  invitationCodes: [],
+                },
+              }),
+          });
+        }
+        if (url === '/api/admin/sub-events' && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: () =>
+              Promise.resolve({
+                id: 'se-2',
+                title: 'Farewell Brunch',
+                isPrivate: true,
+              }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }) as any;
+
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Manage Sub-Events' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'Create New Sub-Event' });
+      fireEvent.change(within(dialog).getByLabelText('Title *'), {
+        target: { value: 'Farewell Brunch' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Start Time (Optional)'), {
+        target: { value: '2026-09-20T12:00' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('End Time (Optional)'), {
+        target: { value: '2026-09-20T10:00' },
+      });
+
+      // Inline validation blocks saving when endTime precedes startTime
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'End time cannot precede start time.'
+      );
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create Sub-Event' }));
+      expect(global.fetch).not.toHaveBeenCalledWith('/api/admin/sub-events', expect.anything());
+
+      // Fix endTime so it follows startTime and submit
+      fireEvent.change(within(dialog).getByLabelText('End Time (Optional)'), {
+        target: { value: '2026-09-20T14:00' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create Sub-Event' }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/admin/sub-events',
+          expect.objectContaining({
+            method: 'POST',
+            body: expect.stringContaining('"title":"Farewell Brunch"'),
+          })
+        );
+      });
+    });
+
+    it('loads complete private event permissions for >100 alphabetical guests and updates only the toggled event via batch endpoint', async () => {
+      const largeGuestList = Array.from({ length: 105 }, (_, idx) => {
+        const num = String(idx + 1).padStart(3, '0');
+        return {
+          id: `code-${num}`,
+          guestName: idx === 104 ? 'Zoe Zimmerman' : `Guest ${num}`,
+          code: `CODE${num}`,
+          used: false,
+        };
+      });
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: largeGuestList,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        fetchAll: mockFetchAll,
+      });
+
+      global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
+        if (url === '/api/admin/sub-events/access' && (!options?.method || options.method === 'GET')) {
+          // Simulate backend returning paginated invitationCodes (first 25 only, NOT including code-105),
+          // while subEvents carry uncapped allowedInvitationCodeIds including code-105!
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                success: true,
+                data: {
+                  subEvents: [
+                    {
+                      id: 'se-rehearsal',
+                      title: 'Rehearsal Dinner',
+                      isPrivate: true,
+                      allowedInvitationCodeIds: ['code-001', 'code-105'],
+                    },
+                    {
+                      id: 'se-welcome',
+                      title: 'Welcome Party',
+                      isPrivate: true,
+                      allowedInvitationCodeIds: ['code-105'],
+                    },
+                  ],
+                  invitationCodes: [
+                    {
+                      id: 'code-001',
+                      code: 'CODE001',
+                      guestName: 'Guest 001',
+                      allowedSubEventIds: ['se-rehearsal'],
+                    },
+                  ],
+                  pagination: { total: 105, page: 1, limit: 25, totalPages: 5 },
+                },
+              }),
+          });
+        }
+        if (url === '/api/admin/sub-events/access/batch' && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true, data: { count: 1 } }),
+          });
+        }
+        return Promise.resolve({ ok: false });
+      }) as any;
+
+      renderComponent();
+
+      // Wait for sub-event permissions on the 105th alphabetical guest (Zoe Zimmerman)
+      const zoeRehearsalCheckbox = (await screen.findByRole('checkbox', {
+        name: 'Toggle access for Rehearsal Dinner on Zoe Zimmerman',
+      })) as HTMLInputElement;
+      const zoeWelcomeCheckbox = screen.getByRole('checkbox', {
+        name: 'Toggle access for Welcome Party on Zoe Zimmerman',
+      }) as HTMLInputElement;
+
+      expect(zoeRehearsalCheckbox).toBeChecked();
+      expect(zoeWelcomeCheckbox).toBeChecked();
+
+      // Uncheck Rehearsal Dinner on Zoe Zimmerman -> must call batch revoke ONLY for se-rehearsal and keep Welcome Party checked
+      fireEvent.click(zoeRehearsalCheckbox);
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/admin/sub-events/access/batch',
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              invitationCodeIds: ['code-105'],
+              subEventIds: ['se-rehearsal'],
+              action: 'revoke',
+            }),
+          })
+        );
+      });
+
+      expect(zoeRehearsalCheckbox).not.toBeChecked();
+      expect(zoeWelcomeCheckbox).toBeChecked();
     });
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -12,31 +12,38 @@ export function SampleDataBanner() {
   const [loading, setLoading] = useState<boolean>(false);
   const { addToast, confirm } = useToast();
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/sample-data');
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success) {
-        setHasSampleData(Boolean(data.hasSampleData));
-        if (data.counts) {
-          const parts = [];
-          if (data.counts.registry) parts.push(`${data.counts.registry} registry items`);
-          if (data.counts.guests) parts.push(`${data.counts.guests} guests`);
-          if (data.counts.seating) parts.push(`${data.counts.seating} tables`);
-          if (data.counts.weddingParty) parts.push(`${data.counts.weddingParty} party members`);
-          if (data.counts.attractions) parts.push(`${data.counts.attractions} attractions`);
-          setCountsSummary(parts.join(', '));
-        }
-      }
-    } catch {
-      // Ignore network errors in background polling
-    }
-  }, []);
-
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    let cancelled = false;
+
+    const loadStatus = async () => {
+      try {
+        const res = await fetch('/api/admin/sample-data');
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.success) {
+          setHasSampleData(Boolean(data.hasSampleData));
+          if (data.counts) {
+            const parts = [];
+            if (data.counts.registry) parts.push(`${data.counts.registry} registry items`);
+            if (data.counts.guests) parts.push(`${data.counts.guests} guests`);
+            if (data.counts.seating) parts.push(`${data.counts.seating} tables`);
+            if (data.counts.weddingParty) parts.push(`${data.counts.weddingParty} party members`);
+            if (data.counts.attractions) parts.push(`${data.counts.attractions} attractions`);
+            setCountsSummary(parts.join(', '));
+          }
+        }
+      } catch {
+        // Ignore network errors in background polling
+      }
+    };
+
+    void loadStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePurge = async () => {
     const confirmed = await confirm(

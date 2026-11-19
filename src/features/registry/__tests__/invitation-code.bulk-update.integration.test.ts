@@ -35,8 +35,12 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
 
   beforeEach(async () => {
     await realPrisma.snapshotVersion.deleteMany();
+    await realPrisma.subEventRsvp.deleteMany();
+    await realPrisma.subEventAccess.deleteMany();
+    await realPrisma.subEvent.deleteMany();
     await realPrisma.contributor.deleteMany();
     await realPrisma.invitationCode.deleteMany();
+    await realPrisma.seatingTable.deleteMany();
 
     service = new InvitationCodeAdminService();
     // Inject real PrismaClient
@@ -45,7 +49,12 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
 
   afterAll(async () => {
     await realPrisma.snapshotVersion.deleteMany();
+    await realPrisma.subEventRsvp.deleteMany();
+    await realPrisma.subEventAccess.deleteMany();
+    await realPrisma.subEvent.deleteMany();
+    await realPrisma.contributor.deleteMany();
     await realPrisma.invitationCode.deleteMany();
+    await realPrisma.seatingTable.deleteMany();
     await realPrisma.$disconnect();
     await pool.end();
   });
@@ -191,5 +200,135 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     // Confirm no audit snapshot was persisted
     const snapshots = await realPrisma.snapshotVersion.findMany();
     expect(snapshots.length).toBe(0);
+  });
+
+  it('updates guest profile and address in place while preserving seating assignments, redemption state, and event responses', async () => {
+    const seatingTable = await realPrisma.seatingTable.create({
+      data: { name: 'Head Table', capacity: 8 },
+    });
+
+    const subEvent = await realPrisma.subEvent.create({
+      data: {
+        title: 'Rehearsal Dinner',
+        isPrivate: true,
+        startTime: new Date('2026-09-18T18:00:00.000Z'),
+        endTime: new Date('2026-09-18T21:00:00.000Z'),
+      },
+    });
+
+    const usedTimestamp = new Date('2026-05-01T12:30:00.000Z');
+    const guest = await realPrisma.invitationCode.create({
+      data: {
+        code: 'ORIG100',
+        guestName: 'Original Guest',
+        email: 'orig@example.com',
+        householdName: 'Original Household',
+        partyGroup: 'Bridal Party',
+        partyTags: ['VIP'],
+        plusOneAllocations: 1,
+        plusOneFirstName: 'Jordan',
+        plusOneLastName: 'Original',
+        dietaryNotes: 'Vegetarian',
+        addressLine1: '100 Old Rd',
+        city: 'Chicago',
+        state: 'IL',
+        zipCode: '60601',
+        country: 'USA',
+        used: true,
+        usedAt: usedTimestamp,
+        tableId: seatingTable.id,
+        seatNumber: 4,
+        extraFields: { attendanceStatus: 'attending', mealChoice: 'pasta' },
+      },
+    });
+
+    await realPrisma.subEventAccess.create({
+      data: {
+        subEventId: subEvent.id,
+        invitationCodeId: guest.id,
+      },
+    });
+
+    await realPrisma.subEventRsvp.create({
+      data: {
+        subEventId: subEvent.id,
+        invitationCodeId: guest.id,
+        status: 'attending',
+        plusOneCount: 1,
+        dietaryNotes: 'Vegetarian',
+      },
+    });
+
+    await realPrisma.contributor.create({
+      data: {
+        name: 'Original Guest',
+        amount: 150,
+        invitationCodeId: guest.id,
+      },
+    });
+
+    await service.update(
+      guest.id,
+      {
+        guestName: 'Edited Guest Name',
+        code: 'newcode200',
+        email: 'edited@example.com',
+        householdName: '',
+        partyGroup: 'Family',
+        partyTags: ['VIP', 'Family'],
+        plusOneAllocations: 2,
+        plusOneFirstName: 'Taylor',
+        plusOneLastName: 'Edited',
+        dietaryNotes: 'Gluten-Free',
+        addressLine1: '742 Evergreen Terrace',
+        addressLine2: 'Suite 2',
+        city: 'Springfield',
+        state: 'OR',
+        zipCode: '97477',
+        country: 'USA',
+      },
+      'TestAdmin'
+    );
+
+    const reloaded = await realPrisma.invitationCode.findUnique({
+      where: { id: guest.id },
+      include: {
+        subEventAccesses: true,
+        subEventRsvps: true,
+        contributors: true,
+      },
+    });
+
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.guestName).toBe('Edited Guest Name');
+    expect(reloaded!.code).toBe('NEWCODE200');
+    expect(reloaded!.email).toBe('edited@example.com');
+    expect(reloaded!.householdName).toBeNull();
+    expect(reloaded!.partyGroup).toBe('Family');
+    expect(reloaded!.partyTags).toEqual(['VIP', 'Family']);
+    expect(reloaded!.plusOneAllocations).toBe(2);
+    expect(reloaded!.plusOneFirstName).toBe('Taylor');
+    expect(reloaded!.plusOneLastName).toBe('Edited');
+    expect(reloaded!.dietaryNotes).toBe('Gluten-Free');
+    expect(reloaded!.addressLine1).toBe('742 Evergreen Terrace');
+    expect(reloaded!.addressLine2).toBe('Suite 2');
+    expect(reloaded!.city).toBe('Springfield');
+    expect(reloaded!.state).toBe('OR');
+    expect(reloaded!.zipCode).toBe('97477');
+    expect(reloaded!.country).toBe('USA');
+
+    // Preserved seating, redemption, extraFields, and related records
+    expect(reloaded!.tableId).toBe(seatingTable.id);
+    expect(reloaded!.seatNumber).toBe(4);
+    expect(reloaded!.used).toBe(true);
+    expect(reloaded!.usedAt?.toISOString()).toBe(usedTimestamp.toISOString());
+    expect(reloaded!.extraFields).toEqual({ attendanceStatus: 'attending', mealChoice: 'pasta' });
+    expect(reloaded!.subEventAccesses).toHaveLength(1);
+    expect(reloaded!.subEventAccesses[0].subEventId).toBe(subEvent.id);
+    expect(reloaded!.subEventRsvps).toHaveLength(1);
+    expect(reloaded!.subEventRsvps[0].status).toBe('attending');
+    expect(reloaded!.subEventRsvps[0].plusOneCount).toBe(1);
+    expect(reloaded!.contributors).toHaveLength(1);
+    expect(reloaded!.contributors[0].amount).toBe(150);
   });
 });

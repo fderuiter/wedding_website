@@ -1,35 +1,10 @@
 import { test, expect, type Browser, type BrowserContext, type Route, type Request } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateAdminCookieValue() {
-  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
-  const payload = {
-    isAdmin: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000, // 8 hours
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import {
+  generateAdminCookieValue,
+  generateGuestCookieValue,
+  seedAdminAndGuestAuthCookies,
+  seedGuestAuthCookies,
+} from './helpers/auth';
 
 function isDomainMatch(hostname: string, domain: string) {
   return hostname === domain || hostname.endsWith(`.${domain}`);
@@ -63,18 +38,11 @@ async function createCrawlerContext(
   guestCookieValue: string
 ): Promise<BrowserContext> {
   const context = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
-  await context.addCookies([
-    {
-      name: 'admin_auth',
-      value: cookieValue,
-      url: baseURL,
-    },
-    {
-      name: 'guest_auth',
-      value: guestCookieValue,
-      url: baseURL,
-    }
-  ]);
+  await seedAdminAndGuestAuthCookies(context, {
+    adminCookieValue: cookieValue,
+    guestCookieValue,
+    extraOrigins: [baseURL],
+  });
 
   await context.route('**/*', async (routeHandler: Route, request: Request) => {
     const urlStr = request.url();
@@ -179,13 +147,10 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
         attempt++;
         const guestContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
         try {
-          await guestContext.addCookies([
-            {
-              name: 'guest_auth',
-              value: guestCookieValue,
-              url: baseURL,
-            }
-          ]);
+          await seedGuestAuthCookies(guestContext, {
+            cookieValue: guestCookieValue,
+            extraOrigins: [baseURL],
+          });
 
           const page = await guestContext.newPage();
           try {

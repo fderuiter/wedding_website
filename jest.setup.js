@@ -171,6 +171,56 @@ jest.mock('msw', () => {
   };
 });
 
+jest.mock('jest-axe', () => {
+  const actual = jest.requireActual('jest-axe');
+  const nodeFs = jest.requireActual('node:fs');
+  const nodePath = jest.requireActual('node:path');
+
+  const appendJestViolations = (violations) => {
+    if (!Array.isArray(violations) || violations.length === 0) {
+      return;
+    }
+    const reportFile =
+      process.env.JEST_A11Y_REPORT_PATH ||
+      nodePath.join(process.cwd(), 'test-results', 'jest-a11y-violations.json');
+    try {
+      nodeFs.mkdirSync(nodePath.dirname(reportFile), { recursive: true });
+      let existing = [];
+      if (nodeFs.existsSync(reportFile)) {
+        const raw = nodeFs.readFileSync(reportFile, 'utf8').trim();
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            existing = parsed;
+          }
+        }
+      }
+      nodeFs.writeFileSync(
+        reportFile,
+        JSON.stringify([...existing, ...violations], null, 2),
+        'utf8'
+      );
+    } catch {
+      // Preserve matcher behavior even if filesystem write fails
+    }
+  };
+
+  const wrappedToHaveNoViolations = {
+    toHaveNoViolations(results) {
+      const outcome = actual.toHaveNoViolations.toHaveNoViolations.call(this, results);
+      if (!this?.isNot && Array.isArray(outcome?.actual) && outcome.actual.length > 0) {
+        appendJestViolations(outcome.actual);
+      }
+      return outcome;
+    },
+  };
+
+  return {
+    ...actual,
+    toHaveNoViolations: wrappedToHaveNoViolations,
+  };
+});
+
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';

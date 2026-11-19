@@ -552,7 +552,7 @@ describe('RegistryRepository', () => {
 
       expect(item.amountContributed).toBe(50);
       expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
-        where: { code: 'GOODCODE' },
+        where: { code: 'GOODCODE', isSample: false },
       });
       expect(tx.invitationCode.update).toHaveBeenCalledWith({
         where: { id: 'invite-good' },
@@ -601,6 +601,34 @@ describe('RegistryRepository', () => {
       await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Invalid invitation code.');
     });
 
+    it('should throw an error if a sample invitation code is provided', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'sample-inv-1',
+            code: 'SMITH2026',
+            guestName: 'Mr. & Mrs. Robert Smith',
+            used: false,
+            isSample: true,
+          }),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation(callback => callback(tx));
+
+      const contribution = { name: 'Mr. & Mrs. Robert Smith', amount: 50, code: 'SMITH2026' };
+      await expect(registryRepository.contributeToItem('1', contribution)).rejects.toThrow('Invalid invitation code.');
+      expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'SMITH2026', isSample: false },
+      });
+      expect(tx.invitationCode.update).not.toHaveBeenCalled();
+      expect(tx.registryItem.update).not.toHaveBeenCalled();
+    });
+
     it('should successfully contribute when a previously used invitation code is provided', async () => {
       const tx = {
         registryItem: {
@@ -629,7 +657,7 @@ describe('RegistryRepository', () => {
 
       expect(item.amountContributed).toBe(50);
       expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
-        where: { code: 'USEDCODE' },
+        where: { code: 'USEDCODE', isSample: false },
       });
       expect(tx.invitationCode.update).toHaveBeenCalledWith({
         where: { id: 'invite-used' },

@@ -1,48 +1,24 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { seedGuestAuthCookies } from './helpers/auth';
 
 test.describe('Metadata', () => {
   test('should have the correct metadata', async ({ context, page }) => {
-    const guestCookieValue = generateGuestCookieValue();
-    await context.addCookies([
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://127.0.0.1:3000',
-      },
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://localhost:3000',
-      },
-    ]);
+    await seedGuestAuthCookies(context);
 
     try {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
+        await seedGuestAuthCookies(context).catch(() => {});
         page = await context.newPage();
         await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
       } else {
         throw err;
       }
     }
+
+    expect(new URL(page.url()).pathname).toBe('/');
 
     // Check title
     await expect(page).toHaveTitle(/Jane & John|Home|Wedding Website/);
@@ -57,11 +33,11 @@ test.describe('Metadata', () => {
     const ogDescription = page.locator('meta[property="og:description"]');
     await expect(ogDescription).toHaveAttribute('content', /Welcome to our wedding website|Join Jane and John/);
     const ogUrl = page.locator('meta[property="og:url"]');
-    await expect(ogUrl).toHaveAttribute('content', /(http:\/\/localhost:3000|http:\/\/127\.0\.0\.1:3000)/);
+    await expect(ogUrl).toHaveAttribute('content', /^http:\/\/(localhost|127\.0\.0\.1):3000\/?$/);
     const ogType = page.locator('meta[property="og:type"]');
     await expect(ogType).toHaveAttribute('content', 'website');
     const ogImage = page.locator('meta[property="og:image"]');
-    await expect(ogImage).toHaveAttribute('content', /(api\/og|images\/(placeholder\.png|sunset-embrace\.jpg))/);
+    await expect(ogImage).toHaveAttribute('content', /^http:\/\/(localhost|127\.0\.0\.1):3000\/(api\/og|images\/(placeholder\.png|sunset-embrace\.jpg))/);
 
     // Check Twitter card metadata
     const twitterCard = page.locator('meta[name="twitter:card"]');
@@ -71,10 +47,10 @@ test.describe('Metadata', () => {
     const twitterDescription = page.locator('meta[name="twitter:description"]');
     await expect(twitterDescription).toHaveAttribute('content', /Welcome to our wedding website|Join Jane and John/);
     const twitterImage = page.locator('meta[name="twitter:image"]');
-    await expect(twitterImage).toHaveAttribute('content', /(api\/og|images\/(placeholder\.png|sunset-embrace\.jpg))/);
+    await expect(twitterImage).toHaveAttribute('content', /^http:\/\/(localhost|127\.0\.0\.1):3000\/(api\/og|images\/(placeholder\.png|sunset-embrace\.jpg))/);
 
     // Check canonical link
     const canonicalLink = page.locator('link[rel="canonical"]');
-    await expect(canonicalLink).toHaveAttribute('href', /(http:\/\/localhost:3000|http:\/\/127\.0\.0\.1:3000)/);
+    await expect(canonicalLink).toHaveAttribute('href', /^http:\/\/(localhost|127\.0\.0\.1):3000\/?$/);
   });
 });

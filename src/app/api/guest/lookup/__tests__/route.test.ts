@@ -13,7 +13,7 @@ import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 
 const mockFindFirst = prisma.invitationCode.findFirst as jest.Mock;
 
@@ -133,18 +133,43 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
-          OR: [
-            { guestName: { equals: 'Jane', mode: 'insensitive' } },
-            { plusOneFirstName: { equals: 'Jane', mode: 'insensitive' } },
-            { plusOneLastName: { equals: 'Jane', mode: 'insensitive' } },
-          ],
+          isSample: false,
+          guestName: { equals: 'Jane', mode: 'insensitive' },
         },
       });
     });
+
+    it('ignores sample guest records (isSample: true) and issues no guest_invite_session cookie', async () => {
+      mockFindFirst.mockResolvedValue(null);
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
+        body: JSON.stringify({ query: 'Mr. & Mrs. Robert Smith' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('No invitation found matching');
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          isSample: false,
+        }),
+      });
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
+    });
   });
 
-  describe('Successful Lookups & Session Hydration', () => {
-    it('matches by guest name and sets guest_invite_session cookie when caller is authenticated', async () => {
+  describe('Successful Lookups & Session Boundary', () => {
+    it('matches by guest name and omits guest_invite_session from Set-Cookie even when caller is authenticated', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-1',
         code: 'PASS123',
@@ -177,11 +202,10 @@ describe('POST /api/guest/lookup', () => {
       expect(json.dietaryNotes).toBeUndefined();
       expect(json.data?.addressLine1).toBeUndefined();
 
-      // Check cookies: guest_auth should not be set (already held); guest_invite_session must be set
+      // Check cookies: neither guest_auth nor guest_invite_session may be set by lookup
       const setCookieHeaders = res.headers.get('set-cookie') || '';
       expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
-      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
-      expect(setCookieHeaders).toContain('Path=/');
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
     });
 
     it('does not set guest_invite_session cookie when caller is unauthenticated', async () => {
@@ -210,7 +234,7 @@ describe('POST /api/guest/lookup', () => {
       expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
     });
 
-    it('matches by email and sets session cookie when caller is authenticated', async () => {
+    it('matches by email and omits guest_invite_session from Set-Cookie when caller is authenticated', async () => {
       mockFindFirst.mockResolvedValue({
         id: 'inv-uuid-2',
         code: 'EMAILPASS',
@@ -237,7 +261,36 @@ describe('POST /api/guest/lookup', () => {
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
       expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
-      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
+    });
+
+    it('leaves any existing guest_invite_session cookie intact without overwriting or clearing it', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-2',
+        code: 'OTHERCODE',
+        guestName: 'Alex Smith',
+        email: 'alex@example.com',
+      });
+
+      const existingSessionToken = await signGuestInviteSessionToken({
+        code: 'EXISTING123',
+        guestName: 'Existing Household',
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_INVITE_COOKIE}=${existingSessionToken}`,
+        },
+        body: JSON.stringify({ query: 'Alex Smith' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(200);
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(setCookieHeaders).not.toContain('Max-Age=0');
     });
 
     it('matches by case-insensitive name or email query', async () => {
@@ -260,10 +313,55 @@ describe('POST /api/guest/lookup', () => {
       expect(json.code).toBeUndefined();
     });
 
-    it('matches by plus-one first name and authenticates successfully', async () => {
+    it('does not match single-token plus-one first name alone', async () => {
+      mockFindFirst.mockResolvedValue(null);
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
+        body: JSON.stringify({ query: 'Samantha' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          isSample: false,
+          guestName: { equals: 'Samantha', mode: 'insensitive' },
+        },
+      });
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
+    });
+
+    it('does not match single-token plus-one last name alone', async () => {
+      mockFindFirst.mockResolvedValue(null);
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Williams' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: {
+          isSample: false,
+          guestName: { equals: 'Williams', mode: 'insensitive' },
+        },
+      });
+    });
+
+    it('matches compound plus-one full name tokens without setting guest_invite_session', async () => {
       mockFindFirst.mockResolvedValue({
-        id: 'inv-uuid-plus-1',
-        code: 'PLUSFIRST',
+        id: 'inv-uuid-plus-3',
+        code: 'PLUSFULL',
         guestName: 'Primary Host',
         plusOneFirstName: 'Samantha',
         plusOneLastName: 'Williams',
@@ -276,74 +374,6 @@ describe('POST /api/guest/lookup', () => {
           'Content-Type': 'application/json',
           cookie: `${GUEST_COOKIE}=${guestToken}`,
         },
-        body: JSON.stringify({ query: 'Samantha' }),
-      });
-      const res = await lookupRoute(req);
-      expect(res.status).toBe(200);
-
-      const json = await res.json();
-      expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Host');
-      expect(json.code).toBeUndefined();
-
-      expect(mockFindFirst).toHaveBeenCalledWith({
-        where: {
-          OR: expect.arrayContaining([
-            { guestName: { equals: 'Samantha', mode: 'insensitive' } },
-            { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
-            { plusOneLastName: { equals: 'Samantha', mode: 'insensitive' } },
-          ]),
-        },
-      });
-
-      const setCookieHeaders = res.headers.get('set-cookie') || '';
-      expect(setCookieHeaders).not.toContain(`${GUEST_COOKIE}=`);
-      expect(setCookieHeaders).toContain(`${GUEST_INVITE_COOKIE}=`);
-    });
-
-    it('matches by plus-one last name', async () => {
-      mockFindFirst.mockResolvedValue({
-        id: 'inv-uuid-plus-2',
-        code: 'PLUSLAST',
-        guestName: 'Primary Host',
-        plusOneFirstName: 'Samantha',
-        plusOneLastName: 'Williams',
-      });
-
-      const req = new NextRequest('http://localhost/api/guest/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Williams' }),
-      });
-      const res = await lookupRoute(req);
-      expect(res.status).toBe(200);
-
-      const json = await res.json();
-      expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Host');
-      expect(json.code).toBeUndefined();
-
-      expect(mockFindFirst).toHaveBeenCalledWith({
-        where: {
-          OR: expect.arrayContaining([
-            { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
-          ]),
-        },
-      });
-    });
-
-    it('matches compound plus-one full name tokens', async () => {
-      mockFindFirst.mockResolvedValue({
-        id: 'inv-uuid-plus-3',
-        code: 'PLUSFULL',
-        guestName: 'Primary Host',
-        plusOneFirstName: 'Samantha',
-        plusOneLastName: 'Williams',
-      });
-
-      const req = new NextRequest('http://localhost/api/guest/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'Samantha Williams' }),
       });
       const res = await lookupRoute(req);
@@ -354,16 +384,21 @@ describe('POST /api/guest/lookup', () => {
       expect(json.guestName).toBe('Primary Host');
       expect(json.code).toBeUndefined();
 
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
+
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
-          OR: expect.arrayContaining([
+          isSample: false,
+          OR: [
+            { guestName: { equals: 'Samantha Williams', mode: 'insensitive' } },
             {
               AND: [
                 { plusOneFirstName: { equals: 'Samantha', mode: 'insensitive' } },
                 { plusOneLastName: { equals: 'Williams', mode: 'insensitive' } },
               ],
             },
-          ]),
+          ],
         },
       });
     });
@@ -392,6 +427,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: expect.arrayContaining([
             {
               AND: [

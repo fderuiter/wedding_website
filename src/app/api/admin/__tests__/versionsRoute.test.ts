@@ -4,6 +4,7 @@ import { GET as getVersions } from '../versions/route';
 import { POST as restoreVersion } from '../versions/[id]/restore/route';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { toPublicAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
 // Mock dependency modules
@@ -48,6 +49,7 @@ jest.mock('@/core/auth/auth.server', () => ({
 }));
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+const mockToPublicAppConfig = toPublicAppConfig as jest.MockedFunction<typeof toPublicAppConfig>;
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 
 describe('GET /api/admin/versions', () => {
@@ -99,6 +101,51 @@ describe('GET /api/admin/versions', () => {
       take: 50,
       skip: 0,
     });
+  });
+
+  it('strips messaging secrets from AppConfig snapshots via real toPublicAppConfig', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const actualConfig = jest.requireActual('@/lib/config');
+    mockToPublicAppConfig.mockImplementationOnce((cfg: any) => actualConfig.toPublicAppConfig(cfg));
+
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(1);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'v-secrets',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          id: 'global',
+          partner1Name: 'Casey',
+          partner2Name: 'Jordan',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          smtpHost: 'smtp.example.invalid',
+          smtpUser: 'mailer@example.invalid',
+          smtpPass: 'secret-smtp-pass',
+          resendApiKey: 're_secret',
+          sendgridApiKey: 'SG.secret',
+          twilioAccountSid: 'AC_SECRET_SID',
+          twilioAuthToken: 'twilio-secret-token',
+        },
+        createdAt: new Date(),
+      },
+    ]);
+
+    const req = new NextRequest('http://localhost/api/admin/versions?entityType=AppConfig&entityId=global', { method: 'GET' });
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const itemData = json.data.items[0].data;
+    expect(itemData.partner1Name).toBe('Casey');
+    expect(new Date(itemData.weddingDate).toISOString()).toBe('2026-06-20T16:00:00.000Z');
+    expect(itemData.smtpHost).toBeUndefined();
+    expect(itemData.smtpUser).toBeUndefined();
+    expect(itemData.smtpPass).toBeUndefined();
+    expect(itemData.resendApiKey).toBeUndefined();
+    expect(itemData.sendgridApiKey).toBeUndefined();
+    expect(itemData.twilioAccountSid).toBeUndefined();
+    expect(itemData.twilioAuthToken).toBeUndefined();
   });
 
   it('masks contributor email addresses in Contributor and RegistryItem version history payloads', async () => {

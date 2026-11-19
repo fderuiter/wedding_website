@@ -1,4 +1,6 @@
-import { toPublicAppConfig, isMultisiteEnabled, APP_DEFAULTS, getAppConfig } from '../config';
+import { toPublicAppConfig, toAdminAppConfig, isMultisiteEnabled, APP_DEFAULTS, getAppConfig } from '../config';
+import type { AdminAppConfig } from '../config';
+import { PublicAppConfigSchema } from '../../features/content/schemas';
 import { prisma } from '../prisma';
 
 jest.mock('../prisma', () => ({
@@ -129,6 +131,23 @@ describe('Configuration DTO Architecture', () => {
       ...baseConfig,
       adminPassword: 'SuperSecretPassword123!',
       smtpPassword: 'smtp-pass-value',
+      emailProvider: 'smtp',
+      smtpHost: 'smtp.example.invalid',
+      smtpPort: 465,
+      smtpUser: 'mailer@example.invalid',
+      smtpPass: 'smtp-secret-pass',
+      smtpFrom: 'noreply@example.invalid',
+      smtpSecure: true,
+      resendApiKey: 're_live_secret_123',
+      resendFrom: 'resend@example.invalid',
+      sendgridApiKey: 'SG.live_secret_456',
+      sendgridFrom: 'sendgrid@example.invalid',
+      smsProvider: 'twilio',
+      twilioAccountSid: 'AC_SYNTHETIC_TWILIO_SID',
+      twilioAuthToken: 'twilio-secret-auth-token',
+      twilioFromNumber: '+15550199999',
+      broadcastBatchSize: 25,
+      broadcastBatchDelayMs: 1000,
       apiSecret: 'sk_live_123456789',
       stripeSecretKey: 'sk_test_987654321',
       databaseUrlCredentials: 'postgres://user:pass@host/db',
@@ -142,11 +161,81 @@ describe('Configuration DTO Architecture', () => {
     expect(publicConfig.seoKeywords).toBe("Jane and John's wedding, wedding website");
     expect(publicConfig.adminPassword).toBeUndefined();
     expect(publicConfig.smtpPassword).toBeUndefined();
+    expect(publicConfig.emailProvider).toBeUndefined();
+    expect(publicConfig.smtpHost).toBeUndefined();
+    expect(publicConfig.smtpPort).toBeUndefined();
+    expect(publicConfig.smtpUser).toBeUndefined();
+    expect(publicConfig.smtpPass).toBeUndefined();
+    expect(publicConfig.smtpFrom).toBeUndefined();
+    expect(publicConfig.smtpSecure).toBeUndefined();
+    expect(publicConfig.resendApiKey).toBeUndefined();
+    expect(publicConfig.resendFrom).toBeUndefined();
+    expect(publicConfig.sendgridApiKey).toBeUndefined();
+    expect(publicConfig.sendgridFrom).toBeUndefined();
+    expect(publicConfig.smsProvider).toBeUndefined();
+    expect(publicConfig.twilioAccountSid).toBeUndefined();
+    expect(publicConfig.twilioAuthToken).toBeUndefined();
+    expect(publicConfig.twilioFromNumber).toBeUndefined();
+    expect(publicConfig.broadcastBatchSize).toBeUndefined();
+    expect(publicConfig.broadcastBatchDelayMs).toBeUndefined();
     expect(publicConfig.apiSecret).toBeUndefined();
     expect(publicConfig.stripeSecretKey).toBeUndefined();
     expect(publicConfig.databaseUrlCredentials).toBeUndefined();
     expect(publicConfig.authToken).toBeUndefined();
     expect(publicConfig.guestPasscode).toBeUndefined();
+  });
+
+  it('PublicAppConfigSchema strictly rejects unknown and credential keys', () => {
+    const validResult = PublicAppConfigSchema.safeParse(baseConfig);
+    expect(validResult.success).toBe(true);
+
+    const withSmtpPass = PublicAppConfigSchema.safeParse({
+      ...baseConfig,
+      smtpPass: 'secret',
+    });
+    expect(withSmtpPass.success).toBe(false);
+
+    const withTwilioSid = PublicAppConfigSchema.safeParse({
+      ...baseConfig,
+      twilioAccountSid: 'AC12345',
+    });
+    expect(withTwilioSid.success).toBe(false);
+  });
+
+  it('toAdminAppConfig omits raw secrets and returns boolean presence flags alongside non-secret messaging fields', () => {
+    const adminConfig: AdminAppConfig = toAdminAppConfig({
+      ...baseConfig,
+      emailProvider: 'smtp',
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: 587,
+      smtpUser: 'postmaster@wedding.example',
+      smtpPass: 'super-secret-smtp-pass',
+      smtpFrom: 'wedding@example.com',
+      smtpSecure: true,
+      resendApiKey: '',
+      resendFrom: 'resend@example.com',
+      sendgridApiKey: 'SG.secret',
+      sendgridFrom: 'sg@example.com',
+      smsProvider: 'twilio',
+      twilioAccountSid: 'AC999888777',
+      twilioAuthToken: '   ',
+      twilioFromNumber: '+15551234567',
+      broadcastBatchSize: 40,
+      broadcastBatchDelayMs: 750,
+    });
+
+    expect(adminConfig.smtpHost).toBe('smtp.mailgun.org');
+    expect(adminConfig.smtpUser).toBe('postmaster@wedding.example');
+    expect(adminConfig.twilioAccountSid).toBe('AC999888777');
+    expect(adminConfig.hasSmtpPass).toBe(true);
+    expect(adminConfig.hasResendApiKey).toBe(false);
+    expect(adminConfig.hasSendgridApiKey).toBe(true);
+    expect(adminConfig.hasTwilioAuthToken).toBe(false);
+
+    expect('smtpPass' in adminConfig).toBe(false);
+    expect('resendApiKey' in adminConfig).toBe(false);
+    expect('sendgridApiKey' in adminConfig).toBe(false);
+    expect('twilioAuthToken' in adminConfig).toBe(false);
   });
 });
 

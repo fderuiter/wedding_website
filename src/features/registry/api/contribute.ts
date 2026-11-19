@@ -36,6 +36,17 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
+  const isFund =
+    targetItem?.itemType === 'CASH_FUND' || targetItem?.itemType === 'EXPERIENCE_FUND';
+  const hasPaymentHandle = Boolean(targetItem?.paymentHandle && targetItem.paymentHandle.trim());
+
+  if (isFund && !paymentIntentId && !hasPaymentHandle) {
+    throw new ApiError(
+      400,
+      'Direct transfer is not available for this fund because no payment handle is configured.'
+    );
+  }
+
   let finalCode = code;
   if (!finalCode) {
     const session = await getGuestInviteSession(request);
@@ -49,7 +60,19 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   let transactionTimestamp: Date | null = null;
 
   if (paymentIntentId) {
-    const stripe = getStripeInstance();
+    let stripe;
+    try {
+      stripe = getStripeInstance();
+    } catch (err: any) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: err?.message || 'Card checkout is not configured on this deployment.',
+        },
+        { status: 503 }
+      );
+    }
+
     let paymentIntent;
     try {
       paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -68,13 +91,15 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     transactionTimestamp = paymentIntent.created ? new Date(paymentIntent.created * 1000) : new Date();
   }
 
+  const effectiveCoverFee = isFund && !stripePaymentIntentId ? false : Boolean(coverFee);
+
   const updatedItem = await registryService.contributeToItem(itemId, {
     name,
     email,
     amount,
     code: finalCode,
     message,
-    coverFee,
+    coverFee: effectiveCoverFee,
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),

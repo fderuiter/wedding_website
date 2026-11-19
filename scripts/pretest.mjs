@@ -87,6 +87,10 @@ async function main() {
   if (isUnitTest) {
     console.log('Unit test phase detected. Skipping full build...');
 
+    const testResultsDir = path.join(rootDir, 'test-results');
+    fs.mkdirSync(testResultsDir, { recursive: true });
+    fs.writeFileSync(path.join(testResultsDir, 'jest-a11y-violations.json'), '[]\n', 'utf8');
+
     // Check if Docker is available and running
     let dockerRunning = false;
     try {
