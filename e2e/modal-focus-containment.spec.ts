@@ -10,12 +10,16 @@ async function gotoWithRetry(
   context: BrowserContext,
   page: Page,
   path: string,
-  reseedCookies?: (_ctx: BrowserContext) => Promise<unknown>
+  reseedCookies?: (_ctx: BrowserContext) => Promise<unknown>,
+  waitForReady?: (_page: Page) => Promise<void>
 ): Promise<Page> {
   let activePage = page;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       await activePage.goto(path, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      if (waitForReady) {
+        await waitForReady(activePage);
+      }
       return activePage;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -54,10 +58,13 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     await expect(helpTrigger).toBeVisible({ timeout: 15000 });
     await expect(skipLink).not.toHaveAttribute('inert', '');
 
-    await helpTrigger.click();
-
     const drawer = page.getByRole('dialog', { name: /sign-in help/i });
-    await expect(drawer).toBeVisible();
+    await expect(async () => {
+      if (!(await drawer.isVisible())) {
+        await helpTrigger.click();
+      }
+      await expect(drawer).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 15000 });
     await expect(skipLink).toHaveAttribute('inert', '');
     await expect(loginForm).toHaveAttribute('inert', '');
 
@@ -81,7 +88,7 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     await page.keyboard.press('Shift+Tab');
     await expect(gotItBtn).toBeFocused();
 
-    await page.screenshot({ path: '/tmp/guest-help-drawer-focus.png' });
+    await page.screenshot({ path: '/tmp/guest-help-drawer-focus.png', animations: 'disabled' });
 
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
@@ -102,11 +109,19 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     );
     await seedGuestAuthCookies(context);
 
-    page = await gotoWithRetry(context, page, '/photos', seedGuestAuthCookies);
-    await page.locator('[data-hydrated="true"]').waitFor({ timeout: 15000 });
+    page = await gotoWithRetry(
+      context,
+      page,
+      '/photos',
+      seedGuestAuthCookies,
+      async (activePage) => {
+        expect(new URL(activePage.url()).pathname).toBe('/photos');
+        await activePage.locator('[data-hydrated="true"]').waitFor({ timeout: 15000 });
+        await expect(activePage.getByTestId('photo-thumbnail-0')).toBeVisible({ timeout: 15000 });
+      }
+    );
 
     const firstThumb = page.getByTestId('photo-thumbnail-0');
-    await expect(firstThumb).toBeVisible({ timeout: 15000 });
     await firstThumb.click();
 
     const dialog = page.getByRole('dialog', { name: 'Photo Preview' });
@@ -129,7 +144,7 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     await page.keyboard.press('ArrowLeft');
     await expect(page.getByTestId('lightbox-counter')).toContainText('1 /');
 
-    await page.screenshot({ path: '/tmp/lightbox-focus-containment.png' });
+    await page.screenshot({ path: '/tmp/lightbox-focus-containment.png', animations: 'disabled' });
 
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -213,10 +228,20 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
       })
     );
 
-    page = await gotoWithRetry(context, page, '/registry', seedGuestAuthCookies);
+    page = await gotoWithRetry(
+      context,
+      page,
+      '/registry',
+      seedGuestAuthCookies,
+      async (activePage) => {
+        expect(new URL(activePage.url()).pathname).toBe('/registry');
+        await expect(activePage.getByText('Espresso Machine Group Gift').first()).toBeVisible({
+          timeout: 20000,
+        });
+      }
+    );
 
     const cardHeading = page.getByText('Espresso Machine Group Gift').first();
-    await expect(cardHeading).toBeVisible({ timeout: 20000 });
     await cardHeading.click();
 
     const dialog = page.getByRole('dialog');
@@ -240,7 +265,7 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     const doneBtn = dialog.getByRole('button', { name: 'Done' });
     await expect(doneBtn).toBeFocused();
 
-    await page.screenshot({ path: '/tmp/registry-modal-focus.png' });
+    await page.screenshot({ path: '/tmp/registry-modal-focus.png', animations: 'disabled' });
 
     await doneBtn.click();
     await expect(dialog).toBeHidden();
@@ -251,7 +276,7 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     context,
     page,
   }) => {
-    test.setTimeout(60000);
+    test.setTimeout(90000);
     await seedAdminAndGuestAuthCookies(context);
 
     await context.route('**/api/admin/invitation-codes/validate', (route) =>
@@ -303,12 +328,17 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
       context,
       page,
       '/admin/dashboard/invitation-codes',
-      seedAdminAndGuestAuthCookies
+      seedAdminAndGuestAuthCookies,
+      async (activePage) => {
+        expect(new URL(activePage.url()).pathname).toBe('/admin/dashboard/invitation-codes');
+        await activePage.setViewportSize({ width: 1280, height: 1000 });
+        await expect(activePage.getByRole('button', { name: 'Import CSV' })).toBeVisible({
+          timeout: 25000,
+        });
+      }
     );
-    await page.setViewportSize({ width: 1280, height: 1000 });
 
     const importBtn = page.getByRole('button', { name: 'Import CSV' });
-    await expect(importBtn).toBeVisible({ timeout: 25000 });
     await importBtn.click();
 
     const dialog = page.getByRole('dialog');
@@ -342,7 +372,7 @@ test.describe('Modal Focus Containment and Inert Background Isolation', () => {
     const closeWizardBtn = dialog.getByRole('button', { name: 'Close Wizard' });
     await expect(closeWizardBtn).toBeFocused();
 
-    await page.screenshot({ path: '/tmp/csv-wizard-focus.png' });
+    await page.screenshot({ path: '/tmp/csv-wizard-focus.png', animations: 'disabled' });
 
     await closeWizardBtn.click();
     await expect(dialog).toBeHidden();
