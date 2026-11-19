@@ -285,7 +285,18 @@ export default function AdminSettingsPage() {
     e.preventDefault();
     if (!localConfig) return;
     try {
-      await saveSettings(localConfig);
+      const saved: any = await saveSettings(localConfig);
+      if (saved && typeof saved === 'object') {
+        setLocalConfig((prev: any) => ({
+          ...prev,
+          ...saved,
+          weddingDate: saved.weddingDate ? String(saved.weddingDate).split('T')[0] : prev?.weddingDate,
+          smtpPass: '',
+          resendApiKey: '',
+          sendgridApiKey: '',
+          twilioAuthToken: '',
+        }));
+      }
       addToast('Branding profile saved successfully.', 'success');
     } catch (err: any) {
       addToast(err.message || 'Failed to save profile', 'error');
@@ -355,6 +366,10 @@ export default function AdminSettingsPage() {
           draftType="config"
           draftData={{
             ...localConfig,
+            smtpPass: undefined,
+            resendApiKey: undefined,
+            sendgridApiKey: undefined,
+            twilioAuthToken: undefined,
             weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
           }}
           entityId={selectedProfileId}
@@ -746,8 +761,23 @@ export default function AdminSettingsPage() {
                         <Input type="text" name="smtpUser" value={localConfig.smtpUser || ''} onChange={handleChange} />
                       </FormGroup>
                       <FormGroup>
-                        <Label>SMTP Password</Label>
-                        <Input type="password" name="smtpPass" value={localConfig.smtpPass || ''} onChange={handleChange} />
+                        <Label htmlFor="smtpPass">
+                          SMTP Password
+                          {localConfig.hasSmtpPass && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                              Configured
+                            </span>
+                          )}
+                        </Label>
+                        <Input
+                          id="smtpPass"
+                          type="password"
+                          name="smtpPass"
+                          autoComplete="new-password"
+                          value={localConfig.smtpPass || ''}
+                          onChange={handleChange}
+                          placeholder={localConfig.hasSmtpPass ? 'Leave blank to keep saved password' : 'Enter SMTP password'}
+                        />
                       </FormGroup>
                     </div>
                   </div>
@@ -759,8 +789,23 @@ export default function AdminSettingsPage() {
                     <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Resend API Credentials</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <FormGroup>
-                        <Label>Resend API Key</Label>
-                        <Input type="password" name="resendApiKey" value={localConfig.resendApiKey || ''} onChange={handleChange} placeholder="re_123456789..." />
+                        <Label htmlFor="resendApiKey">
+                          Resend API Key
+                          {localConfig.hasResendApiKey && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                              Configured
+                            </span>
+                          )}
+                        </Label>
+                        <Input
+                          id="resendApiKey"
+                          type="password"
+                          name="resendApiKey"
+                          autoComplete="new-password"
+                          value={localConfig.resendApiKey || ''}
+                          onChange={handleChange}
+                          placeholder={localConfig.hasResendApiKey ? 'Leave blank to keep saved API key' : 're_123456789...'}
+                        />
                       </FormGroup>
                       <FormGroup>
                         <Label>Sender Email Address</Label>
@@ -776,8 +821,23 @@ export default function AdminSettingsPage() {
                     <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">SendGrid API Credentials</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <FormGroup>
-                        <Label>SendGrid API Key</Label>
-                        <Input type="password" name="sendgridApiKey" value={localConfig.sendgridApiKey || ''} onChange={handleChange} placeholder="SG.123456789..." />
+                        <Label htmlFor="sendgridApiKey">
+                          SendGrid API Key
+                          {localConfig.hasSendgridApiKey && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                              Configured
+                            </span>
+                          )}
+                        </Label>
+                        <Input
+                          id="sendgridApiKey"
+                          type="password"
+                          name="sendgridApiKey"
+                          autoComplete="new-password"
+                          value={localConfig.sendgridApiKey || ''}
+                          onChange={handleChange}
+                          placeholder={localConfig.hasSendgridApiKey ? 'Leave blank to keep saved API key' : 'SG.123456789...'}
+                        />
                       </FormGroup>
                       <FormGroup>
                         <Label>Sender Email Address</Label>
@@ -797,8 +857,23 @@ export default function AdminSettingsPage() {
                         <Input type="text" name="twilioAccountSid" value={localConfig.twilioAccountSid || ''} onChange={handleChange} placeholder="AC123456789..." />
                       </FormGroup>
                       <FormGroup>
-                        <Label>Auth Token</Label>
-                        <Input type="password" name="twilioAuthToken" value={localConfig.twilioAuthToken || ''} onChange={handleChange} />
+                        <Label htmlFor="twilioAuthToken">
+                          Auth Token
+                          {localConfig.hasTwilioAuthToken && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                              Configured
+                            </span>
+                          )}
+                        </Label>
+                        <Input
+                          id="twilioAuthToken"
+                          type="password"
+                          name="twilioAuthToken"
+                          autoComplete="new-password"
+                          value={localConfig.twilioAuthToken || ''}
+                          onChange={handleChange}
+                          placeholder={localConfig.hasTwilioAuthToken ? 'Leave blank to keep saved auth token' : 'Enter auth token'}
+                        />
                       </FormGroup>
                       <FormGroup>
                         <Label>From Phone Number</Label>

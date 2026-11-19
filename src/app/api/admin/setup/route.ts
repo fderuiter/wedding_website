@@ -198,11 +198,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
   });
 
+  const sanitizedUpdatedConfig = toPublicAppConfig(AppConfigSchema.parse(updatedConfig));
+
   await prisma.snapshotVersion.create({
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: updatedConfig as any,
+      data: sanitizedUpdatedConfig as any,
       author: 'Admin (Setup)',
     },
   });
