@@ -4,9 +4,6 @@ import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { GuestLookupSchema } from '@/utils/validation';
-import { isGuestRequest } from '@/core/auth/guest.server';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
-import { env } from '@/env';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   let body: unknown;
@@ -31,8 +28,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
   if (searchName) {
     conditions.push({ guestName: { equals: searchName, mode: 'insensitive' } });
-    conditions.push({ plusOneFirstName: { equals: searchName, mode: 'insensitive' } });
-    conditions.push({ plusOneLastName: { equals: searchName, mode: 'insensitive' } });
 
     const tokens = searchName.split(/\s+/).filter(Boolean);
     if (tokens.length >= 2) {
@@ -61,34 +56,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(404, 'No invitation found matching the provided details.');
   }
 
-  const response = NextResponse.json({
+  return NextResponse.json({
     success: true,
     guestName: invite.guestName,
     data: {
       guestName: invite.guestName,
     },
   });
-
-  const isGuest = await isGuestRequest(req);
-  if (isGuest) {
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-
-    const inviteToken = await signGuestInviteSessionToken({
-      code: invite.code,
-      guestName: invite.guestName,
-      iat,
-      exp,
-    });
-
-    response.cookies.set(GUEST_INVITE_COOKIE, inviteToken, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60,
-    });
-  }
-
-  return response;
 });

@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
+import {
+  REGISTRY_DEFAULT_PAGE_LIMIT,
+  REGISTRY_MAX_CATALOG_LIMIT,
+} from '@/utils/registryPagination';
 import type { IRegistryRepository, GetItemsOptions, PaginatedRegistryItems, CreateRegistryItemInput } from './types';
 import { RegistryItemSchema, RegistryItemDTO } from './schemas';
 
@@ -20,7 +24,7 @@ class RegistryRepository implements IRegistryRepository {
   async getAllItems(options: GetItemsOptions = {}): Promise<PaginatedRegistryItems> {
     const {
       page = 1,
-      limit = 20,
+      limit = REGISTRY_DEFAULT_PAGE_LIMIT,
       category,
       minPrice,
       maxPrice,
@@ -29,7 +33,10 @@ class RegistryRepository implements IRegistryRepository {
     } = options;
 
     const normalizedPage = Math.max(1, Math.floor(page || 1));
-    const normalizedLimit = Math.min(500, Math.max(1, Math.floor(limit || 20)));
+    const normalizedLimit = Math.min(
+      REGISTRY_MAX_CATALOG_LIMIT,
+      Math.max(1, Math.floor(limit || REGISTRY_DEFAULT_PAGE_LIMIT))
+    );
     const skip = (normalizedPage - 1) * normalizedLimit;
     const take = normalizedLimit;
 

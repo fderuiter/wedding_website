@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
 import { signAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
+import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 
 describe('Middleware Route Classification and Authorization Bypass', () => {
   const originalEnv = process.env;
@@ -186,6 +187,26 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       expect(res.status).toBe(401);
       const json = await res.json();
       expect(json.error).toBe('Unauthorized');
+    });
+
+    it('blocks guest-authenticated GET requests to /api/media and /api/media/ with 401 while allowing /api/photos', async () => {
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const guestHeaders = {
+        host: 'localhost:3000',
+        cookie: `${GUEST_COOKIE}=${guestToken}`,
+      };
+
+      const mediaRes = await middleware(new NextRequest('http://localhost:3000/api/media?page=1&limit=100', { headers: guestHeaders }));
+      expect(mediaRes.status).toBe(401);
+
+      const trailingSlashRes = await middleware(new NextRequest('http://localhost:3000/api/media/', { headers: guestHeaders }));
+      expect(trailingSlashRes.status).toBe(401);
+
+      const childRes = await middleware(new NextRequest('http://localhost:3000/api/media/123', { headers: guestHeaders }));
+      expect(childRes.status).toBe(401);
+
+      const photosRes = await middleware(new NextRequest('http://localhost:3000/api/photos', { headers: guestHeaders }));
+      expect(photosRes.status).toBe(200);
     });
   });
 });
