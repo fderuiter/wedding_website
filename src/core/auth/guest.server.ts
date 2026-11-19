@@ -9,8 +9,24 @@ import {
 export const GUEST_COOKIE = 'guest_auth';
 
 async function getSecret(): Promise<string> {
-  const secret = env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret';
-  const passcode = env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026';
+  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+  const fallback = isProduction ? '' : 'default-guest-session-secret';
+  const secret = isProduction
+    ? (process.env.GUEST_SESSION_SECRET || fallback)
+    : (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || fallback);
+  const passcode = isProduction
+    ? (process.env.GUEST_PASSCODE || 'wedding2026')
+    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
+
+  if (isProduction) {
+    if (!secret || secret === 'default-guest-session-secret') {
+      throw new Error('GUEST_SESSION_SECRET must be configured with a distinct secret in production');
+    }
+    if (secret.length < 32) {
+      throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production');
+    }
+  }
+
   if (secret === passcode) {
     throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
   }

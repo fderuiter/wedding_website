@@ -31,7 +31,18 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const { passcode } = parseResult.data;
   const trimmedCode = passcode.trim();
 
-  const expectedPasscode = env.GUEST_PASSCODE;
+  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+  const expectedPasscode = isProduction
+    ? (process.env.GUEST_PASSCODE ?? '')
+    : env.GUEST_PASSCODE;
+
+  if (isProduction && (!expectedPasscode.trim() || expectedPasscode.trim() === 'wedding2026')) {
+    return NextResponse.json(
+      { success: false, error: 'Guest passcode is not configured for production.' },
+      { status: 503 }
+    );
+  }
+
   const matchesSharedPasscode =
     Boolean(expectedPasscode) &&
     (safeComparePasscode(passcode, expectedPasscode) ||

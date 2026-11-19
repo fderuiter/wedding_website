@@ -485,7 +485,7 @@ The application requires the following environment variables in deployment envir
 - `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcards. *Required.*
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
 - `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh` (default: `false`). *Optional.*
-- `GUEST_PASSCODE`: Global passcode required for guest access (default: `wedding2026`).
+- `GUEST_PASSCODE`: Global passcode required for guest access (unique, non-default; default: `wedding2026` in dev/test only). *Required in production.*
 - `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (min 32 characters, distinct from `GUEST_PASSCODE`; default: `default-guest-session-secret` in dev/test only). *Required in production.*
 - `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
 - `CRON_SECRET`: Authorization secret for cron worker endpoints. *Optional.*

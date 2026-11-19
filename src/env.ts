@@ -66,6 +66,14 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
+    const trimmedPasscode = data.GUEST_PASSCODE?.trim();
+    if (!trimmedPasscode || trimmedPasscode === 'wedding2026') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GUEST_PASSCODE'],
+        message: 'GUEST_PASSCODE is required and must not use the default fallback in production',
+      });
+    }
     if (!data.GUEST_SESSION_SECRET || data.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
       ctx.addIssue({
         code: 'custom',
@@ -80,7 +88,11 @@ const envSchema = z.object({
       });
     }
   }
-  if (data.GUEST_SESSION_SECRET && data.GUEST_PASSCODE && data.GUEST_SESSION_SECRET === data.GUEST_PASSCODE) {
+  if (
+    data.GUEST_SESSION_SECRET &&
+    data.GUEST_PASSCODE &&
+    (data.GUEST_SESSION_SECRET === data.GUEST_PASSCODE || data.GUEST_SESSION_SECRET === data.GUEST_PASSCODE.trim())
+  ) {
     ctx.addIssue({
       code: 'custom',
       path: ['GUEST_SESSION_SECRET'],
@@ -204,8 +216,16 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
     console.error('❌ Security Error: GUEST_SESSION_SECRET must be at least 32 characters long in production.');
     throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production.');
   }
-  const effectivePasscode = process.env.GUEST_PASSCODE || 'wedding2026';
-  if (process.env.GUEST_SESSION_SECRET === effectivePasscode) {
+  const trimmedGuestPasscode = process.env.GUEST_PASSCODE?.trim();
+  if (!trimmedGuestPasscode) {
+    console.error('❌ Security Error: GUEST_PASSCODE environment variable is missing in production environment.');
+    throw new Error('GUEST_PASSCODE environment variable is required in production.');
+  }
+  if (trimmedGuestPasscode === 'wedding2026') {
+    console.error('❌ Security Error: GUEST_PASSCODE must not use the default fallback passcode in production.');
+    throw new Error('GUEST_PASSCODE must not use the default fallback passcode in production.');
+  }
+  if (process.env.GUEST_SESSION_SECRET === process.env.GUEST_PASSCODE || process.env.GUEST_SESSION_SECRET === trimmedGuestPasscode) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
     throw new Error('GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
   }
