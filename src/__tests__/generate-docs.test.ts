@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { z } from 'zod';
 import {
   getZodType,
@@ -6,9 +9,13 @@ import {
   generateConfigTable,
   generateApiRoutesSection,
   generateEnvSpecs,
+  generateFeatureMetadataTable,
+  generateAdminEntityTable,
+  generateFeatureBarrelsTable,
+  updateFeatureModulesMd,
 } from '../../scripts/generate-docs';
 import { AppConfigSchema } from '../features/content/schemas';
-import { DEFAULT_MODULE_CONFIG } from '../lib/modules';
+import { DEFAULT_MODULE_CONFIG, FEATURE_METADATA } from '../lib/modules';
 
 describe('Documentation Generator - getZodType & Spec Tables', () => {
   describe('Primitive and structural types', () => {
@@ -213,6 +220,163 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(customTable).toContain(
         "| `customField` | `'a\\\\b' \\| 'c\\|d'` | `Virtual DTO` | `Server-only` | Supports C:\\\\path\\\\file \\| fallback \\\\\\| literal and multiline notes |"
       );
+    });
+  });
+
+  describe('FEATURE_MODULES.md Automated Table Generation', () => {
+    it('generates all 10 presentation feature toggles with dependencies, persistence, and HTTP 400 groupGifting coverage', () => {
+      const table = generateFeatureMetadataTable();
+      const rows = table.trim().split('\n').slice(2);
+      expect(rows).toHaveLength(10);
+
+      for (const key of Object.keys(FEATURE_METADATA)) {
+        expect(table).toContain(`| \`${key}\` |`);
+      }
+
+      expect(table).toContain('Requires `registry`');
+      expect(table).toContain('HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent`');
+      expect(table).toContain('`/registry/edit-item/[id]`');
+      expect(table).toContain('`Virtual DTO` + `Prisma` (`showCountdown`)');
+      expect(table).toContain('`Virtual DTO` + `Prisma` (`showAddToCalendar`)');
+    });
+
+    it('generates all 7 exact plural ENTITY_KEY slugs from src/features/admin/registry.ts', () => {
+      const table = generateAdminEntityTable();
+      const rows = table.trim().split('\n').slice(2);
+      expect(rows).toHaveLength(7);
+
+      const expectedSlugs = [
+        'content-nodes',
+        'wedding-party',
+        'attractions',
+        'registry-items',
+        'invitation-codes',
+        'seating-tables',
+        'sub-events',
+      ];
+      for (const slug of expectedSlugs) {
+        expect(table).toContain(`| \`${slug}\` |`);
+        expect(table).toContain(`\`/api/admin/${slug}\``);
+      }
+
+      expect(table).not.toContain('| `registry-item` |');
+      expect(table).not.toContain('| `seating-table` |');
+      expect(table).not.toContain('| `sub-event` |');
+      expect(table).not.toContain('| `invitation-code` |');
+      expect(table).not.toContain('| `content` |');
+    });
+
+    it('generates all 11 feature module barrels from src/features/*/index.ts and excludes non-existent service symbols', () => {
+      const table = generateFeatureBarrelsTable();
+      expect(table).toContain('Total domain feature modules: **11** under `src/features/`.');
+
+      const expectedDomains = [
+        'admin',
+        'attractions',
+        'broadcast',
+        'content',
+        'logistics',
+        'media',
+        'registry',
+        'seating',
+        'sub-events',
+        'weather',
+        'wedding-party',
+      ];
+      for (const domain of expectedDomains) {
+        expect(table).toContain(`| \`${domain}\` | \`src/features/${domain}/index.ts\` |`);
+      }
+
+      const staleRemovedSymbols = [
+        'attractionsService',
+        'mediaService',
+        'seatingService',
+        'SubEventRepository',
+        'weatherProxy',
+        'weddingPartyService',
+        'sendBroadcast',
+        'BroadcastModal',
+        'LogisticsRepository',
+      ];
+      for (const removedSymbol of staleRemovedSymbols) {
+        expect(table).not.toContain(`\`${removedSymbol}\``);
+      }
+    });
+
+    it('synchronizes FEATURE_MODULES.md markers in an isolated workspace and detects barrel/entity changes or missing markers', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'generate-feature-modules-'));
+      try {
+        const adminDir = path.join(tmpDir, 'src/features/admin');
+        const customDir = path.join(tmpDir, 'src/features/custom');
+        fs.mkdirSync(adminDir, { recursive: true });
+        fs.mkdirSync(customDir, { recursive: true });
+
+        fs.writeFileSync(
+          path.join(customDir, 'admin-service.ts'),
+          [
+            'export class CustomEntityAdminService {',
+            "  static readonly ENTITY_KEY = 'custom-entities';",
+            '  constructor() {',
+            "    super(schema, 'CustomEntity');",
+            '  }',
+            '}',
+          ].join('\n'),
+        );
+        fs.writeFileSync(
+          path.join(customDir, 'index.ts'),
+          [
+            "export { CustomEntityAdminService } from './admin-service';",
+            'export const customHelper = () => true;',
+            'export type CustomItemDTO = { id: string };',
+          ].join('\n'),
+        );
+        fs.writeFileSync(
+          path.join(adminDir, 'registry.ts'),
+          [
+            'export async function getEntityService(entity: string) {',
+            "  const [{ CustomEntityAdminService }] = await Promise.all([import('@/features/custom')]);",
+            '  const serviceMap = {',
+            '    [CustomEntityAdminService.ENTITY_KEY]: new CustomEntityAdminService(),',
+            '  };',
+            '  return serviceMap[entity] || null;',
+            '}',
+            'export { getEntityService as lookupEntity };',
+          ].join('\n'),
+        );
+        fs.writeFileSync(path.join(adminDir, 'index.ts'), "export { getEntityService } from './registry';\n");
+
+        const docPath = path.join(tmpDir, 'FEATURE_MODULES.md');
+        fs.writeFileSync(
+          docPath,
+          [
+            '# Feature Modules',
+            '<!-- BEGIN AUTOGENERATED FEATURE_METADATA -->',
+            'stale metadata',
+            '<!-- END AUTOGENERATED FEATURE_METADATA -->',
+            '<!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->',
+            'stale entities',
+            '<!-- END AUTOGENERATED ADMIN_ENTITIES -->',
+            '<!-- BEGIN AUTOGENERATED FEATURE_BARRELS -->',
+            'stale barrels',
+            '<!-- END AUTOGENERATED FEATURE_BARRELS -->',
+          ].join('\n'),
+        );
+
+        updateFeatureModulesMd(tmpDir);
+        const updated = fs.readFileSync(docPath, 'utf8');
+        expect(updated).not.toContain('stale metadata');
+        expect(updated).not.toContain('stale entities');
+        expect(updated).not.toContain('stale barrels');
+        expect(updated).toContain('| `custom-entities` | `CustomEntityAdminService` | `src/features/custom/index.ts` | `CustomEntity` |');
+        expect(updated).toContain('| `custom` | `src/features/custom/index.ts` | `CustomEntityAdminService`, `customHelper` | `CustomItemDTO` |');
+
+        fs.writeFileSync(docPath, '# Missing markers\n');
+        expect(() => updateFeatureModulesMd(tmpDir)).toThrow(
+          'FEATURE_MODULES.md is missing one or more required AUTOGENERATED HTML marker blocks',
+        );
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 });

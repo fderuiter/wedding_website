@@ -14,6 +14,7 @@ import {
   generateConfigTable,
   generateRoutesDiagram,
   updateArchitectureMd,
+  updateFeatureModulesMd,
   generateOpenApiSpec,
 } from './generate-docs';
 
@@ -407,8 +408,9 @@ export async function generatePortal() {
     throw new Error('Failed to generate configuration table, route diagram, or API routes inventory');
   }
 
-  // Update ARCHITECTURE.md and OpenAPI specification
+  // Update ARCHITECTURE.md, FEATURE_MODULES.md, and OpenAPI specification
   updateArchitectureMd();
+  updateFeatureModulesMd();
   await generateOpenApiSpec();
 
   console.log(`\n--- Step 3: Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);

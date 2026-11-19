@@ -1,48 +1,92 @@
 # Web Scraper Documentation
 
-This document provides details on the web scraper functionality used to pre-fill registry item details from a given URL.
+This document describes the runtime architecture, endpoints, security controls, selector precedence, and error domains for the product metadata scraper used to pre-fill gift registry items.
 
 ## Overview
 
-The web scraper is exposed via the `POST /api/registry/scrape` API endpoint. It is an admin-only feature designed to simplify adding new items to the registry by automatically fetching metadata and pricing from a product page.
+The registry scraper provides two **Admin-only** endpoints backed by `node-html-parser` and the SSRF-hardened `safeFetch` client:
 
-The backend uses `node-html-parser` to parse HTML and extract product information. Rather than relying solely on Open Graph meta tags, the scraper employs a multi-tier extraction pipeline including JSON-LD structured data parsing, Open Graph and Twitter meta tags, domain-specific vendor selectors for major retailers (Amazon, Target, Costco), and site favicon resolution.
+1. **Single-URL Scrape (`POST /api/registry/scrape`)**: Implemented in [src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L406-L449) ([src/app/api/registry/scrape/route.ts](src/app/api/registry/scrape/route.ts#L1)) for interactive single-item metadata lookup in the admin registry modal.
+2. **Batch URL Scrape (`POST /api/registry/scrape/batch`)**: Implemented in [src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L44-L130) ([src/app/api/registry/scrape/batch/route.ts](src/app/api/registry/scrape/batch/route.ts#L1)) for bulk importing up to 20 product URLs concurrently.
 
-## Architecture and Extraction Workflow
+Both endpoints require an authenticated administrator session (`isProtectedRoute` -> `Admin-only`) and **skip** `isFeatureEnabled('registry')` so administrators can curate registry items even while the public registry presentation toggle is disabled.
 
-The scraper follows a strict sequence to ensure security, accuracy, and reliability when fetching external resources:
+---
 
-1.  **Request Initiation:** An administrator submits a product URL in the registry admin dashboard, sending a POST request to `/api/registry/scrape`.
-2.  **URL Validation & SSRF Protection:** The input URL is validated using standard schema validation. Before initiating an HTTP connection, a Server-Side Request Forgery (SSRF) guard clause verifies the hostname by resolving it to an IP address and blocking requests targeting private, local, or restricted network ranges.
-3.  **Content Fetching:** A fetch request is dispatched with customized browser user-agent and accept headers to emulate a standard web browser. Requests are bound by a strict timeout (via `AbortController`).
-4.  **HTML Parsing:** The response HTML body is parsed into a virtual DOM using `node-html-parser`.
-5.  **Data Extraction Pipeline:**
-    *   **JSON-LD Structured Data Parsing:** The DOM is searched for `<script type="application/ld+json">` elements. JSON payload trees are parsed safely to extract structured `Product` properties including `name`, `description`, `image` (URL and caption/alt text), and price from `offers` or `priceSpecification`.
-    *   **Meta Tag Extraction:** Fallback product metadata is retrieved from Open Graph tags (`og:title`, `og:description`, `og:image`, `og:image:alt`, `og:price:amount`), Twitter card tags (`twitter:image`, `twitter:data1`), and standard `<title>` elements.
-    *   **Vendor-Specific Selectors:** Custom DOM selector heuristics target retailer-specific markup for popular store domains:
-        *   **Amazon (`amazon.com`):** Targets `#productTitle`/`#title` for title, `#feature-bullets`/`#productDescription` for description, `.a-price .a-offscreen` for price, and `#imgTagWrapperId img`/`#landingImage`/`#main-image` for product images.
-        *   **Target (`target.com`):** Targets `h1[data-test="product-title"]`/`h1.pdp-title` for title, `div[data-test="item-details-description"]`/`#pdp-tab-description` for description, and `div[data-test="product-image"] img`/`img[data-test="current-image"]` for images.
-        *   **Costco (`costco.com`):** Targets `h1[data-qa="product-title"]`/`.product-h1`/`h1.product-title` for title, `#product-description`/`.product-info-description` for description, and `#initialLoadedImage`/`.product-image-canvas img`/`img[data-qa="product-image"]` for images.
-    *   **Multi-Tier Price Extraction:** Price is evaluated hierarchically from JSON-LD offers/specifications, `og:price:amount`, `product:price:amount`, Twitter price data, or vendor DOM price elements.
-    *   **Favicon Fallback:** Site favicons are extracted from HTML `<link rel="icon">`, `<link rel="shortcut icon">`, or `<link rel="apple-touch-icon">` tags. If no link tag exists, it checks `/favicon.ico` or defaults to Google's favicon service (`https://www.google.com/s2/favicons?domain=...`).
-6.  **Response Generation:** The final normalized metadata (`name`, `description`, `price`, `imageUrl`, `imageAlt`, `vendorUrl`, `quantity`, `faviconUrl`) is returned as a JSON response.
+## Endpoints, Limits, and Timeouts
+
+| Property | Single Scrape (`POST /api/registry/scrape`) | Batch Scrape (`POST /api/registry/scrape/batch`) |
+| --- | --- | --- |
+| **Handler** | [src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L406-L449) | [src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L44-L130) |
+| **Request Schema** | `ScrapeUrlSchema` (`{ url: string }`, HTTP/HTTPS, max `2,000` chars) in [src/features/registry/schemas.ts](src/features/registry/schemas.ts#L377-L379) | `BatchScrapeUrlsSchema` (`{ urls: string[] }`, **min `1` / max `20` URLs**, max `2,000` chars each) in [src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L10-L15) |
+| **Concurrency** | `1` URL per request | Worker pool of **`5` concurrent scrapes** (`BATCH_CONCURRENCY = 5`) |
+| **Timeouts** | **`4,500 ms`** `AbortController` timeout (`SCRAPE_TIMEOUT_MS = 4500`) | **`10,000 ms`** per-URL timeout (`PER_URL_TIMEOUT_MS = 10000`) bounded by a **`15,000 ms`** master batch `AbortController` (`MASTER_BATCH_TIMEOUT_MS = 15000`) |
+| **Success Response** | HTTP `200` `{ success: true, data: ScrapedProductData }` | HTTP `200` `{ success: true, results, total, successful, failed }` |
+| **Failure Behavior** | Throws HTTP `400` on invalid URL / SSRF block or HTTP `422` `ApiError` with `{ domain, code }` | Throws HTTP `400` only if the `{ urls }` envelope fails schema validation (e.g., empty array or `> 20` URLs); individual URL failures **never abort the batch** and populate `{ success: false, error, errorDomain }` per item |
+
+---
+
+## SSRF Protection & Redirect Validation
+
+All outbound requests execute through `safeFetch` ([src/utils/safeFetch.ts](src/utils/safeFetch.ts#L31-L109)) with browser-like `User-Agent` and `Accept` headers:
+
+1. **Protocol Allowlist**: Only `http:` and `https:` URLs are permitted ([src/utils/validation.ts](src/utils/validation.ts#L210-L215) and [src/utils/safeFetch.ts](src/utils/safeFetch.ts#L39-L41)).
+2. **DNS Resolution & Private Range Blocking**: Before opening a socket, `validateAndResolveHost` resolves the target hostname and blocks loopback (`127.0.0.0/8`, `::1`), private RFC 1918 ranges, link-local / cloud metadata addresses (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), multicast, and unspecified IPs.
+3. **DNS-Rebinding Pinning**: `safeFetch` attaches a per-request `undici` `Agent` dispatcher whose custom `lookup` callback pins the TCP/TLS connection to the exact validated IP address so an attacker cannot rebind DNS between validation and socket connection.
+4. **Validated Redirect Hops**: Redirects are followed manually (`redirect: 'manual'`) for up to **`5` hops** (`MAX_REDIRECTS = 5`), re-running full URL and SSRF IP validation on every `Location` target before following the hop.
+
+---
+
+## Metadata Extraction Precedence
+
+Once `node-html-parser` parses the HTML document, `scrapeProductUrl` ([src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L105-L183)) resolves fields in strict priority order. Across `name`, `description`, and `imageUrl`, **JSON-LD structured data is evaluated first, Open Graph / Twitter meta tags take priority second, and vendor-specific DOM selectors act only as third-tier fallbacks**:
+
+1. **`name` (`string`)**:
+   - JSON-LD `Product.name` (`<script type="application/ld+json">`, traversing nested `@graph` arrays and matching `@type` containing `Product`)
+   - Open Graph `<meta property="og:title">`
+   - Vendor title selector (`#productTitle, #title` on `amazon.*`; `h1[data-test="product-title"], h1.pdp-title` on `target.com`; `h1[data-qa="product-title"], .product-h1, h1.product-title` on `costco.com`)
+   - Document `<title>` tag (defaulting to `''` if absent)
+2. **`description` (`string`)**:
+   - JSON-LD `Product.description`
+   - Open Graph `<meta property="og:description">`
+   - Vendor description selector (`#feature-bullets, #productDescription` on `amazon.*`; `div[data-test="item-details-description"], #pdp-tab-description` on `target.com`; `#product-description, .product-info-description` on `costco.com`)
+3. **`imageUrl` (`string`)**:
+   - JSON-LD `Product.image` (string, array, or `ImageObject.url` / `contentUrl`)
+   - Open Graph `<meta property="og:image">`
+   - Twitter card `<meta name="twitter:image">` (or `property="twitter:image"`)
+   - Vendor image selector (`#imgTagWrapperId img, #landingImage, #main-image, img#landingImage` on `amazon.*`; `div[data-test="product-image"] img, img[data-test="current-image"], picture img` on `target.com`; `#initialLoadedImage, .product-image-canvas img, img[data-qa="product-image"]` on `costco.com`), resolved to an absolute URL against the scraped `url`
+4. **`imageAlt` (`string | undefined`)**:
+   - JSON-LD `ImageObject.caption` or `ImageObject.name`
+   - Open Graph `<meta property="og:image:alt">`
+   - Twitter card `<meta name="twitter:image:alt">`
+   - Matched vendor `<img>` `alt` attribute (falling back to `name` when non-empty)
+5. **`price` (`number | undefined`)**:
+   - JSON-LD `Product.offers` (`price`, `lowPrice`, or nested `priceSpecification.price`), followed by top-level `Product.price` / `Product.lowPrice`
+   - Open Graph `<meta property="og:price:amount">`
+   - Product meta `<meta property="product:price:amount">`
+   - Twitter card `<meta name="twitter:data1">`, evaluated **only** when `twitter:label1` contains `"price"` (case-insensitive)
+   - Unconditional DOM fallback **`.a-price .a-offscreen`**: queried on **every** page regardless of hostname ([src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L136-L141)). No Target- or Costco-specific DOM price selectors exist; if none of the tiers yields a positive numeric value, `price` remains `undefined`.
+6. **`faviconUrl` (`string`)**:
+   - HTML `<link>` tag matching `rel~="icon"`, `rel="shortcut icon"`, or `rel="apple-touch-icon"` with a non-empty `href`, resolved relative to `url`
+   - **Static `/favicon.ico` URL construction**: when no `<link>` icon tag is present, `extractFavicon` ([src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L384-L404)) returns `new URL('/favicon.ico', url).toString()` directly **without** performing any network `HEAD`/`GET` probe (falling back to `https://www.google.com/s2/favicons?domain=<hostname>&sz=64` only if `new URL('/favicon.ico', url)` throws).
+7. **`vendorUrl` & `quantity`**:
+   - `vendorUrl` echoes the requested `url`, and `quantity` defaults to `1`.
+
+---
 
 ## Error Handling & Error Domains
 
-When scraping fails or is rejected by external retailers, the API throws structured `ApiError` exceptions classified into distinct error domains:
+Scraper failures are categorized into four structured `ScrapeErrorDomain` values across [src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L22-L103) and [src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L17-L108):
 
-*   **`BLOCKED_BY_VENDOR`:** Returned when a retailer's site blocks the scraper with HTTP status codes `403 Forbidden`, `401 Unauthorized`, or `429 Too Many Requests`. This occurs when cloud Web Application Firewalls (WAF) or anti-bot measures (such as Cloudflare or Akamai) reject automated user-agents.
-*   **`URL_NOT_FOUND`:** Returned when the requested product page responds with HTTP status codes `404 Not Found` or `410 Gone`.
-*   **`NETWORK_TIMEOUT`:** Returned when the network fetch fails, connections are refused, or the request exceeds the server timeout cutoff.
+* **`INVALID_URL`**: Returned per item in `POST /api/registry/scrape/batch` when an entry in `urls` is empty, fails `new URL()` parsing, or uses a protocol other than `http:` or `https:` ([src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L29-L42)). On single-URL `POST /api/registry/scrape`, malformed or non-HTTP(S) URLs are rejected upfront by `ScrapeUrlSchema` with **HTTP 400**.
+* **`BLOCKED_BY_VENDOR`**: Returned when an upstream retailer responds with HTTP `401 Unauthorized`, `403 Forbidden`, or `429 Too Many Requests` (for example, Cloudflare or Akamai bot challenges). Single scrape throws **HTTP 422** with `details: { domain: 'BLOCKED_BY_VENDOR', code }`; batch scrape records `errorDomain: 'BLOCKED_BY_VENDOR'` on that item (`POST /api/registry/scrape/batch` also maps SSRF `Blocked: ...` rejections to `BLOCKED_BY_VENDOR` per item, whereas single scrape returns **HTTP 400**).
+* **`URL_NOT_FOUND`**: Returned when the upstream product page responds with HTTP `404 Not Found` or `410 Gone` (HTTP 422 on single scrape; per-item `errorDomain: 'URL_NOT_FOUND'` on batch scrape).
+* **`NETWORK_TIMEOUT`**: Returned when the upstream response returns any other non-2xx HTTP status, encounters a DNS/socket/TLS error, or aborts due to the `4,500 ms` single timeout, `10,000 ms` per-URL batch timeout, or `15,000 ms` master batch timeout (HTTP 422 on single scrape; per-item `errorDomain: 'NETWORK_TIMEOUT'` on batch scrape).
 
-## Known Issues and Limitations
+---
 
-*   **Anti-Bot Blocking:** Retailers frequently employ sophisticated anti-bot protections (e.g., Akamai Bot Manager, Cloudflare Bot Management). Scrapes to sites like Costco, Target, or Amazon may periodically fail with `BLOCKED_BY_VENDOR`.
-*   **Client-Side Rendering:** `node-html-parser` parses static HTML retrieved from the fetch response. Sites that require client-side JavaScript execution (Single Page Applications) to load product details or images may yield incomplete metadata if the information is not present in initial HTML or JSON-LD tags.
-*   **Inconsistent Vendor Layouts:** Retailers frequently update their DOM class names and layout structures. While JSON-LD and Open Graph tags mitigate this, vendor-specific selectors may require updates if retailer markup changes significantly.
+## Known Limitations
 
-## Areas for Improvement
-
-*   **Headless Browser Rendering:** Integrating browser automation engines like Puppeteer or Playwright for fallback rendering could allow executing client-side JavaScript and bypassing basic client-side bot detection.
-*   **Proxy Management:** Implementing residential proxy rotation could help mitigate `BLOCKED_BY_VENDOR` errors caused by IP-based rate limits on retailer sites.
-*   **Expanded Vendor Heuristics:** Adding custom selectors and JSON-LD edge case handlers for additional popular registry retailers (e.g., Williams Sonoma, Crate & Barrel, Macy's).
+* **Anti-Bot Challenges**: Major retailers (Amazon, Target, Costco) periodically challenge automated server fetches with HTTP `403` or `429` (`BLOCKED_BY_VENDOR`).
+* **Static HTML Parsing Only**: `node-html-parser` inspects the initial server-rendered HTML payload without executing client-side JavaScript. Single-page storefront apps that hydrate product metadata exclusively on the client may return partial fields unless JSON-LD or Open Graph tags are server-rendered.
+* **Retailer Markup Drift**: Vendor fallback selectors cover Amazon, Target, and Costco DOM conventions for title, description, and image, while DOM price fallback relies solely on `.a-price .a-offscreen` when JSON-LD and price meta tags are absent.

@@ -3,6 +3,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import ts from 'typescript';
 import { AppConfigSchema, PublicAppConfigSchema } from '../src/features/content/schemas';
+import {
+  DEFAULT_MODULE_CONFIG,
+  FEATURE_METADATA,
+  type FeatureId,
+  type FeatureMetadata,
+} from '../src/lib/modules';
 import { isProtectedRoute } from '../src/lib/routes';
 
 const scriptDir = typeof __dirname !== 'undefined'
@@ -569,6 +575,652 @@ export function updateArchitectureMd() {
   console.log('Successfully updated ARCHITECTURE.md');
 }
 
+// 5. Generate FEATURE_MODULES.md Sections
+interface FeatureRuntimeEnforcement {
+  persistence: string;
+  uiCoverage: string;
+  apiCoverage: string;
+}
+
+const FEATURE_RUNTIME_ENFORCEMENT: Record<FeatureId, FeatureRuntimeEnforcement> = {
+  registry: {
+    persistence: '`Virtual DTO`',
+    uiCoverage:
+      'Nav hidden; `/registry`, `/registry/add-item`, `/registry/edit-item/[id]` skip server `isFeatureEnabled`',
+    apiCoverage:
+      'HTTP 404 on `/api/registry/{items,items/batch,capabilities,contribute,payment-intent}`; skipped on `items/[id]`, `scrape`, `scrape/batch`, `session`, `validate-code`, `webhook/stripe`, `/api/admin/[entity]`',
+  },
+  groupGifting: {
+    persistence: '`Virtual DTO`',
+    uiCoverage: '`/registry` (group gift contribution UI)',
+    apiCoverage: 'HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent`',
+  },
+  guestPasscode: {
+    persistence: '`Virtual DTO`',
+    uiCoverage:
+      'Unchecked (`/guest/login`, `/guest`, `/guest/collect`, and `src/middleware.ts` skip `isFeatureEnabled`)',
+    apiCoverage: 'Unchecked (`POST /api/guest/login` skips `isFeatureEnabled`)',
+  },
+  weather: {
+    persistence: '`Virtual DTO`',
+    uiCoverage: 'Nav hidden; `/weather` returns HTTP 404',
+    apiCoverage: 'HTTP 404 on `GET /api/weather`',
+  },
+  weddingParty: {
+    persistence: '`Virtual DTO`',
+    uiCoverage:
+      'Nav hidden; `/wedding-party` returns HTTP 404 (`/admin/dashboard/wedding-party` skips `isFeatureEnabled`)',
+    apiCoverage: 'Unchecked (`/api/admin/[entity]` with `wedding-party` skips `isFeatureEnabled`)',
+  },
+  attractions: {
+    persistence: '`Virtual DTO`',
+    uiCoverage:
+      'Nav hidden; `/things-to-do` returns HTTP 404 (`/admin/dashboard/attractions` skips `isFeatureEnabled`)',
+    apiCoverage: 'Unchecked (`/api/admin/[entity]` with `attractions` skips `isFeatureEnabled`)',
+  },
+  gallery: {
+    persistence: '`Virtual DTO`',
+    uiCoverage:
+      'Nav + `/` link hidden; `/photos` & `/photos/slideshow` return HTTP 404 (`/admin/dashboard/media` skips `isFeatureEnabled`)',
+    apiCoverage:
+      'HTTP 404 on `/api/photos`, `/api/photos/upload`, `/api/guest/photos/upload`, `/api/media/*`, `/api/admin/photos/*`',
+  },
+  countdown: {
+    persistence: '`Virtual DTO` + `Prisma` (`showCountdown`)',
+    uiCoverage: 'Homepage (`/`) widget (`config.showCountdown && isFeatureEnabled`)',
+    apiCoverage: 'N/A',
+  },
+  addToCalendar: {
+    persistence: '`Virtual DTO` + `Prisma` (`showAddToCalendar`)',
+    uiCoverage: 'Homepage (`/`) widget (`config.showAddToCalendar && isFeatureEnabled`)',
+    apiCoverage: 'N/A (`GET /api/schedule/[id]/ics` skips `isFeatureEnabled`)',
+  },
+  interactive3D: {
+    persistence: '`Virtual DTO`',
+    uiCoverage: 'Homepage (`/`) section hidden; `/heart` returns HTTP 404',
+    apiCoverage: 'N/A',
+  },
+};
+
+export function generateFeatureMetadataTable(
+  metadata: Record<string, FeatureMetadata> = FEATURE_METADATA,
+  defaults: Record<string, boolean> = DEFAULT_MODULE_CONFIG,
+): string {
+  let markdown =
+    '| Feature Identifier | Title | Category | Default | Persistence | Dependencies | UI Route & Render Coverage | API Route Coverage | Description |\n' +
+    '|---|---|---|---|---|---|---|---|---|\n';
+
+  for (const [key, meta] of Object.entries(metadata)) {
+    const defaultVal = defaults[key] ?? true;
+    const enforcement = (FEATURE_RUNTIME_ENFORCEMENT as Record<string, FeatureRuntimeEnforcement | undefined>)[key] ?? {
+      persistence: '`Virtual DTO`',
+      uiCoverage: 'N/A',
+      apiCoverage: 'N/A',
+    };
+    const deps =
+      meta.dependencies && meta.dependencies.length > 0
+        ? meta.dependencies.map((d) => `Requires \`${escapeMarkdownTableCell(d)}\``).join(', ')
+        : 'None';
+
+    const title = escapeMarkdownTableCell(meta.title.replace(/\r?\n/g, ' ').trim());
+    const category = escapeMarkdownTableCell(meta.category);
+    const persistence = escapeMarkdownTableCell(enforcement.persistence);
+    const uiCoverage = escapeMarkdownTableCell(enforcement.uiCoverage);
+    const apiCoverage = escapeMarkdownTableCell(enforcement.apiCoverage);
+    const desc = escapeMarkdownTableCell(meta.description.replace(/\r?\n/g, ' ').trim());
+
+    markdown +=
+      `| \`${escapeMarkdownTableCell(key)}\` | ${title} | \`${category}\` | \`${defaultVal}\` | ${persistence} | ${deps} | ${uiCoverage} | ${apiCoverage} | ${desc} |\n`;
+  }
+
+  return markdown;
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+  return Boolean(
+    ts.canHaveModifiers(node) &&
+      ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword),
+  );
+}
+
+function parseTsSourceFile(filePath: string): ts.SourceFile {
+  const sourceText = fs.readFileSync(filePath, 'utf8');
+  const scriptKind =
+    filePath.endsWith('.tsx') || filePath.endsWith('.jsx')
+      ? ts.ScriptKind.TSX
+      : ts.ScriptKind.TS;
+  return ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
+}
+
+function resolveLocalTsModule(fromFile: string, specifier: string, rootDir: string): string | null {
+  let base: string;
+  if (specifier.startsWith('@/')) {
+    base = path.join(rootDir, 'src', specifier.slice(2));
+  } else if (specifier.startsWith('.')) {
+    base = path.resolve(path.dirname(fromFile), specifier);
+  } else {
+    return null;
+  }
+
+  const strippedJs = base.replace(/\.(js|jsx|mjs|cjs)$/, '');
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${strippedJs}.ts`,
+    `${strippedJs}.tsx`,
+    path.join(base, 'index.ts'),
+    path.join(base, 'index.tsx'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function collectBindingNames(name: ts.BindingName, target: Set<string>) {
+  if (ts.isIdentifier(name)) {
+    target.add(name.text);
+  } else if (ts.isObjectBindingPattern(name)) {
+    for (const element of name.elements) {
+      collectBindingNames(element.name, target);
+    }
+  } else if (ts.isArrayBindingPattern(name)) {
+    for (const element of name.elements) {
+      if (ts.isBindingElement(element)) {
+        collectBindingNames(element.name, target);
+      }
+    }
+  }
+}
+
+function collectModuleExports(
+  filePath: string,
+  rootDir: string,
+  visited: Set<string> = new Set(),
+): { values: Set<string>; types: Set<string> } {
+  const values = new Set<string>();
+  const types = new Set<string>();
+
+  if (visited.has(filePath) || !fs.existsSync(filePath)) {
+    return { values, types };
+  }
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(filePath);
+
+  const sourceFile = parseTsSourceFile(filePath);
+  const localValues = new Set<string>();
+  const localTypes = new Set<string>();
+
+  for (const stmt of sourceFile.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      const target = hasExportModifier(stmt) ? values : localValues;
+      for (const decl of stmt.declarationList.declarations) {
+        collectBindingNames(decl.name, target);
+      }
+    } else if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      (hasExportModifier(stmt) ? values : localValues).add(stmt.name.text);
+    } else if (ts.isClassDeclaration(stmt) && stmt.name) {
+      (hasExportModifier(stmt) ? values : localValues).add(stmt.name.text);
+    } else if (ts.isEnumDeclaration(stmt)) {
+      (hasExportModifier(stmt) ? values : localValues).add(stmt.name.text);
+    } else if (ts.isInterfaceDeclaration(stmt)) {
+      (hasExportModifier(stmt) ? types : localTypes).add(stmt.name.text);
+    } else if (ts.isTypeAliasDeclaration(stmt)) {
+      (hasExportModifier(stmt) ? types : localTypes).add(stmt.name.text);
+    }
+  }
+
+  for (const stmt of sourceFile.statements) {
+    if (!ts.isExportDeclaration(stmt)) continue;
+
+    const moduleSpecifier =
+      stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)
+        ? stmt.moduleSpecifier.text
+        : null;
+    const resolvedTarget = moduleSpecifier
+      ? resolveLocalTsModule(filePath, moduleSpecifier, rootDir)
+      : null;
+
+    if (!stmt.exportClause) {
+      if (resolvedTarget) {
+        const sub = collectModuleExports(resolvedTarget, rootDir, nextVisited);
+        if (stmt.isTypeOnly) {
+          for (const v of sub.values) types.add(v);
+          for (const t of sub.types) types.add(t);
+        } else {
+          for (const v of sub.values) values.add(v);
+          for (const t of sub.types) types.add(t);
+        }
+      }
+    } else if (ts.isNamespaceExport(stmt.exportClause)) {
+      if (stmt.isTypeOnly) {
+        types.add(stmt.exportClause.name.text);
+      } else {
+        values.add(stmt.exportClause.name.text);
+      }
+    } else if (ts.isNamedExports(stmt.exportClause)) {
+      const targetExports = resolvedTarget
+        ? collectModuleExports(resolvedTarget, rootDir, nextVisited)
+        : null;
+
+      for (const el of stmt.exportClause.elements) {
+        const exportedName = el.name.text;
+        const origName = el.propertyName ? el.propertyName.text : el.name.text;
+
+        if (stmt.isTypeOnly || el.isTypeOnly) {
+          types.add(exportedName);
+        } else if (origName === 'default') {
+          values.add(exportedName);
+        } else if (targetExports) {
+          if (targetExports.values.has(origName)) {
+            values.add(exportedName);
+          } else if (targetExports.types.has(origName)) {
+            types.add(exportedName);
+          } else {
+            values.add(exportedName);
+          }
+        } else if (localTypes.has(origName) && !localValues.has(origName)) {
+          types.add(exportedName);
+        } else {
+          values.add(exportedName);
+        }
+      }
+    }
+  }
+
+  for (const v of values) {
+    types.delete(v);
+  }
+
+  return { values, types };
+}
+
+function findExportOriginFile(
+  entryFile: string,
+  symbolName: string,
+  rootDir: string,
+  visited: Set<string> = new Set(),
+): { filePath: string; originalName: string } | null {
+  if (visited.has(entryFile) || !fs.existsSync(entryFile)) {
+    return null;
+  }
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(entryFile);
+
+  const sourceFile = parseTsSourceFile(entryFile);
+
+  for (const stmt of sourceFile.statements) {
+    if (!hasExportModifier(stmt)) continue;
+    if (
+      (ts.isClassDeclaration(stmt) || ts.isFunctionDeclaration(stmt)) &&
+      stmt.name?.text === symbolName
+    ) {
+      return { filePath: entryFile, originalName: symbolName };
+    }
+    if (ts.isVariableStatement(stmt)) {
+      const names = new Set<string>();
+      for (const decl of stmt.declarationList.declarations) {
+        collectBindingNames(decl.name, names);
+      }
+      if (names.has(symbolName)) {
+        return { filePath: entryFile, originalName: symbolName };
+      }
+    }
+  }
+
+  for (const stmt of sourceFile.statements) {
+    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) {
+      continue;
+    }
+    const resolvedTarget = resolveLocalTsModule(entryFile, stmt.moduleSpecifier.text, rootDir);
+    if (!resolvedTarget) continue;
+
+    if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+      for (const el of stmt.exportClause.elements) {
+        if (el.name.text === symbolName) {
+          const origName = el.propertyName ? el.propertyName.text : el.name.text;
+          return (
+            findExportOriginFile(resolvedTarget, origName, rootDir, nextVisited) ?? {
+              filePath: resolvedTarget,
+              originalName: origName,
+            }
+          );
+        }
+      }
+    } else if (!stmt.exportClause) {
+      const found = findExportOriginFile(resolvedTarget, symbolName, rootDir, nextVisited);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function extractAdminServiceClassInfo(
+  serviceFilePath: string,
+  className: string,
+): { entityKey: string | null; prismaModel: string } {
+  const sourceFile = parseTsSourceFile(serviceFilePath);
+  let entityKey: string | null = null;
+  let prismaModel = 'N/A';
+
+  for (const stmt of sourceFile.statements) {
+    if (!ts.isClassDeclaration(stmt) || stmt.name?.text !== className) continue;
+
+    for (const member of stmt.members) {
+      if (
+        ts.isPropertyDeclaration(member) &&
+        ts.canHaveModifiers(member) &&
+        ts.getModifiers(member)?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) &&
+        ts.isIdentifier(member.name) &&
+        member.name.text === 'ENTITY_KEY' &&
+        member.initializer &&
+        (ts.isStringLiteral(member.initializer) || ts.isNoSubstitutionTemplateLiteral(member.initializer))
+      ) {
+        entityKey = member.initializer.text;
+      }
+
+      if (ts.isConstructorDeclaration(member) && member.body) {
+        for (const bodyStmt of member.body.statements) {
+          if (
+            ts.isExpressionStatement(bodyStmt) &&
+            ts.isCallExpression(bodyStmt.expression) &&
+            bodyStmt.expression.expression.kind === ts.SyntaxKind.SuperKeyword
+          ) {
+            const modelArg = bodyStmt.expression.arguments[1];
+            if (modelArg && (ts.isStringLiteral(modelArg) || ts.isNoSubstitutionTemplateLiteral(modelArg))) {
+              prismaModel = modelArg.text;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { entityKey, prismaModel };
+}
+
+export function generateAdminEntityTable(rootDir: string = ROOT_DIR): string {
+  const registryPath = path.join(rootDir, 'src/features/admin/registry.ts');
+  if (!fs.existsSync(registryPath)) {
+    throw new Error(`Admin entity registry not found at ${registryPath}`);
+  }
+
+  const sourceFile = parseTsSourceFile(registryPath);
+  const importedSymbols = new Map<string, { specifier: string; importedName: string }>();
+
+  function collectImports(node: ts.Node) {
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      node.importClause?.namedBindings &&
+      ts.isNamedImports(node.importClause.namedBindings)
+    ) {
+      const specifier = node.moduleSpecifier.text;
+      for (const el of node.importClause.namedBindings.elements) {
+        importedSymbols.set(el.name.text, {
+          specifier,
+          importedName: el.propertyName ? el.propertyName.text : el.name.text,
+        });
+      }
+    }
+
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isArrayBindingPattern(node.name) &&
+      node.initializer &&
+      ts.isAwaitExpression(node.initializer) &&
+      ts.isCallExpression(node.initializer.expression)
+    ) {
+      const callExpr = node.initializer.expression;
+      const firstArg = callExpr.arguments[0];
+      if (firstArg && ts.isArrayLiteralExpression(firstArg)) {
+        node.name.elements.forEach((bindingEl, idx) => {
+          const importCall = firstArg.elements[idx];
+          if (
+            !ts.isBindingElement(bindingEl) ||
+            !ts.isObjectBindingPattern(bindingEl.name) ||
+            !importCall ||
+            !ts.isCallExpression(importCall) ||
+            importCall.expression.kind !== ts.SyntaxKind.ImportKeyword
+          ) {
+            return;
+          }
+          const specArg = importCall.arguments[0];
+          if (!specArg || !ts.isStringLiteral(specArg)) return;
+
+          for (const propEl of bindingEl.name.elements) {
+            if (ts.isIdentifier(propEl.name)) {
+              const importedName =
+                propEl.propertyName && ts.isIdentifier(propEl.propertyName)
+                  ? propEl.propertyName.text
+                  : propEl.name.text;
+              importedSymbols.set(propEl.name.text, {
+                specifier: specArg.text,
+                importedName,
+              });
+            }
+          }
+        });
+      }
+    }
+
+    ts.forEachChild(node, collectImports);
+  }
+
+  collectImports(sourceFile);
+
+  let serviceMapLiteral: ts.ObjectLiteralExpression | null = null;
+  function findServiceMap(node: ts.Node) {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      node.left.text === 'serviceMap' &&
+      ts.isObjectLiteralExpression(node.right)
+    ) {
+      serviceMapLiteral = node.right;
+      return;
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'serviceMap' &&
+      node.initializer &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      serviceMapLiteral = node.initializer;
+      return;
+    }
+    ts.forEachChild(node, findServiceMap);
+  }
+
+  findServiceMap(sourceFile);
+
+  if (!serviceMapLiteral) {
+    throw new Error(`Failed to locate serviceMap object literal in ${registryPath}`);
+  }
+
+  const rows: {
+    entityKey: string;
+    serviceClass: string;
+    barrelPath: string;
+    prismaModel: string;
+  }[] = [];
+
+  for (const prop of (serviceMapLiteral as ts.ObjectLiteralExpression).properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+
+    let serviceClass = '';
+    if (ts.isNewExpression(prop.initializer) && ts.isIdentifier(prop.initializer.expression)) {
+      serviceClass = prop.initializer.expression.text;
+    }
+
+    let directEntityKey: string | null = null;
+    if (ts.isStringLiteral(prop.name) || ts.isNoSubstitutionTemplateLiteral(prop.name) || ts.isIdentifier(prop.name)) {
+      directEntityKey = prop.name.text;
+    } else if (
+      ts.isComputedPropertyName(prop.name) &&
+      ts.isPropertyAccessExpression(prop.name.expression) &&
+      ts.isIdentifier(prop.name.expression.expression) &&
+      prop.name.expression.name.text === 'ENTITY_KEY'
+    ) {
+      if (!serviceClass) {
+        serviceClass = prop.name.expression.expression.text;
+      }
+    }
+
+    const importInfo = serviceClass ? importedSymbols.get(serviceClass) : undefined;
+    const barrelAbs = importInfo
+      ? resolveLocalTsModule(registryPath, importInfo.specifier, rootDir)
+      : null;
+    const barrelRel = barrelAbs
+      ? path.relative(rootDir, barrelAbs).replace(/\\/g, '/')
+      : importInfo?.specifier ?? 'N/A';
+
+    let entityKey = directEntityKey;
+    let prismaModel = 'N/A';
+
+    if (barrelAbs && importInfo) {
+      const origin = findExportOriginFile(barrelAbs, importInfo.importedName, rootDir);
+      if (origin) {
+        const classInfo = extractAdminServiceClassInfo(origin.filePath, origin.originalName);
+        if (!entityKey && classInfo.entityKey) {
+          entityKey = classInfo.entityKey;
+        }
+        prismaModel = classInfo.prismaModel;
+      }
+    }
+
+    if (!entityKey) {
+      throw new Error(
+        `Failed to resolve static ENTITY_KEY for "${serviceClass || prop.getText(sourceFile)}" in ${registryPath}`,
+      );
+    }
+
+    rows.push({
+      entityKey,
+      serviceClass: serviceClass || 'UnknownService',
+      barrelPath: barrelRel,
+      prismaModel,
+    });
+  }
+
+  let markdown =
+    '| Entity Slug (`ENTITY_KEY`) | Admin Service Class | Feature Barrel | Prisma Model | Dynamic Endpoints |\n' +
+    '|---|---|---|---|---|\n';
+
+  for (const row of rows) {
+    const slug = escapeMarkdownTableCell(row.entityKey);
+    const cls = escapeMarkdownTableCell(row.serviceClass);
+    const barrel = escapeMarkdownTableCell(row.barrelPath);
+    const model = escapeMarkdownTableCell(row.prismaModel);
+    markdown +=
+      `| \`${slug}\` | \`${cls}\` | \`${barrel}\` | \`${model}\` | \`/api/admin/${slug}\`, \`/api/admin/${slug}/[id]\`, \`/api/admin/${slug}/batch\` |\n`;
+  }
+
+  return markdown;
+}
+
+export function generateFeatureBarrelsTable(rootDir: string = ROOT_DIR): string {
+  const featuresDir = path.join(rootDir, 'src/features');
+  if (!fs.existsSync(featuresDir)) {
+    throw new Error(`Features directory not found at ${featuresDir}`);
+  }
+
+  const entries = fs
+    .readdirSync(featuresDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    .sort((a, b) => compareAscii(a.name, b.name));
+
+  const modules: {
+    domain: string;
+    barrelRel: string;
+    values: string[];
+    types: string[];
+  }[] = [];
+
+  for (const entry of entries) {
+    const barrelAbs = resolveLocalTsModule(
+      path.join(featuresDir, 'index.ts'),
+      `./${entry.name}`,
+      rootDir,
+    );
+    if (!barrelAbs) continue;
+
+    const { values, types } = collectModuleExports(barrelAbs, rootDir);
+    const sortedValues = Array.from(values).sort(compareAscii);
+    const sortedTypes = Array.from(types).sort(compareAscii);
+    const barrelRel = path.relative(rootDir, barrelAbs).replace(/\\/g, '/');
+
+    modules.push({
+      domain: entry.name,
+      barrelRel,
+      values: sortedValues,
+      types: sortedTypes,
+    });
+  }
+
+  let markdown = `Total domain feature modules: **${modules.length}** under \`src/features/\`.\n\n`;
+  markdown += '| Domain Module | Barrel Path | Runtime Exports | Type Exports |\n|---|---|---|---|\n';
+
+  for (const mod of modules) {
+    const valuesCell =
+      mod.values.length > 0
+        ? mod.values.map((v) => `\`${escapeMarkdownTableCell(v)}\``).join(', ')
+        : '_None_';
+    const typesCell =
+      mod.types.length > 0
+        ? mod.types.map((t) => `\`${escapeMarkdownTableCell(t)}\``).join(', ')
+        : '_None_';
+
+    markdown += `| \`${escapeMarkdownTableCell(mod.domain)}\` | \`${escapeMarkdownTableCell(mod.barrelRel)}\` | ${valuesCell} | ${typesCell} |\n`;
+  }
+
+  return markdown;
+}
+
+export function updateFeatureModulesMd(rootDir: string = ROOT_DIR) {
+  const filePath = path.join(rootDir, 'FEATURE_MODULES.md');
+  let content = fs.readFileSync(filePath, 'utf8');
+
+  const metadataRegex =
+    /<!-- BEGIN AUTOGENERATED FEATURE_METADATA -->[\s\S]*?<!-- END AUTOGENERATED FEATURE_METADATA -->/;
+  const entitiesRegex =
+    /<!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->[\s\S]*?<!-- END AUTOGENERATED ADMIN_ENTITIES -->/;
+  const barrelsRegex =
+    /<!-- BEGIN AUTOGENERATED FEATURE_BARRELS -->[\s\S]*?<!-- END AUTOGENERATED FEATURE_BARRELS -->/;
+
+  if (!metadataRegex.test(content) || !entitiesRegex.test(content) || !barrelsRegex.test(content)) {
+    throw new Error(
+      'FEATURE_MODULES.md is missing one or more required AUTOGENERATED HTML marker blocks (FEATURE_METADATA, ADMIN_ENTITIES, FEATURE_BARRELS).',
+    );
+  }
+
+  content = content.replace(
+    metadataRegex,
+    `<!-- BEGIN AUTOGENERATED FEATURE_METADATA -->\n${generateFeatureMetadataTable()}\n<!-- END AUTOGENERATED FEATURE_METADATA -->`,
+  );
+  content = content.replace(
+    entitiesRegex,
+    `<!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->\n${generateAdminEntityTable(rootDir)}\n<!-- END AUTOGENERATED ADMIN_ENTITIES -->`,
+  );
+  content = content.replace(
+    barrelsRegex,
+    `<!-- BEGIN AUTOGENERATED FEATURE_BARRELS -->\n${generateFeatureBarrelsTable(rootDir)}\n<!-- END AUTOGENERATED FEATURE_BARRELS -->`,
+  );
+
+  fs.writeFileSync(filePath, content);
+  console.log('Successfully updated FEATURE_MODULES.md');
+}
+
 export async function generateOpenApiSpec() {
   const openApiScript = path.join(scriptDir, 'generate-openapi.ts');
   if (fs.existsSync(openApiScript)) {
@@ -581,5 +1233,6 @@ const isMain = typeof process.argv[1] === 'string' &&
                path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (isMain) {
   updateArchitectureMd();
+  updateFeatureModulesMd();
   void generateOpenApiSpec();
 }

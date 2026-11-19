@@ -37,6 +37,10 @@ describe('check-quality', () => {
     expect(storybookIdx).toBe(docsIdx + 1);
     expect(testIdx).toBe(storybookIdx + 1);
     expect(steps[storybookIdx].remediation).toContain('npm run build-storybook');
+
+    const docSyncStep = steps.find((s) => s.name === 'Verify Documentation Synchronization');
+    expect(docSyncStep).toBeDefined();
+    expect(docSyncStep?.remediation).toContain('FEATURE_MODULES.md');
   });
 
   it('prints remediation text, deletes partial storybook-static output, and exits 1 when build-storybook fails', () => {

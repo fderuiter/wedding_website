@@ -51,7 +51,7 @@ export const steps: Step[] = [
   {
     name: 'Verify Documentation Synchronization',
     command: 'npm run check:doc-sync',
-    remediation: 'Documentation drift detected or generation failed.\nRun "npx tsx scripts/generate-openapi.ts" and "npx tsx scripts/generate-docs.ts" to regenerate documentation, then commit changes to "public/openapi.json" and "ARCHITECTURE.md".',
+    remediation: 'Documentation drift detected or generation failed.\nRun "npx tsx scripts/generate-openapi.ts" and "npx tsx scripts/generate-docs.ts" to regenerate documentation, then commit changes to "public/openapi.json", "ARCHITECTURE.md", and "FEATURE_MODULES.md".',
   },
   {
     name: 'Build Static Documentation Portal',

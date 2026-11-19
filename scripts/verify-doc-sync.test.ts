@@ -23,6 +23,7 @@ describe('verify-doc-sync', () => {
     fs.mkdirSync(path.join(tempDir, 'public'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3"}');
     fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# System Architecture');
+    fs.writeFileSync(path.join(tempDir, 'FEATURE_MODULES.md'), '# Feature Modules');
 
     // Create an unrelated file
     fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
@@ -38,6 +39,14 @@ describe('verify-doc-sync', () => {
   });
 
   describe('checkDocDrift', () => {
+    it('tracks public/openapi.json, ARCHITECTURE.md, and FEATURE_MODULES.md in DEFAULT_DOC_FILES', () => {
+      expect(DEFAULT_DOC_FILES).toEqual([
+        'public/openapi.json',
+        'ARCHITECTURE.md',
+        'FEATURE_MODULES.md',
+      ]);
+    });
+
     it('returns empty array when git working directory has no documentation drift', () => {
       const drifted = checkDocDrift(DEFAULT_DOC_FILES, tempDir);
       expect(drifted).toEqual([]);
@@ -49,6 +58,12 @@ describe('verify-doc-sync', () => {
       expect(drifted).toEqual(['ARCHITECTURE.md']);
     });
 
+    it('detects modifications in FEATURE_MODULES.md', () => {
+      fs.writeFileSync(path.join(tempDir, 'FEATURE_MODULES.md'), '# Updated Feature Modules Content');
+      const drifted = checkDocDrift(DEFAULT_DOC_FILES, tempDir);
+      expect(drifted).toEqual(['FEATURE_MODULES.md']);
+    });
+
     it('detects modifications in public/openapi.json', () => {
       fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.1.0"}');
       const drifted = checkDocDrift(DEFAULT_DOC_FILES, tempDir);
@@ -57,8 +72,9 @@ describe('verify-doc-sync', () => {
 
     it('detects untracked or deleted documentation files', () => {
       fs.unlinkSync(path.join(tempDir, 'ARCHITECTURE.md'));
+      fs.unlinkSync(path.join(tempDir, 'FEATURE_MODULES.md'));
       const drifted = checkDocDrift(DEFAULT_DOC_FILES, tempDir);
-      expect(drifted).toEqual(['ARCHITECTURE.md']);
+      expect(drifted).toEqual(['ARCHITECTURE.md', 'FEATURE_MODULES.md']);
     });
 
     it('ignores non-documentation file changes to prevent false positives', () => {
@@ -108,6 +124,23 @@ describe('verify-doc-sync', () => {
       expect(result.error).toBeUndefined();
     });
 
+    it('detects drift when generator modifies FEATURE_MODULES.md', () => {
+      const result = verifyDocSync({
+        cwd: tempDir,
+        files: DEFAULT_DOC_FILES,
+        generateDocs: () => {
+          fs.writeFileSync(
+            path.join(tempDir, 'FEATURE_MODULES.md'),
+            '# Feature modules with drift'
+          );
+        },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.driftedFiles).toEqual(['FEATURE_MODULES.md']);
+      expect(result.error).toBeUndefined();
+    });
+
     it('detects multiple drifted documentation files', () => {
       const result = verifyDocSync({
         cwd: tempDir,
@@ -118,6 +151,10 @@ describe('verify-doc-sync', () => {
             '# Architecture drift'
           );
           fs.writeFileSync(
+            path.join(tempDir, 'FEATURE_MODULES.md'),
+            '# Feature modules drift'
+          );
+          fs.writeFileSync(
             path.join(tempDir, 'public', 'openapi.json'),
             '{"openapi": "drift"}'
           );
@@ -125,8 +162,9 @@ describe('verify-doc-sync', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.driftedFiles).toHaveLength(2);
+      expect(result.driftedFiles).toHaveLength(3);
       expect(result.driftedFiles).toContain('ARCHITECTURE.md');
+      expect(result.driftedFiles).toContain('FEATURE_MODULES.md');
       expect(result.driftedFiles).toContain('public/openapi.json');
     });
 
