@@ -1,28 +1,36 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
+
+function subscribeToVisibilityChange(onStoreChange: () => void) {
+  if (typeof document === 'undefined') {
+    return () => {};
+  }
+  document.addEventListener('visibilitychange', onStoreChange);
+  return () => {
+    document.removeEventListener('visibilitychange', onStoreChange);
+  };
+}
+
+function getVisibilitySnapshot() {
+  return typeof document === 'undefined' ? true : document.visibilityState === 'visible';
+}
+
+function getServerVisibilitySnapshot() {
+  return true;
+}
 
 export function GlobalRadialGlow() {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith('/admin');
-  
-  const [isVisible, setIsVisible] = useState(true);
 
   // Minimal CPU cycles when tab is inactive
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      setIsVisible(document.visibilityState === 'visible');
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    // Initialize state
-    setIsVisible(document.visibilityState === 'visible');
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
+  const isVisible = useSyncExternalStore(
+    subscribeToVisibilityChange,
+    getVisibilitySnapshot,
+    getServerVisibilitySnapshot
+  );
 
   if (isAdmin || !isVisible) {
     return null;

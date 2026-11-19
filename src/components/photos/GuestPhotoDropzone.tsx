@@ -38,7 +38,6 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
 
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const uploadsRef = useRef<UploadStatus[]>(uploads);
-  uploadsRef.current = uploads;
   const isMountedRef = useRef(true);
   const uploadCounterRef = useRef(0);
   const processQueueRef = useRef<() => void>(() => {});
@@ -198,9 +197,9 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
     });
   }, [uploadFile]);
 
-  processQueueRef.current = processQueue;
-
   useEffect(() => {
+    uploadsRef.current = uploads;
+    processQueueRef.current = processQueue;
     processQueue();
   }, [uploads, processQueue]);
 

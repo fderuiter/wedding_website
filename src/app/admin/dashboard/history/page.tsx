@@ -403,9 +403,47 @@ export default function HistoryTimelinePage() {
     }
   }, [page, limit]);
 
+  const handleSetPage: React.Dispatch<React.SetStateAction<number>> = useCallback((nextPage) => {
+    setLoading(true);
+    setError(null);
+    setPage(nextPage);
+  }, []);
+
   useEffect(() => {
-    fetchVersions(page, limit);
-  }, [fetchVersions, page, limit]);
+    let cancelled = false;
+
+    const loadVersions = async () => {
+      try {
+        const data = await apiClient.get<any>(`/api/admin/versions?page=${page}&limit=${limit}`);
+        if (cancelled) return;
+        if (Array.isArray(data)) {
+          setVersions(data);
+          setPaginationMeta(null);
+        } else if (data && Array.isArray(data.items)) {
+          setVersions(data.items);
+          setPaginationMeta(data.pagination || null);
+        } else {
+          setVersions([]);
+          setPaginationMeta(null);
+        }
+        setError(null);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to load version history.';
+        setError(message || 'Failed to load version history.');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadVersions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, limit]);
 
   return (
     <AdminViewState
@@ -420,7 +458,7 @@ export default function HistoryTimelinePage() {
         page={page}
         limit={limit}
         paginationMeta={paginationMeta}
-        setPage={setPage}
+        setPage={handleSetPage}
         fetchVersions={fetchVersions}
       />
     </AdminViewState>

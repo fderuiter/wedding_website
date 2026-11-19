@@ -277,12 +277,6 @@ export function useRegistry() {
     return [Math.floor(min), Math.ceil(max)];
   }, [items]);
 
-  useEffect(() => {
-    if (!priceRangeUserSet && items.length > 0) {
-      setPriceRange([minPrice, maxPrice]);
-    }
-  }, [minPrice, maxPrice, priceRangeUserSet, items.length]);
-
   const effectivePriceRange = useMemo<[number, number]>(
     () => (priceRangeUserSet ? priceRange : [minPrice, maxPrice]),
     [priceRangeUserSet, priceRange, minPrice, maxPrice]

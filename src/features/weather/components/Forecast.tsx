@@ -73,8 +73,32 @@ const Forecast: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchWeather();
-  }, [fetchWeather]);
+    let cancelled = false;
+
+    const loadInitialWeather = async () => {
+      try {
+        const data = await apiClient.get<WeatherData>('/api/weather');
+        if (!cancelled) {
+          setWeatherData(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error fetching weather:', err);
+          setError('Failed to load forecast. Please try again later.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadInitialWeather();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (isLoading) {
     return (

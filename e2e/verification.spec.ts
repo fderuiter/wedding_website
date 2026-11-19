@@ -5,6 +5,27 @@ import fs from 'fs';
 import path from 'path';
 import { seedAdminAndGuestAuthCookies, seedGuestAuthCookies } from './helpers/auth';
 
+function recordRouteViolations(route: string, violations: unknown[]) {
+  const reportDir = path.join(process.cwd(), 'test-results');
+  if (!fs.existsSync(reportDir)) {
+    fs.mkdirSync(reportDir, { recursive: true });
+  }
+  const reportFile = path.join(reportDir, 'playwright-a11y-violations.json');
+  let violationsByRoute: Record<string, unknown[]> = {};
+  if (fs.existsSync(reportFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        violationsByRoute = parsed as Record<string, unknown[]>;
+      }
+    } catch {
+      violationsByRoute = {};
+    }
+  }
+  violationsByRoute[route] = violations;
+  fs.writeFileSync(reportFile, JSON.stringify(violationsByRoute, null, 2));
+}
+
 test.describe('UI Verification', () => {
   test('should show the main content on visit and be accessible', async ({ context, page }) => {
     await seedGuestAuthCookies(context);
@@ -34,15 +55,7 @@ test.describe('UI Verification', () => {
       axeBuilder.options({ rules: a11yConfig.rules });
     }
     const accessibilityScanResults = await axeBuilder.analyze();
-
-    const reportDir = path.join(process.cwd(), 'test-results');
-    if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
-    const reportFile = path.join(reportDir, 'playwright-a11y-violations.json');
-    let existingViolations = [];
-    if (fs.existsSync(reportFile)) {
-      existingViolations = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
-    }
-    fs.writeFileSync(reportFile, JSON.stringify([...existingViolations, ...accessibilityScanResults.violations], null, 2));
+    recordRouteViolations('/', accessibilityScanResults.violations);
 
     // Assert no violations
     expect(accessibilityScanResults.violations).toEqual([]);
@@ -71,7 +84,9 @@ test.describe('UI Verification', () => {
       axeBuilder.options({ rules: a11yConfig.rules });
     }
     const results = await axeBuilder.analyze();
-    expect(results.violations.filter((v) => v.id === 'color-contrast')).toEqual([]);
+    const contrastViolations = results.violations.filter((v) => v.id === 'color-contrast');
+    recordRouteViolations('/weather', contrastViolations);
+    expect(contrastViolations).toEqual([]);
   });
 
   test('should pass axe accessibility scan on /admin/dashboard/thank-you-notes with zero contrast violations', async ({ context, page }) => {
@@ -97,7 +112,9 @@ test.describe('UI Verification', () => {
       axeBuilder.options({ rules: a11yConfig.rules });
     }
     const results = await axeBuilder.analyze();
-    expect(results.violations.filter((v) => v.id === 'color-contrast')).toEqual([]);
+    const contrastViolations = results.violations.filter((v) => v.id === 'color-contrast');
+    recordRouteViolations('/admin/dashboard/thank-you-notes', contrastViolations);
+    expect(contrastViolations).toEqual([]);
   });
 
   test('should pass axe accessibility scan on /admin/dashboard/seating-chart with zero contrast violations', async ({ context, page }) => {
@@ -123,6 +140,8 @@ test.describe('UI Verification', () => {
       axeBuilder.options({ rules: a11yConfig.rules });
     }
     const results = await axeBuilder.analyze();
-    expect(results.violations.filter((v) => v.id === 'color-contrast')).toEqual([]);
+    const contrastViolations = results.violations.filter((v) => v.id === 'color-contrast');
+    recordRouteViolations('/admin/dashboard/seating-chart', contrastViolations);
+    expect(contrastViolations).toEqual([]);
   });
 });

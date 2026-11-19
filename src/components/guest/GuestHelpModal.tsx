@@ -4,7 +4,6 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useId,
   useMemo,
   useRef,
@@ -162,16 +161,23 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
     const titleId = `help-title-${baseId}`;
     const descId = `help-desc-${baseId}`;
     const theme = useTheme();
-    const [activeCategory, setActiveCategory] = useState<GuestHelpCategory>(initialCategory);
+    const modalKey = `${isOpen ? 'open' : 'closed'}-${initialCategory}`;
+    const [categoryOverride, setCategoryOverride] = useState<{
+      key: string;
+      category: GuestHelpCategory;
+    } | null>(null);
+    const activeCategory =
+      categoryOverride && categoryOverride.key === modalKey
+        ? categoryOverride.category
+        : initialCategory;
+    const setActiveCategory = (category: GuestHelpCategory) => {
+      setCategoryOverride({ key: modalKey, category });
+    };
     const tabRefs = useRef<Record<GuestHelpCategory, HTMLButtonElement | null>>({
       passcode: null,
       dietary: null,
       registry: null,
     });
-
-    useEffect(() => {
-      if (isOpen) setActiveCategory(initialCategory);
-    }, [isOpen, initialCategory]);
 
     const p1 = sanitizeConfigText(config?.partner1Name || config?.brideName, 60);
     const p2 = sanitizeConfigText(config?.partner2Name || config?.groomName, 60);

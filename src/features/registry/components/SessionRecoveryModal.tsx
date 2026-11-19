@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
@@ -13,39 +13,24 @@ export interface SessionRecoveryModalProps {
   onSuccess?: () => void;
 }
 
-export const SessionRecoveryModal: React.FC<SessionRecoveryModalProps> = ({
-  isOpen,
+interface SessionRecoveryFormProps {
+  defaultCode: string;
+  recoverSession: (code: string) => Promise<boolean>;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
+  defaultCode,
+  recoverSession,
   onClose,
   onSuccess,
 }) => {
-  const {
-    isRecoveryModalOpen,
-    closeRecoveryModal,
-    draftInvitationCode,
-    invitationCode,
-    recoverSession,
-  } = useGuestSession();
-
-  const activeIsOpen = isOpen ?? isRecoveryModalOpen;
-
-  const [code, setCode] = useState(draftInvitationCode || invitationCode || '');
+  const [draftCode, setDraftCode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activeIsOpen) {
-      setCode(draftInvitationCode || invitationCode || '');
-      setErrorMessage(null);
-    }
-  }, [activeIsOpen, draftInvitationCode, invitationCode]);
-
-  const handleClose = () => {
-    if (onClose) {
-      onClose();
-    } else {
-      closeRecoveryModal();
-    }
-  };
+  const code = draftCode ?? defaultCode;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +47,7 @@ export const SessionRecoveryModal: React.FC<SessionRecoveryModalProps> = ({
       const success = await recoverSession(cleanCode);
       if (success) {
         if (onSuccess) onSuccess();
-        handleClose();
+        onClose();
       } else {
         setErrorMessage('Invalid invitation code. Please check and try again.');
       }
@@ -74,58 +59,92 @@ export const SessionRecoveryModal: React.FC<SessionRecoveryModalProps> = ({
   };
 
   return (
+    <form onSubmit={handleSubmit} className="mt-4 space-y-4" noValidate>
+      <FormGroup state={errorMessage ? 'error' : 'default'}>
+        <Label htmlFor="recovery-invitation-code">
+          Invitation Code <span className="text-red-500">*</span>
+        </Label>
+        <Input
+          id="recovery-invitation-code"
+          type="text"
+          placeholder="e.g. ABCDEF12"
+          value={code}
+          onChange={(e) => {
+            setDraftCode(e.target.value.toUpperCase());
+            setErrorMessage(null);
+          }}
+          disabled={isSubmitting}
+          autoFocus
+        />
+        {errorMessage && <FormMessage>{errorMessage}</FormMessage>}
+      </FormGroup>
+
+      <div className="flex justify-end gap-3 mt-6">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          disabled={isSubmitting}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={isSubmitting || !code.trim()}
+          aria-busy={isSubmitting}
+        >
+          {isSubmitting ? (
+            <>
+              <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" aria-hidden="true" />
+              Verifying...
+            </>
+          ) : (
+            'Re-verify Code'
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+};
+
+export const SessionRecoveryModal: React.FC<SessionRecoveryModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+}) => {
+  const {
+    isRecoveryModalOpen,
+    closeRecoveryModal,
+    draftInvitationCode,
+    invitationCode,
+    recoverSession,
+  } = useGuestSession();
+
+  const activeIsOpen = isOpen ?? isRecoveryModalOpen;
+
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+    } else {
+      closeRecoveryModal();
+    }
+  };
+
+  return (
     <Dialog
       isOpen={activeIsOpen}
       onClose={handleClose}
       title="Session Expired"
       description="Your guest session has expired or requires re-verification. Re-verify your invitation code to restore your session without losing form inputs."
     >
-      <form onSubmit={handleSubmit} className="mt-4 space-y-4" noValidate>
-        <FormGroup state={errorMessage ? 'error' : 'default'}>
-          <Label htmlFor="recovery-invitation-code">
-            Invitation Code <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            id="recovery-invitation-code"
-            type="text"
-            placeholder="e.g. ABCDEF12"
-            value={code}
-            onChange={(e) => {
-              setCode(e.target.value.toUpperCase());
-              setErrorMessage(null);
-            }}
-            disabled={isSubmitting}
-            autoFocus
-          />
-          {errorMessage && <FormMessage>{errorMessage}</FormMessage>}
-        </FormGroup>
-
-        <div className="flex justify-end gap-3 mt-6">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={isSubmitting || !code.trim()}
-            aria-busy={isSubmitting}
-          >
-            {isSubmitting ? (
-              <>
-                <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" aria-hidden="true" />
-                Verifying...
-              </>
-            ) : (
-              'Re-verify Code'
-            )}
-          </Button>
-        </div>
-      </form>
+      <SessionRecoveryForm
+        key={activeIsOpen ? 'open' : 'closed'}
+        defaultCode={draftInvitationCode || invitationCode || ''}
+        recoverSession={recoverSession}
+        onClose={handleClose}
+        onSuccess={onSuccess}
+      />
     </Dialog>
   );
 };

@@ -196,8 +196,8 @@ To protect production database integrity and application availability, the deplo
 ### 🔄 Staging Promotion & Approval Workflow
 
 1. **Automated Staging Delivery on Merge**:
-   - When a pull request is merged into `main`, GitHub Actions triggers `.github/workflows/deploy.yml`.
-   - The workflow verifies N-1 schema backwards compatibility, builds and scans the immutable container artifact, signs OIDC build provenance attestations (`actions/attest-build-provenance`), and exports `image_digest` (`sha256:<64-hex>`).
+   - When a pull request is merged into `main`, `.github/workflows/ci.yml` (`CI`) executes static checks, unit tests, container smoke tests, and Playwright E2E tests first. Once `CI` completes with `success` on the `main` push, GitHub Actions triggers `.github/workflows/deploy.yml` via `workflow_run` for `github.event.workflow_run.head_sha` (manual `workflow_dispatch` and reusable `workflow_call` runs verify a completed successful `CI` run for `github.sha` via a preflight gate).
+   - The workflow verifies N-1 schema backwards compatibility, invokes `.github/workflows/publish-artifact.yml` once via `workflow_call` to build and scan the immutable container artifact, signs OIDC build provenance attestations (`actions/attest-build-provenance`), and exports `image_digest` (`sha256:<64-hex>`).
    - `staging-deploy-provider` receives the attested `image_digest`, verifies OIDC provenance via `gh attestation verify` against the `oci://ghcr.io/<owner>/<repo>@sha256:<hex>` URI prior to rollout, captures the currently serving staging image (`previous_image_digest` and `previous_image_tag`) before deploying the digest-pinned container to `staging`, and validates `/api/health`.
 2. **Pre-Flight Schema Status & DDL Review**:
    - The pipeline generates a detailed **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`.
@@ -228,8 +228,8 @@ To protect production database integrity and application availability, the deplo
   - Local container build and container Playwright smoke test using `docker compose up --build -d app`.
 
 ### 2. Artifact Publication (`publish-artifact.yml`)
-- **Triggers**: Release pipeline, pushes to `main` or `v*` tags, manual `workflow_dispatch`.
-- **Permissions**: `packages: write` (for GitHub Container Registry), `security-events: write` (for uploading SARIF scan results to GitHub Code Scanning), `id-token: write` and `attestations: write` (for OIDC cryptographic build provenance attestations).
+- **Triggers**: Reusable `workflow_call` from `deploy.yml` (after `CI` succeeds on `main`), pushes to `v*` tags, and manual `workflow_dispatch`.
+- **Permissions**: Top-level `contents: read`, with job-scoped `packages: write` (for GitHub Container Registry), `security-events: write` (for uploading SARIF scan results to GitHub Code Scanning), and `id-token: write` / `attestations: write` (for OIDC cryptographic build provenance attestations).
 - **Actions**:
   - Compiles local container image prior to registry publication.
   - Executes Trivy vulnerability scanning (`aquasecurity/trivy-action`) to block builds with `CRITICAL` or `HIGH` severity vulnerabilities.
@@ -278,7 +278,7 @@ To protect production database integrity and application availability, the deplo
   - Deploys the digest-pinned `@sha256:` container URI to the hosting provider (Google Cloud Run or generic webhook with `--fail-with-body` HTTP error enforcement) and records the verified digest, pinned URI, attestation status, and pre-rollout tag/digest in `$GITHUB_STEP_SUMMARY`.
 
 ### 5. Post-Deployment Verification & Automated Rollback (`deploy.yml` & `rollback.yml`)
-- **Triggers**: Runs automatically in `deploy.yml` post-provider deployment for staging and production, or manually via `workflow_dispatch`.
+- **Triggers**: `deploy.yml` triggers via `workflow_run` after `CI` completes successfully on `main` pushes (or via `workflow_dispatch` / `workflow_call` after confirming a successful `CI` run for `github.sha`), running health verification automatically post-provider deployment for staging and production (`rollback.yml` can also be invoked manually via `workflow_dispatch`).
 - **Actions**:
   - `verify-deployment` polls `/api/health` with configurable exponential backoff and a 2-minute maximum timeout.
   - Validates HTTP status code 200 and confirms JSON body `database == 'connected'` and `status == 'ok'`.

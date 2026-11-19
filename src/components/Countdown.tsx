@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { formatDate } from '@/utils/intl';
 
 /**
@@ -18,6 +18,8 @@ type TimeLeft = {
   seconds?: number;
 };
 
+const getServerTickSnapshot = () => -1;
+
 /**
  * @function Countdown
  * @description A React component that displays a countdown to a specified target date.
@@ -29,49 +31,56 @@ type TimeLeft = {
 const Countdown = ({ targetDate }: { targetDate: string }) => {
   const weddingDate = useMemo(() => new Date(targetDate), [targetDate]);
 
-  const calculateTimeLeft = useCallback((): TimeLeft => {
-    const now = new Date();
-    const difference = weddingDate.getTime() - now.getTime();
+  const subscribeToClock = useCallback(
+    (onStoreChange: () => void) => {
+      if (weddingDate.getTime() <= Date.now()) {
+        return () => {};
+      }
 
-    let timeLeft: TimeLeft = {};
+      const intervalId = setInterval(() => {
+        onStoreChange();
+        if (weddingDate.getTime() <= Date.now()) {
+          clearInterval(intervalId);
+        }
+      }, 1000);
 
-    if (difference > 0) {
-      timeLeft = {
-        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
-        minutes: Math.floor((difference / (1000 * 60)) % 60),
-        seconds: Math.floor((difference / 1000) % 60),
+      return () => {
+        clearInterval(intervalId);
       };
-    }
+    },
+    [weddingDate]
+  );
 
-    return timeLeft;
+  const getTickSnapshot = useCallback(() => {
+    const difference = weddingDate.getTime() - Date.now();
+    if (difference <= 0) {
+      return 0;
+    }
+    return Math.floor(difference / 1000) + 1;
   }, [weddingDate]);
 
-  const [isMounted, setIsMounted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>({});
-  const [announcement, setAnnouncement] = useState('');
+  const ticksRemaining = useSyncExternalStore(
+    subscribeToClock,
+    getTickSnapshot,
+    getServerTickSnapshot
+  );
 
-  useEffect(() => {
-    setIsMounted(true);
-    const initialTimeLeft = calculateTimeLeft();
-    setTimeLeft(initialTimeLeft);
+  const isMounted = ticksRemaining >= 0;
 
-    if (Object.keys(initialTimeLeft).length === 0) {
-      return;
+  const timeLeft = useMemo<TimeLeft>(() => {
+    if (ticksRemaining <= 0) {
+      return {};
     }
-
-    const intervalId = setInterval(() => {
-      const updatedTimeLeft = calculateTimeLeft();
-      setTimeLeft(updatedTimeLeft);
-      if (Object.keys(updatedTimeLeft).length === 0) {
-        clearInterval(intervalId);
-      }
-    }, 1000);
-
-    return () => {
-      clearInterval(intervalId);
+    const totalSeconds = ticksRemaining - 1;
+    return {
+      days: Math.floor(totalSeconds / (60 * 60 * 24)),
+      hours: Math.floor((totalSeconds / (60 * 60)) % 24),
+      minutes: Math.floor((totalSeconds / 60) % 60),
+      seconds: Math.floor(totalSeconds % 60),
     };
-  }, [calculateTimeLeft]);
+  }, [ticksRemaining]);
+
+  const [announcement, setAnnouncement] = useState('');
 
   const timerComponents: React.ReactNode[] = [];
 

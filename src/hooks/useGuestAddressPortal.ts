@@ -225,10 +225,15 @@ interface GuestAddressApiResponse {
 export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   const toast = useToast();
   const toastRef = useRef(toast);
-  toastRef.current = toast;
-
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'success' && optionsRef.current?.onSuccessToast) {
@@ -240,13 +245,21 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     }
   }, []);
 
-  const [state, dispatch] = useReducer(guestAddressPortalReducer, {
+  const [state, rawDispatch] = useReducer(guestAddressPortalReducer, {
     ...initialGuestPortalState,
     code: options?.initialCode || '',
   });
 
   const stateRef = useRef(state);
-  stateRef.current = state;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const dispatch = useCallback((action: GuestAddressPortalAction) => {
+    stateRef.current = guestAddressPortalReducer(stateRef.current, action);
+    rawDispatch(action);
+  }, []);
 
   const validationAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -318,7 +331,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         });
       }
     },
-    [fetchAddressData]
+    [dispatch, fetchAddressData]
   );
 
   const validateCode = useCallback(
@@ -421,7 +434,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         });
       }
     },
-    [addToast, fetchAddressData]
+    [addToast, dispatch, fetchAddressData]
   );
 
   // Mount effect to check session or auto-validate URL code
@@ -536,20 +549,20 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         addToast(errorMsg, 'error');
       }
     },
-    [addToast]
+    [addToast, dispatch]
   );
 
   const setField = useCallback((field: keyof AddressFormData, value: string) => {
     dispatch({ type: 'SET_FIELD', field, value });
-  }, []);
+  }, [dispatch]);
 
   const setCode = useCallback((code: string) => {
     dispatch({ type: 'SET_CODE', code });
-  }, []);
+  }, [dispatch]);
 
   const resetError = useCallback(() => {
     dispatch({ type: 'RESET_ERROR' });
-  }, []);
+  }, [dispatch]);
 
   const handleRetry = useCallback(async () => {
     cancelInFlightValidation();

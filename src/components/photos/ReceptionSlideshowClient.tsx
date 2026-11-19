@@ -125,15 +125,6 @@ export function ReceptionSlideshowClient({
     return false;
   }, []);
 
-  // Keep currentIndex in bounds when photos queue size shrinks
-  useEffect(() => {
-    if (photos.length > 0 && currentIndex >= photos.length) {
-      setCurrentIndex((prev) => (photos.length > 0 ? prev % photos.length : 0));
-    } else if (photos.length === 0 && currentIndex !== 0) {
-      setCurrentIndex(0);
-    }
-  }, [photos.length, currentIndex]);
-
   // Handle broken image URLs by skipping immediately and falling back to default photos if all fail
   const handlePhotoError = useCallback((failedUrl: string) => {
     failedUrlsRef.current.add(failedUrl);
@@ -183,8 +174,11 @@ export function ReceptionSlideshowClient({
   useEffect(() => {
     if (typeof document !== 'undefined' && isInteractiveControl(document.activeElement)) {
       isControlsFocusedRef.current = true;
+    } else {
+      inactivityTimerRef.current = setTimeout(() => {
+        setAreControlsVisible(false);
+      }, 3000);
     }
-    handleUserActivity();
 
     const onActivity = () => handleUserActivity();
 
@@ -231,7 +225,7 @@ export function ReceptionSlideshowClient({
   const goToNext = useCallback(() => {
     setPhotos((currentList) => {
       if (currentList.length > 0) {
-        setCurrentIndex((prev) => (prev + 1) % currentList.length);
+        setCurrentIndex((prev) => ((prev % currentList.length) + 1) % currentList.length);
       }
       return currentList;
     });
@@ -240,7 +234,7 @@ export function ReceptionSlideshowClient({
   const goToPrev = useCallback(() => {
     setPhotos((currentList) => {
       if (currentList.length > 0) {
-        setCurrentIndex((prev) => (prev - 1 + currentList.length) % currentList.length);
+        setCurrentIndex((prev) => ((prev % currentList.length) - 1 + currentList.length) % currentList.length);
       }
       return currentList;
     });
