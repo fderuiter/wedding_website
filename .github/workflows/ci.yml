@@ -41,6 +41,9 @@ jobs:
       - name: Verify Deployment Runbooks
         run: npm run check:runbooks
 
+      - name: Verify Setup & Contributor Guides Contract
+        run: npm run check:setup-guides
+
       - name: Check Personal/Template Identifier Isolation
         run: npm run check:identifiers
 

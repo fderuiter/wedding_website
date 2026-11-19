@@ -8,7 +8,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
 1. **Be Nice:** Seriously. We're all just trying to make cool stuff (or, in this case, a functional website). Let's be respectful and constructive.
 2. **Check Existing Issues:** Before you file a new bug report or feature request, please take a quick peek at the [existing issues](https://github.com/fderuiter/wedding_website/issues) to see if someone else has already mentioned it. Maybe add a thumbs-up or your own details to an existing issue.
-3. **Use the Templates:** When you *do* create a new issue, please use the provided templates (Bug Report, Feature Request, Docs Improvement). They help me understand what's going on without needing a crystal ball.
+3. **Use the Templates:** When you *do* create a new issue, please use the provided templates in [`.github/ISSUE_TEMPLATE/`](ISSUE_TEMPLATE) (`Bug Report`, `Feature Request`, [`Documentation Improvement`](ISSUE_TEMPLATE/documentation.md), `Accessibility Issue Report`, `Configuration Management Improvement`, `Refactoring & Code Quality Task`, `Testing Improvement Task`, `UI/UX Improvement Suggestion`). They help me understand what's going on without needing a crystal ball.
 
 ## How to Contribute (The Fun Part!)
 
@@ -27,7 +27,9 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git checkout -b fix/registry-typo
     ```
 
-5. **Make Your Changes:** Write your code, fix the bug, improve the docs. Try to stick to the existing code style (TypeScript, React, Tailwind utility classes). Run `npm run lint` if you want to check for basic style issues (though it's not super strict right now).
+5. **Make Your Changes:** Write your code, fix the bug, or improve the docs while adhering to our TypeScript, React, Tailwind CSS, and ESLint rules:
+   - **Scaffold New Feature Modules:** When introducing a new domain feature under `src/features/`, run `npm run scaffold -- <feature-name>` ([`scripts/scaffold-feature.mjs`](../scripts/scaffold-feature.mjs), kebab-case) to generate the standard `api/`, `components/`, `hooks/`, `lib/`, `schemas.ts`, `types.ts`, `repository.ts`, `service.ts`, and public `index.ts` barrel structure.
+   - **Strict ESLint Enforcement:** Run `npm run lint` (or `npm run lint:fix`). [`eslint.config.mjs`](../eslint.config.mjs) enforces **error-level** rules that fail builds, pre-commit hooks, and CI — including single quotes (`@stylistic/quotes`), 2-space indentation (`@stylistic/indent`), required semicolons (`@stylistic/semi`), public feature barrel imports only (`no-restricted-imports` banning `@/features/*/*`), utility import boundaries (`local-rules/no-restricted-utility-imports`), no `require()` imports outside `.cjs` (`@typescript-eslint/no-require-imports`), and zero unused imports (`unused-imports/no-unused-imports`).
 6. **Test Your Changes & Run Quality Gates:** Before submitting your PR, ensure all quality gates pass locally. You can run all checks at once or individual commands:
 
    - **Run All Quality Checks:**
@@ -38,11 +40,15 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
    - **Individual Quality Checks:**
+     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:prisma`, `lint:migrations`, `check:doc-sync`, and `check:setup-guides`).
+     - `npm run check:env-docs` - Ensure environment variables match `.env.example` and deployment documentation.
+     - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
+     - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
      - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
+     - `npm run check:action-pins` - Ensure third-party GitHub Actions are pinned to 40-character commit SHAs.
      - `npm run check:links` - Validate relative documentation links across Markdown files.
-     - `npm run check:prisma` - Validate Prisma schema structure.
+     - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
      - `npm run check:standalone` - Verify Next.js standalone build & container portability.
-     - `npm run check:env-docs` - Ensure environment variables match `.env.example` documentation.
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json` and `ARCHITECTURE.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
      - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
@@ -57,6 +63,10 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git add .
     git commit -m "fix: Correct spelling on registry item description"
     ```
+
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm install`), which:
+    1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
+    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs ten sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
 8. **Push to Your Fork:**
 
@@ -75,7 +85,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
 We treat upstream compatibility as a core feature of this template. If your pull request introduces changes that affect downstream adopters (such as database migrations, configuration schema changes, environment variables, or breaking changes):
 
-1. **Categorize Changes**: Check the appropriate categories in the PR template (🚀 Application, 🗄️ Schema, ⚙️ Configuration, 🐳 Deployment, ⚠️ Breaking Change).
+1. **Categorize Changes**: Check the appropriate categories in the PR template (🚀 Application, 🗄️ Schema, ⚙️ Configuration, 🐳 Deployment, ⚠️ Breaking Change, 📚 Documentation).
 2. **Flag Adopter Action**: Explicitly flag whether the change requires downstream adopter action (`Adopter Action Required: Yes | No`).
 3. **Migration Instructions**: Include clear, step-by-step migration instructions in the PR description if database migrations, environment variable additions, or breaking changes are involved.
 4. **Docs Sync**: Keep documentation in sync. For details on versioning guidelines and release categorization, refer to [docs/versioning.md](../docs/versioning.md) and [docs/upgrading.md](../docs/upgrading.md).
@@ -104,15 +114,15 @@ All new utility functions placed in the global `src/utils/` folder must follow t
 * **Stateless and Pure:** Utility functions must be pure functions with no side effects. They must not rely on global state, mutable external variables, or perform asynchronous networking. Given the same inputs, they must always return the same outputs.
 * **TypeScript & Quality:** Explicitly define TypeScript argument and return types. Avoid the use of `any`.
 * **Placement:**
-  * Place domain-agnostic, stateless helpers in `/app/src/utils/` (e.g., as standalone utility files or added to an existing domain-agnostic utility file).
-  * Ensure that feature-specific logic is strictly isolated in feature-specific subdirectories under `src/features/`.
+  * Place domain-agnostic, stateless helpers in `src/utils/` (e.g., as standalone utility files or added to an existing domain-agnostic utility file).
+  * Ensure that feature-specific logic is strictly isolated in feature-specific subdirectories under `src/features/` (use `npm run scaffold -- <feature-name>` when creating a new feature module).
 
 ## Code Style
 
-* **TypeScript:** Use it. Try to be explicit with types where it makes sense.
+* **TypeScript:** Strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`) is enforced across all four `tsconfig*.json` files. Explicitly define types and avoid `any`.
 * **React:** Functional components with Hooks are the way.
 * **Tailwind CSS:** Utility classes first. Avoid custom CSS unless absolutely necessary.
-* **Formatting:** Pretty standard stuff. Try to match the existing code. `npm run lint` might help.
+* **Formatting & Imports (`eslint.config.mjs`):** Single quotes, 2-space indentation, semicolons, zero unused imports, no `require()` outside `.cjs`, and cross-feature imports strictly via `@/features/<domain>` public barrels are enforced as **errors** by `npm run lint` (use `npm run lint:fix` to auto-format).
 
 ## Code of Conduct
 

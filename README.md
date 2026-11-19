@@ -69,7 +69,7 @@ For detailed onboarding, local setup workflows, and testing runbooks, see the [D
 
 *   **Node.js**: LTS version recommended (v22+).
 *   **Git**: For version control.
-*   **PostgreSQL Database**: Compatible with local PostgreSQL or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
+*   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`docker compose up -d db`, defaulting to user `wedding`, password `wedding123`, database `wedding` on port `5432` in [`docker-compose.yml`](./docker-compose.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
 
 ### Installation Steps
 
@@ -86,32 +86,50 @@ For detailed onboarding, local setup workflows, and testing runbooks, see the [D
 
 ### Environment Variables
 
-Create a `.env` file (or `.env.local`, `.env.development`, `.env.development.local`) in the root directory by copying the `.env.example` file or creating a new one. You need to define the following variables:
+Create a `.env` file (or `.env.local`, `.env.development`, `.env.development.local`) in the root directory by copying [`.env.example`](./.env.example):
+
+```bash
+cp .env.example .env
+```
+
+Optional integrations (`POSTGRES_URL_NON_POOLING`, `CRON_SECRET`, all six `S3_*` variables, and `STRIPE_*`) remain commented out by default in `.env.example` so local asset uploads use `LocalStorageProvider` ([`src/utils/storage.ts`](./src/utils/storage.ts)) and Prisma migrations ([`prisma.config.ts`](./prisma.config.ts)) manage temporary shadow databases automatically without broken shadow URLs.
+
+Configure the core local environment variables in `.env`:
 
 ```env
-# Required for Admin Login (Must be a scrypt hash, NOT plaintext)
-# Generate a hash by running: node scripts/generate-password-hash.mjs "your_password"
-# The format must be: scrypt:[saltBase64]:[keyBase64]
+# PostgreSQL connection (defaults match `docker compose up -d db` in docker-compose.yml)
+DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding?schema=public"
+
+# Admin login hash (64-byte scrypt key required by src/utils/password.ts — NOT plaintext)
+# Generate your hash with: node scripts/generate-password-hash.mjs "your_password"
 ADMIN_PASSWORD="scrypt:c2FsdA==:aGFzaA=="
 
-# Required for Prisma (PostgreSQL connection)
-# Obtain this from your database provider
-DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+# Trusted hostnames allowed to access the application
+ALLOWED_HOSTS="localhost,127.0.0.1,*.localhost,wedding.example,*.wedding.example"
+
+# Global guest passcode and distinct HMAC-SHA256 guest session signing secret (32+ chars in production)
+GUEST_PASSCODE="your-unique-guest-passcode"
+GUEST_SESSION_SECRET="your-dedicated-guest-session-secret"
 ```
+
+> **Important:** Replace the dummy `ADMIN_PASSWORD` placeholder by running `node scripts/generate-password-hash.mjs "your_password"` before signing in to the Setup Wizard or `/admin/login`.
 
 ### Database Setup
 
-1.  **Run Migrations:** Apply the database schema to your PostgreSQL database.
+1.  **Start PostgreSQL (if using Docker Compose) & Run Migrations:** Apply the database schema to your PostgreSQL database:
     ```bash
+    docker compose up -d db
     npm run migrate:dev
     ```
-    This command creates the necessary tables (`RegistryItem`, `Contributor`, etc.) defined in `prisma/schema.prisma`.
+    `npm run migrate:dev` (`dotenv -c development -- prisma migrate dev`) loads `.env` automatically and creates all tables defined in `prisma/schema.prisma`.
 
 2.  **Seed Data (Optional):** Run the database seeding script to populate initial configuration settings:
     ```bash
     npm run db:seed
     ```
-    This seeds default `AppConfig` settings (such as partner names, wedding date, venue details, and hero text) from `scripts/seed.ts` into your database.
+    `npm run db:seed` (`dotenv -c development -- tsx scripts/seed.ts`) loads `.env` automatically without manual shell exports and upserts the global `AppConfig` record (`partner1Name: 'Jane'`, `partner2Name: 'John'`, `baseUrl: 'http://localhost:3000'`, venue details, and hero text) from [`scripts/seed.ts`](./scripts/seed.ts).
+
+    > **Note on `SetupWizard` Bypass & Root Redirect:** Seeding `AppConfig` satisfies `isSiteInitialized` in [`src/lib/config.ts`](./src/lib/config.ts), which causes [`src/app/layout.tsx`](./src/app/layout.tsx) to skip rendering `<SetupWizard />` and [`src/middleware.ts`](./src/middleware.ts) to redirect unauthenticated requests to `/` (`303 See Other`) to `/guest/login`. Skip `npm run db:seed` if you want to walk through the First-Run Setup Wizard on an unseeded database.
 
 ## Usage
 
@@ -154,10 +172,13 @@ npm run test:watch
 
 ### First-Run Setup & Bootstrap
 
-1. **Initial Setup Wizard:** On a fresh installation, visiting the site presents the First-Run Setup Wizard.
-2. **Authentication:** Enter the admin password corresponding to the `ADMIN_PASSWORD` scrypt hash configured in your environment. **No default password exists.**
-3. **Core Site Configuration:** Enter your partner details, wedding date, canonical site URL, venue details, and timezone.
-4. **Replay Protection:** Once setup completes, the setup endpoint (`/api/admin/setup`) is protected against unauthorized replay attacks (`403 Forbidden`). Future configuration changes require an authenticated admin session.
+On an **unseeded** installation (before `AppConfig` satisfies `isSiteInitialized`), visiting `http://localhost:3000` renders the five-step [`SetupWizard`](./src/components/setup/SetupWizard.tsx):
+
+1. **Step 1 — Admin Authentication (`Welcome to Your Wedding Site!`):** Enter the plaintext admin password matching the 64-byte `ADMIN_PASSWORD` scrypt hash generated via `node scripts/generate-password-hash.mjs`. **No default password exists.**
+2. **Step 2 — The Essentials:** Configure Partner 1 and Partner 2 names, wedding date, timezone, canonical Site URL (`baseUrl`), optional host contact email, venue name/city/state, and theme/layout presets (`ThemeConfigurationPanel`), saved via `/api/admin/setup`.
+3. **Step 3 — Sample Data Selection:** Choose a starter archetype preset and populate optional sample data modules (`registry`, `guests`, `seating`, `weddingParty`, `attractions`), or skip to start blank.
+4. **Step 4 — Guest List Import:** Import a guest list CSV spreadsheet (`CsvImportWizardModal`) to generate invitation codes immediately, or skip for later.
+5. **Step 5 — Complete Setup:** Optionally manage wedding party members (`WeddingPartyManagerModal`) and local attractions (`AttractionsManagerModal`), then proceed to `/admin/dashboard`. Once `AppConfig` is initialized, `/api/admin/setup` enforces replay protection (`403 Forbidden`) against unauthenticated requests, and `/` redirects unauthenticated visitors to `/guest/login`.
 
 ### Admin Access
 
@@ -181,17 +202,19 @@ If you cloned or forked this template to host your own wedding website, you can 
 ## Project Structure
 
 *   `src/app`: Next.js App Router pages and Route Handlers.
-*   `src/components`: Shared React components (Layout, UI elements, 3D scenes).
+*   `src/components`: Shared React components (Layout, UI elements, 3D scenes, first-run `setup/` wizard).
 *   `src/core`: Framework infrastructure and authentication modules.
-*   `src/data`: Static fallback data.
 *   `src/features`: Feature-specific logic (e.g., `src/features/registry` contains all registry-related components, hooks, and services).
 *   `src/hooks`: Shared React hooks.
-*   `src/lib`: Core library configurations (Prisma client).
-*   `src/utils`: Utility functions (validation, formatting, auth).
-*   `prisma`: Database schema definition.
-*   `public`: Static assets (images, fonts).
+*   `src/lib`: Core library configurations (Prisma client, `AppConfig` loader).
+*   `src/mocks`: MSW mock handlers and server setup for Jest and Storybook.
+*   `src/testing`: Typed test fixture factories.
+*   `src/utils`: Stateless utility functions (validation, formatting, storage, password verification).
+*   `prisma`: Database schema definition and SQL migrations.
+*   `public`: Static assets and generated OpenAPI specification.
 *   `e2e`: End-to-end tests (Playwright).
-*   `scripts`: Utility scripts for database migration and maintenance.
+*   `scripts`: CLI verification, documentation sync, portal generation, and database seeding scripts.
+*   `docs`: Developer onboarding, runtime contract, and deployment runbooks.
 
 ## Contributing
 

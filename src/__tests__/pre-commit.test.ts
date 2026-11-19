@@ -136,7 +136,7 @@ process.exit(0);
     expect(hookContent).toContain("{ name: 'Documentation synchronization check', script: 'check:doc-sync' }");
   });
 
-  it('passes when documentation is synchronized and executes all nine static checks in order', () => {
+  it('passes when documentation is synchronized and executes all ten static checks in order', () => {
     fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'staged change\n');
     execSync('git add notes.txt', { cwd: tempDir, stdio: 'ignore' });
 
@@ -151,6 +151,7 @@ process.exit(0);
       'npm:type-check',
       'npm:lint:unused',
       'npm:check:env-docs',
+      'npm:check:setup-guides',
       'npm:check:identifiers',
       'npm:check:action-pins',
       'npm:check:links',

@@ -84,6 +84,7 @@ try {
     { name: 'TypeScript type check', script: 'type-check' },
     { name: 'Knip dead-code analysis', script: 'lint:unused' },
     { name: 'Environment variables documentation check', script: 'check:env-docs' },
+    { name: 'Setup and contributor guides contract check', script: 'check:setup-guides' },
     { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
     { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
     { name: 'Documentation relative links check', script: 'check:links' },
