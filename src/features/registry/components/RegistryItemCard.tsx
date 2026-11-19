@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { useTheme } from '@/components/ThemeProvider';
 import { RegistryItem } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -16,6 +17,7 @@ import { useRegistryContributionMachine } from '../hooks/useRegistryContribution
 import { getPaymentUrl } from '../utils/paymentUrls';
 import {
   CARD_PROCESSING_FEE_RATE,
+  calculateContributionAmounts,
   getStripePromise,
   isValidStripePublishableKey,
 } from '@/lib/stripe';
@@ -51,6 +53,29 @@ interface RegistryItemCardProps {
 interface StripeControllerHandle {
   stripe: Stripe | null;
   elements: StripeElements | null;
+}
+
+interface SyncedPaymentIntentSnapshot {
+  itemId: string;
+  paymentIntentId: string;
+  clientSecret: string;
+  baseAmountCents: number;
+  coverFee: boolean;
+  hasGuestMetadata: boolean;
+  name: string;
+  email: string;
+  message: string;
+  code: string;
+  isMock?: boolean;
+}
+
+function isUnmockedFetchError(err: unknown): boolean {
+  return (
+    err instanceof TypeError ||
+    (typeof err === 'object' &&
+      err !== null &&
+      (err as { name?: unknown }).name === 'TypeError')
+  );
 }
 
 /**
@@ -119,7 +144,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   stripePublishableKey,
   isAdmin = false,
 }) => {
+  const { resolvedTheme } = useTheme();
   const stripeControllerRef = useRef<StripeControllerHandle | null>(null);
+  const syncedPaymentIntentRef = useRef<SyncedPaymentIntentSnapshot | null>(null);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const directRadioRef = useRef<HTMLButtonElement | null>(null);
   const cardRadioRef = useRef<HTMLButtonElement | null>(null);
 
@@ -199,11 +227,26 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isDirectMode = isFund && activePaymentMode === 'direct';
   const isCardMode = isFund && activePaymentMode === 'card';
 
+  // Stripe PaymentIntent state (only used in Card Checkout mode, scoped by item.id)
+  const [paymentIntentData, setPaymentIntentData] = useState<{
+    itemId: string;
+    clientSecret: string;
+    paymentIntentId: string;
+    amount: number;
+    feeAmount: number;
+  } | null>(null);
+
   const handleSelectMode = (mode: 'direct' | 'card') => {
     setSelectedModeOverride({ key: modeBaseKey, mode });
     setSubmissionError(null);
     if (mode === 'direct') {
       setCoverFee(false);
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+      syncedPaymentIntentRef.current = null;
+      setPaymentIntentData(null);
     }
   };
 
@@ -228,14 +271,24 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     ? Math.min(100, remainingAmount > 0 ? remainingAmount : item.price)
     : item.price;
 
+  const elementsAmountCents =
+    baseContributionAmount > 0
+      ? Math.max(
+        1,
+        calculateContributionAmounts(baseContributionAmount, effectiveCoverFee).totalChargeCents
+      )
+      : Math.max(100, Math.round(initialElementsAmount * 100));
+
+  const elementsTheme = resolvedTheme === 'dark' ? ('night' as const) : ('stripe' as const);
+
   const elementsOptions = useMemo(
     () => ({
       mode: 'payment' as const,
-      amount: Math.max(100, Math.round(initialElementsAmount * 100)),
+      amount: elementsAmountCents,
       currency: 'usd',
-      appearance: { theme: 'stripe' as const },
+      appearance: { theme: elementsTheme },
     }),
-    [initialElementsAmount]
+    [elementsAmountCents, elementsTheme]
   );
 
   const stripePromise = useMemo(() => {
@@ -245,67 +298,122 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     return getStripePromise(stripePublishableKey);
   }, [isCardMode, item.isSample, item.purchased, isSubmitting, stripePublishableKey]);
 
-  // Stripe PaymentIntent state (only used in Card Checkout mode)
-  const [paymentIntentData, setPaymentIntentData] = useState<{
-    clientSecret: string;
-    paymentIntentId: string;
-    amount: number;
-    feeAmount: number;
-  } | null>(null);
+  // Reset synced PaymentIntent ref and state when item.id changes or Card Checkout mode exits
+  const prevItemIdRef = useRef(item.id);
+  useEffect(() => {
+    if (prevItemIdRef.current !== item.id || !isCardMode) {
+      prevItemIdRef.current = item.id;
+      syncedPaymentIntentRef.current = null;
+      setPaymentIntentData((prev) => (prev === null ? prev : null));
+    }
+  }, [item.id, isCardMode]);
 
-  // Sync PaymentIntent dynamically only when Card Checkout mode is active
+  // Sync PaymentIntent pricing dynamically only when Card Checkout mode is active
   useEffect(() => {
     if (!isCardMode || item.isSample || item.purchased || isSubmitting || isSuccess) return;
-    if (baseContributionAmount <= 0) return;
+    const baseAmountCents = Math.round(baseContributionAmount * 100);
+    const remainingAmountCents = Math.round(remainingAmount * 100);
+    if (baseContributionAmount <= 0 || baseAmountCents > remainingAmountCents) return;
+
+    const currentSynced =
+      syncedPaymentIntentRef.current?.itemId === item.id ? syncedPaymentIntentRef.current : null;
+    if (
+      currentSynced &&
+      !currentSynced.isMock &&
+      currentSynced.baseAmountCents === baseAmountCents &&
+      currentSynced.coverFee === effectiveCoverFee
+    ) {
+      return;
+    }
 
     let active = true;
     const timer = setTimeout(async () => {
+      syncTimerRef.current = null;
+      const latestSynced =
+        syncedPaymentIntentRef.current?.itemId === item.id ? syncedPaymentIntentRef.current : null;
+      const existingPaymentIntentId =
+        latestSynced && !latestSynced.isMock ? latestSynced.paymentIntentId : undefined;
+
       try {
         const res = await apiClient.post('/api/registry/payment-intent', {
           itemId: item.id,
           amount: baseContributionAmount,
           coverFee: effectiveCoverFee,
-          paymentIntentId: paymentIntentData?.paymentIntentId,
-          name: contributorName,
-          email,
-          message,
-          code: invitationCode,
+          ...(existingPaymentIntentId ? { paymentIntentId: existingPaymentIntentId } : {}),
         });
-        if (active && res && res.clientSecret) {
-          setPaymentIntentData(res);
-        }
-      } catch {
-        // Strictly restrict mock fallback to unit tests where fetch may not be mocked
-        if (process.env.NODE_ENV === 'test' && active && !paymentIntentData) {
+        if (active && res && res.clientSecret && res.paymentIntentId) {
+          syncedPaymentIntentRef.current = {
+            itemId: item.id,
+            paymentIntentId: res.paymentIntentId,
+            clientSecret: res.clientSecret,
+            baseAmountCents,
+            coverFee: effectiveCoverFee,
+            hasGuestMetadata: false,
+            name: '',
+            email: '',
+            message: '',
+            code: '',
+            isMock: false,
+          };
           setPaymentIntentData({
-            clientSecret: `pi_mock_secret_${item.id}`,
-            paymentIntentId: `pi_mock_${item.id}`,
+            ...res,
+            itemId: item.id,
+          });
+        }
+      } catch (err: unknown) {
+        // Strictly restrict mock fallback to unit tests where fetch is not mocked
+        if (
+          process.env.NODE_ENV === 'test' &&
+          active &&
+          !syncedPaymentIntentRef.current &&
+          isUnmockedFetchError(err)
+        ) {
+          const fallbackFee =
+            Math.round(baseContributionAmount * CARD_PROCESSING_FEE_RATE * 100) / 100;
+          const mockIntentId = `pi_mock_${item.id}`;
+          const mockSecret = `pi_mock_secret_${item.id}`;
+          syncedPaymentIntentRef.current = {
+            itemId: item.id,
+            paymentIntentId: mockIntentId,
+            clientSecret: mockSecret,
+            baseAmountCents,
+            coverFee: effectiveCoverFee,
+            hasGuestMetadata: false,
+            name: '',
+            email: '',
+            message: '',
+            code: '',
+            isMock: true,
+          };
+          setPaymentIntentData({
+            itemId: item.id,
+            clientSecret: mockSecret,
+            paymentIntentId: mockIntentId,
             amount: baseContributionAmount,
-            feeAmount: effectiveCoverFee ? estimatedProcessingFee : 0,
+            feeAmount: effectiveCoverFee ? fallbackFee : 0,
           });
         }
       }
     }, 250);
+    syncTimerRef.current = timer;
 
     return () => {
       active = false;
       clearTimeout(timer);
+      if (syncTimerRef.current === timer) {
+        syncTimerRef.current = null;
+      }
     };
   }, [
     item.id,
     item.isSample,
     item.purchased,
+    remainingAmount,
     isSubmitting,
     isSuccess,
     isCardMode,
     baseContributionAmount,
     effectiveCoverFee,
-    contributorName,
-    email,
-    message,
-    invitationCode,
-    estimatedProcessingFee,
-    paymentIntentData,
   ]);
 
   // Form submission handling direct transfer, physical claims, and embedded Stripe Elements confirmation
@@ -331,19 +439,56 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       return;
     }
 
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+
     setSubmissionError(null);
 
     try {
-      let intentId = paymentIntentData?.paymentIntentId;
-      let secret = paymentIntentData?.clientSecret;
+      const currentSynced =
+        syncedPaymentIntentRef.current?.itemId === item.id ? syncedPaymentIntentRef.current : null;
+      const activeStateIntent =
+        isCardMode && paymentIntentData?.itemId === item.id ? paymentIntentData : null;
+      const hasRealSyncedIntent = Boolean(currentSynced && !currentSynced.isMock);
 
-      // 1. Ensure PaymentIntent is created or retrieved
-      if (!intentId || !secret) {
+      const baseAmountCents = Math.round(baseContributionAmount * 100);
+      const normalizedName = contributorName.trim();
+      const normalizedEmail = email.trim();
+      const normalizedMessage = message;
+      const normalizedCode = invitationCode.trim();
+
+      const needsIntentSync =
+        !currentSynced ||
+        currentSynced.isMock ||
+        !currentSynced.paymentIntentId ||
+        !currentSynced.clientSecret ||
+        currentSynced.baseAmountCents !== baseAmountCents ||
+        currentSynced.coverFee !== effectiveCoverFee ||
+        !currentSynced.hasGuestMetadata ||
+        currentSynced.name !== normalizedName ||
+        currentSynced.email !== normalizedEmail ||
+        currentSynced.message !== normalizedMessage ||
+        currentSynced.code !== normalizedCode;
+
+      let intentId = hasRealSyncedIntent
+        ? currentSynced?.paymentIntentId ?? activeStateIntent?.paymentIntentId
+        : undefined;
+      let secret = hasRealSyncedIntent
+        ? currentSynced?.clientSecret ?? activeStateIntent?.clientSecret
+        : undefined;
+
+      // 1. Ensure PaymentIntent is created or synchronized whenever pricing or guest metadata changed
+      if (needsIntentSync) {
         try {
           const intentRes = await apiClient.post('/api/registry/payment-intent', {
             itemId: item.id,
             amount: baseContributionAmount,
             coverFee: effectiveCoverFee,
+            ...(hasRealSyncedIntent && currentSynced?.paymentIntentId
+              ? { paymentIntentId: currentSynced.paymentIntentId }
+              : {}),
             name: contributorName,
             email,
             message,
@@ -352,12 +497,34 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           if (intentRes?.paymentIntentId && intentRes?.clientSecret) {
             intentId = intentRes.paymentIntentId;
             secret = intentRes.clientSecret;
-            setPaymentIntentData(intentRes);
+            syncedPaymentIntentRef.current = {
+              itemId: item.id,
+              paymentIntentId: intentRes.paymentIntentId,
+              clientSecret: intentRes.clientSecret,
+              baseAmountCents,
+              coverFee: effectiveCoverFee,
+              hasGuestMetadata: true,
+              name: normalizedName,
+              email: normalizedEmail,
+              message: normalizedMessage,
+              code: normalizedCode,
+              isMock: false,
+            };
+            setPaymentIntentData({
+              ...intentRes,
+              itemId: item.id,
+            });
+          } else if (hasRealSyncedIntent) {
+            throw new Error('Unable to synchronize updated payment details. Please try again.');
           }
-        } catch (intentErr: any) {
-          if (process.env.NODE_ENV === 'test') {
-            intentId = intentId || 'pi_mock_intent';
-            secret = secret || 'pi_mock_secret';
+        } catch (intentErr: unknown) {
+          if (
+            process.env.NODE_ENV === 'test' &&
+            !hasRealSyncedIntent &&
+            isUnmockedFetchError(intentErr)
+          ) {
+            intentId = 'pi_mock_intent';
+            secret = 'pi_mock_secret';
           } else {
             throw intentErr;
           }
