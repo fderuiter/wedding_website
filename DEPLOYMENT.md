@@ -186,17 +186,18 @@ To protect production database integrity and application availability, the deplo
 
 1. **Automated Staging Delivery on Merge**:
    - When a pull request is merged into `main`, GitHub Actions triggers `.github/workflows/deploy.yml`.
-   - The workflow verifies N-1 schema backwards compatibility, builds and scans the immutable container artifact, runs migrations on `staging`, deploys to the staging provider, and validates `/api/health`.
+   - The workflow verifies N-1 schema backwards compatibility, builds and scans the immutable container artifact, signs OIDC build provenance attestations (`actions/attest-build-provenance`), and exports `image_digest` (`sha256:<64-hex>`).
+   - `staging-deploy-provider` receives the attested `image_digest`, verifies OIDC provenance via `gh attestation verify` against the `oci://ghcr.io/<owner>/<repo>@sha256:<hex>` URI prior to rollout, deploys the digest-pinned container to `staging`, and validates `/api/health`.
 2. **Pre-Flight Schema Status & DDL Review**:
    - The pipeline generates a detailed **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`.
-   - The summary details target environment status, pending migration filenames, altered tables/columns, and complete SQL statements.
+   - The summary details target environment status, pending migration filenames, altered tables/columns, and complete SQL statements alongside the verified container digest and attestation status.
 3. **Maintainer Review & Sign-Off**:
    - Maintainers navigate to the active workflow run in GitHub Actions.
    - Maintainers review the pre-flight schema summary, verify staging health check results, and click **Review deployments**.
    - Upon selecting the `production` environment and clicking **Approve and deploy**, GitHub Actions unblocks production deployment.
 4. **Production Deployment & Automated Rollback Guard**:
    - Production database migrations execute via `.github/workflows/db-migrate.yml` with advisory locking and preflight verification.
-   - The updated container is deployed via `.github/workflows/deploy-provider.yml`.
+   - `production-deploy-provider` promotes the exact `image_digest` attested in `publish-artifact.yml` (or an explicit `image_digest` supplied on manual production-only dispatches), re-verifies OIDC build provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml`, and deploys the immutable `@sha256:` URI via `.github/workflows/deploy-provider.yml`.
    - Post-deployment health probes verify `/api/health` with exponential backoff.
    - **Rollback Guarantee**: If the production health probe fails, `.github/workflows/rollback.yml` is automatically triggered to restore the previous validated container tag (`previous_tag`) **without requiring a second human approval step**.
 
@@ -227,7 +228,7 @@ To protect production database integrity and application availability, the deplo
 - **Outputs**:
   - `image_uri`: Immutable URI (`ghcr.io/<owner>/<repo>:<sha>`).
   - `image_tag`: Immutable commit SHA or custom release tag.
-  - `image_digest`: OCI image digest.
+  - `image_digest`: Attested OCI image digest (`sha256:<64-hex>`) propagated to staging and production deployment jobs.
 
 ### 3. Database Migration (`db-migrate.yml`)
 - **Triggers**: Release pipeline, manual `workflow_dispatch` with target environment (`production`, `staging`, `development`).
@@ -240,16 +241,25 @@ To protect production database integrity and application availability, the deplo
   - Emits diagnostic error signaling and resolution guidance if migration fails.
 
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
-- **Triggers**: Release pipeline, manual `workflow_dispatch` with `image_tag` parameter.
+- **Triggers**: Release pipeline (`workflow_call`) with `image_digest`, or manual `workflow_dispatch` with an explicit `image_digest` (`sha256:<64-hex>`) or immutable release/commit `image_tag` (unpinned `latest` tags are rejected).
+- **Permissions**: Top-level `contents: read`; deployment job scopes `packages: read` and `attestations: read` for registry inspection and OIDC provenance verification.
 - **Secrets required**: Provider credentials (e.g. `GCP_SA_KEY`, `DEPLOY_WEBHOOK_URL`).
+- **Inputs**:
+  - `environment`: Target deployment environment (`production` or `staging`).
+  - `image_digest`: Immutable OCI image digest (`sha256:<64-hex>`) to deploy directly.
+  - `image_tag`: Immutable version tag or commit SHA (resolved to an immutable `sha256` digest via `docker buildx imagetools inspect` when `image_digest` is omitted).
+  - `provider`: Hosting provider adapter (`google-cloud-run`, `docker-host`, or `generic-webhook`).
 - **Outputs**:
   - `service_url`: Target deployment service URL.
   - `is_dry_run`: Boolean flag indicating if deployment executed in dry-run mode.
+  - `image_digest`: Verified immutable `sha256` OCI image digest deployed.
+  - `image_uri`: Full digest-pinned OCI image URI (`ghcr.io/<owner>/<repo>@sha256:<hex>`).
+  - `attestation_status`: OIDC build provenance attestation verification status (`verified`).
 - **Actions**:
   - Declares `environment: ${{ inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules and reviewer sign-off for `production`.
-  - Consumes a pre-built, tested release artifact tag.
-  - Deploys the container to hosting provider (e.g. Google Cloud Run).
-  - Exports the active service URL as a job output.
+  - Rejects unpinned `latest` tags, resolves tag-only manual dispatches to immutable `sha256` digests via `docker buildx imagetools inspect`, and validates digests against `^sha256:[a-f0-9]{64}$`.
+  - Runs `gh attestation verify` against `oci://ghcr.io/<owner>/<repo>@sha256:<hex>` with `--owner` and `--signer-workflow <owner>/<repo>/.github/workflows/publish-artifact.yml` before invoking any provider adapter or dry-run step.
+  - Deploys the digest-pinned `@sha256:` container URI to the hosting provider (e.g. Google Cloud Run or generic webhook) and records the verified digest, pinned URI, and attestation status in `$GITHUB_STEP_SUMMARY`.
 
 ### 5. Post-Deployment Verification & Automated Rollback (`deploy.yml` & `rollback.yml`)
 - **Triggers**: Runs automatically in `deploy.yml` post-provider deployment for staging and production.
