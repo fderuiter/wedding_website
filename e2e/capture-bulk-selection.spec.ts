@@ -74,7 +74,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   await expect(deleteBtn).toBeVisible({ timeout: 15000 });
   await deleteBtn.click();
 
-  const modal = page.getByRole('dialog', { name: 'Confirm Batch Deletion' });
+  const modal = page.getByRole('alertdialog', { name: 'Confirm Batch Deletion' });
   await expect(modal).toBeVisible({ timeout: 15000 });
 
   await page.screenshot({ path: '/tmp/batch-delete-modal.png', fullPage: true });

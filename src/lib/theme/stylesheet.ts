@@ -281,9 +281,23 @@ export function generateDynamicStyles(
     ...sanitizedCustomTokens,
   };
 
+  const baseLightRecord = baseLightTokens as unknown as Record<string, unknown>;
+  const baseDarkRecord = baseDarkTokens as unknown as Record<string, unknown>;
+  const darkCustomTokens: Record<string, string> = {};
+  for (const [k, v] of Object.entries(sanitizedCustomTokens)) {
+    if (
+      k in baseDarkRecord &&
+      baseDarkRecord[k] !== baseLightRecord[k] &&
+      v === baseLightRecord[k]
+    ) {
+      continue;
+    }
+    darkCustomTokens[k] = v;
+  }
+
   const darkPresetTokens = {
     ...baseDarkTokens,
-    ...sanitizedCustomTokens,
+    ...darkCustomTokens,
   };
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');

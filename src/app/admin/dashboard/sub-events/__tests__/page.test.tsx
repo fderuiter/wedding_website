@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { axe } from 'jest-axe';
 import SubEventsMatrixPage from '../page';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -343,5 +344,52 @@ describe('SubEventsMatrixPage', () => {
       expect(mockAddToast).toHaveBeenCalledWith('Sub-event deleted successfully.', 'success');
       expect(screen.queryByText('Rehearsal Dinner')).not.toBeInTheDocument();
     });
+  });
+
+  test('Create Sub-Event modal renders via Dialog with accessible title, traps Tab focus, passes jest-axe, and dismisses via Escape and backdrop click', async () => {
+    const { container } = render(<SubEventsMatrixPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    });
+
+    const createBtn = screen.getByRole('button', { name: /\+ Create New Sub-Event/i });
+    createBtn.focus();
+    fireEvent.click(createBtn);
+
+    const dialog = screen.getByRole('dialog', { name: 'Create New Sub-Event' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const labelledBy = dialog.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    expect(within(dialog).getByRole('heading', { level: 2 })).toHaveAttribute('id', labelledBy);
+
+    const titleInput = within(dialog).getByLabelText('Title *');
+    const submitBtn = within(dialog).getByRole('button', { name: 'Create Sub-Event' });
+    expect(titleInput).toHaveFocus();
+
+    submitBtn.focus();
+    fireEvent.keyDown(submitBtn, { key: 'Tab' });
+    expect(titleInput).toHaveFocus();
+    fireEvent.keyDown(titleInput, { key: 'Tab', shiftKey: true });
+    expect(submitBtn).toHaveFocus();
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    // Escape closes modal and restores focus to trigger button
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Create New Sub-Event' })).not.toBeInTheDocument();
+    });
+    expect(createBtn).toHaveFocus();
+
+    // Backdrop click closes modal without creating a sub-event
+    fireEvent.click(createBtn);
+    const reopened = screen.getByRole('dialog', { name: 'Create New Sub-Event' });
+    fireEvent.click(reopened.parentElement?.parentElement as HTMLElement);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Create New Sub-Event' })).not.toBeInTheDocument();
+    });
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/admin/sub-events', expect.anything());
   });
 });

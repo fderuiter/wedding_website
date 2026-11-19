@@ -230,4 +230,23 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
     expect(defaultCss).toContain('--card-padding: 2rem;');
     expect(defaultCss).toContain('--radius-card: 1rem;');
   });
+
+  it('preserves dark preset Dialog contrast tokens when themeTokens contains uncustomized light preset defaults', () => {
+    const css = generateThemeStylesheet({
+      ...sampleConfig,
+      themePreset: 'classic',
+      themeTokens: {
+        '--dialog-bg': '#ffffff',
+        '--dialog-title-color': 'inherit',
+        '--btn-radius': '0.75rem',
+      },
+    });
+
+    const darkBlockMatch = css.match(/\.dark\s*\{([\s\S]*?)\}/);
+    expect(darkBlockMatch).not.toBeNull();
+    const darkBlock = darkBlockMatch?.[1] ?? '';
+    expect(darkBlock).toContain('--dialog-bg: #1f2937;');
+    expect(darkBlock).toContain('--dialog-title-color: #f9fafb;');
+    expect(darkBlock).toContain('--btn-radius: 0.75rem;');
+  });
 });
