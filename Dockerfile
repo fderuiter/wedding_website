@@ -56,7 +56,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 RUN mkdir -p .next public/uploads
 RUN chown -R nextjs:nodejs .next public/uploads
 
-# Copy Prisma schema, configuration, administrative scripts, and full node_modules for migrations and standalone execution
+# Copy Prisma schema, config, administrative scripts, and full node_modules for migrations and standalone execution
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts

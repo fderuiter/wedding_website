@@ -1,4 +1,8 @@
+import fs from 'fs';
+import path from 'path';
+import { compile } from 'tailwindcss';
 import {
+  generateDynamicStyles,
   generateThemeStylesheet,
   optimizeContrast,
   hexToRgb,
@@ -132,23 +136,236 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
     expect(getContrastRatio(hexToRgb(focusRingLight), whiteRgb)).toBeGreaterThanOrEqual(3.0);
     expect(getContrastRatio(hexToRgb(surfaceBorderLight), whiteRgb)).toBeGreaterThanOrEqual(3.0);
 
-    // Dark background (#111827) contrast checks
-    const darkRgb = hexToRgb('#111827');
-    const primaryTextDark = optimizeContrast(primary, '#111827', 4.5);
-    const secondaryTextDark = optimizeContrast(secondary, '#111827', 4.5);
-    const errorTextDark = optimizeContrast('#EF4444', '#111827', 4.5);
-    const mutedTextDark = optimizeContrast('#9CA3AF', '#111827', 4.5);
-    const warningTextDark = optimizeContrast('#FDE68A', '#111827', 4.5);
-    const focusRingDark = optimizeContrast(primary, '#111827', 3.0);
-    const surfaceBorderDark = optimizeContrast('#9CA3AF', '#111827', 3.0);
+    // Dark surface tier (#111827, #1F2937, #374151, #4B5563) contrast checks
+    const darkSurfaces = ['#111827', '#1F2937', '#374151', '#4B5563'] as const;
+    const brandPalettes = [
+      { primary: '#B91C1C', secondary: '#B45309' },
+      { primary: '#7F1D1D', secondary: '#92400E' },
+      { primary: '#1E3A8A', secondary: '#0F766E' },
+      { primary: '#14532D', secondary: '#7E22CE' },
+    ];
 
-    expect(getContrastRatio(hexToRgb(primaryTextDark), darkRgb)).toBeGreaterThanOrEqual(4.5);
-    expect(getContrastRatio(hexToRgb(secondaryTextDark), darkRgb)).toBeGreaterThanOrEqual(4.5);
-    expect(getContrastRatio(hexToRgb(errorTextDark), darkRgb)).toBeGreaterThanOrEqual(4.5);
-    expect(getContrastRatio(hexToRgb(mutedTextDark), darkRgb)).toBeGreaterThanOrEqual(4.5);
-    expect(getContrastRatio(hexToRgb(warningTextDark), darkRgb)).toBeGreaterThanOrEqual(4.5);
-    expect(getContrastRatio(hexToRgb(focusRingDark), darkRgb)).toBeGreaterThanOrEqual(3.0);
-    expect(getContrastRatio(hexToRgb(surfaceBorderDark), darkRgb)).toBeGreaterThanOrEqual(3.0);
+    for (const surfaceHex of darkSurfaces) {
+      const surfaceRgb = hexToRgb(surfaceHex);
+      const errorTextDark = optimizeContrast('#EF4444', surfaceHex, 4.5);
+      const mutedTextDark = optimizeContrast('#9CA3AF', surfaceHex, 4.5);
+      const warningTextDark = optimizeContrast('#FDE68A', surfaceHex, 4.5);
+      const surfaceBorderDark = optimizeContrast('#9CA3AF', surfaceHex, 3.0);
+
+      expect(getContrastRatio(hexToRgb(errorTextDark), surfaceRgb)).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(mutedTextDark), surfaceRgb)).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(warningTextDark), surfaceRgb)).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(surfaceBorderDark), surfaceRgb)).toBeGreaterThanOrEqual(3.0);
+
+      for (const palette of brandPalettes) {
+        const primaryTextDark = optimizeContrast(palette.primary, surfaceHex, 4.5);
+        const secondaryTextDark = optimizeContrast(palette.secondary, surfaceHex, 4.5);
+        const focusRingDark = optimizeContrast(palette.primary, surfaceHex, 3.0);
+
+        expect(getContrastRatio(hexToRgb(primaryTextDark), surfaceRgb)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrastRatio(hexToRgb(secondaryTextDark), surfaceRgb)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrastRatio(hexToRgb(focusRingDark), surfaceRgb)).toBeGreaterThanOrEqual(3.0);
+      }
+    }
+
+    // Default solid bg-primary (#B91C1C) paired with white text retains >= 6.47:1 contrast,
+    // and lighter custom brand palettes calibrate --color-primary to >= 4.5:1 against white text in .dark
+    expect(getContrastRatio(hexToRgb('#B91C1C'), whiteRgb)).toBeGreaterThanOrEqual(6.47);
+    const customLightBrandCss = generateDynamicStyles('#EF4444', '#F59E0B', 'classic');
+    const customDarkSolidMatch = customLightBrandCss.match(/\.dark\s*\{[^}]+--color-primary:\s*(#[0-9a-fA-F]{6});/);
+    const customDarkTextMatch = customLightBrandCss.match(
+      /\.dark\s*\{[^}]+--color-primary-text:\s*(#[0-9a-fA-F]{6});/
+    );
+    expect(customDarkSolidMatch).toBeTruthy();
+    expect(customDarkTextMatch).toBeTruthy();
+    expect(getContrastRatio(hexToRgb(customDarkSolidMatch![1]), whiteRgb)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      getContrastRatio(hexToRgb(customDarkTextMatch![1]), hexToRgb('#1F2937'))
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('calibrates default dark tokens against card surfaces (#1F2937 / Tailwind v4 800 or lighter preset --card-bg) and splits 700/600 dark tiers', () => {
+    const css = generateThemeStylesheet(sampleConfig);
+    const expectedCardPrimary = optimizeContrast('#B91C1C', '#1D293D', 4.5);
+    const expected700Primary = optimizeContrast('#B91C1C', '#44403B', 4.5);
+    const expected600Primary = optimizeContrast('#B91C1C', '#4B5563', 4.5);
+
+    // .dark calibrates against #1D293D so text passes >= 4.5:1 on #111827, #1F2937, and Tailwind v4 gray-800/slate-800 (#1E2939/#1D293D)
+    expect(css).toMatch(new RegExp('\\.dark\\s*\\{[^}]+--color-primary:\\s*#B91C1C;', 'i'));
+    expect(css).toMatch(
+      new RegExp(`\\.dark\\s*\\{[^}]+--color-primary-text:\\s*${expectedCardPrimary};`, 'i')
+    );
+    expect(getContrastRatio(hexToRgb(expectedCardPrimary), hexToRgb('#111827'))).toBeGreaterThanOrEqual(4.5);
+    expect(getContrastRatio(hexToRgb(expectedCardPrimary), hexToRgb('#1F2937'))).toBeGreaterThanOrEqual(4.5);
+    expect(getContrastRatio(hexToRgb(expectedCardPrimary), hexToRgb('#1E2939'))).toBeGreaterThanOrEqual(4.5);
+    expect(getContrastRatio(hexToRgb(expectedCardPrimary), hexToRgb('#1D293D'))).toBeGreaterThanOrEqual(4.5);
+
+    // 700 and 600 dark surfaces receive dedicated calibrated tokens
+    expect(css).toContain('.dark .dark\\:bg-gray-700');
+    expect(css).toContain(`--color-primary-text: ${expected700Primary};`);
+    expect(getContrastRatio(hexToRgb(expected700Primary), hexToRgb('#374151'))).toBeGreaterThanOrEqual(4.5);
+    expect(getContrastRatio(hexToRgb(expected700Primary), hexToRgb('#44403B'))).toBeGreaterThanOrEqual(4.5);
+
+    expect(css).toContain('.dark .dark\\:bg-gray-600');
+    expect(css).toContain(`--color-primary-text: ${expected600Primary};`);
+    expect(getContrastRatio(hexToRgb(expected600Primary), hexToRgb('#4B5563'))).toBeGreaterThanOrEqual(4.5);
+
+    // Pre-merged default light preset tokens (e.g. --card-bg: #ffffff from getAppConfig) do not clobber .dark --card-bg
+    const preMergedLightCss = generateDynamicStyles('#B91C1C', '#B45309', 'classic', {
+      '--card-bg': '#ffffff',
+    });
+    expect(preMergedLightCss).toMatch(/\.dark\s*\{[\s\S]*?--card-bg:\s*#1f2937;/i);
+
+    // Lighter custom dark --card-bg raises base dark calibration to stay >= 4.5:1
+    const lighterCardCss = generateDynamicStyles('#B91C1C', '#B45309', 'classic', {
+      '--card-bg': '#2d3748',
+    });
+    const expectedLighterCardPrimary = optimizeContrast('#B91C1C', '#2d3748', 4.5);
+    expect(lighterCardCss).toMatch(
+      new RegExp(`\\.dark\\s*\\{[^}]+--color-primary-text:\\s*${expectedLighterCardPrimary};`, 'i')
+    );
+    expect(
+      getContrastRatio(hexToRgb(expectedLighterCardPrimary), hexToRgb('#2d3748'))
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('resolves calibrated dark --color-primary-text on opacity-modified dark containers without leaking light #B91C1C', () => {
+    const css = generateThemeStylesheet(sampleConfig);
+    const styleEl = document.createElement('style');
+    styleEl.textContent = css;
+    document.head.appendChild(styleEl);
+
+    const prevHtmlClass = document.documentElement.className;
+    document.documentElement.className = 'dark';
+
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="things-hotel-block" class="mb-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700">
+        <span id="things-tag" class="text-primary">Rate</span>
+        <code id="things-promo" class="bg-gray-100 dark:bg-gray-700 text-primary">SAVE20</code>
+      </div>
+      <div id="timeline-batch" class="bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700">
+        <span id="timeline-label">Unsaved</span>
+      </div>
+      <div id="registry-stripe" class="bg-slate-50 dark:bg-slate-900/60 rounded-md">
+        <span id="registry-icon" class="text-primary">Card</span>
+      </div>
+      <div id="faq-card" class="bg-white dark:bg-gray-800">
+        <span id="faq-badge" class="bg-primary/10 text-primary">Travel</span>
+      </div>
+    `;
+    document.body.appendChild(host);
+
+    try {
+      const expectedCardPrimary = optimizeContrast('#B91C1C', '#1D293D', 4.5);
+      const expected700Primary = optimizeContrast('#B91C1C', '#44403B', 4.5);
+
+      const hotelToken = getComputedStyle(document.getElementById('things-hotel-block')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+      const promoToken = getComputedStyle(document.getElementById('things-promo')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+      const timelineToken = getComputedStyle(document.getElementById('timeline-batch')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+      const registryToken = getComputedStyle(document.getElementById('registry-stripe')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+      const faqBadgeToken = getComputedStyle(document.getElementById('faq-badge')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+
+      expect(hotelToken.toLowerCase()).toBe(expectedCardPrimary.toLowerCase());
+      expect(hotelToken.toLowerCase()).not.toBe('#b91c1c');
+      expect(promoToken.toLowerCase()).toBe(expected700Primary.toLowerCase());
+      expect(timelineToken.toLowerCase()).toBe(expectedCardPrimary.toLowerCase());
+      expect(registryToken.toLowerCase()).toBe(expectedCardPrimary.toLowerCase());
+      expect(faqBadgeToken.toLowerCase()).toBe(expected700Primary.toLowerCase());
+
+      // Solid fill token remains raw #B91C1C
+      const fillToken = getComputedStyle(document.getElementById('things-hotel-block')!)
+        .getPropertyValue('--color-primary')
+        .trim();
+      expect(fillToken.toLowerCase()).toBe('#b91c1c');
+    } finally {
+      host.remove();
+      styleEl.remove();
+      document.documentElement.className = prevHtmlClass;
+    }
+  });
+
+  it('compiles globals.css @theme inline utilities, .btn-secondary border contrast, static .dark fallbacks, and @media print rules', async () => {
+    const globalsPath = path.join(process.cwd(), 'src/app/globals.css');
+    const globalsContent = fs.readFileSync(globalsPath, 'utf8');
+    const twIndex = fs.readFileSync(
+      path.join(process.cwd(), 'node_modules/tailwindcss/index.css'),
+      'utf8'
+    );
+
+    const compilableCss = globalsContent
+      .replace('@import "tailwindcss";', twIndex)
+      .replace(/^@source\s+[^\n]+$/m, '');
+
+    const compiler = await compile(compilableCss, {
+      base: path.dirname(globalsPath),
+    });
+
+    const builtCss = compiler.build([
+      'text-primary',
+      'dark:text-primary',
+      'dark:text-primary-text',
+      'text-secondary',
+      'dark:text-secondary-text',
+      'bg-primary',
+      'from-primary',
+      'btn-secondary',
+    ]);
+
+    // Foreground utilities bind to calibrated --color-primary-text / --color-secondary-text
+    expect(builtCss).toMatch(/\.text-primary\s*\{[^}]*color:\s*var\(--color-primary-text\)/);
+    expect(builtCss).toMatch(/\.dark\\:text-primary[^{]*\{[^}]*color:\s*var\(--color-primary-text\)/);
+    expect(builtCss).toMatch(
+      /\.dark\\:text-primary-text[^{]*\{[^}]*color:\s*var\(--color-primary-text\)/
+    );
+    expect(builtCss).toMatch(/\.text-secondary\s*\{[^}]*color:\s*var\(--color-secondary-text\)/);
+    expect(builtCss).toMatch(
+      /\.dark\\:text-secondary-text[^{]*\{[^}]*color:\s*var\(--color-secondary-text\)/
+    );
+
+    // Solid background and gradient utilities keep --color-primary
+    expect(builtCss).toMatch(/\.bg-primary\s*\{[^}]*background-color:\s*var\(--color-primary\)/);
+    expect(builtCss).toMatch(/\.from-primary\s*\{[^}]*--tw-gradient-from:\s*var\(--color-primary\)/);
+
+    // .btn-secondary uses --color-primary-text for both label and border (>= 4.5:1 and >= 3.0:1)
+    const btnSecondaryStart = builtCss.indexOf('.btn-secondary {');
+    const btnSecondaryHoverStart = builtCss.indexOf('.btn-secondary:hover {');
+    expect(btnSecondaryStart).toBeGreaterThan(-1);
+    expect(btnSecondaryHoverStart).toBeGreaterThan(btnSecondaryStart);
+    const btnSecondaryBlock = builtCss.slice(btnSecondaryStart, btnSecondaryHoverStart);
+    expect(btnSecondaryBlock).toContain('color: var(--color-primary-text);');
+    expect(btnSecondaryBlock).toContain('border-color: var(--color-primary-text);');
+
+    // Static .dark fallback tokens in globals.css align with calibrated #1F2937 values
+    const darkBlockMatch = globalsContent.match(/^\.dark\s*\{([^}]+)\}/m);
+    expect(darkBlockMatch).toBeTruthy();
+    const darkBlock = darkBlockMatch![1];
+    const staticPrimaryMatch = darkBlock.match(/--color-primary-text:\s*(#[0-9a-fA-F]{6})/);
+    const staticSecondaryMatch = darkBlock.match(/--color-secondary-text:\s*(#[0-9a-fA-F]{6})/);
+    expect(staticPrimaryMatch).toBeTruthy();
+    expect(staticSecondaryMatch).toBeTruthy();
+    expect(
+      getContrastRatio(hexToRgb(staticPrimaryMatch![1]), hexToRgb('#1F2937'))
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      getContrastRatio(hexToRgb(staticSecondaryMatch![1]), hexToRgb('#1F2937'))
+    ).toBeGreaterThanOrEqual(4.5);
+
+    // @media print overrides remain intact
+    expect(globalsContent).toMatch(/@media print[\s\S]*--color-primary-text:\s*var\(--print-text\)\s*!important/);
+    expect(globalsContent).toMatch(
+      /@media print[\s\S]*--color-secondary-text:\s*var\(--print-text\)\s*!important/
+    );
   });
 
   it('complies with size constraint by eliminating duplicate stylesheets on the document', () => {

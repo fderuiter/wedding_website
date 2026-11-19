@@ -68,6 +68,7 @@ The application requires the following environment variables. These match the ru
 - `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcard patterns allowed to access the application (e.g. `localhost,127.0.0.1,wedding.example`). Wildcard DNS is not required for default single-site deployments. *Required.*
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain-based site routing. Defaults to `false` (1 deployment = 1 wedding site). *Optional.*
 - `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh`. Defaults to `false`. *Optional.*
+- `TRUST_PROXY`: Set to `true` (or a positive integer hop count such as `1` or `2`) when running behind a trusted reverse proxy or ingress controller so rate limiting reads `X-Forwarded-For` / `X-Real-IP`. Defaults to `false` (ignores forwarded IP headers on direct hosts). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website. *Required.*
   - **Security Requirement**: Must be explicitly defined in production environment settings. Never rely on default passcodes.
 - `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). *Required.*
@@ -485,6 +486,7 @@ The application requires the following environment variables in deployment envir
 - `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcards. *Required.*
 - `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
 - `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh` (default: `false`). *Optional.*
+- `TRUST_PROXY`: Set to `true` (or a positive integer hop count) to trust `X-Forwarded-For` / `X-Real-IP` behind a reverse proxy (default: `false`). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access (unique, non-default; default: `wedding2026` in dev/test only). *Required in production.*
 - `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (min 32 characters, distinct from `GUEST_PASSCODE`; default: `default-guest-session-secret` in dev/test only). *Required in production.*
 - `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
