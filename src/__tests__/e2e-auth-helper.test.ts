@@ -11,6 +11,7 @@ import {
 import { GUEST_COOKIE, isGuestRequest } from '@/core/auth/guest.server';
 import { GUEST_INVITE_COOKIE, getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { ADMIN_COOKIE, isAdminRequest } from '@/core/auth/auth.server';
+import { prisma } from '@/lib/prisma';
 
 describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
   const originalGuestSecret = process.env.GUEST_SESSION_SECRET;
@@ -52,24 +53,49 @@ describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
     expect(accepted).toBe(true);
   });
 
-  it('signs guest_invite_session tokens with GUEST_SESSION_SECRET accepted by getGuestInviteSession', async () => {
+  it('signs guest_invite_session tokens with GUEST_SESSION_SECRET accepted by getGuestInviteSession when active in DB', async () => {
     process.env.GUEST_PASSCODE = 'wedding2026';
     process.env.GUEST_SESSION_SECRET = 'playwright-e2e-session-secret-32-chars-min';
 
-    const token = generateGuestInviteSessionCookieValue('VIP100', 'Alice');
-    const session = await getGuestInviteSession({
-      cookies: {
-        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: token } : undefined),
-      },
-      headers: new Headers(),
-    } as never);
+    const prismaWithInvite = prisma as unknown as {
+      invitationCode?: { findUnique?: jest.Mock };
+    };
+    const originalInvitationCode = prismaWithInvite.invitationCode;
+    const mockFindUnique = jest.fn().mockResolvedValue({
+      id: 'inv-vip-100',
+      code: 'VIP100',
+      guestName: 'Alice',
+      isSample: false,
+    });
+    prismaWithInvite.invitationCode = { findUnique: mockFindUnique };
 
-    expect(session).toEqual(
-      expect.objectContaining({
-        code: 'VIP100',
-        guestName: 'Alice',
-      })
-    );
+    try {
+      const token = generateGuestInviteSessionCookieValue('VIP100', 'Alice');
+      const session = await getGuestInviteSession({
+        cookies: {
+          get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: token } : undefined),
+        },
+        headers: new Headers(),
+      } as never);
+
+      expect(session).toEqual(
+        expect.objectContaining({
+          code: 'VIP100',
+          guestName: 'Alice',
+        })
+      );
+
+      mockFindUnique.mockResolvedValueOnce(null);
+      const revokedSession = await getGuestInviteSession({
+        cookies: {
+          get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: token } : undefined),
+        },
+        headers: new Headers(),
+      } as never);
+      expect(revokedSession).toBeNull();
+    } finally {
+      prismaWithInvite.invitationCode = originalInvitationCode;
+    }
   });
 
   it('rejects GUEST_SESSION_SECRET values that match GUEST_PASSCODE', () => {

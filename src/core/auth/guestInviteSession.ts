@@ -1,90 +1,218 @@
+import { cache } from 'react';
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
-import { env } from '@/env';
+import { prisma } from '@/lib/prisma';
+import { isAdminRequest } from './auth.server';
+import { isGuestRequest } from './guest.server';
 import {
-  readRequestCookie,
-  signCompactToken,
-  verifyCompactToken,
-} from './tokenCookieHelpers';
+  GUEST_INVITE_COOKIE,
+  type GuestInviteSessionPayload,
+  getSignedGuestInviteSession,
+  signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
+} from './guestInviteToken';
 
-export const GUEST_INVITE_COOKIE = 'guest_invite_session';
+export {
+  GUEST_INVITE_COOKIE,
+  type GuestInviteSessionPayload,
+  signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
+};
 
-export interface GuestInviteSessionPayload {
-  code: string;
-  guestName: string;
-  iat?: number;
-  exp?: number;
+interface InvitationLookupRecord {
+  code?: string;
+  guestName?: string;
+  isSample?: boolean;
 }
 
-async function getSecret(): Promise<string> {
-  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
-  const fallback = isProduction ? '' : 'default-guest-session-secret';
-  const secret = isProduction
-    ? (process.env.GUEST_SESSION_SECRET || fallback)
-    : (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || fallback);
-  const passcode = isProduction
-    ? (process.env.GUEST_PASSCODE || 'wedding2026')
-    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
+interface InvitationCodeLookupDelegate {
+  findUnique?: (args: {
+    where: { code: string; isSample: boolean };
+  }) => Promise<InvitationLookupRecord | null | undefined>;
+  findFirst?: (args: {
+    where: { code: { equals: string; mode: 'insensitive' }; isSample: boolean };
+  }) => Promise<InvitationLookupRecord | null | undefined>;
+}
 
-  if (isProduction) {
-    if (!secret || secret === 'default-guest-session-secret') {
-      throw new Error('GUEST_SESSION_SECRET must be configured with a distinct secret in production');
-    }
-    if (secret.length < 32) {
-      throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production');
-    }
+function isStaticExportBuild(): boolean {
+  return (
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export'
+  );
+}
+
+async function resolveActiveInvitationSession(
+  payload: GuestInviteSessionPayload
+): Promise<GuestInviteSessionPayload | null> {
+  const normalizedCode = payload.code.trim().toUpperCase();
+  if (!normalizedCode) {
+    return null;
   }
-
-  if (secret === passcode) {
-    throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
-  }
-  return secret;
-}
-
-/**
- * Signs a guest invitation payload into a JWT-like compact token with 7-day expiration.
- */
-export async function signGuestInviteSessionToken(payload: Omit<GuestInviteSessionPayload, 'iat' | 'exp'> & { iat?: number; exp?: number }): Promise<string> {
-  const iat = payload.iat ?? Date.now();
-  const exp = payload.exp ?? (iat + 7 * 24 * 60 * 60 * 1000); // 7 days
-  const fullPayload: GuestInviteSessionPayload = {
-    ...payload,
-    iat,
-    exp,
-  };
-  const secret = await getSecret();
-  return signCompactToken(fullPayload, secret);
-}
-
-/**
- * Validates a guest invitation session token and returns the decoded payload if valid.
- */
-export async function verifyGuestInviteSessionToken(token: string): Promise<GuestInviteSessionPayload | null> {
-  if (!token || typeof token !== 'string') return null;
 
   try {
-    const secret = await getSecret();
-    const payload = await verifyCompactToken<GuestInviteSessionPayload>(token, secret);
-    if (!payload || !payload.code || !payload.guestName) {
+    const delegate = (prisma as unknown as { invitationCode?: InvitationCodeLookupDelegate })?.invitationCode;
+    if (!delegate) {
       return null;
     }
 
-    const now = Date.now();
-    if (payload.exp && payload.exp < now) {
+    let invite: InvitationLookupRecord | null | undefined;
+    if (typeof delegate.findUnique === 'function') {
+      invite = await delegate.findUnique({
+        where: {
+          code: normalizedCode,
+          isSample: false,
+        },
+      });
+    }
+
+    if (invite === undefined && typeof delegate.findFirst === 'function') {
+      invite = await delegate.findFirst({
+        where: {
+          code: { equals: normalizedCode, mode: 'insensitive' },
+          isSample: false,
+        },
+      });
+    }
+
+    if (!invite || invite.isSample === true) {
       return null;
     }
 
-    return payload;
+    return {
+      ...payload,
+      code: payload.code,
+      guestName:
+        typeof invite.guestName === 'string' && invite.guestName.trim()
+          ? invite.guestName
+          : payload.guestName,
+    };
   } catch {
     return null;
   }
 }
 
+async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
+  if (isStaticExportBuild()) {
+    return null;
+  }
+
+  const signedPayload = await getSignedGuestInviteSession();
+  if (!signedPayload) {
+    return null;
+  }
+
+  return resolveActiveInvitationSession(signedPayload);
+}
+
+const getCachedServerCookieGuestInviteSession = cache(resolveServerCookieGuestInviteSession);
+
 /**
- * Retrieve verified guest invitation session from NextRequest or cookieStore.
+ * Retrieve verified guest invitation session from NextRequest or cookieStore,
+ * confirming that the session code still matches an active, non-sample InvitationCode record.
  */
 export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
-  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
-  if (!cookieValue) return null;
+  if (isStaticExportBuild()) {
+    return null;
+  }
 
-  return verifyGuestInviteSessionToken(cookieValue);
+  if (!req) {
+    return getCachedServerCookieGuestInviteSession();
+  }
+
+  const signedPayload = await getSignedGuestInviteSession(req);
+  if (!signedPayload) {
+    return null;
+  }
+
+  return resolveActiveInvitationSession(signedPayload);
+}
+
+function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
+  if (
+    callbackPath &&
+    callbackPath.startsWith('/') &&
+    !callbackPath.startsWith('//') &&
+    callbackPath !== '/guest/login' &&
+    !callbackPath.startsWith('/guest/login?')
+  ) {
+    return `/guest/login?callbackUrl=${encodeURIComponent(callbackPath)}`;
+  }
+
+  return '/guest/login';
+}
+
+function redirectWithSeeOther(url: string): void {
+  try {
+    redirect(url);
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'digest' in err &&
+      typeof (err as { digest?: unknown }).digest === 'string' &&
+      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT;')
+    ) {
+      (err as { digest: string }).digest = (err as { digest: string }).digest.replace(/;30[78];$/, ';303;');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Server-side rendering guard for guest-gated pages and layouts.
+ * Redirects callers holding a revoked, rotated, or sample guest_invite_session cookie
+ * (without a valid guest_auth or admin_auth cookie) to /guest/login with HTTP 303.
+ */
+export async function enforceActiveGuestPageSession(): Promise<void> {
+  if (isStaticExportBuild()) {
+    return;
+  }
+
+  const signedInvite = await getSignedGuestInviteSession();
+  if (!signedInvite) {
+    return;
+  }
+
+  let isGuestGatedPage: string | null = null;
+  let callbackUrlHeader: string | null = null;
+  try {
+    if (typeof headers === 'function') {
+      const headerStore = await headers();
+      if (headerStore && typeof headerStore.get === 'function') {
+        isGuestGatedPage = headerStore.get('x-guest-gated-page');
+        callbackUrlHeader = headerStore.get('x-guest-callback-url');
+      }
+    }
+  } catch {
+    // Request headers may be unavailable in isolated unit test renders
+  }
+
+  if (isGuestGatedPage === '0') {
+    return;
+  }
+
+  if (
+    callbackUrlHeader &&
+    (callbackUrlHeader === '/guest' ||
+      callbackUrlHeader.startsWith('/guest?') ||
+      callbackUrlHeader === '/guest/login' ||
+      callbackUrlHeader.startsWith('/guest/login?') ||
+      callbackUrlHeader === '/guest/collect' ||
+      callbackUrlHeader.startsWith('/guest/collect?') ||
+      callbackUrlHeader === '/admin' ||
+      callbackUrlHeader.startsWith('/admin/'))
+  ) {
+    return;
+  }
+
+  if ((await isAdminRequest()) || (await isGuestRequest())) {
+    return;
+  }
+
+  const activeSession = await getGuestInviteSession();
+  if (!activeSession) {
+    redirectWithSeeOther(buildGuestLoginRedirectTarget(callbackUrlHeader));
+  }
 }

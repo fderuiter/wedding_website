@@ -8,6 +8,7 @@ import { withPageQuery } from '@/lib/query-wrapper';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
 
@@ -30,6 +31,7 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered photos page.
  */
 export default async function PhotosPage() {
+  await enforceActiveGuestPageSession();
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();

@@ -5,6 +5,7 @@ import { weddingPartyRepository, type WeddingPartyMemberDTO } from '@/features/w
 import { withPageQuery } from '@/lib/query-wrapper';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 export const metadata: Metadata = {
   title: 'Wedding Party',
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered wedding party page.
  */
 export default async function WeddingPartyPage() {
+  await enforceActiveGuestPageSession();
   const config = await getAppConfig();
   if (!isFeatureEnabled('weddingParty', config.modules)) {
     notFound();

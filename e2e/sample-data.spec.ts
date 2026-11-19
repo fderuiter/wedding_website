@@ -126,7 +126,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     const lookupSetCookies = lookupRes.headersArray().filter(h => h.name.toLowerCase() === 'set-cookie');
     expect(lookupSetCookies.some(h => h.value.includes('guest_invite_session='))).toBe(false);
 
-    // 6. Pre-deployment signed guest_invite_session cookie for sample code is blocked by downstream guest handlers
+    // 6. Pre-deployment signed guest_invite_session cookie for sample code is rejected as unauthorized
     const preSignedSampleCookie = generateGuestInviteSessionCookieValue(
       'SMITH2026',
       'Mr. & Mrs. Robert Smith'
@@ -135,7 +135,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     const addrGetRes = await request.get('/api/guest/address', {
       headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },
     });
-    expect(addrGetRes.status()).toBe(404);
+    expect(addrGetRes.status()).toBe(401);
 
     const addrPutRes = await request.put('/api/guest/address', {
       headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },
@@ -147,7 +147,27 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
         country: 'United States',
       },
     });
-    expect(addrPutRes.status()).toBe(404);
+    expect(addrPutRes.status()).toBe(401);
+
+    const sampleSessionRes = await request.get('/api/registry/session', {
+      headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },
+    });
+    expect(sampleSessionRes.status()).toBe(200);
+    const sampleSessionJson = await sampleSessionRes.json();
+    expect(sampleSessionJson.data.isVerified).toBe(false);
+    const sampleSessionCookies = sampleSessionRes
+      .headersArray()
+      .filter(h => h.name.toLowerCase() === 'set-cookie');
+    expect(
+      sampleSessionCookies.some(
+        h => h.value.includes('guest_invite_session=') && h.value.includes('Max-Age=0')
+      )
+    ).toBe(true);
+
+    const samplePhotosRes = await request.get('/api/photos', {
+      headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },
+    });
+    expect(samplePhotosRes.status()).toBe(401);
   });
 
   test('displays sample data banner and badges in admin UI, then purges sample data', async ({ context, page }) => {

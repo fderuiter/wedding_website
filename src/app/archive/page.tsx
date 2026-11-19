@@ -1,6 +1,7 @@
 import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 
 export const metadata: Metadata = {
@@ -20,7 +21,8 @@ const archivedPages: Array<{ href: string, title: string, description: string, i
  *
  * @returns {JSX.Element} The rendered archive page.
  */
-export default function ArchivePage() {
+export default async function ArchivePage() {
+  await enforceActiveGuestPageSession();
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">

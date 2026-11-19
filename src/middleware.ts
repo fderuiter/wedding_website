@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
-import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
 import { timingSafeEqualJS } from '@/utils/crypto';
@@ -75,7 +75,8 @@ export async function middleware(request: NextRequest) {
     normalizedPath.startsWith('/_next/') ||
     (!isApiRoute && /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(normalizedPath));
 
-  if (isProtectedRoute(normalizedPath, method)) {
+  const isProtected = isProtectedRoute(normalizedPath, method);
+  if (isProtected) {
     const isAuth = await isAdminRequest(request);
 
     if (!isAuth) {
@@ -91,7 +92,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!isExcluded) {
-    const isGuest = (await isGuestRequest(request)) || Boolean(await getGuestInviteSession(request));
+    const isGuest = (await isGuestRequest(request)) || Boolean(await getSignedGuestInviteSession(request));
     const isAdmin = await isAdminRequest(request);
 
     if (!isGuest && !isAdmin) {
@@ -104,7 +105,22 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers();
+  if (request.headers && typeof request.headers.forEach === 'function') {
+    request.headers.forEach((value: string, key: string) => {
+      if (typeof value === 'string') {
+        requestHeaders.set(key, value);
+      }
+    });
+  }
+  requestHeaders.set('x-guest-gated-page', !isExcluded && !isApiRoute && !isProtected ? '1' : '0');
+  requestHeaders.set('x-guest-callback-url', pathname + request.nextUrl.search);
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 }
 
 // Run middleware on all API routes and all non-static page requests

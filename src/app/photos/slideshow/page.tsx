@@ -5,6 +5,7 @@ import type { ContentNodeDTO } from '@/features/content';
 import { withPageQuery } from '@/lib/query-wrapper';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 import { ReceptionSlideshowClient, SlideshowPhoto } from '@/components/photos/ReceptionSlideshowClient';
 
 export const metadata: Metadata = {
@@ -22,6 +23,7 @@ export const metadata: Metadata = {
  * @returns {Promise<JSX.Element>} The rendered standalone slideshow page.
  */
 export default async function PhotosSlideshowPage() {
+  await enforceActiveGuestPageSession();
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();

@@ -1,9 +1,13 @@
 /** @jest-environment node */
 
+import { NextRequest } from 'next/server';
 import {
+  GUEST_INVITE_COOKIE,
+  getGuestInviteSession,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from '../guestInviteSession';
+import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
 
@@ -167,5 +171,145 @@ describe('guestInviteSession', () => {
 
     const payload = await verifyGuestInviteSessionToken(expiredToken);
     expect(payload).toBeNull();
+  });
+
+  describe('getGuestInviteSession active database record validation', () => {
+    const prismaWithInvite = prisma as unknown as {
+      invitationCode?: {
+        findUnique?: jest.Mock;
+        findFirst?: jest.Mock;
+      };
+    };
+    let originalInvitationCode: typeof prismaWithInvite.invitationCode;
+    let mockFindUnique: jest.Mock;
+
+    beforeEach(() => {
+      originalInvitationCode = prismaWithInvite.invitationCode;
+      mockFindUnique = jest.fn();
+      prismaWithInvite.invitationCode = {
+        findUnique: mockFindUnique,
+      };
+    });
+
+    afterEach(() => {
+      prismaWithInvite.invitationCode = originalInvitationCode;
+      delete process.env.STATIC_EXPORT;
+    });
+
+    it('returns the session payload when an active non-sample InvitationCode exists', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'inv-active-1',
+        code: 'ACTIVE2026',
+        guestName: 'Taylor Household',
+        isSample: false,
+      });
+
+      const token = await signGuestInviteSessionToken({
+        code: 'ACTIVE2026',
+        guestName: 'Taylor Household',
+      });
+      const req = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const session = await getGuestInviteSession(req);
+      expect(session).toEqual(
+        expect.objectContaining({
+          code: 'ACTIVE2026',
+          guestName: 'Taylor Household',
+        })
+      );
+      expect(mockFindUnique).toHaveBeenCalledWith({
+        where: { code: 'ACTIVE2026', isSample: false },
+      });
+    });
+
+    it('returns null when the invitation record has been deleted', async () => {
+      mockFindUnique.mockResolvedValue(null);
+
+      const token = await signGuestInviteSessionToken({
+        code: 'DELETED2026',
+        guestName: 'Former Guest',
+      });
+      const req = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const session = await getGuestInviteSession(req);
+      expect(session).toBeNull();
+    });
+
+    it('returns null when the invitation code has been rotated to a new value', async () => {
+      mockFindUnique.mockImplementation(async ({ where }: { where: { code: string; isSample: boolean } }) => {
+        if (where.code === 'ROTATEDNEW' && where.isSample === false) {
+          return {
+            id: 'inv-rot-1',
+            code: 'ROTATEDNEW',
+            guestName: 'Rotated Guest',
+            isSample: false,
+          };
+        }
+        return null;
+      });
+
+      const oldToken = await signGuestInviteSessionToken({
+        code: 'LEAKEDOLD',
+        guestName: 'Rotated Guest',
+      });
+      const oldReq = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${oldToken}` },
+      });
+      expect(await getGuestInviteSession(oldReq)).toBeNull();
+
+      const newToken = await signGuestInviteSessionToken({
+        code: 'ROTATEDNEW',
+        guestName: 'Rotated Guest',
+      });
+      const newReq = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${newToken}` },
+      });
+      expect(await getGuestInviteSession(newReq)).toEqual(
+        expect.objectContaining({
+          code: 'ROTATEDNEW',
+          guestName: 'Rotated Guest',
+        })
+      );
+    });
+
+    it('returns null when the matching invitation record is flagged as sample data', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'inv-sample-1',
+        code: 'SMITH2026',
+        guestName: 'Sample Guest',
+        isSample: true,
+      });
+
+      const token = await signGuestInviteSessionToken({
+        code: 'SMITH2026',
+        guestName: 'Sample Guest',
+      });
+      const req = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const session = await getGuestInviteSession(req);
+      expect(session).toBeNull();
+    });
+
+    it('skips database lookups and returns null during STATIC_EXPORT builds', async () => {
+      process.env.STATIC_EXPORT = 'true';
+
+      const token = await signGuestInviteSessionToken({
+        code: 'ACTIVE2026',
+        guestName: 'Taylor Household',
+      });
+      const req = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const session = await getGuestInviteSession(req);
+      expect(session).toBeNull();
+      expect(mockFindUnique).not.toHaveBeenCalled();
+    });
   });
 });

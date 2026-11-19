@@ -4,7 +4,7 @@ import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { logisticsService } from '@/features/logistics';
 import { subEventService } from '@/features/sub-events';
 import { ContentNodeSchema, type ContentNodeDTO } from '@/features/content';
-import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { enforceActiveGuestPageSession, getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { withPageQuery } from '@/lib/query-wrapper';
 
 /**
@@ -99,6 +99,7 @@ export default async function HomePage() {
     process.env.npm_lifecycle_event === 'build:export';
 
   if (!isStaticExport) {
+    await enforceActiveGuestPageSession();
     const guestSession = await getGuestInviteSession();
     if (guestSession?.code) {
       const guestSchedule = await withPageQuery(

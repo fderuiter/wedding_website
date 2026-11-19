@@ -1,6 +1,7 @@
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { notFound } from 'next/navigation';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 import HeartClient from './HeartClient';
 
 export const metadata = {
@@ -9,6 +10,7 @@ export const metadata = {
 };
 
 export default async function HeartPage() {
+  await enforceActiveGuestPageSession();
   const config = await getAppConfig();
   if (!isFeatureEnabled('interactive3D', config.modules)) {
     notFound();
