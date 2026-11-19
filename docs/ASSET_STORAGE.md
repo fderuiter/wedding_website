@@ -104,13 +104,13 @@ export interface StorageProvider {
 The application defines distinct file size and format validation rules for administrative asset uploads versus guest photo submissions:
 
 #### Administrative Upload Constraints
-- **Maximum File Size**: 5 MB (`MAX_UPLOAD_SIZE = 5 * 1024 * 1024`), defined in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L35).
+- **Maximum File Size**: 5 MB (`MAX_UPLOAD_SIZE = 5 * 1024 * 1024`), defined in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L97).
 - **Allowed MIME Types**: JPEG (`image/jpeg`), PNG (`image/png`), ICO (`image/x-icon`, `image/vnd.microsoft.icon`).
 - **Allowed Extensions**: `.jpg`, `.jpeg`, `.png`, `.ico`.
 - **Extension & MIME Consistency**: Uploaded file extensions must match declared MIME types.
 
 #### Guest Photo Upload Constraints
-- **Maximum File Size**: 10 MB (`MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024`), defined in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L60-L63).
+- **Maximum File Size**: 10 MB (`MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024`), defined in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L122-L124).
 - **Allowed MIME Types**: JPEG (`image/jpeg`), PNG (`image/png`), WebP (`image/webp`).
 - **Allowed Extensions**: `.jpg`, `.jpeg`, `.png`, `.webp`.
 - **Format & Size Differences**: Guest photo uploads support WebP and larger 10MB file payloads to accommodate high-resolution mobile device uploads, but exclude ICO support.

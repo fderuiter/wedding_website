@@ -14,7 +14,7 @@ The 3D interactive heart is a complex, physics-enabled scene powered by `@react-
 Physics logic, impulses, and configuration are encapsulated in the `useHeartPhysics` hook (`src/app/heart/hooks/useHeartPhysics.ts`). Interaction state such as `isBroken` or the `reduceMotion` accessibility setting is consumed via `useUnified3DInput`.
 
 ### Physics Constants & Dynamic Theme Configuration
-Default physics multipliers and impulse definitions are defined in `src/app/heart/constants.ts` under `PHYSICS_CONSTANTS`. `ThemeProvider` manages physics options in `src/components/ThemeProvider.tsx` (L101–L115), initializing theme state from these default constants.
+Default physics multipliers and impulse definitions are defined in `src/app/heart/constants.ts` under `PHYSICS_CONSTANTS`. `ThemeProvider` manages physics options in `src/components/ThemeProvider.tsx` (L110–L124), initializing theme state from these default constants.
 
 Components and hooks—specifically `useHeartPhysics` in `src/app/heart/hooks/useHeartPhysics.ts` (L43)—consume dynamic physics parameters using `const { physics } = useTheme()`. This allows physics constants (such as break threshold, impulse multipliers, and rotation speeds) to be updated or customized dynamically at runtime via the theme provider context.
 

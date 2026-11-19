@@ -15,8 +15,8 @@ We maintain security updates on the default `main` branch.
 ## Template Deployers & Self-Hosters
 
 If you are deploying this template for your own event, please ensure:
-1. You generate unique credentials for `ADMIN_PASSWORD` (using `scripts/generate-password-hash.mjs`) and a unique `GUEST_PASSCODE`.
-2. You configure `ALLOWED_HOSTS` to match your actual domain name(s).
+1. You generate unique credentials for `ADMIN_PASSWORD` (using `scripts/generate-password-hash.mjs`), a unique `GUEST_PASSCODE`, and a distinct `GUEST_SESSION_SECRET` of at least 32 characters for signing `guest_auth` and `guest_invite_session` cookies. Runtime validation in `src/env.ts` rejects default fallback values (`wedding2026` and `default-guest-session-secret`), `GUEST_SESSION_SECRET` values shorter than 32 characters, and values matching `GUEST_PASSCODE` in production.
+2. You configure `ALLOWED_HOSTS` to match your actual domain name(s) (and configure `CRON_SECRET` if scheduling `/api/cron/*` broadcast jobs).
 3. If hosting publicly, replace the security contact email below with your own contact address in your fork or deployment settings.
 
 ## Reporting a Vulnerability

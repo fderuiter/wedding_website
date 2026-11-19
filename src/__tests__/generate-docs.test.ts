@@ -1,8 +1,16 @@
 import { z } from 'zod';
-import { getZodType } from '../../scripts/generate-docs';
+import {
+  getZodType,
+  getZodDescription,
+  escapeMarkdownTableCell,
+  generateConfigTable,
+  generateApiRoutesSection,
+  generateEnvSpecs,
+} from '../../scripts/generate-docs';
 import { AppConfigSchema } from '../features/content/schemas';
+import { DEFAULT_MODULE_CONFIG } from '../lib/modules';
 
-describe('Documentation Generator - getZodType Helper', () => {
+describe('Documentation Generator - getZodType & Spec Tables', () => {
   describe('Primitive and structural types', () => {
     it('resolves string, number, boolean, date, object, and any', () => {
       expect(getZodType(z.string())).toBe('string');
@@ -84,8 +92,17 @@ describe('Documentation Generator - getZodType Helper', () => {
     });
   });
 
+  describe('Description metadata unwrapping (getZodDescription)', () => {
+    it('reads .describe() placed before or after wrapped Zod modifiers and pipes', () => {
+      expect(getZodDescription(z.string().describe('Outer description'))).toBe('Outer description');
+      expect(getZodDescription(z.string().describe('Inner description').nullable().optional().default(''))).toBe('Inner description');
+      expect(getZodDescription(z.string().transform((s) => s.trim()).pipe(z.string().describe('Piped description')).default(''))).toBe('Piped description');
+      expect(getZodDescription(z.string().optional())).toBeUndefined();
+    });
+  });
+
   describe('AppConfigSchema fields', () => {
-    it('unwraps all modified fields in AppConfigSchema without modifier labels', () => {
+    it('unwraps all modified fields in AppConfigSchema without modifier labels and resolves modules to object', () => {
       const shape = AppConfigSchema.shape;
 
       expect(getZodType(shape.subdomain)).toBe('string');
@@ -97,11 +114,13 @@ describe('Documentation Generator - getZodType Helper', () => {
       expect(getZodType(shape.typographyScale)).toBe('object');
       expect(getZodType(shape.brandLogoWidth)).toBe('string');
       expect(getZodType(shape.showCountdown)).toBe('boolean');
-      expect(getZodType(shape.modules)).toBe('any');
+      expect(getZodType(shape.modules)).toBe('object');
       expect(getZodType(shape.features)).toBe('object[]');
 
-      // Verify none of the fields return modifier names
-      for (const value of Object.values(shape)) {
+      const entries = Object.entries(shape);
+      expect(entries).toHaveLength(81);
+
+      for (const [key, value] of entries) {
         const type = getZodType(value);
         expect(type).not.toBe('default');
         expect(type).not.toBe('optional');
@@ -109,7 +128,91 @@ describe('Documentation Generator - getZodType Helper', () => {
         expect(type).not.toBe('pipe');
         expect(type).not.toBe('pipeline');
         expect(type).not.toBe('unknown');
+
+        const description = getZodDescription(value);
+        expect(description).toBeDefined();
+        expect(description!.length).toBeGreaterThan(0);
+        expect(description).not.toContain(`Configuration field for ${key}`);
       }
+    });
+
+    it('preserves AppConfigSchema.shape.modules defaults and dependency rules', () => {
+      const modulesSchema = AppConfigSchema.shape.modules;
+      expect(modulesSchema.parse(undefined)).toEqual(DEFAULT_MODULE_CONFIG);
+      expect(modulesSchema.parse({ registry: false, groupGifting: true })).toEqual({
+        ...DEFAULT_MODULE_CONFIG,
+        registry: false,
+        groupGifting: false,
+      });
+      expect(modulesSchema.parse(JSON.stringify({ registry: false, groupGifting: true }))).toEqual({
+        ...DEFAULT_MODULE_CONFIG,
+        registry: false,
+        groupGifting: false,
+      });
+    });
+  });
+
+  describe('Generated AppConfig and API Route Specifications', () => {
+    it('distinguishes 66 Prisma columns, 15 virtual DTO fields, 64 public fields, 13 admin-only fields, and 4 masked secrets', () => {
+      const table = generateConfigTable();
+      expect(table).not.toContain('Configuration field for');
+
+      const rows = table
+        .trim()
+        .split('\n')
+        .slice(2);
+      expect(rows).toHaveLength(81);
+
+      const prismaRows = rows.filter((r) => r.includes('| `Prisma` |'));
+      const virtualRows = rows.filter((r) => r.includes('| `Virtual DTO` |'));
+      const publicRows = rows.filter((r) => r.includes('| `Public` |'));
+      const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
+      const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
+
+      expect(prismaRows).toHaveLength(66);
+      expect(virtualRows).toHaveLength(15);
+      expect(publicRows).toHaveLength(64);
+      expect(adminOnlyRows).toHaveLength(13);
+      expect(maskedSecretRows).toHaveLength(4);
+
+      expect(table).toContain('`Masked secret (hasSmtpPass)`');
+      expect(table).toContain('`Masked secret (hasResendApiKey)`');
+      expect(table).toContain('`Masked secret (hasSendgridApiKey)`');
+      expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
+    });
+
+    it('lists all 69 API route handlers and marks /api/media and /api/media/[id] as Admin-only', () => {
+      const apiSection = generateApiRoutesSection();
+      expect(apiSection).toContain('Total API route handlers: **69**');
+
+      const handlerRows = apiSection
+        .split('\n')
+        .filter((line) => line.startsWith('| `/api/'));
+      expect(handlerRows).toHaveLength(69);
+
+      expect(apiSection).toContain('| `/api/media` | `src/app/api/media/route.ts` | `GET`, `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/media/[id]` | `src/app/api/media/[id]/route.ts` | `PUT`, `DELETE` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/media/export` | `src/app/api/media/export/route.ts` | `GET`, `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/cron/broadcasts` | `src/app/api/cron/broadcasts/route.ts` | `GET`, `POST` | `Bearer (CRON_SECRET)` |');
+    });
+
+    it('generates non-empty environment specifications', () => {
+      expect(generateEnvSpecs()).toContain('**Node.js**: v22.x');
+    });
+
+    it('escapes both backslashes and pipe characters in Markdown table cells', () => {
+      expect(escapeMarkdownTableCell("'classic' | 'modern'")).toBe("'classic' \\| 'modern'");
+      expect(escapeMarkdownTableCell('C:\\app\\config')).toBe('C:\\\\app\\\\config');
+      expect(escapeMarkdownTableCell('foo \\| bar')).toBe('foo \\\\\\| bar');
+
+      const customTable = generateConfigTable({
+        customField: z
+          .enum(['a\\b', 'c|d'])
+          .describe('Supports C:\\path\\file | fallback \\| literal\nand multiline notes'),
+      });
+      expect(customTable).toContain(
+        "| `customField` | `'a\\\\b' \\| 'c\\|d'` | `Virtual DTO` | `Server-only` | Supports C:\\\\path\\\\file \\| fallback \\\\\\| literal and multiline notes |"
+      );
     });
   });
 });

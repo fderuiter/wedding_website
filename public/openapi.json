@@ -1845,10 +1845,12 @@
                         "updatedAt": {},
                         "partner1Name": {
                           "default": "",
+                          "description": "Primary display name for the first partner across headings, metadata, and monograms.",
                           "type": "string"
                         },
                         "partner2Name": {
                           "default": "",
+                          "description": "Primary display name for the second partner across headings, metadata, and monograms.",
                           "type": "string"
                         },
                         "brideName": {
@@ -1863,7 +1865,9 @@
                             "null"
                           ]
                         },
-                        "weddingDate": {},
+                        "weddingDate": {
+                          "description": "Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports."
+                        },
                         "baseUrl": {
                           "anyOf": [
                             {
@@ -1877,46 +1881,60 @@
                           ]
                         },
                         "venueName": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Display name of the primary wedding ceremony or reception venue."
                         },
                         "venueAddress": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Street address of the primary wedding venue."
                         },
                         "venueCity": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "City where the primary wedding venue is located."
                         },
                         "venueState": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "State, province, or region of the primary wedding venue."
                         },
                         "venueZip": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Postal or ZIP code of the primary wedding venue."
                         },
                         "latitude": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Geographic latitude coordinate of the venue used for maps and live weather forecasts."
                         },
                         "longitude": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Geographic longitude coordinate of the venue used for maps and live weather forecasts."
                         },
                         "storyText": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Couple story narrative displayed on the homepage story section."
                         },
                         "venueDescription": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Descriptive overview of the wedding venue grounds, setting, and amenities."
                         },
                         "travelAdvice": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Travel, airport, parking, and local transit guidance for attending guests."
                         },
                         "heroTitle": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Main headline rendered inside the homepage hero banner."
                         },
                         "heroSubtitle": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Secondary tagline rendered beneath the homepage hero headline."
                         },
                         "seoTitle": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "HTML document title and social preview title for search engines and link cards."
                         },
                         "seoDescription": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Meta description summarizing the wedding website for search engines and Open Graph previews."
                         },
                         "contactEmail": {
                           "type": "string"
@@ -1982,7 +2000,8 @@
                           ]
                         },
                         "seoKeywords": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "Comma-separated SEO meta keywords template supporting partner and venue placeholders."
                         },
                         "colorPrimary": {
                           "type": "string",
@@ -1993,6 +2012,7 @@
                           "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
                         },
                         "features": {
+                          "description": "Ordered homepage content section definitions controlling section titles, visibility, and copy.",
                           "type": "array",
                           "items": {
                             "type": "object",
