@@ -1,12 +1,14 @@
 # Application Runtime Contract
 
-This document defines the authoritative, provider-neutral runtime contract for the wedding website application. Any supported hosting infrastructure—including Docker containers, cloud container services (e.g., Google Cloud Run, AWS App Runner/ECS, Azure Container Apps), serverless hosting (e.g., Vercel), or bare-metal/VM local production environments—must satisfy the specifications described here.
+This document defines the authoritative, provider-neutral runtime contract for the wedding website application. Any supported hosting infrastructure—including Docker containers, cloud container services (e.g., Google Cloud Run, AWS App Runner/ECS, Azure Container Apps), serverless hosting (e.g., Vercel), static showcase CDNs, or bare-metal/VM local production environments—must satisfy the specifications described here.
 
 ---
 
 ## 1. Node.js & Next.js Standalone Runtime
 
-- **Target Architecture**: Next.js App Router configured for standalone bundle generation (`output: 'standalone'` in `next.config.ts`).
+- **Target Architecture**: Dual-mode Next.js App Router configuration in `next.config.ts`:
+  - **Standalone Server Mode (Default)**: Configured with `output: 'standalone'` when `STATIC_EXPORT` is unset or false, producing a self-contained Node.js server bundle at `.next/standalone/server.js` (packaged at `/app/server.js` in OCI containers).
+  - **Static Showcase Export Mode (`STATIC_EXPORT`)**: Setting `STATIC_EXPORT=true` or `STATIC_EXPORT=1`—or running `npm run build:export` (`scripts/build-export.mjs`)—switches `next.config.ts` to `output: 'export'` with `images.unoptimized: true` and optional subpath routing via `NEXT_PUBLIC_BASE_PATH` (`basePath` and `assetPrefix`). `scripts/build-export.mjs` temporarily moves `src/app/api` to `.api-backup-export` during compilation (restoring it automatically on exit or `SIGINT`/`SIGTERM`/`SIGHUP`) while `src/lib/config.ts` renders pages against `STATIC_MOCK_CONFIG` without requiring PostgreSQL connectivity.
 - **Node.js Version Requirement**: Node.js **v22.x LTS** runtime (minimum v20.x, recommended v22+).
 - **OCI Container Support**:
   - The official `Dockerfile` produces a multi-platform OCI image based on `node:22-bookworm-slim`.
@@ -37,50 +39,106 @@ This document defines the authoritative, provider-neutral runtime contract for t
 
 ## 4. Environment Variable Matrix
 
-All runtime configuration is supplied via environment variables. The runtime validates environment variables on startup using `src/env.ts` (Zod schema).
+All operator-facing configuration across application runtime (`src/env.ts`, `src/lib/config.ts`), Next.js and VitePress build pipelines (`next.config.ts`, `scripts/build-export.mjs`, `docs-portal/.vitepress/config.mts`), and container orchestration (`Dockerfile`, `docker-compose.yml`) is supplied via environment variables. Core runtime variables are validated at startup by `src/env.ts` (Zod schema). Internal framework and test-runner flags (`NEXT_RUNTIME`, `npm_lifecycle_event`, and `JEST_WORKER_ID`) are managed automatically by Next.js, npm, and Jest rather than configured by operators.
 
 ### Mandatory Runtime Variables
-| Variable | Description | Validation / Format Requirements |
+| Variable | Default Value | Description & Validation Requirements |
 |---|---|---|
-| `DATABASE_URL` | Primary PostgreSQL connection URL (`datasource.url` in `prisma.config.ts`) | Must be a valid `postgresql://` or `postgres://` connection string. |
-| `ADMIN_PASSWORD` | Scrypt hash for admin authentication | Must match format `scrypt:[saltBase64]:[keyBase64]` (generated via `scripts/generate-password-hash.mjs`). Plaintext passwords are rejected. |
-| `ALLOWED_HOSTS` | Whitelisted host domains for request header validation | Comma-separated list of valid domain names or wildcard patterns (e.g. `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
-| `GUEST_PASSCODE` | Global passcode required for guest website access | Required in `production` (must not use the `wedding2026` dev/test fallback). |
-| `GUEST_SESSION_SECRET` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256) | Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not use the `default-guest-session-secret` dev/test fallback. |
+| `DATABASE_URL` | *None* | Primary PostgreSQL connection URL (`datasource.url` in `prisma.config.ts`). Must be a valid `postgresql://` or `postgres://` connection string. |
+| `ADMIN_PASSWORD` | *None* | Scrypt hash for admin authentication. Must match format `scrypt:[saltBase64]:[keyBase64]` (generated via `scripts/generate-password-hash.mjs`); plaintext passwords are rejected. |
+
+### Production-Required Variables
+These variables provide convenience defaults for local `development` and `test` modes in `src/env.ts`, but startup validation strictly requires unique, non-default values when `NODE_ENV=production`:
+| Variable | Dev / Test Default | Production Requirements & Description |
+|---|---|---|
+| `GUEST_PASSCODE` | `wedding2026` | Global passcode required for guest website access. Required in `production` (must not be empty or use the `wedding2026` dev/test fallback). |
+| `GUEST_SESSION_SECRET` | `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not use the `default-guest-session-secret` fallback. |
 
 ### Optional Infrastructure & Feature Variables
 | Variable | Default Value | Description |
 |---|---|---|
-| `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in container environments. |
+| `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in `Dockerfile` runner environments. |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
-| `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile site routing. |
-| `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations during container startup in `docker-entrypoint.sh`. |
-| `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or positive integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
-| `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item. |
-| `CRON_SECRET` | *None* | Authorization secret for triggering scheduled background endpoints. |
+| `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile subdomain site routing. |
+| `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`npx -y prisma migrate deploy`) during container startup in `docker-entrypoint.sh`. |
+| `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
+| `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
+| `CRON_SECRET` | *None* | Bearer authorization secret for triggering scheduled background endpoints (`/api/cron/*`). |
 
 ### Optional Object Storage Variables (S3-Compatible)
-When storing uploaded media assets externally, all core S3 credential variables must be supplied as a coherent group:
-| Variable | Requirement | Description |
-|---|---|---|
-| `S3_BUCKET` | Required if using S3 | Target bucket name. |
-| `S3_REGION` | Required if using S3 | S3 region (e.g. `us-east-1` or `auto` for Cloudflare R2). |
-| `S3_ACCESS_KEY_ID` | Required if using S3 | AWS/S3 access key ID. |
-| `S3_SECRET_ACCESS_KEY` | Required if using S3 | AWS/S3 secret access key. |
-| `S3_ENDPOINT` | Optional | Custom S3 API endpoint URL (e.g., Cloudflare R2 endpoint or MinIO). |
-| `S3_PUBLIC_URL` | Optional | Custom CDN or public asset delivery URL prefix. |
+When storing uploaded media assets externally, all four core S3 credential variables must be supplied together as a coherent group:
+| Variable | Requirement | Default Value | Description |
+|---|---|---|---|
+| `S3_BUCKET` | Required if using S3 | *None* | Target S3/R2 bucket name. |
+| `S3_REGION` | Required if using S3 | *None* | S3 region (e.g., `us-east-1` or `auto` for Cloudflare R2). |
+| `S3_ACCESS_KEY_ID` | Required if using S3 | *None* | AWS/S3 API access key ID. |
+| `S3_SECRET_ACCESS_KEY` | Required if using S3 | *None* | AWS/S3 API secret access key. |
+| `S3_ENDPOINT` | Optional | *None* | Custom S3 API endpoint URL (e.g., Cloudflare R2 endpoint or MinIO). |
+| `S3_PUBLIC_URL` | Optional | *None* | Custom CDN or public asset delivery URL prefix. |
 
-*Note: Supplying partial S3 credentials will cause startup environment validation to fail.*
+*Note: Supplying partial core S3 credentials will cause startup and build-time environment validation to fail.*
 
 ### Optional Stripe Card Checkout Variables
 When enabling online credit card and digital wallet processing for cash and experience funds, `STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` must be supplied together as a pair (or both omitted for direct-transfer-only registries):
-| Variable | Requirement | Description |
-|---|---|---|
-| `STRIPE_SECRET_KEY` | Required if using Stripe card checkout | Server-side Stripe API secret key (`sk_...` or `rk_...`). Placeholder mock keys are rejected in non-test environments. |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Required if using Stripe card checkout | Client-side Stripe publishable key (`pk_...`) used by Stripe Elements. Placeholder mock keys are rejected in non-test environments. |
-| `STRIPE_WEBHOOK_SECRET` | Optional (recommended if using Stripe webhooks) | Endpoint signing secret (`whsec_...`) used to verify incoming `/api/registry/webhook/stripe` events. |
+| Variable | Requirement | Default Value | Description |
+|---|---|---|---|
+| `STRIPE_SECRET_KEY` | Required if using Stripe card checkout | *None* | Server-side Stripe API secret key (`sk_...` or `rk_...`). Placeholder mock keys are rejected in non-test environments. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Required if using Stripe card checkout | *None* | Client-side Stripe publishable key (`pk_...`) used by Stripe Elements. Placeholder mock keys are rejected in non-test environments. |
+| `STRIPE_WEBHOOK_SECRET` | Optional (recommended if using Stripe webhooks) | *None* | Endpoint signing secret (`whsec_...`) used to verify incoming `/api/registry/webhook/stripe` events. |
 
 *Note: Supplying only one of `STRIPE_SECRET_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` will cause startup environment validation to fail fast.*
+
+### Optional Server, Build, Portal & Container Variables
+These variables configure container port binding, static HTML export builds, VitePress documentation portal asset paths, Docker Compose PostgreSQL service interpolation, and E2E setup bypasses:
+| Variable | Default Value | Scope | Description |
+|---|---|---|---|
+| `PORT` | `3000` | Container / Standalone Server | HTTP listening port (`ENV PORT=3000` in `Dockerfile`; `127.0.0.1:${PORT:-3000}:3000` in `docker-compose.yml`). |
+| `STATIC_EXPORT` | *None* | Build (`next.config.ts`, `scripts/build-export.mjs`, `src/`) | Switches Next.js to static HTML export (`output: 'export'`) and `STATIC_MOCK_CONFIG` data when set to `'true'` or `'1'`. |
+| `NEXT_PUBLIC_BASE_PATH` | *None* | Static Export Build (`next.config.ts`) | Optional URL subpath prefix (`basePath` and `assetPrefix`) applied when `STATIC_EXPORT` is enabled and value is not `'/'`. |
+| `VITEPRESS_BASE` | `/` | Docs Portal (`docs-portal/.vitepress/config.mts`) | Base URL path for building and serving the VitePress documentation portal. |
+| `E2E_TEST` | *None* (`true` in `docker-compose.yml`) | Runtime / Compose (`src/lib/config.ts`, `docker-compose.yml`) | When `'true'`, `isSiteInitialized()` returns `true` to bypass `<SetupWizard />` during automated E2E tests. Set `E2E_TEST=false` on production Docker Compose hosts so initial onboarding runs. |
+| `DB_USER` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL username interpolated into the `db` container (`POSTGRES_USER`) and `migration`/`app` `DATABASE_URL`. |
+| `DB_PASSWORD` | `wedding123` | Docker Compose (`docker-compose.yml`) | PostgreSQL password interpolated into the `db` container (`POSTGRES_PASSWORD`) and `migration`/`app` `DATABASE_URL`. |
+| `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and `migration`/`app` `DATABASE_URL`. |
+| `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Host TCP port published to container port `5432` for the `db` service (`${DB_PORT:-5432}:5432`). |
+
+### Optional Site Configuration Overrides (`SITE_*`)
+`src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:
+| Variable | Default Value | Target `AppConfig` Field | Description |
+|---|---|---|---|
+| `SITE_PARTNER1_NAME` | *None* | `partner1Name` | Override Partner 1 display name (when non-empty). |
+| `SITE_PARTNER2_NAME` | *None* | `partner2Name` | Override Partner 2 display name (when non-empty). |
+| `SITE_BRIDE_NAME` | *None* | `brideName`, `partner1Name` | Legacy alias overriding both `brideName` and `partner1Name` (when non-empty). |
+| `SITE_GROOM_NAME` | *None* | `groomName`, `partner2Name` | Legacy alias overriding both `groomName` and `partner2Name` (when non-empty). |
+| `SITE_WEDDING_DATE` | *None* | `weddingDate` | ISO 8601 date/timestamp string parsed via `new Date(...)` for the wedding celebration date. |
+| `SITE_BASE_URL` | *None* | `baseUrl` | Canonical public base URL of the wedding website. |
+| `SITE_VENUE_NAME` | *None* | `venueName` | Primary wedding venue name (when non-empty). |
+| `SITE_VENUE_ADDRESS` | *None* | `venueAddress` | Street address of the primary venue. |
+| `SITE_VENUE_CITY` | *None* | `venueCity` | City of the primary venue. |
+| `SITE_VENUE_STATE` | *None* | `venueState` | State/province of the primary venue. |
+| `SITE_VENUE_ZIP` | *None* | `venueZip` | Postal/ZIP code of the primary venue. |
+| `SITE_LATITUDE` | *None* | `latitude` | Venue latitude coordinate parsed as a floating-point number (`parseFloat`). |
+| `SITE_LONGITUDE` | *None* | `longitude` | Venue longitude coordinate parsed as a floating-point number (`parseFloat`). |
+| `SITE_TIMEZONE` | *None* | `timezone` | IANA timezone identifier for event schedules (e.g., `America/Chicago`). |
+| `SITE_COLOR_PRIMARY` | *None* | `colorPrimary` | Primary brand hex color token (when non-empty). |
+| `SITE_COLOR_SECONDARY` | *None* | `colorSecondary` | Secondary accent hex color token (when non-empty). |
+| `SITE_THEME_PRESET` | *None* | `themePreset` | Active theme preset identifier (e.g., `classic`). |
+| `SITE_THEME_TOKENS` | *None* | `themeTokens` | JSON-encoded map of custom CSS design token overrides (malformed JSON is ignored). |
+| `SITE_SHOW_COUNTDOWN` | *None* | `showCountdown` | Boolean string (`'true'` / `'false'`, case-insensitive) toggling the homepage countdown widget. |
+| `SITE_SHOW_ADD_TO_CALENDAR` | *None* | `showAddToCalendar` | Boolean string (`'true'` / `'false'`, case-insensitive) toggling the homepage Add-to-Calendar widget. |
+| `SITE_SEO_TITLE` | *None* | `seoTitle` | Custom HTML `<title>` / Open Graph title override. |
+| `SITE_SEO_DESCRIPTION` | *None* | `seoDescription` | Custom meta / Open Graph description override. |
+| `SITE_BRAND_MONOGRAM` | *None* | `brandMonogram` | Couple monogram text displayed in branding elements. |
+| `SITE_BRAND_LOGO_URL` | *None* | `brandLogoUrl` | URL or asset path for the custom brand logo image. |
+| `SITE_BRAND_LOGO_ALT` | *None* | `brandLogoAlt` | Accessible alt text for the custom brand logo image. |
+| `SITE_HERO_IMAGE_URL` | *None* | `heroImageUrl` | URL or asset path for the homepage hero image. |
+| `SITE_HERO_IMAGE_ALT` | *None* | `heroImageAlt` | Accessible alt text for the homepage hero image. |
+| `SITE_BRAND_WATERMARK_URL` | *None* | `brandWatermarkUrl` | URL or asset path for the decorative brand watermark graphic. |
+| `SITE_BRAND_WATERMARK_ALT` | *None* | `brandWatermarkAlt` | Accessible alt text for the decorative brand watermark graphic. |
+| `SITE_BADGE_GRAPHIC_URL` | *None* | `badgeGraphicUrl` | URL or asset path for the custom badge graphic. |
+| `SITE_BADGE_GRAPHIC_ALT` | *None* | `badgeGraphicAlt` | Accessible alt text for the custom badge graphic. |
+| `SITE_CONTACT_EMAIL` | *None* | `contactEmail` | Host contact email address displayed to guests. |
 
 ---
 
@@ -111,34 +169,42 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 ## 7. HTTPS Assumptions & Security Policy
 
 - **Transport Security**: Production deployments assume HTTPS termination at the reverse proxy/ingress layer.
-- **Security Headers**: Standard security headers are automatically injected on all responses via `next.config.ts`:
+- **Security Headers (Standalone / Server Mode Only)**: When running in standalone/server mode (`!isStaticExport`), `next.config.ts` (`headers()`) automatically injects the following HTTP security headers on all routes (`/(.*)`):
+  - `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; frame-src 'self' https://js.stripe.com https://hooks.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'self';`
   - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
   - `X-Frame-Options: SAMEORIGIN`
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: strict-origin-when-cross-origin`
+- **Static Export Header Caveat**: Next.js `headers()` is disabled when `STATIC_EXPORT` is `'true'` or `'1'` (`output: 'export'`). Operators serving static showcase builds must configure equivalent `Content-Security-Policy`, HSTS, framing, MIME-sniffing, and referrer headers at their CDN, static host, or reverse-proxy layer.
 
 ---
 
 ## 8. Application Lifecycle & Probes
 
 ```
- +------------------+     +-----------------------+     +-------------------+     +---------------------+
- |   Build Phase    | --> |    Migration Phase    | --> |    Start Phase    | --> |  Readiness Probes   |
- | npm run build    |     | prisma migrate deploy |     | node server.js    |     | GET /api/health     |
- +------------------+     +-----------------------+     +-------------------+     +---------------------+
+ +------------------+     +-----------------------+     +-------------------+     +-----------------------+
+ |   Build Phase    | --> |    Migration Phase    | --> |    Start Phase    | --> | Health & Ready Probes |
+ | npm run build    |     | prisma migrate deploy |     | node server.js    |     | GET /api/health       |
+ | (or build:export)|     |                       |     | (PID 1 via exec)  |     | GET /api/ready        |
+ +------------------+     +-----------------------+     +-------------------+     +-----------------------+
 ```
 
-1. **Build Phase (`npm run build`)**:
-   - Executes TypeScript type checking, Prisma Client generation (`prisma generate`), and Next.js standalone build.
+1. **Build Phase (`npm run build` / `npm run build:export`)**:
+   - Executes ESLint, migration and unused-export lints, Prisma Client generation (`prisma generate`), and Next.js standalone compilation (`output: 'standalone'`), or static HTML export (`output: 'export'`) via `npm run build:export` (`STATIC_EXPORT=true`).
    - Does **not** require an active database connection. Safe for CI/CD build environments.
 2. **Migration Phase (`npx prisma migrate deploy`)**:
-   - Runs before application startup (executed automatically in `docker-entrypoint.sh` when `RUN_MIGRATIONS=true` or via deployment pipeline).
+   - Runs before application startup (executed via the `migration` service in `docker-compose.yml`, automatically in `docker-entrypoint.sh` when `RUN_MIGRATIONS=true`, or via CI/CD release pipelines).
    - Applies pending database migrations safely without data loss.
 3. **Start Phase (`node server.js`)**:
-   - Initializes the Next.js standalone HTTP server, listens on `PORT` (`0.0.0.0`), and validates environment variables.
+   - `docker-entrypoint.sh` validates `DATABASE_URL` and invokes `exec "$@"` (`exec node server.js`), launching the Next.js standalone HTTP server on `PORT` (`0.0.0.0`) and validating `src/env.ts`.
 4. **Health & Readiness Probes**:
-   - Endpoint: `GET /api/health`
-   - Response: `HTTP 200 OK` with wrapped JSON `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` (`success` is `true`, and `data` contains `status`, `timestamp`, and `database`).
-   - Bypasses API rate limiting and authentication checks (including guest/admin checks in `middleware.ts`) for infrastructure probes to allow load balancers, orchestrators, and automated deployment polling to perform health checks without credentials or rate-limit throttling.
-5. **Graceful Shutdown**:
-   - On receiving `SIGTERM` or `SIGINT`, the process stops accepting new HTTP connections, waits for ongoing requests to finish, disconnects Prisma database client instances, and exits cleanly.
+   - **Liveness / Health Endpoint (`GET /api/health`, `src/app/api/health/route.ts`)**:
+     - Wrapped in `withApiMiddleware`, executes `SELECT 1` via Prisma, and returns `HTTP 200 OK` with wrapped JSON `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` (or `HTTP 503 Service Unavailable` with `{ "success": false, "error": "...", ... }` when PostgreSQL is unreachable).
+     - Exempted from guest/admin session checks in `src/middleware.ts` (`normalizedPath === '/api/health'`) and exempted from API rate limiting in `src/utils/withApiMiddleware.ts` (`isHealthPath`).
+   - **Readiness Endpoint (`GET /api/ready`, `src/app/api/ready/route.ts`)**:
+     - Direct Next.js Route Handler (not wrapped by `withApiMiddleware`), executes `SELECT 1` via Prisma, and returns `HTTP 200 OK` with unwrapped JSON `{ "status": "ready", "database": "connected", "timestamp": "..." }`, or `HTTP 503 Service Unavailable` with `{ "status": "unhealthy", "database": "disconnected", "error": "...", "timestamp": "..." }` on database failure.
+     - Exempted from guest/admin session checks in `src/middleware.ts` (`normalizedPath === '/api/ready'`) and not subject to `withApiMiddleware` rate-limit buckets.
+   - **Perimeter Host Validation**: Both `/api/health` and `/api/ready` still pass through perimeter `ALLOWED_HOSTS` validation (`X-Forwarded-Host` / `Host`) in `src/middleware.ts`, so container/orchestrator probes must send an allowed `Host` header (e.g., `localhost` or a configured domain).
+5. **Process Shutdown & Signal Delivery**:
+   - `docker-entrypoint.sh` hands off execution with `exec "$@"` so `node server.js` runs as **PID 1** inside the container and receives `SIGTERM` and `SIGINT` directly from the container runtime without an intermediate shell process.
+   - Neither `docker-entrypoint.sh` nor `src/lib/prisma.ts` registers custom `SIGTERM` / `SIGINT` listeners or invokes `prisma.$disconnect()` / `pool.end()` hooks; termination relies on default Node.js / Next.js standalone server exit behavior, and open `pg.Pool` (`@prisma/adapter-pg`) TCP connections are closed by the OS kernel and PostgreSQL upon process exit. Hosting orchestrators and reverse proxies should drain incoming requests via readiness checks before sending `SIGTERM`.
