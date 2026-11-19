@@ -5,6 +5,7 @@ import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
+import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { WeddingPartyEditorForm, WeddingPartyCard } from '@/components/admin/WeddingPartyEditor';
 import { Button } from '@/components/ui/Button';
@@ -82,17 +83,17 @@ function WeddingPartyDashboardContent({
 
   const draftMember = {
     id: currentMember.id || 'draft',
-    name: currentMember.name || '',
-    role: currentMember.role || '',
-    bio: currentMember.bio || '',
-    side: currentMember.side || null,
+    name: currentMember.name ?? '',
+    role: currentMember.role ?? '',
+    bio: currentMember.bio ?? '',
+    side: currentMember.side ?? null,
     photo: {
-      url: currentMember.photoUrl || currentMember.photo?.url || '',
-      altText: currentMember.photoAlt || currentMember.photo?.altText || '',
-      isDecorative: currentMember.photoDecorative || currentMember.photo?.isDecorative || false,
+      url: currentMember.photoUrl ?? currentMember.photo?.url ?? '',
+      altText: currentMember.photoAlt ?? currentMember.photo?.altText ?? '',
+      isDecorative: currentMember.photoDecorative ?? currentMember.photo?.isDecorative ?? false,
     },
-    link: currentMember.link || '',
-    order: currentMember.order || 0,
+    link: currentMember.link ?? '',
+    order: currentMember.order ?? 0,
   };
 
   const currentMembersWithDraft = members.map(m => m.id === currentMember.id ? draftMember : m);
@@ -126,8 +127,7 @@ function WeddingPartyDashboardContent({
         </div>
 
         {isEditing && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">{currentMember.id ? 'Edit' : 'Create'} Member</h2>
+          <AdminEditorContainer title={`${currentMember.id ? 'Edit' : 'Create'} Member`}>
             <WeddingPartyEditorForm
               values={currentMember}
               onChange={(updated) => setCurrentMember((prev) => ({ ...prev, ...updated }))}
@@ -135,7 +135,7 @@ function WeddingPartyDashboardContent({
               onCancel={() => setIsEditing(false)}
               submitLabel="Save"
             />
-          </div>
+          </AdminEditorContainer>
         )}
 
         <div aria-live="polite" className="sr-only" role="status">

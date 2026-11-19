@@ -1,0 +1,335 @@
+import { spawnSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+const REPO_ROOT = path.resolve(__dirname, '../..');
+const DEPLOY_YML_PATH = path.join(REPO_ROOT, '.github', 'workflows', 'deploy.yml');
+const DEPLOY_PROVIDER_YML_PATH = path.join(REPO_ROOT, '.github', 'workflows', 'deploy-provider.yml');
+const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
+const CLOUD_RUN_DOC_PATH = path.join(REPO_ROOT, 'docs', 'deployment', 'gcp-cloud-run.md');
+
+function extractStepRunScript(workflowContent: string, stepName: string): string {
+  const lines = workflowContent.split(/\r?\n/);
+  const targetHeader = `- name: ${stepName}`;
+  const headerIdx = lines.findIndex((l) => l.trim() === targetHeader);
+  if (headerIdx === -1) {
+    throw new Error(`Step "${stepName}" not found in workflow`);
+  }
+
+  let runIdx = -1;
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith('- name:') || trimmed.startsWith('- uses:')) {
+      break;
+    }
+    if (trimmed === 'run: |') {
+      runIdx = i;
+      break;
+    }
+  }
+
+  if (runIdx === -1) {
+    throw new Error(`"run: |" block not found for step "${stepName}"`);
+  }
+
+  const runIndent = lines[runIdx].search(/\S/);
+  const scriptLines: string[] = [];
+  for (let i = runIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      scriptLines.push('');
+      continue;
+    }
+    const indent = line.search(/\S/);
+    if (indent <= runIndent) {
+      break;
+    }
+    scriptLines.push(line.slice(runIndent + 2));
+  }
+
+  return scriptLines.join('\n');
+}
+
+describe('Release & Provider Deployment Workflow Digest Pinning and Provenance Checks', () => {
+  const deployYml = fs.readFileSync(DEPLOY_YML_PATH, 'utf8');
+  const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
+
+  let tempDir: string;
+  let binDir: string;
+  let outputFile: string;
+  let summaryFile: string;
+  let callLogFile: string;
+
+  const VALID_DIGEST = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-provider-test-'));
+    binDir = path.join(tempDir, 'bin');
+    outputFile = path.join(tempDir, 'github_output.txt');
+    summaryFile = path.join(tempDir, 'github_summary.md');
+    callLogFile = path.join(tempDir, 'cli_calls.log');
+
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(outputFile, '');
+    fs.writeFileSync(summaryFile, '');
+    fs.writeFileSync(callLogFile, '');
+
+    // Shim docker CLI for login + buildx imagetools inspect
+    const dockerShim = path.join(binDir, 'docker');
+    fs.writeFileSync(
+      dockerShim,
+      `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(callLogFile)}, 'docker ' + args.join(' ') + '\\n');
+if (args[0] === 'login') {
+  process.exit(0);
+}
+if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
+  if (process.env.MOCK_DOCKER_FAIL === 'true') {
+    console.error('manifest unknown');
+    process.exit(1);
+  }
+  process.stdout.write(process.env.MOCK_RESOLVED_DIGEST || '${VALID_DIGEST}');
+  process.exit(0);
+}
+process.exit(1);
+`
+    );
+    fs.chmodSync(dockerShim, 0o755);
+
+    // Shim gh CLI for gh attestation verify
+    const ghShim = path.join(binDir, 'gh');
+    fs.writeFileSync(
+      ghShim,
+      `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(callLogFile)}, 'gh ' + args.join(' ') + ' [token=' + (process.env.GH_TOKEN ? 'present' : 'missing') + ']\\n');
+if (args[0] === 'attestation' && args[1] === 'verify') {
+  if (process.env.MOCK_ATTESTATION_FAIL === 'true') {
+    console.error('Error: failed to verify attestation');
+    process.exit(1);
+  }
+  process.stdout.write('Verification succeeded!\\n');
+  process.exit(0);
+}
+process.exit(1);
+`
+    );
+    fs.chmodSync(ghShim, 0o755);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function runBashStep(script: string, envOverrides: Record<string, string>) {
+    return spawnSync('bash', ['-eo', 'pipefail', '-c', script], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_STEP_SUMMARY: summaryFile,
+        ...envOverrides,
+      },
+    });
+  }
+
+  it('keeps top-level permissions at contents: read and scopes attestations/packages read to deployment jobs', () => {
+    expect(deployYml).toMatch(/^permissions:\n  contents: read\n/m);
+    expect(deployProviderYml).toMatch(/^permissions:\n  contents: read\n/m);
+
+    expect(deployProviderYml).toContain(
+      '    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+    );
+    expect(deployYml).toContain(
+      '  staging-deploy-provider:\n    name: Staging Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+    );
+    expect(deployYml).toContain(
+      '  production-deploy-provider:\n    name: Production Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+    );
+  });
+
+  it('propagates image_digest in deploy.yml and removes latest defaults in deploy-provider.yml', () => {
+    expect(deployProviderYml).not.toContain("default: 'latest'");
+    expect(deployProviderYml).toContain('image_digest:');
+
+    expect(deployYml).toContain('image_digest:');
+    const digestPassMatches = deployYml.match(
+      /image_digest: \$\{\{ inputs\.image_digest \|\| needs\.publish-artifact\.outputs\.image_digest \}\}/g
+    );
+    expect(digestPassMatches).toHaveLength(2);
+  });
+
+  it('passes workflow inputs and GH_TOKEN strictly via env blocks without ${{ ... }} inside deploy-provider.yml run scripts', () => {
+    const stepNames = [
+      'Resolve Artifact Image URI',
+      'Verify Artifact Provenance Attestation',
+      'Deploy via Generic Webhook Adapter',
+      'Dry-run Provider Adapter Validation',
+      'Resolve Service URL Output',
+      'Deployment Summary',
+    ];
+
+    for (const stepName of stepNames) {
+      const script = extractStepRunScript(deployProviderYml, stepName);
+      expect(script).not.toContain('${{');
+    }
+  });
+
+  it('validates an explicit sha256 digest, verifies OIDC provenance, and writes pinned @sha256 URI to outputs and summary', () => {
+    const resolveScript = extractStepRunScript(deployProviderYml, 'Resolve Artifact Image URI');
+    const provenanceScript = extractStepRunScript(deployProviderYml, 'Verify Artifact Provenance Attestation');
+    const dryRunScript = extractStepRunScript(deployProviderYml, 'Dry-run Provider Adapter Validation');
+    const summaryScript = extractStepRunScript(deployProviderYml, 'Deployment Summary');
+
+    const resolveRes = runBashStep(resolveScript, {
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      RAW_DIGEST: VALID_DIGEST,
+      RAW_TAG: 'a1b2c3d4',
+      TARGET_ENV: 'staging',
+    });
+    expect(resolveRes.status).toBe(0);
+
+    const expectedUri = `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`;
+    const outputsAfterResolve = fs.readFileSync(outputFile, 'utf8');
+    expect(outputsAfterResolve).toContain(`image_digest=${VALID_DIGEST}`);
+    expect(outputsAfterResolve).toContain(`image_uri=${expectedUri}`);
+
+    const provRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: expectedUri,
+      IMAGE_DIGEST: VALID_DIGEST,
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+    });
+    expect(provRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('attestation_status=verified');
+
+    const cliCalls = fs.readFileSync(callLogFile, 'utf8');
+    expect(cliCalls).not.toContain('docker buildx imagetools inspect');
+    expect(cliCalls).toContain(
+      `gh attestation verify oci://${expectedUri} --owner OwnerOrg --signer-workflow OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml [token=present]`
+    );
+
+    const dryRunRes = runBashStep(dryRunScript, {
+      IMAGE_URI: expectedUri,
+      IMAGE_DIGEST: VALID_DIGEST,
+    });
+    expect(dryRunRes.status).toBe(0);
+    expect(dryRunRes.stdout).toContain(expectedUri);
+
+    const summaryRes = runBashStep(summaryScript, {
+      TARGET_ENV: 'staging',
+      PROVIDER: 'google-cloud-run',
+      IMAGE_DIGEST: VALID_DIGEST,
+      IMAGE_URI: expectedUri,
+      ATTESTATION_STATUS: 'verified',
+      SERVICE_URL: 'https://staging.example.com',
+    });
+    expect(summaryRes.status).toBe(0);
+
+    const summary = fs.readFileSync(summaryFile, 'utf8');
+    expect(summary).toContain(`**Verified Digest:** \`${VALID_DIGEST}\``);
+    expect(summary).toContain(`**Pinned Artifact URI:** \`${expectedUri}\``);
+    expect(summary).toContain('**Provenance Attestation:** `verified`');
+  });
+
+  it('resolves tag-only manual dispatch to an immutable sha256 digest via docker buildx imagetools inspect', () => {
+    const resolveScript = extractStepRunScript(deployProviderYml, 'Resolve Artifact Image URI');
+    const resolvedFromTag = 'sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+    const res = runBashStep(resolveScript, {
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      RAW_DIGEST: '',
+      RAW_TAG: 'v1.4.2',
+      TARGET_ENV: 'production',
+      MOCK_RESOLVED_DIGEST: resolvedFromTag,
+    });
+
+    expect(res.status).toBe(0);
+    const cliCalls = fs.readFileSync(callLogFile, 'utf8');
+    expect(cliCalls).toContain(
+      'docker buildx imagetools inspect --format {{.Manifest.Digest}} ghcr.io/ownerorg/wedding_website:v1.4.2'
+    );
+
+    const outputs = fs.readFileSync(outputFile, 'utf8');
+    expect(outputs).toContain(`image_digest=${resolvedFromTag}`);
+    expect(outputs).toContain(`image_uri=ghcr.io/ownerorg/wedding_website@${resolvedFromTag}`);
+  });
+
+  it('blocks unpinned latest tags, missing identifiers, and malformed digests before registry or provenance calls', () => {
+    const resolveScript = extractStepRunScript(deployProviderYml, 'Resolve Artifact Image URI');
+
+    const latestRes = runBashStep(resolveScript, {
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      RAW_DIGEST: '',
+      RAW_TAG: 'latest',
+      TARGET_ENV: 'production',
+    });
+    expect(latestRes.status).not.toBe(0);
+    expect(latestRes.stdout + latestRes.stderr).toContain("Unpinned 'latest' image tag is forbidden");
+
+    const emptyRes = runBashStep(resolveScript, {
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      RAW_DIGEST: '',
+      RAW_TAG: '',
+      TARGET_ENV: 'production',
+    });
+    expect(emptyRes.status).not.toBe(0);
+    expect(emptyRes.stdout + emptyRes.stderr).toContain('Missing artifact identifier');
+
+    const badDigestRes = runBashStep(resolveScript, {
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      RAW_DIGEST: 'sha256:not-a-valid-64-char-hex',
+      RAW_TAG: '',
+      TARGET_ENV: 'production',
+    });
+    expect(badDigestRes.status).not.toBe(0);
+    expect(badDigestRes.stdout + badDigestRes.stderr).toContain('Invalid image digest');
+
+    expect(fs.readFileSync(callLogFile, 'utf8')).toBe('');
+  });
+
+  it('blocks deployment when gh attestation verify fails on an unattested or tampered image', () => {
+    const provenanceScript = extractStepRunScript(deployProviderYml, 'Verify Artifact Provenance Attestation');
+
+    const res = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+      IMAGE_DIGEST: VALID_DIGEST,
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_ATTESTATION_FAIL: 'true',
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stdout + res.stderr).toContain('OIDC build provenance verification failed');
+    expect(fs.readFileSync(outputFile, 'utf8')).not.toContain('attestation_status=verified');
+  });
+
+  it('documents digest propagation and provenance verification in DEPLOYMENT.md and gcp-cloud-run.md', () => {
+    const deploymentDoc = fs.readFileSync(DEPLOYMENT_DOC_PATH, 'utf8');
+    const cloudRunDoc = fs.readFileSync(CLOUD_RUN_DOC_PATH, 'utf8');
+
+    expect(deploymentDoc).toContain('gh attestation verify');
+    expect(deploymentDoc).toContain('docker buildx imagetools inspect');
+    expect(deploymentDoc).toContain('attestation_status');
+
+    expect(cloudRunDoc).toContain(
+      'image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}'
+    );
+    expect(cloudRunDoc).toContain('attestations: read');
+    expect(cloudRunDoc).toContain('gh attestation verify');
+  });
+});

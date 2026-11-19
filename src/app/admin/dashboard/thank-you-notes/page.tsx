@@ -88,11 +88,15 @@ export default function ThankYouNotesPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
+    setIsLoading(true);
+    setError(null);
     setStatusFilter(tab);
     setCurrentPage(1);
   };
 
   const handleSearchChange = (query: string) => {
+    setIsLoading(true);
+    setError(null);
     setSearchQuery(query);
     setCurrentPage(1);
   };
@@ -199,8 +203,59 @@ export default function ThankYouNotesPage() {
   }, [statusFilter, searchQuery, currentPage, pageSize]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let cancelled = false;
+
+    const loadThankYouNotes = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (statusFilter !== 'All') {
+          params.set('status', statusFilter);
+        }
+        if (searchQuery.trim()) {
+          params.set('search', searchQuery.trim());
+        }
+        params.set('page', currentPage.toString());
+        params.set('pageSize', pageSize.toString());
+
+        const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          throw new Error('Failed to fetch thank-you notes.');
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setItems(data.items || []);
+        setMetrics(
+          data.metrics || {
+            total: 0,
+            sent: 0,
+            unsent: 0,
+            notNeeded: 0,
+            thanked: 0,
+            completionPercentage: 0,
+          }
+        );
+        if (data.pagination) {
+          setPagination(data.pagination);
+        }
+        setError(null);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err.message || 'An error occurred while loading thank-you notes.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadThankYouNotes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [statusFilter, searchQuery, currentPage, pageSize]);
 
   // Bulk selection logic
   const isAllSelected = useMemo(() => {
@@ -832,7 +887,11 @@ export default function ThankYouNotesPage() {
                 variant="secondary"
                 size="sm"
                 disabled={currentPage <= 1 || isLoading}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => {
+                  setIsLoading(true);
+                  setError(null);
+                  setCurrentPage((p) => Math.max(1, p - 1));
+                }}
                 aria-label="Previous page"
               >
                 Previous
@@ -844,7 +903,11 @@ export default function ThankYouNotesPage() {
                 variant="secondary"
                 size="sm"
                 disabled={currentPage >= pagination.totalPages || isLoading}
-                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                onClick={() => {
+                  setIsLoading(true);
+                  setError(null);
+                  setCurrentPage((p) => Math.min(pagination.totalPages, p + 1));
+                }}
                 aria-label="Next page"
               >
                 Next

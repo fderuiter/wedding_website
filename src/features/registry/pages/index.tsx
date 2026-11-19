@@ -11,11 +11,15 @@ import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import { PriceRangeFilter } from '../components/PriceRangeFilter';
 import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
 import EmptyState from '@/components/EmptyState';
-import { useRegistry } from '../hooks/useRegistry';
+import { useRegistry, type SortOption } from '../hooks/useRegistry';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Checkbox, Label, Input, Select } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import {
+  REGISTRY_INITIAL_VISIBLE_ITEMS,
+  REGISTRY_LOAD_MORE_INCREMENT,
+} from '@/utils/registryPagination';
 
 import { GuestSessionProvider } from '../context/GuestSessionContext';
 
@@ -48,6 +52,8 @@ function RegistryPageContent() {
     isModalOpen,
     setVisibleItemsCount,
     isAdmin,
+    cardCheckoutEnabled,
+    stripePublishableKey,
     filteredItems,
     visibleItems,
     categories,
@@ -98,7 +104,9 @@ function RegistryPageContent() {
     setLiveAnnouncement('Loading more gifts...');
     
     loadMoreTimerRef.current = setTimeout(() => {
-      setVisibleItemsCount(prevCount => Math.min(prevCount + 8, filteredItems.length));
+      setVisibleItemsCount(prevCount =>
+        Math.min(prevCount + REGISTRY_LOAD_MORE_INCREMENT, filteredItems.length)
+      );
       isLoadingMore.current = false;
       loadMoreTimerRef.current = null;
     }, 500);
@@ -210,7 +218,7 @@ function RegistryPageContent() {
               </Label>
               <Select
                 value={sortOption}
-                onChange={(e) => setSortOption(e.target.value as any)}
+                onChange={(e) => setSortOption(e.target.value as SortOption)}
                 aria-label="Sort gifts"
                 className="w-auto"
               >
@@ -261,7 +269,7 @@ function RegistryPageContent() {
           </div>
         ) : isLoading ? (
           <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto">
-            {Array.from({ length: 12 }).map((_, index) => (
+            {Array.from({ length: REGISTRY_INITIAL_VISIBLE_ITEMS }).map((_, index) => (
               <RegistryCardSkeleton key={index} />
             ))}
           </div>
@@ -285,6 +293,7 @@ function RegistryPageContent() {
                   item={item}
                   onClick={handleCardClick}
                   isAdmin={isAdmin}
+                  cardCheckoutEnabled={cardCheckoutEnabled}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                 />
@@ -347,6 +356,9 @@ function RegistryPageContent() {
               titleId={`registry-item-title-${selectedItem.id}`}
               onClose={handleCloseModal}
               onContribute={handleContribute}
+              cardCheckoutEnabled={cardCheckoutEnabled}
+              stripePublishableKey={stripePublishableKey}
+              isAdmin={isAdmin}
             />
           )}
         </Dialog>

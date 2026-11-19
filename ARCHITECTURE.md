@@ -114,6 +114,7 @@ flowchart LR
     node_api_admin_maintenance_export["export"]
     node_api_admin_maintenance_import["import"]
     node_api_admin_me["me"]
+    node_api_admin_onboardingmilestones["onboarding-milestones"]
     node_api_admin_photos["photos"]
     node_api_admin_photos_id["[id]"]
     node_api_admin_photos_moderation["moderation"]
@@ -155,6 +156,7 @@ flowchart LR
     node_api_photos_upload["upload"]
     node_api_ready["ready"]
     node_api_registry["registry"]
+    node_api_registry_capabilities["capabilities"]
     node_api_registry_contribute["contribute"]
     node_api_registry_items["items"]
     node_api_registry_items_id["[id]"]
@@ -227,6 +229,7 @@ flowchart LR
     node_api_admin_maintenance --> node_api_admin_maintenance_export
     node_api_admin_maintenance --> node_api_admin_maintenance_import
     node_api_admin --> node_api_admin_me
+    node_api_admin --> node_api_admin_onboardingmilestones
     node_api_admin --> node_api_admin_photos
     node_api_admin_photos --> node_api_admin_photos_id
     node_api_admin_photos --> node_api_admin_photos_moderation
@@ -268,6 +271,7 @@ flowchart LR
     node_api_photos --> node_api_photos_upload
     node_api --> node_api_ready
     node_api --> node_api_registry
+    node_api_registry --> node_api_registry_capabilities
     node_api_registry --> node_api_registry_contribute
     node_api_registry --> node_api_registry_items
     node_api_registry_items --> node_api_registry_items_id
@@ -334,6 +338,7 @@ flowchart LR
     class node_api_admin_maintenance_export api;
     class node_api_admin_maintenance_import api;
     class node_api_admin_me api;
+    class node_api_admin_onboardingmilestones api;
     class node_api_admin_photos_id api;
     class node_api_admin_photos_moderation api;
     class node_api_admin_photos_moderation_batch api;
@@ -367,6 +372,7 @@ flowchart LR
     class node_api_photos api;
     class node_api_photos_upload api;
     class node_api_ready api;
+    class node_api_registry_capabilities api;
     class node_api_registry_contribute api;
     class node_api_registry_items api;
     class node_api_registry_items_id api;

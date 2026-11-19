@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+const PLACEHOLDER_STRIPE_KEYS = new Set([
+  'sk_test_placeholder_mock_key',
+  'pk_test_placeholder_mock_key',
+]);
+
+function normalizeOptionalEnv(val: string | undefined): string | undefined {
+  if (!val) return undefined;
+  const trimmed = val.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
@@ -50,6 +61,9 @@ const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_PUBLIC_URL: z.string().optional(),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
     if (!data.GUEST_SESSION_SECRET || data.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
@@ -83,6 +97,65 @@ const envSchema = z.object({
         path: [key],
         message: `Incomplete S3 credentials: ${key} is required when other S3 variables are set`,
       });
+    });
+  }
+
+  const stripeSecretKey = normalizeOptionalEnv(data.STRIPE_SECRET_KEY);
+  const stripePublishableKey = normalizeOptionalEnv(data.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+  const stripeWebhookSecret = normalizeOptionalEnv(data.STRIPE_WEBHOOK_SECRET);
+
+  if (stripeSecretKey && !stripePublishableKey) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
+      message: 'Incomplete Stripe credentials: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is required when STRIPE_SECRET_KEY is set',
+    });
+  }
+  if (stripePublishableKey && !stripeSecretKey) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['STRIPE_SECRET_KEY'],
+      message: 'Incomplete Stripe credentials: STRIPE_SECRET_KEY is required when NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is set',
+    });
+  }
+
+  if (stripeSecretKey) {
+    if (!stripeSecretKey.startsWith('sk_') && !stripeSecretKey.startsWith('rk_')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STRIPE_SECRET_KEY'],
+        message: 'STRIPE_SECRET_KEY must start with sk_ or rk_',
+      });
+    } else if (data.NODE_ENV !== 'test' && PLACEHOLDER_STRIPE_KEYS.has(stripeSecretKey)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STRIPE_SECRET_KEY'],
+        message: 'STRIPE_SECRET_KEY must not use a placeholder mock key in non-test environments',
+      });
+    }
+  }
+
+  if (stripePublishableKey) {
+    if (!stripePublishableKey.startsWith('pk_')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
+        message: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must start with pk_',
+      });
+    } else if (data.NODE_ENV !== 'test' && PLACEHOLDER_STRIPE_KEYS.has(stripePublishableKey)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
+        message: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must not use a placeholder mock key in non-test environments',
+      });
+    }
+  }
+
+  if (stripeWebhookSecret && !stripeWebhookSecret.startsWith('whsec_')) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['STRIPE_WEBHOOK_SECRET'],
+      message: 'STRIPE_WEBHOOK_SECRET must start with whsec_',
     });
   }
 });
@@ -147,6 +220,24 @@ if (presentKeys.length > 0 && presentKeys.length < keys.length) {
   throw new Error('Incomplete S3 credentials provided in environment variables');
 }
 
+// Fail fast if incomplete or invalid Stripe card credentials are provided
+const stripeCardKeys = ['STRIPE_SECRET_KEY', 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'] as const;
+const presentStripeCardKeys = stripeCardKeys.filter(key => Boolean(normalizeOptionalEnv(process.env[key])));
+if (presentStripeCardKeys.length > 0 && presentStripeCardKeys.length < stripeCardKeys.length) {
+  const missingStripeKeys = stripeCardKeys.filter(key => !normalizeOptionalEnv(process.env[key]));
+  console.error('❌ Incomplete Stripe credentials provided in environment variables:', missingStripeKeys.join(', '));
+  throw new Error(`Incomplete Stripe credentials provided in environment variables: missing ${missingStripeKeys.join(', ')}`);
+}
+if (process.env.NODE_ENV !== 'test') {
+  for (const key of stripeCardKeys) {
+    const val = normalizeOptionalEnv(process.env[key]);
+    if (val && PLACEHOLDER_STRIPE_KEYS.has(val)) {
+      console.error(`❌ Security Error: ${key} must not use a placeholder mock key in non-test environments.`);
+      throw new Error(`${key} must not use a placeholder mock key in non-test environments.`);
+    }
+  }
+}
+
 let _env: z.infer<typeof envSchema>;
 
 if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE || !process.env.GUEST_SESSION_SECRET))) {
@@ -162,12 +253,16 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
     GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
+    CRON_SECRET: process.env.CRON_SECRET || undefined,
     S3_BUCKET: process.env.S3_BUCKET || undefined,
     S3_REGION: process.env.S3_REGION || undefined,
     S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || undefined,
     S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || undefined,
     S3_ENDPOINT: process.env.S3_ENDPOINT || undefined,
     S3_PUBLIC_URL: process.env.S3_PUBLIC_URL || undefined,
+    STRIPE_SECRET_KEY: normalizeOptionalEnv(process.env.STRIPE_SECRET_KEY),
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: normalizeOptionalEnv(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
+    STRIPE_WEBHOOK_SECRET: normalizeOptionalEnv(process.env.STRIPE_WEBHOOK_SECRET),
   };
 } else {
   const parsed = envSchema.safeParse(process.env);

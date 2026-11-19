@@ -29,6 +29,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { safeFetch } from '@/utils/safeFetch';
 import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
+import { isAdminRequest } from '@/core/auth/auth.server';
 
 export interface ExportMediaItem {
   id?: string;
@@ -167,6 +168,9 @@ export async function processExportRequest(
 }
 
 async function handleExport(req: NextRequest) {
+  if (!(await isAdminRequest(req))) {
+    throw new ApiError(401, 'Unauthorized');
+  }
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     throw new ApiError(404, "Feature 'gallery' is disabled");

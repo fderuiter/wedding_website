@@ -1,35 +1,5 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateAdminCookieValue() {
-  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
-  const payload = {
-    isAdmin: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { generateAdminCookieValue, seedAdminAndGuestAuthCookies } from './helpers/auth';
 
 test.describe('Sample Data Generator & Admin Workflow', () => {
   test.beforeEach(async ({ request }) => {
@@ -108,12 +78,82 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(contributeBody.error).toMatch(/sample/i);
   });
 
-  test('displays sample data banner and badges in admin UI, then purges sample data', async ({ context, page }) => {
+  test('rejects sample guest invitation codes across validation, login, lookup, and downstream guest routes', async ({ request }) => {
     const adminCookie = generateAdminCookieValue();
-    await context.addCookies([
-      { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-      { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-    ]);
+    const guestCookie = generateGuestCookieValue();
+
+    // 1. Seed classic sample data including sample guests (e.g. SMITH2026) and registry items
+    const seedRes = await request.post('/api/admin/sample-data', {
+      headers: { Cookie: `admin_auth=${adminCookie}` },
+      data: {
+        archetype: 'classic',
+        modules: ['registry', 'guests'],
+      },
+    });
+    expect(seedRes.status()).toBe(200);
+
+    // 2. Validate sample code SMITH2026 -> expect 404 and no guest_invite_session Set-Cookie
+    const validateRes = await request.get('/api/registry/validate-code?code=SMITH2026');
+    expect(validateRes.status()).toBe(404);
+    const validateBody = await validateRes.json();
+    expect(validateBody.error).toBe('Invalid invitation code.');
+    const validateSetCookies = validateRes.headersArray().filter(h => h.name.toLowerCase() === 'set-cookie');
+    expect(validateSetCookies.some(h => h.value.includes('guest_invite_session='))).toBe(false);
+
+    // 3. Unauthenticated request to protected /api/registry/items still receives 401
+    const unauthItemsRes = await request.get('/api/registry/items');
+    expect(unauthItemsRes.status()).toBe(401);
+
+    // 4. Unified guest login with sample code SMITH2026 -> expect 401 and no session cookie
+    const loginRes = await request.post('/api/guest/login', {
+      data: { passcode: 'SMITH2026' },
+    });
+    expect(loginRes.status()).toBe(401);
+    const loginSetCookies = loginRes.headersArray().filter(h => h.name.toLowerCase() === 'set-cookie');
+    expect(loginSetCookies.some(h => h.value.includes('guest_invite_session=') || h.value.includes('guest_auth='))).toBe(false);
+
+    // 5. Self-service guest lookup for sample guest name -> expect 404 and no guest_invite_session cookie
+    const lookupRes = await request.post('/api/guest/lookup', {
+      headers: { Cookie: `guest_auth=${guestCookie}` },
+      data: { query: 'Mr. & Mrs. Robert Smith' },
+    });
+    expect(lookupRes.status()).toBe(404);
+    const lookupSetCookies = lookupRes.headersArray().filter(h => h.name.toLowerCase() === 'set-cookie');
+    expect(lookupSetCookies.some(h => h.value.includes('guest_invite_session='))).toBe(false);
+
+    // 6. Pre-deployment signed guest_invite_session cookie for sample code is blocked by downstream guest handlers
+    const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
+    const samplePayload = Buffer.from(
+      JSON.stringify({
+        code: 'SMITH2026',
+        guestName: 'Mr. & Mrs. Robert Smith',
+        iat: Date.now(),
+        exp: Date.now() + 8 * 60 * 60 * 1000,
+      })
+    ).toString('base64url');
+    const sampleSig = crypto.createHmac('sha256', secret).update(samplePayload).digest('base64url');
+    const preSignedSampleCookie = `${samplePayload}.${sampleSig}`;
+
+    const addrGetRes = await request.get('/api/guest/address', {
+      headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },
+    });
+    expect(addrGetRes.status()).toBe(404);
+
+    const addrPutRes = await request.put('/api/guest/address', {
+      headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },
+      data: {
+        addressLine1: '100 Demo Way',
+        city: 'Chicago',
+        state: 'IL',
+        zipCode: '60601',
+        country: 'United States',
+      },
+    });
+    expect(addrPutRes.status()).toBe(404);
+  });
+
+  test('displays sample data banner and badges in admin UI, then purges sample data', async ({ context, page }) => {
+    const { adminCookieValue: adminCookie } = await seedAdminAndGuestAuthCookies(context);
 
     // Seed sample data via API
     const request = context.request;
@@ -147,10 +187,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
         ) {
           console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
           await page.close().catch(() => {});
-          await context.addCookies([
-            { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-            { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-          ]).catch(() => {});
+          await seedAdminAndGuestAuthCookies(context, { adminCookieValue: adminCookie }).catch(() => {});
           page = await context.newPage();
         } else {
           throw err;

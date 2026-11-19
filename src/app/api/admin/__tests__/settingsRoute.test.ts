@@ -30,13 +30,15 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-jest.mock('@/lib/config', () => ({
-  getAppConfig: jest.fn(),
-  toPublicAppConfig: jest.fn((config) => {
-    return config;
-  }),
-  isMultisiteEnabled: jest.fn(() => process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1'),
-}));
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    getAppConfig: jest.fn(),
+    toPublicAppConfig: jest.fn((config) => actual.toPublicAppConfig(config)),
+    toAdminAppConfig: jest.fn((config) => actual.toAdminAppConfig(config)),
+    isMultisiteEnabled: jest.fn(() => process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1'),
+  };
+});
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
@@ -47,7 +49,7 @@ jest.mock('next/cache', () => ({
 }));
 
 import { prisma } from '@/lib/prisma';
-import { getAppConfig, toPublicAppConfig } from '@/lib/config';
+import { getAppConfig, toPublicAppConfig, toAdminAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { revalidatePath } from 'next/cache';
 import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
@@ -169,16 +171,37 @@ describe('GET /api/admin/settings', () => {
     expect(json.error).toBe('Unauthorized');
   });
 
-  it('returns config when authenticated', async () => {
+  it('returns masked admin config when authenticated and omits raw secrets', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    mockGetAppConfig.mockResolvedValue(updatedConfig as any);
+    const configWithSecrets = {
+      ...updatedConfig,
+      smtpUser: 'mailer@wedding.example',
+      smtpPass: 'secret-smtp-pass',
+      resendApiKey: 're_secret_123',
+      sendgridApiKey: '',
+      twilioAccountSid: 'AC12345',
+      twilioAuthToken: 'twilio-secret-token',
+    };
+    mockGetAppConfig.mockResolvedValue(configWithSecrets as any);
 
     const req = makeAuthReq();
     const res = await GET(req);
 
     expect(res.status).toBe(200);
     expect(mockGetAppConfig).toHaveBeenCalled();
-    expect(toPublicAppConfig).toHaveBeenCalledWith(updatedConfig);
+    expect(toAdminAppConfig).toHaveBeenCalledWith(configWithSecrets);
+
+    const json = await res.json();
+    expect(json.data.smtpUser).toBe('mailer@wedding.example');
+    expect(json.data.twilioAccountSid).toBe('AC12345');
+    expect(json.data.hasSmtpPass).toBe(true);
+    expect(json.data.hasResendApiKey).toBe(true);
+    expect(json.data.hasSendgridApiKey).toBe(false);
+    expect(json.data.hasTwilioAuthToken).toBe(true);
+    expect(json.data.smtpPass).toBeUndefined();
+    expect(json.data.resendApiKey).toBeUndefined();
+    expect(json.data.sendgridApiKey).toBeUndefined();
+    expect(json.data.twilioAuthToken).toBeUndefined();
   });
 });
 
@@ -406,13 +429,66 @@ describe('PUT /api/admin/settings', () => {
     expect(mockRevalidatePath).not.toHaveBeenCalled();
   });
 
-  it('returns the public config on success', async () => {
+  it('returns the masked admin config and saves sanitized snapshot on success', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
+    const savedRecord = {
+      ...updatedConfig,
+      smtpPass: 'stored-smtp-pass',
+      twilioAccountSid: 'AC_STORED',
+      twilioAuthToken: 'stored-twilio-token',
+    };
+    (mockPrisma.appConfig.update as jest.Mock).mockResolvedValue(savedRecord);
+
     const req = makeAuthReq(validConfigData);
     const res = await PUT(req);
 
     expect(res.status).toBe(200);
-    expect(toPublicAppConfig).toHaveBeenCalledWith(AppConfigSchema.parse(updatedConfig));
+    const parsedSaved = AppConfigSchema.parse(savedRecord);
+    expect(toPublicAppConfig).toHaveBeenCalledWith(parsedSaved);
+    expect(toAdminAppConfig).toHaveBeenCalledWith(parsedSaved);
+
+    const json = await res.json();
+    expect(json.data.hasSmtpPass).toBe(true);
+    expect(json.data.hasTwilioAuthToken).toBe(true);
+    expect(json.data.smtpPass).toBeUndefined();
+    expect(json.data.twilioAuthToken).toBeUndefined();
+
+    const snapshotCall = (mockPrisma.snapshotVersion.create as jest.Mock).mock.calls[0][0];
+    expect(snapshotCall.data.data.smtpPass).toBeUndefined();
+    expect(snapshotCall.data.data.twilioAccountSid).toBeUndefined();
+    expect(snapshotCall.data.data.twilioAuthToken).toBeUndefined();
+  });
+
+  it('preserves stored secrets when password inputs are blank and rotates when provided', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'global',
+      subdomain: null,
+      smtpPass: 'existing-smtp-pass',
+      resendApiKey: 'existing-resend-key',
+      sendgridApiKey: 'existing-sendgrid-key',
+      twilioAuthToken: 'existing-twilio-token',
+    });
+
+    const req = makeAuthReq({
+      ...validConfigData,
+      smtpPass: '',
+      resendApiKey: '   ',
+      sendgridApiKey: 'SG.rotated_key',
+      // twilioAuthToken omitted
+    });
+    const res = await PUT(req);
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith({
+      where: { id: 'global' },
+      data: expect.objectContaining({
+        smtpPass: 'existing-smtp-pass',
+        resendApiKey: 'existing-resend-key',
+        sendgridApiKey: 'SG.rotated_key',
+        twilioAuthToken: 'existing-twilio-token',
+      }),
+    });
   });
 
   it('persists a valid timezone to database', async () => {
@@ -455,6 +531,7 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
   });
 
   it('GET with list=true returns only canonical global profile in single-site mode', async () => {
+    mockGetAppConfig.mockResolvedValue(updatedConfig as any);
     const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
       headers: { cookie: 'admin_auth=valid-token' }
     });
@@ -466,6 +543,7 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
   });
 
   it('GET with id passes global to getAppConfig in single-site mode', async () => {
+    mockGetAppConfig.mockResolvedValue(updatedConfig as any);
     const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
       headers: { cookie: 'admin_auth=valid-token' }
     });
@@ -529,6 +607,7 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
   });
 
   it('GET with id fetches a specific profile', async () => {
+    mockGetAppConfig.mockResolvedValue(updatedConfig as any);
     const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
       headers: { cookie: 'admin_auth=valid-token' }
     });

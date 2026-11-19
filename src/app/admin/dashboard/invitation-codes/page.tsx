@@ -12,8 +12,20 @@ import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { BroadcastModal } from '@/components/admin/BroadcastModal';
 import { InvitationQRPreviewModal, InvitationQRPreviewGuest } from '@/components/admin/InvitationQRPreviewModal';
 import { InvitationQRPrintLabelsModal, PrintableInvitationCode } from '@/components/admin/InvitationQRPrintLabelsModal';
+import { GuestEditorModal } from '@/components/admin/GuestEditorModal';
+import {
+  SubEventEditorModal,
+  SubEventDeleteConfirmModal,
+  type EditableSubEvent,
+} from '@/components/admin/SubEventEditorModal';
 import { AdminViewState } from '@/components/admin/AdminViewState';
-import { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from '@/features/registry';
+import {
+  matchDietaryCategory,
+  getAttendanceStatus,
+  isAddressComplete,
+  type InvitationCodeDTO,
+} from '@/features/registry';
+import type { SubEventDTO } from '@/features/sub-events';
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
@@ -25,13 +37,18 @@ export default function InvitationCodesDashboardPage() {
     isLoading,
     error,
     create,
+    update,
     remove,
     removeBatch,
     updateBatch,
     fetchAll,
   } = useAdminInvitationCodes();
 
-  useAdminSubEvents();
+  const {
+    create: createSubEvent,
+    update: updateSubEvent,
+    remove: removeSubEvent,
+  } = useAdminSubEvents({ enabled: false });
 
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -67,9 +84,12 @@ export default function InvitationCodesDashboardPage() {
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const [subEvents, setSubEvents] = useState<any[]>([]);
+  const [subEvents, setSubEvents] = useState<EditableSubEvent[]>([]);
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
+  const [editingGuest, setEditingGuest] = useState<InvitationCodeDTO | null>(null);
   const [isSubEventModalOpen, setIsSubEventModalOpen] = useState(false);
+  const [editingSubEvent, setEditingSubEvent] = useState<EditableSubEvent | null>(null);
+  const [deletingSubEvent, setDeletingSubEvent] = useState<EditableSubEvent | null>(null);
   const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastModalFilters, setBroadcastModalFilters] = useState<any>(undefined);
@@ -78,13 +98,6 @@ export default function InvitationCodesDashboardPage() {
   const [printLabelsList, setPrintLabelsList] = useState<PrintableInvitationCode[]>([]);
   const [bulkSubEventAction, setBulkSubEventAction] = useState<'grant' | 'revoke' | 'set'>('grant');
   const [bulkSelectedSubEventIds, setBulkSelectedSubEventIds] = useState<string[]>([]);
-  const [newSubEvent, setNewSubEvent] = useState({
-    title: '',
-    description: '',
-    locationName: '',
-    category: '',
-    isPrivate: true,
-  });
 
   const handleBatchSubEventAccess = async () => {
     if (selectedIds.length === 0) return;
@@ -120,20 +133,42 @@ export default function InvitationCodesDashboardPage() {
 
   const fetchSubEventsAndMatrix = async () => {
     try {
-      const res = await fetch('/api/admin/sub-events/access?limit=100');
+      const res = await fetch('/api/admin/sub-events/access');
       if (res.ok) {
         const json = await res.json();
         const data = json.data || json;
-        if (data.subEvents) {
+        const map: Record<string, Set<string>> = {};
+
+        if (Array.isArray(data.subEvents)) {
           setSubEvents(data.subEvents);
+          data.subEvents.forEach(
+            (evt: { id: string; allowedInvitationCodeIds?: string[] }) => {
+              if (Array.isArray(evt.allowedInvitationCodeIds)) {
+                evt.allowedInvitationCodeIds.forEach((invId: string) => {
+                  if (!map[invId]) map[invId] = new Set<string>();
+                  map[invId].add(evt.id);
+                });
+              }
+            }
+          );
         }
-        if (data.invitationCodes) {
-          const map: Record<string, string[]> = {};
-          data.invitationCodes.forEach((c: any) => {
-            map[c.id] = c.allowedSubEventIds || [];
-          });
-          setAccessMatrix(map);
+
+        if (Array.isArray(data.invitationCodes)) {
+          data.invitationCodes.forEach(
+            (c: { id: string; allowedSubEventIds?: string[] }) => {
+              if (Array.isArray(c.allowedSubEventIds)) {
+                if (!map[c.id]) map[c.id] = new Set<string>();
+                c.allowedSubEventIds.forEach((seId: string) => map[c.id].add(seId));
+              }
+            }
+          );
         }
+
+        const resolvedMatrix: Record<string, string[]> = {};
+        Object.entries(map).forEach(([invId, set]) => {
+          resolvedMatrix[invId] = Array.from(set);
+        });
+        setAccessMatrix(resolvedMatrix);
       }
     } catch {
       // Ignore
@@ -145,60 +180,107 @@ export default function InvitationCodesDashboardPage() {
   }, []);
 
   const handleToggleSubEventAccess = async (invitationCodeId: string, subEventId: string, isAllowed: boolean) => {
-    const currentAllowed = accessMatrix[invitationCodeId] || [];
+    const previousAllowed = accessMatrix[invitationCodeId] || [];
     const updated = isAllowed
-      ? Array.from(new Set([...currentAllowed, subEventId]))
-      : currentAllowed.filter((id) => id !== subEventId);
+      ? Array.from(new Set([...previousAllowed, subEventId]))
+      : previousAllowed.filter((id) => id !== subEventId);
 
     setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: updated }));
 
     try {
-      const res = await fetch('/api/admin/sub-events/access', {
-        method: 'PUT',
+      const res = await fetch('/api/admin/sub-events/access/batch', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invitationCodeId, allowedSubEventIds: updated }),
+        body: JSON.stringify({
+          invitationCodeIds: [invitationCodeId],
+          subEventIds: [subEventId],
+          action: isAllowed ? 'grant' : 'revoke',
+        }),
       });
-      if (!res.ok) throw new Error('Failed to update event permissions');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to update event permissions');
+      }
       addToast('Sub-event permissions updated.', 'success');
-    } catch (e: any) {
-      addToast(e.message || 'Failed to update sub-event permissions.', 'error');
+    } catch (e: unknown) {
+      setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: previousAllowed }));
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to update sub-event permissions.',
+        'error'
+      );
       fetchSubEventsAndMatrix();
     }
   };
 
-  const handleCreateSubEvent = async () => {
-    if (!newSubEvent.title.trim()) {
-      addToast('Sub-event title is required.', 'error');
-      return;
-    }
+  const handleSaveGuest = async (id: string, payload: Partial<InvitationCodeDTO>) => {
     try {
-      const res = await fetch('/api/admin/sub-events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newSubEvent.title.trim(),
-          description: newSubEvent.description.trim() || undefined,
-          locationName: newSubEvent.locationName.trim() || undefined,
-          category: newSubEvent.category.trim() || undefined,
-          isPrivate: newSubEvent.isPrivate,
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to create sub-event.');
-      addToast('Sub-event created successfully.', 'success');
-      setNewSubEvent({ title: '', description: '', locationName: '', category: '', isPrivate: true });
-      setIsSubEventModalOpen(false);
+      await update(id, payload);
+      addToast('Guest details updated successfully.', 'success');
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to update guest details.',
+        'error'
+      );
+      throw e;
+    }
+  };
+
+  const handleSaveSubEvent = async (payload: Partial<SubEventDTO>, editingId?: string) => {
+    try {
+      if (editingId) {
+        const updated = await updateSubEvent(editingId, payload);
+        setSubEvents((prev) =>
+          prev.map((evt) => (evt.id === editingId ? { ...evt, ...payload, ...(updated || {}) } : evt))
+        );
+        setEditingSubEvent(null);
+        addToast('Sub-event updated successfully.', 'success');
+      } else {
+        const created = await createSubEvent(payload);
+        if (created && created.id) {
+          setSubEvents((prev) => [...prev, created as EditableSubEvent]);
+        }
+        addToast('Sub-event created successfully.', 'success');
+      }
       fetchSubEventsAndMatrix();
-    } catch (e: any) {
-      addToast(e.message || 'Failed to create sub-event.', 'error');
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message
+          ? e.message
+          : editingId
+            ? 'Failed to update sub-event.'
+            : 'Failed to create sub-event.',
+        'error'
+      );
+      throw e;
+    }
+  };
+
+  const handleConfirmDeleteSubEvent = async (target: EditableSubEvent) => {
+    try {
+      await removeSubEvent(target.id);
+      setSubEvents((prev) => prev.filter((evt) => evt.id !== target.id));
+      setAccessMatrix((prev) => {
+        const next: Record<string, string[]> = {};
+        Object.entries(prev).forEach(([invId, ids]) => {
+          next[invId] = ids.filter((id) => id !== target.id);
+        });
+        return next;
+      });
+      if (editingSubEvent?.id === target.id) {
+        setEditingSubEvent(null);
+      }
+      addToast('Sub-event deleted successfully.', 'success');
+      fetchSubEventsAndMatrix();
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to delete sub-event.',
+        'error'
+      );
+      throw e;
     }
   };
 
   const selectAllRef = useRef<HTMLInputElement>(null);
-
-  // Guardrail: Reset selection state when active search query or filters change
-  useEffect(() => {
-    setSelectedIds([]);
-  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter, addressFilter, partyGroupFilter, selectedTagFilter]);
 
   const allUniqueTags = useMemo(() => {
     const set = new Set<string>();
@@ -594,7 +676,10 @@ export default function InvitationCodesDashboardPage() {
           <div className="flex gap-4 flex-wrap">
             <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
             <Button variant="secondary" onClick={handleCopyShareableLink}>Copy Address Link</Button>
-            <Button variant="secondary" onClick={() => setIsSubEventModalOpen(true)}>Manage Sub-Events</Button>
+            <Button variant="secondary" onClick={() => {
+              setEditingSubEvent(null);
+              setIsSubEventModalOpen(true);
+            }}>Manage Sub-Events</Button>
             <Button variant="secondary" onClick={() => setIsImporting(true)}>Import CSV</Button>
             <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
             <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
@@ -824,7 +909,10 @@ export default function InvitationCodesDashboardPage() {
                 type="text"
                 placeholder="Search by name, code, email, household, tag..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSelectedIds([]);
+                }}
                 aria-label="Search invitation codes"
                 className="w-full"
               />
@@ -836,7 +924,10 @@ export default function InvitationCodesDashboardPage() {
                   id="party-group-filter"
                   aria-label="Filter by party side or group"
                   value={partyGroupFilter}
-                  onChange={(e) => setPartyGroupFilter(e.target.value)}
+                  onChange={(e) => {
+                    setPartyGroupFilter(e.target.value);
+                    setSelectedIds([]);
+                  }}
                   className="w-full sm:w-auto"
                 >
                   <option value="all">All Party Groups</option>
@@ -858,7 +949,10 @@ export default function InvitationCodesDashboardPage() {
                   id="dietary-filter"
                   aria-label="Filter by dietary category"
                   value={dietaryFilter}
-                  onChange={(e) => setDietaryFilter(e.target.value)}
+                  onChange={(e) => {
+                    setDietaryFilter(e.target.value);
+                    setSelectedIds([]);
+                  }}
                   className="w-full sm:w-auto"
                 >
                   <option value="all">All Dietary Categories</option>
@@ -880,7 +974,10 @@ export default function InvitationCodesDashboardPage() {
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Party Tags:</span>
               <button
                 type="button"
-                onClick={() => setSelectedTagFilter(null)}
+                onClick={() => {
+                  setSelectedTagFilter(null);
+                  setSelectedIds([]);
+                }}
                 className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
                   selectedTagFilter === null
                     ? 'bg-primary text-white font-bold'
@@ -893,7 +990,10 @@ export default function InvitationCodesDashboardPage() {
                 <button
                   key={tag}
                   type="button"
-                  onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                  onClick={() => {
+                    setSelectedTagFilter(selectedTagFilter === tag ? null : tag);
+                    setSelectedIds([]);
+                  }}
                   className={`px-2.5 py-1 text-xs rounded-full transition-colors font-medium ${
                     selectedTagFilter === tag
                       ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-300'
@@ -919,7 +1019,10 @@ export default function InvitationCodesDashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={statusFilter === 'all'}
-                  onClick={() => setStatusFilter('all')}
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     statusFilter === 'all'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -932,7 +1035,10 @@ export default function InvitationCodesDashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={statusFilter === 'redeemed'}
-                  onClick={() => setStatusFilter('redeemed')}
+                  onClick={() => {
+                    setStatusFilter('redeemed');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     statusFilter === 'redeemed'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -945,7 +1051,10 @@ export default function InvitationCodesDashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={statusFilter === 'unused'}
-                  onClick={() => setStatusFilter('unused')}
+                  onClick={() => {
+                    setStatusFilter('unused');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     statusFilter === 'unused'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -963,7 +1072,10 @@ export default function InvitationCodesDashboardPage() {
               <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
-                  onClick={() => setAddressFilter('all')}
+                  onClick={() => {
+                    setAddressFilter('all');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     addressFilter === 'all'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -974,7 +1086,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddressFilter('complete')}
+                  onClick={() => {
+                    setAddressFilter('complete');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     addressFilter === 'complete'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -985,7 +1100,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddressFilter('missing')}
+                  onClick={() => {
+                    setAddressFilter('missing');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     addressFilter === 'missing'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1003,7 +1121,10 @@ export default function InvitationCodesDashboardPage() {
               <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('all')}
+                  onClick={() => {
+                    setAttendanceFilter('all');
+                    setSelectedIds([]);
+                  }}
                   aria-label={`All attendance (${attendanceCounts.all})`}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'all'
@@ -1015,7 +1136,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('attending')}
+                  onClick={() => {
+                    setAttendanceFilter('attending');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'attending'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1026,7 +1150,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('declined')}
+                  onClick={() => {
+                    setAttendanceFilter('declined');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'declined'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1037,7 +1164,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('pending')}
+                  onClick={() => {
+                    setAttendanceFilter('pending');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'pending'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1222,7 +1352,15 @@ export default function InvitationCodesDashboardPage() {
                   </div>
                 </div>
 
-                <div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`Edit guest ${item.guestName}`}
+                    onClick={() => setEditingGuest(item)}
+                  >
+                    Edit
+                  </Button>
                   <Button
                     variant="danger"
                     size="sm"
@@ -1484,82 +1622,31 @@ export default function InvitationCodesDashboardPage() {
           </div>
         )}
 
-        {isSubEventModalOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="sub-event-modal-title"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          >
-            <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
-              <h2 id="sub-event-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">
-                Create Timeline Sub-Event
-              </h2>
-              <div className="space-y-3">
-                <FormGroup>
-                  <Label>Event Title</Label>
-                  <Input
-                    type="text"
-                    placeholder="e.g. Rehearsal Dinner"
-                    value={newSubEvent.title}
-                    onChange={(e) => setNewSubEvent({ ...newSubEvent, title: e.target.value })}
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <Label>Description / Notes</Label>
-                  <Input
-                    type="text"
-                    placeholder="e.g. Invitation only dinner for bridal party"
-                    value={newSubEvent.description}
-                    onChange={(e) => setNewSubEvent({ ...newSubEvent, description: e.target.value })}
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <Label>Location</Label>
-                  <Input
-                    type="text"
-                    placeholder="e.g. Sunset Bistro"
-                    value={newSubEvent.locationName}
-                    onChange={(e) => setNewSubEvent({ ...newSubEvent, locationName: e.target.value })}
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <Label>Privacy Setting</Label>
-                  <div className="flex items-center gap-4 pt-1">
-                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="isPrivate"
-                        checked={newSubEvent.isPrivate}
-                        onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: true })}
-                        className="text-primary focus:ring-primary"
-                      />
-                      <span className="font-semibold text-red-600 dark:text-red-400">Private Event</span> (Restricted)
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="isPrivate"
-                        checked={!newSubEvent.isPrivate}
-                        onChange={() => setNewSubEvent({ ...newSubEvent, isPrivate: false })}
-                        className="text-primary focus:ring-primary"
-                      />
-                      <span className="font-semibold text-green-600 dark:text-green-400">Public Event</span> (Visible to all)
-                    </label>
-                  </div>
-                </FormGroup>
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={() => setIsSubEventModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleCreateSubEvent}>
-                  Create Event
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        <GuestEditorModal
+          isOpen={Boolean(editingGuest)}
+          onClose={() => setEditingGuest(null)}
+          guest={editingGuest}
+          onSave={handleSaveGuest}
+        />
+
+        <SubEventEditorModal
+          isOpen={isSubEventModalOpen}
+          onClose={() => {
+            setIsSubEventModalOpen(false);
+            setEditingSubEvent(null);
+          }}
+          editingEvent={editingSubEvent}
+          onSave={handleSaveSubEvent}
+          existingSubEvents={subEvents}
+          onSelectEdit={(evt) => setEditingSubEvent(evt)}
+          onRequestDelete={(evt) => setDeletingSubEvent(evt)}
+        />
+
+        <SubEventDeleteConfirmModal
+          subEvent={deletingSubEvent}
+          onClose={() => setDeletingSubEvent(null)}
+          onConfirm={handleConfirmDeleteSubEvent}
+        />
 
         <BroadcastModal
           isOpen={isBroadcastModalOpen}

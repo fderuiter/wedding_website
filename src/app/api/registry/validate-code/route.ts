@@ -16,7 +16,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     where: { code }
   });
 
-  if (!invite) {
+  if (!invite || invite.isSample) {
     throw new ApiError(404, 'Invalid invitation code.');
   }
 

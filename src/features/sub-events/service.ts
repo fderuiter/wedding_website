@@ -42,11 +42,11 @@ export class SubEventService {
     }
 
     const invite = await this.client.invitationCode.findUnique({
-      where: { code: code.trim().toUpperCase() },
+      where: { code: code.trim().toUpperCase(), isSample: false },
       select: { plusOneAllocations: true },
     });
 
-    if (!invite) {
+    if (!invite || invite.isSample) {
       return null;
     }
 
@@ -68,10 +68,10 @@ export class SubEventService {
     let invitationCodeId: string | null = null;
     if (code && typeof code === 'string' && code.trim()) {
       const invite = await this.client.invitationCode.findUnique({
-        where: { code: code.trim().toUpperCase() },
+        where: { code: code.trim().toUpperCase(), isSample: false },
         select: { id: true },
       });
-      if (invite) {
+      if (invite && !invite.isSample) {
         invitationCodeId = invite.id;
       }
     }
@@ -176,10 +176,10 @@ export class SubEventService {
 
     if (code && typeof code === 'string' && code.trim()) {
       const invite = await this.client.invitationCode.findUnique({
-        where: { code: code.trim().toUpperCase() },
+        where: { code: code.trim().toUpperCase(), isSample: false },
         select: { id: true },
       });
-      if (invite) {
+      if (invite && !invite.isSample) {
         invitationCodeId = invite.id;
       }
     }
@@ -299,11 +299,11 @@ export class SubEventService {
     }
 
     const invite = await this.client.invitationCode.findUnique({
-      where: { code: code.trim().toUpperCase() },
+      where: { code: code.trim().toUpperCase(), isSample: false },
       select: { id: true, guestName: true, plusOneAllocations: true },
     });
 
-    if (!invite) {
+    if (!invite || invite.isSample) {
       throw new ApiError(401, 'Invalid invitation session.');
     }
 
@@ -677,6 +677,12 @@ export class SubEventService {
       subEvents: (subEvents || []).map((e: any) => ({
         id: e.id,
         title: e.title,
+        description: e.description || '',
+        startTime: e.startTime instanceof Date ? e.startTime.toISOString() : (e.startTime || null),
+        endTime: e.endTime instanceof Date ? e.endTime.toISOString() : (e.endTime || null),
+        locationName: e.locationName || '',
+        location: e.location || '',
+        category: e.category || '',
         isPrivate: e.isPrivate,
         allowedInvitationCodeIds: e.accesses ? e.accesses.map((a: any) => a.invitationCodeId) : [],
       })),

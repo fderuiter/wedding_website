@@ -51,6 +51,26 @@ describe('Guest Postal Address API (/api/guest/address)', () => {
       expect(body.success).toBe(false);
     });
 
+    test('returns 404 when session references a sample invitation code', async () => {
+      mockGetGuestInviteSession.mockResolvedValue({ code: 'SMITH2026', guestName: 'Mr. & Mrs. Robert Smith' });
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+        id: 'sample-1',
+        code: 'SMITH2026',
+        guestName: 'Mr. & Mrs. Robert Smith',
+        isSample: true,
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/address');
+      const res = await GET(req);
+
+      expect(res.status).toBe(404);
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'SMITH2026', isSample: false },
+      });
+      const body = await res.json();
+      expect(body.success).toBe(false);
+    });
+
     test('returns mailing address for authenticated guest session', async () => {
       mockGetGuestInviteSession.mockResolvedValue({ code: 'VALID100', guestName: 'Alice' });
       (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
@@ -149,6 +169,34 @@ describe('Guest Postal Address API (/api/guest/address)', () => {
       expect(body.success).toBe(true);
       expect(body.data.addressLine1).toBe('456 Market St');
       expect(body.data.city).toBe('Oakland');
+    });
+
+    test('returns 404 and does not update when session references a sample invitation code', async () => {
+      mockGetGuestInviteSession.mockResolvedValue({ code: 'SMITH2026', guestName: 'Mr. & Mrs. Robert Smith' });
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+        id: 'sample-1',
+        code: 'SMITH2026',
+        guestName: 'Mr. & Mrs. Robert Smith',
+        isSample: true,
+      });
+
+      const req = new NextRequest('http://localhost/api/guest/address', {
+        method: 'PUT',
+        body: JSON.stringify({
+          addressLine1: '789 Sample Ave',
+          city: 'Austin',
+          state: 'TX',
+          zipCode: '78701',
+          country: 'United States',
+        }),
+      });
+
+      const res = await PUT(req);
+      expect(res.status).toBe(404);
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'SMITH2026', isSample: false },
+      });
+      expect(mockPrisma.invitationCode.update).not.toHaveBeenCalled();
     });
   });
 });

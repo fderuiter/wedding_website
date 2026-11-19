@@ -221,11 +221,7 @@ export default function InteractiveTimeline({
     };
   }, []);
 
-  const loadSchedule = useCallback(async () => {
-    if (initialNodes.length === 0 && emptyStateMessage) {
-      setIsLoadingSchedule(true);
-      setScheduleLoadError(null);
-    }
+  const fetchAndApplySchedule = useCallback(async () => {
     try {
       const res = await fetch('/api/schedule');
       if (!isMountedRef.current) return;
@@ -287,9 +283,27 @@ export default function InteractiveTimeline({
     }
   }, [emptyStateMessage, initialNodes.length, initializeEvents]);
 
+  const loadSchedule = useCallback(async () => {
+    if (initialNodes.length === 0 && emptyStateMessage) {
+      setIsLoadingSchedule(true);
+      setScheduleLoadError(null);
+    }
+    await fetchAndApplySchedule();
+  }, [emptyStateMessage, initialNodes.length, fetchAndApplySchedule]);
+
   useEffect(() => {
-    loadSchedule();
-  }, [loadSchedule]);
+    let cancelled = false;
+    const runInitialFetch = async () => {
+      await Promise.resolve();
+      if (!cancelled) {
+        await fetchAndApplySchedule();
+      }
+    };
+    void runInitialFetch();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchAndApplySchedule]);
 
   const normalizedEvents = useMemo(() => {
     if (subEventsFromApi && (subEventsFromApi.length > 0 || initialNodes.length === 0)) {

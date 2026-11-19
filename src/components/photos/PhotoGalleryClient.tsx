@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
@@ -22,6 +22,10 @@ export interface PhotoGalleryClientProps {
   defaultTab?: PhotoCategory;
 }
 
+const emptySubscribe = () => () => {};
+const getClientHydratedSnapshot = () => true;
+const getServerHydratedSnapshot = () => false;
+
 export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryClientProps) {
   const toast = useOptionalToast();
   const [photos, setPhotos] = useState<PhotoItem[]>(() =>
@@ -40,11 +44,11 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
-  const [isHydrated, setIsHydrated] = useState(false);
-
-  useEffect(() => {
-    setIsHydrated(true);
-  }, []);
+  const isHydrated = useSyncExternalStore(
+    emptySubscribe,
+    getClientHydratedSnapshot,
+    getServerHydratedSnapshot
+  );
 
   const triggerButtonRef = useRef<HTMLElement | null>(null);
   const triggerIndexRef = useRef<number | null>(null);

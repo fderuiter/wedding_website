@@ -228,6 +228,13 @@ describe('Maintenance API Routes Integration Tests', () => {
           brideName: 'Alice',
           adminPassword: 'SuperSecretPassword',
           databaseUrl: 'postgres://secret:password@localhost/db',
+          smtpHost: 'smtp.example.invalid',
+          smtpUser: 'mailer@example.invalid',
+          smtpPass: 'smtp-secret-pass',
+          resendApiKey: 're_secret',
+          sendgridApiKey: 'SG.secret',
+          twilioAccountSid: 'AC_SECRET_SID',
+          twilioAuthToken: 'twilio-secret-token',
         },
       ] as any);
       mockPrisma.contentNode.findMany.mockResolvedValue([]);
@@ -236,7 +243,19 @@ describe('Maintenance API Routes Integration Tests', () => {
       mockPrisma.attraction.findMany.mockResolvedValue([]);
       mockPrisma.registryItem.findMany.mockResolvedValue([]);
       mockPrisma.contributor.findMany.mockResolvedValue([]);
-      mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
+      mockPrisma.snapshotVersion.findMany.mockResolvedValue([
+        {
+          id: 'sv-config',
+          entityType: 'AppConfig',
+          entityId: 'global',
+          data: {
+            id: 'global',
+            brideName: 'Alice',
+            smtpPass: 'historical-smtp-secret',
+            twilioAccountSid: 'AC_HISTORICAL_SID',
+          },
+        },
+      ] as any);
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/export');
       const res = await GET(req);
@@ -245,6 +264,16 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(data.appConfig[0].brideName).toBe('Alice');
       expect(data.appConfig[0].adminPassword).toBeUndefined();
       expect(data.appConfig[0].databaseUrl).toBeUndefined();
+      expect(data.appConfig[0].smtpHost).toBeUndefined();
+      expect(data.appConfig[0].smtpUser).toBeUndefined();
+      expect(data.appConfig[0].smtpPass).toBeUndefined();
+      expect(data.appConfig[0].resendApiKey).toBeUndefined();
+      expect(data.appConfig[0].sendgridApiKey).toBeUndefined();
+      expect(data.appConfig[0].twilioAccountSid).toBeUndefined();
+      expect(data.appConfig[0].twilioAuthToken).toBeUndefined();
+      expect(data.snapshotVersion[0].data.brideName).toBe('Alice');
+      expect(data.snapshotVersion[0].data.smtpPass).toBeUndefined();
+      expect(data.snapshotVersion[0].data.twilioAccountSid).toBeUndefined();
     });
   });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Select } from '@/components/ui/forms';
@@ -24,8 +24,7 @@ export interface BroadcastModalProps {
   adminPhone?: string;
 }
 
-export const BroadcastModal: React.FC<BroadcastModalProps> = ({
-  isOpen,
+const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   onClose,
   initialChannel = 'EMAIL',
   targetFilters,
@@ -56,19 +55,6 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   const [scheduledFor, setScheduledFor] = useState('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      setChannel(initialChannel);
-      setSubject('');
-      setBody('');
-      setTestDestination('');
-      setActiveTab('compose');
-      setPreviewResult(null);
-      setIsScheduled(false);
-      setScheduledFor('');
-    }
-  }, [isOpen, initialChannel]);
 
   const insertPlaceholder = (ph: string) => {
     if (!textareaRef.current) {
@@ -209,243 +195,255 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   };
 
   return (
+    <div className="space-y-4">
+      {/* Navigation Tabs */}
+      <div
+        role="tablist"
+        aria-label="Broadcast navigation tabs"
+        className="flex border-b border-gray-200 dark:border-zinc-700"
+      >
+        <button
+          type="button"
+          role="tab"
+          id="broadcast-tab-compose"
+          aria-selected={activeTab === 'compose'}
+          aria-controls="broadcast-tabpanel-compose"
+          onClick={() => setActiveTab('compose')}
+          className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === 'compose'
+              ? 'border-primary text-primary font-semibold'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
+          }`}
+        >
+          Compose Message
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="broadcast-tab-preview"
+          aria-selected={activeTab === 'preview'}
+          aria-controls="broadcast-tabpanel-preview"
+          onClick={() => setActiveTab('preview')}
+          className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === 'preview'
+              ? 'border-primary text-primary font-semibold'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
+          }`}
+        >
+          Live Preview
+        </button>
+      </div>
+
+      {/* Target Summary Banner */}
+      <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary">
+        <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
+      </div>
+
+      {activeTab === 'compose' ? (
+        <div
+          role="tabpanel"
+          id="broadcast-tabpanel-compose"
+          aria-labelledby="broadcast-tab-compose"
+          className="space-y-4"
+        >
+          <FormGroup>
+            <Label htmlFor="broadcast-channel">Channel</Label>
+            <Select
+              id="broadcast-channel"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as BroadcastChannel)}
+              className="w-full"
+            >
+              <option value="EMAIL">Email Broadcast</option>
+              <option value="SMS">SMS Alert / Text Message</option>
+            </Select>
+          </FormGroup>
+
+          {channel === 'EMAIL' && (
+            <FormGroup>
+              <Label htmlFor="broadcast-subject">Subject</Label>
+              <Input
+                id="broadcast-subject"
+                type="text"
+                placeholder="e.g. Important Schedule Update regarding Wedding Rehearsal"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full"
+              />
+            </FormGroup>
+          )}
+
+          {/* Template Variables Quick Insert Toolbar */}
+          <div>
+            <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1.5 block">
+              Insert Dynamic Placeholders:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {AVAILABLE_TEMPLATE_PLACEHOLDERS.map((item) => (
+                <button
+                  key={item.placeholder}
+                  type="button"
+                  onClick={() => insertPlaceholder(item.placeholder)}
+                  title={item.description}
+                  className="inline-flex items-center px-2 py-1 text-xs font-mono bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 rounded border border-gray-300 dark:border-zinc-600 transition-colors"
+                >
+                  + {item.placeholder}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <FormGroup>
+            <Label htmlFor="broadcast-body">Message Body</Label>
+            <Textarea
+              ref={textareaRef}
+              id="broadcast-body"
+              rows={6}
+              placeholder={
+                channel === 'EMAIL'
+                  ? 'Hi {{guestName}},\n\nPlease note that the location for the rehearsal dinner has changed...'
+                  : 'Wedding Update: Hi {{guestName}}, due to morning rain, our ceremony is moving indoors to the main hall!'
+              }
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="w-full font-sans"
+            />
+          </FormGroup>
+
+          {/* Test Destination Override Option */}
+          <FormGroup>
+            <Label htmlFor="broadcast-test-destination">Test Destination (Optional)</Label>
+            <Input
+              id="broadcast-test-destination"
+              type={channel === 'EMAIL' ? 'email' : 'tel'}
+              placeholder={
+                channel === 'EMAIL'
+                  ? (defaultAdminEmail || 'e.g. host@example.com')
+                  : (adminPhone || 'e.g. +15551234567')
+              }
+              value={testDestination}
+              onChange={(e) => setTestDestination(e.target.value)}
+              className="w-full"
+            />
+            <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+              Leave blank to deliver to configured host {channel === 'EMAIL' ? 'contact email' : 'phone number'}.
+            </span>
+          </FormGroup>
+
+          {/* Schedule for Later Option */}
+          <div className="p-3 bg-gray-50 dark:bg-zinc-800/60 rounded-md border border-gray-200 dark:border-zinc-700 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-800 dark:text-zinc-200">
+              <input
+                type="checkbox"
+                id="broadcast-schedule-toggle"
+                checked={isScheduled}
+                onChange={(e) => setIsScheduled(e.target.checked)}
+                className="rounded text-primary focus:ring-primary h-4 w-4"
+              />
+              Schedule message for future automated delivery
+            </label>
+
+            {isScheduled && (
+              <FormGroup>
+                <Label htmlFor="broadcast-scheduled-for">Dispatch Date & Time</Label>
+                <Input
+                  id="broadcast-scheduled-for"
+                  type="datetime-local"
+                  value={scheduledFor}
+                  onChange={(e) => setScheduledFor(e.target.value)}
+                  className="w-full"
+                />
+                <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+                  The background cron worker will automatically dispatch this message when the scheduled time arrives.
+                </span>
+              </FormGroup>
+            )}
+          </div>
+        </div>
+      ) : (
+      /* Preview Tab Content */
+        <div
+          role="tabpanel"
+          id="broadcast-tabpanel-preview"
+          aria-labelledby="broadcast-tab-preview"
+          className="space-y-4"
+        >
+          {previewResult ? (
+            <div className="border border-gray-200 dark:border-zinc-700 rounded-md p-4 bg-gray-50 dark:bg-zinc-900/50 space-y-3">
+              <div className="text-xs text-gray-500 dark:text-zinc-400 flex justify-between border-b pb-2 dark:border-zinc-700">
+                <span>Sample Recipient: <strong>{previewResult.sampleGuestName}</strong></span>
+                <span>Destination: <strong>{previewResult.destination}</strong></span>
+              </div>
+
+              {previewResult.subject && (
+                <div>
+                  <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold">Subject:</span>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-zinc-100">{previewResult.subject}</h3>
+                </div>
+              )}
+
+              <div>
+                <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
+                <div className="bg-white dark:bg-zinc-800 p-3 rounded border border-gray-200 dark:border-zinc-700 whitespace-pre-wrap text-sm text-gray-800 dark:text-zinc-200">
+                  {previewResult.body}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 text-center text-sm text-gray-500 dark:text-zinc-400">
+              Click "Live Preview" or switch tabs to render dynamic variables.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal Actions */}
+      <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200 dark:border-zinc-800">
+        <Button variant="secondary" onClick={onClose} disabled={sending || sendingTest}>
+          Cancel
+        </Button>
+        {activeTab === 'compose' && (
+          <Button variant="secondary" onClick={handleGeneratePreview} disabled={previewing || !body.trim()}>
+            {previewing ? 'Previewing...' : 'Preview'}
+          </Button>
+        )}
+        <Button
+          variant="secondary"
+          onClick={handleSendTest}
+          disabled={sendingTest || sending || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
+          aria-label="Send Test to Me"
+        >
+          {sendingTest ? 'Sending Test...' : (testDestination.trim() ? 'Send Test' : 'Send Test to Me')}
+        </Button>
+        <Button
+          onClick={handleSend}
+          disabled={sending || sendingTest || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
+        >
+          {sending
+            ? (isScheduled ? 'Scheduling Broadcast...' : 'Sending Broadcast...')
+            : (isScheduled ? 'Schedule Broadcast' : `Send ${channel === 'EMAIL' ? 'Email' : 'SMS'}`)
+          }
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export const BroadcastModal: React.FC<BroadcastModalProps> = (props) => {
+  const { isOpen, onClose, initialChannel = 'EMAIL' } = props;
+
+  return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
       title="Compose Multi-Channel Broadcast"
       className="max-w-2xl"
     >
-      <div className="space-y-4">
-        {/* Navigation Tabs */}
-        <div
-          role="tablist"
-          aria-label="Broadcast navigation tabs"
-          className="flex border-b border-gray-200 dark:border-zinc-700"
-        >
-          <button
-            type="button"
-            role="tab"
-            id="broadcast-tab-compose"
-            aria-selected={activeTab === 'compose'}
-            aria-controls="broadcast-tabpanel-compose"
-            onClick={() => setActiveTab('compose')}
-            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-              activeTab === 'compose'
-                ? 'border-primary text-primary font-semibold'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
-            }`}
-          >
-            Compose Message
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="broadcast-tab-preview"
-            aria-selected={activeTab === 'preview'}
-            aria-controls="broadcast-tabpanel-preview"
-            onClick={() => setActiveTab('preview')}
-            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-              activeTab === 'preview'
-                ? 'border-primary text-primary font-semibold'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
-            }`}
-          >
-            Live Preview
-          </button>
-        </div>
-
-        {/* Target Summary Banner */}
-        <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary">
-          <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
-        </div>
-
-        {activeTab === 'compose' ? (
-          <div
-            role="tabpanel"
-            id="broadcast-tabpanel-compose"
-            aria-labelledby="broadcast-tab-compose"
-            className="space-y-4"
-          >
-            <FormGroup>
-              <Label htmlFor="broadcast-channel">Channel</Label>
-              <Select
-                id="broadcast-channel"
-                value={channel}
-                onChange={(e) => setChannel(e.target.value as BroadcastChannel)}
-                className="w-full"
-              >
-                <option value="EMAIL">Email Broadcast</option>
-                <option value="SMS">SMS Alert / Text Message</option>
-              </Select>
-            </FormGroup>
-
-            {channel === 'EMAIL' && (
-              <FormGroup>
-                <Label htmlFor="broadcast-subject">Subject</Label>
-                <Input
-                  id="broadcast-subject"
-                  type="text"
-                  placeholder="e.g. Important Schedule Update regarding Wedding Rehearsal"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className="w-full"
-                />
-              </FormGroup>
-            )}
-
-            {/* Template Variables Quick Insert Toolbar */}
-            <div>
-              <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1.5 block">
-                Insert Dynamic Placeholders:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {AVAILABLE_TEMPLATE_PLACEHOLDERS.map((item) => (
-                  <button
-                    key={item.placeholder}
-                    type="button"
-                    onClick={() => insertPlaceholder(item.placeholder)}
-                    title={item.description}
-                    className="inline-flex items-center px-2 py-1 text-xs font-mono bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 rounded border border-gray-300 dark:border-zinc-600 transition-colors"
-                  >
-                    + {item.placeholder}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <FormGroup>
-              <Label htmlFor="broadcast-body">Message Body</Label>
-              <Textarea
-                ref={textareaRef}
-                id="broadcast-body"
-                rows={6}
-                placeholder={
-                  channel === 'EMAIL'
-                    ? 'Hi {{guestName}},\n\nPlease note that the location for the rehearsal dinner has changed...'
-                    : 'Wedding Update: Hi {{guestName}}, due to morning rain, our ceremony is moving indoors to the main hall!'
-                }
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                className="w-full font-sans"
-              />
-            </FormGroup>
-
-            {/* Test Destination Override Option */}
-            <FormGroup>
-              <Label htmlFor="broadcast-test-destination">Test Destination (Optional)</Label>
-              <Input
-                id="broadcast-test-destination"
-                type={channel === 'EMAIL' ? 'email' : 'tel'}
-                placeholder={
-                  channel === 'EMAIL'
-                    ? (defaultAdminEmail || 'e.g. host@example.com')
-                    : (adminPhone || 'e.g. +15551234567')
-                }
-                value={testDestination}
-                onChange={(e) => setTestDestination(e.target.value)}
-                className="w-full"
-              />
-              <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
-                Leave blank to deliver to configured host {channel === 'EMAIL' ? 'contact email' : 'phone number'}.
-              </span>
-            </FormGroup>
-
-            {/* Schedule for Later Option */}
-            <div className="p-3 bg-gray-50 dark:bg-zinc-800/60 rounded-md border border-gray-200 dark:border-zinc-700 space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-800 dark:text-zinc-200">
-                <input
-                  type="checkbox"
-                  id="broadcast-schedule-toggle"
-                  checked={isScheduled}
-                  onChange={(e) => setIsScheduled(e.target.checked)}
-                  className="rounded text-primary focus:ring-primary h-4 w-4"
-                />
-                Schedule message for future automated delivery
-              </label>
-
-              {isScheduled && (
-                <FormGroup>
-                  <Label htmlFor="broadcast-scheduled-for">Dispatch Date & Time</Label>
-                  <Input
-                    id="broadcast-scheduled-for"
-                    type="datetime-local"
-                    value={scheduledFor}
-                    onChange={(e) => setScheduledFor(e.target.value)}
-                    className="w-full"
-                  />
-                  <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
-                    The background cron worker will automatically dispatch this message when the scheduled time arrives.
-                  </span>
-                </FormGroup>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Preview Tab Content */
-          <div
-            role="tabpanel"
-            id="broadcast-tabpanel-preview"
-            aria-labelledby="broadcast-tab-preview"
-            className="space-y-4"
-          >
-            {previewResult ? (
-              <div className="border border-gray-200 dark:border-zinc-700 rounded-md p-4 bg-gray-50 dark:bg-zinc-900/50 space-y-3">
-                <div className="text-xs text-gray-500 dark:text-zinc-400 flex justify-between border-b pb-2 dark:border-zinc-700">
-                  <span>Sample Recipient: <strong>{previewResult.sampleGuestName}</strong></span>
-                  <span>Destination: <strong>{previewResult.destination}</strong></span>
-                </div>
-
-                {previewResult.subject && (
-                  <div>
-                    <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold">Subject:</span>
-                    <h3 className="text-base font-semibold text-gray-900 dark:text-zinc-100">{previewResult.subject}</h3>
-                  </div>
-                )}
-
-                <div>
-                  <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
-                  <div className="bg-white dark:bg-zinc-800 p-3 rounded border border-gray-200 dark:border-zinc-700 whitespace-pre-wrap text-sm text-gray-800 dark:text-zinc-200">
-                    {previewResult.body}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-6 text-center text-sm text-gray-500 dark:text-zinc-400">
-                Click "Live Preview" or switch tabs to render dynamic variables.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Modal Actions */}
-        <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200 dark:border-zinc-800">
-          <Button variant="secondary" onClick={onClose} disabled={sending || sendingTest}>
-            Cancel
-          </Button>
-          {activeTab === 'compose' && (
-            <Button variant="secondary" onClick={handleGeneratePreview} disabled={previewing || !body.trim()}>
-              {previewing ? 'Previewing...' : 'Preview'}
-            </Button>
-          )}
-          <Button
-            variant="secondary"
-            onClick={handleSendTest}
-            disabled={sendingTest || sending || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
-            aria-label="Send Test to Me"
-          >
-            {sendingTest ? 'Sending Test...' : (testDestination.trim() ? 'Send Test' : 'Send Test to Me')}
-          </Button>
-          <Button
-            onClick={handleSend}
-            disabled={sending || sendingTest || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
-          >
-            {sending
-              ? (isScheduled ? 'Scheduling Broadcast...' : 'Sending Broadcast...')
-              : (isScheduled ? 'Schedule Broadcast' : `Send ${channel === 'EMAIL' ? 'Email' : 'SMS'}`)
-            }
-          </Button>
-        </div>
-      </div>
+      <BroadcastModalForm
+        key={`${isOpen ? 'open' : 'closed'}-${initialChannel}`}
+        {...props}
+        initialChannel={initialChannel}
+      />
     </Dialog>
   );
 };

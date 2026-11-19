@@ -2,8 +2,6 @@ name: Publish Release Artifact
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -12,10 +10,18 @@ on:
         description: 'Custom image tag (defaults to commit SHA)'
         required: false
         type: string
+      commit_sha:
+        description: 'Commit SHA to check out and default image tag to'
+        required: false
+        type: string
   workflow_call:
     inputs:
       tag_name:
         description: 'Custom image tag'
+        required: false
+        type: string
+      commit_sha:
+        description: 'Commit SHA to check out and default image tag to'
         required: false
         type: string
     outputs:
@@ -31,10 +37,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  security-events: write
-  id-token: write
-  attestations: write
 
 concurrency:
   group: publish-artifact-${{ github.ref }}
@@ -44,22 +46,38 @@ jobs:
   publish:
     name: Build & Publish Immutable OCI Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
     outputs:
       image_uri: ${{ steps.meta.outputs.primary_uri }}
       image_tag: ${{ steps.meta.outputs.tag_name }}
       image_digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
 
       - name: Compute Image Tag & Targets
         id: meta
         env:
           RAW_INPUT_TAG: ${{ inputs.tag_name }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
+          if [ -n "$INPUT_COMMIT_SHA" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
+
           if [ -z "$RAW_INPUT_TAG" ]; then
-            TAG_NAME="${GITHUB_SHA}"
+            TAG_NAME="${RESOLVED_SHA}"
           else
             if [[ ! "$RAW_INPUT_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
               echo "::error::Invalid image tag '${RAW_INPUT_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
