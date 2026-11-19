@@ -74,4 +74,20 @@ describe('RootLayoutClient Standalone Presentation Suppression', () => {
 
     expect(screen.queryByTestId('navbar')).not.toBeInTheDocument();
   });
+
+  it('provides GuestHelpProvider so child route triggers open the shared modal with config contactEmail', () => {
+    mockPathname = '/guest';
+    const { GuestHelpTrigger } = jest.requireActual('@/components/guest/GuestHelpModal');
+    const { fireEvent } = jest.requireActual('@testing-library/react');
+
+    render(
+      <RootLayoutClient config={{ ...mockConfig, contactEmail: 'couple@example.com' }}>
+        <GuestHelpTrigger label="Need Help?" defaultCategory="passcode" />
+      </RootLayoutClient>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Need Help\?/i }));
+    expect(screen.getByRole('dialog', { name: /Guest Help & Support/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /couple@example\.com/i })).toBeInTheDocument();
+  });
 });
