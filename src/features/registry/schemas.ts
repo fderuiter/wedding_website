@@ -288,6 +288,7 @@ export interface DryRunValidatedRow
   extraFields?: Record<string, unknown> | null;
   isValid: boolean;
   errors: string[];
+  fieldErrors?: Record<string, string[]>;
   warnings: string[];
   isDuplicate: boolean;
   existingGuestName?: string | null;

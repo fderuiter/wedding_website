@@ -2,36 +2,111 @@
 import React, { createContext, useContext, useId } from 'react';
 import { cn } from '@/utils/cn';
 
+type FormFeedbackState = 'error' | 'success' | 'warning' | 'default';
+
+type RegisteredControl = {
+  key: string;
+  customId?: string;
+};
+
 type FormItemContextValue = {
   id: string;
-  state: 'error' | 'success' | 'warning' | 'default';
+  controlId: string;
+  controls: RegisteredControl[];
+  state: FormFeedbackState;
   messageId: string;
   hasMessage: boolean;
+  describedByIds: string[];
+  registerControl: (key: string, customId?: string) => void;
+  unregisterControl: (key: string) => void;
   registerMessage: (id: string, active: boolean) => void;
 };
 
 const FormItemContext = createContext<FormItemContextValue | null>(null);
 
+const useIsomorphicLayoutEffect =
+  typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
+
+function mergeAriaDescribedBy(
+  contextIds: string[] | undefined,
+  propDescribedBy: string | undefined
+): string | undefined {
+  const tokens: string[] = [];
+  if (propDescribedBy) {
+    for (const token of propDescribedBy.split(/\s+/)) {
+      if (token && !tokens.includes(token)) {
+        tokens.push(token);
+      }
+    }
+  }
+  if (contextIds) {
+    for (const token of contextIds) {
+      if (token && !tokens.includes(token)) {
+        tokens.push(token);
+      }
+    }
+  }
+  return tokens.length > 0 ? tokens.join(' ') : undefined;
+}
+
 export const FormGroup = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { state?: 'error' | 'success' | 'warning' | 'default' }
+  React.HTMLAttributes<HTMLDivElement> & { state?: FormFeedbackState }
 >(({ className, state = 'default', ...props }, ref) => {
   const id = useId();
   const messageId = `${id}-message`;
 
-  const [activeMessages, setActiveMessages] = React.useState<Record<string, boolean>>({});
+  const [controls, setControls] = React.useState<RegisteredControl[]>([]);
+  const [describedByIds, setDescribedByIds] = React.useState<string[]>([]);
 
-  const registerMessage = React.useCallback((msgId: string, active: boolean) => {
-    setActiveMessages((prev) => {
-      if (prev[msgId] === active) return prev;
-      return { ...prev, [msgId]: active };
+  const registerControl = React.useCallback((key: string, customId?: string) => {
+    setControls((prev) => {
+      const existingIdx = prev.findIndex((item) => item.key === key);
+      if (existingIdx >= 0) {
+        if (prev[existingIdx].customId === customId) return prev;
+        const next = [...prev];
+        next[existingIdx] = { key, customId };
+        return next;
+      }
+      return [...prev, { key, customId }];
     });
   }, []);
 
-  const hasMessage = Object.values(activeMessages).some(Boolean);
+  const unregisterControl = React.useCallback((key: string) => {
+    setControls((prev) => {
+      if (!prev.some((item) => item.key === key)) return prev;
+      return prev.filter((item) => item.key !== key);
+    });
+  }, []);
+
+  const registerMessage = React.useCallback((msgId: string, active: boolean) => {
+    setDescribedByIds((prev) => {
+      const exists = prev.includes(msgId);
+      if (active && !exists) return [...prev, msgId];
+      if (!active && exists) return prev.filter((item) => item !== msgId);
+      return prev;
+    });
+  }, []);
+
+  const primaryControl = controls[0];
+  const controlId = primaryControl ? (primaryControl.customId || id) : id;
+  const hasMessage = describedByIds.length > 0;
 
   return (
-    <FormItemContext.Provider value={{ id, state, messageId, hasMessage, registerMessage }}>
+    <FormItemContext.Provider
+      value={{
+        id,
+        controlId,
+        controls,
+        state,
+        messageId,
+        hasMessage,
+        describedByIds,
+        registerControl,
+        unregisterControl,
+        registerMessage,
+      }}
+    >
       <div ref={ref} className={cn('space-y-1', className)} {...props} />
     </FormItemContext.Provider>
   );
@@ -46,46 +121,108 @@ const useFormItem = () => {
   return context;
 };
 
+function useFormControl({
+  propId,
+  propState,
+  propAriaDescribedBy,
+  propAriaInvalid,
+  requireGroup,
+}: {
+  propId?: string;
+  propState?: FormFeedbackState;
+  propAriaDescribedBy?: string;
+  propAriaInvalid?: React.AriaAttributes['aria-invalid'];
+  requireGroup: boolean;
+}) {
+  const context = useContext(FormItemContext);
+  if (requireGroup && !context) {
+    throw new Error('useFormItem must be used within a FormGroup');
+  }
+  const controlKey = useId();
+  const registerControl = context?.registerControl;
+  const unregisterControl = context?.unregisterControl;
+
+  useIsomorphicLayoutEffect(() => {
+    if (!registerControl) return;
+    registerControl(controlKey, propId);
+  }, [controlKey, propId, registerControl]);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!unregisterControl) return;
+    return () => {
+      unregisterControl(controlKey);
+    };
+  }, [controlKey, unregisterControl]);
+
+  const isPrimary =
+    !context ||
+    context.controls.length === 0 ||
+    context.controls[0]?.key === controlKey;
+
+  const id = propId || (context && isPrimary ? context.id : controlKey);
+  const state: FormFeedbackState = propState || context?.state || 'default';
+  const ariaDescribedBy = mergeAriaDescribedBy(context?.describedByIds, propAriaDescribedBy);
+  const ariaInvalid: React.AriaAttributes['aria-invalid'] =
+    propAriaInvalid !== undefined ? propAriaInvalid : (state === 'error' ? 'true' : 'false');
+
+  return {
+    id,
+    state,
+    ariaDescribedBy,
+    ariaInvalid,
+  };
+}
+
 export const Label = React.forwardRef<
   HTMLLabelElement,
   React.LabelHTMLAttributes<HTMLLabelElement>
->(({ className, ...props }, ref) => {
-  const { id, state } = useFormItem();
-  
+>(({ className, htmlFor: propHtmlFor, ...props }, ref) => {
+  const { controlId, state } = useFormItem();
+
   return (
     <label
       ref={ref}
-      htmlFor={id}
+      {...props}
+      htmlFor={propHtmlFor || controlId}
       className={cn(
         'block text-sm font-semibold leading-none',
-        state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' : 
-          state === 'success' ? 'text-[var(--form-success-text,#16a34a)]' : 
-            state === 'warning' ? 'text-[var(--form-warning-text,#ca8a04)]' : 
+        state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' :
+          state === 'success' ? 'text-[var(--form-success-text,#16a34a)]' :
+            state === 'warning' ? 'text-[var(--form-warning-text,#ca8a04)]' :
               'text-[var(--form-label-text,var(--color-primary-text,#111827))]',
         className
       )}
-      {...props}
     />
   );
 });
 Label.displayName = 'Label';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  state?: 'error' | 'success' | 'warning' | 'default';
+  state?: FormFeedbackState;
   sizeVariant?: 'default' | 'compact';
 }
 
 export const Input = React.forwardRef<
   HTMLInputElement,
   InputProps
->(({ className, type = 'text', style, state: propState, sizeVariant = 'default', id: propId, ...props }, ref) => {
-  const context = useContext(FormItemContext);
-  const fallbackId = useId();
-
-  const id = propId || context?.id || fallbackId;
-  const state = propState || context?.state || 'default';
-  const messageId = context?.messageId;
-  const hasMessage = context?.hasMessage ?? false;
+>(({
+  className,
+  type = 'text',
+  style,
+  state: propState,
+  sizeVariant = 'default',
+  id: propId,
+  'aria-describedby': propAriaDescribedBy,
+  'aria-invalid': propAriaInvalid,
+  ...props
+}, ref) => {
+  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+    propId,
+    propState,
+    propAriaDescribedBy,
+    propAriaInvalid,
+    requireGroup: false,
+  });
 
   const sizeStyles = {
     default: 'h-10 px-3 py-2 text-sm',
@@ -101,6 +238,7 @@ export const Input = React.forwardRef<
 
   return (
     <input
+      {...props}
       type={type}
       id={id}
       style={{
@@ -114,9 +252,8 @@ export const Input = React.forwardRef<
         className
       )}
       ref={ref}
-      aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={hasMessage ? messageId : undefined}
-      {...props}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedBy}
     />
   );
 });
@@ -124,9 +261,23 @@ Input.displayName = 'Input';
 
 export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
-  React.TextareaHTMLAttributes<HTMLTextAreaElement>
->(({ className, style, ...props }, ref) => {
-  const { id, state, messageId, hasMessage } = useFormItem();
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { state?: FormFeedbackState }
+>(({
+  className,
+  style,
+  state: propState,
+  id: propId,
+  'aria-describedby': propAriaDescribedBy,
+  'aria-invalid': propAriaInvalid,
+  ...props
+}, ref) => {
+  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+    propId,
+    propState,
+    propAriaDescribedBy,
+    propAriaInvalid,
+    requireGroup: true,
+  });
 
   const stateStyles = {
     default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
@@ -137,6 +288,7 @@ export const Textarea = React.forwardRef<
 
   return (
     <textarea
+      {...props}
       id={id}
       style={{
         borderRadius: 'var(--input-radius, 0.375rem)',
@@ -148,9 +300,8 @@ export const Textarea = React.forwardRef<
         className
       )}
       ref={ref}
-      aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={hasMessage ? messageId : undefined}
-      {...props}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedBy}
     />
   );
 });
@@ -158,9 +309,23 @@ Textarea.displayName = 'Textarea';
 
 export const Select = React.forwardRef<
   HTMLSelectElement,
-  React.SelectHTMLAttributes<HTMLSelectElement>
->(({ className, style, ...props }, ref) => {
-  const { id, state, messageId, hasMessage } = useFormItem();
+  React.SelectHTMLAttributes<HTMLSelectElement> & { state?: FormFeedbackState }
+>(({
+  className,
+  style,
+  state: propState,
+  id: propId,
+  'aria-describedby': propAriaDescribedBy,
+  'aria-invalid': propAriaInvalid,
+  ...props
+}, ref) => {
+  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+    propId,
+    propState,
+    propAriaDescribedBy,
+    propAriaInvalid,
+    requireGroup: true,
+  });
 
   const stateStyles = {
     default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
@@ -171,6 +336,7 @@ export const Select = React.forwardRef<
 
   return (
     <select
+      {...props}
       id={id}
       style={{
         borderRadius: 'var(--input-radius, 0.375rem)',
@@ -182,9 +348,8 @@ export const Select = React.forwardRef<
         className
       )}
       ref={ref}
-      aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={hasMessage ? messageId : undefined}
-      {...props}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedBy}
     />
   );
 });
@@ -192,9 +357,23 @@ Select.displayName = 'Select';
 
 export const Checkbox = React.forwardRef<
   HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement>
->(({ className, style, ...props }, ref) => {
-  const { id, state, messageId, hasMessage } = useFormItem();
+  React.InputHTMLAttributes<HTMLInputElement> & { state?: FormFeedbackState }
+>(({
+  className,
+  style,
+  state: propState,
+  id: propId,
+  'aria-describedby': propAriaDescribedBy,
+  'aria-invalid': propAriaInvalid,
+  ...props
+}, ref) => {
+  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+    propId,
+    propState,
+    propAriaDescribedBy,
+    propAriaInvalid,
+    requireGroup: true,
+  });
 
   const stateStyles = {
     default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
@@ -205,6 +384,7 @@ export const Checkbox = React.forwardRef<
 
   return (
     <input
+      {...props}
       type="checkbox"
       id={id}
       style={{
@@ -217,9 +397,8 @@ export const Checkbox = React.forwardRef<
         className
       )}
       ref={ref}
-      aria-invalid={state === 'error' ? 'true' : 'false'}
-      aria-describedby={hasMessage ? messageId : undefined}
-      {...props}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedBy}
     />
   );
 });
@@ -228,17 +407,30 @@ Checkbox.displayName = 'Checkbox';
 export const FormMessage = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLParagraphElement> & { children?: React.ReactNode }
->(({ className, children, ...props }, ref) => {
-  const { state, messageId, registerMessage } = useFormItem();
+>(({
+  className,
+  children,
+  id: propId,
+  role: propRole,
+  'aria-live': propAriaLive,
+  'aria-atomic': propAriaAtomic,
+  ...props
+}, ref) => {
+  const { state, registerMessage } = useFormItem();
   const messageUniqueId = React.useId();
-  const hasContent = !!children;
+  const resolvedId = propId || `${messageUniqueId}-message`;
+  const hasContent =
+    children !== null &&
+    children !== undefined &&
+    children !== false &&
+    children !== '';
 
-  React.useEffect(() => {
-    registerMessage(messageUniqueId, hasContent);
+  useIsomorphicLayoutEffect(() => {
+    registerMessage(resolvedId, hasContent);
     return () => {
-      registerMessage(messageUniqueId, false);
+      registerMessage(resolvedId, false);
     };
-  }, [messageUniqueId, hasContent, registerMessage]);
+  }, [resolvedId, hasContent, registerMessage]);
 
   const stateStyles = {
     default: 'text-[var(--form-message-text,var(--color-secondary-text,#6b7280))]',
@@ -247,23 +439,24 @@ export const FormMessage = React.forwardRef<
     warning: 'text-[var(--form-warning-text,#ca8a04)] font-medium',
   };
 
-  const role = props.role ?? (state === 'error' ? 'alert' : 'status');
-  const ariaLive = props['aria-live'] ?? (state === 'error' ? 'assertive' : 'polite');
+  const role = propRole ?? (state === 'error' ? 'alert' : 'status');
+  const ariaLive = propAriaLive ?? (state === 'error' ? 'assertive' : 'polite');
+  const ariaAtomic = propAriaAtomic ?? 'true';
 
   return (
     <p
       ref={ref}
-      id={messageId}
+      {...props}
+      id={resolvedId}
       role={role}
       aria-live={ariaLive}
-      aria-atomic="true"
+      aria-atomic={ariaAtomic}
       className={cn(
         'text-xs',
         hasContent ? 'mt-1' : 'sr-only',
         stateStyles[state],
         className
       )}
-      {...props}
     >
       {children}
     </p>
