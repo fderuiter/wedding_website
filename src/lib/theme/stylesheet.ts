@@ -286,12 +286,12 @@ function calibrateDarkSurfaceTokens(
 }
 
 function renderDarkContainerDeclarations(
-  safePrimary: string,
-  safeSecondary: string,
+  solidPrimary: string,
+  solidSecondary: string,
   tokens: DarkSurfaceTokenSet
 ): string {
-  return `      --color-primary: ${safePrimary};
-      --color-secondary: ${safeSecondary};
+  return `      --color-primary: ${solidPrimary};
+      --color-secondary: ${solidSecondary};
       --color-primary-text: ${tokens.primaryText};
       --color-secondary-text: ${tokens.secondaryText};
       --color-error-text: ${tokens.errorText};
@@ -428,7 +428,7 @@ export function generateDynamicStyles(
   const dark600TokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, dark600SurfaceBg);
 
   const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
-  const seatAssignedTextDark = optimizeContrast('#ffffff', safePrimary, 4.5);
+  const seatAssignedTextDark = optimizeContrast('#ffffff', primaryTextLight, 4.5);
 
   const lightPresetCssRules = Object.entries(lightPresetTokens)
     .filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
@@ -468,7 +468,7 @@ export function generateDynamicStyles(
 
   return `
     :root {
-${renderDarkContainerDeclarations(safePrimary, safeSecondary, baseDarkTokensCalibrated)}
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
 ${lightPresetCssRules}
       --font-heading: ${safeFontHeading};
       --font-body: ${safeFontBody};
@@ -506,7 +506,7 @@ ${lightPresetCssRules}
     }
 
     .dark {
-${renderDarkContainerDeclarations(safePrimary, safeSecondary, baseDarkTokensCalibrated)}
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
 ${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
@@ -564,17 +564,17 @@ ${darkPresetCssRules}
 
     /* Re-assert dark mode variables for base dark backgrounds (black / 800–950) */
 ${baseDarkContainerSelectors} {
-${renderDarkContainerDeclarations(safePrimary, safeSecondary, baseDarkTokensCalibrated)}
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
     }
 
     /* Elevated dark surfaces (700 tier: #374151 and low-alpha accent badges) */
 ${dark700ContainerSelectors} {
-${renderDarkContainerDeclarations(safePrimary, safeSecondary, dark700TokensCalibrated)}
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, dark700TokensCalibrated)}
     }
 
     /* Elevated dark surfaces (600 tier: #4B5563) */
 ${dark600ContainerSelectors} {
-${renderDarkContainerDeclarations(safePrimary, safeSecondary, dark600TokensCalibrated)}
+${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, dark600TokensCalibrated)}
     }
   `;
 }

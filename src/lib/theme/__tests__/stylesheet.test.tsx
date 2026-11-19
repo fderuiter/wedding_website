@@ -168,8 +168,20 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
       }
     }
 
-    // Default solid bg-primary (#B91C1C) paired with white text retains >= 6.47:1 contrast
+    // Default solid bg-primary (#B91C1C) paired with white text retains >= 6.47:1 contrast,
+    // and lighter custom brand palettes calibrate --color-primary to >= 4.5:1 against white text in .dark
     expect(getContrastRatio(hexToRgb('#B91C1C'), whiteRgb)).toBeGreaterThanOrEqual(6.47);
+    const customLightBrandCss = generateDynamicStyles('#EF4444', '#F59E0B', 'classic');
+    const customDarkSolidMatch = customLightBrandCss.match(/\.dark\s*\{[^}]+--color-primary:\s*(#[0-9a-fA-F]{6});/);
+    const customDarkTextMatch = customLightBrandCss.match(
+      /\.dark\s*\{[^}]+--color-primary-text:\s*(#[0-9a-fA-F]{6});/
+    );
+    expect(customDarkSolidMatch).toBeTruthy();
+    expect(customDarkTextMatch).toBeTruthy();
+    expect(getContrastRatio(hexToRgb(customDarkSolidMatch![1]), whiteRgb)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      getContrastRatio(hexToRgb(customDarkTextMatch![1]), hexToRgb('#1F2937'))
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('calibrates default dark tokens against card surfaces (#1F2937 / Tailwind v4 800 or lighter preset --card-bg) and splits 700/600 dark tiers', () => {
