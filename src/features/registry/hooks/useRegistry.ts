@@ -13,12 +13,14 @@ import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
 import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe';
+import {
+  REGISTRY_INITIAL_VISIBLE_ITEMS,
+  REGISTRY_MAX_CATALOG_LIMIT,
+} from '@/utils/registryPagination';
 import { useRegistryCapabilities } from './useRegistryCapabilities';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 
-const INITIAL_VISIBLE_ITEMS = 12;
-const REGISTRY_CATALOG_LIMIT = 500;
 const EMPTY_ITEMS: RegistryItem[] = [];
 
 type RegistryQueryData = PaginatedRegistryItems | RegistryItem[];
@@ -74,7 +76,7 @@ function applyOptimisticContribution(item: RegistryItem, variables: ContributeVa
 
 function mapRegistryQueryData(
   data: RegistryQueryData | undefined,
-  updater: (item: RegistryItem) => RegistryItem
+  updater: (_item: RegistryItem) => RegistryItem
 ): RegistryQueryData | undefined {
   if (!data) return data;
   if (Array.isArray(data)) {
@@ -100,10 +102,10 @@ export function useRegistry() {
   const cardCheckoutEnabled = isCapabilitiesLoading ? undefined : detectedCardCheckoutEnabled;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [visibleItemsCount, setVisibleItemsCount] = useState(INITIAL_VISIBLE_ITEMS);
+  const [visibleItemsCount, setVisibleItemsCount] = useState(REGISTRY_INITIAL_VISIBLE_ITEMS);
   const [isAdmin, setIsAdmin] = useState(false);
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(REGISTRY_CATALOG_LIMIT);
+  const [limit, setLimit] = useState(REGISTRY_MAX_CATALOG_LIMIT);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
   const [showGroupGiftsOnly, setShowGroupGiftsOnlyState] = useState(false);
   const [showAvailableOnly, setShowAvailableOnlyState] = useState(false);
@@ -114,11 +116,17 @@ export function useRegistry() {
   const router = useRouter();
 
   useEffect(() => {
+    let active = true;
     const checkAdminStatus = async () => {
       const admin = await checkAdminClient();
-      setIsAdmin(admin);
+      if (active) {
+        setIsAdmin(admin);
+      }
     };
-    checkAdminStatus();
+    void checkAdminStatus();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const registryQueryKey = useMemo(() => ['registry-items', page, limit], [page, limit]);
@@ -144,7 +152,7 @@ export function useRegistry() {
   const { remove: deleteItem } = useEntityOrchestration<RegistryItem>({
     queryKey: registryQueryKey,
     endpoint: '/api/registry/items',
-    invalidateQueryKeys: [['admin-registry']],
+    invalidateQueryKeys: [['admin-registry'], ['admin-registry-item']],
     entityName: 'registry item',
     apiClient,
     enabled: false,
@@ -182,33 +190,33 @@ export function useRegistry() {
 
   const handleSetCategoryFilter = useCallback((nextCategories: string[]) => {
     setCategoryFilter(nextCategories);
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
   }, [setCategoryFilter]);
 
   const handleSetPriceRange = useCallback((range: [number, number]) => {
     setPriceRange(range);
     setPriceRangeUserSet(true);
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
   }, []);
 
   const setShowGroupGiftsOnly = useCallback((value: SetStateAction<boolean>) => {
     setShowGroupGiftsOnlyState(value);
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
   }, []);
 
   const setShowAvailableOnly = useCallback((value: SetStateAction<boolean>) => {
     setShowAvailableOnlyState(value);
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
   }, []);
 
   const setSearchQuery = useCallback((value: SetStateAction<string>) => {
     setSearchQueryState(value);
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
   }, []);
 
   const setSortOption = useCallback((value: SetStateAction<SortOption>) => {
     setSortOptionState(value);
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
   }, []);
 
   const { mutate: contribute } = useMutation({
@@ -241,7 +249,7 @@ export function useRegistry() {
         setSelectedItem(context.previousSelectedItem);
       }
     },
-    onSuccess: (updatedItem) => {
+    onSuccess: (updatedItem, variables) => {
       if (updatedItem && typeof updatedItem === 'object' && 'id' in updatedItem && updatedItem.id) {
         const nextItem = updatedItem as RegistryItem;
         queryClient.setQueriesData<RegistryQueryData>(
@@ -251,6 +259,7 @@ export function useRegistry() {
         setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
       }
       queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-registry-item', variables.itemId] });
     },
     meta: {
       successMessage: 'Thank you for your contribution!',
@@ -401,9 +410,12 @@ export function useRegistry() {
 
   const handleDelete = useCallback(async (id: string) => {
     if (await confirm('Are you sure you want to delete this item?')) {
-      deleteItem(id);
+      if (selectedItem?.id === id) {
+        handleCloseModal();
+      }
+      await deleteItem(id);
     }
-  }, [deleteItem, confirm]);
+  }, [deleteItem, confirm, selectedItem?.id, handleCloseModal]);
 
   const handleContribute = useCallback(async (
     itemId: string,
@@ -435,7 +447,7 @@ export function useRegistry() {
     setShowAvailableOnlyState(false);
     setSearchQueryState('');
     setSortOptionState('default');
-    setVisibleItemsCount(INITIAL_VISIBLE_ITEMS);
+    setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
     setPage(1);
   }, [setCategoryFilter, minPrice, maxPrice]);
 

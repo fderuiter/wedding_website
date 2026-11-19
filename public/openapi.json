@@ -2535,6 +2535,17 @@
         }
       }
     },
+    "/api/admin/onboarding-milestones": {
+      "get": {
+        "summary": "GET /api/admin/onboarding-milestones",
+        "description": "Evaluates administrative onboarding setup milestones using aggregate database counts\nand application configuration checks, excluding sample records (`isSample: true`).",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/photos/{id}": {
       "patch": {
         "summary": "PATCH /api/admin/photos/[id]",

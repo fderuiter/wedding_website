@@ -44,6 +44,7 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('SetupWizard focus shifting and ARIA error linking', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     jest.clearAllMocks();
   });
 
@@ -292,6 +293,163 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(savedPayload).toBeTruthy();
     expect(savedPayload.themePreset).toBe('romantic');
     expect(savedPayload.layoutContainerMaxWidth).toBe('72rem');
+  });
+
+  test('trims partner names before Step 2 submission and rejects whitespace-only partner names', async () => {
+    let savedPayload: Record<string, unknown> | null = null;
+    let setupSaveCalls = 0;
+    global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.body) {
+        const parsed = JSON.parse(init.body as string);
+        if (parsed.partner1Name !== undefined || parsed.partner2Name !== undefined) {
+          setupSaveCalls++;
+          savedPayload = parsed;
+        }
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    // Step 1: Login
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    const partner1Input = screen.getByLabelText(/Partner 1/i) as HTMLInputElement;
+    const partner2Input = screen.getByLabelText(/Partner 2/i) as HTMLInputElement;
+
+    // Whitespace-only partner name should be rejected client-side without calling save endpoint
+    fireEvent.change(partner1Input, { target: { value: '   ' } });
+    fireEvent.change(partner2Input, { target: { value: '  Sam  ' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Please enter names for both partners.')).toBeInTheDocument();
+    });
+    expect(setupSaveCalls).toBe(0);
+    expect(document.activeElement).toBe(partner1Input);
+    expect(partner1Input).toHaveAttribute('aria-invalid', 'true');
+
+    // Now provide padded partner names and verify trimmed payload
+    fireEvent.change(partner1Input, { target: { value: '  Alex  ' } });
+    fireEvent.change(partner2Input, { target: { value: '  Sam  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument();
+    });
+
+    expect(setupSaveCalls).toBe(1);
+    expect(savedPayload).toMatchObject({
+      partner1Name: 'Alex',
+      partner2Name: 'Sam',
+      baseUrl: 'https://alexandsam.com',
+      seoTitle: "Alex & Sam's Wedding",
+      seoDescription: 'Join Alex and Sam for their wedding celebration.',
+    });
+  });
+
+  test('synchronizes isAdminLoggedIn in localStorage and dispatches storage event on login, save, restore, and finish', async () => {
+    const storageEvents: Event[] = [];
+    const onStorage = (e: Event) => storageEvents.push(e);
+    window.addEventListener('storage', onStorage);
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    try {
+      const { unmount } = renderWithProviders(<SetupWizard />);
+      expect(window.localStorage.getItem('isAdminLoggedIn')).toBeNull();
+
+      // 1. Login writes isAdminLoggedIn
+      fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+      await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+      expect(window.localStorage.getItem('isAdminLoggedIn')).toBe('true');
+      expect(storageEvents.length).toBeGreaterThanOrEqual(1);
+
+      // Clear localStorage to verify Step 2 save writes it again
+      window.localStorage.removeItem('isAdminLoggedIn');
+      storageEvents.length = 0;
+
+      // 2. Save writes isAdminLoggedIn
+      fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+      fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+      fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+      fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+
+      await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+      expect(window.localStorage.getItem('isAdminLoggedIn')).toBe('true');
+      expect(storageEvents.length).toBeGreaterThanOrEqual(1);
+
+      unmount();
+
+      // 3. Restore with valid session cookie writes isAdminLoggedIn
+      window.localStorage.removeItem('isAdminLoggedIn');
+      storageEvents.length = 0;
+      (checkAdminClient as jest.Mock).mockResolvedValueOnce(true);
+      window.sessionStorage.setItem('setup_wizard_draft', JSON.stringify({ step: 5 }));
+
+      renderWithProviders(<SetupWizard />);
+      await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+      expect(window.localStorage.getItem('isAdminLoggedIn')).toBe('true');
+      expect(storageEvents.length).toBeGreaterThanOrEqual(1);
+
+      // 4. Finish ("Go to Admin Dashboard") writes isAdminLoggedIn even if cleared beforehand
+      window.localStorage.removeItem('isAdminLoggedIn');
+      storageEvents.length = 0;
+
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        fireEvent.click(screen.getByRole('button', { name: 'Go to Admin Dashboard' }));
+      } finally {
+        errorSpy.mockRestore();
+      }
+      expect(window.localStorage.getItem('isAdminLoggedIn')).toBe('true');
+      expect(storageEvents.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      window.removeEventListener('storage', onStorage);
+    }
+  });
+
+  test('continues setup progress when localStorage throws in restricted browser storage', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const setItemSpy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage disabled', 'SecurityError');
+    });
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    try {
+      renderWithProviders(<SetupWizard />);
+
+      fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+      await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+    } finally {
+      setItemSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 
   test('Step 4 renders guest list import controls and launches CsvImportWizardModal', async () => {
@@ -859,6 +1017,77 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
     expect(document.activeElement).toBe(contactEmailInput);
     expect(contactEmailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  test('routes backend Step 2 field errors for contactEmail and partner names to the corresponding input with exclusive ARIA state', async () => {
+    let callCount = 0;
+    global.fetch = jest.fn(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      if (callCount === 2) {
+        return Promise.resolve({
+          ok: false,
+          json: () =>
+            Promise.resolve({
+              error: 'Validation Error: contactEmail: Invalid email address format',
+            }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: false,
+        json: () =>
+          Promise.resolve({
+            error: 'Validation Error: Partner names cannot use reserved placeholder values.',
+          }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    fireEvent.change(screen.getByPlaceholderText('Admin Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    const partner1Input = screen.getByLabelText(/Partner 1/i);
+    const partner2Input = screen.getByLabelText(/Partner 2/i);
+    const siteUrlInput = screen.getByLabelText(/Site URL/i);
+    const contactEmailInput = screen.getByLabelText(/Host Contact Email \(Optional\)/i);
+
+    fireEvent.change(partner1Input, { target: { value: 'Partner 1' } });
+    fireEvent.change(partner2Input, { target: { value: 'Partner 2' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(siteUrlInput, { target: { value: 'https://alexandsam.com' } });
+    fireEvent.change(contactEmailInput, { target: { value: 'hosts@alexandsam.com' } });
+
+    // Backend rejects contactEmail -> only contactEmail receives focus and aria-invalid
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText('Validation Error: contactEmail: Invalid email address format')
+      ).toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(contactEmailInput);
+    expect(contactEmailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
+    expect(partner1Input).not.toHaveAttribute('aria-invalid', 'true');
+
+    // Backend rejects partner names -> only partner1 receives focus and aria-invalid
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText('Validation Error: Partner names cannot use reserved placeholder values.')
+      ).toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(partner1Input);
+    expect(partner1Input).toHaveAttribute('aria-invalid', 'true');
+    expect(contactEmailInput).not.toHaveAttribute('aria-invalid', 'true');
     expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
   });
 });

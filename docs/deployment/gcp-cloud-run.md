@@ -88,7 +88,11 @@ For full architectural diagrams and operational guidance, refer to the canonical
 staging-database-migration:
   name: Staging Database Migration
   needs: [publish-artifact, schema-compatibility]
-  if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+  if: |
+    !cancelled() &&
+    (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+    (needs.schema-compatibility.result == 'success') &&
+    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
   uses: ./.github/workflows/db-migrate.yml
   with:
     environment: 'staging'
@@ -96,12 +100,21 @@ staging-database-migration:
 
 staging-deploy-provider:
   name: Staging Provider Deployment
+  permissions:
+    contents: read
+    packages: read
+    attestations: read
   needs: [publish-artifact, staging-database-migration]
-  if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+  if: |
+    !cancelled() &&
+    (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+    (needs.staging-database-migration.result == 'success') &&
+    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
   uses: ./.github/workflows/deploy-provider.yml
   with:
     environment: 'staging'
-    image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+    image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
+    image_tag: ${{ needs.publish-artifact.outputs.image_tag }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
   secrets: inherit
 
@@ -113,7 +126,7 @@ production-database-migration:
     always() &&
     (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
     (needs.schema-compatibility.result == 'success') &&
-    (needs.publish-artifact.result == 'success') &&
+    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
     (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
   uses: ./.github/workflows/db-migrate.yml
   with:
@@ -122,25 +135,30 @@ production-database-migration:
 
 production-deploy-provider:
   name: Production Provider Deployment
+  permissions:
+    contents: read
+    packages: read
+    attestations: read
   needs: [publish-artifact, staging-verify-deployment, production-database-migration]
   if: |
     always() &&
     (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
-    (needs.publish-artifact.result == 'success') &&
+    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
     (needs.production-database-migration.result == 'success') &&
     (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
   uses: ./.github/workflows/deploy-provider.yml
   with:
     environment: 'production'
-    image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+    image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
+    image_tag: ${{ needs.publish-artifact.outputs.image_tag }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
   secrets: inherit
 ```
 
 #### Production Reviewer Approval Gate & Promotion
-To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules:
-1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`. Staging migrations and Cloud Run deployment proceed automatically.
-2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the pipeline and notifies designated maintainers. Maintainers review the preflight schema summary, altered tables/columns, and staging health check outcome before approving the deployment.
+To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules and cryptographic OIDC provenance verification:
+1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`. `publish-artifact` builds and signs the multi-arch container image, and `staging-deploy-provider` verifies OIDC provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml` before deploying the immutable `ghcr.io/<owner>/<repo>@sha256:<hex>` digest to Cloud Run.
+2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the pipeline and notifies designated maintainers. Maintainers review the preflight schema summary, altered tables/columns, and staging health check outcome before approving the deployment, after which `production-deploy-provider` re-verifies OIDC provenance for the exact `image_digest` validated in staging before updating the production Cloud Run service.
 3. **Automated Rollback Guarantee**: If the production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/rollback.yml` is automatically triggered to restore the previous healthy container tag (`previous_tag`) **without requiring a second human approval gate**.
 
 #### Workflow Parameters, Manual Dispatches & Preflight Checks
@@ -148,11 +166,15 @@ The release pipeline supports automated merges as well as manual triggers via Gi
 
 *   **Release Pipeline Manual Dispatches (`deploy.yml`)**:
     *   `environment`: Target deployment scope:
-        *   `all` (default): Executes staging migration and deployment, validates staging health, halts for the mandatory production reviewer approval gate, and promotes to production.
+        *   `all` (default): Executes staging migration and deployment, validates staging health, halts for the mandatory production reviewer approval gate, and promotes the identical `sha256` digest to production.
         *   `staging`: Dispatches only `staging-database-migration` and `staging-deploy-provider`, validating changes in the staging environment without promoting to production.
         *   `production`: Directly targets `production-database-migration` and `production-deploy-provider`, bypassing staging and immediately routing to the mandatory production approval gate.
+    *   `image_digest`: Optional immutable OCI image digest (`sha256:<64-hex>`) allowing production-only or manual runs to pin an existing attested artifact without rebuilding HEAD.
     *   `provider`: Hosting provider adapter (defaults to `google-cloud-run`).
     *   `previous_tag`: Image tag used by automated rollback if health checks fail (defaults to `latest`).
+*   **Standalone Provider Dispatches (`deploy-provider.yml`)**:
+    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected). Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner` and `--signer-workflow`) prior to Cloud Run rollout.
+    *   Exports `service_url`, `is_dry_run`, `image_digest`, `image_uri`, and `attestation_status` outputs and records them in `$GITHUB_STEP_SUMMARY`.
 *   **Standalone Database Migration Dispatches (`db-migrate.yml`)**:
     *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. It accepts `environment` (`production`, `staging`, or `development`) and execution confirmation (`confirm: true`).
 *   **Workflow Secrets**:

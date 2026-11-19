@@ -281,5 +281,110 @@ describe('useEntityOrchestration', () => {
       expect(cachedData?.length).toBe(3);
       expect(mockApiClient.delete).toHaveBeenCalledWith(`${endpoint}/2`);
     });
+
+    it('supports fetchEndpoint, unwraps { item } mutation envelopes, and invalidates related query keys', async () => {
+      const paginatedResponse = {
+        items: initialItems,
+        total: 4,
+        page: 1,
+        limit: 500,
+        totalPages: 1,
+      };
+      mockApiClient.get.mockResolvedValueOnce(paginatedResponse);
+      mockApiClient.post.mockResolvedValueOnce({
+        message: 'Created',
+        item: { id: '5', name: 'Wrapped Item Five', position: 5 },
+      });
+      mockApiClient.put.mockResolvedValueOnce({
+        message: 'Updated',
+        item: { id: '5', name: 'Renamed Item Five', position: 5 },
+      });
+
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+      const { result } = renderHook(
+        () =>
+          useEntityOrchestration<TestItem>({
+            queryKey,
+            endpoint,
+            fetchEndpoint: `${endpoint}?limit=500`,
+            invalidateQueryKeys: [['public-entities'], ['single-entity']],
+            entityName,
+            apiClient: mockApiClient,
+          }),
+        { wrapper: createWrapper(queryClient) }
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(mockApiClient.get).toHaveBeenCalledWith(`${endpoint}?limit=500`);
+      expect(result.current.data).toEqual(initialItems);
+
+      await act(async () => {
+        const created = await result.current.create({ name: 'Wrapped Item Five' });
+        expect(created).toEqual({ id: '5', name: 'Wrapped Item Five', position: 5 });
+      });
+      expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, { name: 'Wrapped Item Five' });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['public-entities'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['single-entity'] });
+
+      await act(async () => {
+        const updated = await result.current.update('5', { name: 'Renamed Item Five' });
+        expect(updated).toEqual({ id: '5', name: 'Renamed Item Five', position: 5 });
+      });
+      expect(mockApiClient.put).toHaveBeenCalledWith(`${endpoint}/5`, { name: 'Renamed Item Five' });
+      expect(queryClient.getQueryData<TestItem[]>(queryKey)?.find((i) => i.id === '5')?.name).toBe(
+        'Renamed Item Five'
+      );
+    });
+
+    it('updates and rolls back paginated { items, total, limit, totalPages } caches on remove', async () => {
+      const paginatedKey = ['paginated-entities', 1, 2] as const;
+      const initialPaginated = {
+        items: initialItems.slice(0, 3),
+        total: 3,
+        page: 1,
+        limit: 2,
+        totalPages: 2,
+      };
+      queryClient.setQueryData(paginatedKey, initialPaginated);
+      mockApiClient.delete.mockResolvedValueOnce({ success: true });
+
+      const { result } = renderHook(
+        () =>
+          useEntityOrchestration<TestItem>({
+            queryKey: paginatedKey,
+            endpoint,
+            entityName,
+            apiClient: mockApiClient,
+            enabled: false,
+          }),
+        { wrapper: createWrapper(queryClient) }
+      );
+
+      await act(async () => {
+        await result.current.remove('2');
+      });
+
+      expect(queryClient.getQueryData(paginatedKey)).toEqual({
+        items: [initialItems[0], initialItems[2]],
+        total: 2,
+        page: 1,
+        limit: 2,
+        totalPages: 1,
+      });
+
+      mockApiClient.delete.mockRejectedValueOnce(new Error('Delete failed'));
+      await act(async () => {
+        await expect(result.current.remove('1')).rejects.toThrow('Delete failed');
+      });
+
+      expect(queryClient.getQueryData(paginatedKey)).toEqual({
+        items: [initialItems[0], initialItems[2]],
+        total: 2,
+        page: 1,
+        limit: 2,
+        totalPages: 1,
+      });
+    });
   });
 });

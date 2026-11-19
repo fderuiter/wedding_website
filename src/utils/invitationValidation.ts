@@ -60,7 +60,23 @@ type InvitationValidationMode = 'service' | 'batch' | 'row';
 interface InvitationValidationOptions {
   mode?: InvitationValidationMode;
   rowNumber?: number;
+  partial?: boolean;
 }
+
+const NULLABLE_INVITATION_STRING_FIELDS = [
+  'email',
+  'addressLine1',
+  'addressLine2',
+  'city',
+  'state',
+  'zipCode',
+  'country',
+  'dietaryNotes',
+  'plusOneFirstName',
+  'plusOneLastName',
+  'householdName',
+  'partyGroup',
+] as const;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -143,6 +159,30 @@ export function normalizePartyTags(
   return tags;
 }
 
+export function normalizePartialInvitationFields(
+  data: Record<string, unknown>
+): Record<string, unknown> {
+  const finalData: Record<string, unknown> = { ...data };
+
+  if (typeof finalData.guestName === 'string') {
+    finalData.guestName = finalData.guestName.trim();
+  }
+
+  for (const field of NULLABLE_INVITATION_STRING_FIELDS) {
+    if (finalData[field] !== undefined) {
+      finalData[field] = normalizeNullableString(finalData[field]);
+    }
+  }
+
+  if (finalData.partyTags !== undefined) {
+    finalData.partyTags = Array.isArray(finalData.partyTags)
+      ? normalizePartyTags(finalData.partyTags)
+      : [];
+  }
+
+  return finalData;
+}
+
 export function normalizeBatchInvitationRecord(
   item: BatchInvitationCodeRecord
 ): NormalizedInvitationCodeRecord {
@@ -197,16 +237,20 @@ export function validateInvitationGuestFields(
   const record = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   const errors: string[] = [];
 
-  if (!record.guestName || typeof record.guestName !== 'string' || record.guestName.trim() === '') {
-    errors.push(
-      formatModeMessage(mode, rowNumber, 'Guest name is required.', 'has an empty guest name.')
-    );
+  const isPartial = Boolean(options?.partial);
+
+  if (!isPartial || record.guestName !== undefined) {
+    if (!record.guestName || typeof record.guestName !== 'string' || record.guestName.trim() === '') {
+      errors.push(
+        formatModeMessage(mode, rowNumber, 'Guest name is required.', 'has an empty guest name.')
+      );
+    }
   }
 
   if (
     mode === 'service' &&
     record.code !== undefined &&
-    record.code !== null &&
+    (isPartial || record.code !== null) &&
     (typeof record.code !== 'string' || record.code.trim() === '')
   ) {
     errors.push('Validation Error: Code cannot be empty.');

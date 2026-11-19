@@ -14,10 +14,13 @@ on:
         options:
           - production
           - staging
+      image_digest:
+        description: 'Immutable OCI Image Digest (sha256:<64-hex>) to deploy'
+        required: false
+        type: string
       image_tag:
-        description: 'OCI Image Tag or SHA to deploy'
-        required: true
-        default: 'latest'
+        description: 'OCI Image Tag or Commit SHA (resolved to digest if image_digest is omitted)'
+        required: false
         type: string
       provider:
         description: 'Hosting Provider Adapter'
@@ -35,10 +38,13 @@ on:
         required: false
         default: 'production'
         type: string
-      image_tag:
-        description: 'OCI Image Tag or SHA to deploy'
+      image_digest:
+        description: 'Immutable OCI Image Digest (sha256:<64-hex>) to deploy'
         required: false
-        default: 'latest'
+        type: string
+      image_tag:
+        description: 'OCI Image Tag or Commit SHA (resolved to digest if image_digest is omitted)'
+        required: false
         type: string
       provider:
         description: 'Hosting Provider Adapter'
@@ -61,6 +67,15 @@ on:
       is_dry_run:
         description: 'Flag indicating if deployment ran in dry-run mode'
         value: ${{ jobs.deploy.outputs.is_dry_run }}
+      image_digest:
+        description: 'Verified immutable OCI image digest deployed'
+        value: ${{ jobs.deploy.outputs.image_digest }}
+      image_uri:
+        description: 'Full digest-pinned OCI image URI deployed'
+        value: ${{ jobs.deploy.outputs.image_uri }}
+      attestation_status:
+        description: 'OIDC build provenance attestation verification status'
+        value: ${{ jobs.deploy.outputs.attestation_status }}
 
 concurrency:
   group: deploy-provider-${{ inputs.environment || 'production' }}
@@ -70,17 +85,27 @@ jobs:
   deploy:
     name: Deploy Release Artifact to Provider
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     environment: ${{ inputs.environment || 'production' }}
     outputs:
       service_url: ${{ steps.resolve-url.outputs.service_url }}
       is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
+      image_digest: ${{ steps.resolve.outputs.image_digest }}
+      image_uri: ${{ steps.resolve.outputs.image_uri }}
+      attestation_status: ${{ steps.provenance.outputs.attestation_status }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve Artifact Image URI
         id: resolve
         env:
-          TAG: ${{ inputs.image_tag || 'latest' }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          RAW_DIGEST: ${{ inputs.image_digest }}
+          RAW_TAG: ${{ inputs.image_tag }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
         run: |
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
@@ -88,15 +113,76 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "$TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
-            echo "::error::Invalid image tag '${TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+          if [ -z "$RAW_DIGEST" ] && [ -z "$RAW_TAG" ]; then
+            echo "::error::Missing artifact identifier. Provide an immutable 'image_digest' (sha256:...) or a release/commit 'image_tag'."
             exit 1
           fi
 
+          if [ -n "$RAW_TAG" ]; then
+            if [[ "${RAW_TAG,,}" == "latest" ]]; then
+              echo "::error::Unpinned 'latest' image tag is forbidden. Provide an explicit 'image_digest' or an immutable version/commit 'image_tag'."
+              exit 1
+            fi
+
+            if [[ ! "$RAW_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+              echo "::error::Invalid image tag '${RAW_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+              exit 1
+            fi
+          fi
+
           REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_URI="ghcr.io/${REPO_LOWER}:${TAG}"
+
+          if [ -n "$RAW_DIGEST" ]; then
+            if [[ ! "$RAW_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid image digest '${RAW_DIGEST}'. Must match ^sha256:[a-f0-9]{64}$."
+              exit 1
+            fi
+            RESOLVED_DIGEST="$RAW_DIGEST"
+
+            if [ -n "$GH_TOKEN" ]; then
+              printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin
+            fi
+          else
+            if [ -n "$GH_TOKEN" ]; then
+              printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin
+            fi
+
+            TAG_URI="ghcr.io/${REPO_LOWER}:${RAW_TAG}"
+            echo "Resolving tag-only reference ${TAG_URI} to immutable sha256 digest..."
+            if ! RESOLVED_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$TAG_URI"); then
+              echo "::error::Failed to resolve OCI digest for tag '${TAG_URI}' via docker buildx imagetools inspect."
+              exit 1
+            fi
+
+            if [[ ! "$RESOLVED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Resolved digest '${RESOLVED_DIGEST}' for '${TAG_URI}' is invalid. Must match ^sha256:[a-f0-9]{64}$."
+              exit 1
+            fi
+          fi
+
+          IMAGE_URI="ghcr.io/${REPO_LOWER}@${RESOLVED_DIGEST}"
+          echo "image_digest=${RESOLVED_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
           echo "Resolved deployment target artifact: ${IMAGE_URI}"
+
+      - name: Verify Artifact Provenance Attestation
+        id: provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: |
+          echo "Verifying OIDC build provenance attestation for oci://${IMAGE_URI}..."
+          if ! gh attestation verify "oci://${IMAGE_URI}" \
+            --owner "$REPO_OWNER" \
+            --signer-workflow "$SIGNER_WORKFLOW"; then
+            echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}' and signer workflow '${SIGNER_WORKFLOW}'). Blocking deployment."
+            exit 1
+          fi
+          echo "attestation_status=verified" >> "$GITHUB_OUTPUT"
+          echo "Verified OIDC build provenance attestation for ${IMAGE_DIGEST}."
 
       - name: Deploy to Google Cloud Run Adapter
         if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
@@ -117,11 +203,12 @@ jobs:
         if: inputs.provider == 'generic-webhook' && secrets.DEPLOY_WEBHOOK_URL != ''
         env:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
         run: |
           echo "Triggering deployment webhook for image ${IMAGE_URI}..."
-          PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg env "$TARGET_ENV" '{image: $image, environment: $env}')
+          PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg digest "$IMAGE_DIGEST" --arg env "$TARGET_ENV" '{image: $image, digest: $digest, environment: $env}')
           curl -X POST "$DEPLOY_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
@@ -129,9 +216,10 @@ jobs:
       - name: Dry-run Provider Adapter Validation
         if: secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == ''
         env:
-          TAG: ${{ inputs.image_tag || 'latest' }}
+          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
         run: |
-          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for image tag: ${TAG}."
+          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
 
       - name: Resolve Service URL Output
         id: resolve-url
@@ -158,11 +246,15 @@ jobs:
         env:
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          ATTESTATION_STATUS: ${{ steps.provenance.outputs.attestation_status }}
           SERVICE_URL: ${{ steps.resolve-url.outputs.service_url }}
         run: |
           echo "### 🚀 Provider Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Provider:** \`${PROVIDER}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Artifact Image URI:** \`${IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Verified Digest:** \`${IMAGE_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Pinned Artifact URI:** \`${IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Provenance Attestation:** \`${ATTESTATION_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Service URL:** \`${SERVICE_URL}\`" >> "$GITHUB_STEP_SUMMARY"
