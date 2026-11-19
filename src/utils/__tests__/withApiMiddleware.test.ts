@@ -282,6 +282,59 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(res6.status).toBe(429);
     });
 
+    test('enforces strict 5 request limit on POST /api/admin/setup while keeping GET /api/admin/setup under general quota', async () => {
+      const handler = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ success: true, initialized: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const middleware = withApiMiddleware(handler);
+
+      // 15 GET requests do not consume POST credential budget or trigger 5-attempt lockout
+      for (let i = 0; i < 15; i++) {
+        const getReq = new NextRequest('http://localhost/api/admin/setup', { method: 'GET' });
+        const getRes = await middleware(getReq, {});
+        expect(getRes.status).toBe(200);
+      }
+
+      // 5 POST attempts pass, 6th POST attempt returns 429
+      for (let i = 0; i < 5; i++) {
+        const postReq = new NextRequest('http://localhost/api/admin/setup', { method: 'POST' });
+        const postRes = await middleware(postReq, {});
+        expect(postRes.status).toBe(200);
+      }
+
+      const postReq6 = new NextRequest('http://localhost/api/admin/setup', { method: 'POST' });
+      const postRes6 = await middleware(postReq6, {});
+      expect(postRes6.status).toBe(429);
+
+      // Subsequent GET status check still succeeds under general quota
+      const statusReqAfterLockout = new NextRequest('http://localhost/api/admin/setup', { method: 'GET' });
+      const statusResAfterLockout = await middleware(statusReqAfterLockout, {});
+      expect(statusResAfterLockout.status).toBe(200);
+    });
+
+    test('enforces strict 5 request limit on GET /api/registry/validate-code', async () => {
+      const handler = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Invalid invitation code.' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 5; i++) {
+        const req = new NextRequest(`http://localhost/api/registry/validate-code?code=CODE000${i}`);
+        const res = await middleware(req, {});
+        expect(res.status).toBe(404);
+      }
+
+      const req6 = new NextRequest('http://localhost/api/registry/validate-code?code=CODE0006');
+      const res6 = await middleware(req6, {});
+      expect(res6.status).toBe(429);
+    });
+
     test('exempts /api/health from rate limiting across more than 100 consecutive requests', async () => {
       const handler = jest.fn().mockResolvedValue(
         new Response(JSON.stringify({ status: 'ok', database: 'connected' }), {

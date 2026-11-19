@@ -11,6 +11,25 @@ function normalizeOptionalEnv(val: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function parseTrustProxy(val: unknown): boolean | number {
+  if (val === undefined || val === null || val === '') return false;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') {
+    if (!Number.isInteger(val) || val < 0) return false;
+    return val === 0 ? false : val;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim().toLowerCase();
+    if (trimmed === '' || trimmed === 'false' || trimmed === '0') return false;
+    if (trimmed === 'true') return true;
+    if (/^\d+$/.test(trimmed)) {
+      const hops = parseInt(trimmed, 10);
+      return hops > 0 ? hops : false;
+    }
+  }
+  return false;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
@@ -51,6 +70,18 @@ const envSchema = z.object({
   RUN_MIGRATIONS: z.union([z.boolean(), z.string()])
     .transform(val => val === true || val === 'true' || val === '1')
     .default(false),
+  TRUST_PROXY: z.union([z.boolean(), z.number().int().min(0), z.string()])
+    .optional()
+    .default(false)
+    .refine(val => {
+      if (typeof val === 'boolean') return true;
+      if (typeof val === 'number') return Number.isInteger(val) && val >= 0;
+      const trimmed = val.trim().toLowerCase();
+      return trimmed === '' || trimmed === 'true' || trimmed === 'false' || /^\d+$/.test(trimmed);
+    }, {
+      message: 'TRUST_PROXY must be true, false, or a non-negative integer hop count',
+    })
+    .transform((val): boolean | number => parseTrustProxy(val)),
   GUEST_PASSCODE: z.string().default('wedding2026'),
   GUEST_SESSION_SECRET: z.string().default('default-guest-session-secret'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
@@ -250,6 +281,7 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
     ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
     RUN_MIGRATIONS: process.env.RUN_MIGRATIONS === 'true' || process.env.RUN_MIGRATIONS === '1',
+    TRUST_PROXY: parseTrustProxy(process.env.TRUST_PROXY),
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
     GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
     HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
@@ -278,6 +310,9 @@ export const env = new Proxy(_env, {
   get(target, prop) {
     if (typeof prop === 'string') {
       const val = process.env[prop];
+      if (prop === 'TRUST_PROXY') {
+        return val !== undefined && val !== '' ? parseTrustProxy(val) : target.TRUST_PROXY;
+      }
       if (val !== undefined && val !== '') {
         if (prop === 'MULTISITE_ENABLED' || prop === 'RUN_MIGRATIONS') {
           return val === 'true' || val === '1';
