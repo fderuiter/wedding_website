@@ -8,6 +8,12 @@ import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
 import { ThemeSelector } from '../ui/ThemeSelector';
+import {
+  GuestHelpProvider,
+  GuestHelpTrigger,
+  resolveHelpCategoryForPath,
+  useGuestHelp,
+} from '@/components/guest/GuestHelpModal';
 import { deriveBrandMonogram } from '@/features/content';
 
 /**
@@ -62,6 +68,7 @@ const DEFAULT_HOME_FEATURES = [
  */
 export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
   const pathname = usePathname();
+  const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const browserHash = useSyncExternalStore(
     subscribeToHashChange,
@@ -168,16 +175,17 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
   const monogram = deriveBrandMonogram(config);
   const disablePrefetch = pathname === '/guest/login';
+  const defaultHelpCategory = resolveHelpCategoryForPath(pathname);
 
-  return (
+  const navbarContent = (
     <>
       <header
         ref={headerRef}
         className="fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]"
       >
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex-shrink-0 flex items-center h-16">
+          <div className="flex items-center justify-between min-h-16 py-1.5 gap-3">
+            <div className="flex-shrink-0 flex items-center min-h-12">
               <Link
                 href="/"
                 prefetch={disablePrefetch ? false : undefined}
@@ -194,8 +202,8 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                 )}
               </Link>
             </div>
-            <div className="hidden md:block">
-              <nav aria-label="Global Navigation" className="ml-10 flex items-baseline space-x-4">
+            <div className="hidden md:block flex-1 min-w-0">
+              <nav aria-label="Global Navigation" className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1">
                 {allLinks.map((link) => {
                   const active = isLinkActive(link.href);
                   return (
@@ -209,7 +217,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                           setActiveHash(link.href.substring(link.href.indexOf('#')));
                         }
                       }}
-                      className={`px-3 py-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
+                      className={`px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
                         active
                           ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
                           : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
@@ -221,7 +229,13 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
                 })}
               </nav>
             </div>
-            <div className="hidden md:flex md:items-center md:gap-4">
+            <div className="hidden md:flex md:items-center md:gap-3 flex-shrink-0">
+              <GuestHelpTrigger
+                variant="navbar"
+                label="Help"
+                defaultCategory={defaultHelpCategory}
+                config={config}
+              />
               <ThemeSelector />
               {isAdmin && (
                 <div className="flex items-center">
@@ -288,6 +302,13 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
               </Link>
             );
           })}
+          <GuestHelpTrigger
+            variant="mobileNav"
+            label="Help"
+            defaultCategory={defaultHelpCategory}
+            config={config}
+            onTrigger={() => setIsMenuOpen(false)}
+          />
           <div className="pt-3 pb-2 px-3 border-t border-[var(--color-surface-border,#e5e7eb)] flex justify-between items-center">
             <span className="text-sm font-medium text-[var(--color-primary-text)]">Theme</span>
             <ThemeSelector />
@@ -316,4 +337,14 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
       </Overlay>
     </>
   );
+
+  if (!hasProvider) {
+    return (
+      <GuestHelpProvider config={config} pathname={pathname}>
+        {navbarContent}
+      </GuestHelpProvider>
+    );
+  }
+
+  return navbarContent;
 }

@@ -85,6 +85,10 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
           orderBy: { id: 'asc' },
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         }),
+      sanitize: (snapshot) =>
+        snapshot?.entityType === 'AppConfig' && snapshot.data && typeof snapshot.data === 'object'
+          ? { ...snapshot, data: toPublicAppConfig(snapshot.data) }
+          : snapshot,
     },
   ];
 

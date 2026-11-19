@@ -1,51 +1,8 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateAdminCookieValue() {
-  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
-  const payload = {
-    isAdmin: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { seedAdminAndGuestAuthCookies } from './helpers/auth';
 
 test('seating chart admin dashboard has Export Visual PDF button', async ({ context, page }) => {
-  const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
-  const cookies = origins.flatMap((url) => [
-    {
-      name: 'admin_auth',
-      value: generateAdminCookieValue(),
-      url,
-    },
-    {
-      name: 'guest_auth',
-      value: generateGuestCookieValue(),
-      url,
-    },
-  ]);
-  await context.addCookies(cookies);
+  await seedAdminAndGuestAuthCookies(context);
 
   // Navigate to Seating Chart Dashboard
   try {
@@ -53,7 +10,7 @@ test('seating chart admin dashboard has Export Visual PDF button', async ({ cont
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
-      await context.addCookies(cookies).catch(() => {});
+      await seedAdminAndGuestAuthCookies(context).catch(() => {});
       page = await context.newPage();
       await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded', timeout: 30000 });
     } else {

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
 
 export default function GuestAddressCollectPage() {
   const [formData, setFormData] = useState({
@@ -109,6 +110,9 @@ export default function GuestAddressCollectPage() {
           <Button variant="primary" onClick={handleReset} className="w-full">
             Submit Another Address
           </Button>
+          <div className="mt-4 flex justify-center">
+            <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+          </div>
         </div>
       </main>
     );
@@ -124,6 +128,9 @@ export default function GuestAddressCollectPage() {
           <p className="text-sm text-muted mt-2">
             Please share your physical postal address so the couple can send invitations and wedding updates.
           </p>
+          <div className="mt-3 flex justify-center">
+            <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+          </div>
         </div>
 
         {errorMessage && (

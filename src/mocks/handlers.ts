@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { getStripeCapability } from '@/lib/stripe';
 
 // 1x1 transparent PNG to mock map tile requests without network access
 const TRANSPARENT_PNG = new Uint8Array([
@@ -62,6 +63,22 @@ const mockScheduleData = [
 ];
 
 export const handlers = [
+  http.get('*/api/registry/capabilities', () => {
+    const hasExplicitStripeEnv =
+      process.env.STRIPE_SECRET_KEY !== undefined ||
+      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY !== undefined;
+    const capability = hasExplicitStripeEnv
+      ? getStripeCapability()
+      : {
+        cardCheckoutEnabled: true,
+        stripePublishableKey: 'pk_test_msw_mock_publishable_key',
+      };
+    return HttpResponse.json({
+      success: true,
+      data: capability,
+    });
+  }),
+
   // Schedule API handler for InteractiveTimeline
   http.get('*/api/schedule', () => {
     return HttpResponse.json({

@@ -12,10 +12,12 @@ import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
+import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe';
 import {
   REGISTRY_INITIAL_VISIBLE_ITEMS,
   REGISTRY_MAX_CATALOG_LIMIT,
 } from '@/utils/registryPagination';
+import { useRegistryCapabilities } from './useRegistryCapabilities';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 
@@ -38,6 +40,9 @@ function applyOptimisticContribution(item: RegistryItem, variables: ContributeVa
   if (item.id !== variables.itemId) return item;
   if (item.isGroupGift) {
     const newAmount = item.amountContributed + variables.amount;
+    const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
+    const effectiveCoverFee =
+      isFund && !variables.paymentIntentId ? false : (variables.coverFee ?? false);
     return {
       ...item,
       amountContributed: Math.min(item.price, newAmount),
@@ -46,8 +51,10 @@ function applyOptimisticContribution(item: RegistryItem, variables: ContributeVa
         {
           name: variables.purchaserName,
           amount: variables.amount,
-          coverFee: variables.coverFee ?? false,
-          feeAmount: variables.coverFee ? Math.round(variables.amount * 0.025 * 100) / 100 : 0,
+          coverFee: effectiveCoverFee,
+          feeAmount: effectiveCoverFee
+            ? Math.round(variables.amount * CARD_PROCESSING_FEE_RATE * 100) / 100
+            : 0,
           date: new Date().toISOString(),
           isPlusOne: false,
           thankYouStatus: 'Unsent',
@@ -87,6 +94,12 @@ function mapRegistryQueryData(
 export function useRegistry() {
   const queryClient = useQueryClient();
   const { confirm } = useToast();
+  const {
+    cardCheckoutEnabled: detectedCardCheckoutEnabled,
+    stripePublishableKey,
+    isCapabilitiesLoading,
+  } = useRegistryCapabilities();
+  const cardCheckoutEnabled = isCapabilitiesLoading ? undefined : detectedCardCheckoutEnabled;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(REGISTRY_INITIAL_VISIBLE_ITEMS);
@@ -448,6 +461,8 @@ export function useRegistry() {
     visibleItemsCount,
     setVisibleItemsCount,
     isAdmin,
+    cardCheckoutEnabled,
+    stripePublishableKey,
     filteredItems,
     visibleItems,
     categories,

@@ -1,35 +1,5 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateAdminCookieValue() {
-  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
-  const payload = {
-    isAdmin: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { generateAdminCookieValue, seedAdminAndGuestAuthCookies } from './helpers/auth';
 
 test.describe('Sample Data Generator & Admin Workflow', () => {
   test.beforeEach(async ({ request }) => {
@@ -109,11 +79,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
   });
 
   test('displays sample data banner and badges in admin UI, then purges sample data', async ({ context, page }) => {
-    const adminCookie = generateAdminCookieValue();
-    await context.addCookies([
-      { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-      { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-    ]);
+    const { adminCookieValue: adminCookie } = await seedAdminAndGuestAuthCookies(context);
 
     // Seed sample data via API
     const request = context.request;
@@ -147,10 +113,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
         ) {
           console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
           await page.close().catch(() => {});
-          await context.addCookies([
-            { name: 'admin_auth', value: adminCookie, url: 'http://127.0.0.1:3000' },
-            { name: 'admin_auth', value: adminCookie, url: 'http://localhost:3000' },
-          ]).catch(() => {});
+          await seedAdminAndGuestAuthCookies(context, { adminCookieValue: adminCookie }).catch(() => {});
           page = await context.newPage();
         } else {
           throw err;
